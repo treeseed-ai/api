@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.local/
+coverage/
+*.log
+*.tgz
+scripts/.ts-run-*.mjs
+npm-debug.log*

@@ -1,0 +1,82 @@
+{
+  "name": "@treeseed/api",
+  "version": "0.1.0",
+  "description": "TreeSeed remote SDK API platform built on Hono and optimized for Railway deployment.",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/treeseed-ai/api.git",
+    "directory": "."
+  },
+  "homepage": "https://treeseed.ai",
+  "bugs": {
+    "url": "https://github.com/treeseed-ai/api/issues"
+  },
+  "packageManager": "npm@11.7.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "default": "./dist/app.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./railway": {
+      "types": "./dist/railway.d.ts",
+      "default": "./dist/railway.js"
+    },
+    "./providers": {
+      "types": "./dist/providers.d.ts",
+      "default": "./dist/providers.js"
+    },
+    "./templates": {
+      "types": "./dist/templates.d.ts",
+      "default": "./dist/templates.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    }
+  },
+  "files": [
+    "README.md",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "setup": "npm install",
+    "setup:ci": "npm ci",
+    "build": "npm run build:dist",
+    "build:dist": "node ./scripts/run-ts.mjs ./scripts/build-dist.ts",
+    "prepack": "npm run build:dist",
+    "test": "npm run test:unit",
+    "test:unit": "vitest run --config ./vitest.config.ts",
+    "release:setup": "npm run setup:ci",
+    "release:verify": "npm run build:dist && npm run test:unit",
+    "start": "node ./dist/server.js"
+  },
+  "dependencies": {
+    "@treeseed/agent": "^0.1.2",
+    "@treeseed/core": "^0.1.2",
+    "@treeseed/sdk": "^0.1.2",
+    "hono": "^4.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "esbuild": "^0.25.10",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2"
+  }
+}
