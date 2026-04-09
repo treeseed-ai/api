@@ -27,6 +27,10 @@
       "types": "./dist/app.d.ts",
       "default": "./dist/app.js"
     },
+    "./gateway": {
+      "types": "./dist/gateway.d.ts",
+      "default": "./dist/gateway.js"
+    },
     "./config": {
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"

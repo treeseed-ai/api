@@ -1,4 +1,5 @@
 export { createTreeseedApiApp } from './app.ts';
+export { createTreeseedGatewayApp } from './gateway.ts';
 export { resolveApiConfig } from './config.ts';
 export { createRailwayTreeseedApiServer } from './railway.ts';
 export { resolveApiRuntimeProviders } from './providers.ts';

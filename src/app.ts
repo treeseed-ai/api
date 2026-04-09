@@ -98,6 +98,39 @@ async function executeSdkOperation(sdk: AgentSdk, operation: string, input: Reco
 		case 'release-all-leases':
 		case 'releaseAllLeases':
 			return sdk.releaseAllLeases();
+		case 'start-work-day':
+		case 'startWorkDay':
+			return sdk.startWorkDay(input as any);
+		case 'close-work-day':
+		case 'closeWorkDay':
+			return sdk.closeWorkDay(input as any);
+		case 'create-task':
+		case 'createTask':
+			return sdk.createTask(input as any);
+		case 'claim-task':
+		case 'claimTask':
+			return sdk.claimTask(input as any);
+		case 'record-task-progress':
+		case 'recordTaskProgress':
+			return sdk.recordTaskProgress(input as any);
+		case 'complete-task':
+		case 'completeTask':
+			return sdk.completeTask(input as any);
+		case 'fail-task':
+		case 'failTask':
+			return sdk.failTask(input as any);
+		case 'append-task-event':
+		case 'appendTaskEvent':
+			return sdk.appendTaskEvent(input as any);
+		case 'search-tasks':
+		case 'searchTasks':
+			return sdk.searchTasks(input as any);
+		case 'get-manager-context':
+		case 'getManagerContext':
+			return sdk.getManagerContext(String(input.taskId ?? input.id ?? ''));
+		case 'create-report':
+		case 'createReport':
+			return sdk.createReport(input as any);
 		case 'list-agent-specs':
 		case 'listAgentSpecs':
 			return sdk.listAgentSpecs(input as any);

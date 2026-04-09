@@ -1,4 +1,5 @@
 import type { AgentSdk } from '@treeseed/sdk/sdk';
+import type { SdkQueueMessageEnvelope } from '@treeseed/sdk';
 import type {
 	ApiPrincipal,
 	ApiScope,
@@ -95,4 +96,19 @@ export interface ApiServerOptions {
 	runtimeProviders?: ApiRuntimeProviders;
 	sdk?: AgentSdk;
 	log?: (message: string, details?: Record<string, unknown>) => void;
+}
+
+export interface GatewayQueueProducer {
+	enqueue(request: {
+		queueName?: string;
+		message: SdkQueueMessageEnvelope;
+		delaySeconds?: number;
+	}): Promise<void>;
+}
+
+export interface GatewayServerOptions {
+	sdk: AgentSdk;
+	bearerToken: string;
+	queueProducer?: GatewayQueueProducer;
+	projectId?: string;
 }

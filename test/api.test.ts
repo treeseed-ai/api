@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { parseTemplateCatalogResponse } from '../../sdk/src/template-catalog.ts';
 import { createTreeseedApiApp } from '../src/app.ts';
 import { resolveApiConfig } from '../src/config.ts';
+import { createTreeseedGatewayApp } from '../src/gateway.ts';
+import { AgentSdk } from '../../sdk/src/sdk.ts';
+import { MemoryAgentDatabase } from '../../sdk/src/d1-store.ts';
 
 const workspaceRoot = resolve(process.cwd(), '..', '..');
 
@@ -21,6 +24,9 @@ describe('@treeseed/api', () => {
 			},
 			'./app': {
 				default: './dist/app.js',
+			},
+			'./gateway': {
+				default: './dist/gateway.js',
 			},
 			'./config': {
 				default: './dist/config.js',
@@ -329,5 +335,90 @@ describe('@treeseed/api', () => {
 				},
 			},
 		})).toThrow(/could not resolve auth provider/i);
+	});
+
+	it('exposes the agent gateway lifecycle endpoints', async () => {
+		const queued: Array<Record<string, unknown>> = [];
+		const sdk = new AgentSdk({
+			repoRoot: workspaceRoot,
+			database: new MemoryAgentDatabase(),
+		});
+		const app = createTreeseedGatewayApp({
+			sdk,
+			bearerToken: 'gateway-secret',
+			projectId: 'treeseed-market',
+			queueProducer: {
+				async enqueue(request) {
+					queued.push(request.message as unknown as Record<string, unknown>);
+				},
+			},
+		});
+
+		const started = await app.request('/workdays/start', {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer gateway-secret',
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ capacityBudget: 25 }),
+		});
+		expect(started.status).toBe(200);
+		const startedPayload = await json(started);
+		const workDayId = startedPayload.payload.id;
+
+		const task = await app.request('/tasks', {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer gateway-secret',
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				workDayId,
+				agentId: 'market-curator',
+				type: 'agent_root',
+				idempotencyKey: `${workDayId}:market-curator`,
+				payload: { hello: 'world' },
+			}),
+		});
+		const taskPayload = await json(task);
+		expect(taskPayload.payload.agentId).toBe('market-curator');
+
+		const queuedResponse = await app.request('/queue/enqueue', {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer gateway-secret',
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ taskId: taskPayload.payload.id }),
+		});
+		expect(queuedResponse.status).toBe(200);
+		expect(queued).toHaveLength(1);
+
+		const completed = await app.request(`/tasks/${taskPayload.payload.id}/complete`, {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer gateway-secret',
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				output: { ok: true },
+				summary: { status: 'done' },
+			}),
+		});
+		expect(completed.status).toBe(200);
+
+		const report = await app.request('/reports', {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer gateway-secret',
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				workDayId,
+				kind: 'workday_summary',
+				body: { totalTasks: 1 },
+			}),
+		});
+		expect(report.status).toBe(200);
 	});
 });
