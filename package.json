@@ -15,7 +15,7 @@
   "packageManager": "npm@11.7.0",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "types": "./dist/index.d.ts",
   "exports": {
@@ -64,11 +64,14 @@
     "setup:ci": "npm ci",
     "build": "npm run build:dist",
     "build:dist": "node ./scripts/run-ts.mjs ./scripts/build-dist.ts",
+    "lint": "npm run build:dist",
     "prepack": "npm run build:dist",
     "test": "npm run test:unit",
     "test:unit": "vitest run --config ./vitest.config.ts",
+    "verify:direct": "npm run lint && npm run test:unit",
+    "verify": "node --input-type=module -e \"await import('@treeseed/sdk/scripts/verify-driver')\"",
     "release:setup": "npm run setup:ci",
-    "release:verify": "npm run build:dist && npm run test:unit",
+    "release:verify": "npm run verify:direct",
     "start": "node ./dist/server.js"
   },
   "dependencies": {

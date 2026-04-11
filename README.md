@@ -18,7 +18,7 @@ TreeSeed remote SDK API platform package.
 
 ## Requirements
 
-- Node `>=20`
+- Node `>=22`
 - npm as the canonical package manager
 
 ## Install
