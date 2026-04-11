@@ -1,6 +1,6 @@
 {
   "name": "@treeseed/api",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TreeSeed remote SDK API platform built on Hono and optimized for Railway deployment.",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -76,8 +76,8 @@
   },
   "dependencies": {
     "@treeseed/agent": "^0.1.2",
-    "@treeseed/core": "^0.2.0",
-    "@treeseed/sdk": "^0.2.0",
+    "@treeseed/core": "^0.3.0",
+    "@treeseed/sdk": "^0.3.0",
     "hono": "^4.8.2"
   },
   "devDependencies": {

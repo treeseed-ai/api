@@ -164,6 +164,18 @@ async function executeSdkOperation(sdk: AgentSdk, operation: string, input: Reco
 		case 'get-subgraph':
 		case 'getSubgraph':
 			return sdk.getSubgraph(Array.isArray(input.seedIds) ? input.seedIds.map(String) : [], input.options as any);
+		case 'resolve-seeds':
+		case 'resolveSeeds':
+			return sdk.resolveSeeds(input as any);
+		case 'query-graph':
+		case 'queryGraph':
+			return sdk.queryGraph(input as any);
+		case 'build-context-pack':
+		case 'buildContextPack':
+			return sdk.buildContextPack(input as any);
+		case 'parse-graph-dsl':
+		case 'parseGraphDsl':
+			return sdk.parseGraphDsl(String(input.source ?? input.query ?? ''));
 		case 'resolve-reference':
 		case 'resolveReference':
 			return sdk.resolveReference(String(input.reference ?? ''), input.options as any);

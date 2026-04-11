@@ -196,6 +196,92 @@ describe('@treeseed/api', () => {
 		expect(Array.isArray(payload.payload)).toBe(true);
 	});
 
+	it('exposes graph query and context-pack sdk operations', async () => {
+		const app = createTreeseedApiApp({
+			config: {
+				repoRoot: workspaceRoot,
+				authSecret: 'test-secret',
+			},
+		});
+
+		const started = await json(await app.request('/auth/device/start', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ scopes: ['sdk', 'auth:me'] }),
+		}));
+		await app.request('/auth/device/approve', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				userCode: started.userCode,
+				principalId: 'graph-user',
+				scopes: ['sdk', 'auth:me'],
+			}),
+		});
+		const tokenPayload = await json(await app.request('/auth/device/poll', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ deviceCode: started.deviceCode }),
+		}));
+
+		const parseResponse = await app.request('/sdk/parseGraphDsl', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${tokenPayload.accessToken}`,
+			},
+			body: JSON.stringify({
+				repoRoot: workspaceRoot,
+				input: {
+					source: 'ctx "market architecture" for plan in /knowledge via related,references depth 1 budget 400 as brief',
+				},
+			}),
+		});
+		expect(parseResponse.status).toBe(200);
+		const parsePayload = await json(parseResponse);
+		expect(parsePayload.ok).toBe(true);
+		expect(parsePayload.query).toMatchObject({ stage: 'plan', view: 'brief' });
+
+		const queryResponse = await app.request('/sdk/queryGraph', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${tokenPayload.accessToken}`,
+			},
+			body: JSON.stringify({
+				repoRoot: workspaceRoot,
+				input: {
+					...(parsePayload.query as Record<string, unknown>),
+					options: { ...((parsePayload.query as Record<string, any>).options ?? {}), maxNodes: 5 },
+				},
+			}),
+		});
+		expect(queryResponse.status).toBe(200);
+		const queryPayload = await json(queryResponse);
+		expect(Array.isArray(queryPayload.seedIds)).toBe(true);
+		expect(Array.isArray(queryPayload.nodes)).toBe(true);
+
+		const contextResponse = await app.request('/sdk/buildContextPack', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${tokenPayload.accessToken}`,
+			},
+			body: JSON.stringify({
+				repoRoot: workspaceRoot,
+				input: {
+					...(parsePayload.query as Record<string, unknown>),
+					options: { ...((parsePayload.query as Record<string, any>).options ?? {}), maxNodes: 5 },
+					budget: { maxTokens: 400, includeMode: 'mixed' },
+				},
+			}),
+		});
+		expect(contextResponse.status).toBe(200);
+		const contextPayload = await json(contextResponse);
+		expect(Array.isArray(contextPayload.nodes)).toBe(true);
+		expect(typeof contextPayload.totalTokenEstimate).toBe('number');
+	});
+
 	it('delegates workflow operations through the shared sdk workflow runtime', async () => {
 		const app = createTreeseedApiApp({
 			config: {
