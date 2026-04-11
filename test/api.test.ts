@@ -88,7 +88,7 @@ describe('@treeseed/api', () => {
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
 				clientName: 'test-cli',
-				scopes: ['auth:me', 'sdk', 'cli'],
+				scopes: ['auth:me', 'sdk', 'operations'],
 			}),
 		}));
 
@@ -107,7 +107,7 @@ describe('@treeseed/api', () => {
 				userCode: started.userCode,
 				principalId: 'user-123',
 				displayName: 'CLI User',
-				scopes: ['auth:me', 'sdk', 'cli'],
+				scopes: ['auth:me', 'sdk', 'operations'],
 			}),
 		});
 		expect(approved.status).toBe(200);
@@ -196,7 +196,7 @@ describe('@treeseed/api', () => {
 		expect(Array.isArray(payload.payload)).toBe(true);
 	});
 
-	it('delegates cli commands through the shared command runtime', async () => {
+	it('delegates workflow operations through the shared sdk workflow runtime', async () => {
 		const app = createTreeseedApiApp({
 			config: {
 				repoRoot: workspaceRoot,
@@ -207,7 +207,7 @@ describe('@treeseed/api', () => {
 		const started = await json(await app.request('/auth/device/start', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ scopes: ['cli', 'auth:me'] }),
+			body: JSON.stringify({ scopes: ['operations', 'auth:me'] }),
 		}));
 		await app.request('/auth/device/approve', {
 			method: 'POST',
@@ -215,7 +215,7 @@ describe('@treeseed/api', () => {
 			body: JSON.stringify({
 				userCode: started.userCode,
 				principalId: 'cli-user',
-				scopes: ['cli', 'auth:me'],
+				scopes: ['operations', 'auth:me'],
 			}),
 		});
 		const tokenPayload = await json(await app.request('/auth/device/poll', {
@@ -224,7 +224,7 @@ describe('@treeseed/api', () => {
 			body: JSON.stringify({ deviceCode: started.deviceCode }),
 		}));
 
-		const response = await app.request('/cli/status', {
+		const response = await app.request('/operations/status', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -237,8 +237,8 @@ describe('@treeseed/api', () => {
 
 		expect(response.status).toBe(200);
 		const payload = await json(response);
-		expect(payload.command).toBe('status');
-		expect(typeof payload.exitCode).toBe('number');
+		expect(payload.operation).toBe('status');
+		expect(payload.ok).toBe(true);
 	});
 
 	it('returns stable errors for unsupported operations and missing auth', async () => {

@@ -2,7 +2,7 @@
 
 TreeSeed remote SDK API platform package.
 
-`@treeseed/api` is the HTTP analogue of `@treeseed/cli`: it is a thin runtime wrapper around SDK-owned behavior, with API-specific auth, request handling, and deployment concerns layered on top. The package exposes both the public Treeseed API app and the private Cloudflare agent gateway app.
+`@treeseed/api` is the HTTP analogue of the SDK workflow/runtime surface: it is a thin runtime wrapper around SDK-owned behavior, with API-specific auth, request handling, and deployment concerns layered on top. The package exposes both the public Treeseed API app and the private Cloudflare agent gateway app.
 
 ## What It Provides
 
@@ -10,7 +10,7 @@ TreeSeed remote SDK API platform package.
 - `createRailwayTreeseedApiServer()` to run that app on Node with Railway-friendly defaults
 - `createTreeseedGatewayApp()` to create the authenticated Cloudflare gateway Worker app
 - `/sdk/:operation` routes that delegate to `@treeseed/sdk`
-- `/cli/:command` routes that delegate to the shared Treeseed CLI runtime
+- `/operations/:operation` routes that delegate to SDK workflow operations
 - private task/workday/report endpoints for the control plane
 - template catalog endpoints aligned with the existing remote template contract
 - a built-in, low-footprint device-code auth provider with bearer-token validation
@@ -129,5 +129,5 @@ When running on Railway, `RAILWAY_PUBLIC_DOMAIN` is used automatically to derive
 ## Notes
 
 - The built-in auth provider uses in-memory device and refresh state to keep operational cost low in the first phase.
-- SDK and CLI behavior remains owned by `@treeseed/sdk`; this package adapts that behavior to HTTP.
+- SDK behavior remains owned by `@treeseed/sdk`; this package adapts that behavior to HTTP.
 - The public API app and the private gateway app are intentionally different surfaces with different security expectations.

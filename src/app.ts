@@ -5,7 +5,7 @@ import {
 } from '@treeseed/sdk/remote';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { executeCliHttpCommand } from './cli.ts';
+import { executeHttpWorkflowOperation } from './operations.ts';
 import { resolveApiConfig } from './config.ts';
 import { resolveApiRuntimeProviders } from './providers.ts';
 import { loadTemplateCatalog } from './templates.ts';
@@ -23,7 +23,7 @@ type AppVariables = {
 };
 
 const SDK_OPERATION_SCOPE = 'sdk';
-const CLI_OPERATION_SCOPE = 'cli';
+const WORKFLOW_OPERATION_SCOPE = 'operations';
 
 function jsonError(c: Context, status: number, error: string, details?: Record<string, unknown>) {
 	return c.json({
@@ -285,14 +285,20 @@ export function createTreeseedApiApp(options: ApiServerOptions = {}) {
 		}
 	});
 
-	app.post('/cli/:command', async (c) => {
-		const unauthorized = withScope(c, CLI_OPERATION_SCOPE);
+	app.post('/operations/:operation', async (c) => {
+		const unauthorized = withScope(c, WORKFLOW_OPERATION_SCOPE);
 		if (unauthorized) return unauthorized;
 
 		const body = await c.req.json().catch(() => ({}));
-		const command = c.req.param('command');
-		const result = await executeCliHttpCommand(command, body);
-		return c.json(result, result.ok ? 200 : 400);
+		const operation = c.req.param('operation');
+		try {
+			const result = await executeHttpWorkflowOperation(operation, body);
+			return c.json(result, result.ok ? 200 : 400);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			const status = /Unsupported workflow operation|not supported over HTTP|confirmation required/i.test(message) ? 400 : 500;
+			return jsonError(c, status, message, { operation });
+		}
 	});
 
 	app.all('/agents', (c) => jsonError(c, 501, 'Agent API endpoints are reserved for a later phase.'));

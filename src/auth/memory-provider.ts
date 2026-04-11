@@ -61,7 +61,7 @@ export class MemoryDeviceCodeAuthProvider implements ApiAuthProvider {
 		this.devices.set(deviceCode, {
 			deviceCode,
 			userCode,
-			requestedScopes: request.scopes?.length ? [...request.scopes] : ['templates:read', 'auth:me', 'sdk', 'cli'],
+			requestedScopes: request.scopes?.length ? [...request.scopes] : ['templates:read', 'auth:me', 'sdk', 'operations'],
 			expiresAt,
 			intervalSeconds: this.config.deviceCodePollIntervalSeconds,
 			status: 'pending',
