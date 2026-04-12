@@ -100,6 +100,7 @@ export interface ApiServerOptions {
 	config?: Partial<ApiConfig>;
 	runtimeProviders?: ApiRuntimeProviders;
 	sdk?: AgentSdk;
+	workflowExecutor?: (operation: string, request: WorkflowHttpOperationRequest) => Promise<ApiWorkflowOperationResponse>;
 	surfaces?: Partial<{
 		auth: boolean;
 		templates: boolean;

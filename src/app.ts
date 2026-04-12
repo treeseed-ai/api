@@ -144,7 +144,10 @@ export function createTreeseedApiApp(options: ApiServerOptions = {}) {
 	}
 
 	if (resolved.surfaces.operations) {
-		registerOperationRoutes(app, { scope: resolved.scopes.operations });
+		registerOperationRoutes(app, {
+			scope: resolved.scopes.operations,
+			executeOperation: options.workflowExecutor,
+		});
 	}
 
 	app.notFound((c) => jsonError(c, 404, 'Not found.'));

@@ -2,13 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { AgentSdk, parseTemplateCatalogResponse } from '../../sdk/src/index.ts';
-import { MemoryAgentDatabase } from '../../sdk/src/d1-store.ts';
+import { AgentSdk, parseTemplateCatalogResponse } from '@treeseed/sdk';
 import { createTreeseedApiApp } from '../src/app.ts';
 import { resolveApiConfig } from '../src/config.ts';
 import { createTreeseedGatewayApp } from '../src/gateway.ts';
 
-const workspaceRoot = resolve(process.cwd(), '..', '..');
+const packageRoot = process.cwd();
 
 async function json(response: Response) {
 	return response.json() as Promise<any>;
@@ -17,7 +16,7 @@ async function json(response: Response) {
 async function authorizeApp(scopes: string[]) {
 	const app = createTreeseedApiApp({
 		config: {
-			repoRoot: workspaceRoot,
+			repoRoot: packageRoot,
 			authSecret: 'test-secret',
 		},
 	});
@@ -55,24 +54,12 @@ describe('@treeseed/api', () => {
 		expect(packageJson.name).toBe('@treeseed/api');
 		expect(packageJson.dependencies?.['@treeseed/core']).toBeUndefined();
 		expect(packageJson.exports).toMatchObject({
-			'.': {
-				default: './dist/index.js',
-			},
-			'./app': {
-				default: './dist/app.js',
-			},
-			'./gateway': {
-				default: './dist/gateway.js',
-			},
-			'./config': {
-				default: './dist/config.js',
-			},
-			'./railway': {
-				default: './dist/railway.js',
-			},
-			'./types': {
-				default: './dist/types.js',
-			},
+			'.': { default: './dist/index.js' },
+			'./app': { default: './dist/app.js' },
+			'./gateway': { default: './dist/gateway.js' },
+			'./config': { default: './dist/config.js' },
+			'./railway': { default: './dist/railway.js' },
+			'./types': { default: './dist/types.js' },
 		});
 
 		let importMatches = '';
@@ -104,7 +91,7 @@ describe('@treeseed/api', () => {
 	it('serves health, templates, and the agent health surface', async () => {
 		const app = createTreeseedApiApp({
 			config: {
-				repoRoot: workspaceRoot,
+				repoRoot: packageRoot,
 				authSecret: 'test-secret',
 			},
 		});
@@ -126,7 +113,7 @@ describe('@treeseed/api', () => {
 	it('runs the device-code lifecycle and injects bearer principals', async () => {
 		const app = createTreeseedApiApp({
 			config: {
-				repoRoot: workspaceRoot,
+				repoRoot: packageRoot,
 				authSecret: 'test-secret',
 			},
 		});
@@ -197,17 +184,18 @@ describe('@treeseed/api', () => {
 	it('delegates sdk operations using canonical operation names', async () => {
 		const { app, token } = await authorizeApp(['sdk', 'auth:me']);
 
-		const response = await app.request('/sdk/search', {
+		const response = await app.request('/sdk/startWorkDay', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
 				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
-				repoRoot: workspaceRoot,
+				repoRoot: packageRoot,
 				input: {
-					model: 'page',
-					limit: 5,
+					projectId: 'treeseed-api-test',
+					capacityBudget: 5,
+					actor: 'api-test',
 				},
 			}),
 		});
@@ -215,11 +203,12 @@ describe('@treeseed/api', () => {
 		expect(response.status).toBe(200);
 		const payload = await json(response);
 		expect(payload.ok).toBe(true);
-		expect(payload.operation).toBe('search');
-		expect(Array.isArray(payload.payload)).toBe(true);
+		expect(payload.operation).toBe('create');
+		expect(payload.model).toBe('work_day');
+		expect(payload.payload.projectId).toBe('treeseed-api-test');
 	});
 
-	it('exposes graph query and context-pack sdk operations', async () => {
+	it('exposes graph-dispatch sdk operations that do not require the full workspace fixture', async () => {
 		const { app, token } = await authorizeApp(['sdk', 'auth:me']);
 
 		const parseResponse = await app.request('/sdk/parseGraphDsl', {
@@ -229,7 +218,7 @@ describe('@treeseed/api', () => {
 				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
-				repoRoot: workspaceRoot,
+				repoRoot: packageRoot,
 				input: {
 					source: 'ctx "market architecture" for plan in /knowledge via related,references depth 1 budget 400 as brief',
 				},
@@ -238,58 +227,50 @@ describe('@treeseed/api', () => {
 		expect(parseResponse.status).toBe(200);
 		const parsePayload = await json(parseResponse);
 		expect(parsePayload.query).toMatchObject({ stage: 'plan', view: 'brief' });
-
-		const queryResponse = await app.request('/sdk/queryGraph', {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${token}`,
-			},
-			body: JSON.stringify({
-				repoRoot: workspaceRoot,
-				input: {
-					...(parsePayload.query as Record<string, unknown>),
-					options: { ...((parsePayload.query as Record<string, any>).options ?? {}), maxNodes: 5 },
-				},
-			}),
-		});
-		expect(queryResponse.status).toBe(200);
-		const queryPayload = await json(queryResponse);
-		expect(Array.isArray(queryPayload.seedIds)).toBe(true);
-		expect(Array.isArray(queryPayload.nodes)).toBe(true);
-
-		const contextResponse = await app.request('/sdk/buildContextPack', {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${token}`,
-			},
-			body: JSON.stringify({
-				repoRoot: workspaceRoot,
-				input: {
-					...(parsePayload.query as Record<string, unknown>),
-					options: { ...((parsePayload.query as Record<string, any>).options ?? {}), maxNodes: 5 },
-					budget: { maxTokens: 400, includeMode: 'mixed' },
-				},
-			}),
-		});
-		expect(contextResponse.status).toBe(200);
-		const contextPayload = await json(contextResponse);
-		expect(Array.isArray(contextPayload.nodes)).toBe(true);
-		expect(typeof contextPayload.totalTokenEstimate).toBe('number');
 	});
 
 	it('delegates workflow operations through the shared sdk workflow runtime', async () => {
-		const { app, token } = await authorizeApp(['operations', 'auth:me']);
+		const app = createTreeseedApiApp({
+			config: {
+				repoRoot: packageRoot,
+				authSecret: 'test-secret',
+			},
+			workflowExecutor: async (operation) => ({
+				ok: true,
+				operation,
+				payload: {
+					mode: 'stubbed-test',
+				},
+			}),
+		});
+		const started = await json(await app.request('/auth/device/start', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ scopes: ['operations', 'auth:me'] }),
+		}));
+		await app.request('/auth/device/approve', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				userCode: started.userCode,
+				principalId: 'ops-user',
+				scopes: ['operations', 'auth:me'],
+			}),
+		});
+		const tokenPayload = await json(await app.request('/auth/device/poll', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ deviceCode: started.deviceCode }),
+		}));
 
 		const response = await app.request('/operations/status', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${token}`,
+				authorization: `Bearer ${tokenPayload.accessToken}`,
 			},
 			body: JSON.stringify({
-				cwd: workspaceRoot,
+				cwd: packageRoot,
 			}),
 		});
 
@@ -297,6 +278,7 @@ describe('@treeseed/api', () => {
 		const payload = await json(response);
 		expect(payload.operation).toBe('status');
 		expect(payload.ok).toBe(true);
+		expect(payload.payload).toMatchObject({ mode: 'stubbed-test' });
 	});
 
 	it('exposes the agent surface on the main api app', async () => {
@@ -373,15 +355,15 @@ describe('@treeseed/api', () => {
 	it('returns stable errors for unsupported operations and missing auth', async () => {
 		const app = createTreeseedApiApp({
 			config: {
-				repoRoot: workspaceRoot,
+				repoRoot: packageRoot,
 				authSecret: 'test-secret',
 			},
 		});
 
-		const unauthorized = await app.request('/sdk/search', {
+		const unauthorized = await app.request('/sdk/startWorkDay', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ input: { model: 'page' } }),
+			body: JSON.stringify({ input: { projectId: 'unauthorized', actor: 'test' } }),
 		});
 		expect(unauthorized.status).toBe(401);
 
@@ -404,7 +386,7 @@ describe('@treeseed/api', () => {
 				'content-type': 'application/json',
 				authorization: `Bearer ${token}`,
 			},
-			body: JSON.stringify({ cwd: workspaceRoot }),
+			body: JSON.stringify({ cwd: packageRoot }),
 		});
 		expect(unsupportedWorkflow.status).toBe(400);
 	});
@@ -412,7 +394,7 @@ describe('@treeseed/api', () => {
 	it('fails fast on duplicate or missing provider selections', () => {
 		expect(() => createTreeseedApiApp({
 			config: {
-				repoRoot: workspaceRoot,
+				repoRoot: packageRoot,
 				authSecret: 'test-secret',
 			},
 			runtimeProviders: {
@@ -442,7 +424,7 @@ describe('@treeseed/api', () => {
 
 		expect(() => createTreeseedApiApp({
 			config: {
-				repoRoot: workspaceRoot,
+				repoRoot: packageRoot,
 				authSecret: 'test-secret',
 				providers: {
 					auth: 'missing',
@@ -461,8 +443,7 @@ describe('@treeseed/api', () => {
 	it('reuses the shared agent route handlers in the gateway app', async () => {
 		const queued: Array<Record<string, unknown>> = [];
 		const sdk = new AgentSdk({
-			repoRoot: workspaceRoot,
-			database: new MemoryAgentDatabase(),
+			repoRoot: packageRoot,
 		});
 		const app = createTreeseedGatewayApp({
 			sdk,

@@ -6,8 +6,13 @@ import type { AppVariables } from './types.ts';
 
 export function registerOperationRoutes(
 	app: Hono<{ Variables: AppVariables }>,
-	options: { scope: string },
+	options: {
+		scope: string;
+		executeOperation?: typeof executeHttpWorkflowOperation;
+	},
 ) {
+	const executeOperation = options.executeOperation ?? executeHttpWorkflowOperation;
+
 	app.post('/operations/:operation', async (c) => {
 		const unauthorized = requireScope(c, options.scope);
 		if (unauthorized) return unauthorized;
@@ -27,7 +32,7 @@ export function registerOperationRoutes(
 
 		const body = await c.req.json().catch(() => ({}));
 		try {
-			const result = await executeHttpWorkflowOperation(resolvedOperation.name, body);
+			const result = await executeOperation(resolvedOperation.name, body);
 			return c.json(result, result.ok ? 200 : 400);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
