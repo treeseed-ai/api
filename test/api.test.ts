@@ -1,12 +1,12 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseTemplateCatalogResponse } from '../../sdk/src/template-catalog.ts';
+import { AgentSdk, parseTemplateCatalogResponse } from '../../sdk/src/index.ts';
+import { MemoryAgentDatabase } from '../../sdk/src/d1-store.ts';
 import { createTreeseedApiApp } from '../src/app.ts';
 import { resolveApiConfig } from '../src/config.ts';
 import { createTreeseedGatewayApp } from '../src/gateway.ts';
-import { AgentSdk } from '../../sdk/src/sdk.ts';
-import { MemoryAgentDatabase } from '../../sdk/src/d1-store.ts';
 
 const workspaceRoot = resolve(process.cwd(), '..', '..');
 
@@ -14,10 +14,46 @@ async function json(response: Response) {
 	return response.json() as Promise<any>;
 }
 
+async function authorizeApp(scopes: string[]) {
+	const app = createTreeseedApiApp({
+		config: {
+			repoRoot: workspaceRoot,
+			authSecret: 'test-secret',
+		},
+	});
+
+	const started = await json(await app.request('/auth/device/start', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ scopes }),
+	}));
+	await app.request('/auth/device/approve', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({
+			userCode: started.userCode,
+			principalId: 'test-user',
+			displayName: 'Test User',
+			scopes,
+		}),
+	});
+	const tokenPayload = await json(await app.request('/auth/device/poll', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ deviceCode: started.deviceCode }),
+	}));
+
+	return {
+		app,
+		token: tokenPayload.accessToken as string,
+	};
+}
+
 describe('@treeseed/api', () => {
-	it('exposes the expected package exports', () => {
+	it('exposes the expected package exports and no direct core dependency', () => {
 		const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as Record<string, any>;
 		expect(packageJson.name).toBe('@treeseed/api');
+		expect(packageJson.dependencies?.['@treeseed/core']).toBeUndefined();
 		expect(packageJson.exports).toMatchObject({
 			'.': {
 				default: './dist/index.js',
@@ -38,6 +74,18 @@ describe('@treeseed/api', () => {
 				default: './dist/types.js',
 			},
 		});
+
+		let importMatches = '';
+		try {
+			importMatches = execFileSync(
+				'rg',
+				['-n', '@treeseed/core', 'src', 'test', 'README.md', 'package.json'],
+				{ cwd: process.cwd(), encoding: 'utf8' },
+			).trim();
+		} catch {
+			importMatches = '';
+		}
+		expect(importMatches).toBe('');
 	});
 
 	it('derives Railway-aware config without contaminating local defaults', () => {
@@ -53,7 +101,7 @@ describe('@treeseed/api', () => {
 		expect(config.providers.auth).toBe('memory');
 	});
 
-	it('serves health, templates, and agent placeholder routes', async () => {
+	it('serves health, templates, and the agent health surface', async () => {
 		const app = createTreeseedApiApp({
 			config: {
 				repoRoot: workspaceRoot,
@@ -70,9 +118,9 @@ describe('@treeseed/api', () => {
 		const templatesPayload = await json(templatesResponse);
 		expect(parseTemplateCatalogResponse(templatesPayload).items.length).toBeGreaterThan(0);
 
-		const agentsResponse = await app.request('/agents');
-		expect(agentsResponse.status).toBe(501);
-		expect(await json(agentsResponse)).toMatchObject({ ok: false });
+		const agentHealthResponse = await app.request('/agent/healthz');
+		expect(agentHealthResponse.status).toBe(200);
+		expect(await json(agentHealthResponse)).toMatchObject({ ok: true });
 	});
 
 	it('runs the device-code lifecycle and injects bearer principals', async () => {
@@ -88,7 +136,7 @@ describe('@treeseed/api', () => {
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
 				clientName: 'test-cli',
-				scopes: ['auth:me', 'sdk', 'operations'],
+				scopes: ['auth:me', 'sdk', 'operations', 'agent'],
 			}),
 		}));
 
@@ -107,7 +155,7 @@ describe('@treeseed/api', () => {
 				userCode: started.userCode,
 				principalId: 'user-123',
 				displayName: 'CLI User',
-				scopes: ['auth:me', 'sdk', 'operations'],
+				scopes: ['auth:me', 'sdk', 'operations', 'agent'],
 			}),
 		});
 		expect(approved.status).toBe(200);
@@ -146,39 +194,14 @@ describe('@treeseed/api', () => {
 		expect(await json(refreshed)).toMatchObject({ ok: true, tokenType: 'Bearer' });
 	});
 
-	it('delegates sdk operations and preserves the envelope contract', async () => {
-		const app = createTreeseedApiApp({
-			config: {
-				repoRoot: workspaceRoot,
-				authSecret: 'test-secret',
-			},
-		});
-
-		const started = await json(await app.request('/auth/device/start', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ scopes: ['sdk', 'auth:me'] }),
-		}));
-		await app.request('/auth/device/approve', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				userCode: started.userCode,
-				principalId: 'sdk-user',
-				scopes: ['sdk', 'auth:me'],
-			}),
-		});
-		const tokenPayload = await json(await app.request('/auth/device/poll', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ deviceCode: started.deviceCode }),
-		}));
+	it('delegates sdk operations using canonical operation names', async () => {
+		const { app, token } = await authorizeApp(['sdk', 'auth:me']);
 
 		const response = await app.request('/sdk/search', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${tokenPayload.accessToken}`,
+				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
 				repoRoot: workspaceRoot,
@@ -197,38 +220,13 @@ describe('@treeseed/api', () => {
 	});
 
 	it('exposes graph query and context-pack sdk operations', async () => {
-		const app = createTreeseedApiApp({
-			config: {
-				repoRoot: workspaceRoot,
-				authSecret: 'test-secret',
-			},
-		});
-
-		const started = await json(await app.request('/auth/device/start', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ scopes: ['sdk', 'auth:me'] }),
-		}));
-		await app.request('/auth/device/approve', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				userCode: started.userCode,
-				principalId: 'graph-user',
-				scopes: ['sdk', 'auth:me'],
-			}),
-		});
-		const tokenPayload = await json(await app.request('/auth/device/poll', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ deviceCode: started.deviceCode }),
-		}));
+		const { app, token } = await authorizeApp(['sdk', 'auth:me']);
 
 		const parseResponse = await app.request('/sdk/parseGraphDsl', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${tokenPayload.accessToken}`,
+				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
 				repoRoot: workspaceRoot,
@@ -239,14 +237,13 @@ describe('@treeseed/api', () => {
 		});
 		expect(parseResponse.status).toBe(200);
 		const parsePayload = await json(parseResponse);
-		expect(parsePayload.ok).toBe(true);
 		expect(parsePayload.query).toMatchObject({ stage: 'plan', view: 'brief' });
 
 		const queryResponse = await app.request('/sdk/queryGraph', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${tokenPayload.accessToken}`,
+				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
 				repoRoot: workspaceRoot,
@@ -265,7 +262,7 @@ describe('@treeseed/api', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${tokenPayload.accessToken}`,
+				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
 				repoRoot: workspaceRoot,
@@ -283,38 +280,13 @@ describe('@treeseed/api', () => {
 	});
 
 	it('delegates workflow operations through the shared sdk workflow runtime', async () => {
-		const app = createTreeseedApiApp({
-			config: {
-				repoRoot: workspaceRoot,
-				authSecret: 'test-secret',
-			},
-		});
-
-		const started = await json(await app.request('/auth/device/start', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ scopes: ['operations', 'auth:me'] }),
-		}));
-		await app.request('/auth/device/approve', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				userCode: started.userCode,
-				principalId: 'cli-user',
-				scopes: ['operations', 'auth:me'],
-			}),
-		});
-		const tokenPayload = await json(await app.request('/auth/device/poll', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ deviceCode: started.deviceCode }),
-		}));
+		const { app, token } = await authorizeApp(['operations', 'auth:me']);
 
 		const response = await app.request('/operations/status', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${tokenPayload.accessToken}`,
+				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
 				cwd: workspaceRoot,
@@ -325,6 +297,77 @@ describe('@treeseed/api', () => {
 		const payload = await json(response);
 		expect(payload.operation).toBe('status');
 		expect(payload.ok).toBe(true);
+	});
+
+	it('exposes the agent surface on the main api app', async () => {
+		const { app, token } = await authorizeApp(['agent', 'auth:me']);
+
+		const started = await app.request('/agent/workdays/start', {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${token}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ capacityBudget: 25 }),
+		});
+		expect(started.status).toBe(200);
+		const startedPayload = await json(started);
+		const workDayId = startedPayload.payload.id;
+
+		const task = await app.request('/agent/tasks', {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${token}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({
+				workDayId,
+				agentId: 'market-curator',
+				type: 'agent_root',
+				idempotencyKey: `${workDayId}:market-curator`,
+				payload: { hello: 'world' },
+			}),
+		});
+		expect(task.status).toBe(200);
+		const taskPayload = await json(task);
+
+		const context = await app.request('/agent/context/resolve-task', {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${token}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ taskId: taskPayload.payload.id }),
+		});
+		expect(context.status).toBe(200);
+		expect(await json(context)).toMatchObject({
+			ok: true,
+			payload: {
+				task: {
+					id: taskPayload.payload.id,
+				},
+			},
+		});
+
+		const graph = await app.request('/agent/graph/parse-dsl', {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${token}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ source: 'ctx "market architecture" for plan' }),
+		});
+		expect(graph.status).toBe(200);
+
+		const specs = await app.request('/agent/specs', {
+			headers: {
+				authorization: `Bearer ${token}`,
+			},
+		});
+		expect(specs.status).toBe(200);
+		const specsPayload = await json(specs);
+		expect(Array.isArray(specsPayload.payload)).toBe(true);
+		expect(Array.isArray(specsPayload.handlers)).toBe(true);
 	});
 
 	it('returns stable errors for unsupported operations and missing auth', async () => {
@@ -342,36 +385,28 @@ describe('@treeseed/api', () => {
 		});
 		expect(unauthorized.status).toBe(401);
 
-		const started = await json(await app.request('/auth/device/start', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ scopes: ['sdk'] }),
-		}));
-		await app.request('/auth/device/approve', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				userCode: started.userCode,
-				principalId: 'sdk-user',
-				scopes: ['sdk'],
-			}),
-		});
-		const tokenPayload = await json(await app.request('/auth/device/poll', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ deviceCode: started.deviceCode }),
-		}));
+		const { app: authorizedApp, token } = await authorizeApp(['sdk', 'operations']);
 
-		const unsupported = await app.request('/sdk/nope', {
+		const unsupportedSdk = await authorizedApp.request('/sdk/nope', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${tokenPayload.accessToken}`,
+				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({ input: {} }),
 		});
-		expect(unsupported.status).toBe(400);
-		expect(await json(unsupported)).toMatchObject({ ok: false });
+		expect(unsupportedSdk.status).toBe(400);
+		expect(await json(unsupportedSdk)).toMatchObject({ ok: false });
+
+		const unsupportedWorkflow = await authorizedApp.request('/operations/dev', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({ cwd: workspaceRoot }),
+		});
+		expect(unsupportedWorkflow.status).toBe(400);
 	});
 
 	it('fails fast on duplicate or missing provider selections', () => {
@@ -423,7 +458,7 @@ describe('@treeseed/api', () => {
 		})).toThrow(/could not resolve auth provider/i);
 	});
 
-	it('exposes the agent gateway lifecycle endpoints', async () => {
+	it('reuses the shared agent route handlers in the gateway app', async () => {
 		const queued: Array<Record<string, unknown>> = [];
 		const sdk = new AgentSdk({
 			repoRoot: workspaceRoot,

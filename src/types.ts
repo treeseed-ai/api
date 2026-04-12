@@ -1,5 +1,4 @@
-import type { AgentSdk } from '@treeseed/sdk/sdk';
-import type { SdkQueueMessageEnvelope } from '@treeseed/sdk/types';
+import type { AgentSdk, SdkQueueMessageEnvelope } from '@treeseed/sdk';
 import type {
 	ApiPrincipal,
 	ApiScope,
@@ -67,6 +66,12 @@ export interface ApiConfig {
 	providers: ApiRuntimeProviderSelections;
 }
 
+export interface AppVariables {
+	requestId: string;
+	config: ApiConfig;
+	principal: ApiPrincipal | null;
+}
+
 export type ApiProviderFactory<T> = (options: { config: ApiConfig }) => T;
 
 export interface ApiRuntimeProviders {
@@ -95,6 +100,19 @@ export interface ApiServerOptions {
 	config?: Partial<ApiConfig>;
 	runtimeProviders?: ApiRuntimeProviders;
 	sdk?: AgentSdk;
+	surfaces?: Partial<{
+		auth: boolean;
+		templates: boolean;
+		sdk: boolean;
+		agent: boolean;
+		operations: boolean;
+	}>;
+	scopes?: Partial<{
+		authMe: ApiScope;
+		sdk: ApiScope;
+		agent: ApiScope;
+		operations: ApiScope;
+	}>;
 	log?: (message: string, details?: Record<string, unknown>) => void;
 }
 
