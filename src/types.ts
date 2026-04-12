@@ -1,5 +1,5 @@
 import type { AgentSdk } from '@treeseed/sdk/sdk';
-import type { SdkQueueMessageEnvelope } from '@treeseed/sdk';
+import type { SdkQueueMessageEnvelope } from '@treeseed/sdk/types';
 import type {
 	ApiPrincipal,
 	ApiScope,

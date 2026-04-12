@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
-import type { SdkQueueMessageEnvelope } from '@treeseed/sdk';
+import type { SdkQueueMessageEnvelope } from '@treeseed/sdk/types';
 import { AgentSdk } from '@treeseed/sdk/sdk';
 import type { GatewayServerOptions } from './types.ts';
 

@@ -47,7 +47,7 @@ const app = createTreeseedApiApp();
 Gateway use:
 
 ```ts
-import { AgentSdk } from '@treeseed/sdk';
+import { AgentSdk } from '@treeseed/sdk/sdk';
 import { createTreeseedGatewayApp } from '@treeseed/api/gateway';
 
 const sdk = AgentSdk.createLocal({
