@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
 	ApiAuthProvider,
 	ApiConfig,
+	ApiCredential,
 	ApiPrincipal,
 	DeviceCodeApproveRequest,
 	DeviceCodePollRequest,
@@ -10,6 +11,8 @@ import type {
 	DeviceCodeStartResponse,
 	TokenRefreshRequest,
 	TokenRefreshResponse,
+	TrustedUserAssertionClaims,
+	UserIdentityProfileInput,
 } from '../types.ts';
 import {
 	createAccessToken,
@@ -91,6 +94,8 @@ export class MemoryDeviceCodeAuthProvider implements ApiAuthProvider {
 			id: request.principalId,
 			displayName: request.displayName,
 			scopes: request.scopes?.length ? [...request.scopes] : [...record.requestedScopes],
+			roles: ['member'],
+			permissions: ['auth:read:self'],
 			metadata: request.metadata,
 		};
 		return { ok: true };
@@ -123,11 +128,14 @@ export class MemoryDeviceCodeAuthProvider implements ApiAuthProvider {
 			sub: record.principal.id,
 			displayName: record.principal.displayName,
 			scopes: record.principal.scopes,
+			roles: record.principal.roles,
+			permissions: record.principal.permissions,
 			metadata: record.principal.metadata,
 			iat: nowSeconds(),
 			exp: expiresAt,
 			iss: this.config.issuer,
 			jti: randomUUID(),
+			tokenType: 'access',
 		}, this.config.authSecret);
 
 		this.refreshSessions.set(refreshToken, {
@@ -165,11 +173,14 @@ export class MemoryDeviceCodeAuthProvider implements ApiAuthProvider {
 			sub: session.principal.id,
 			displayName: session.principal.displayName,
 			scopes: session.principal.scopes,
+			roles: session.principal.roles,
+			permissions: session.principal.permissions,
 			metadata: session.principal.metadata,
 			iat: nowSeconds(),
 			exp: expiresAt,
 			iss: this.config.issuer,
 			jti: randomUUID(),
+			tokenType: 'access',
 		}, this.config.authSecret);
 
 		return {
@@ -185,6 +196,99 @@ export class MemoryDeviceCodeAuthProvider implements ApiAuthProvider {
 
 	async authenticateBearerToken(token: string) {
 		const payload = verifyAccessToken(token, this.config.authSecret);
-		return payload ? principalFromAccessTokenPayload(payload) : null;
+		return payload
+			? {
+				principal: principalFromAccessTokenPayload(payload),
+				credential: {
+					type: 'access_token',
+					id: payload.jti,
+					label: payload.tokenType,
+				} satisfies ApiCredential,
+			}
+			: null;
+	}
+
+	async authenticateServiceCredential() {
+		return null;
+	}
+
+	async createPersonalAccessToken() {
+		throw new Error('Personal access tokens are unavailable in the memory auth provider.');
+	}
+
+	async listPersonalAccessTokens() {
+		return [];
+	}
+
+	async revokePersonalAccessToken() {}
+
+	async syncUserIdentity(identity: UserIdentityProfileInput) {
+		return {
+			userId: identity.providerSubject,
+			identityId: identity.providerSubject,
+			principal: {
+				id: identity.providerSubject,
+				displayName: identity.displayName ?? undefined,
+				scopes: ['auth:me'],
+				roles: ['member'],
+				permissions: ['auth:read:self'],
+				metadata: identity.profile,
+			},
+		};
+	}
+
+	async createServiceToken() {
+		throw new Error('Service credentials are unavailable in the memory auth provider.');
+	}
+
+	async rotateServiceToken() {
+		throw new Error('Service credentials are unavailable in the memory auth provider.');
+	}
+
+	createTrustedUserAssertion(claims: TrustedUserAssertionClaims) {
+		return Buffer.from(JSON.stringify(claims)).toString('base64url');
+	}
+
+	verifyTrustedUserAssertion(assertion: string) {
+		try {
+			return JSON.parse(Buffer.from(assertion, 'base64url').toString('utf8')) as TrustedUserAssertionClaims;
+		} catch {
+			return null;
+		}
+	}
+
+	async exchangeTrustedUserAssertion(claims: TrustedUserAssertionClaims) {
+		const principal: ApiPrincipal = {
+			id: claims.userId,
+			displayName: claims.userId,
+			scopes: ['auth:me'],
+			roles: ['member'],
+			permissions: ['auth:read:self'],
+			metadata: {
+				sessionId: claims.sessionId,
+				identityId: claims.identityId,
+			},
+		};
+		const expiresAt = nowSeconds() + this.config.accessTokenTtlSeconds;
+		return {
+			ok: true as const,
+			accessToken: createAccessToken({
+				sub: principal.id,
+				displayName: principal.displayName,
+				scopes: principal.scopes,
+				roles: principal.roles,
+				permissions: principal.permissions,
+				metadata: principal.metadata,
+				iat: nowSeconds(),
+				exp: expiresAt,
+				iss: this.config.issuer,
+				jti: randomUUID(),
+				tokenType: 'access',
+			}, this.config.authSecret),
+			tokenType: 'Bearer' as const,
+			expiresAt: formatExpiry(expiresAt),
+			expiresInSeconds: this.config.accessTokenTtlSeconds,
+			principal,
+		};
 	}
 }

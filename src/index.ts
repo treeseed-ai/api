@@ -5,4 +5,5 @@ export { createRailwayTreeseedApiServer } from './railway.ts';
 export { resolveApiRuntimeProviders } from './providers.ts';
 export { loadTemplateCatalog } from './templates.ts';
 export { MemoryDeviceCodeAuthProvider } from './auth/memory-provider.ts';
+export { D1AuthProvider } from './auth/d1-provider.ts';
 export type * from './types.ts';

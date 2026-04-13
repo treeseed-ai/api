@@ -5,10 +5,13 @@ export interface AccessTokenPayload {
 	sub: string;
 	displayName?: string;
 	scopes: string[];
+	roles: string[];
+	permissions: string[];
 	iat: number;
 	exp: number;
 	iss: string;
 	jti: string;
+	tokenType: 'access' | 'service';
 	metadata?: Record<string, unknown>;
 }
 
@@ -64,6 +67,8 @@ export function principalFromAccessTokenPayload(payload: AccessTokenPayload): Ap
 		id: payload.sub,
 		displayName: payload.displayName,
 		scopes: [...payload.scopes],
+		roles: [...payload.roles],
+		permissions: [...payload.permissions],
 		metadata: payload.metadata,
 	};
 }

@@ -1,25 +1,121 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AgentSdk, parseTemplateCatalogResponse } from '@treeseed/sdk';
+import type { D1DatabaseLike, D1PreparedStatementLike } from '@treeseed/sdk/types/cloudflare';
 import { createTreeseedApiApp } from '../src/app.ts';
+import { D1AuthProvider } from '../src/auth/d1-provider.ts';
 import { resolveApiConfig } from '../src/config.ts';
 import { createTreeseedGatewayApp } from '../src/gateway.ts';
 
 const packageRoot = process.cwd();
+const authMigrationPath = resolve(packageRoot, '../../migrations/0007_site_web_sessions.sql');
+
+class TestPreparedStatement implements D1PreparedStatementLike {
+	private bindings: unknown[] = [];
+
+	constructor(
+		private readonly db: DatabaseSync,
+		private readonly query: string,
+	) {}
+
+	bind(...values: unknown[]) {
+		this.bindings = values;
+		return this;
+	}
+
+	async run() {
+		this.db.prepare(this.query).run(...this.bindings);
+		return {};
+	}
+
+	async first<T = Record<string, unknown>>() {
+		return (this.db.prepare(this.query).get(...this.bindings) as T | undefined) ?? null;
+	}
+
+	async all<T = Record<string, unknown>>() {
+		return {
+			results: this.db.prepare(this.query).all(...this.bindings) as T[],
+		};
+	}
+
+	async raw<T = unknown[]>() {
+		const rows = this.db.prepare(this.query).all(...this.bindings) as Array<Record<string, unknown>>;
+		return rows.map((row) => Object.values(row)) as T[];
+	}
+}
+
+class TestD1Database implements D1DatabaseLike {
+	private readonly db = new DatabaseSync(':memory:');
+
+	constructor() {
+		this.db.exec(readFileSync(authMigrationPath, 'utf8'));
+	}
+
+	prepare(query: string) {
+		return new TestPreparedStatement(this.db, query);
+	}
+
+	async exec(query: string) {
+		this.db.exec(query);
+		return {};
+	}
+}
+
+function createTestConfig() {
+	return {
+		repoRoot: packageRoot,
+		authSecret: 'test-secret',
+		cloudflareAccountId: 'cf-test-account',
+		cloudflareApiToken: 'cf-test-token',
+		d1DatabaseId: 'd1-test-db',
+		webServiceId: 'web',
+		webServiceSecret: 'web-test-secret',
+		webAssertionSecret: 'web-assertion-test-secret',
+	};
+}
+
+function createTestApp(options: Parameters<typeof createTreeseedApiApp>[0] = {}) {
+	const db = new TestD1Database();
+	const config = {
+		...createTestConfig(),
+		...(options.config ?? {}),
+	};
+	const selectedAuthProvider = config.providers?.auth ?? 'test-d1';
+	return createTreeseedApiApp({
+		...options,
+		config: {
+			...config,
+			providers: {
+				...(config.providers ?? {}),
+				auth: selectedAuthProvider,
+				agents: config.providers?.agents ?? {
+					execution: 'stub',
+					queue: 'memory',
+					notification: 'stub',
+					repository: 'stub',
+					verification: 'stub',
+				},
+			},
+		},
+		runtimeProviders: {
+			...options.runtimeProviders,
+			auth: {
+				...(options.runtimeProviders?.auth ?? {}),
+				[selectedAuthProvider]: ({ config: runtimeConfig }) => new D1AuthProvider(runtimeConfig, { db }),
+			},
+		},
+	});
+}
 
 async function json(response: Response) {
 	return response.json() as Promise<any>;
 }
 
 async function authorizeApp(scopes: string[]) {
-	const app = createTreeseedApiApp({
-		config: {
-			repoRoot: packageRoot,
-			authSecret: 'test-secret',
-		},
-	});
+	const app = createTestApp();
 
 	const started = await json(await app.request('/auth/device/start', {
 		method: 'POST',
@@ -66,7 +162,7 @@ describe('@treeseed/api', () => {
 		try {
 			importMatches = execFileSync(
 				'rg',
-				['-n', '@treeseed/core', 'src', 'test', 'README.md', 'package.json'],
+				['-n', '@treeseed/core', 'src', 'README.md', 'package.json'],
 				{ cwd: process.cwd(), encoding: 'utf8' },
 			).trim();
 		} catch {
@@ -85,16 +181,11 @@ describe('@treeseed/api', () => {
 		expect(config.port).toBe(4312);
 		expect(config.baseUrl).toBe('https://treeseed.up.railway.app');
 		expect(config.issuer).toBe('https://treeseed.up.railway.app');
-		expect(config.providers.auth).toBe('memory');
+		expect(config.providers.auth).toBe('d1');
 	});
 
 	it('serves health, templates, and the agent health surface', async () => {
-		const app = createTreeseedApiApp({
-			config: {
-				repoRoot: packageRoot,
-				authSecret: 'test-secret',
-			},
-		});
+		const app = createTestApp();
 
 		const healthResponse = await app.request('/healthz');
 		expect(healthResponse.status).toBe(200);
@@ -111,12 +202,7 @@ describe('@treeseed/api', () => {
 	});
 
 	it('runs the device-code lifecycle and injects bearer principals', async () => {
-		const app = createTreeseedApiApp({
-			config: {
-				repoRoot: packageRoot,
-				authSecret: 'test-secret',
-			},
-		});
+		const app = createTestApp();
 
 		const started = await json(await app.request('/auth/device/start', {
 			method: 'POST',
@@ -169,6 +255,7 @@ describe('@treeseed/api', () => {
 			payload: {
 				id: 'user-123',
 				displayName: 'CLI User',
+				roles: ['member'],
 			},
 		});
 
@@ -179,6 +266,74 @@ describe('@treeseed/api', () => {
 		});
 		expect(refreshed.status).toBe(200);
 		expect(await json(refreshed)).toMatchObject({ ok: true, tokenType: 'Bearer' });
+	});
+
+	it('syncs browser identities, issues PATs, and exchanges trusted web users', async () => {
+		const app = createTestApp({
+			config: {
+				bootstrapAdminAllowlist: ['owner@example.com'],
+			},
+		});
+
+		const synced = await app.request('/internal/auth/web/sync-user', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({
+				provider: 'github',
+				providerSubject: 'github-user-1',
+				email: 'owner@example.com',
+				emailVerified: true,
+				displayName: 'Owner User',
+				profile: { login: 'owner' },
+			}),
+		});
+		expect(synced.status).toBe(200);
+		const syncedPayload = await json(synced);
+		expect(syncedPayload.payload.principal.roles).toEqual(expect.arrayContaining(['member', 'platform_admin']));
+
+		const exchanged = await app.request('/internal/auth/web/exchange', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({
+				userId: syncedPayload.payload.principal.id,
+				sessionId: 'session-1',
+				identityId: syncedPayload.payload.identityId,
+				authTime: '2026-04-12T00:00:00.000Z',
+				expiresAt: '2099-04-12T00:05:00.000Z',
+				nonce: 'nonce-1',
+			}),
+		});
+		expect(exchanged.status).toBe(200);
+		const exchangePayload = await json(exchanged);
+		expect(exchangePayload.principal.id).toBe(syncedPayload.payload.principal.id);
+
+		const patResponse = await app.request('/auth/pat', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${exchangePayload.accessToken}`,
+			},
+			body: JSON.stringify({ name: 'CLI Token', scopes: ['auth:me', 'sdk'] }),
+		});
+		expect(patResponse.status).toBe(200);
+		const patPayload = await json(patResponse);
+		expect(patPayload.payload.token).toMatch(/^pat_/);
+
+		const patList = await app.request('/auth/pat', {
+			headers: {
+				authorization: `Bearer ${patPayload.payload.token}`,
+			},
+		});
+		expect(patList.status).toBe(200);
+		expect((await json(patList)).payload[0].name).toBe('CLI Token');
 	});
 
 	it('delegates sdk operations using canonical operation names', async () => {
@@ -230,11 +385,8 @@ describe('@treeseed/api', () => {
 	});
 
 	it('delegates workflow operations through the shared sdk workflow runtime', async () => {
-		const app = createTreeseedApiApp({
-			config: {
-				repoRoot: packageRoot,
-				authSecret: 'test-secret',
-			},
+		const app = createTestApp({
+			config: createTestConfig(),
 			workflowExecutor: async (operation) => ({
 				ok: true,
 				operation,
@@ -353,7 +505,7 @@ describe('@treeseed/api', () => {
 	});
 
 	it('returns stable errors for unsupported operations and missing auth', async () => {
-		const app = createTreeseedApiApp({
+		const app = createTestApp({
 			config: {
 				repoRoot: packageRoot,
 				authSecret: 'test-secret',
@@ -417,7 +569,28 @@ describe('@treeseed/api', () => {
 						},
 						approveDeviceFlow: async () => ({ ok: true }),
 						authenticateBearerToken: async () => null,
-					}),
+						authenticateServiceCredential: async () => null,
+						createPersonalAccessToken: async () => ({ id: 'id', token: 'token', prefix: 'prefix', name: 'name', expiresAt: null }),
+						listPersonalAccessTokens: async () => [],
+						revokePersonalAccessToken: async () => {},
+						syncUserIdentity: async () => ({
+							principal: { id: 'user', roles: [], permissions: [], scopes: ['auth:me'] },
+							userId: 'user',
+							identityId: null,
+						}),
+						createServiceToken: async () => ({ id: 'svc', serviceId: 'svc', secret: 'secret' }),
+						rotateServiceToken: async () => ({ id: 'svc', serviceId: 'svc', secret: 'secret' }),
+						createTrustedUserAssertion: () => 'assertion',
+						verifyTrustedUserAssertion: async () => null,
+						exchangeTrustedUserAssertion: async () => ({
+							ok: true,
+							accessToken: 'token',
+							tokenType: 'Bearer',
+							expiresAt: new Date().toISOString(),
+							expiresInSeconds: 60,
+							principal: { id: 'user', roles: [], permissions: [], scopes: ['auth:me'] },
+						}),
+					} as any),
 				},
 			},
 		})).toThrow(/duplicate auth provider/i);

@@ -1,4 +1,5 @@
 import { MemoryDeviceCodeAuthProvider } from './auth/memory-provider.ts';
+import { D1AuthProvider } from './auth/d1-provider.ts';
 import type {
 	ApiAuthProvider,
 	ApiConfig,
@@ -34,6 +35,7 @@ export function resolveApiRuntimeProviders(config: ApiConfig, overrides: ApiRunt
 
 	addProviders(authRegistry, {
 		memory: ({ config: runtimeConfig }) => new MemoryDeviceCodeAuthProvider(runtimeConfig),
+		d1: ({ config: runtimeConfig }) => new D1AuthProvider(runtimeConfig),
 	}, 'auth');
 	addProviders(authRegistry, overrides.auth, 'auth');
 

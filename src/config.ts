@@ -11,6 +11,13 @@ function normalizeUrl(value: string) {
 	return value.endsWith('/') ? value.slice(0, -1) : value;
 }
 
+function parseCsv(value: string | undefined) {
+	return (value ?? '')
+		.split(',')
+		.map((entry) => entry.trim().toLowerCase())
+		.filter(Boolean);
+}
+
 function resolveBaseUrl(env: NodeJS.ProcessEnv, host: string, port: number) {
 	if (env.TREESEED_API_BASE_URL?.trim()) {
 		return normalizeUrl(env.TREESEED_API_BASE_URL.trim());
@@ -38,13 +45,23 @@ export function resolveApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfi
 		issuer,
 		repoRoot,
 		authSecret: env.TREESEED_API_AUTH_SECRET?.trim() || 'treeseed-api-dev-secret',
+		cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID?.trim() || undefined,
+		cloudflareApiToken: env.CLOUDFLARE_API_TOKEN?.trim() || undefined,
+		d1DatabaseId: env.TREESEED_API_D1_DATABASE_ID?.trim() || undefined,
+		d1DatabaseName: env.TREESEED_API_D1_DATABASE_NAME?.trim() || env.SITE_DATA_DB?.trim() || undefined,
+		d1LocalPersistTo: env.TREESEED_API_D1_LOCAL_PERSIST_TO?.trim() || resolve(repoRoot, '.wrangler/state/v3/d1'),
+		webServiceId: env.TREESEED_API_WEB_SERVICE_ID?.trim() || 'web',
+		webServiceSecret: env.TREESEED_API_WEB_SERVICE_SECRET?.trim() || 'treeseed-web-service-dev-secret',
+		webAssertionSecret: env.TREESEED_API_WEB_ASSERTION_SECRET?.trim() || env.TREESEED_API_AUTH_SECRET?.trim() || 'treeseed-web-assertion-dev-secret',
+		webExchangeTtlSeconds: parseInteger(env.TREESEED_API_WEB_EXCHANGE_TTL, 300),
+		bootstrapAdminAllowlist: parseCsv(env.TREESEED_API_BOOTSTRAP_ADMIN_ALLOWLIST),
 		accessTokenTtlSeconds: parseInteger(env.TREESEED_API_ACCESS_TOKEN_TTL, 900),
 		refreshTokenTtlSeconds: parseInteger(env.TREESEED_API_REFRESH_TOKEN_TTL, 7 * 24 * 60 * 60),
 		deviceCodeTtlSeconds: parseInteger(env.TREESEED_API_DEVICE_CODE_TTL, 10 * 60),
 		deviceCodePollIntervalSeconds: parseInteger(env.TREESEED_API_DEVICE_CODE_POLL_INTERVAL, 5),
 		templateCatalogPath: env.TREESEED_API_TEMPLATE_CATALOG_PATH?.trim() || undefined,
 		providers: {
-			auth: env.TREESEED_API_PROVIDER_AUTH?.trim() || 'memory',
+			auth: env.TREESEED_API_PROVIDER_AUTH?.trim() || 'd1',
 			agents: {
 				execution: env.TREESEED_API_PROVIDER_AGENT_EXECUTION?.trim() || 'stub',
 				queue: env.TREESEED_API_PROVIDER_AGENT_QUEUE?.trim() || 'memory',

@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import type { ApiPrincipal, ApiScope } from '@treeseed/sdk';
 import type { AppVariables } from './types.ts';
+import { permissionGranted } from './auth/rbac.ts';
 
 export type ApiContext = Context<{ Variables: AppVariables }>;
 
@@ -31,6 +32,21 @@ export function hasScope(principal: ApiPrincipal | null, requiredScope: ApiScope
 export function requireScope(c: ApiContext, requiredScope: ApiScope) {
 	if (!hasScope(c.get('principal'), requiredScope)) {
 		return jsonError(c, 401, 'Authentication required.', { requiredScope });
+	}
+	return null;
+}
+
+export function requireAuthentication(c: ApiContext) {
+	if (!c.get('principal')) {
+		return jsonError(c, 401, 'Authentication required.');
+	}
+	return null;
+}
+
+export function requirePermission(c: ApiContext, permission: string) {
+	const principal = c.get('principal');
+	if (!principal || !permissionGranted(c.get('permissionGrants'), permission)) {
+		return jsonError(c, 403, 'Permission denied.', { permission });
 	}
 	return null;
 }

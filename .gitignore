@@ -6,3 +6,4 @@ coverage/
 *.tgz
 scripts/.ts-run-*.mjs
 npm-debug.log*
+.treeseed/
