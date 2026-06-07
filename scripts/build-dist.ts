@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { build } from 'esbuild';
 import ts from 'typescript';
@@ -142,6 +142,27 @@ function assertRequiredOutputs() {
 	}
 }
 
+function copySdkRuntimeArtifacts() {
+	const sdkRoot = resolve(packageRoot, 'node_modules', '@treeseed', 'sdk');
+	const sdkVendorRoot = resolve(distRoot, 'node_modules', '@treeseed', 'sdk');
+	const sdkPackageJson = resolve(sdkRoot, 'package.json');
+	if (!existsSync(sdkPackageJson)) return;
+	const requiredSdkOutputs = [
+		resolve(sdkRoot, 'dist', 'index.js'),
+		resolve(sdkRoot, 'dist', 'api', 'index.js'),
+		resolve(sdkRoot, 'drizzle', 'market'),
+	];
+	for (const requiredOutput of requiredSdkOutputs) {
+		if (!existsSync(requiredOutput)) {
+			throw new Error(`Installed @treeseed/sdk is missing required runtime artifact: ${relative(sdkRoot, requiredOutput)}`);
+		}
+	}
+	mkdirSync(sdkVendorRoot, { recursive: true });
+	copyFileSync(sdkPackageJson, resolve(sdkVendorRoot, 'package.json'));
+	cpSync(resolve(sdkRoot, 'dist'), resolve(sdkVendorRoot, 'dist'), { recursive: true });
+	cpSync(resolve(sdkRoot, 'drizzle'), resolve(sdkVendorRoot, 'drizzle'), { recursive: true });
+}
+
 rmSync(distRoot, { recursive: true, force: true });
 
 for (const filePath of walkFiles(srcRoot)) {
@@ -156,4 +177,5 @@ for (const filePath of walkFiles(scriptsRoot)) {
 }
 
 emitDeclarations();
+copySdkRuntimeArtifacts();
 assertRequiredOutputs();

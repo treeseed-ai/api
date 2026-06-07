@@ -64,11 +64,13 @@ function assertNoLocalDependencySpecs() {
 
 function scanDirectory(root: string) {
 	for (const filePath of walkFiles(root)) {
+		const relativePath = relative(packageRoot, filePath);
+		if (relativePath.startsWith('dist/node_modules/')) continue;
 		if (!textExtensions.has(extname(filePath))) continue;
 		const source = readFileSync(filePath, 'utf8');
 		for (const pattern of forbiddenPatterns) {
 			if (pattern.test(source)) {
-				throw new Error(`${relative(packageRoot, filePath)} contains forbidden reference matching ${pattern}.`);
+				throw new Error(`${relativePath} contains forbidden reference matching ${pattern}.`);
 			}
 		}
 	}
