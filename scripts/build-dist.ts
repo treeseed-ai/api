@@ -8,15 +8,36 @@ const srcRoot = resolve(packageRoot, 'src');
 const scriptsRoot = resolve(packageRoot, 'scripts');
 const distRoot = resolve(packageRoot, 'dist');
 
+const JS_SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.ts']);
+const COPY_EXTENSIONS = new Set(['.d.ts', '.json', '.jsonc', '.md', '.yaml', '.yml']);
+const EXECUTABLE_OUTPUTS = new Set([
+	'api/server.js',
+	'market-operations-runner/entrypoint.js',
+	'scripts/migrate-market-db.js',
+]);
+const REQUIRED_OUTPUTS = [
+	'index.js',
+	'index.d.ts',
+	'api/app.js',
+	'api/server.js',
+	'api/store.js',
+	'api/market-postgres.js',
+	'api/project-deployment-routes.js',
+	'api/route-descriptors.js',
+	'api/hub-launch-application.js',
+	'market-operations-runner/entrypoint.js',
+	'market-operations-runner/project-web-deployment-executor.js',
+	'scripts/migrate-market-db.js',
+];
+
 function walkFiles(root: string): string[] {
+	if (!existsSync(root)) return [];
 	const files: string[] = [];
 	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		if (entry.name.startsWith('.ts-run-')) continue;
 		const fullPath = join(root, entry.name);
-		if (entry.isDirectory()) {
-			files.push(...walkFiles(fullPath));
-			continue;
-		}
-		files.push(fullPath);
+		if (entry.isDirectory()) files.push(...walkFiles(fullPath));
+		else files.push(fullPath);
 	}
 	return files;
 }
@@ -26,12 +47,18 @@ function ensureDir(filePath: string) {
 }
 
 function rewriteRuntimeSpecifiers(contents: string) {
-	return contents.replace(/(['"`])(\.[^'"`\n]+)\.(mjs|ts)\1/g, '$1$2.js$1');
+	return contents
+		.replace(/(['"`])(\.[^'"`\n]+)\.(mjs|ts)\1/g, '$1$2.js$1')
+		.replace(/(['"`])\.\.\/src\//g, '$1../');
+}
+
+function outputPathForSource(filePath: string, sourceRoot: string, outputRoot: string) {
+	const relativePath = relative(sourceRoot, filePath);
+	return resolve(outputRoot, relativePath.replace(/\.(mjs|ts)$/u, '.js'));
 }
 
 async function compileModule(filePath: string, sourceRoot: string, outputRoot: string) {
-	const relativePath = relative(sourceRoot, filePath);
-	const outputFile = resolve(outputRoot, relativePath.replace(/\.(mjs|ts)$/u, '.js'));
+	const outputFile = outputPathForSource(filePath, sourceRoot, outputRoot);
 	ensureDir(outputFile);
 	await build({
 		entryPoints: [filePath],
@@ -42,8 +69,16 @@ async function compileModule(filePath: string, sourceRoot: string, outputRoot: s
 		logLevel: 'silent',
 	});
 	writeFileSync(outputFile, rewriteRuntimeSpecifiers(readFileSync(outputFile, 'utf8')), 'utf8');
-	if (relativePath === 'server.ts') {
-		chmodSync(outputFile, 0o755);
+	const relativeOutput = relative(outputRoot, outputFile);
+	if (EXECUTABLE_OUTPUTS.has(relativeOutput)) chmodSync(outputFile, 0o755);
+}
+
+function copyAsset(filePath: string, sourceRoot: string, outputRoot: string) {
+	const outputFile = resolve(outputRoot, relative(sourceRoot, filePath));
+	ensureDir(outputFile);
+	copyFileSync(filePath, outputFile);
+	if (outputFile.endsWith('.d.ts')) {
+		writeFileSync(outputFile, rewriteRuntimeSpecifiers(readFileSync(outputFile, 'utf8')), 'utf8');
 	}
 }
 
@@ -57,28 +92,27 @@ function transpileScript(filePath: string) {
 					module: ts.ModuleKind.ESNext,
 					target: ts.ScriptTarget.ES2022,
 				},
-		  }).outputText
+			}).outputText
 		: source;
 	ensureDir(outputFile);
 	writeFileSync(outputFile, rewriteRuntimeSpecifiers(transformed), 'utf8');
-	chmodSync(outputFile, 0o755);
+	const relativeOutput = relative(distRoot, outputFile);
+	if (EXECUTABLE_OUTPUTS.has(relativeOutput)) chmodSync(outputFile, 0o755);
 }
 
 function emitDeclarations() {
+	const configPath = ts.findConfigFile(packageRoot, ts.sys.fileExists, 'tsconfig.dist.json')
+		?? ts.findConfigFile(packageRoot, ts.sys.fileExists, 'tsconfig.json');
+	if (!configPath) throw new Error('Unable to locate a tsconfig for declaration build.');
+	const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
+	const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, packageRoot);
 	const program = ts.createProgram({
-		rootNames: walkFiles(srcRoot).filter((filePath) => filePath.endsWith('.ts')),
+		rootNames: parsed.fileNames,
 		options: {
-			allowImportingTsExtensions: true,
-			module: ts.ModuleKind.ESNext,
-			moduleResolution: ts.ModuleResolutionKind.Bundler,
-			target: ts.ScriptTarget.ES2022,
-			strict: true,
-			skipLibCheck: true,
-			types: ['node'],
+			...parsed.options,
 			declaration: true,
 			emitDeclarationOnly: true,
 			declarationDir: distRoot,
-			rootDir: srcRoot,
 			noEmit: false,
 		},
 	});
@@ -93,22 +127,33 @@ function emitDeclarations() {
 	}
 }
 
+function assertRequiredOutputs() {
+	for (const relativeOutput of REQUIRED_OUTPUTS) {
+		if (!existsSync(resolve(distRoot, relativeOutput))) {
+			throw new Error(`Missing required build output: dist/${relativeOutput}`);
+		}
+	}
+	if (existsSync(resolve(distRoot, 'src'))) {
+		throw new Error('Build output must not contain dist/src.');
+	}
+	for (const filePath of walkFiles(distRoot)) {
+		if (filePath.includes('.ts-run-')) throw new Error(`Build output contains temporary ts runner artifact: ${filePath}`);
+		if (filePath.endsWith('.d.js')) throw new Error(`Build output contains invalid declaration artifact: ${filePath}`);
+	}
+}
+
 rmSync(distRoot, { recursive: true, force: true });
 
 for (const filePath of walkFiles(srcRoot)) {
-	if (filePath.endsWith('.ts')) {
-		await compileModule(filePath, srcRoot, distRoot);
-	}
+	const extension = extname(filePath);
+	if (filePath.endsWith('.d.ts')) copyAsset(filePath, srcRoot, distRoot);
+	else if (JS_SOURCE_EXTENSIONS.has(extension)) await compileModule(filePath, srcRoot, distRoot);
+	else if (COPY_EXTENSIONS.has(extension)) copyAsset(filePath, srcRoot, distRoot);
 }
 
 for (const filePath of walkFiles(scriptsRoot)) {
-	if (filePath.endsWith('.ts') || filePath.endsWith('.mjs')) {
-		transpileScript(filePath);
-	}
+	if (filePath.endsWith('.ts') || filePath.endsWith('.mjs')) transpileScript(filePath);
 }
 
 emitDeclarations();
-
-if (existsSync(resolve(packageRoot, 'README.md'))) {
-	copyFileSync(resolve(packageRoot, 'README.md'), resolve(distRoot, '..', 'README.md'));
-}
+assertRequiredOutputs();

@@ -1,0 +1,179 @@
+name: treeseed
+version: 1
+description: TreeSeed platform development and operations portfolio
+
+defaultEnvironments:
+  - local
+
+environments:
+  - local
+  - staging
+  - prod
+
+resources:
+  teams:
+    - key: team:treeseed
+      slug: treeseed
+      name: treeseed
+      displayName: TreeSeed
+      profileSummary: TreeSeed platform market, integrated package, and agent operations.
+
+  projects:
+    - key: project:treeseed/market
+      team: team:treeseed
+      slug: market
+      name: TreeSeed Market
+      description: Top-level market application and control plane.
+      kind: market_app
+      repository:
+        role: primary
+        provider: github
+        owner: knowledge-coop
+        name: market
+        gitUrl: https://github.com/knowledge-coop/market.git
+        defaultBranch: main
+        checkoutPath: .
+
+  capacityProviders:
+    - key: capacity-provider:treeseed/local-dev
+      environments: [local]
+      team: team:treeseed
+      name: treeseed-local-dev
+      kind: local
+      provider: local
+      billingScope: team
+      creditBudgetMode: derived
+      maxConcurrentWorkdays: 2
+      maxConcurrentWorkers: 4
+      executionProviders:
+        - id: treeseed-local-codex
+          name: Local Codex capacity
+          kind: codex_subscription
+          nativeUnit: wall_minute
+          quotaVisibility: opaque
+          maxConcurrentWorkers: 4
+          resetCadence: daily
+          nativeLimits:
+            - scope: daily
+              nativeUnit: wall_minute
+              limitAmount: 480
+              reserveBufferPercent: 20
+              resetCadence: daily
+              confidence: estimated
+              source: configured
+      registration:
+        apiKey:
+          createIfMissing: true
+          name: TreeSeed local provider security code
+          scopes:
+            - provider:register
+            - provider:heartbeat
+            - provider:portfolio:read
+            - provider:tasks:claim
+            - provider:tasks:update
+            - provider:usage:report
+            - provider:reports:write
+            - provider:capabilities:write
+
+  capacityGrants:
+    - key: capacity-grant:treeseed/local/market
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/market
+      environment: local
+      grantScope: project
+      portfolioAllocationPercent: 100
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+
+  workPolicies:
+    - key: work-policy:treeseed/local/market
+      environments: [local]
+      project: project:treeseed/market
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/staging/market
+      environments: [staging]
+      project: project:treeseed/market
+      environment: staging
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 2500
+      maxQueuedTasks: 50
+      maxQueuedCredits: 5000
+
+    - key: work-policy:treeseed/prod/market
+      environments: [prod]
+      project: project:treeseed/market
+      environment: prod
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 2500
+      maxQueuedTasks: 50
+      maxQueuedCredits: 5000
+
+  repositoryHosts:
+    - key: repository-host:treeseed/market-github
+      team: team:treeseed
+      provider: github
+      name: knowledge-coop
+      ownership: treeseed_managed
+      accountLabel: Knowledge Coop GitHub organization
+      organizationOrOwner: knowledge-coop
+      defaultVisibility: public
+      softwareRepositoryNameTemplate: "{project}"
+      contentRepositoryNameTemplate: "{project}-content"
+      allowedProjectKinds: [market_app, package, knowledge_hub]
+      status: active
+
+  hubRepositories: []
+  products:
+    - key: product:treeseed/market-template
+      team: team:treeseed
+      kind: template
+      slug: treeseed-market
+      title: TreeSeed Market Starter
+      summary: First-party TreeSeed market control plane starter bundle.
+      visibility: public
+      listingEnabled: true
+      offerMode: free
+      manifestKey: seeds/treeseed.yaml
+      artifactKey: catalog/treeseed-market/1.0.0/template
+      searchText: TreeSeed market control plane starter template
+      metadata:
+        provider: github
+        owner: knowledge-coop
+        repository: market
+        gitUrl: https://github.com/knowledge-coop/market.git
+
+  catalogArtifacts:
+    - key: catalog-artifact:treeseed/market-template/1.0.0
+      product: product:treeseed/market-template
+      version: 1.0.0
+      kind: template
+      contentKey: catalog/treeseed-market/1.0.0/template
+      manifestKey: seeds/treeseed.yaml
+      metadata:
+        provider: github
+        owner: knowledge-coop
+        repository: market
+        gitUrl: https://github.com/knowledge-coop/market.git
+
+  agentPools: []

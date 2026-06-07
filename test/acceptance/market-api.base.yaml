@@ -1,0 +1,408 @@
+version: 1
+name: market-api-live-acceptance
+expectedStatuses: test/acceptance/market-api.expected-statuses.json
+
+variables:
+  apiVersionPath: /v1
+
+seed:
+  enabled: true
+  path: /v1/acceptance/seed
+  namespace: acceptance-${environment}
+  actors:
+    siteAdmin:
+      siteRoles: [platform_admin]
+    marketSteward:
+      siteRoles: [market_admin]
+    teamOwner:
+      siteRoles: [member]
+      teamRole: team_owner
+    teamOperator:
+      siteRoles: [member]
+      teamRole: contributor
+    teamViewer:
+      siteRoles: [viewer]
+      teamRole: reviewer
+    nonMember:
+      siteRoles: [viewer]
+    providerOperator:
+      siteRoles: [member]
+
+actors:
+  anonymous: {}
+  siteAdmin: {}
+  marketSteward: {}
+  teamOwner: {}
+  teamOperator: {}
+  teamViewer: {}
+  nonMember: {}
+  providerOperator: {}
+  providerKey:
+    tokenEnv: TREESEED_ACCEPTANCE_PROVIDER_TOKEN
+    required: false
+  platformRunner:
+    tokenEnv: TREESEED_ACCEPTANCE_PLATFORM_RUNNER_TOKEN
+    required: false
+
+descriptorMatrices:
+  - id: descriptor-executable-role-matrix
+    coverageOnly: true
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    actors: [anonymous, siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember, providerOperator, providerKey, platformRunner]
+    excludeProviderIngress: false
+    excludeInternalRunner: false
+    expectByDescriptor:
+      get.v1.auth.web.sessions:
+        anonymous: { status: 401, envelope: { ok: false } }
+      get.v1.auth.web.account.deletion-blockers:
+        anonymous: { status: 401, envelope: { ok: false } }
+      get.v1.teams.teamId.members:
+        nonMember: { status: 403, envelope: { ok: false } }
+      get.v1.teams.teamId.permissions:
+        nonMember: { status: 403, envelope: { ok: false } }
+      get.v1.projects.projectId.summary:
+        nonMember: { status: 403, envelope: { ok: false } }
+
+roleMatrices:
+  - id: site-role-matrix
+    actors: [siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember]
+    endpoints:
+      - id: me
+        method: GET
+        path: ${apiVersionPath}/me
+        expect:
+          status: 200
+          envelope: { ok: true }
+      - id: markets
+        method: GET
+        path: ${apiVersionPath}/me/markets
+        expect:
+          status: 200
+          envelope: { ok: true }
+      - id: platform-operations-read
+        method: GET
+        path: ${apiVersionPath}/platform/operations
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          marketSteward: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 403, envelope: { ok: false } }
+          teamOperator: { status: 403, envelope: { ok: false } }
+          teamViewer: { status: 403, envelope: { ok: false } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: seeds-runs
+        method: GET
+        path: ${apiVersionPath}/seeds/runs
+        expect:
+          status: 200
+          envelope: { ok: true }
+  - id: team-role-matrix
+    actors: [siteAdmin, teamOwner, teamOperator, teamViewer, nonMember]
+    endpoints:
+      - id: teams-list
+        method: GET
+        path: ${apiVersionPath}/teams
+        expect:
+          status: 200
+          envelope: { ok: true }
+      - id: team-members
+        method: GET
+        path: ${apiVersionPath}/teams/${fixtures.team.id}/members
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 403, envelope: { ok: false } }
+          teamViewer: { status: 403, envelope: { ok: false } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: team-permissions
+        method: GET
+        path: ${apiVersionPath}/teams/${fixtures.team.id}/permissions
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 200, envelope: { ok: true } }
+          teamViewer: { status: 200, envelope: { ok: true } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: projects-list
+        method: GET
+        path: ${apiVersionPath}/projects?teamId=${fixtures.team.id}
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 200, envelope: { ok: true } }
+          teamViewer: { status: 200, envelope: { ok: true } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: project-summary
+        method: GET
+        path: ${apiVersionPath}/projects/${fixtures.project.id}/summary
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 200, envelope: { ok: true } }
+          teamViewer: { status: 200, envelope: { ok: true } }
+          nonMember: { status: 403, envelope: { ok: false } }
+
+sdkMethodMatrices:
+  - method: webSignIn
+    actor: anonymous
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: confirmWebEmail
+    actor: anonymous
+    expect:
+      status: 400
+      envelope: { ok: false }
+  - method: completeWebPasswordReset
+    actor: anonymous
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: enqueueAgentTask
+    actor: teamOwner
+    expect:
+      statusAny: [201, 409]
+
+deploymentFlows:
+  - id: deployment-flow.mocked-web-deployment
+    actor: teamOwner
+    runnerActor: platformRunner
+    market: local
+    environment: staging
+    mockResult: success
+    environments: [local]
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+coverage:
+  requireAllDescriptors: true
+  requireAllSdkMethods: true
+  requiredCaseIds:
+    - health.ready
+    - auth.web.sign-up.sends-confirmation-email
+    - descriptor-executable-role-matrix.post.v1.auth.web.sign-up.anonymous
+    - auth.web.sign-in.site-admin
+    - auth.web.username-check.seeded
+    - provider-key-cannot-read-platform-operations
+    - site-role-matrix.me.siteAdmin
+    - site-role-matrix.platform-operations-read.teamViewer
+    - team-role-matrix.team-members.teamOwner
+    - team-role-matrix.team-members.nonMember
+    - sdk.me.site-admin
+    - sdk.teams.team-owner
+    - sdk.me.teamOwner
+    - sdk.rotateCapacityProviderApiKey.teamOwner
+    - deployment-flow.mocked-web-deployment
+
+cases:
+  - id: health.ready
+    actor: anonymous
+    method: GET
+    path: /readyz
+    expect:
+      status: 200
+
+  - id: auth.web.sign-up.sends-confirmation-email
+    actor: anonymous
+    method: POST
+    path: ${apiVersionPath}/auth/web/sign-up
+    body:
+      email: acceptance-signup-${runNonce}@treeseed.ai
+      username: acceptance-signup-${runNonce}
+      password: AcceptancePassword123!
+      firstName: Acceptance
+      lastName: Signup
+      name: Acceptance Signup
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.confirmationRequired
+          equals: true
+        - path: payload.email
+          equals: acceptance-signup-${runNonce}@treeseed.ai
+
+  - id: auth.me.requires-user
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/me
+    expect:
+      status: 401
+      envelope:
+        ok: false
+
+  - id: auth.web.sign-in.site-admin
+    actor: anonymous
+    method: POST
+    path: ${apiVersionPath}/auth/web/sign-in
+    body:
+      email: ${actors.siteAdmin.email}
+      password: ${seed.password}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.accessToken
+          type: string
+
+  - id: auth.web.username-check.seeded
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/auth/web/username/check?username=${actors.teamOwner.username}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.available
+          equals: false
+
+  - id: auth.me.site-admin
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/me
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.principal.id
+          type: string
+
+  - id: sdk.me.site-admin
+    actor: siteAdmin
+    sdkMethod: me
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.principal.id
+          type: string
+
+  - id: sdk.teams.team-owner
+    actor: teamOwner
+    sdkMethod: teams
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload
+          exists: true
+
+  - id: auth.sessions.team-owner
+    actor: teamOwner
+    method: GET
+    path: ${apiVersionPath}/auth/web/sessions
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload
+          exists: true
+
+  - id: auth.appearance.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/auth/web/appearance
+    body:
+      colorScheme: fern
+      themeMode: system
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.scheme
+          type: string
+
+  - id: auth.password-change.team-operator
+    actor: teamOperator
+    method: PATCH
+    path: ${apiVersionPath}/auth/web/password
+    body:
+      currentPassword: ${seed.password}
+      password: ${seed.password}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: auth.account-blockers.team-viewer
+    actor: teamViewer
+    method: GET
+    path: ${apiVersionPath}/auth/web/account/deletion-blockers
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: platform.operations.requires-auth
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 401
+      envelope:
+        ok: false
+
+  - id: provider-key-cannot-read-platform-operations
+    actor: providerKey
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 401
+      envelope:
+        ok: false
+
+  - id: platform.operations.site-admin
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: platform.operations.team-viewer-denied
+    actor: teamViewer
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 403
+      envelope:
+        ok: false
+
+  - id: teams.list.team-owner
+    actor: teamOwner
+    method: GET
+    path: ${apiVersionPath}/teams
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.list.non-member
+    actor: nonMember
+    method: GET
+    path: ${apiVersionPath}/teams
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: catalog-list-envelope
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/catalog
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload
+          exists: true

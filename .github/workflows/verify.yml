@@ -1,10 +1,8 @@
 name: Verify
 
 on:
-  push:
-    tags-ignore:
-      - '*'
   pull_request:
+  push:
   workflow_dispatch:
 
 jobs:
@@ -21,18 +19,9 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.12.0
 
-      - name: Install dependencies
-        run: |
-          if test -f package-lock.json; then
-            npm ci
-          else
-            npm install --no-audit --no-fund
-          fi
-
-      - name: Verify package
-        run: npm run verify:direct
+      - run: npm ci --workspaces=false
+      - run: npm run verify:direct
