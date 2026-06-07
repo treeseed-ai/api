@@ -151,6 +151,11 @@ function packageJson() {
 	};
 }
 
+function sdkGitRef(spec: string) {
+	const match = spec.match(/#(.+)$/u);
+	return match?.[1]?.trim() || 'staging';
+}
+
 function preparedSdkPackageRoot(installedSdkRoot: string) {
 	if (existsSync(resolve(installedSdkRoot, 'dist', 'index.js')) && existsSync(resolve(installedSdkRoot, 'dist', 'api', 'index.js'))) {
 		return { root: installedSdkRoot, cleanup: () => {} };
@@ -158,40 +163,49 @@ function preparedSdkPackageRoot(installedSdkRoot: string) {
 	const sdkSpec = packageJson().dependencies?.['@treeseed/sdk'];
 	if (!sdkSpec) throw new Error('@treeseed/api requires @treeseed/sdk to vendor runtime artifacts.');
 	const tempRoot = mkdtempSync(resolve(tmpdir(), 'treeseed-api-sdk-pack-'));
-	const pack = spawnSync('npm', ['pack', sdkSpec, '--pack-destination', tempRoot, '--json'], {
+	const sourceRoot = resolve(tempRoot, 'sdk');
+	const clone = spawnSync('git', ['clone', '--filter=blob:none', 'https://github.com/treeseed-ai/sdk.git', sourceRoot], {
 		cwd: packageRoot,
+		encoding: 'utf8',
+		shell: process.platform === 'win32',
+	});
+	if (clone.status !== 0) {
+		rmSync(tempRoot, { recursive: true, force: true });
+		throw new Error(`Unable to clone @treeseed/sdk runtime dependency.\n${clone.stdout}\n${clone.stderr}`);
+	}
+	const checkout = spawnSync('git', ['checkout', sdkGitRef(sdkSpec)], {
+		cwd: sourceRoot,
+		encoding: 'utf8',
+		shell: process.platform === 'win32',
+	});
+	if (checkout.status !== 0) {
+		rmSync(tempRoot, { recursive: true, force: true });
+		throw new Error(`Unable to checkout @treeseed/sdk runtime dependency ref ${sdkGitRef(sdkSpec)}.\n${checkout.stdout}\n${checkout.stderr}`);
+	}
+	const install = spawnSync('npm', ['install', '--workspaces=false', '--ignore-scripts'], {
+		cwd: sourceRoot,
 		encoding: 'utf8',
 		shell: process.platform === 'win32',
 		env: {
 			...process.env,
-			TREESEED_SKIP_PACKAGE_PREPARE: '',
+			TREESEED_SKIP_PACKAGE_PREPARE: '1',
 		},
 	});
-	if (pack.status !== 0) {
+	if (install.status !== 0) {
 		rmSync(tempRoot, { recursive: true, force: true });
-		throw new Error(`Unable to pack @treeseed/sdk runtime dependency.\n${pack.stdout}\n${pack.stderr}`);
+		throw new Error(`Unable to install @treeseed/sdk runtime dependency build dependencies.\n${install.stdout}\n${install.stderr}`);
 	}
-	const jsonStart = pack.stdout.indexOf('[');
-	const jsonEnd = pack.stdout.lastIndexOf(']');
-	const packed = jsonStart >= 0 && jsonEnd >= jsonStart
-		? JSON.parse(pack.stdout.slice(jsonStart, jsonEnd + 1)) as Array<{ filename?: string }>
-		: [];
-	const filename = packed[0]?.filename;
-	if (!filename) {
-		rmSync(tempRoot, { recursive: true, force: true });
-		throw new Error(`Unable to determine packed @treeseed/sdk tarball filename.\n${pack.stdout}`);
-	}
-	const extract = spawnSync('tar', ['-xzf', resolve(tempRoot, filename), '-C', tempRoot], {
-		cwd: packageRoot,
+	const buildSdk = spawnSync('npm', ['run', 'build:dist'], {
+		cwd: sourceRoot,
 		encoding: 'utf8',
 		shell: process.platform === 'win32',
 	});
-	if (extract.status !== 0) {
+	if (buildSdk.status !== 0) {
 		rmSync(tempRoot, { recursive: true, force: true });
-		throw new Error(`Unable to extract packed @treeseed/sdk runtime dependency.\n${extract.stdout}\n${extract.stderr}`);
+		throw new Error(`Unable to build @treeseed/sdk runtime dependency.\n${buildSdk.stdout}\n${buildSdk.stderr}`);
 	}
 	return {
-		root: resolve(tempRoot, 'package'),
+		root: sourceRoot,
 		cleanup: () => rmSync(tempRoot, { recursive: true, force: true }),
 	};
 }
