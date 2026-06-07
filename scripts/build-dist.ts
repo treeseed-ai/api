@@ -1,5 +1,8 @@
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { build } from 'esbuild';
 import ts from 'typescript';
 import { packageRoot } from './package-tools.ts';
@@ -142,25 +145,81 @@ function assertRequiredOutputs() {
 	}
 }
 
+function packageJson() {
+	return JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
+		dependencies?: Record<string, string>;
+	};
+}
+
+function preparedSdkPackageRoot(installedSdkRoot: string) {
+	if (existsSync(resolve(installedSdkRoot, 'dist', 'index.js')) && existsSync(resolve(installedSdkRoot, 'dist', 'api', 'index.js'))) {
+		return { root: installedSdkRoot, cleanup: () => {} };
+	}
+	const sdkSpec = packageJson().dependencies?.['@treeseed/sdk'];
+	if (!sdkSpec) throw new Error('@treeseed/api requires @treeseed/sdk to vendor runtime artifacts.');
+	const tempRoot = mkdtempSync(resolve(tmpdir(), 'treeseed-api-sdk-pack-'));
+	const pack = spawnSync('npm', ['pack', sdkSpec, '--pack-destination', tempRoot, '--json'], {
+		cwd: packageRoot,
+		encoding: 'utf8',
+		shell: process.platform === 'win32',
+		env: {
+			...process.env,
+			TREESEED_SKIP_PACKAGE_PREPARE: '',
+		},
+	});
+	if (pack.status !== 0) {
+		rmSync(tempRoot, { recursive: true, force: true });
+		throw new Error(`Unable to pack @treeseed/sdk runtime dependency.\n${pack.stdout}\n${pack.stderr}`);
+	}
+	const jsonStart = pack.stdout.indexOf('[');
+	const jsonEnd = pack.stdout.lastIndexOf(']');
+	const packed = jsonStart >= 0 && jsonEnd >= jsonStart
+		? JSON.parse(pack.stdout.slice(jsonStart, jsonEnd + 1)) as Array<{ filename?: string }>
+		: [];
+	const filename = packed[0]?.filename;
+	if (!filename) {
+		rmSync(tempRoot, { recursive: true, force: true });
+		throw new Error(`Unable to determine packed @treeseed/sdk tarball filename.\n${pack.stdout}`);
+	}
+	const extract = spawnSync('tar', ['-xzf', resolve(tempRoot, filename), '-C', tempRoot], {
+		cwd: packageRoot,
+		encoding: 'utf8',
+		shell: process.platform === 'win32',
+	});
+	if (extract.status !== 0) {
+		rmSync(tempRoot, { recursive: true, force: true });
+		throw new Error(`Unable to extract packed @treeseed/sdk runtime dependency.\n${extract.stdout}\n${extract.stderr}`);
+	}
+	return {
+		root: resolve(tempRoot, 'package'),
+		cleanup: () => rmSync(tempRoot, { recursive: true, force: true }),
+	};
+}
+
 function copySdkRuntimeArtifacts() {
 	const sdkRoot = resolve(packageRoot, 'node_modules', '@treeseed', 'sdk');
 	const sdkVendorRoot = resolve(distRoot, 'node_modules', '@treeseed', 'sdk');
-	const sdkPackageJson = resolve(sdkRoot, 'package.json');
-	if (!existsSync(sdkPackageJson)) return;
-	const requiredSdkOutputs = [
-		resolve(sdkRoot, 'dist', 'index.js'),
-		resolve(sdkRoot, 'dist', 'api', 'index.js'),
-		resolve(sdkRoot, 'drizzle', 'market'),
-	];
-	for (const requiredOutput of requiredSdkOutputs) {
-		if (!existsSync(requiredOutput)) {
-			throw new Error(`Installed @treeseed/sdk is missing required runtime artifact: ${relative(sdkRoot, requiredOutput)}`);
+	const sdkPackage = preparedSdkPackageRoot(sdkRoot);
+	try {
+		const sdkPackageJson = resolve(sdkPackage.root, 'package.json');
+		if (!existsSync(sdkPackageJson)) return;
+		const requiredSdkOutputs = [
+			resolve(sdkPackage.root, 'dist', 'index.js'),
+			resolve(sdkPackage.root, 'dist', 'api', 'index.js'),
+			resolve(sdkPackage.root, 'drizzle', 'market'),
+		];
+		for (const requiredOutput of requiredSdkOutputs) {
+			if (!existsSync(requiredOutput)) {
+				throw new Error(`@treeseed/sdk is missing required runtime artifact: ${relative(sdkPackage.root, requiredOutput)}`);
+			}
 		}
+		mkdirSync(sdkVendorRoot, { recursive: true });
+		copyFileSync(sdkPackageJson, resolve(sdkVendorRoot, 'package.json'));
+		cpSync(resolve(sdkPackage.root, 'dist'), resolve(sdkVendorRoot, 'dist'), { recursive: true });
+		cpSync(resolve(sdkPackage.root, 'drizzle'), resolve(sdkVendorRoot, 'drizzle'), { recursive: true });
+	} finally {
+		sdkPackage.cleanup();
 	}
-	mkdirSync(sdkVendorRoot, { recursive: true });
-	copyFileSync(sdkPackageJson, resolve(sdkVendorRoot, 'package.json'));
-	cpSync(resolve(sdkRoot, 'dist'), resolve(sdkVendorRoot, 'dist'), { recursive: true });
-	cpSync(resolve(sdkRoot, 'drizzle'), resolve(sdkVendorRoot, 'drizzle'), { recursive: true });
 }
 
 rmSync(distRoot, { recursive: true, force: true });
