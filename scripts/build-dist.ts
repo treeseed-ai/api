@@ -1,6 +1,5 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { build } from 'esbuild';
 import ts from 'typescript';
 import { packageRoot } from './package-tools.ts';
@@ -143,25 +142,6 @@ function assertRequiredOutputs() {
 	}
 }
 
-function ensureInstalledSdkDist() {
-	const sdkRoot = resolve(packageRoot, 'node_modules', '@treeseed', 'sdk');
-	if (!existsSync(resolve(sdkRoot, 'package.json'))) return;
-	if (existsSync(resolve(sdkRoot, 'dist', 'index.js')) && existsSync(resolve(sdkRoot, 'dist', 'api', 'index.js'))) return;
-	const result = spawnSync('npm', ['run', 'build:dist'], {
-		cwd: sdkRoot,
-		stdio: 'inherit',
-		shell: process.platform === 'win32',
-		env: {
-			...process.env,
-			TREESEED_SKIP_PACKAGE_PREPARE: '1',
-		},
-	});
-	if (result.status !== 0) {
-		throw new Error('Unable to build installed @treeseed/sdk dependency output.');
-	}
-}
-
-ensureInstalledSdkDist();
 rmSync(distRoot, { recursive: true, force: true });
 
 for (const filePath of walkFiles(srcRoot)) {
