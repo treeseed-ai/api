@@ -31,6 +31,13 @@ const runTreeseedHostingAuditMock = vi.hoisted(() => vi.fn(async (input: Record<
 	nextActions: ['Hosting setup is ready for host saving and project launch.'],
 })));
 
+const executeKnowledgeHubProviderLaunchMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@treeseed/sdk', async (importOriginal) => ({
+	...(await importOriginal<typeof import('@treeseed/sdk')>()),
+	executeKnowledgeHubProviderLaunch: executeKnowledgeHubProviderLaunchMock,
+}));
+
 vi.mock('@treeseed/sdk/workflow-support', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@treeseed/sdk/workflow-support')>()),
 	runTreeseedHostingAudit: runTreeseedHostingAuditMock,
@@ -344,6 +351,7 @@ async function createDeploymentReadyProject(id: string) {
 describe('market api', () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+		executeKnowledgeHubProviderLaunchMock.mockReset();
 		runTreeseedHostingAuditMock.mockReset();
 		runTreeseedHostingAuditMock.mockImplementation(async (input: Record<string, unknown> = {}) => ({
 			ok: true,
@@ -2087,7 +2095,7 @@ describe('market api', () => {
 				CLOUDFLARE_API_TOKEN: 'managed-token',
 				CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 			}, async () => {
-				const launchSpy = vi.spyOn(treeseedCore, 'executeKnowledgeHubProviderLaunch').mockRejectedValue(new Error('launch intentionally stopped'));
+				executeKnowledgeHubProviderLaunchMock.mockRejectedValue(new Error('launch intentionally stopped'));
 				const app = createTestApp();
 			const token = await authorizeApp(app);
 			const team = await createTeam(app, token);
@@ -2111,7 +2119,7 @@ describe('market api', () => {
 				expect(launched.status).toBe(400);
 				const launchPayload = await json(launched);
 				expect(launchPayload.error).toMatch(/no longer accepts runtime host configuration/u);
-				expect(launchSpy).not.toHaveBeenCalled();
+				expect(executeKnowledgeHubProviderLaunchMock).not.toHaveBeenCalled();
 		});
 	});
 
@@ -2499,7 +2507,7 @@ describe('market api', () => {
 			CLOUDFLARE_ACCOUNT_ID: undefined,
 		}, async () => {
 			vi.spyOn(process, 'cwd').mockReturnValue('/tmp/treeseed-missing-managed-host-config');
-			const launchSpy = vi.spyOn(treeseedCore, 'executeKnowledgeHubProviderLaunch').mockRejectedValue(new Error('launch should not run'));
+			executeKnowledgeHubProviderLaunchMock.mockRejectedValue(new Error('launch should not run'));
 			const app = createTestApp();
 			const token = await authorizeApp(app);
 			const team = await createTeam(app, token);
@@ -2522,7 +2530,7 @@ describe('market api', () => {
 			const payload = await json(launched);
 			expect(payload.error).toBe('TreeSeed managed Cloudflare hosting is not configured.');
 			expect(payload.missing).toEqual(['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']);
-			expect(launchSpy).not.toHaveBeenCalled();
+			expect(executeKnowledgeHubProviderLaunchMock).not.toHaveBeenCalled();
 		});
 	});
 
@@ -6031,7 +6039,7 @@ describe('market api', () => {
 			CLOUDFLARE_API_TOKEN: 'managed-token',
 			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
-		const launchSpy = vi.spyOn(treeseedCore, 'executeKnowledgeHubProviderLaunch').mockResolvedValue({
+		executeKnowledgeHubProviderLaunchMock.mockResolvedValue({
 			workingRoot: '/tmp/hub-provider-launch-success',
 			repository: {
 				slug: 'treeseed-ai/launch-project',
@@ -6211,7 +6219,7 @@ describe('market api', () => {
 			}),
 		]));
 		expect(payload.payload.launchJob.input.launchIntent.execution.providerLaunchInput.hostBindings.publicWeb.provider).toBe('cloudflare');
-		expect(launchSpy).not.toHaveBeenCalled();
+		expect(executeKnowledgeHubProviderLaunchMock).not.toHaveBeenCalled();
 
 		const deploymentDetail = await json(await app.request(`/v1/project-deployments/${payload.deploymentId}`, {
 			headers: {
