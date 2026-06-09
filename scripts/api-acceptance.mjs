@@ -4,12 +4,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
-import { ACCEPTANCE_ACTORS, MARKET_API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../src/api/route-descriptors.js';
+import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../src/api/route-descriptors.js';
 
 function parseArgs(argv) {
 	const args = {
 		environment: 'staging',
-		spec: 'test/acceptance/market-api.base.yaml',
+		spec: 'test/acceptance/api.base.yaml',
 		reportJson: '',
 		reportJunit: '',
 		expandJson: '',
@@ -27,7 +27,7 @@ function parseArgs(argv) {
 	return args;
 }
 
-function loadExpectedStatuses(path = 'test/acceptance/market-api.expected-statuses.json') {
+function loadExpectedStatuses(path = 'test/acceptance/api.expected-statuses.json') {
 	if (!path || !existsSync(path)) return {};
 	const parsed = JSON.parse(readFileSync(path, 'utf8'));
 	return parsed.statuses ?? {};
@@ -418,7 +418,7 @@ function expandDescriptorMatrices(spec, expectedStatuses = loadExpectedStatuses(
 		const domains = new Set(Array.isArray(matrix.ownerDomains) ? matrix.ownerDomains : []);
 		const authClasses = new Set(Array.isArray(matrix.authClasses) ? matrix.authClasses : []);
 		const ids = new Set(Array.isArray(matrix.ids) ? matrix.ids : []);
-		for (const descriptor of MARKET_API_ROUTE_DESCRIPTORS) {
+		for (const descriptor of API_ROUTE_DESCRIPTORS) {
 			if (ids.size > 0 && !ids.has(descriptor.id)) continue;
 			if (ids.size === 0 && !methods.has(descriptor.method)) continue;
 			if (domains.size > 0 && !domains.has(descriptor.ownerDomain)) continue;
@@ -584,7 +584,7 @@ function expandSdkMethodMatrices(spec, expectedStatuses = loadExpectedStatuses(s
 	const expanded = [];
 	for (const [method, descriptorId] of Object.entries(SDK_METHOD_ROUTE_MAP)) {
 		if ((spec.coverage?.exemptSdkMethods ?? []).includes(method)) continue;
-		const descriptor = MARKET_API_ROUTE_DESCRIPTORS.find((entry) => entry.id === descriptorId);
+		const descriptor = API_ROUTE_DESCRIPTORS.find((entry) => entry.id === descriptorId);
 		const matrixOverride = explicit.find((entry) => entry.method === method || entry.sdkMethod === method) ?? {};
 		const actor = matrixOverride.actor ?? actorForSdkMethod(method, descriptor);
 		const expected = matrixOverride.expect ?? expectedForDescriptor(descriptor ?? { acceptance: { successActors: [actor] } }, actor, expectedStatuses);
@@ -610,7 +610,7 @@ function assertCoverage(spec, cases) {
 	}
 	if (spec.coverage?.requireAllDescriptors) {
 		const coveredDescriptors = new Set(cases.map((entry) => entry.descriptorId).filter(Boolean));
-		const missingDescriptors = MARKET_API_ROUTE_DESCRIPTORS
+		const missingDescriptors = API_ROUTE_DESCRIPTORS
 			.filter((descriptor) => !coveredDescriptors.has(descriptor.id))
 			.filter((descriptor) => !(spec.coverage.exemptDescriptorIds ?? []).includes(descriptor.id));
 		if (missingDescriptors.length > 0) {
@@ -679,11 +679,11 @@ function runMockedDeploymentRunner({ variables, actors, flow, args }) {
 		encoding: 'utf8',
 		env: {
 			...process.env,
-			TREESEED_MARKET_API_BASE_URL: variables.baseUrl,
-			TREESEED_MARKET_URL: variables.baseUrl,
-			TREESEED_MARKET_ID: market,
+			TREESEED_API_BASE_URL: variables.baseUrl,
+			TREESEED_URL: variables.baseUrl,
+			TREESEED_MANAGER_ID: market,
 			TREESEED_PLATFORM_RUNNER_SECRET: runnerSecret,
-			TREESEED_PLATFORM_RUNNER_ID: variables.fixtures?.platformRunner?.id ?? `market-ops-${market}-1`,
+			TREESEED_PLATFORM_RUNNER_ID: variables.fixtures?.platformRunner?.id ?? `treeseed-ops-${market}-1`,
 		},
 	});
 	if (result.status !== 0) {
@@ -789,7 +789,7 @@ function junit(report) {
 	const escape = (value) => String(value ?? '').replace(/[<>&"']/gu, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[char]));
 	return [
 		`<?xml version="1.0" encoding="UTF-8"?>`,
-		`<testsuite name="market-acceptance" tests="${report.results.length}" failures="${failures.length}">`,
+		`<testsuite name="api-acceptance" tests="${report.results.length}" failures="${failures.length}">`,
 		...report.results.map((result) => result.ok
 			? `  <testcase classname="market.acceptance" name="${escape(result.id)}" time="${result.durationMs / 1000}" />`
 			: `  <testcase classname="market.acceptance" name="${escape(result.id)}" time="${result.durationMs / 1000}"><failure>${escape(result.failures.join('\\n'))}</failure></testcase>`),

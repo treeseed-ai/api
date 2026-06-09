@@ -15,8 +15,8 @@ const JS_SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.ts']);
 const COPY_EXTENSIONS = new Set(['.d.ts', '.json', '.jsonc', '.md', '.yaml', '.yml']);
 const EXECUTABLE_OUTPUTS = new Set([
 	'api/server.js',
-	'market-operations-runner/entrypoint.js',
-	'scripts/migrate-market-db.js',
+	'operations-runner/entrypoint.js',
+	'scripts/migrate-db.js',
 ]);
 const REQUIRED_OUTPUTS = [
 	'index.js',
@@ -28,9 +28,9 @@ const REQUIRED_OUTPUTS = [
 	'api/project-deployment-routes.js',
 	'api/route-descriptors.js',
 	'api/hub-launch-application.js',
-	'market-operations-runner/entrypoint.js',
-	'market-operations-runner/project-web-deployment-executor.js',
-	'scripts/migrate-market-db.js',
+	'operations-runner/entrypoint.js',
+	'operations-runner/project-web-deployment-executor.js',
+	'scripts/migrate-db.js',
 ];
 
 function walkFiles(root: string): string[] {

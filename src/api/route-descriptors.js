@@ -305,7 +305,7 @@ function acceptancePolicy(path, method) {
 	};
 }
 
-export function extractActiveMarketApiRoutes(source = `${readFileSync(appSourcePath, 'utf8')}\n${readFileSync(projectDeploymentRoutesSourcePath, 'utf8')}`) {
+export function extractActiveApiRoutes(source = `${readFileSync(appSourcePath, 'utf8')}\n${readFileSync(projectDeploymentRoutesSourcePath, 'utf8')}`) {
 	const routes = [];
 	const pattern = /app\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/gu;
 	for (const match of source.matchAll(pattern)) {
@@ -329,7 +329,7 @@ export function extractActiveMarketApiRoutes(source = `${readFileSync(appSourceP
 	return routes.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-export const MARKET_API_ROUTE_DESCRIPTORS = extractActiveMarketApiRoutes().map((descriptor) => {
+export const API_ROUTE_DESCRIPTORS = extractActiveApiRoutes().map((descriptor) => {
 	const sdkMethods = Object.entries(SDK_METHOD_ROUTE_MAP)
 		.filter(([, routeIdValue]) => routeIdValue === descriptor.id)
 		.map(([method]) => method);
@@ -337,10 +337,10 @@ export const MARKET_API_ROUTE_DESCRIPTORS = extractActiveMarketApiRoutes().map((
 });
 
 export function descriptorById(id) {
-	return MARKET_API_ROUTE_DESCRIPTORS.find((descriptor) => descriptor.id === id) ?? null;
+	return API_ROUTE_DESCRIPTORS.find((descriptor) => descriptor.id === id) ?? null;
 }
 
 export function descriptorsForSdkMethods() {
-	const byId = new Map(MARKET_API_ROUTE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor]));
+	const byId = new Map(API_ROUTE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor]));
 	return Object.fromEntries(Object.entries(SDK_METHOD_ROUTE_MAP).map(([method, id]) => [method, byId.get(id) ?? null]));
 }

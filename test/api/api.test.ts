@@ -7,12 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataType, newDb } from 'pg-mem';
 import * as treeseedCore from '@treeseed/sdk';
 import { AgentSdk, PlatformRunnerClient } from '@treeseed/sdk';
-import { createMarketApiApp } from '../../src/api/app.js';
+import { createApiApp } from '../../src/api/app.js';
 import { MarketPostgresDatabase } from '../../src/api/market-postgres.js';
 import { MarketControlPlaneStore } from '../../src/api/store.js';
 import { encryptHostConfig } from '../../src/crypto/host-crypto.ts';
 import { listTreeseedManagedHostsFromConfig } from '../../src/market/managed-hosts.js';
-import { runOnceWithClient } from '../../src/market-operations-runner/entrypoint.js';
+import { runOnceWithClient } from '../../src/operations-runner/entrypoint.js';
 
 const runTreeseedHostingAuditMock = vi.hoisted(() => vi.fn(async (input: Record<string, unknown> = {}) => ({
 	ok: true,
@@ -91,7 +91,7 @@ function createTestPostgresDatabase() {
 	return MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot: marketMigrationRoot });
 }
 
-type MarketApiTestOptions = {
+type ApiTestOptions = {
 	db?: ReturnType<typeof createTestPostgresDatabase>;
 	store?: MarketControlPlaneStore;
 	sdk?: AgentSdk;
@@ -101,8 +101,8 @@ type MarketApiTestOptions = {
 	mockExternal?: boolean;
 };
 
-function createTestApp(options: MarketApiTestOptions = {}) {
-	return createMarketApiApp({
+function createTestApp(options: ApiTestOptions = {}) {
+	return createApiApp({
 		...options,
 		db: options.db ?? createTestPostgresDatabase(),
 		sdk: options.sdk ?? new AgentSdk({
@@ -179,7 +179,7 @@ async function withHttpMarketApp<T>(app: ReturnType<typeof createTestApp>, actio
 }
 
 function createRunnerRepoFixture() {
-	const root = mkdtempSync(resolve(tmpdir(), 'treeseed-market-runner-'));
+	const root = mkdtempSync(resolve(tmpdir(), 'treeseed-operations-runner-'));
 	const repo = resolve(root, 'repo');
 	const workspace = resolve(root, 'workspace');
 	mkdirSync(resolve(repo, 'src/content/notes'), { recursive: true });
@@ -371,17 +371,17 @@ describe('market api', () => {
 		}));
 	});
 
-	it('logs local Market API request URLs with sensitive query values redacted', async () => {
+	it('logs local API request URLs with sensitive query values redacted', async () => {
 		const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 		const app = createTestApp({ logRequests: true });
 
 		const response = await app.request('/v1/markets/current?token=secret-token&teamId=team-1');
 
 		expect(response.status).toBe(200);
-		expect(write).toHaveBeenCalledWith(expect.stringContaining('[market-api] GET /v1/markets/current?token=[redacted]&teamId=team-1 -> 200'));
+		expect(write).toHaveBeenCalledWith(expect.stringContaining('[api] GET /v1/markets/current?token=[redacted]&teamId=team-1 -> 200'));
 	});
 
-	it('owns web auth lifecycle and acceptance session seeding in the Market API', async () => {
+	it('owns web auth lifecycle and acceptance session seeding in the API', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		const app = createTestApp({ db, store, mockExternal: true });
@@ -1132,7 +1132,7 @@ describe('market api', () => {
 			metadata: {
 				launchPhase: 'failed',
 				launchFailure: {
-					code: 'market_api_bootstrap_failed',
+					code: 'api_bootstrap_failed',
 					message: 'Cloudflare API request failed after 1 attempts: POST /zones/zone-1/dns_records: Authentication error',
 				},
 				cloudflareHost: {
@@ -1663,7 +1663,7 @@ describe('market api', () => {
 		}));
 		expect(validated.payload.validation.status).toBe('failed');
 		expect(validated.payload.validation.message).toContain('Cloudflare DNS write preflight failed');
-		expect(validated.payload.validation.message).toContain('Zone DNS edit access');
+		expect(validated.payload.validation.message).toContain('DNS Write and Zone Read access');
 		expect(JSON.stringify(validated)).not.toContain('cf-secret-token');
 	});
 
@@ -2392,7 +2392,7 @@ describe('market api', () => {
 						runnerSecret: 'platform-runner-secret',
 					});
 					const result = await runOnceWithClient({
-						runnerId: 'market-ops-host-runner-01',
+						runnerId: 'treeseed-ops-host-runner-01',
 						environment: 'staging',
 						dataDir: fixture.workspace,
 					}, client, 'test', {
@@ -3388,7 +3388,7 @@ describe('market api', () => {
 		]);
 	});
 
-	it('creates platform operations and lets the market operations runner claim and complete them', async () => {
+	it('creates platform operations and lets the Treeseed operations runner claim and complete them', async () => {
 		const app = createTestApp({
 			config: {
 				platformRunnerSecret: 'platform-runner-secret',
@@ -3469,13 +3469,13 @@ describe('market api', () => {
 				authorization: 'Bearer platform-runner-secret',
 			},
 			body: JSON.stringify({
-				runnerId: 'market-ops-test-1',
+				runnerId: 'treeseed-ops-test-1',
 				environment: 'staging',
 				capabilities: ['repository:write_content_record'],
 			}),
 		}));
 		expect(registered.runner).toMatchObject({
-			id: 'market-ops-test-1',
+			id: 'treeseed-ops-test-1',
 			environment: 'staging',
 		});
 
@@ -3485,7 +3485,7 @@ describe('market api', () => {
 				'content-type': 'application/json',
 				authorization: 'Bearer platform-runner-secret',
 			},
-			body: JSON.stringify({ runnerId: 'market-ops-test-1', limit: 1 }),
+			body: JSON.stringify({ runnerId: 'treeseed-ops-test-1', limit: 1 }),
 		}));
 		expect(claimed.operation.id).toBe(created.operation.id);
 		expect(claimed.operation.status).toBe('leased');
@@ -3497,7 +3497,7 @@ describe('market api', () => {
 				authorization: 'Bearer platform-runner-secret',
 			},
 			body: JSON.stringify({
-				runnerId: 'market-ops-other',
+				runnerId: 'treeseed-ops-other',
 				output: { changedPaths: [] },
 			}),
 		});
@@ -3510,7 +3510,7 @@ describe('market api', () => {
 				authorization: 'Bearer platform-runner-secret',
 			},
 			body: JSON.stringify({
-				runnerId: 'market-ops-test-1',
+				runnerId: 'treeseed-ops-test-1',
 				leaseSeconds: 600,
 			}),
 		}));
@@ -3523,7 +3523,7 @@ describe('market api', () => {
 				authorization: 'Bearer platform-runner-secret',
 			},
 			body: JSON.stringify({
-				runnerId: 'market-ops-test-1',
+				runnerId: 'treeseed-ops-test-1',
 				output: { changedPaths: [] },
 				event: { kind: 'runner.progress', data: { phase: 'verified' } },
 			}),
@@ -3537,7 +3537,7 @@ describe('market api', () => {
 				authorization: 'Bearer platform-runner-secret',
 			},
 			body: JSON.stringify({
-				runnerId: 'market-ops-test-1',
+				runnerId: 'treeseed-ops-test-1',
 				output: { changedPaths: ['src/content/notes/hello.mdx'] },
 			}),
 		}));
@@ -3925,7 +3925,7 @@ describe('market api', () => {
 		expect(serialized).not.toContain('sk-secret-token-value');
 	});
 
-	it('runs mocked project web deployments through the market operations runner', async () => {
+	it('runs mocked project web deployments through the Treeseed operations runner', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-deploy-project');
 		const unrelated = await store.createPlatformOperation({
 			namespace: 'market',
@@ -3953,7 +3953,7 @@ describe('market api', () => {
 				runnerSecret: 'platform-runner-secret',
 			});
 			const result = await runOnceWithClient({
-				runnerId: 'market-ops-web-runner-01',
+				runnerId: 'treeseed-ops-web-runner-01',
 				environment: 'staging',
 				dataDir: packageRoot,
 			}, client, 'test', {
@@ -4057,7 +4057,7 @@ describe('market api', () => {
 				runnerSecret: 'platform-runner-secret',
 			});
 			const result = await runOnceWithClient({
-				runnerId: 'market-ops-web-runner-02',
+				runnerId: 'treeseed-ops-web-runner-02',
 				environment: 'staging',
 				dataDir: packageRoot,
 			}, client, 'test', {
@@ -4118,7 +4118,7 @@ describe('market api', () => {
 				runnerSecret: 'platform-runner-secret',
 			});
 			const result = await runOnceWithClient({
-				runnerId: 'market-ops-web-runner-monitor',
+				runnerId: 'treeseed-ops-web-runner-monitor',
 				environment: 'staging',
 				dataDir: packageRoot,
 			}, client, 'test', {
@@ -4205,7 +4205,7 @@ describe('market api', () => {
 				runnerSecret: 'platform-runner-secret',
 			});
 			const result = await runOnceWithClient({
-				runnerId: 'market-ops-web-runner-03',
+				runnerId: 'treeseed-ops-web-runner-03',
 				environment: 'staging',
 				dataDir: packageRoot,
 			}, client, 'test', {
@@ -4244,7 +4244,7 @@ describe('market api', () => {
 		const store = createTestStore(db);
 		await store.ensureInitialized();
 		await store.upsertMarketOperationRunner({
-			runnerId: 'market-ops-runner-01',
+			runnerId: 'treeseed-ops-runner-01',
 			environment: 'staging',
 			metadata: { dataDir: '/data' },
 		});
@@ -4265,17 +4265,17 @@ describe('market api', () => {
 		});
 		expect(operation).not.toBeNull();
 		const claimed = await store.claimPlatformOperation({
-			runnerId: 'market-ops-runner-01',
+			runnerId: 'treeseed-ops-runner-01',
 			operationId: operation!.id,
 			leaseSeconds: 120,
 		});
 		expect(claimed).not.toBeNull();
-		expect(claimed!.assignedRunnerId).toBe('market-ops-runner-01');
+		expect(claimed!.assignedRunnerId).toBe('treeseed-ops-runner-01');
 		const claimRows = await store.all(`SELECT * FROM platform_repository_claims`);
 		expect(claimRows).toHaveLength(1);
 		expect(claimRows[0]).toMatchObject({
 			repository_key: 'local-treeseed-market',
-			runner_id: 'market-ops-runner-01',
+			runner_id: 'treeseed-ops-runner-01',
 			workspace_path: '/data/repositories/local-treeseed-market/repo',
 			branch: 'staging',
 			claim_state: 'active',
@@ -4283,13 +4283,13 @@ describe('market api', () => {
 		const events = await store.listPlatformOperationEvents(operation!.id);
 		expect(events.map((event: Record<string, unknown>) => event.kind)).toEqual(['created', 'claimed', 'repository.claimed']);
 		await store.renewPlatformOperationLease(operation!.id, {
-			runnerId: 'market-ops-runner-01',
+			runnerId: 'treeseed-ops-runner-01',
 			leaseSeconds: 240,
 		});
 		const renewed = await store.all(`SELECT * FROM platform_repository_claims`);
 		expect(renewed[0].lease_expires_at).toEqual(expect.any(String));
 		await store.completePlatformOperation(operation!.id, {
-			runnerId: 'market-ops-runner-01',
+			runnerId: 'treeseed-ops-runner-01',
 			output: {
 				branch: 'treeseed/platform-test',
 				commitSha: 'abcdef1234567890abcdef1234567890abcdef12',
@@ -4334,7 +4334,7 @@ describe('market api', () => {
 				'content-type': 'application/json',
 				authorization: 'Bearer platform-runner-secret',
 			},
-			body: JSON.stringify({ runnerId: 'market-ops-test-1', operationId: waiting.operation.id }),
+			body: JSON.stringify({ runnerId: 'treeseed-ops-test-1', operationId: waiting.operation.id }),
 		}));
 		expect(skipped.operation).toBe(null);
 
@@ -4356,7 +4356,7 @@ describe('market api', () => {
 				'content-type': 'application/json',
 				authorization: 'Bearer platform-runner-secret',
 			},
-			body: JSON.stringify({ runnerId: 'market-ops-test-1', operationId: created.operation.id }),
+			body: JSON.stringify({ runnerId: 'treeseed-ops-test-1', operationId: created.operation.id }),
 		}));
 		const cancelled = await json(await app.request(`/v1/platform/operations/${created.operation.id}/cancel`, {
 			method: 'POST',
@@ -4369,7 +4369,7 @@ describe('market api', () => {
 				'content-type': 'application/json',
 				authorization: 'Bearer platform-runner-secret',
 			},
-			body: JSON.stringify({ runnerId: 'market-ops-test-1', output: { late: true } }),
+			body: JSON.stringify({ runnerId: 'treeseed-ops-test-1', output: { late: true } }),
 		});
 		expect(completeAfterCancel.status).toBe(409);
 		const retried = await json(await app.request(`/v1/platform/operations/${created.operation.id}/retry`, {
@@ -4388,7 +4388,7 @@ describe('market api', () => {
 		});
 	});
 
-	it('lets the market operations runner complete a queued noop operation through API service auth', async () => {
+	it('lets the Treeseed operations runner complete a queued noop operation through API service auth', async () => {
 		const app = createTestApp({
 			config: {
 				platformRunnerSecret: 'platform-runner-secret',
@@ -4414,9 +4414,9 @@ describe('market api', () => {
 				runnerSecret: 'platform-runner-secret',
 			});
 			const result = await runOnceWithClient({
-				runnerId: 'market-ops-test-1',
+				runnerId: 'treeseed-ops-test-1',
 				environment: 'local',
-				dataDir: resolve(packageRoot, '.treeseed/test-market-ops'),
+				dataDir: resolve(packageRoot, '.treeseed/test-treeseed-ops'),
 			}, client, 'test');
 			expect(result).toMatchObject({ ok: true, claimed: true });
 		});
@@ -4428,7 +4428,7 @@ describe('market api', () => {
 			terminal: true,
 			output: {
 				ok: true,
-				message: 'Market operations runner diagnostic completed.',
+				message: 'Treeseed operations runner diagnostic completed.',
 			},
 		});
 	});
@@ -4550,7 +4550,7 @@ describe('market api', () => {
 				},
 				body: JSON.stringify({
 					title: 'Runner executed note',
-					summary: 'Written by the market operations runner.',
+					summary: 'Written by the Treeseed operations runner.',
 					repository: {
 						provider: 'local',
 						owner: 'treeseed',
@@ -4568,7 +4568,7 @@ describe('market api', () => {
 					runnerSecret: 'platform-runner-secret',
 				});
 				const result = await runOnceWithClient({
-					runnerId: 'market-ops-test-1',
+					runnerId: 'treeseed-ops-test-1',
 					environment: 'local',
 					dataDir: fixture.workspace,
 				}, client, 'test', { operationId: queued.job.id });
@@ -4644,7 +4644,7 @@ describe('market api', () => {
 					runnerSecret: 'platform-runner-secret',
 				});
 				const result = await runOnceWithClient({
-					runnerId: 'market-ops-runner-01',
+					runnerId: 'treeseed-ops-runner-01',
 					environment: 'staging',
 					dataDir: fixture.workspace,
 				}, client, 'test', { operationId: branchJob.operation.id });
@@ -4700,7 +4700,7 @@ describe('market api', () => {
 					runnerSecret: 'platform-runner-secret',
 				});
 				const result = await runOnceWithClient({
-					runnerId: 'market-ops-runner-02',
+					runnerId: 'treeseed-ops-runner-02',
 					environment: 'staging',
 					dataDir: resolve(fixture.root, 'workspace-2'),
 				}, client, 'test', { operationId: failingJob.operation.id });
@@ -5901,7 +5901,7 @@ describe('market api', () => {
 			kind: 'publish_report',
 			severity: 'high',
 			requestedByType: 'platform',
-			requestedById: 'market-operations-runner',
+			requestedById: 'operations-runner',
 			title: 'Publish projection report',
 			summary: 'Review the generated projection report.',
 			options: [{ id: 'approve', label: 'Approve', state: 'approved' }],
@@ -6203,7 +6203,7 @@ describe('market api', () => {
 		]);
 		expect(payload.payload.project.latestLaunch.state).toBe('running');
 		expect(payload.payload.launchJob.status).toBe('running');
-		expect(payload.payload.launchJob.selectedTarget).toBe('market_api');
+		expect(payload.payload.launchJob.selectedTarget).toBe('api');
 		expect(payload.payload.launchJob.input.credentialSessions).toBeUndefined();
 		expect(payload.payload.deployments).toEqual(expect.arrayContaining([
 			expect.objectContaining({ environment: 'staging', action: 'launch_project', status: 'running', platformOperationId: payload.operationId }),
@@ -6331,7 +6331,7 @@ describe('market api', () => {
 		});
 	}, 30000);
 
-	it('keeps managed project launch bootstrap owned by the Market API instead of the runner', async () => {
+	it('keeps managed project launch bootstrap owned by the API instead of the runner', async () => {
 		await withEnv({
 			CLOUDFLARE_API_TOKEN: 'managed-token',
 			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
@@ -6360,10 +6360,10 @@ describe('market api', () => {
 				hostingMode: 'managed',
 			}),
 		}));
-		expect(launched.payload.launchJob.selectedTarget).toBe('market_api');
+		expect(launched.payload.launchJob.selectedTarget).toBe('api');
 		expect(launched.payload.launchJob.status).toBe('running');
 		expect(launched.payload.launchJob.input.credentialSessions).toBeUndefined();
-		expect(await store.pullManagedLaunchJobs({ runnerId: 'market-ops-launch-runner-01', limit: 5 })).toEqual([]);
+		expect(await store.pullManagedLaunchJobs({ runnerId: 'treeseed-ops-launch-runner-01', limit: 5 })).toEqual([]);
 		const job = await json(await app.request(`/v1/jobs/${launched.operationId}`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
@@ -6659,7 +6659,7 @@ describe('market api', () => {
 		});
 	});
 
-	it('stores native execution provider capacity through backend Market API routes', async () => {
+	it('stores native execution provider capacity through backend API routes', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		const app = createTestApp({ db, store });
@@ -7453,7 +7453,7 @@ describe('market api', () => {
 		await withEnv({
 			NODE_ENV: undefined,
 			TREESEED_LOCAL_DEV_MODE: undefined,
-			TREESEED_MARKET_CREDENTIAL_SESSION_SECRET: undefined,
+			TREESEED_CREDENTIAL_SESSION_SECRET: undefined,
 			TREESEED_ENVIRONMENT: 'local',
 		}, async () => {
 			const app = createTestApp({ config: { environment: 'local' } });
@@ -8263,7 +8263,7 @@ describe('TreeDX market integration', () => {
 			}),
 			ensureServiceVolume: vi.fn(async () => {
 				calls.push('volume:/data');
-				return { volume: { id: 'volume-1', name: 'public-treedx-data' }, instance: { id: 'volume-instance-1' }, created: true, updated: false };
+				return { volume: { id: 'volume-1', name: 'public-treedx-node-01-volume' }, instance: { id: 'volume-instance-1' }, created: true, updated: false };
 			}),
 			ensureGeneratedServiceDomain: vi.fn(async () => {
 				calls.push('domain');
@@ -8275,7 +8275,7 @@ describe('TreeDX market integration', () => {
 			}),
 		};
 
-		await withEnv({ TREESEED_PUBLIC_TREEDX_RAILWAY_PROJECT_NAME: 'treeseed-public-treedx-staging' }, async () => {
+		await withEnv({ TREESEED_PUBLIC_TREEDX_RAILWAY_PROJECT_NAME: 'treeseed-api' }, async () => {
 			await withHttpMarketApp(app, async (baseUrl) => {
 				const client = new PlatformRunnerClient({
 					marketUrl: baseUrl,
@@ -8283,7 +8283,7 @@ describe('TreeDX market integration', () => {
 					runnerSecret: 'platform-runner-secret',
 				});
 				const result = await runOnceWithClient({
-					runnerId: 'market-ops-treedx-runner-01',
+					runnerId: 'treeseed-ops-treedx-runner-01',
 					environment: 'staging',
 					dataDir: packageRoot,
 				}, client, 'test', {
@@ -8304,9 +8304,10 @@ describe('TreeDX market integration', () => {
 		});
 
 		expect(calls).toEqual(expect.arrayContaining([
-			'project:treeseed-public-treedx',
+			'project:treeseed-api',
 			'environment:staging',
-			'service:public-federation:treeseed/treedx:0.1.0',
+			'service:public-treedx-node-01:treeseed/treedx:0.1.0',
+			'variables:PHX_HOST,PHX_SERVER,PORT,SECRET_KEY_BASE,TREEDX_DATA_DIR,TREEDX_FEDERATION_MODE,TREESEED_TREEDX_SCOPE',
 			'volume:/data',
 			'domain',
 			'deploy',

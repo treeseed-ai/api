@@ -10161,10 +10161,10 @@ export class MarketControlPlaneStore {
 				     started_at = COALESCE(started_at, ?),
 				     updated_at = ?
 				 WHERE id = ? AND status = 'pending'`,
-				[input.runnerId ?? 'market-operations-runner', timestamp, timestamp, row.id],
+				[input.runnerId ?? 'operations-runner', timestamp, timestamp, row.id],
 			);
 			await this.appendJobEvent(row.id, 'claimed', {
-				runnerId: input.runnerId ?? 'market-operations-runner',
+				runnerId: input.runnerId ?? 'operations-runner',
 				target: 'market_operations_runner',
 			});
 			const next = await this.findJobById(row.id);

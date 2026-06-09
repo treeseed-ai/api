@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { createExecutorsForOptions } from '../../src/market-operations-runner/entrypoint.js';
+import { createExecutorsForOptions } from '../../src/operations-runner/entrypoint.js';
 
-describe('Market API backend boundaries', () => {
-	it('registers project-host operation executors on the market operations runner', () => {
+describe('API backend boundaries', () => {
+	it('registers project-host operation executors on the Treeseed operations runner', () => {
 		const capabilities = createExecutorsForOptions({ operationKey: null })
 			.map((executor) => `${executor.namespace}:${executor.operation}`);
 		expect(capabilities).toEqual(expect.arrayContaining([
@@ -30,7 +30,7 @@ describe('Market API backend boundaries', () => {
 		const storeSource = readFileSync('src/api/store.js', 'utf8');
 		const appSource = readFileSync('src/api/app.js', 'utf8');
 		const adapterSource = readFileSync('src/api/market-postgres.js', 'utf8');
-		const testSource = readFileSync('test/api/market-api.test.ts', 'utf8');
+		const testSource = readFileSync('test/api/api.test.ts', 'utf8');
 		expect(storeSource).not.toMatch(/migrations\/|migrationPaths|loadMigrationSql|PostgresD1Database/u);
 		expect(storeSource).not.toMatch(/\bCREATE\s+TABLE\b|\bALTER\s+TABLE\b|PRAGMA\s+table_info/iu);
 		expect(appSource).not.toContain('resolveApiD1Database');
@@ -63,7 +63,7 @@ describe('Market API backend boundaries', () => {
 
 	it('keeps backend credential and launch recovery guardrails in API routes', () => {
 		const api = readFileSync('src/api/app.js', 'utf8');
-		expect(api).toContain('retryMarketApiLaunchBootstrapFromRequest');
+		expect(api).toContain('retryApiLaunchBootstrapFromRequest');
 		expect(api).toContain('sensitive_passphrase_required');
 		expect(api).toContain('runProjectLaunchApiBootstrap');
 		expect(api).toContain('rejectPlaintextHostCredentialFields');

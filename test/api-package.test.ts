@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createMarketApiApp } from '../src/api/app.js';
+import { createApiApp } from '../src/api/app.js';
 import { createMarketPostgresDatabase } from '../src/api/market-postgres.js';
-import { ACCEPTANCE_ACTORS, MARKET_API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../src/api/route-descriptors.js';
+import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../src/api/route-descriptors.js';
 import { MarketControlPlaneStore, validateProjectSlug } from '../src/api/store.js';
-import { main as runMarketOperationsRunner } from '../src/market-operations-runner/entrypoint.js';
+import { main as runMarketOperationsRunner } from '../src/operations-runner/entrypoint.js';
 
 function createNoopStore() {
 	return new Proxy({
@@ -18,9 +18,9 @@ function createNoopStore() {
 	});
 }
 
-describe('Market API package surface', () => {
+describe('API package surface', () => {
 	it('exports the backend constructors used by deployment entrypoints', () => {
-		expect(typeof createMarketApiApp).toBe('function');
+		expect(typeof createApiApp).toBe('function');
 		expect(typeof MarketControlPlaneStore).toBe('function');
 		expect(typeof createMarketPostgresDatabase).toBe('function');
 		expect(typeof validateProjectSlug).toBe('function');
@@ -28,7 +28,7 @@ describe('Market API package surface', () => {
 	});
 
 	it('constructs the Hono app with injected backend dependencies', () => {
-		const app = createMarketApiApp({
+		const app = createApiApp({
 			db: {},
 			store: createNoopStore(),
 			config: {
@@ -58,17 +58,17 @@ describe('Market API package surface', () => {
 
 describe('route descriptors', () => {
 	it('covers the SDK route map with unique route ids', () => {
-		const ids = new Set(MARKET_API_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.id));
-		expect(ids.size).toBe(MARKET_API_ROUTE_DESCRIPTORS.length);
+		const ids = new Set(API_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.id));
+		expect(ids.size).toBe(API_ROUTE_DESCRIPTORS.length);
 		for (const routeId of Object.values(SDK_METHOD_ROUTE_MAP)) {
 			expect(ids.has(routeId)).toBe(true);
 		}
 	});
 
 	it('has expected acceptance statuses for every descriptor actor matrix entry', () => {
-		const expected = JSON.parse(readFileSync(resolve(process.cwd(), 'test/acceptance/market-api.expected-statuses.json'), 'utf8'));
+		const expected = JSON.parse(readFileSync(resolve(process.cwd(), 'test/acceptance/api.expected-statuses.json'), 'utf8'));
 		const statuses = expected.statuses ?? {};
-		for (const descriptor of MARKET_API_ROUTE_DESCRIPTORS) {
+		for (const descriptor of API_ROUTE_DESCRIPTORS) {
 			expect(statuses[descriptor.id], descriptor.id).toBeTruthy();
 			for (const actor of ACCEPTANCE_ACTORS) {
 				expect(statuses[descriptor.id][actor], `${descriptor.id}:${actor}`).toEqual(expect.any(Number));

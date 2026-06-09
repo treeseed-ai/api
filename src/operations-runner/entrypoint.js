@@ -93,23 +93,23 @@ async function packageVersion() {
 }
 
 async function loadConfig({ requireSecrets = true } = {}) {
-	const marketId = readArg('--market') ?? env('TREESEED_MARKET_ID', 'local');
+	const marketId = readArg('--market') ?? env('TREESEED_MANAGER_ID', 'local');
 	const config = {
-		marketUrl: env('TREESEED_MARKET_API_BASE_URL') ?? env('TREESEED_MARKET_URL'),
-		marketDatabaseUrl: env('TREESEED_MARKET_DATABASE_URL'),
+		marketUrl: env('TREESEED_API_BASE_URL') ?? env('TREESEED_URL'),
+		apiDatabaseUrl: env('TREESEED_DATABASE_URL'),
 		marketId,
-		runnerId: env('TREESEED_PLATFORM_RUNNER_ID', marketId === 'prod' ? 'market-ops-prod-1' : marketId === 'staging' ? 'market-ops-staging-1' : 'market-ops-local-1'),
+		runnerId: env('TREESEED_PLATFORM_RUNNER_ID', marketId === 'prod' ? 'treeseed-ops-prod-1' : marketId === 'staging' ? 'treeseed-ops-staging-1' : 'treeseed-ops-local-1'),
 		runnerSecret: env('TREESEED_PLATFORM_RUNNER_SECRET'),
-		dataDir: env('TREESEED_PLATFORM_RUNNER_DATA_DIR', resolve(process.cwd(), '.treeseed/market-operations-runner')),
+		dataDir: env('TREESEED_PLATFORM_RUNNER_DATA_DIR', resolve(process.cwd(), '.treeseed/operations-runner')),
 		environment: env('TREESEED_PLATFORM_RUNNER_ENVIRONMENT', marketId === 'prod' ? 'production' : marketId),
 		port: Number(env('PORT', '0')),
 	};
 	if (requireSecrets) {
 		const missing = Object.entries({
-			TREESEED_MARKET_DATABASE_URL: config.marketDatabaseUrl,
+			TREESEED_DATABASE_URL: config.apiDatabaseUrl,
 		}).filter(([, value]) => !value).map(([key]) => key);
 		if (missing.length > 0) {
-			throw new Error(`Missing required market operations runner environment: ${missing.join(', ')}`);
+			throw new Error(`Missing required Treeseed operations runner environment: ${missing.join(', ')}`);
 		}
 	}
 	await mkdir(config.dataDir, { recursive: true });
@@ -122,14 +122,14 @@ async function loadConfig({ requireSecrets = true } = {}) {
 function loadHealthConfig() {
 	return {
 		port: Number(env('PORT', '0')),
-		dataDir: env('TREESEED_PLATFORM_RUNNER_DATA_DIR', resolve(process.cwd(), '.treeseed/market-operations-runner')),
+		dataDir: env('TREESEED_PLATFORM_RUNNER_DATA_DIR', resolve(process.cwd(), '.treeseed/operations-runner')),
 	};
 }
 
 function createClient(config) {
-	if (config.marketDatabaseUrl) {
+	if (config.apiDatabaseUrl) {
 		return createPlatformOperationStoreFromEnv({
-			databaseUrl: config.marketDatabaseUrl,
+			databaseUrl: config.apiDatabaseUrl,
 			initializeSchema: true,
 		});
 	}
@@ -137,13 +137,13 @@ function createClient(config) {
 		marketUrl: config.marketUrl,
 		marketId: config.marketId,
 		runnerSecret: config.runnerSecret,
-		userAgent: `treeseed-market-operations-runner/${process.version}`,
+		userAgent: `treeseed-api-operations-runner/${process.version}`,
 	});
 }
 
 function createDeploymentStore(config) {
-	if (!config.marketDatabaseUrl) return null;
-	const db = createMarketPostgresDatabase(config.marketDatabaseUrl);
+	if (!config.apiDatabaseUrl) return null;
+	const db = createMarketPostgresDatabase(config.apiDatabaseUrl);
 	return new MarketControlPlaneStore(config, db);
 }
 
@@ -167,7 +167,6 @@ function treeDxEnvironmentNeutralProjectName(value, fallback) {
 	const projectName = String(value || fallback || '').trim();
 	if (!projectName) return fallback;
 	return projectName
-		.replace(/^(treeseed-public-treedx)-(?:staging|prod|production)$/iu, '$1')
 		.replace(/^(treeseed-team-[a-z0-9-]+-treedx)-(?:staging|prod|production)$/iu, '$1');
 }
 
@@ -177,10 +176,10 @@ function treeDxRailwayNames({ team, teamId, publicRead, environment }) {
 		return {
 			projectName: treeDxEnvironmentNeutralProjectName(
 				process.env.TREESEED_PUBLIC_TREEDX_RAILWAY_PROJECT_NAME,
-				'treeseed-public-treedx',
+				'treeseed-api',
 			),
-			serviceName: process.env.TREESEED_PUBLIC_TREEDX_RAILWAY_SERVICE_NAME || 'public-federation',
-			volumeName: process.env.TREESEED_PUBLIC_TREEDX_RAILWAY_VOLUME_NAME || 'public-treedx-data',
+			serviceName: process.env.TREESEED_PUBLIC_TREEDX_RAILWAY_SERVICE_NAME || 'public-treedx-node-01',
+			volumeName: process.env.TREESEED_PUBLIC_TREEDX_RAILWAY_VOLUME_NAME || 'public-treedx-node-01-volume',
 			environmentName: envName,
 			scope: 'public_federation',
 		};
@@ -225,7 +224,7 @@ export function createExecutorsForOptions(options = {}) {
 			await context.checkpoint({ phase: 'diagnostic' }, { kind: 'market.noop', data: { runnerId: process.env.TREESEED_PLATFORM_RUNNER_ID ?? null } });
 			return {
 				ok: true,
-				message: 'Market operations runner diagnostic completed.',
+				message: 'Treeseed operations runner diagnostic completed.',
 			};
 		},
 	};
@@ -307,7 +306,7 @@ export function createExecutorsForOptions(options = {}) {
 		operation: `host_binding_${kind}`,
 		async run(input, context) {
 			if (!options.deploymentStore) {
-				throw new Error('Project host operations require a Market control-plane store.');
+				throw new Error('Project host operations require a Treeseed control-plane store.');
 			}
 			await context.checkpoint({
 				phase: 'project_hosts.started',
@@ -380,7 +379,7 @@ export function createExecutorsForOptions(options = {}) {
 		operation: 'provision',
 		async run(input, context) {
 			if (!options.deploymentStore) {
-				throw new Error('TreeDX provisioning requires a Market control-plane store.');
+				throw new Error('TreeDX provisioning requires a Treeseed control-plane store.');
 			}
 			const payload = objectValue(input);
 			const teamId = typeof payload.teamId === 'string' ? payload.teamId : null;
@@ -449,6 +448,7 @@ export function createExecutorsForOptions(options = {}) {
 				}).catch(() => ({}));
 				const variables = {
 					TREEDX_DATA_DIR: volumeMountPath,
+					...(names.scope === 'public_federation' ? { TREEDX_FEDERATION_MODE: 'connected_library' } : {}),
 					PORT: '4000',
 					PHX_SERVER: 'true',
 					PHX_HOST: `${names.serviceName}.railway.app`,
@@ -636,7 +636,7 @@ export async function registerAndHeartbeat(client, config, version, options = {}
 		maxConcurrentJobs: Math.max(1, Number(options.maxJobs ?? 1) || 1),
 		metadata: {
 			dataDir: config.dataDir,
-			process: 'market-operations-runner',
+			process: 'operations-runner',
 			queue: {
 				activeJobCount: 0,
 				maxConcurrentJobs: Math.max(1, Number(options.maxJobs ?? 1) || 1),
@@ -746,7 +746,7 @@ function runnerRuntimeFromOptions(options = {}) {
 			config: {
 				baseUrl: config.marketUrl ?? null,
 				marketUrl: config.marketUrl ?? null,
-				marketDatabaseUrl: config.marketDatabaseUrl ?? null,
+				apiDatabaseUrl: config.apiDatabaseUrl ?? null,
 				environment: config.environment ?? process.env.TREESEED_PLATFORM_RUNNER_ENVIRONMENT ?? null,
 				credentialSessionSecret: config.credentialSessionSecret ?? null,
 			},
@@ -917,14 +917,14 @@ async function consumeLaunchCredentialSession(store, runtime, jobId, sessionId) 
 }
 
 function credentialSessionSecretForRunner(runtime) {
-	const configured = process.env.TREESEED_MARKET_CREDENTIAL_SESSION_SECRET
+	const configured = process.env.TREESEED_CREDENTIAL_SESSION_SECRET
 		?? runtime?.resolved?.config?.credentialSessionSecret
 		?? null;
 	if (configured && String(configured).trim()) return String(configured);
 	const runtimeConfig = runtime?.resolved?.config ?? {};
 	const environment = String(runtimeConfig.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
-	const localDatabase = isLoopbackUrl(runtimeConfig.marketDatabaseUrl ?? process.env.TREESEED_MARKET_DATABASE_URL ?? '');
-	const localBaseUrl = isLoopbackUrl(runtimeConfig.baseUrl ?? runtimeConfig.marketUrl ?? process.env.TREESEED_MARKET_API_BASE_URL ?? process.env.TREESEED_SITE_URL ?? process.env.BETTER_AUTH_URL ?? '');
+	const localDatabase = isLoopbackUrl(runtimeConfig.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? '');
+	const localBaseUrl = isLoopbackUrl(runtimeConfig.baseUrl ?? runtimeConfig.marketUrl ?? process.env.TREESEED_API_BASE_URL ?? process.env.TREESEED_SITE_URL ?? process.env.BETTER_AUTH_URL ?? '');
 	if (
 		process.env.NODE_ENV === 'test'
 		|| process.env.TREESEED_LOCAL_DEV_MODE
@@ -934,7 +934,7 @@ function credentialSessionSecretForRunner(runtime) {
 	) {
 		return 'treeseed-local-test-credential-session-secret';
 	}
-	throw new Error('TREESEED_MARKET_CREDENTIAL_SESSION_SECRET is required for provider credential sessions.');
+	throw new Error('TREESEED_CREDENTIAL_SESSION_SECRET is required for provider credential sessions.');
 }
 
 function decryptCredentialSessionPayloadForRunner(runtime, envelope) {
@@ -959,7 +959,7 @@ async function prepareLaunchIntentForMarketRunner(store, runtime, job) {
 	const providerLaunchInput = objectValue(execution.providerLaunchInput);
 	const sessions = objectValue(launchJobInput.credentialSessions);
 	if (Object.keys(sessions).length > 0) {
-		throw new Error('launch_project jobs must not contain provider credential sessions. Project launch credentials are bootstrapped by the Market API only.');
+		throw new Error('launch_project jobs must not contain provider credential sessions. Project launch credentials are bootstrapped by the API only.');
 	}
 	const envOverlay = {};
 	const consume = async (key) => {
@@ -1016,7 +1016,7 @@ async function prepareLaunchIntentForMarketRunner(store, runtime, job) {
 
 async function runManagedLaunchJobs(config, store, _version, options = {}) {
 	if (!store) return { ok: true, processed: 0, failed: 0 };
-	const runtime = { resolved: { config: { baseUrl: config.marketUrl ?? null, marketDatabaseUrl: config.marketDatabaseUrl ?? null, environment: config.environment } } };
+	const runtime = { resolved: { config: { baseUrl: config.marketUrl ?? null, apiDatabaseUrl: config.apiDatabaseUrl ?? null, environment: config.environment } } };
 	const jobs = await store.pullManagedLaunchJobs({
 		runnerId: config.runnerId,
 		limit: Math.max(1, Number(options.maxJobs ?? 1) || 1),
@@ -1027,7 +1027,7 @@ async function runManagedLaunchJobs(config, store, _version, options = {}) {
 	for (const job of jobs) {
 		try {
 			await store.recordJobProgress(job.id, {
-				summary: 'Market operations runner claimed the project launch job.',
+				summary: 'Treeseed operations runner claimed the project launch job.',
 				data: {
 					runnerId: config.runnerId,
 					phase: 'launch_claimed',
@@ -1166,7 +1166,7 @@ function startHealthServer(config, state = {}) {
 	const server = createServer((request, response) => {
 		if (request.url === '/healthz') {
 			response.writeHead(200, { 'content-type': 'application/json' });
-			response.end(JSON.stringify({ ok: true, service: 'market-operations-runner', state: state.status ?? 'booting' }));
+			response.end(JSON.stringify({ ok: true, service: 'operations-runner', state: state.status ?? 'booting' }));
 			return;
 		}
 		if (request.url === '/readyz') {
@@ -1174,7 +1174,7 @@ function startHealthServer(config, state = {}) {
 			response.writeHead(ready ? 200 : 503, { 'content-type': 'application/json' });
 			response.end(JSON.stringify({
 				ok: ready,
-				service: 'market-operations-runner',
+				service: 'operations-runner',
 				state: state.status ?? 'booting',
 				error: state.error ?? null,
 			}));
@@ -1256,7 +1256,7 @@ export async function main() {
 	if (command === 'version') {
 		console.log(JSON.stringify({
 			ok: true,
-			name: 'market-operations-runner',
+			name: 'operations-runner',
 			version: await packageVersion(),
 		}));
 		return;
@@ -1265,7 +1265,7 @@ export async function main() {
 		const config = await loadConfig({ requireSecrets: false });
 		console.log(JSON.stringify({
 			ok: true,
-			service: 'market-operations-runner',
+			service: 'operations-runner',
 			dataDir: config.dataDir,
 		}));
 		return;
@@ -1278,7 +1278,7 @@ export async function main() {
 		await runLoop();
 		return;
 	}
-	console.error('Usage: market-operations-runner <version|healthcheck|once|run>');
+	console.error('Usage: operations-runner <version|healthcheck|once|run>');
 	process.exitCode = 2;
 }
 

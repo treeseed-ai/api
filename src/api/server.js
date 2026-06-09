@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { resolveApiConfig } from '@treeseed/sdk/api';
-import { createMarketApiApp } from './app.js';
+import { createApiApp } from './app.js';
 
 function hasRequestBody(method) {
 	return method !== 'GET' && method !== 'HEAD';
@@ -36,12 +36,12 @@ async function honoNodeHandler(app, request, response) {
 	Readable.fromWeb(webResponse.body).pipe(res);
 }
 
-export async function createMarketApiServer(options = {}) {
+export async function createApiServer(options = {}) {
 	const config = {
 		...resolveApiConfig(),
 		...(options.config ?? {}),
 	};
-	const app = createMarketApiApp({
+	const app = createApiApp({
 		...options,
 		config,
 	});
@@ -70,6 +70,6 @@ const currentFile = fileURLToPath(import.meta.url);
 const entryFile = process.argv[1] ?? '';
 
 if (entryFile === currentFile) {
-	const instance = await createMarketApiServer();
-	process.stdout.write(`Treeseed Market API listening on ${instance.url}\n`);
+	const instance = await createApiServer();
+	process.stdout.write(`Treeseed API listening on ${instance.url}\n`);
 }

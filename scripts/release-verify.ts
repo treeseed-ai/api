@@ -90,7 +90,7 @@ function assertCleanDist() {
 function runAcceptanceIfConfigured() {
 	const baseUrl = process.env.TREESEED_MARKET_ACCEPTANCE_BASE_URL;
 	if (!baseUrl) {
-		console.log('Skipping Market API acceptance tests: TREESEED_MARKET_ACCEPTANCE_BASE_URL is not set.');
+		console.log('Skipping API acceptance tests: TREESEED_MARKET_ACCEPTANCE_BASE_URL is not set.');
 		return;
 	}
 	run('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
@@ -101,9 +101,9 @@ async function smokeImportDist() {
 	const server = await import('../dist/api/server.js');
 	const store = await import('../dist/api/store.js');
 	const pg = await import('../dist/api/market-postgres.js');
-	const runner = await import('../dist/market-operations-runner/entrypoint.js');
-	if (typeof app.createMarketApiApp !== 'function') throw new Error('missing createMarketApiApp');
-	if (typeof server.createMarketApiServer !== 'function') throw new Error('missing createMarketApiServer');
+	const runner = await import('../dist/operations-runner/entrypoint.js');
+	if (typeof app.createApiApp !== 'function') throw new Error('missing createApiApp');
+	if (typeof server.createApiServer !== 'function') throw new Error('missing createApiServer');
 	if (typeof store.MarketControlPlaneStore !== 'function') throw new Error('missing MarketControlPlaneStore');
 	if (typeof pg.createMarketPostgresDatabase !== 'function') throw new Error('missing createMarketPostgresDatabase');
 	if (typeof runner.main !== 'function') throw new Error('missing operations runner main');

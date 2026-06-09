@@ -1,141 +1,156 @@
 # `@treeseed/api`
 
-TreeSeed HTTP adapter package for the current SDK and agent runtimes.
+`@treeseed/api` is the deploy-only Treeseed backend package.
 
-`@treeseed/api` is a thin HTTP layer over `@treeseed/sdk` and `@treeseed/agent`. It owns auth, request handling, and deployment wiring, but keeps SDK and agent behavior in those packages rather than re-implementing orchestration logic locally.
+It owns the HTTP API, Treeseed PostgreSQL adapter, backend auth helpers, migrations, backend seed application, platform operation lifecycle, route descriptors, and Treeseed operations runner. The root web app should talk to this package only through HTTP/proxy/client surfaces.
 
-## What It Provides
+The canonical repository is:
 
-- `createTreeseedApiApp()` to create a portable Hono application
-- `createRailwayTreeseedApiServer()` to run that app on Node with Railway-friendly defaults
-- `createTreeseedGatewayApp()` to expose the same agent control-plane routes behind a gateway-style bearer-token boundary
-- `/sdk/:operation` routes that mirror current SDK method names and remote contracts
-- `/agent/...` routes for agent workday, task, context, graph, and report flows
-- `/operations/:operation` routes for remote workflow execution
-- template catalog endpoints aligned with SDK-owned template metadata
-- a built-in, low-footprint device-code auth provider with bearer-token validation
-
-## Requirements
-
-- Node `>=22`
-- npm as the canonical package manager
-
-## Install
-
-```bash
-npm install @treeseed/api
+```text
+git@github.com:treeseed-ai/api.git
 ```
 
-## Local Use
+## Runtime Ownership
 
-Start the packaged server:
+This package owns:
 
-```bash
-npm run build
-npm start
+- `src/api/**`: Hono API application and Node server entrypoint
+- `src/operations-runner/**`: Treeseed operation claiming, checkpointing, execution, health, and runner entrypoint
+- `src/api/market-postgres.*`: Treeseed PostgreSQL adapter
+- backend auth and credential-session helpers
+- API migrations and backend seed application
+- API acceptance route descriptors and package-local API tests
+
+The root Market repo owns:
+
+- Astro web UI
+- knowledge hub content
+- auth, management, and Market UI pages
+- `/v1/*` proxy route and UI API client only
+
+## Public Exports
+
+```text
+@treeseed/api
+@treeseed/api/api/app
+@treeseed/api/api/server
+@treeseed/api/api/store
+@treeseed/api/api/market-postgres
+@treeseed/api/operations-runner
+@treeseed/api/route-descriptors
 ```
 
-Programmatic use:
+## Binaries
 
-```ts
-import { createTreeseedApiApp } from '@treeseed/api';
-
-const app = createTreeseedApiApp();
+```text
+treeseed-api
+treeseed-api-operations-runner
+treeseed-api-db-migrate
 ```
 
-Gateway use:
-
-```ts
-import { AgentSdk } from '@treeseed/sdk';
-import { createTreeseedGatewayApp } from '@treeseed/api/gateway';
-
-const sdk = AgentSdk.createLocal({
-	repoRoot: '/absolute/path/to/site',
-	databaseName: 'treeseed-local',
-});
-
-const app = createTreeseedGatewayApp({
-	sdk,
-	bearerToken: process.env.TREESEED_GATEWAY_BEARER_TOKEN!,
-});
-```
-
-## Environment
-
-Common environment variables:
-
-- `PORT`
-- `HOST`
-- `TREESEED_API_BASE_URL`
-- `TREESEED_API_ISSUER`
-- `TREESEED_API_AUTH_SECRET`
-- `TREESEED_API_TEMPLATE_CATALOG_PATH`
-- `TREESEED_API_PROVIDER_AUTH`
-- `TREESEED_API_PROVIDER_AGENT_EXECUTION`
-- `TREESEED_API_PROVIDER_AGENT_QUEUE`
-- `TREESEED_API_PROVIDER_AGENT_NOTIFICATION`
-- `TREESEED_API_PROVIDER_AGENT_REPOSITORY`
-- `TREESEED_API_PROVIDER_AGENT_VERIFICATION`
-
-Gateway-specific variables used by the wider system:
-
-- `TREESEED_GATEWAY_BEARER_TOKEN`
-- `TREESEED_PROJECT_ID`
-- Cloudflare D1 binding for the operational database
-- optional Cloudflare Queue producer binding for enqueue operations
-
-## Gateway Responsibilities
-
-The gateway app reuses the shared agent route handlers under a bearer-token boundary:
-
-- `POST /workdays/start`
-- `POST /workdays/:id/close`
-- `POST /tasks`
-- `POST /tasks/:id/claim`
-- `POST /tasks/:id/progress`
-- `POST /tasks/:id/complete`
-- `POST /tasks/:id/fail`
-- `POST /tasks/:id/requeue`
-- `POST /tasks/:id/followups`
-- `POST /queue/enqueue`
-- `POST /context/resolve-task`
-- `POST /graph/search`
-- `POST /graph/subgraph`
-- `POST /graph/query`
-- `POST /graph/context-pack`
-- `POST /graph/parse-dsl`
-- `GET /graph/node/:id`
-- `GET /specs`
-- `POST /reports`
-- `GET /healthz`
-
-Operational rules:
-
-- Railway and laptop processes talk to the gateway, not directly to D1
-- the gateway owns authenticated task/workday/report state transitions
-- producer-side queue writes should happen through the gateway
-- worker-side queue pull tokens should stay out of the gateway
-
-## Recommended Workflow
-
-For package development:
+## Package Scripts
 
 ```bash
 npm install
 npm run build
-npm test
+npm run test:unit
+npm run verify:local
 ```
 
-When changing the agent control plane:
+Runtime scripts:
 
-- validate `createTreeseedGatewayApp()`
-- validate the `/agent/...` namespace on the main API app
-- keep SDK, agent, and workflow route modules separate even when they share helpers
+```bash
+npm run dev:api
+npm run dev:runner -- --market local --watch --operation project:web_deployment --mock-external
+npm run start:api
+npm run start:runner
+npm run db:migrate
+```
 
-When running on Railway, `RAILWAY_PUBLIC_DOMAIN` is used automatically to derive the public base URL when `TREESEED_API_BASE_URL` is not set.
+Acceptance against a hosted API:
 
-## Notes
+```bash
+TREESEED_MARKET_ACCEPTANCE_BASE_URL=<api-base-url> npm run test:acceptance
+```
 
-- The built-in auth provider uses in-memory device and refresh state to keep operational cost low in the first phase.
-- SDK behavior remains owned by `@treeseed/sdk`; agent orchestration behavior remains owned by `@treeseed/agent`.
-- The main API app exposes distinct `sdk`, `agent`, and `operations` surfaces; the gateway app reuses the agent handlers with a narrower trust boundary.
+`verify:local` builds `dist`, checks package dependency boundaries, runs unit tests, validates generated output, and smoke-imports the public `dist` entrypoints. Acceptance tests skip clearly unless `TREESEED_MARKET_ACCEPTANCE_BASE_URL` is set.
+
+## Deployment
+
+Railway builds both backend services from this package root.
+
+This package owns the API app desired state in `treeseed.site.yaml`: API service, indexed operations runner, PostgreSQL, API domains, variables, volumes, and public TreeDX federation hosting. Reconciliation must flow through `trsd hosting plan|apply|verify|destroy --app api` and the SDK canonical reconciliation platform; provider-side manual repairs are diagnostics only and should become adapter fixes.
+
+```text
+api
+  rootDir: packages/api
+  buildCommand: npm run build
+  startCommand: npm run start:api
+  healthcheckPath: /healthz
+  runtimeMode: serverless
+
+operationsRunner
+  rootDir: packages/api
+  buildCommand: npm run build
+  startCommand: npm run start:runner
+  healthcheckPath: /healthz
+  runtimeMode: service
+  volumeMountPath: /data
+```
+
+The Treeseed PostgreSQL service must target both `api` and `operationsRunner` with `TREESEED_DATABASE_URL`.
+
+Use the root workflow commands for hosted planning and deployment:
+
+```bash
+npx trsd ready staging --json
+npx trsd hosting plan --environment staging --service api --json
+npx trsd hosting plan --environment staging --service operationsRunner --json
+npx trsd hosting verify --environment staging --service api --live --json
+npx trsd hosting verify --environment staging --service operationsRunner --live --json
+npx trsd operations smoke --environment staging --service operationsRunner --json
+```
+
+## Required Environment
+
+API and runner:
+
+- `TREESEED_DATABASE_URL`
+- `TREESEED_PLATFORM_RUNNER_SECRET`
+- `TREESEED_CREDENTIAL_SESSION_SECRET`
+- API auth/service trust secrets configured by the environment
+
+Runner:
+
+- `TREESEED_PLATFORM_RUNNER_ID`
+- `TREESEED_PLATFORM_RUNNER_DATA_DIR`
+- `TREESEED_PLATFORM_RUNNER_ENVIRONMENT`
+- `TREESEED_MANAGER_ID`
+
+Web/API trust:
+
+- `TREESEED_WEB_SERVICE_ID`
+- `TREESEED_WEB_SERVICE_SECRET`
+- `TREESEED_WEB_ASSERTION_SECRET`
+- `TREESEED_API_BASE_URL`
+
+Provider credentials are required only for enabled operation types. Manage them through Treeseed config and provider secret stores, not plaintext env files.
+
+## Release
+
+`@treeseed/api` is private and deploy-only for now. It still keeps standard Treeseed package scripts so package verification, tags, and workflow orchestration stay consistent with the other package repos.
+
+```bash
+npm run release:verify
+npm run release:publish
+```
+
+`release:publish` should no-op or refuse clearly while the package remains private.
+
+## Boundary Rules
+
+- Do not use `workspace:` or `file:` dependency specs in this package repository.
+- Do not import sibling package source paths. Use canonical public SDK exports.
+- Do not move web UI code into this package.
+- Do not make the root Market app import backend implementation from this package.
+- Do not print secrets in logs, JSON reports, or acceptance output.

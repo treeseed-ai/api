@@ -68,7 +68,7 @@ afterEach(() => {
 });
 
 describe('local seed apply', () => {
-	it('targets the Market PostgreSQL database and attaches the local owner', async () => {
+	it('targets the Treeseed PostgreSQL database and attaches the local owner', async () => {
 		const tempRoot = mkdtempSync(resolve(tmpdir(), 'treeseed-local-seed-root-'));
 		tempDirs.push(tempRoot);
 		mkdirSync(resolve(tempRoot, 'seeds'), { recursive: true });

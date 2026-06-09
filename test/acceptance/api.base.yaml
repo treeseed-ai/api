@@ -1,6 +1,6 @@
 version: 1
-name: market-api-live-acceptance
-expectedStatuses: test/acceptance/market-api.expected-statuses.json
+name: api-live-acceptance
+expectedStatuses: test/acceptance/api.expected-statuses.json
 
 variables:
   apiVersionPath: /v1

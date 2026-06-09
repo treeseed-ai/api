@@ -416,7 +416,7 @@ function parseBooleanEnvValue(value) {
 	return null;
 }
 
-function shouldLogMarketApiRequests(config, options = {}) {
+function shouldLogApiRequests(config, options = {}) {
 	if (typeof options.logRequests === 'boolean') return options.logRequests;
 	const explicit = parseBooleanEnvValue(process.env.TREESEED_MARKET_API_REQUEST_LOGS ?? process.env.TREESEED_API_REQUEST_LOGS);
 	if (explicit != null) return explicit;
@@ -449,7 +449,7 @@ function redactedRequestTarget(requestUrl) {
 	return `${url.pathname}${query ? `?${query}` : ''}`;
 }
 
-function installMarketApiRequestLogger(app) {
+function installApiRequestLogger(app) {
 	app.use('*', async (c, next) => {
 		const startedAt = Date.now();
 		const method = c.req.method;
@@ -459,7 +459,7 @@ function installMarketApiRequestLogger(app) {
 		} finally {
 			const elapsedMs = Date.now() - startedAt;
 			const status = c.res?.status ?? 500;
-			process.stdout.write(`[market-api] ${method} ${target} -> ${status} ${elapsedMs}ms\n`);
+			process.stdout.write(`[api] ${method} ${target} -> ${status} ${elapsedMs}ms\n`);
 		}
 	});
 }
@@ -825,7 +825,7 @@ async function createMarketWebSession(marketAuthProvider, userId, data = {}, opt
 	}
 	const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 	const token = await marketAuthProvider.createPersonalAccessToken(userId, {
-		name: 'Market web session',
+		name: 'Treeseed web session',
 		scopes: ['auth:me'],
 		expiresAt,
 	});
@@ -994,7 +994,7 @@ const LOCAL_CONTENT_DEFAULTS = {
 	decisions: {
 		idPrefix: 'decision',
 		extension: 'mdx',
-		fields: { decisionType: 'approved', rationale: '', authority: 'TreeSeed Market Team', primaryContributor: 'market-steward', relatedObjectives: [], relatedQuestions: [], relatedNotes: [], relatedProposals: [], relatedBooks: [], supersedes: [], implements: [] },
+		fields: { decisionType: 'approved', rationale: '', authority: 'TreeSeed Treeseed Team', primaryContributor: 'market-steward', relatedObjectives: [], relatedQuestions: [], relatedNotes: [], relatedProposals: [], relatedBooks: [], supersedes: [], implements: [] },
 		body: 'Record what was decided, why it was decided, and which proposals or evidence it closes.',
 	},
 	agents: {
@@ -1536,7 +1536,7 @@ function decryptedHostConfigSummary(value) {
 }
 
 function credentialSessionSecret(runtime) {
-	const configured = process.env.TREESEED_MARKET_CREDENTIAL_SESSION_SECRET
+	const configured = process.env.TREESEED_CREDENTIAL_SESSION_SECRET
 		?? runtime?.resolved?.config?.credentialSessionSecret
 		?? null;
 	if (configured && String(configured).trim()) {
@@ -1544,7 +1544,7 @@ function credentialSessionSecret(runtime) {
 	}
 	const runtimeConfig = runtime?.resolved?.config ?? {};
 	const environment = String(runtimeConfig.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
-	const localDatabase = isLoopbackUrl(runtimeConfig.marketDatabaseUrl ?? process.env.TREESEED_MARKET_DATABASE_URL ?? '');
+	const localDatabase = isLoopbackUrl(runtimeConfig.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? '');
 	const localBaseUrl = isLoopbackUrl(runtimeConfig.baseUrl ?? process.env.TREESEED_SITE_URL ?? process.env.BETTER_AUTH_URL ?? '');
 	if (
 		process.env.NODE_ENV === 'test'
@@ -1555,7 +1555,7 @@ function credentialSessionSecret(runtime) {
 	) {
 		return 'treeseed-local-test-credential-session-secret';
 	}
-	throw new Error('TREESEED_MARKET_CREDENTIAL_SESSION_SECRET is required for provider credential sessions.');
+	throw new Error('TREESEED_CREDENTIAL_SESSION_SECRET is required for provider credential sessions.');
 }
 
 function credentialSessionKey(runtime) {
@@ -1851,7 +1851,7 @@ function scheduleBackgroundBootstrap(c, task) {
 	const promise = Promise.resolve()
 		.then(task)
 		.catch((error) => {
-			process.stderr.write(`[market-api] project launch bootstrap failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+			process.stderr.write(`[api] project launch bootstrap failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
 		});
 	let executionCtx = null;
 	try {
@@ -1944,7 +1944,7 @@ async function verifyCloudflareDnsWriteForLaunch({ overlay, domains }) {
 		recordId = created?.result?.id ?? null;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Cloudflare DNS write preflight failed for ${zoneName}: ${message}. The selected Web Host token must include Zone DNS edit access for this root domain.`);
+		throw new Error(`Cloudflare DNS write preflight failed for ${zoneName}: ${message}. The selected Web Host token must include DNS Write and Zone Read access for this root domain.`);
 	} finally {
 		if (recordId) {
 			await cloudflareRequestForLaunchPreflight({
@@ -1998,7 +1998,7 @@ async function githubRequestForProjectDeletion({ token, path, method = 'GET' }) 
 		headers: {
 			authorization: `Bearer ${token}`,
 			accept: 'application/vnd.github+json',
-			'user-agent': 'treeseed-market-api',
+			'user-agent': 'treeseed-api',
 			'X-GitHub-Api-Version': '2022-11-28',
 		},
 	});
@@ -2441,7 +2441,7 @@ async function runProjectLaunchApiBootstrap({
 	try {
 		await appendLaunchDeploymentEvent(store, job, {
 			kind: 'launch.bootstrap_started',
-			message: 'Credential bootstrap started in the Market API.',
+			message: 'Credential bootstrap started in the API.',
 			status: 'running',
 			severity: 'info',
 			payload: { phase: 'credential_bootstrap' },
@@ -2614,15 +2614,15 @@ async function runProjectLaunchApiBootstrap({
 			message,
 			status: 'failed',
 			severity: 'error',
-			payload: { code: 'market_api_bootstrap_failed', phase: bootstrapPhase },
+			payload: { code: 'api_bootstrap_failed', phase: bootstrapPhase },
 		});
 		await applyHubLaunchFailure(store, job, {
-			code: 'market_api_bootstrap_failed',
+			code: 'api_bootstrap_failed',
 			message,
 			phase: bootstrapPhase,
 		}).catch(() => null);
 		await store.failJob(job.id, {
-			code: 'market_api_bootstrap_failed',
+			code: 'api_bootstrap_failed',
 			message,
 		}).catch(() => null);
 		return null;
@@ -2857,7 +2857,7 @@ async function runProjectDeletionApiDestroy({
 	}
 }
 
-async function retryMarketApiLaunchBootstrapFromRequest({
+async function retryApiLaunchBootstrapFromRequest({
 	c,
 	store,
 	runtime,
@@ -3290,7 +3290,7 @@ function safeTokenEquals(left, right) {
 
 function resolvePlatformRunnerSecret(config) {
 	return optionalTrimmedString(config.platformRunnerSecret)
-		?? optionalTrimmedString(config.marketOperationsRunnerSecret)
+		?? optionalTrimmedString(config.operationsRunnerSecret)
 		?? optionalTrimmedString(process.env.TREESEED_PLATFORM_RUNNER_SECRET)
 		?? optionalTrimmedString(process.env.TREESEED_MARKET_OPERATIONS_RUNNER_SECRET);
 }
@@ -3418,7 +3418,7 @@ function launchCapabilityPreset(repositoryTopology = 'split_software_content') {
 		'market.publish': {
 			requiresApproval: true,
 			allowedRoles: ['market_steward'],
-			reason: 'Market publishing makes project outputs externally visible.',
+			reason: 'Treeseed publishing makes project outputs externally visible.',
 		},
 	};
 	const resourceScope = (namespace, operation) => ({
@@ -3658,7 +3658,7 @@ function requireConfiguredServiceCredential(c, config) {
 	const serviceSecret = c.req.header('x-treeseed-service-secret') ?? '';
 	if (!config.webServiceId || !config.webServiceSecret || serviceId !== config.webServiceId || serviceSecret !== config.webServiceSecret) {
 		return {
-			response: jsonError(c, 401, 'Trusted Market service credential required.'),
+			response: jsonError(c, 401, 'Trusted Treeseed service credential required.'),
 		};
 	}
 	return { ok: true };
@@ -4523,20 +4523,20 @@ function defaultConfig(overrides = {}) {
 	return config;
 }
 
-export function createMarketApiExtension(options = {}) {
+export function createApiExtension(options = {}) {
 	return {
 		name: options.name ?? 'treeseed-market',
 		mount: options.mount ?? ((app, runtime) => options.extendApp?.(app, runtime)),
 	};
 }
 
-export function createMarketApiApp(options = {}) {
+export function createApiApp(options = {}) {
 	const config = defaultConfig(options.config ?? {});
-	const marketDatabaseUrl = config.marketDatabaseUrl ?? process.env.TREESEED_MARKET_DATABASE_URL ?? null;
-	if (!options.db && !marketDatabaseUrl) {
-		throw new Error('TREESEED_MARKET_DATABASE_URL is required for the Market PostgreSQL control-plane database.');
+	const apiDatabaseUrl = config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? null;
+	if (!options.db && !apiDatabaseUrl) {
+		throw new Error('TREESEED_DATABASE_URL is required for the Treeseed PostgreSQL control-plane database.');
 	}
-	const db = options.db ?? createMarketPostgresDatabase(marketDatabaseUrl);
+	const db = options.db ?? createMarketPostgresDatabase(apiDatabaseUrl);
 	const store = options.store ?? new MarketControlPlaneStore({
 		...config,
 		assertionSecret: config.webAssertionSecret,
@@ -4572,7 +4572,7 @@ export function createMarketApiApp(options = {}) {
 		: {
 			...(options.runtimeProviders ?? {}),
 		};
-	const logRequests = shouldLogMarketApiRequests(config, options);
+	const logRequests = shouldLogApiRequests(config, options);
 
 	return createTreeseedApiApp({
 		...options,
@@ -4591,10 +4591,10 @@ export function createMarketApiApp(options = {}) {
 			...(options.surfaces ?? {}),
 		},
 		extensions: [
-			createMarketApiExtension({
+			createApiExtension({
 				mount(app, runtime) {
 			if (logRequests) {
-				installMarketApiRequestLogger(app);
+				installApiRequestLogger(app);
 			}
 			const runtimeMarketAuthProvider = new D1AuthProvider({
 				...authConfig,
@@ -4912,7 +4912,7 @@ export function createMarketApiApp(options = {}) {
 					requestedByType: 'service',
 					requestedById: 'acceptance',
 				}).catch(() => null);
-				const platformRunnerId = `market-ops-${namespace}-1`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+				const platformRunnerId = `treeseed-ops-${namespace}-1`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
 				const platformRunner = await store.upsertMarketOperationRunner({
 					runnerId: platformRunnerId,
 					name: `Acceptance ${namespace} Runner`,
@@ -5542,12 +5542,12 @@ export function createMarketApiApp(options = {}) {
 
 			app.get('/v1/auth/oauth/:provider/start', (c) => {
 				const provider = c.req.param('provider');
-				return jsonError(c, 501, `OAuth provider "${provider}" is not configured on the Market API yet.`);
+				return jsonError(c, 501, `OAuth provider "${provider}" is not configured on the API yet.`);
 			});
 
 			app.get('/v1/auth/oauth/:provider/callback', (c) => {
 				const provider = c.req.param('provider');
-				return jsonError(c, 501, `OAuth provider "${provider}" is not configured on the Market API yet.`);
+				return jsonError(c, 501, `OAuth provider "${provider}" is not configured on the API yet.`);
 			});
 
 			app.get('/v1/auth/web/username/check', async (c) => {
@@ -6954,7 +6954,7 @@ export function createMarketApiApp(options = {}) {
 					},
 					selfHosting: {
 						marketUrl,
-						marketId: selfHosting.env.TREESEED_MARKET_ID,
+						marketId: selfHosting.env.TREESEED_MANAGER_ID,
 						env: selfHosting.env,
 						redactedEnv: selfHosting.redactedEnv,
 						commands: selfHosting.commands,
@@ -7134,7 +7134,7 @@ export function createMarketApiApp(options = {}) {
 						deployment: null,
 						selfHosting: {
 							marketUrl,
-							marketId: rendered.env.TREESEED_MARKET_ID,
+							marketId: rendered.env.TREESEED_MANAGER_ID,
 							env: rendered.redactedEnv,
 							commands: rendered.commands,
 							composeFile: rendered.composeFile,
@@ -7269,7 +7269,7 @@ export function createMarketApiApp(options = {}) {
 					ok: true,
 					selfHosting: {
 						marketUrl,
-						marketId: rendered.env.TREESEED_MARKET_ID,
+						marketId: rendered.env.TREESEED_MANAGER_ID,
 						env: rendered.redactedEnv,
 						commands: rendered.commands,
 						composeFile: rendered.composeFile,
@@ -8256,7 +8256,7 @@ export function createMarketApiApp(options = {}) {
 					operation: 'launch_project',
 					status: 'running',
 					preferredMode: 'auto',
-					selectedTarget: 'market_api',
+					selectedTarget: 'api',
 					requestedByType: c.get('actorType') === 'service' ? 'service' : 'user',
 					requestedById: typeof access.principal.id === 'string' ? access.principal.id : null,
 					idempotencyKey: `launch:${details.project.id}`,
@@ -8270,7 +8270,7 @@ export function createMarketApiApp(options = {}) {
 						hostBindingPlans: hostBindingMetadata.hostBindingPlans,
 						hostingMode,
 						bootstrap: {
-							ownedBy: 'market_api',
+							ownedBy: 'api',
 							requiresPassphrase: Boolean(sensitivePassphrase),
 						},
 					}),
@@ -8756,7 +8756,7 @@ export function createMarketApiApp(options = {}) {
 					operation: 'delete_project',
 					status: 'running',
 					preferredMode: 'auto',
-					selectedTarget: 'market_api',
+					selectedTarget: 'api',
 					input: {
 						teamId: project.teamId,
 						projectId: project.id,
@@ -10308,8 +10308,8 @@ export function createMarketApiApp(options = {}) {
 					return jsonError(c, 409, 'Only failed or cancelled jobs can be retried.', { status: job.status });
 				}
 				const body = await readJsonOrFormBody(c);
-				if (job.namespace === 'workflow' && job.operation === 'launch_project' && job.selectedTarget === 'market_api') {
-					const retried = await retryMarketApiLaunchBootstrapFromRequest({
+				if (job.namespace === 'workflow' && job.operation === 'launch_project' && job.selectedTarget === 'api') {
+					const retried = await retryApiLaunchBootstrapFromRequest({
 						c,
 						store,
 						runtime,
@@ -10362,8 +10362,8 @@ export function createMarketApiApp(options = {}) {
 					return jsonError(c, 409, 'Only failed or cancelled jobs can be resumed.', { status: job.status });
 				}
 				const body = await readJsonOrFormBody(c);
-				if (job.namespace === 'workflow' && job.operation === 'launch_project' && job.selectedTarget === 'market_api') {
-					const resumed = await retryMarketApiLaunchBootstrapFromRequest({
+				if (job.namespace === 'workflow' && job.operation === 'launch_project' && job.selectedTarget === 'api') {
+					const resumed = await retryApiLaunchBootstrapFromRequest({
 						c,
 						store,
 						runtime,

@@ -7,16 +7,16 @@ import {
 	expandRoleMatrices,
 	expandSdkMethodMatrices,
 	loadSpec,
-} from '../../scripts/market-acceptance.mjs';
-import { ACCEPTANCE_ACTORS, MARKET_API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../src/api/route-descriptors.js';
+} from '../../scripts/api-acceptance.mjs';
+import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../src/api/route-descriptors.js';
 
-describe('Market API acceptance framework', () => {
+describe('API acceptance framework', () => {
 	it('expands every active route into coverage actor cases', () => {
-		const spec = loadSpec('test/acceptance/market-api.base.yaml');
+		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const descriptorCases = expandDescriptorMatrices(spec);
 		const descriptorIds = new Set(descriptorCases.map((entry) => entry.descriptorId));
-		expect(descriptorIds.size).toBe(MARKET_API_ROUTE_DESCRIPTORS.length);
-		for (const descriptor of MARKET_API_ROUTE_DESCRIPTORS) {
+		expect(descriptorIds.size).toBe(API_ROUTE_DESCRIPTORS.length);
+		for (const descriptor of API_ROUTE_DESCRIPTORS) {
 			for (const actor of ACCEPTANCE_ACTORS) {
 				expect(descriptorCases.some((entry) => entry.descriptorId === descriptor.id && entry.actor === actor)).toBe(true);
 			}
@@ -33,7 +33,7 @@ describe('Market API acceptance framework', () => {
 	});
 
 	it('requires a live sign-up case that sends confirmation email', () => {
-		const spec = loadSpec('test/acceptance/market-api.base.yaml');
+		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const explicitCases = (spec.cases ?? []) as Array<{ id?: string }>;
 		expect(spec.coverage.requiredCaseIds).toContain('auth.web.sign-up.sends-confirmation-email');
 		expect(explicitCases.find((entry) => entry.id === 'auth.web.sign-up.sends-confirmation-email')).toMatchObject({
@@ -48,7 +48,7 @@ describe('Market API acceptance framework', () => {
 	});
 
 	it('generates safe request bodies for non-GET route descriptors', () => {
-		for (const descriptor of MARKET_API_ROUTE_DESCRIPTORS.filter((entry) => entry.method !== 'GET')) {
+		for (const descriptor of API_ROUTE_DESCRIPTORS.filter((entry) => entry.method !== 'GET')) {
 			const body = bodyForFactory(descriptor.acceptance.bodyFactory, descriptor, 'teamOwner');
 			if (descriptor.acceptance.bodyFactory === 'empty') {
 				expect(body).toBeUndefined();
@@ -59,7 +59,7 @@ describe('Market API acceptance framework', () => {
 	});
 
 	it('expands SDK method cases from the descriptor map and enforces coverage', () => {
-		const spec = loadSpec('test/acceptance/market-api.base.yaml');
+		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const allCases = [
 			...(spec.cases ?? []),
 			...expandDeploymentFlows(spec),
@@ -73,7 +73,7 @@ describe('Market API acceptance framework', () => {
 	});
 
 	it('includes the mocked web deployment acceptance flow in expansion', () => {
-		const spec = loadSpec('test/acceptance/market-api.base.yaml');
+		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const flows = expandDeploymentFlows(spec);
 		expect(flows).toHaveLength(1);
 		expect(flows[0]).toMatchObject({
@@ -92,7 +92,7 @@ describe('Market API acceptance framework', () => {
 		const { spawnSync } = await import('node:child_process');
 		const dir = mkdtempSync(join(tmpdir(), 'treeseed-acceptance-expand-'));
 		const output = join(dir, 'cases.json');
-		const result = spawnSync(process.execPath, ['./scripts/market-acceptance.mjs', '--environment', 'local', '--expand-json', output], {
+		const result = spawnSync(process.execPath, ['./scripts/api-acceptance.mjs', '--environment', 'local', '--expand-json', output], {
 			encoding: 'utf8',
 		});
 		expect(result.status).toBe(0);

@@ -1,4 +1,4 @@
-import { createMarketApiApp } from '../../api/app.js';
+import { createApiApp } from '../../api/app.js';
 import { resolveLocalSeedEnv } from './apply.js';
 
 function localApiConfig(projectRoot, env = process.env) {
@@ -6,8 +6,8 @@ function localApiConfig(projectRoot, env = process.env) {
 	return {
 		repoRoot: projectRoot,
 		projectId: localEnv.TREESEED_PROJECT_ID ?? 'treeseed-market',
-		baseUrl: String(localEnv.TREESEED_MARKET_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/u, ''),
-		issuer: String(localEnv.TREESEED_API_ISSUER ?? localEnv.TREESEED_MARKET_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/u, ''),
+		baseUrl: String(localEnv.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/u, ''),
+		issuer: String(localEnv.TREESEED_API_ISSUER ?? localEnv.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/u, ''),
 		authSecret: localEnv.TREESEED_AUTH_SECRET ?? localEnv.TREESEED_API_AUTH_SECRET ?? localEnv.TREESEED_BETTER_AUTH_SECRET ?? 'treeseed-local-seed-auth-secret',
 		webAssertionSecret: localEnv.TREESEED_WEB_ASSERTION_SECRET ?? localEnv.TREESEED_API_WEB_ASSERTION_SECRET ?? 'treeseed-local-seed-assertion-secret',
 		webServiceId: localEnv.TREESEED_WEB_SERVICE_ID ?? localEnv.TREESEED_API_SERVICE_ID ?? 'web',
@@ -59,7 +59,7 @@ async function requestLocalSeedApi(input, endpoint) {
 	const db = input.db;
 	try {
 		const config = localApiConfig(input.projectRoot, localEnv);
-		const app = createMarketApiApp({ config, ...(db ? { db } : {}) });
+		const app = createApiApp({ config, ...(db ? { db } : {}) });
 		return await jsonRequest(app, `/v1/seeds/${encodeURIComponent(input.seedName)}/${endpoint}`, input, seedRequestBody(input));
 	} finally {
 		if (!input.db) db?.close?.();
@@ -71,7 +71,7 @@ async function requestLocalSeedExport(input) {
 	const db = input.db;
 	try {
 		const config = localApiConfig(input.projectRoot, localEnv);
-		const app = createMarketApiApp({ config, ...(db ? { db } : {}) });
+		const app = createApiApp({ config, ...(db ? { db } : {}) });
 		let teamId = input.team;
 		const teamsResponse = await app.request('/v1/teams', {
 			headers: {

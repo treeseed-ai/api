@@ -1,7 +1,7 @@
 {
   "name": "@treeseed/api",
   "version": "0.4.1",
-  "description": "TreeSeed Market backend API and operations runner.",
+  "description": "TreeSeed Treeseed backend API and operations runner.",
   "license": "COMMERCIAL",
   "repository": {
     "type": "git",
@@ -25,9 +25,9 @@
     "scripts/verify-driver.mjs"
   ],
   "bin": {
-    "treeseed-market-api": "./dist/api/server.js",
-    "treeseed-market-operations-runner": "./dist/market-operations-runner/entrypoint.js",
-    "treeseed-market-db-migrate": "./dist/scripts/migrate-market-db.js"
+    "treeseed-api": "./dist/api/server.js",
+    "treeseed-api-operations-runner": "./dist/operations-runner/entrypoint.js",
+    "treeseed-api-db-migrate": "./dist/scripts/migrate-db.js"
   },
   "exports": {
     ".": {
@@ -51,8 +51,8 @@
       "default": "./dist/api/market-postgres.js"
     },
     "./operations-runner": {
-      "types": "./dist/market-operations-runner/entrypoint.d.ts",
-      "default": "./dist/market-operations-runner/entrypoint.js"
+      "types": "./dist/operations-runner/entrypoint.d.ts",
+      "default": "./dist/operations-runner/entrypoint.js"
     },
     "./route-descriptors": {
       "types": "./dist/api/route-descriptors.d.ts",
@@ -67,14 +67,14 @@
     "prepare": "node ./scripts/prepare.mjs",
     "prepack": "npm run build:dist",
     "dev:api": "node --experimental-transform-types ./src/api/server.js",
-    "dev:runner": "node --experimental-transform-types ./src/market-operations-runner/entrypoint.js run",
+    "dev:runner": "node --experimental-transform-types ./src/operations-runner/entrypoint.js run",
     "start:api": "node ./dist/api/server.js",
-    "start:runner": "node ./dist/market-operations-runner/entrypoint.js run",
-    "db:migrate:market": "node ./dist/scripts/migrate-market-db.js",
+    "start:runner": "node ./dist/operations-runner/entrypoint.js run",
+    "db:migrate": "node ./dist/scripts/migrate-db.js",
     "lint": "npm run build:dist",
     "test": "npm run test:unit",
     "test:unit": "vitest run --config ./vitest.config.ts",
-    "test:acceptance": "node ./scripts/market-acceptance.mjs",
+    "test:acceptance": "node ./scripts/api-acceptance.mjs",
     "verify:direct": "npm run release:verify",
     "verify:local": "node --input-type=module -e \"process.env.TREESEED_VERIFY_DRIVER='direct'; await import('./scripts/verify-driver.mjs')\"",
     "verify:action": "node --input-type=module -e \"process.env.TREESEED_VERIFY_DRIVER='act'; await import('./scripts/verify-driver.mjs')\"",
@@ -84,11 +84,11 @@
     "release:verify": "node ./scripts/run-ts.mjs ./scripts/release-verify.ts",
     "release:publish": "node ./scripts/run-ts.mjs ./scripts/publish-package.ts"
   },
-	"dependencies": {
-		"@react-email/render": "^2.0.8",
-		"@treeseed/sdk": "github:treeseed-ai/sdk#bef2035014d37ba5f4d375b5fd217e21da6cc39f",
-		"drizzle-orm": "^0.45.2",
-		"hono": "^4.8.2",
+  "dependencies": {
+    "@react-email/render": "^2.0.8",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#0.10.29-dev.staging.20260609T012510Z",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.8.2",
     "libsodium-wrappers": "^0.7.16",
     "libsodium-wrappers-sumo": "^0.7.16",
     "octokit": "^5.0.5",

@@ -1,1 +1,1 @@
-export { createMarketApiExtension } from './app.js';
+export { createApiExtension } from './app.js';

@@ -48,6 +48,6 @@ export function redactDeploymentValue<T>(value: T): T {
 		.map(([key, entry]) => [key, redactDeploymentValue(entry)])) as T;
 }
 
-export function normalizeDeploymentSource(value: unknown): 'market_ui' | 'market_api' | 'cli' | 'launch_flow' {
-	return ['market_ui', 'market_api', 'cli', 'launch_flow'].includes(String(value ?? '')) ? value as any : 'market_api';
+export function normalizeDeploymentSource(value: unknown): 'market_ui' | 'api' | 'cli' | 'launch_flow' {
+	return ['market_ui', 'api', 'cli', 'launch_flow'].includes(String(value ?? '')) ? value as any : 'api';
 }

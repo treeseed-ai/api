@@ -176,11 +176,11 @@ export function resolveLocalSeedEnv(projectRoot, env = process.env) {
 
 async function createLocalSeedStore(projectRoot, env = process.env) {
 	const localEnv = resolveLocalSeedEnv(projectRoot, env);
-	const marketDatabaseUrl = localEnv.TREESEED_MARKET_DATABASE_URL?.trim();
-	if (!marketDatabaseUrl) {
-		throw new Error('TREESEED_MARKET_DATABASE_URL is required to apply Market seeds through the PostgreSQL control-plane database.');
+	const apiDatabaseUrl = localEnv.TREESEED_DATABASE_URL?.trim();
+	if (!apiDatabaseUrl) {
+		throw new Error('TREESEED_DATABASE_URL is required to apply Treeseed seeds through the PostgreSQL control-plane database.');
 	}
-	const db = createMarketPostgresDatabase(marketDatabaseUrl);
+	const db = createMarketPostgresDatabase(apiDatabaseUrl);
 	return new MarketControlPlaneStore({
 		repoRoot: projectRoot,
 		projectId: localEnv.TREESEED_PROJECT_ID ?? 'treeseed-market',

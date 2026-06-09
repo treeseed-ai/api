@@ -105,7 +105,7 @@ export function buildProjectDeploymentReadiness(input: {
 			label: input.action === 'publish_content' ? 'Publish executor available' : 'Deploy workflow installable',
 			ready: workflowReadyForAction(repository, input.action),
 			message: input.action === 'publish_content' && (repository?.provider === 'treedx' || repository?.metadata?.contentCanonical === 'treedx')
-				? 'TreeDX content publish can run through the Market operations runner.'
+				? 'TreeDX content publish can run through the Treeseed operations runner.'
 				: repository?.provider === 'github' ? 'The deploy workflow can be dispatched for this repository.' : 'A GitHub repository is required.',
 		},
 		{
@@ -129,9 +129,9 @@ export function buildProjectDeploymentReadiness(input: {
 		},
 		{
 			code: 'runner_ready',
-			label: 'Market operations runner',
+			label: 'Treeseed operations runner',
 			ready: runner.status === 'online' || runner.status === 'unknown',
-			message: runner.status === 'online' ? 'Market operations runner is online.' : 'Queued operations can wait for the Market operations runner.',
+			message: runner.status === 'online' ? 'Treeseed operations runner is online.' : 'Queued operations can wait for the Treeseed operations runner.',
 		},
 		{
 			code: 'no_active_operation',

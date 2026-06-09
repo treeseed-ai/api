@@ -339,7 +339,7 @@ export function installProjectDeploymentRoutes(app, { store, requireProjectAcces
 			status: 'queued',
 			idempotencyKey,
 			requestedByUserId: access.principal.id,
-			triggeredByType: 'market_api',
+			triggeredByType: 'api',
 			triggeredById: access.principal.id,
 			summary: `Retry queued for ${original.action} ${original.environment}.`,
 		});
@@ -356,7 +356,7 @@ export function installProjectDeploymentRoutes(app, { store, requireProjectAcces
 				deploymentId: retryDeployment.id,
 				environment: retryDeployment.environment,
 				action: retryDeployment.action,
-				source: 'market_api',
+				source: 'api',
 				repositoryId: retryDeployment.repository?.repositoryId ?? null,
 				webHostId: retryDeployment.target?.hostId ?? null,
 				workflowFile: 'deploy-web.yml',
