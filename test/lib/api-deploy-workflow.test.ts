@@ -15,6 +15,7 @@ describe('API deploy workflow', () => {
 		expect(deploy.jobs).toHaveProperty('live-verify');
 
 		const deployRun = JSON.stringify(deploy.jobs['deploy-api']);
+		expect(deployRun).toContain('npm install --no-save @treeseed/cli');
 		expect(deployRun).toContain('trsd hosting plan');
 		expect(deployRun).toContain('--environment');
 		expect(deployRun).toContain('TREESEED_WORKFLOW_ENVIRONMENT');
@@ -25,6 +26,7 @@ describe('API deploy workflow', () => {
 		expect(deployRun).not.toContain('CLOUDFLARE_API_TOKEN');
 
 		const liveRun = JSON.stringify(deploy.jobs['live-verify']);
+		expect(liveRun).toContain('npm install --no-save @treeseed/cli');
 		expect(liveRun).toContain('trsd hosting verify');
 		expect(liveRun).toContain('--app api --live --json');
 		expect(liveRun).toContain('trsd operations smoke');

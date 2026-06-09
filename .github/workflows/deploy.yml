@@ -140,7 +140,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --workspaces=false
       - name: Install Treeseed CLI workflow tool
-        run: npm install --no-save --ignore-scripts @treeseed/cli@git+https://github.com/treeseed-ai/cli.git#staging
+        run: npm install --no-save @treeseed/cli
       - name: Plan API reconciliation
         run: npx trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
@@ -186,7 +186,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --workspaces=false
       - name: Install Treeseed CLI workflow tool
-        run: npm install --no-save --ignore-scripts @treeseed/cli@git+https://github.com/treeseed-ai/cli.git#staging
+        run: npm install --no-save @treeseed/cli
       - name: Verify API hosting live
         run: npx trsd hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
       - name: Run operations runner smoke

@@ -4849,14 +4849,14 @@ export function createApiApp(options = {}) {
 					environment: 'staging',
 					deploymentProfile: 'hosted_project',
 					baseUrl: `https://${projectSlug}.staging.example.test`,
-					pagesProjectName: `${projectSlug}-staging`,
+					pagesProjectName: projectSlug,
 					metadata: { acceptance: true, namespace },
 				}).catch(() => null);
 				await store.upsertProjectEnvironment(project.id, {
 					environment: 'prod',
 					deploymentProfile: 'hosted_project',
 					baseUrl: `https://${projectSlug}.example.test`,
-					pagesProjectName: `${projectSlug}-prod`,
+					pagesProjectName: projectSlug,
 					metadata: { acceptance: true, namespace },
 				}).catch(() => null);
 				const provider = await store.upsertCapacityProvider(team.id, {

@@ -343,7 +343,7 @@ async function createDeploymentReadyProject(id: string) {
 		environment: 'staging',
 		deploymentProfile: 'hosted_project',
 		baseUrl: `https://staging.${id}.example.com`,
-		pagesProjectName: `${id}-staging`,
+		pagesProjectName: id,
 	});
 	return { app, db, store, token, team, project };
 }
@@ -945,7 +945,7 @@ describe('market api', () => {
 			deploymentProfile: 'hosted_project',
 			baseUrl: 'https://delete-hosted-staging.example.test',
 			cloudflareAccountId: 'account-1',
-			pagesProjectName: 'delete-hosted-staging',
+			pagesProjectName: 'delete-hosted-site',
 			workerName: 'delete-hosted-staging-worker',
 			r2BucketName: 'delete-hosted-content',
 			d1DatabaseName: 'delete-hosted-site-data',
@@ -3611,7 +3611,7 @@ describe('market api', () => {
 			environment: 'staging',
 			deploymentProfile: 'hosted_project',
 			baseUrl: 'https://staging.deploy-project.example.com',
-			pagesProjectName: 'deploy-project-staging',
+			pagesProjectName: 'deploy-project',
 		});
 
 		const productionWithoutConfirmation = await app.request(`/v1/projects/${project.id}/deployments/web`, {
@@ -3751,7 +3751,7 @@ describe('market api', () => {
 			environment: 'prod',
 			deploymentProfile: 'hosted_project',
 			baseUrl: 'https://deployment-governance-project.example.com',
-			pagesProjectName: 'deployment-governance-project-prod',
+			pagesProjectName: 'deployment-governance-project',
 		});
 
 		const readOnlyKey = await store.createTeamApiKey(team.id, {
@@ -4806,18 +4806,18 @@ describe('market api', () => {
 				deploymentProfile: 'hosted_project',
 				baseUrl: 'https://staging.example.com',
 				cloudflareAccountId: 'cf-account-1',
-				pagesProjectName: 'topology-project-staging',
+				pagesProjectName: 'topology-project',
 				workerName: 'topology-project-staging-worker',
 				r2BucketName: 'topology-project-staging-content',
 				d1DatabaseName: 'topology-project-staging-db',
 				queueName: 'topology-project-staging-queue',
-				railwayProjectName: 'topology-project-staging',
+				railwayProjectName: 'topology-project',
 			}),
 		}));
 		expect(environment.payload).toMatchObject({
 			projectId: project.id,
 			environment: 'staging',
-			pagesProjectName: 'topology-project-staging',
+			pagesProjectName: 'topology-project',
 		});
 
 		const resource = await json(await app.request(`/v1/projects/${project.id}/resources`, {
@@ -4919,15 +4919,15 @@ describe('market api', () => {
 			body: JSON.stringify({
 				deploymentProfile: 'hosted_project',
 				baseUrl: 'https://prod.example.com',
-				pagesProjectName: 'topology-project-prod',
+				pagesProjectName: 'topology-project',
 				workerName: 'topology-project-prod-worker',
 				r2BucketName: 'topology-project-prod-content',
-				railwayProjectName: 'topology-project-prod',
+				railwayProjectName: 'topology-project',
 			}),
 		}));
 		expect(runnerEnvironment.payload).toMatchObject({
 			environment: 'prod',
-			pagesProjectName: 'topology-project-prod',
+			pagesProjectName: 'topology-project',
 		});
 
 		const runnerResource = await json(await app.request(`/v1/projects/${project.id}/runner/resources`, {
