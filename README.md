@@ -70,10 +70,10 @@ npm run db:migrate
 Acceptance against a hosted API:
 
 ```bash
-TREESEED_MARKET_ACCEPTANCE_BASE_URL=<api-base-url> npm run test:acceptance
+TREESEED_API_BASE_URL=<api-base-url> npm run test:acceptance -- --base-url "$TREESEED_API_BASE_URL"
 ```
 
-`verify:local` builds `dist`, checks package dependency boundaries, runs unit tests, validates generated output, and smoke-imports the public `dist` entrypoints. Acceptance tests skip clearly unless `TREESEED_MARKET_ACCEPTANCE_BASE_URL` is set.
+`verify:local` builds `dist`, checks package dependency boundaries, runs unit tests, validates generated output, and smoke-imports the public `dist` entrypoints. Hosted acceptance is run by the package deploy workflow and can be run manually with `npm run test:acceptance -- --base-url <api-base-url>`.
 
 ## Deployment
 
@@ -100,14 +100,15 @@ operationsRunner
 
 The Treeseed PostgreSQL service must target both `api` and `operationsRunner` with `TREESEED_DATABASE_URL`.
 
-Use the root workflow commands for hosted planning and deployment:
+Use this package's `TreeSeed API Deploy` GitHub workflow for hosted staging and production deployment. The root Market workflow does not deploy or accept the API. The package workflow verifies the package, reconciles the API app through `trsd hosting apply --app api`, verifies live Railway/API/runner/PostgreSQL/TreeDX state, runs the operations-runner smoke check, and then runs the hosted API acceptance suite before the workflow is green.
+
+Use `trsd` directly for local/operator planning and live repair:
 
 ```bash
 npx trsd ready staging --json
-npx trsd hosting plan --environment staging --service api --json
-npx trsd hosting plan --environment staging --service operationsRunner --json
-npx trsd hosting verify --environment staging --service api --live --json
-npx trsd hosting verify --environment staging --service operationsRunner --live --json
+npx trsd hosting plan --environment staging --app api --json
+npx trsd hosting apply --environment staging --app api --execute --json
+npx trsd hosting verify --environment staging --app api --live --json
 npx trsd operations smoke --environment staging --service operationsRunner --json
 ```
 

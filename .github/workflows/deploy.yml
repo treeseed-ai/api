@@ -1,0 +1,206 @@
+name: TreeSeed API Deploy
+
+on:
+  push:
+    branches:
+      - staging
+    tags:
+      - '*.*.*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - prod
+      action_kind:
+        description: Workflow action to perform
+        required: true
+        default: deploy_api
+        type: choice
+        options:
+          - deploy_api
+          - verify_live
+          - acceptance
+
+concurrency:
+  group: treeseed-api-deploy-${{ github.ref }}-${{ inputs.environment || 'auto' }}
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
+      workflow_action: ${{ steps.classify.outputs.workflow_action }}
+      release_tag: ${{ steps.classify.outputs.release_tag }}
+      api_changed: ${{ steps.classify.outputs.api_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            scope="${{ inputs.environment }}"
+            workflow_action="${{ inputs.action_kind }}"
+            release_tag="false"
+            api_changed="true"
+          else
+            scope=$([[ "${GITHUB_REF_TYPE}" == "tag" ]] && echo "prod" || echo "staging")
+            workflow_action="deploy_api"
+            release_tag=$([[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo "true" || echo "false")
+            compare_ref="${{ github.event.before }}"
+            if [[ -z "${compare_ref}" || "${compare_ref}" == "0000000000000000000000000000000000000000" ]]; then
+              compare_ref="$(git rev-list --max-count=1 "${GITHUB_SHA}^" 2>/dev/null || true)"
+            fi
+            api_changed="false"
+            if [[ -z "${compare_ref}" || "${release_tag}" == "true" ]]; then
+              api_changed="true"
+            else
+              while IFS= read -r path; do
+                [[ -z "${path}" ]] && continue
+                case "${path}" in
+                  src/**|scripts/**|test/**|treeseed.site.yaml|src/env.yaml|package.json|package-lock.json|.github/workflows/**)
+                    api_changed="true"
+                    ;;
+                esac
+              done < <(git diff --name-only "${compare_ref}" "${GITHUB_SHA}")
+            fi
+          fi
+          {
+            echo "scope=${scope}"
+            echo "workflow_action=${workflow_action}"
+            echo "release_tag=${release_tag}"
+            echo "api_changed=${api_changed}"
+          } >> "${GITHUB_OUTPUT}"
+
+  verify:
+    needs: classify
+    if: |
+      needs.classify.outputs.workflow_action == 'deploy_api' ||
+      needs.classify.outputs.workflow_action == 'verify_live' ||
+      needs.classify.outputs.workflow_action == 'acceptance' ||
+      needs.classify.outputs.api_changed == 'true' ||
+      needs.classify.outputs.release_tag == 'true'
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      TREESEED_GITHUB_AUTOMATION_MODE: stub
+      TREESEED_STAGE_WAIT_MODE: skip
+      TREESEED_AGENT_DISABLE_GIT: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci --workspaces=false
+      - name: Verify API package
+        run: npm run verify:direct
+
+  deploy-api:
+    needs:
+      - classify
+      - verify
+    if: |
+      needs.classify.outputs.workflow_action == 'deploy_api' ||
+      needs.classify.outputs.api_changed == 'true' ||
+      needs.classify.outputs.release_tag == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.classify.outputs.scope == 'prod' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE }}
+      TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
+      TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
+      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || 'treeseed/treedx:dev-staging' }}
+      TREESEED_RAILWAY_DEPLOY_TRANSPORT: ${{ vars.TREESEED_RAILWAY_DEPLOY_TRANSPORT || 'api' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci --workspaces=false
+      - name: Install Treeseed CLI workflow tool
+        run: npm install --no-save --ignore-scripts @treeseed/cli@git+https://github.com/treeseed-ai/cli.git#staging
+      - name: Plan API reconciliation
+        run: npx trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
+      - name: Reconcile API app
+        run: npx trsd hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --execute --json
+
+  live-verify:
+    needs:
+      - classify
+      - verify
+      - deploy-api
+    if: |
+      always() &&
+      needs.verify.result == 'success' &&
+      (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped') &&
+      (
+        needs.classify.outputs.workflow_action == 'deploy_api' ||
+        needs.classify.outputs.workflow_action == 'verify_live' ||
+        needs.classify.outputs.workflow_action == 'acceptance' ||
+        needs.classify.outputs.api_changed == 'true' ||
+        needs.classify.outputs.release_tag == 'true'
+      )
+    runs-on: ubuntu-latest
+    environment: ${{ needs.classify.outputs.scope == 'prod' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE }}
+      TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
+      TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
+      TREESEED_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && (vars.TREESEED_API_BASE_URL || 'https://api.treeseed.ai') || (vars.TREESEED_STAGING_API_BASE_URL || 'https://api-treeseed-staging.treeseed.ai') }}
+      TREESEED_ACCEPTANCE_SERVICE_ID: ${{ vars.TREESEED_API_WEB_SERVICE_ID || vars.TREESEED_WEB_SERVICE_ID || 'web' }}
+      TREESEED_ACCEPTANCE_SERVICE_SECRET: ${{ secrets.TREESEED_API_WEB_SERVICE_SECRET || secrets.TREESEED_WEB_SERVICE_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci --workspaces=false
+      - name: Install Treeseed CLI workflow tool
+        run: npm install --no-save --ignore-scripts @treeseed/cli@git+https://github.com/treeseed-ai/cli.git#staging
+      - name: Verify API hosting live
+        run: npx trsd hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
+      - name: Run operations runner smoke
+        run: npx trsd operations smoke --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --service operationsRunner --json
+      - name: Run live API acceptance
+        run: |
+          mkdir -p reports
+          node ./scripts/api-acceptance.mjs \
+            --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" \
+            --base-url "${TREESEED_API_BASE_URL}" \
+            --report-json reports/api-acceptance.json \
+            --report-junit reports/api-acceptance.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-acceptance-${{ needs.classify.outputs.scope }}
+          path: reports/

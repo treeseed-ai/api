@@ -88,9 +88,9 @@ function assertCleanDist() {
 }
 
 function runAcceptanceIfConfigured() {
-	const baseUrl = process.env.TREESEED_MARKET_ACCEPTANCE_BASE_URL;
+	const baseUrl = process.env.TREESEED_API_BASE_URL;
 	if (!baseUrl) {
-		console.log('Skipping API acceptance tests: TREESEED_MARKET_ACCEPTANCE_BASE_URL is not set.');
+		console.log('Skipping API acceptance tests: TREESEED_API_BASE_URL is not set.');
 		return;
 	}
 	run('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
