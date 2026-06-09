@@ -7,3 +7,4 @@ coverage/
 scripts/.ts-run-*.mjs
 npm-debug.log*
 .treeseed/
+.wrangler/
