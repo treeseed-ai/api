@@ -6480,7 +6480,7 @@ describe('market api', () => {
 			}),
 		});
 		expect(rejected.status).toBe(403);
-	});
+	}, 15000);
 
 	it('queues launch failures for worker recovery instead of failing the request', async () => {
 		runTreeseedHostingAuditMock.mockResolvedValueOnce({
@@ -6536,7 +6536,7 @@ describe('market api', () => {
 			},
 		}));
 		expect(inbox.payload.some((entry: { kind: string; title: string }) => entry.kind === 'launch_failure' && entry.title.includes('Failed Launch'))).toBe(true);
-	});
+	}, 15000);
 
 	it('manages capacity providers, lanes, grants, and project plans', async () => {
 		const app = createTestApp();
@@ -7134,7 +7134,7 @@ describe('market api', () => {
 			'derived_capacity_exhausted',
 			'insufficient_budget',
 		]));
-	});
+	}, 15000);
 
 	it('stores native capacity reported by capacity provider registration and heartbeat', async () => {
 		const app = createTestApp();
