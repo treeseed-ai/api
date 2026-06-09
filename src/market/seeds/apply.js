@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadAndPlanSeed } from '@treeseed/sdk/seeds';
 import YAML from 'yaml';
@@ -132,46 +132,8 @@ function normalizeExecutionProviders(executionProviders, desiredProviders = []) 
 		.sort(sortBy((provider) => provider.id, (provider) => provider.name, (provider) => provider.kind));
 }
 
-function parseTomlStringValue(value) {
-	const trimmed = String(value ?? '').trim();
-	if (!trimmed) return '';
-	if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-		try {
-			return JSON.parse(trimmed);
-		} catch {
-			return trimmed.slice(1, -1);
-		}
-	}
-	return trimmed;
-}
-
-export function readLocalGeneratedWranglerVars(projectRoot) {
-	const generatedWranglerConfig = resolve(projectRoot, '.treeseed', 'generated', 'environments', 'local', 'wrangler.toml');
-	if (!existsSync(generatedWranglerConfig)) {
-		return {};
-	}
-	const vars = {};
-	let inVars = false;
-	for (const rawLine of readFileSync(generatedWranglerConfig, 'utf8').split(/\r?\n/u)) {
-		const line = rawLine.trim();
-		if (!line || line.startsWith('#')) continue;
-		if (/^\[.+\]$/u.test(line)) {
-			inVars = line === '[vars]';
-			continue;
-		}
-		if (!inVars) continue;
-		const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/u);
-		if (!match) continue;
-		vars[match[1]] = parseTomlStringValue(match[2]);
-	}
-	return vars;
-}
-
-export function resolveLocalSeedEnv(projectRoot, env = process.env) {
-	return {
-		...readLocalGeneratedWranglerVars(projectRoot),
-		...env,
-	};
+export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
+	return env;
 }
 
 async function createLocalSeedStore(projectRoot, env = process.env) {
