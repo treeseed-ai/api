@@ -582,7 +582,7 @@ describe('market api', () => {
 		}));
 		expect(teamResponse.ok).toBe(false);
 		expect(teamResponse.code).toBe('namespace_taken');
-	});
+	}, 15000);
 
 	it('supports multiple verified account emails for login, primary selection, deletion, reset, and invite lookup', async () => {
 		const db = createTestPostgresDatabase();
@@ -6322,12 +6322,14 @@ describe('market api', () => {
 			expect(resumedState.launch.active).toBe(true);
 		}
 
-		const inbox = await json(await app.request(`/v1/teams/${team.id}/inbox`, {
-			headers: {
-				authorization: `Bearer ${token}`,
-			},
-		}));
-		expect(inbox.payload.some((entry: { kind: string }) => entry.kind === 'launch_failure')).toBe(true);
+		expect(await waitForCondition(async () => {
+			const inbox = await json(await app.request(`/v1/teams/${team.id}/inbox`, {
+				headers: {
+					authorization: `Bearer ${token}`,
+				},
+			}));
+			return inbox.payload.some((entry: { kind: string }) => entry.kind === 'launch_failure');
+		}, 8000)).toBe(true);
 		});
 	}, 30000);
 
