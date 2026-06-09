@@ -70,10 +70,13 @@ npm run db:migrate
 Acceptance against a hosted API:
 
 ```bash
-TREESEED_API_BASE_URL=<api-base-url> npm run test:acceptance -- --base-url "$TREESEED_API_BASE_URL"
+TREESEED_API_BASE_URL=<api-base-url> \
+TREESEED_ACCEPTANCE_SERVICE_ID=<service-id> \
+TREESEED_ACCEPTANCE_SERVICE_SECRET=<service-secret> \
+npm run test:acceptance -- --base-url "$TREESEED_API_BASE_URL"
 ```
 
-`verify:local` builds `dist`, checks package dependency boundaries, runs unit tests, validates generated output, and smoke-imports the public `dist` entrypoints. Hosted acceptance is run by the package deploy workflow and can be run manually with `npm run test:acceptance -- --base-url <api-base-url>`.
+`verify:local` builds `dist`, checks package dependency boundaries, runs unit tests, validates generated output, and smoke-imports the public `dist` entrypoints. Hosted acceptance is run only when the API base URL and acceptance service credentials are configured; the package deploy workflow supplies those values for staging/prod, and the same suite can be run manually with `npm run test:acceptance -- --base-url <api-base-url>`.
 
 ## Deployment
 

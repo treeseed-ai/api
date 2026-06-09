@@ -93,6 +93,10 @@ function runAcceptanceIfConfigured() {
 		console.log('Skipping API acceptance tests: TREESEED_API_BASE_URL is not set.');
 		return;
 	}
+	if (!process.env.TREESEED_ACCEPTANCE_SERVICE_ID || !process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET) {
+		console.log('Skipping API acceptance tests: TREESEED_ACCEPTANCE_SERVICE_ID and TREESEED_ACCEPTANCE_SERVICE_SECRET are not both set.');
+		return;
+	}
 	run('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
 }
 
