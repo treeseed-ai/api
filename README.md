@@ -1,88 +1,21 @@
-# `@treeseed/api`
+# @treeseed/api
 
-`@treeseed/api` is the deploy-only Treeseed backend package.
+`@treeseed/api` runs the Treeseed backend control plane: HTTP API, PostgreSQL-backed state, backend auth, operation lifecycle, migrations, seed application, route descriptors, operations runner, and public TreeDX federation hosting.
 
-It owns the HTTP API, Treeseed PostgreSQL adapter, backend auth helpers, migrations, backend seed application, platform operation lifecycle, route descriptors, and Treeseed operations runner. The root web app should talk to this package only through HTTP/proxy/client surfaces.
+Use this package when you operate or develop the Treeseed backend. Ordinary admin users interact with it through the web/admin UI or CLI, not by importing this package.
 
-The canonical repository is:
+## Who Needs This Package
 
-```text
-git@github.com:treeseed-ai/api.git
-```
+- operators deploying Treeseed API and operations-runner services
+- maintainers changing backend routes, storage, auth, migrations, or operation execution
+- acceptance-test runners validating hosted API behavior
+- platform engineers wiring TreeDX federation into the Treeseed backend
 
-## Runtime Ownership
+The root market/admin web app reaches this package through HTTP/proxy/client surfaces only.
 
-This package owns:
+## Runtime Services
 
-- `src/api/**`: Hono API application and Node server entrypoint
-- `src/operations-runner/**`: Treeseed operation claiming, checkpointing, execution, health, and runner entrypoint
-- `src/api/market-postgres.*`: Treeseed PostgreSQL adapter
-- backend auth and credential-session helpers
-- API migrations and backend seed application
-- API acceptance route descriptors and package-local API tests
-
-The root Market repo owns:
-
-- Astro web UI
-- knowledge hub content
-- auth, management, and Market UI pages
-- `/v1/*` proxy route and UI API client only
-
-## Public Exports
-
-```text
-@treeseed/api
-@treeseed/api/api/app
-@treeseed/api/api/server
-@treeseed/api/api/store
-@treeseed/api/api/market-postgres
-@treeseed/api/operations-runner
-@treeseed/api/route-descriptors
-```
-
-## Binaries
-
-```text
-treeseed-api
-treeseed-api-operations-runner
-treeseed-api-db-migrate
-```
-
-## Package Scripts
-
-```bash
-npm install
-npm run build
-npm run test:unit
-npm run verify:local
-```
-
-Runtime scripts:
-
-```bash
-npm run dev:api
-npm run dev:runner -- --market local --watch --operation project:web_deployment --mock-external
-npm run start:api
-npm run start:runner
-npm run db:migrate
-```
-
-Acceptance against a hosted API:
-
-```bash
-TREESEED_API_BASE_URL=<api-base-url> \
-TREESEED_ACCEPTANCE_SERVICE_ID=<service-id> \
-TREESEED_ACCEPTANCE_SERVICE_SECRET=<service-secret> \
-npm run test:acceptance -- --base-url "$TREESEED_API_BASE_URL"
-```
-
-`verify:local` builds `dist`, checks package dependency boundaries, runs unit tests, validates generated output, and smoke-imports the public `dist` entrypoints. Hosted acceptance is run only when the API base URL and acceptance service credentials are configured; the package deploy workflow supplies those values for staging/prod, and the same suite can be run manually with `npm run test:acceptance -- --base-url <api-base-url>`.
-
-## Deployment
-
-Railway builds both backend services from this package root.
-
-This package owns the API app desired state in `treeseed.site.yaml`: API service, indexed operations runner, PostgreSQL, API domains, variables, volumes, and public TreeDX federation hosting. Reconciliation must flow through `trsd hosting plan|apply|verify|destroy --app api` and the SDK canonical reconciliation platform; provider-side manual repairs are diagnostics only and should become adapter fixes.
+Railway builds backend services from this package root:
 
 ```text
 api
@@ -101,11 +34,39 @@ operationsRunner
   volumeMountPath: /data
 ```
 
-The Treeseed PostgreSQL service must target both `api` and `operationsRunner` with `TREESEED_DATABASE_URL`.
+Treeseed PostgreSQL targets both services with `TREESEED_DATABASE_URL`.
 
-Use this package's `TreeSeed API Deploy` GitHub workflow for hosted staging and production deployment. The root Market workflow does not deploy or accept the API. The package workflow verifies the package, reconciles the API app through `trsd hosting apply --app api`, verifies live Railway/API/runner/PostgreSQL/TreeDX state, runs the operations-runner smoke check, and then runs the hosted API acceptance suite before the workflow is green.
+## Install And Verify
 
-Use `trsd` directly for local/operator planning and live repair:
+```bash
+npm install
+npm run build
+npm run test:unit
+npm run verify:local
+```
+
+Runtime scripts:
+
+```bash
+npm run dev:api
+npm run dev:runner -- --market local --watch --operation project:web_deployment --mock-external
+npm run start:api
+npm run start:runner
+npm run db:migrate
+```
+
+Hosted acceptance:
+
+```bash
+TREESEED_API_BASE_URL=<api-base-url> \
+TREESEED_ACCEPTANCE_SERVICE_ID=<service-id> \
+TREESEED_ACCEPTANCE_SERVICE_SECRET=<service-secret> \
+npm run test:acceptance -- --base-url "$TREESEED_API_BASE_URL"
+```
+
+## Deployment
+
+Reconciliation must flow through `trsd`; direct provider mutation is diagnostic only.
 
 ```bash
 npx trsd ready staging --json
@@ -114,6 +75,8 @@ npx trsd hosting apply --environment staging --app api --execute --json
 npx trsd hosting verify --environment staging --app api --live --json
 npx trsd operations smoke --environment staging --service operationsRunner --json
 ```
+
+The package deploy workflow verifies the package, reconciles the API app, verifies live Railway/API/runner/PostgreSQL/TreeDX state, runs operations-runner smoke checks, and runs hosted API acceptance before going green.
 
 ## Required Environment
 
@@ -140,9 +103,48 @@ Web/API trust:
 
 Provider credentials are required only for enabled operation types. Manage them through Treeseed config and provider secret stores, not plaintext env files.
 
+## Public Exports
+
+```text
+@treeseed/api
+@treeseed/api/api/app
+@treeseed/api/api/server
+@treeseed/api/api/store
+@treeseed/api/api/market-postgres
+@treeseed/api/operations-runner
+@treeseed/api/route-descriptors
+```
+
+Published binaries:
+
+```text
+treeseed-api
+treeseed-api-operations-runner
+treeseed-api-db-migrate
+```
+
+## How API Fits With Other Packages
+
+- `@treeseed/admin` renders admin UI and talks to API through HTTP/proxy/client facades.
+- `@treeseed/ui` owns reusable visual components used by admin/market.
+- root `@treeseed/market` hosts the web tenant and future ecommerce overlays.
+- `@treeseed/sdk` owns shared contracts, reconciliation, config, and workflow primitives used by API.
+- `@treeseed/cli` exposes operator commands that call SDK/API surfaces.
+- `@treeseed/agent` owns capacity-provider runtime; API owns backend control-plane routes and operation state for that runtime.
+- `packages/treedx` owns the generic repository service image consumed by API hosting.
+
+## What API Does Not Own
+
+- web/admin routes or Astro pages
+- reusable UI primitives
+- root market content, public messaging, or ecommerce
+- CLI command UX
+- capacity provider manager/runner/worker implementation
+- TreeDX internals
+
 ## Release
 
-`@treeseed/api` is private and deploy-only for now. It still keeps standard Treeseed package scripts so package verification, tags, and workflow orchestration stay consistent with the other package repos.
+`@treeseed/api` is deploy-only/private for now. It keeps standard Treeseed package scripts so package verification, tags, and workflow orchestration stay consistent.
 
 ```bash
 npm run release:verify
@@ -151,10 +153,4 @@ npm run release:publish
 
 `release:publish` should no-op or refuse clearly while the package remains private.
 
-## Boundary Rules
-
-- Do not use `workspace:` or `file:` dependency specs in this package repository.
-- Do not import sibling package source paths. Use canonical public SDK exports.
-- Do not move web UI code into this package.
-- Do not make the root Market app import backend implementation from this package.
-- Do not print secrets in logs, JSON reports, or acceptance output.
+See the root [Package Ownership](../../docs/package-ownership.md) guide for cross-package boundaries.
