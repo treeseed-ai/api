@@ -1,0 +1,92 @@
+name: TreeSeed API
+slug: treeseed-api
+siteUrl: https://api.treeseed.ai
+contactEmail: hello@treeseed.email
+hosting:
+  kind: treeseed_control_plane
+  registration: none
+  teamId: treeseed
+  projectId: api
+hub:
+  mode: treeseed_hosted
+runtime:
+  mode: treeseed_managed
+  registration: none
+surfaces:
+  api:
+    enabled: true
+    provider: railway
+    rootDir: .
+    localBaseUrl: http://127.0.0.1:3000
+    environments:
+      staging:
+        domain: api-treeseed-staging.treeseed.ai
+      prod:
+        domain: api.treeseed.ai
+services:
+  treeseedDatabase:
+    enabled: true
+    provider: railway
+    railway:
+      resourceType: postgres
+      serviceName: treeseed-api-postgres
+      environmentVariable: TREESEED_DATABASE_URL
+      serviceTargets:
+        - api
+        - operationsRunner
+  api:
+    enabled: true
+    provider: railway
+    rootDir: .
+    railway:
+      projectName: treeseed-api
+      serviceName: treeseed-api
+      rootDir: .
+      buildCommand: npm run build
+      startCommand: npm run start:api
+      healthcheckPath: /healthz
+      healthcheckTimeoutSeconds: 120
+      runtimeMode: serverless
+    environments:
+      local:
+        baseUrl: http://127.0.0.1:3000
+        railwayEnvironment: local
+      staging:
+        railwayEnvironment: staging
+      prod:
+        railwayEnvironment: prod
+  operationsRunner:
+    enabled: true
+    provider: railway
+    rootDir: .
+    railway:
+      projectName: treeseed-api
+      serviceName: treeseed-api-operations-runner-01
+      rootDir: .
+      buildCommand: npm run build
+      startCommand: npm run start:runner
+      healthcheckPath: /healthz
+      healthcheckTimeoutSeconds: 120
+      runtimeMode: service
+      volumeMountPath: /data
+      runnerPool:
+        bootstrapCount: 1
+        maxRunners: 4
+        volumeMountPath: /data
+    environments:
+      local:
+        baseUrl: http://127.0.0.1:3001
+        railwayEnvironment: local
+      staging:
+        railwayEnvironment: staging
+      prod:
+        railwayEnvironment: prod
+publicTreeDxFederation:
+  railway:
+    nodePool:
+      bootstrapCount: 1
+      maxNodes: 4
+providers:
+  operations: api
+  deploy: railway
+  dns: cloudflare-dns

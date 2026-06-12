@@ -1,0 +1,27 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      TREESEED_GITHUB_AUTOMATION_MODE: stub
+      TREESEED_STAGE_WAIT_MODE: skip
+      TREESEED_AGENT_DISABLE_GIT: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+
+      - run: npm ci --workspaces=false
+      - run: npm run verify:direct

@@ -1,0 +1,109 @@
+{
+  "name": "@treeseed/api",
+  "version": "0.5.0",
+  "description": "TreeSeed Treeseed backend API and operations runner.",
+  "license": "COMMERCIAL",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/treeseed-ai/api.git",
+    "directory": "."
+  },
+  "homepage": "https://treeseed.ai",
+  "bugs": {
+    "url": "https://github.com/treeseed-ai/api/issues"
+  },
+  "packageManager": "npm@11.7.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "README.md",
+    "dist",
+    "scripts/verify-driver.mjs"
+  ],
+  "bin": {
+    "treeseed-api": "./dist/api/server.js",
+    "treeseed-api-operations-runner": "./dist/operations-runner/entrypoint.js",
+    "treeseed-api-db-migrate": "./dist/scripts/migrate-db.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./api/app": {
+      "types": "./dist/api/app.d.ts",
+      "default": "./dist/api/app.js"
+    },
+    "./api/server": {
+      "types": "./dist/api/server.d.ts",
+      "default": "./dist/api/server.js"
+    },
+    "./api/store": {
+      "types": "./dist/api/store.d.ts",
+      "default": "./dist/api/store.js"
+    },
+    "./api/market-postgres": {
+      "types": "./dist/api/market-postgres.d.ts",
+      "default": "./dist/api/market-postgres.js"
+    },
+    "./operations-runner": {
+      "types": "./dist/operations-runner/entrypoint.d.ts",
+      "default": "./dist/operations-runner/entrypoint.js"
+    },
+    "./route-descriptors": {
+      "types": "./dist/api/route-descriptors.d.ts",
+      "default": "./dist/api/route-descriptors.js"
+    }
+  },
+  "scripts": {
+    "setup": "npm install",
+    "setup:ci": "npm ci",
+    "build": "npm run build:dist",
+    "build:dist": "node ./scripts/run-ts.mjs ./scripts/build-dist.ts",
+    "prepare": "node ./scripts/prepare.mjs",
+    "prepack": "npm run build:dist",
+    "dev:api": "node --experimental-transform-types ./src/api/server.js",
+    "dev:runner": "node --experimental-transform-types ./src/operations-runner/entrypoint.js run",
+    "dev:compose": "COMPOSE_DISABLE_ENV_FILE=1 docker compose up --build",
+    "dev:compose:down": "COMPOSE_DISABLE_ENV_FILE=1 docker compose down",
+    "dev:compose:logs": "COMPOSE_DISABLE_ENV_FILE=1 docker compose logs --follow api operations-runner",
+    "start:api": "node ./dist/api/server.js",
+    "start:runner": "node ./dist/operations-runner/entrypoint.js run",
+    "db:migrate": "node ./dist/scripts/migrate-db.js",
+    "lint": "npm run build:dist",
+    "test": "npm run test:unit",
+    "test:unit": "vitest run --config ./vitest.config.ts",
+    "test:acceptance": "node ./scripts/api-acceptance.mjs",
+    "verify:direct": "npm run release:verify",
+    "verify:local": "node --input-type=module -e \"process.env.TREESEED_VERIFY_DRIVER='direct'; await import('./scripts/verify-driver.mjs')\"",
+    "verify:action": "node --input-type=module -e \"process.env.TREESEED_VERIFY_DRIVER='act'; await import('./scripts/verify-driver.mjs')\"",
+    "verify": "node ./scripts/verify-driver.mjs",
+    "release:setup": "npm run setup:ci",
+    "release:check-tag": "node ./scripts/run-ts.mjs ./scripts/assert-release-tag-version.ts",
+    "release:verify": "node ./scripts/run-ts.mjs ./scripts/release-verify.ts",
+    "release:publish": "node ./scripts/run-ts.mjs ./scripts/publish-package.ts"
+  },
+  "dependencies": {
+    "@react-email/render": "^2.0.8",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#0.11.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.8.2",
+    "libsodium-wrappers": "^0.7.16",
+    "libsodium-wrappers-sumo": "^0.7.16",
+    "octokit": "^5.0.5",
+    "pg": "^8.21.0",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@treeseed/cli": "github:treeseed-ai/cli#0.11.0",
+    "@types/node": "^24.6.0",
+    "esbuild": "^0.28.0",
+    "pg-mem": "^3.0.14",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2"
+  }
+}
