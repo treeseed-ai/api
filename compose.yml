@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: treeseed_api
       POSTGRES_USER: treeseed
-      POSTGRES_PASSWORD: treeseed
+      POSTGRES_PASSWORD: ${TREESEED_LOCAL_POSTGRES_PASSWORD:?TREESEED_LOCAL_POSTGRES_PASSWORD must be injected by trsd for local Docker Compose.}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U treeseed -d treeseed_api"]
       interval: 5s
@@ -27,15 +27,15 @@ services:
       TREESEED_API_ENVIRONMENT: local
       TREESEED_ENVIRONMENT: local
       TREESEED_LOCAL_DEV_MODE: "1"
-      TREESEED_DATABASE_URL: postgres://treeseed:treeseed@treeseed-api-postgres:5432/treeseed_api
-      TREESEED_API_BASE_URL: http://localhost:3000
+      TREESEED_DATABASE_URL: ${TREESEED_DATABASE_URL:?TREESEED_DATABASE_URL must be injected by trsd for local Docker Compose.}
+      TREESEED_API_BASE_URL: ${TREESEED_API_BASE_URL:-http://localhost:3000}
       TREESEED_API_PROVIDER_AUTH: market-postgres
-      TREESEED_API_AUTH_SECRET: treeseed-api-dev-secret
-      TREESEED_API_WEB_SERVICE_ID: web
-      TREESEED_API_WEB_SERVICE_SECRET: treeseed-web-service-dev-secret
-      TREESEED_API_WEB_ASSERTION_SECRET: treeseed-web-assertion-dev-secret
-      TREESEED_PLATFORM_RUNNER_SECRET: treeseed-runner-dev-secret
-      TREESEED_PLATFORM_RUNNER_ENVIRONMENT: local
+      TREESEED_API_AUTH_SECRET: ${TREESEED_API_AUTH_SECRET:?TREESEED_API_AUTH_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_API_WEB_SERVICE_ID: ${TREESEED_API_WEB_SERVICE_ID:-web}
+      TREESEED_API_WEB_SERVICE_SECRET: ${TREESEED_API_WEB_SERVICE_SECRET:?TREESEED_API_WEB_SERVICE_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_API_WEB_ASSERTION_SECRET: ${TREESEED_API_WEB_ASSERTION_SECRET:?TREESEED_API_WEB_ASSERTION_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_PLATFORM_RUNNER_SECRET: ${TREESEED_PLATFORM_RUNNER_SECRET:?TREESEED_PLATFORM_RUNNER_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_PLATFORM_RUNNER_ENVIRONMENT: ${TREESEED_PLATFORM_RUNNER_ENVIRONMENT:-local}
     ports:
       - "3000:3000"
 
@@ -55,18 +55,18 @@ services:
       TREESEED_API_ENVIRONMENT: local
       TREESEED_ENVIRONMENT: local
       TREESEED_LOCAL_DEV_MODE: "1"
-      TREESEED_DATABASE_URL: postgres://treeseed:treeseed@treeseed-api-postgres:5432/treeseed_api
-      TREESEED_API_BASE_URL: http://api:3000
+      TREESEED_DATABASE_URL: ${TREESEED_DATABASE_URL:?TREESEED_DATABASE_URL must be injected by trsd for local Docker Compose.}
+      TREESEED_API_BASE_URL: ${TREESEED_API_INTERNAL_BASE_URL:-http://api:3000}
       TREESEED_API_PROVIDER_AUTH: market-postgres
-      TREESEED_API_AUTH_SECRET: treeseed-api-dev-secret
-      TREESEED_API_WEB_SERVICE_ID: web
-      TREESEED_API_WEB_SERVICE_SECRET: treeseed-web-service-dev-secret
-      TREESEED_API_WEB_ASSERTION_SECRET: treeseed-web-assertion-dev-secret
-      TREESEED_PLATFORM_RUNNER_ID: local-runner-01
-      TREESEED_PLATFORM_RUNNER_SECRET: treeseed-runner-dev-secret
-      TREESEED_PLATFORM_RUNNER_ENVIRONMENT: local
-      TREESEED_PLATFORM_RUNNER_DATA_DIR: /data
-      TREESEED_MANAGER_ID: local-manager-01
+      TREESEED_API_AUTH_SECRET: ${TREESEED_API_AUTH_SECRET:?TREESEED_API_AUTH_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_API_WEB_SERVICE_ID: ${TREESEED_API_WEB_SERVICE_ID:-web}
+      TREESEED_API_WEB_SERVICE_SECRET: ${TREESEED_API_WEB_SERVICE_SECRET:?TREESEED_API_WEB_SERVICE_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_API_WEB_ASSERTION_SECRET: ${TREESEED_API_WEB_ASSERTION_SECRET:?TREESEED_API_WEB_ASSERTION_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_PLATFORM_RUNNER_ID: ${TREESEED_PLATFORM_RUNNER_ID:-local-runner-01}
+      TREESEED_PLATFORM_RUNNER_SECRET: ${TREESEED_PLATFORM_RUNNER_SECRET:?TREESEED_PLATFORM_RUNNER_SECRET must be injected by trsd for local Docker Compose.}
+      TREESEED_PLATFORM_RUNNER_ENVIRONMENT: ${TREESEED_PLATFORM_RUNNER_ENVIRONMENT:-local}
+      TREESEED_PLATFORM_RUNNER_DATA_DIR: ${TREESEED_PLATFORM_RUNNER_DATA_DIR:-/data}
+      TREESEED_MANAGER_ID: ${TREESEED_MANAGER_ID:-local-manager-01}
     volumes:
       - treeseed-api-operations-runner-data:/data
 

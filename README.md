@@ -56,7 +56,7 @@ npm run start:runner
 npm run db:migrate
 ```
 
-Local Docker Compose runs the API, operations runner, and PostgreSQL with the same Railway-owned service shape used by hosting reconciliation:
+Local Docker Compose runs the API, operations runner, and PostgreSQL with the same Railway-owned service shape used by hosting reconciliation. The Compose file does not use `env_file` or plaintext `.env` secrets; run it from a `trsd`-unlocked environment so required variables are injected into the process environment.
 
 ```bash
 npm run dev:compose
