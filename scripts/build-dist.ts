@@ -214,6 +214,12 @@ function copySdkRuntimeArtifacts() {
 	const sdkRoot = resolve(packageRoot, 'node_modules', '@treeseed', 'sdk');
 	const sdkVendorRoot = resolve(distRoot, 'node_modules', '@treeseed', 'sdk');
 	const sdkPackage = preparedSdkPackageRoot(sdkRoot);
+	const copyRuntimeArtifact = (source: string, destination: string) => {
+		cpSync(source, destination, {
+			recursive: true,
+			filter: (entry) => !entry.endsWith('.d.js'),
+		});
+	};
 	try {
 		const sdkPackageJson = resolve(sdkPackage.root, 'package.json');
 		if (!existsSync(sdkPackageJson)) return;
@@ -229,8 +235,8 @@ function copySdkRuntimeArtifacts() {
 		}
 		mkdirSync(sdkVendorRoot, { recursive: true });
 		copyFileSync(sdkPackageJson, resolve(sdkVendorRoot, 'package.json'));
-		cpSync(resolve(sdkPackage.root, 'dist'), resolve(sdkVendorRoot, 'dist'), { recursive: true });
-		cpSync(resolve(sdkPackage.root, 'drizzle'), resolve(sdkVendorRoot, 'drizzle'), { recursive: true });
+		copyRuntimeArtifact(resolve(sdkPackage.root, 'dist'), resolve(sdkVendorRoot, 'dist'));
+		copyRuntimeArtifact(resolve(sdkPackage.root, 'drizzle'), resolve(sdkVendorRoot, 'drizzle'));
 	} finally {
 		sdkPackage.cleanup();
 	}
