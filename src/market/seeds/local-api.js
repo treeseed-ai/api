@@ -14,7 +14,7 @@ function localApiConfig(projectRoot, env = process.env) {
 		webServiceSecret: localEnv.TREESEED_WEB_SERVICE_SECRET ?? localEnv.TREESEED_API_WEB_SERVICE_SECRET ?? localEnv.TREESEED_API_SERVICE_SECRET ?? 'treeseed-local-seed-service-secret',
 		projectApiKey: localEnv.TREESEED_PROJECT_API_KEY,
 		providers: {
-			auth: 'd1',
+			auth: 'market-postgres',
 		},
 	};
 }

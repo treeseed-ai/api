@@ -3211,7 +3211,7 @@ describe('market api', () => {
 			ok: true,
 			status: 'ok',
 			checks: {
-				d1: true,
+				database: true,
 			},
 		});
 
@@ -3268,7 +3268,7 @@ describe('market api', () => {
 			ok: true,
 			status: 'ok',
 			checks: {
-				d1: true,
+				database: true,
 			},
 		});
 

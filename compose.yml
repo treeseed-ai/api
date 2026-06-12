@@ -1,0 +1,75 @@
+services:
+  treeseed-api-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: treeseed_api
+      POSTGRES_USER: treeseed
+      POSTGRES_PASSWORD: treeseed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U treeseed -d treeseed_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - treeseed-api-postgres-volume:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      target: api
+    depends_on:
+      treeseed-api-postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 3000
+      TREESEED_API_ENVIRONMENT: local
+      TREESEED_ENVIRONMENT: local
+      TREESEED_LOCAL_DEV_MODE: "1"
+      TREESEED_DATABASE_URL: postgres://treeseed:treeseed@treeseed-api-postgres:5432/treeseed_api
+      TREESEED_API_BASE_URL: http://localhost:3000
+      TREESEED_API_PROVIDER_AUTH: market-postgres
+      TREESEED_API_AUTH_SECRET: treeseed-api-dev-secret
+      TREESEED_API_WEB_SERVICE_ID: web
+      TREESEED_API_WEB_SERVICE_SECRET: treeseed-web-service-dev-secret
+      TREESEED_API_WEB_ASSERTION_SECRET: treeseed-web-assertion-dev-secret
+      TREESEED_PLATFORM_RUNNER_SECRET: treeseed-runner-dev-secret
+      TREESEED_PLATFORM_RUNNER_ENVIRONMENT: local
+    ports:
+      - "3000:3000"
+
+  operations-runner:
+    build:
+      context: .
+      target: operations-runner
+    command: ["npm", "run", "start:runner"]
+    depends_on:
+      treeseed-api-postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      NODE_ENV: development
+      PORT: 0
+      TREESEED_API_ENVIRONMENT: local
+      TREESEED_ENVIRONMENT: local
+      TREESEED_LOCAL_DEV_MODE: "1"
+      TREESEED_DATABASE_URL: postgres://treeseed:treeseed@treeseed-api-postgres:5432/treeseed_api
+      TREESEED_API_BASE_URL: http://api:3000
+      TREESEED_API_PROVIDER_AUTH: market-postgres
+      TREESEED_API_AUTH_SECRET: treeseed-api-dev-secret
+      TREESEED_API_WEB_SERVICE_ID: web
+      TREESEED_API_WEB_SERVICE_SECRET: treeseed-web-service-dev-secret
+      TREESEED_API_WEB_ASSERTION_SECRET: treeseed-web-assertion-dev-secret
+      TREESEED_PLATFORM_RUNNER_ID: local-runner-01
+      TREESEED_PLATFORM_RUNNER_SECRET: treeseed-runner-dev-secret
+      TREESEED_PLATFORM_RUNNER_ENVIRONMENT: local
+      TREESEED_PLATFORM_RUNNER_DATA_DIR: /data
+      TREESEED_MANAGER_ID: local-manager-01
+    volumes:
+      - treeseed-api-operations-runner-data:/data
+
+volumes:
+  treeseed-api-postgres-volume:
+  treeseed-api-operations-runner-data:

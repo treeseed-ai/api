@@ -33,7 +33,7 @@ import {
 import { runTreeseedHostingAudit } from '@treeseed/sdk/workflow-support';
 import {
 	createTreeseedApiApp,
-	D1AuthProvider,
+	D1AuthProvider as DatabaseAuthProvider,
 	loadTemplateCatalog,
 	resolveApiConfig,
 } from '@treeseed/sdk/api';
@@ -73,6 +73,8 @@ function jsonError(c, status, error, details = {}) {
 		...details,
 	}, { status });
 }
+
+const POSTGRES_AUTH_PROVIDER_ID = 'market-postgres';
 
 async function resolveLaunchTemplateRequirements({ store, principal, config, sourceKind, sourceRef, requireKnownTemplate = false }) {
 	if (!['template', 'market_listing'].includes(sourceKind) || typeof sourceRef !== 'string' || !sourceRef.trim()) {
@@ -4515,6 +4517,10 @@ function defaultConfig(overrides = {}) {
 		...resolved,
 		projectId: overrides.projectId ?? resolved.projectId ?? 'treeseed-market',
 		repoRoot: overrides.repoRoot ?? resolved.repoRoot ?? process.cwd(),
+		d1DatabaseId: undefined,
+		d1DatabaseName: undefined,
+		d1LocalPersistTo: undefined,
+		d1WranglerConfigPath: undefined,
 		...overrides,
 	};
 	if (overrides.authApprovalBaseUrl == null && typeof overrides.siteUrl === 'string' && overrides.siteUrl.trim()) {
@@ -4544,23 +4550,21 @@ export function createApiApp(options = {}) {
 		serviceSecret: config.webServiceSecret,
 		fetchImpl: options.fetchImpl ?? fetch,
 	}, db);
-	const configuredAuthProviderId = config.providers?.auth ?? 'd1';
-	const authProviderId = configuredAuthProviderId === 'd1' ? 'market-d1' : configuredAuthProviderId;
+	const configuredAuthProviderId = config.providers?.auth ?? POSTGRES_AUTH_PROVIDER_ID;
+	const authProviderId = configuredAuthProviderId === 'd1' ? POSTGRES_AUTH_PROVIDER_ID : configuredAuthProviderId;
 	const authConfig = {
 		...config,
 		baseUrl: resolveAuthApprovalBaseUrl(config),
 	};
 	const sharedSdk = options.sdk ?? AgentSdk.createLocal({
 		repoRoot: config.repoRoot,
-		databaseName: config.d1DatabaseName ?? `${config.projectId}-market`,
-		persistTo: config.d1LocalPersistTo,
 	});
-	const runtimeProviders = configuredAuthProviderId === 'd1'
+	const runtimeProviders = authProviderId === POSTGRES_AUTH_PROVIDER_ID
 		? {
 			...(options.runtimeProviders ?? {}),
 			auth: {
 				...(options.runtimeProviders?.auth ?? {}),
-				[authProviderId]: ({ config: runtimeConfig }) => new D1AuthProvider({
+				[POSTGRES_AUTH_PROVIDER_ID]: ({ config: runtimeConfig }) => new DatabaseAuthProvider({
 					...runtimeConfig,
 					baseUrl: resolveAuthApprovalBaseUrl({
 						...config,
@@ -4596,7 +4600,7 @@ export function createApiApp(options = {}) {
 			if (logRequests) {
 				installApiRequestLogger(app);
 			}
-			const runtimeMarketAuthProvider = new D1AuthProvider({
+			const runtimeMarketAuthProvider = new DatabaseAuthProvider({
 				...authConfig,
 				...runtime.resolved.config,
 				baseUrl: resolveAuthApprovalBaseUrl({
@@ -4613,7 +4617,7 @@ export function createApiApp(options = {}) {
 						ok: true,
 						status: 'ok',
 						checks: {
-							d1: probe?.ok === 1 || probe?.ok === '1',
+							database: probe?.ok === 1 || probe?.ok === '1',
 						},
 					});
 				} catch (error) {

@@ -1,0 +1,15 @@
+.git
+.github
+.treeseed
+.wrangler
+node_modules
+dist
+coverage
+reports
+*.log
+npm-debug.log*
+.env
+.env.*
+!.env.example
+compose.yml
+Dockerfile*

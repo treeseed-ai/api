@@ -1,17 +1,7 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { packageRoot } from './package-tools.ts';
-
-const verifyRuntimeRoot = mkdtempSync(join(tmpdir(), 'treeseed-api-verify-'));
-const verifyRuntimeEnv = {
-	TREESEED_API_D1_LOCAL_PERSIST_TO: resolve(verifyRuntimeRoot, 'd1'),
-};
-
-process.on('exit', () => {
-	rmSync(verifyRuntimeRoot, { recursive: true, force: true });
-});
 
 const textExtensions = new Set(['.js', '.ts', '.mjs', '.cjs', '.d.ts', '.json', '.md']);
 const forbiddenPatterns = [
@@ -28,7 +18,6 @@ function run(command: string, args: string[], env: Record<string, string> = {}) 
 		encoding: 'utf8',
 		env: {
 			...process.env,
-			...verifyRuntimeEnv,
 			...env,
 		},
 	});

@@ -1,0 +1,30 @@
+id: "@treeseed/api"
+name: TreeSeed API
+kind: node-typescript
+repository: treeseed-ai/api
+publishTarget: docker
+verify:
+  fast: npm run verify
+  local: npm run verify:local
+  release: npm run release:verify
+artifacts:
+  - provider: docker
+    name: treeseed/api
+    dockerfile: Dockerfile
+    target: api
+  - provider: docker
+    name: treeseed/op-runner
+    dockerfile: Dockerfile
+    target: operations-runner
+releaseGate:
+  workflow: deploy.yml
+dockerImages:
+  releaseWorkflow: publish.yml
+  developmentWorkflow: deploy.yml
+  tags:
+    release:
+      - "<version>"
+      - latest
+    staging:
+      - "dev-staging-<short-sha>"
+      - dev-staging

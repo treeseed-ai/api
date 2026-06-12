@@ -50,9 +50,18 @@ Runtime scripts:
 ```bash
 npm run dev:api
 npm run dev:runner -- --market local --watch --operation project:web_deployment --mock-external
+npm run dev:compose
 npm run start:api
 npm run start:runner
 npm run db:migrate
+```
+
+Local Docker Compose runs the API, operations runner, and PostgreSQL with the same Railway-owned service shape used by hosting reconciliation:
+
+```bash
+npm run dev:compose
+npm run dev:compose:logs
+npm run dev:compose:down
 ```
 
 Hosted acceptance:
