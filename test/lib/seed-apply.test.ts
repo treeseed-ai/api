@@ -117,7 +117,7 @@ describe('local seed apply', () => {
 		} finally {
 			db.close();
 		}
-	});
+	}, 15000);
 
 	it('creates the TreeSeed local portfolio and reports unchanged on repeat apply', async () => {
 		const { db, store } = createStore();

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { packageRoot } from './package-tools.ts';
 
 const textExtensions = new Set(['.js', '.ts', '.mjs', '.cjs', '.d.ts', '.json', '.md']);
@@ -101,11 +102,11 @@ function runAcceptanceIfConfigured() {
 }
 
 async function smokeImportDist() {
-	const app = await import('../dist/api/app.js');
-	const server = await import('../dist/api/server.js');
-	const store = await import('../dist/api/store.js');
-	const pg = await import('../dist/api/market-postgres.js');
-	const runner = await import('../dist/operations-runner/entrypoint.js');
+	const app = await import(pathToFileURL(resolve(packageRoot, 'dist/api/app.js')).href);
+	const server = await import(pathToFileURL(resolve(packageRoot, 'dist/api/server.js')).href);
+	const store = await import(pathToFileURL(resolve(packageRoot, 'dist/api/store.js')).href);
+	const pg = await import(pathToFileURL(resolve(packageRoot, 'dist/api/market-postgres.js')).href);
+	const runner = await import(pathToFileURL(resolve(packageRoot, 'dist/operations-runner/entrypoint.js')).href);
 	if (typeof app.createApiApp !== 'function') throw new Error('missing createApiApp');
 	if (typeof server.createApiServer !== 'function') throw new Error('missing createApiServer');
 	if (typeof store.MarketControlPlaneStore !== 'function') throw new Error('missing MarketControlPlaneStore');
