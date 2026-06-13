@@ -99,7 +99,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@treeseed/cli": "github:treeseed-ai/cli#0.11.1-dev.staging.20260613T084305Z",
+    "@treeseed/cli": "github:treeseed-ai/cli#0.11.1-dev.staging.20260613T085409Z",
     "@types/node": "^24.6.0",
     "esbuild": "^0.28.0",
     "pg-mem": "^3.0.14",
