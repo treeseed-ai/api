@@ -1,7 +1,6 @@
 import {
 	buildProjectWebMonitorResult,
 	cancelGitHubWorkflowRun,
-	dispatchGitHubWorkflowRun,
 	formatGitHubWorkflowFailure,
 	waitForGitHubWorkflowRunCompletion,
 } from '@treeseed/sdk';
@@ -37,6 +36,27 @@ function lastActiveStep(progress) {
 
 function failedJobName(result) {
 	return result?.failedJobs?.[0]?.name ?? null;
+}
+
+async function dispatchProjectGitHubWorkflow(repository, input) {
+	const [owner, repo] = repository.split('/');
+	if (!owner || !repo) throw new Error(`Invalid GitHub repository slug "${repository}".`);
+	const workflowPath = encodeURIComponent(input.workflow);
+	await input.client.request(
+		`POST /repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${workflowPath}/dispatches`,
+		{
+			ref: input.branch,
+			inputs: input.inputs ?? {},
+		},
+	);
+	return {
+		status: 'dispatched',
+		repository,
+		workflow: input.workflow,
+		branch: input.branch,
+		inputs: input.inputs ?? {},
+		dispatchedAt: new Date().toISOString(),
+	};
 }
 
 function isTreeDxContentRepository(repository) {
@@ -386,7 +406,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			return result;
 		}
 
-		const dispatch = await dispatchGitHubWorkflowRun(preflight.repositorySlug, {
+		const dispatch = await dispatchProjectGitHubWorkflow(preflight.repositorySlug, {
 			client: githubClient,
 			workflow: preflight.workflowFile,
 			branch: preflight.branch,

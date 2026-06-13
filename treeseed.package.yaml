@@ -1,8 +1,15 @@
 id: "@treeseed/api"
 name: TreeSeed API
 kind: node-typescript
+type: hosted-service
 repository: treeseed-ai/api
 publishTarget: docker
+workflowTemplateVersion: "1"
+githubEnvironments:
+  - staging
+  - production
+requiredSecrets:
+  - DOCKERHUB_TOKEN
 verify:
   fast: npm run verify
   local: npm run verify:local
@@ -12,15 +19,24 @@ artifacts:
     name: treeseed/api
     dockerfile: Dockerfile
     target: api
+    architectures:
+      - amd64
+      - arm64
   - provider: docker
     name: treeseed/op-runner
     dockerfile: Dockerfile
     target: operations-runner
+    architectures:
+      - amd64
+      - arm64
 releaseGate:
-  workflow: deploy.yml
+  workflow: release-gate.yml
 dockerImages:
   releaseWorkflow: publish.yml
-  developmentWorkflow: deploy.yml
+  developmentWorkflow: dev-image.yml
+  architectures:
+    - amd64
+    - arm64
   tags:
     release:
       - "<version>"

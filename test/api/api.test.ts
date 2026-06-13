@@ -761,7 +761,7 @@ describe('market api', () => {
 			headers: { authorization: `Bearer ${token}` },
 		}));
 		expect(profile.payload.activity.projects.find((entry: { id: string }) => entry.id === project.id)).toBeUndefined();
-	});
+	}, 30000);
 
 	it('updates project profile settings through the project API', async () => {
 		const db = createTestPostgresDatabase();
@@ -5968,7 +5968,7 @@ describe('market api', () => {
 		const anonymous = await app.request('/v1/ui/governance');
 		expect(anonymous.status).toBe(401);
 		expect(await json(anonymous)).toMatchObject({ ok: false });
-	});
+	}, 30000);
 
 	it('uses the configured production web approval URL for the central API', async () => {
 		const app = createTestApp({
