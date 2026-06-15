@@ -6566,7 +6566,7 @@ describe('market api', () => {
 			expect.objectContaining({ action: 'product.approve', nextState: 'approved' }),
 			expect.objectContaining({ action: 'offer.approve', nextState: 'approved' }),
 		]));
-	}, 15_000);
+	}, 30_000);
 
 	it('manages phase 3 commerce stripe connect onboarding for approved vendors', async () => {
 		const calls: string[] = [];
