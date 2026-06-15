@@ -6,6 +6,21 @@ import pg from 'pg';
 const { Pool } = pg;
 const require = createRequire(import.meta.url);
 
+function attachPostgresPoolErrorHandler(pool) {
+	if (!pool || pool.__treeseedErrorHandlerAttached) return;
+	Object.defineProperty(pool, '__treeseedErrorHandlerAttached', {
+		value: true,
+		enumerable: false,
+		configurable: true,
+	});
+	pool.on('error', (error) => {
+		console.warn('[market-postgres] Idle client error', {
+			code: error?.code,
+			message: error?.message,
+		});
+	});
+}
+
 const replaceConflictTargets = new Map([
 	['capacity_provider_hosts', ['capacity_provider_id', 'host_id', 'role']],
 	['permissions', ['key']],
@@ -218,6 +233,7 @@ export class MarketPostgresDatabase {
 			throw new Error('Postgres database URL is required.');
 		}
 		this.pool = new Pool({ connectionString: databaseUrl.trim() });
+		attachPostgresPoolErrorHandler(this.pool);
 		this.migrationRoot = options.migrationRoot ?? null;
 		this.migrationPromise = null;
 	}
@@ -225,6 +241,7 @@ export class MarketPostgresDatabase {
 	static fromPool(pool, options = {}) {
 		const database = Object.create(MarketPostgresDatabase.prototype);
 		database.pool = pool;
+		attachPostgresPoolErrorHandler(database.pool);
 		database.migrationRoot = options.migrationRoot ?? null;
 		database.migrationPromise = null;
 		return database;

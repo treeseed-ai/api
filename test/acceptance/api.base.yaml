@@ -8,7 +8,7 @@ variables:
 seed:
   enabled: true
   path: /v1/acceptance/seed
-  namespace: acceptance-${environment}
+  namespace: acceptance-${environment}-${runNonce}
   actors:
     siteAdmin:
       siteRoles: [platform_admin]
@@ -157,6 +157,18 @@ sdkMethodMatrices:
     expect:
       status: 200
       envelope: { ok: true }
+  - method: auditProjectHosts
+    actor: teamOwner
+    expect:
+      statusAny: [200, 400]
+  - method: resyncProjectHost
+    actor: teamOwner
+    expect:
+      statusAny: [200, 400]
+  - method: rotateProjectHost
+    actor: teamOwner
+    expect:
+      statusAny: [200, 400]
   - method: enqueueAgentTask
     actor: teamOwner
     expect:

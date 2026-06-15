@@ -127,6 +127,6 @@ export function listTreeseedManagedHosts(teamId, runtime, values = {}) {
 	];
 }
 
-export async function listTreeseedManagedHostsFromConfig(teamId, runtime, scope = 'prod') {
+export async function listTreeseedManagedHostsFromConfig(teamId, runtime, scope = runtime?.resolved?.config?.environment ?? 'prod') {
 	return listTreeseedManagedHosts(teamId, runtime, await collectLocalTreeseedConfigValues(runtime, scope));
 }

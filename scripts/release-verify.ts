@@ -89,16 +89,16 @@ function assertCleanDist() {
 }
 
 function runAcceptanceIfConfigured() {
-	const baseUrl = process.env.TREESEED_API_BASE_URL;
-	if (!baseUrl) {
-		console.log('Skipping API acceptance tests: TREESEED_API_BASE_URL is not set.');
-		return;
-	}
-	if (!process.env.TREESEED_ACCEPTANCE_SERVICE_ID || !process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET) {
-		console.log('Skipping API acceptance tests: TREESEED_ACCEPTANCE_SERVICE_ID and TREESEED_ACCEPTANCE_SERVICE_SECRET are not both set.');
-		return;
-	}
-	run('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
+	const baseUrl = process.env.TREESEED_API_BASE_URL || 'http://127.0.0.1:3000';
+	const serviceId = process.env.TREESEED_ACCEPTANCE_SERVICE_ID || process.env.TREESEED_WEB_SERVICE_ID || process.env.TREESEED_API_WEB_SERVICE_ID || 'web';
+	const serviceSecret = process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET
+		|| process.env.TREESEED_WEB_SERVICE_SECRET
+		|| process.env.TREESEED_API_WEB_SERVICE_SECRET
+		|| 'treeseed-web-service-dev-secret';
+	run('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', baseUrl], {
+		TREESEED_ACCEPTANCE_SERVICE_ID: serviceId,
+		TREESEED_ACCEPTANCE_SERVICE_SECRET: serviceSecret,
+	});
 }
 
 async function smokeImportDist() {

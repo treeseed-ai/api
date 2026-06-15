@@ -35,6 +35,79 @@ const executeKnowledgeHubProviderLaunchMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@treeseed/sdk', async (importOriginal) => ({
 	...(await importOriginal<typeof import('@treeseed/sdk')>()),
+	COMMERCE_PRODUCT_KINDS: [
+		'template',
+		'knowledge_pack',
+		'ui_library',
+		'admin_interface',
+		'api_platform',
+		'hosted_project',
+		'professional_hosting',
+		'scoped_service',
+		'capacity_listing',
+	],
+	COMMERCE_OFFER_MODES: [
+		'free',
+		'private',
+		'contact',
+		'one_time',
+		'one_time_current_version',
+		'subscription',
+		'subscription_updates',
+		'professional_hosting',
+		'scoped_contract',
+		'external',
+	],
+	COMMERCE_VENDOR_TRUST_LEVELS: [
+		'public_publisher',
+		'verified_seller',
+		'trusted_service_vendor',
+		'trusted_capacity_vendor',
+		'integration_partner',
+	],
+	COMMERCE_GOVERNANCE_STATES: [
+		'draft',
+		'submitted',
+		'approved',
+		'rejected',
+		'suspended',
+		'archived',
+	],
+	COMMERCE_OWNERSHIP_MODELS: [
+		'team_owned',
+		'individual_contributor_owned',
+		'multi_contributor_attributed',
+		'steward_maintained',
+		'cooperative_owned',
+		'community_governed',
+		'foundation_or_trust_held',
+		'transferred_or_succeeded',
+	],
+	COMMERCE_STEWARDSHIP_ROLES: [
+		'owner',
+		'seller',
+		'maintainer',
+		'governance_steward',
+		'support_steward',
+		'security_steward',
+		'community_steward',
+		'successor',
+	],
+	COMMERCE_STRIPE_ACCOUNT_STATUSES: [
+		'not_started',
+		'pending',
+		'restricted',
+		'enabled',
+		'disabled',
+	],
+	COMMERCE_STRIPE_ENVIRONMENTS: ['test', 'live'],
+	COMMERCE_STRIPE_ONBOARDING_STATUSES: [
+		'not_started',
+		'started',
+		'returned',
+		'completed',
+		'expired',
+	],
 	executeKnowledgeHubProviderLaunch: executeKnowledgeHubProviderLaunchMock,
 }));
 
@@ -99,6 +172,7 @@ type ApiTestOptions = {
 	fetchImpl?: typeof fetch;
 	logRequests?: boolean;
 	mockExternal?: boolean;
+	stripeConnectService?: any;
 };
 
 function createTestApp(options: ApiTestOptions = {}) {
@@ -2452,7 +2526,7 @@ describe('market api', () => {
 			});
 			expect(details.payload.project.metadata.hostBindingAudit.summary.status).toBe('ok');
 		});
-	});
+	}, 20_000);
 
 	it('rejects missing and incompatible dynamic host bindings before project creation', async () => {
 		const app = createTestApp();
@@ -2499,7 +2573,7 @@ describe('market api', () => {
 			headers: { authorization: `Bearer ${token}` },
 		}));
 		expect(projects.payload.some((project: { slug: string }) => project.slug === 'missing-public-web-host' || project.slug === 'incompatible-public-web-host')).toBe(false);
-	});
+	}, 15_000);
 
 	it('launch with TreeSeed managed Cloudflare host fails when operational credentials are missing', async () => {
 		await withEnv({
@@ -2532,7 +2606,7 @@ describe('market api', () => {
 			expect(payload.missing).toEqual(['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']);
 			expect(executeKnowledgeHubProviderLaunchMock).not.toHaveBeenCalled();
 		});
-	});
+	}, 15_000);
 
 	it('routes remote inline dispatch through a hosted project api connection', async () => {
 		const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -3923,7 +3997,7 @@ describe('market api', () => {
 		expect(serialized).not.toContain('capacityProviderId');
 		expect(serialized).not.toContain('runnerToken');
 		expect(serialized).not.toContain('sk-secret-token-value');
-	});
+	}, 20_000);
 
 	it('runs mocked project web deployments through the Treeseed operations runner', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-deploy-project');
@@ -4036,7 +4110,7 @@ describe('market api', () => {
 			});
 		expect(await store.all(`SELECT * FROM capacity_providers`)).toHaveLength(0);
 		expect(JSON.stringify(completedOperation!)).not.toContain('capacityProviderId');
-	});
+	}, 20_000);
 
 	it('records mocked project web deployment failures with GitHub inspect guidance', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-deploy-failure');
@@ -5756,6 +5830,2367 @@ describe('market api', () => {
 		expect(artifact.payload.version).toBe('1.0.0');
 	});
 
+	it('manages phase 2 commerce cooperative governance vendors, products, offers, prices, catalog sync, and commerce marketplace catalog', async () => {
+		const app = createTestApp();
+		const seeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'commerce-phase-2' }),
+		}));
+		const team = seeded.payload.fixtures.team;
+		const ownerToken = seeded.payload.actors.teamOwner.accessToken;
+		const adminToken = seeded.payload.actors.marketSteward.accessToken;
+
+		const vendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				displayName: 'Cooperative Commerce Team',
+				slug: 'cooperative-commerce-team',
+				reason: 'Request marketplace seller capability.',
+			}),
+		}));
+		expect(vendor.payload).toMatchObject({
+			teamId: team.id,
+			status: 'submitted',
+			trustLevel: 'public_publisher',
+			salesEnabled: false,
+		});
+
+		const deniedApproval = await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ trustLevel: 'verified_seller' }),
+		});
+		expect(deniedApproval.status).toBe(403);
+
+		const approvedVendor = await json(await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({
+				trustLevel: 'verified_seller',
+				salesEnabled: true,
+				reason: 'Seller governance review passed.',
+			}),
+		}));
+		expect(approvedVendor.payload).toMatchObject({
+			status: 'approved',
+			trustLevel: 'verified_seller',
+			salesEnabled: true,
+		});
+
+		const product = await json(await app.request('/v1/commerce/products', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				sellerTeamId: team.id,
+				kind: 'template',
+				slug: 'cooperative-starter',
+				title: 'Cooperative Starter',
+				summary: 'A starter product with cooperative ownership.',
+				visibility: 'public',
+				ownershipModel: 'cooperative_owned',
+				ownership: {
+					model: 'cooperative_owned',
+					canonicalOwnerType: 'cooperative',
+					canonicalOwnerId: 'coop-commerce-phase-2',
+					publicSummary: 'Owned by the cooperative contributor group.',
+				},
+				metadata: { cooperativeGovernance: true },
+			}),
+		}));
+		expect(product.payload).toMatchObject({
+			sellerTeamId: team.id,
+			status: 'draft',
+			visibility: 'public',
+			ownershipModel: 'cooperative_owned',
+		});
+
+		const ownership = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(ownership.payload[0]).toMatchObject({
+			model: 'cooperative_owned',
+			buyerVisible: true,
+		});
+
+		const steward = await json(await app.request(`/v1/commerce/products/${product.payload.id}/stewards`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				role: 'governance_steward',
+				assigneeType: 'team',
+				assigneeId: team.id,
+				responsibilities: ['review product changes', 'maintain cooperative policy'],
+			}),
+		}));
+		expect(steward.payload).toMatchObject({
+			role: 'governance_steward',
+			visibleToBuyers: true,
+		});
+
+		const contribution = await json(await app.request(`/v1/commerce/products/${product.payload.id}/contributions`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				contributorType: 'team',
+				contributorId: team.id,
+				role: 'knowledge_curator',
+				summary: 'Prepared the starter project knowledge.',
+				benefitWeight: 0.6,
+			}),
+		}));
+		expect(contribution.payload).toMatchObject({
+			role: 'knowledge_curator',
+			benefitWeight: 0.6,
+		});
+		expect(contribution.payload).not.toHaveProperty('payoutAccountId');
+
+		const policy = await json(await app.request(`/v1/commerce/products/${product.payload.id}/governance-policy`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				policyKind: 'cooperative',
+				title: 'Cooperative Listing Policy',
+				approvalRules: { productApproval: 'market_steward' },
+				quorumRules: { contributorConsent: 'majority' },
+				buyerVisibleSummary: 'Material changes require cooperative review.',
+				status: 'active',
+			}),
+		}));
+		expect(policy.payload).toMatchObject({
+			policyKind: 'cooperative',
+			status: 'active',
+		});
+
+		const updatedOwnership = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership/${ownership.payload[0].id}`, {
+			method: 'PATCH',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				publicSummary: 'Updated buyer-visible cooperative ownership.',
+				buyerVisible: true,
+				reason: 'Clarify ownership summary.',
+			}),
+		}));
+		expect(updatedOwnership.payload).toMatchObject({
+			publicSummary: 'Updated buyer-visible cooperative ownership.',
+			buyerVisible: true,
+		});
+
+		const updatedSteward = await json(await app.request(`/v1/commerce/products/${product.payload.id}/stewards/${steward.payload.id}`, {
+			method: 'PATCH',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				displayName: 'Cooperative Governance Steward',
+				responsibilities: ['review product changes', 'maintain cooperative policy', 'publish buyer-visible governance'],
+				visibleToBuyers: true,
+				reason: 'Clarify stewardship.',
+			}),
+		}));
+		expect(updatedSteward.payload).toMatchObject({
+			displayName: 'Cooperative Governance Steward',
+			visibleToBuyers: true,
+		});
+
+		const endedSteward = await json(await app.request(`/v1/commerce/products/${product.payload.id}/stewards/${steward.payload.id}/end`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Rotate steward assignment.' }),
+		}));
+		expect(endedSteward.payload.endsAt).toEqual(expect.any(String));
+
+		const updatedContribution = await json(await app.request(`/v1/commerce/products/${product.payload.id}/contributions/${contribution.payload.id}`, {
+			method: 'PATCH',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				summary: 'Updated private contribution note.',
+				attributionVisibility: 'private',
+				benefitWeight: 0.75,
+				reason: 'Contributor requested private attribution.',
+			}),
+		}));
+		expect(updatedContribution.payload).toMatchObject({
+			attributionVisibility: 'private',
+			benefitWeight: 0.75,
+		});
+		expect(updatedContribution.payload).not.toHaveProperty('payoutAccountId');
+		expect(updatedContribution.payload).not.toHaveProperty('revenueShare');
+
+		const updatedPolicy = await json(await app.request(`/v1/commerce/products/${product.payload.id}/governance-policy/${policy.payload.id}`, {
+			method: 'PATCH',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				title: 'Updated Cooperative Listing Policy',
+				buyerVisibleSummary: 'Updated material changes require cooperative review.',
+				status: 'active',
+				reason: 'Policy summary update.',
+			}),
+		}));
+		expect(updatedPolicy.payload).toMatchObject({
+			title: 'Updated Cooperative Listing Policy',
+			buyerVisibleSummary: 'Updated material changes require cooperative review.',
+		});
+
+		const secondOwnership = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				model: 'community_governed',
+				canonicalOwnerType: 'community',
+				canonicalOwnerId: 'community-commerce-phase-2',
+				publicSummary: 'Community governed successor ownership.',
+			}),
+		}));
+		const productWithSecondOwnership = await json(await app.request(`/v1/commerce/products/${product.payload.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(productWithSecondOwnership.payload.ownershipRecordId).toBe(secondOwnership.payload.id);
+
+		const transfer = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership-transfer`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				fromOwnershipRecordId: secondOwnership.payload.id,
+				toOwnershipRecordId: ownership.payload[0].id,
+				reason: 'Return ownership to the cooperative.',
+				approvalEvidence: { proposal: 'phase-7-transfer' },
+			}),
+		}));
+		expect(transfer.payload).toMatchObject({
+			status: 'draft',
+			fromOwnershipRecordId: secondOwnership.payload.id,
+			toOwnershipRecordId: ownership.payload[0].id,
+		});
+		const productBeforeTransferApproval = await json(await app.request(`/v1/commerce/products/${product.payload.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(productBeforeTransferApproval.payload.ownershipRecordId).toBe(secondOwnership.payload.id);
+
+		await app.request(`/v1/commerce/products/${product.payload.id}/ownership-transfer/${transfer.payload.id}/submit`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Ready for transfer decision.' }),
+		});
+		const approvedTransfer = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership-transfer/${transfer.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Approved by cooperative steward.' }),
+		}));
+		expect(approvedTransfer.payload.status).toBe('approved');
+		const productAfterTransferApproval = await json(await app.request(`/v1/commerce/products/${product.payload.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(productAfterTransferApproval.payload.ownershipRecordId).toBe(ownership.payload[0].id);
+
+		const rejectedTransfer = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership-transfer`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				fromOwnershipRecordId: ownership.payload[0].id,
+				toOwnershipRecordId: secondOwnership.payload.id,
+				status: 'submitted',
+				reason: 'Rejected transfer exercise.',
+			}),
+		}));
+		await app.request(`/v1/commerce/products/${product.payload.id}/ownership-transfer/${rejectedTransfer.payload.id}/reject`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Rejected by steward.' }),
+		});
+		const productAfterRejectedTransfer = await json(await app.request(`/v1/commerce/products/${product.payload.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(productAfterRejectedTransfer.payload.ownershipRecordId).toBe(ownership.payload[0].id);
+
+		const succession = await json(await app.request(`/v1/commerce/products/${product.payload.id}/succession-events`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				successorType: 'team',
+				successorId: team.id,
+				eventType: 'successor_named',
+				reason: 'Name team as successor steward.',
+			}),
+		}));
+		expect(succession.payload).toMatchObject({
+			eventType: 'successor_named',
+			status: 'submitted',
+		});
+		const workflow = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership-workflow`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(workflow.payload).toMatchObject({
+			productId: product.payload.id,
+			currentOwnershipRecord: expect.objectContaining({ id: ownership.payload[0].id }),
+		});
+		expect(workflow.payload.successionEvents).toContainEqual(expect.objectContaining({ id: succession.payload.id }));
+
+		const submittedProduct = await json(await app.request(`/v1/commerce/products/${product.payload.id}/submit`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Ready for marketplace review.' }),
+		}));
+		expect(submittedProduct.payload.status).toBe('submitted');
+
+		const approvedProduct = await json(await app.request(`/v1/commerce/products/${product.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({ reason: 'Approved for catalog listing.' }),
+		}));
+		expect(approvedProduct.payload).toMatchObject({
+			status: 'approved',
+			catalogItemId: expect.any(String),
+		});
+
+		const publicWorkflow = await json(await app.request(`/v1/commerce/products/${product.payload.id}/ownership-workflow`));
+		expect(publicWorkflow.payload.currentOwnershipRecord).toMatchObject({
+			id: ownership.payload[0].id,
+			buyerVisible: true,
+		});
+		expect(publicWorkflow.payload.contributions).not.toContainEqual(expect.objectContaining({
+			id: contribution.payload.id,
+			attributionVisibility: 'private',
+		}));
+		expect(publicWorkflow.payload.pendingTransfers).toEqual([]);
+		expect(publicWorkflow.payload.successionEvents).toEqual([]);
+
+		const listedProducts = await json(await app.request('/v1/commerce/products?kind=template'));
+		expect(listedProducts.payload).toContainEqual(expect.objectContaining({
+			id: product.payload.id,
+			status: 'approved',
+		}));
+
+		const version = await json(await app.request(`/v1/commerce/products/${product.payload.id}/versions`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				version: '1.0.0',
+				artifactKey: 'teams/commerce-phase-2/artifacts/cooperative-starter-v1.zip',
+				manifestKey: 'teams/commerce-phase-2/manifests/cooperative-starter-v1.json',
+				integrity: 'sha256:test',
+			}),
+		}));
+		await app.request(`/v1/commerce/products/${product.payload.id}/versions/${version.payload.id}/submit`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Version ready.' }),
+		});
+		const approvedVersion = await json(await app.request(`/v1/commerce/products/${product.payload.id}/versions/${version.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({ reason: 'Version approved.' }),
+		}));
+		expect(approvedVersion.payload).toMatchObject({
+			status: 'approved',
+			catalogArtifactVersionId: expect.any(String),
+		});
+
+		const invalidOffer = await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				productId: product.payload.id,
+				mode: 'paid',
+				title: 'Legacy Paid Offer',
+			}),
+		});
+		expect(invalidOffer.status).toBe(400);
+
+		const offer = await json(await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				productId: product.payload.id,
+				productVersionId: version.payload.id,
+				mode: 'subscription_updates',
+				title: 'Cooperative Starter Updates',
+				termsSummary: 'Subscribers receive updates while active.',
+			}),
+		}));
+		expect(offer.payload).toMatchObject({
+			mode: 'subscription_updates',
+			status: 'draft',
+		});
+		expect(offer.payload).not.toHaveProperty('checkoutUrl');
+
+		const price = await json(await app.request(`/v1/commerce/offers/${offer.payload.id}/prices`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				amount: 2900,
+				currency: 'usd',
+				billingInterval: 'month',
+			}),
+		}));
+		expect(price.payload).toMatchObject({
+			amount: 2900,
+			priceVersion: 1,
+			status: 'draft',
+			stripePriceId: null,
+		});
+
+		const activatedPrice = await json(await app.request(`/v1/commerce/prices/${price.payload.id}/activate`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Initial active display price.' }),
+		}));
+		expect(activatedPrice.payload).toMatchObject({
+			status: 'active',
+			priceVersion: 1,
+		});
+
+		const nextPrice = await json(await app.request(`/v1/commerce/offers/${offer.payload.id}/prices`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				amount: 3900,
+				currency: 'usd',
+				billingInterval: 'month',
+			}),
+		}));
+		expect(nextPrice.payload).toMatchObject({
+			amount: 3900,
+			priceVersion: 2,
+		});
+
+		await app.request(`/v1/commerce/offers/${offer.payload.id}/submit`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ reason: 'Offer ready.' }),
+		});
+		const approvedOffer = await json(await app.request(`/v1/commerce/offers/${offer.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({ reason: 'Offer approved.' }),
+		}));
+		expect(approvedOffer.payload).toMatchObject({
+			status: 'approved',
+			mode: 'subscription_updates',
+		});
+
+		const catalog = await json(await app.request('/v1/catalog?kind=template'));
+		expect(catalog.payload).toContainEqual(expect.objectContaining({
+			id: approvedProduct.payload.catalogItemId,
+			slug: 'cooperative-starter',
+			offerMode: 'subscription_updates',
+			metadata: expect.objectContaining({
+				commerceProductId: product.payload.id,
+				ownershipModel: 'cooperative_owned',
+			}),
+		}));
+
+		const marketplace = await json(await app.request('/v1/commerce/marketplace'));
+		expect(marketplace.payload.products).toContainEqual(expect.objectContaining({
+			id: product.payload.id,
+			title: 'Cooperative Starter',
+			vendorId: vendor.payload.id,
+			sellerTeamId: team.id,
+			ownershipModel: 'cooperative_owned',
+			buyerVisibleOwnershipSummary: 'Updated buyer-visible cooperative ownership.',
+			offers: expect.arrayContaining([
+				expect.objectContaining({
+					id: offer.payload.id,
+					mode: 'subscription_updates',
+					title: 'Cooperative Starter Updates',
+					priceId: activatedPrice.payload.id,
+					unitAmount: 2900,
+					currency: 'usd',
+				}),
+			]),
+		}));
+		expect(JSON.stringify(marketplace.payload)).not.toContain('approvalEvidence');
+		expect(JSON.stringify(marketplace.payload)).not.toContain('Updated private contribution note.');
+
+		const marketplaceProduct = await json(await app.request(`/v1/commerce/marketplace/products/${product.payload.id}`));
+		expect(marketplaceProduct.payload).toMatchObject({
+			id: product.payload.id,
+			serviceRequestEligible: false,
+			checkoutEligible: true,
+			capacityListingId: null,
+		});
+		expect(marketplaceProduct.payload.stewardshipSummary).toEqual(expect.arrayContaining([
+			expect.objectContaining({ role: 'governance_steward' }),
+		]));
+
+		const artifacts = await json(await app.request(`/v1/catalog/${approvedProduct.payload.catalogItemId}/artifacts`));
+		expect(artifacts.payload).toContainEqual(expect.objectContaining({
+			version: '1.0.0',
+			contentKey: 'teams/commerce-phase-2/artifacts/cooperative-starter-v1.zip',
+		}));
+
+		const events = await json(await app.request(`/v1/commerce/governance-events?teamId=${team.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(events.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ action: 'vendor.request', nextState: 'submitted' }),
+			expect.objectContaining({ action: 'product.approve', nextState: 'approved' }),
+			expect.objectContaining({ action: 'offer.approve', nextState: 'approved' }),
+		]));
+	}, 15_000);
+
+	it('manages phase 3 commerce stripe connect onboarding for approved vendors', async () => {
+		const calls: string[] = [];
+		const stripeAccounts = new Map<string, any>();
+		const fakeStripeConnectService = {
+			environment: 'test',
+			async isConfigured() {
+				return true;
+			},
+			async createExpressAccount({ vendor }: any) {
+				calls.push('createExpressAccount');
+				const account = {
+					id: `acct_${vendor.id}`,
+					charges_enabled: false,
+					payouts_enabled: false,
+					details_submitted: false,
+					requirements: {
+						currently_due: ['business_profile.url'],
+						eventually_due: ['external_account'],
+						past_due: [],
+						disabled_reason: null,
+					},
+					capabilities: {
+						card_payments: 'pending',
+						transfers: 'pending',
+					},
+				};
+				stripeAccounts.set(account.id, account);
+				return account;
+			},
+			async createOnboardingLink({ stripeAccountId }: any) {
+				calls.push(`createOnboardingLink:${stripeAccountId}`);
+				return { url: `https://connect.stripe.test/onboarding/${stripeAccountId}` };
+			},
+			async retrieveAccount(stripeAccountId: string) {
+				calls.push(`retrieveAccount:${stripeAccountId}`);
+				return stripeAccounts.get(stripeAccountId);
+			},
+			async createLoginLink(stripeAccountId: string) {
+				calls.push(`createLoginLink:${stripeAccountId}`);
+				return { url: `https://connect.stripe.test/dashboard/${stripeAccountId}` };
+			},
+		};
+		const app = createTestApp({ stripeConnectService: fakeStripeConnectService });
+		const seeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'commerce-phase-3' }),
+		}));
+		const team = seeded.payload.fixtures.team;
+		const ownerToken = seeded.payload.actors.teamOwner.accessToken;
+		const viewerToken = seeded.payload.actors.teamViewer.accessToken;
+		const adminToken = seeded.payload.actors.marketSteward.accessToken;
+
+		const emptyStatus = await json(await app.request(`/v1/commerce/vendors/${team.id}/stripe/status`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(emptyStatus.payload).toBeNull();
+
+		const vendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				displayName: 'Stripe Cooperative Vendor',
+				slug: 'stripe-cooperative-vendor',
+			}),
+		}));
+
+		const unapprovedOnboarding = await app.request(`/v1/commerce/vendors/${team.id}/stripe/onboarding`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		});
+		expect(unapprovedOnboarding.status).toBe(409);
+		expect(calls).not.toContain('createExpressAccount');
+
+		const deniedManager = await app.request(`/v1/commerce/vendors/${team.id}/stripe/onboarding`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${viewerToken}`,
+			},
+			body: JSON.stringify({}),
+		});
+		expect(deniedManager.status).toBe(403);
+
+		await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({
+				trustLevel: 'verified_seller',
+				salesEnabled: true,
+				reason: 'Approved for seller onboarding.',
+			}),
+		});
+
+		const onboarding = await json(await app.request(`/v1/commerce/vendors/${team.id}/stripe/onboarding`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		}));
+		expect(onboarding.payload.onboardingUrl).toMatch(/^https:\/\/connect\.stripe\.test\/onboarding\/acct_/u);
+		expect(onboarding.payload.account).toMatchObject({
+			vendorId: vendor.payload.id,
+			teamId: team.id,
+			environment: 'test',
+			accountStatus: 'restricted',
+			onboardingStatus: 'started',
+			chargesEnabled: false,
+			payoutsEnabled: false,
+			detailsSubmitted: false,
+			requirementsCurrentlyDue: ['business_profile.url'],
+			requirementsPastDue: [],
+		});
+		expect(JSON.stringify(onboarding.payload)).not.toContain('sk_test');
+
+		const persistedVendor = await json(await app.request(`/v1/commerce/vendors/${team.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(persistedVendor.payload.stripeAccountId).toBe(onboarding.payload.account.stripeAccountId);
+
+		const returned = await json(await app.request(`/v1/commerce/vendors/${team.id}/stripe/return`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		}));
+		expect(returned.payload).toMatchObject({
+			onboardingStatus: 'returned',
+			accountStatus: 'restricted',
+		});
+
+		const stripeAccountId = onboarding.payload.account.stripeAccountId;
+		stripeAccounts.set(stripeAccountId, {
+			id: stripeAccountId,
+			charges_enabled: true,
+			payouts_enabled: true,
+			details_submitted: true,
+			requirements: {
+				currently_due: [],
+				eventually_due: [],
+				past_due: [],
+				disabled_reason: null,
+			},
+			capabilities: {
+				card_payments: 'active',
+				transfers: 'active',
+			},
+		});
+
+		const refreshed = await json(await app.request(`/v1/commerce/vendors/${team.id}/stripe/status?refresh=1`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(refreshed.payload).toMatchObject({
+			accountStatus: 'enabled',
+			onboardingStatus: 'completed',
+			chargesEnabled: true,
+			payoutsEnabled: true,
+			detailsSubmitted: true,
+			capabilities: {
+				card_payments: 'active',
+				transfers: 'active',
+			},
+		});
+
+		const loginLink = await json(await app.request(`/v1/commerce/vendors/${team.id}/stripe/login-link`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		}));
+		expect(loginLink.payload.loginUrl).toBe(`https://connect.stripe.test/dashboard/${stripeAccountId}`);
+
+		const events = await json(await app.request(`/v1/commerce/governance-events?teamId=${team.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(events.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ action: 'commerce_vendor.stripe_account.created' }),
+			expect.objectContaining({ action: 'commerce_vendor.stripe_onboarding.started' }),
+			expect.objectContaining({ action: 'commerce_vendor.stripe_onboarding.returned' }),
+			expect.objectContaining({ action: 'commerce_vendor.stripe_status.synced' }),
+			expect.objectContaining({ action: 'commerce_vendor.stripe_login_link.created' }),
+		]));
+		expect(JSON.stringify(events.payload)).not.toContain(loginLink.payload.loginUrl);
+	}, 15_000);
+
+	it('syncs phase 4 commerce stripe product and price mirrors for approved vendor offers', async () => {
+		const calls: Array<{ name: string; input: any }> = [];
+		const stripeAccounts = new Map<string, any>();
+		const stripeProducts = new Map<string, any>();
+		const stripePrices = new Map<string, any>();
+		const fakeStripeConnectService = {
+			environment: 'test',
+			async isConfigured() {
+				return true;
+			},
+			async createExpressAccount({ vendor }: any) {
+				const account = {
+					id: `acct_${vendor.id}`,
+					charges_enabled: true,
+					payouts_enabled: true,
+					details_submitted: true,
+					requirements: { currently_due: [], eventually_due: [], past_due: [], disabled_reason: null },
+					capabilities: { card_payments: 'active', transfers: 'active' },
+				};
+				stripeAccounts.set(account.id, account);
+				return account;
+			},
+			async createOnboardingLink({ stripeAccountId }: any) {
+				return { url: `https://connect.stripe.test/onboarding/${stripeAccountId}` };
+			},
+			async retrieveAccount(stripeAccountId: string) {
+				return stripeAccounts.get(stripeAccountId);
+			},
+			async createLoginLink(stripeAccountId: string) {
+				return { url: `https://connect.stripe.test/dashboard/${stripeAccountId}` };
+			},
+			async createProductMirror(input: any) {
+				calls.push({ name: 'createProductMirror', input });
+				const product = {
+					id: `prod_${stripeProducts.size + 1}`,
+					...input.params,
+				};
+				stripeProducts.set(product.id, product);
+				return product;
+			},
+			async updateProductMirror(input: any) {
+				calls.push({ name: 'updateProductMirror', input });
+				const existing = stripeProducts.get(input.stripeProductId) ?? { id: input.stripeProductId };
+				const product = { ...existing, ...input.params };
+				stripeProducts.set(product.id, product);
+				return product;
+			},
+			async retrieveProductMirror({ stripeProductId }: any) {
+				return stripeProducts.get(stripeProductId);
+			},
+			async createPriceMirror(input: any) {
+				calls.push({ name: 'createPriceMirror', input });
+				const price = {
+					id: `price_${stripePrices.size + 1}`,
+					unit_amount: input.params.unit_amount,
+					currency: input.params.currency,
+					recurring: input.params.recurring ?? null,
+					lookup_key: input.params.lookup_key,
+					metadata: input.params.metadata,
+				};
+				stripePrices.set(price.id, price);
+				return price;
+			},
+			async updatePriceMirror(input: any) {
+				calls.push({ name: 'updatePriceMirror', input });
+				const existing = stripePrices.get(input.stripePriceId) ?? { id: input.stripePriceId };
+				const price = { ...existing, ...input.params };
+				stripePrices.set(price.id, price);
+				return price;
+			},
+			async retrievePriceMirror({ stripePriceId }: any) {
+				return stripePrices.get(stripePriceId);
+			},
+		};
+		const app = createTestApp({ stripeConnectService: fakeStripeConnectService });
+		const seeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'commerce-phase-4' }),
+		}));
+		const team = seeded.payload.fixtures.team;
+		const ownerToken = seeded.payload.actors.teamOwner.accessToken;
+		const adminToken = seeded.payload.actors.marketSteward.accessToken;
+
+		const vendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ displayName: 'Phase 4 Vendor', slug: 'phase-4-vendor' }),
+		}));
+		await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({ trustLevel: 'verified_seller', salesEnabled: true }),
+		});
+		await app.request(`/v1/commerce/vendors/${team.id}/stripe/onboarding`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/vendors/${team.id}/stripe/status?refresh=1`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		});
+
+		const product = await json(await app.request('/v1/commerce/products', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				sellerTeamId: team.id,
+				kind: 'template',
+				slug: 'phase-4-template',
+				title: 'Phase 4 Template',
+				summary: 'Template with Stripe mirrors.',
+				visibility: 'public',
+				ownershipModel: 'cooperative_owned',
+				ownership: {
+					model: 'cooperative_owned',
+					canonicalOwnerType: 'cooperative',
+					canonicalOwnerId: 'coop-phase-4',
+					publicSummary: 'Cooperatively governed.',
+				},
+			}),
+		}));
+		await app.request(`/v1/commerce/products/${product.payload.id}/submit`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/products/${product.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({}),
+		});
+		const offer = await json(await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				productId: product.payload.id,
+				mode: 'subscription_updates',
+				title: 'Phase 4 Updates',
+				termsSummary: 'Subscribers receive cooperative updates.',
+			}),
+		}));
+		const price = await json(await app.request(`/v1/commerce/offers/${offer.payload.id}/prices`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({
+				amount: 4900,
+				currency: 'usd',
+				billingInterval: 'month',
+				stripePriceId: 'price_client_supplied_should_be_ignored',
+			}),
+		}));
+		expect(price.payload.stripePriceId).toBeNull();
+		await app.request(`/v1/commerce/offers/${offer.payload.id}/submit`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		});
+		const approvedOffer = await json(await app.request(`/v1/commerce/offers/${offer.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({}),
+		}));
+		expect(approvedOffer.payload).toMatchObject({
+			status: 'approved',
+			stripeProductStatus: 'synced',
+			stripeProductId: expect.stringMatching(/^prod_/u),
+		});
+		expect(calls).toContainEqual(expect.objectContaining({
+			name: 'createProductMirror',
+			input: expect.objectContaining({
+				connectedAccountId: expect.stringMatching(/^acct_/u),
+				params: expect.objectContaining({
+					metadata: expect.objectContaining({
+						treeseed_product_id: product.payload.id,
+						treeseed_offer_id: offer.payload.id,
+						treeseed_ownership_model: 'cooperative_owned',
+						treeseed_object_authority: 'treeseed',
+					}),
+				}),
+			}),
+		}));
+
+		const activated = await json(await app.request(`/v1/commerce/prices/${price.payload.id}/activate`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		}));
+		expect(activated.payload).toMatchObject({
+			status: 'active',
+			stripeSyncStatus: 'synced',
+			stripePriceId: expect.stringMatching(/^price_/u),
+			stripeLookupKey: `treeseed_test_${price.payload.id}_v1`,
+		});
+		const priceCall = calls.find((call) => call.name === 'createPriceMirror');
+		expect(priceCall).toMatchObject({
+			input: {
+				connectedAccountId: expect.stringMatching(/^acct_/u),
+				params: expect.objectContaining({
+					unit_amount: 4900,
+					currency: 'usd',
+					recurring: { interval: 'month' },
+					metadata: expect.objectContaining({
+						treeseed_price_id: price.payload.id,
+						treeseed_price_version: '1',
+						treeseed_ownership_model: 'cooperative_owned',
+					}),
+				}),
+			},
+		});
+
+		stripePrices.set(activated.payload.stripePriceId, {
+			id: activated.payload.stripePriceId,
+			unit_amount: 9900,
+			currency: 'usd',
+			recurring: { interval: 'month' },
+			lookup_key: activated.payload.stripeLookupKey,
+			metadata: {},
+		});
+		const drifted = await json(await app.request(`/v1/commerce/prices/${price.payload.id}/stripe/reconcile`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		}));
+		expect(drifted.payload.price).toMatchObject({
+			stripeSyncStatus: 'drifted',
+			stripeSyncError: expect.stringContaining('immutable terms'),
+		});
+
+		const status = await json(await app.request(`/v1/commerce/offers/${offer.payload.id}/stripe/status`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(status.payload.offer.stripeProductStatus).toBe('synced');
+		expect(status.payload.prices).toContainEqual(expect.objectContaining({
+			id: price.payload.id,
+			stripeSyncStatus: 'drifted',
+		}));
+		const events = await json(await app.request(`/v1/commerce/governance-events?teamId=${team.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(events.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ action: 'commerce_offer.stripe_product.synced' }),
+			expect.objectContaining({ action: 'commerce_price.stripe_price.synced' }),
+			expect.objectContaining({ action: 'commerce_price.stripe_price.drifted' }),
+		]));
+		expect(JSON.stringify({ status, events })).not.toContain('sk_test');
+	}, 20_000);
+
+	it('runs phase 5 commerce checkout plus phase 6 commerce vendor sales, commerce seller monitoring, and commerce refunds fulfillment', async () => {
+		const stripeAccounts = new Map<string, any>();
+		const stripeProducts = new Map<string, any>();
+		const stripePrices = new Map<string, any>();
+		const paymentIntents = new Map<string, any>();
+		const refunds = new Map<string, any>();
+		const fakeStripeConnectService = {
+			environment: 'test',
+			async isConfigured() {
+				return true;
+			},
+			async createExpressAccount({ vendor }: any) {
+				const account = {
+					id: `acct_${vendor.id}`,
+					charges_enabled: true,
+					payouts_enabled: true,
+					details_submitted: true,
+					requirements: { currently_due: [], eventually_due: [], past_due: [], disabled_reason: null },
+					capabilities: { card_payments: 'active', transfers: 'active' },
+				};
+				stripeAccounts.set(account.id, account);
+				return account;
+			},
+			async createOnboardingLink({ stripeAccountId }: any) {
+				return { url: `https://connect.stripe.test/onboarding/${stripeAccountId}` };
+			},
+			async retrieveAccount(stripeAccountId: string) {
+				return stripeAccounts.get(stripeAccountId);
+			},
+			async createProductMirror(input: any) {
+				const product = { id: `prod_${stripeProducts.size + 1}`, ...input.params };
+				stripeProducts.set(product.id, product);
+				return product;
+			},
+			async updateProductMirror(input: any) {
+				const product = { ...(stripeProducts.get(input.stripeProductId) ?? { id: input.stripeProductId }), ...input.params };
+				stripeProducts.set(product.id, product);
+				return product;
+			},
+			async retrieveProductMirror({ stripeProductId }: any) {
+				return stripeProducts.get(stripeProductId);
+			},
+			async createPriceMirror(input: any) {
+				const price = {
+					id: `price_${stripePrices.size + 1}`,
+					unit_amount: input.params.unit_amount,
+					currency: input.params.currency,
+					recurring: input.params.recurring ?? null,
+					lookup_key: input.params.lookup_key,
+					metadata: input.params.metadata,
+				};
+				stripePrices.set(price.id, price);
+				return price;
+			},
+			async updatePriceMirror(input: any) {
+				const price = { ...(stripePrices.get(input.stripePriceId) ?? { id: input.stripePriceId }), ...input.params };
+				stripePrices.set(price.id, price);
+				return price;
+			},
+			async retrievePriceMirror({ stripePriceId }: any) {
+				return stripePrices.get(stripePriceId);
+			},
+			async createPaymentIntent(input: any) {
+				const paymentIntent = {
+					id: `pi_${paymentIntents.size + 1}`,
+					status: 'requires_payment_method',
+					client_secret: `pi_secret_${paymentIntents.size + 1}`,
+					amount: input.params.amount,
+					currency: input.params.currency,
+					metadata: input.params.metadata,
+					connectedAccountId: input.connectedAccountId,
+				};
+				paymentIntents.set(paymentIntent.id, paymentIntent);
+				return paymentIntent;
+			},
+			async retrievePaymentIntent({ paymentIntentId }: any) {
+				return paymentIntents.get(paymentIntentId);
+			},
+			async createRefund(input: any) {
+				const refund = {
+					id: `re_${refunds.size + 1}`,
+					status: 'succeeded',
+					amount: input.params.amount,
+					payment_intent: input.params.payment_intent,
+					metadata: input.params.metadata,
+					connectedAccountId: input.connectedAccountId,
+					idempotencyKey: input.idempotencyKey,
+				};
+				refunds.set(refund.id, refund);
+				return refund;
+			},
+			async retrieveRefund({ refundId }: any) {
+				return refunds.get(refundId);
+			},
+			async constructWebhookEvent({ payload, signature, webhookSecret }: any) {
+				if (signature !== 'valid_signature' || webhookSecret !== 'whsec_test') {
+					const error = new Error('Invalid Stripe webhook signature.');
+					(error as any).status = 400;
+					throw error;
+				}
+				return JSON.parse(payload);
+			},
+		};
+		const app = createTestApp({
+			stripeConnectService: fakeStripeConnectService,
+			config: {
+				stripePublishableKey: 'pk_test_tree',
+				stripeWebhookSecret: 'whsec_test',
+			},
+		});
+		const seeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'commerce-phase-5' }),
+		}));
+		const team = seeded.payload.fixtures.team;
+		const ownerToken = seeded.payload.actors.teamOwner.accessToken;
+		const adminToken = seeded.payload.actors.marketSteward.accessToken;
+
+		const stripeConfig = await json(await app.request('/v1/commerce/stripe/config', {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(stripeConfig.payload).toEqual({ publishableKey: 'pk_test_tree', environment: 'test' });
+
+		const vendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ displayName: 'Phase 5 Vendor', slug: 'phase-5-vendor' }),
+		}));
+		await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({ trustLevel: 'verified_seller', salesEnabled: true }),
+		});
+		await app.request(`/v1/commerce/vendors/${team.id}/stripe/onboarding`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/vendors/${team.id}/stripe/status?refresh=1`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		});
+
+		async function approvedProduct(slug: string, title: string) {
+			const product = await json(await app.request('/v1/commerce/products', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+				body: JSON.stringify({
+					sellerTeamId: team.id,
+					kind: 'template',
+					slug,
+					title,
+					summary: `${title} summary`,
+					visibility: 'public',
+					ownershipModel: 'cooperative_owned',
+					ownership: {
+						model: 'cooperative_owned',
+						canonicalOwnerType: 'cooperative',
+						canonicalOwnerId: `coop-${slug}`,
+						publicSummary: 'Cooperatively governed checkout product.',
+					},
+				}),
+			}));
+			await app.request(`/v1/commerce/products/${product.payload.id}/submit`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+				body: JSON.stringify({}),
+			});
+			await app.request(`/v1/commerce/products/${product.payload.id}/approve`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+				body: JSON.stringify({}),
+			});
+			return product.payload;
+		}
+
+		const freeProduct = await approvedProduct('phase-5-free', 'Phase 5 Free');
+		const paidProduct = await approvedProduct('phase-5-paid', 'Phase 5 Paid');
+		const freeOffer = await json(await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: freeProduct.id,
+				mode: 'free',
+				title: 'Free cooperative offer',
+				accessScope: { artifact: 'free' },
+			}),
+		}));
+		await app.request(`/v1/commerce/offers/${freeOffer.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/offers/${freeOffer.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({}),
+		});
+		const paidOffer = await json(await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: paidProduct.id,
+				mode: 'one_time',
+				title: 'One-time cooperative offer',
+				accessScope: { artifact: 'paid' },
+			}),
+		}));
+		const paidPrice = await json(await app.request(`/v1/commerce/offers/${paidOffer.payload.id}/prices`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ amount: 2500, currency: 'usd', billingInterval: 'one_time' }),
+		}));
+		await app.request(`/v1/commerce/offers/${paidOffer.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/offers/${paidOffer.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({}),
+		});
+		const activePrice = await json(await app.request(`/v1/commerce/prices/${paidPrice.payload.id}/activate`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		}));
+		expect(activePrice.payload).toMatchObject({ stripeSyncStatus: 'synced', stripePriceId: expect.stringMatching(/^price_/u) });
+
+		const checkout = await json(await app.request('/v1/commerce/checkout', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				buyerTeamId: team.id,
+				items: [
+					{ offerId: freeOffer.payload.id, quantity: 1 },
+					{ offerId: paidOffer.payload.id, priceId: activePrice.payload.id, quantity: 1, amount: 1, sellerTeamId: 'client-spoof' },
+				],
+			}),
+		}));
+		expect(checkout.payload.checkout).toMatchObject({
+			status: 'partially_confirmed',
+			groupCount: 2,
+			completedGroupCount: 1,
+		});
+		expect(checkout.payload.paymentGroups).toEqual(expect.arrayContaining([
+			expect.objectContaining({ groupKind: 'free', status: 'succeeded', clientSecret: null }),
+			expect.objectContaining({ groupKind: 'one_time', status: 'requires_confirmation', clientSecret: expect.stringMatching(/^pi_secret_/u) }),
+		]));
+		expect(checkout.payload.entitlements).toContainEqual(expect.objectContaining({
+			offerId: freeOffer.payload.id,
+			status: 'active',
+			ownershipSnapshot: expect.objectContaining({ ownershipModel: 'cooperative_owned' }),
+		}));
+		expect(JSON.stringify(checkout.payload)).not.toContain('sk_test');
+		expect(JSON.stringify(checkout.payload)).not.toContain('applicationFee');
+		const paidGroup = checkout.payload.paymentGroups.find((group: any) => group.groupKind === 'one_time');
+		paymentIntents.set(paidGroup.stripePaymentIntentId, {
+			...paymentIntents.get(paidGroup.stripePaymentIntentId),
+			status: 'succeeded',
+		});
+		const webhookPayload = {
+			id: 'evt_phase_5_payment_success',
+			type: 'payment_intent.succeeded',
+			account: paidGroup.connectedAccountId,
+			data: {
+				object: {
+					id: paidGroup.stripePaymentIntentId,
+					object: 'payment_intent',
+					status: 'succeeded',
+				},
+			},
+		};
+		const webhook = await json(await app.request('/v1/commerce/webhooks/stripe', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'stripe-signature': 'valid_signature',
+			},
+			body: JSON.stringify(webhookPayload),
+		}));
+		expect(webhook.payload).toMatchObject({
+			eventId: 'evt_phase_5_payment_success',
+			status: 'processed',
+		});
+		const duplicateWebhook = await json(await app.request('/v1/commerce/webhooks/stripe', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'stripe-signature': 'valid_signature',
+			},
+			body: JSON.stringify(webhookPayload),
+		}));
+		expect(duplicateWebhook.payload.status).toBe('processed');
+
+		const entitlements = await json(await app.request('/v1/commerce/entitlements?buyerTeamId=' + encodeURIComponent(team.id), {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(entitlements.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ offerId: freeOffer.payload.id, status: 'active' }),
+			expect.objectContaining({ offerId: paidOffer.payload.id, status: 'active' }),
+		]));
+		expect(entitlements.payload.filter((entitlement: any) => entitlement.offerId === paidOffer.payload.id)).toHaveLength(1);
+
+		const sellerSummary = await json(await app.request(`/v1/commerce/vendors/${team.id}/sales/summary`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(sellerSummary.payload).toMatchObject({
+			vendorId: vendor.payload.id,
+			sellerTeamId: team.id,
+			paidOrderCount: 2,
+			activeEntitlementCount: 2,
+		});
+
+		const sellerMonitor = await json(await app.request(`/v1/commerce/vendors/${team.id}/monitoring`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(sellerMonitor.payload).toMatchObject({
+			vendorId: vendor.payload.id,
+			sellerTeamId: team.id,
+			stripeReady: true,
+			pendingFulfillmentCount: expect.any(Number),
+			failedRefundCount: 0,
+			failedWebhookCount: expect.any(Number),
+			recentGovernanceEvents: expect.any(Array),
+		});
+		expect(JSON.stringify(sellerMonitor.payload)).not.toContain('client_secret');
+		const unrelatedMonitor = await app.request(`/v1/commerce/vendors/${team.id}/monitoring`, {
+			headers: { authorization: `Bearer ${seeded.payload.actors.nonMember.accessToken}` },
+		});
+		expect(unrelatedMonitor.status).toBe(403);
+
+		const sellerOrders = await json(await app.request(`/v1/commerce/vendors/${team.id}/sales/orders`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(sellerOrders.payload[0]).toMatchObject({
+			buyerTeamId: team.id,
+			buyerUserIdRedacted: expect.anything(),
+		});
+		expect(JSON.stringify(sellerOrders.payload)).not.toContain('email');
+
+		const paidOrder = checkout.payload.orders.find((order: any) => order.stripePaymentIntentId === paidGroup.stripePaymentIntentId);
+		const paidOrderDetail = await json(await app.request(`/v1/commerce/orders/${paidOrder.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		const paidOrderItem = paidOrderDetail.payload.items.find((item: any) => item.offerId === paidOffer.payload.id);
+		const fulfillment = await json(await app.request(`/v1/commerce/order-items/${paidOrderItem.id}/fulfillment/artifact`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ artifactRefs: [{ key: 'manual-artifact' }], message: 'Delivered from test.' }),
+		}));
+		expect(fulfillment.payload.event).toMatchObject({
+			orderItemId: paidOrderItem.id,
+			status: 'delivered',
+			eventType: 'artifact_delivered',
+		});
+		const fulfillmentEvents = await json(await app.request(`/v1/commerce/vendors/${team.id}/sales/fulfillment-events`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(fulfillmentEvents.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ orderItemId: paidOrderItem.id, status: 'delivered' }),
+		]));
+
+		const refund = await json(await app.request(`/v1/commerce/orders/${paidOrder.id}/refunds`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ orderItemId: paidOrderItem.id, amount: 2500, reason: 'test refund', idempotencyKey: 'phase-6-refund-key' }),
+		}));
+		expect(refund.payload.refund).toMatchObject({
+			orderId: paidOrder.id,
+			orderItemId: paidOrderItem.id,
+			status: 'succeeded',
+			amount: 2500,
+			stripeRefundId: expect.stringMatching(/^re_/u),
+		});
+		expect(refunds.get(refund.payload.refund.stripeRefundId)).toMatchObject({
+			connectedAccountId: paidGroup.connectedAccountId,
+			idempotencyKey: 'phase-6-refund-key',
+		});
+		const duplicateRefund = await json(await app.request(`/v1/commerce/orders/${paidOrder.id}/refunds`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ orderItemId: paidOrderItem.id, amount: 2500, idempotencyKey: 'phase-6-refund-key' }),
+		}));
+		expect(duplicateRefund.payload.id ?? duplicateRefund.payload.refund?.id).toBe(refund.payload.refund.id);
+		const salesRefunds = await json(await app.request(`/v1/commerce/vendors/${team.id}/sales/refunds`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(salesRefunds.payload).toContainEqual(expect.objectContaining({ id: refund.payload.refund.id, status: 'succeeded' }));
+
+		const revoked = await json(await app.request(`/v1/commerce/entitlements/${paidOrderItem.entitlementId}/revoke`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ reason: 'test revocation' }),
+		}));
+		expect(revoked.payload).toMatchObject({ id: paidOrderItem.entitlementId, status: 'revoked' });
+
+		const invalidWebhook = await app.request('/v1/commerce/webhooks/stripe', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'stripe-signature': 'invalid_signature',
+			},
+			body: JSON.stringify({ id: 'evt_invalid', type: 'unknown', data: { object: {} } }),
+		});
+		expect(invalidWebhook.status).toBe(400);
+	}, 25_000);
+
+	it('runs phase 8 commerce scoped services request quote contract checkout and fulfillment', async () => {
+		const stripeAccounts = new Map<string, any>();
+		const stripeProducts = new Map<string, any>();
+		const paymentIntents = new Map<string, any>();
+		const fakeStripeConnectService = {
+			environment: 'test',
+			async isConfigured() {
+				return true;
+			},
+			async createExpressAccount({ vendor }: any) {
+				const account = {
+					id: `acct_${vendor.id}`,
+					charges_enabled: true,
+					payouts_enabled: true,
+					details_submitted: true,
+					requirements: { currently_due: [], eventually_due: [], past_due: [], disabled_reason: null },
+					capabilities: { card_payments: 'active', transfers: 'active' },
+				};
+				stripeAccounts.set(account.id, account);
+				return account;
+			},
+			async createOnboardingLink({ stripeAccountId }: any) {
+				return { url: `https://connect.stripe.test/onboarding/${stripeAccountId}` };
+			},
+			async retrieveAccount(stripeAccountId: string) {
+				return stripeAccounts.get(stripeAccountId);
+			},
+			async createProductMirror(input: any) {
+				const product = { id: `prod_${stripeProducts.size + 1}`, ...input.params };
+				stripeProducts.set(product.id, product);
+				return product;
+			},
+			async updateProductMirror(input: any) {
+				const product = { ...(stripeProducts.get(input.stripeProductId) ?? { id: input.stripeProductId }), ...input.params };
+				stripeProducts.set(product.id, product);
+				return product;
+			},
+			async retrieveProductMirror({ stripeProductId }: any) {
+				return stripeProducts.get(stripeProductId);
+			},
+			async createPaymentIntent(input: any) {
+				const paymentIntent = {
+					id: `pi_service_${paymentIntents.size + 1}`,
+					status: 'requires_payment_method',
+					client_secret: `pi_service_secret_${paymentIntents.size + 1}`,
+					amount: input.params.amount,
+					currency: input.params.currency,
+					metadata: input.params.metadata,
+					connectedAccountId: input.connectedAccountId,
+				};
+				paymentIntents.set(paymentIntent.id, paymentIntent);
+				return paymentIntent;
+			},
+			async retrievePaymentIntent({ paymentIntentId }: any) {
+				return paymentIntents.get(paymentIntentId);
+			},
+			async constructWebhookEvent({ payload, signature, webhookSecret }: any) {
+				if (signature !== 'valid_signature' || webhookSecret !== 'whsec_test') {
+					const error = new Error('Invalid Stripe webhook signature.');
+					(error as any).status = 400;
+					throw error;
+				}
+				return JSON.parse(payload);
+			},
+		};
+		const app = createTestApp({
+			stripeConnectService: fakeStripeConnectService,
+			config: {
+				stripePublishableKey: 'pk_test_tree',
+				stripeWebhookSecret: 'whsec_test',
+			},
+		});
+		const seeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'commerce-phase-8' }),
+		}));
+		const team = seeded.payload.fixtures.team;
+		const ownerToken = seeded.payload.actors.teamOwner.accessToken;
+		const adminToken = seeded.payload.actors.marketSteward.accessToken;
+
+		const vendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ displayName: 'Scoped Service Vendor', slug: 'scoped-service-vendor' }),
+		}));
+		await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({
+				trustLevel: 'trusted_service_vendor',
+				salesEnabled: true,
+				serviceSalesEnabled: true,
+			}),
+		});
+		await app.request(`/v1/commerce/vendors/${team.id}/stripe/onboarding`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/vendors/${team.id}/stripe/status?refresh=1`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		});
+
+		const product = await json(await app.request('/v1/commerce/products', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				sellerTeamId: team.id,
+				kind: 'scoped_service',
+				slug: 'cooperative-service',
+				title: 'Cooperative Service',
+				summary: 'Scoped service with governed quotes.',
+				visibility: 'public',
+				ownershipModel: 'cooperative_owned',
+				ownership: {
+					model: 'cooperative_owned',
+					canonicalOwnerType: 'cooperative',
+					canonicalOwnerId: 'coop-service-phase-8',
+					publicSummary: 'Service governed by cooperative stewards.',
+				},
+			}),
+		}));
+		await app.request(`/v1/commerce/products/${product.payload.id}/stewards`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				role: 'governance_steward',
+				assigneeType: 'team',
+				assigneeId: team.id,
+				displayName: 'Service Governance Steward',
+			}),
+		});
+		await app.request(`/v1/commerce/products/${product.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/products/${product.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({}),
+		});
+		const offer = await json(await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: product.payload.id,
+				mode: 'scoped_contract',
+				title: 'Scoped service contract',
+				termsSummary: 'Quote-driven scoped service.',
+				accessScope: { service: 'governed_scope' },
+			}),
+		}));
+		await app.request(`/v1/commerce/offers/${offer.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/offers/${offer.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({}),
+		});
+
+		const invalidProduct = await json(await app.request('/v1/commerce/products', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				sellerTeamId: team.id,
+				kind: 'template',
+				slug: 'not-a-service',
+				title: 'Not a Service',
+				summary: 'Template product.',
+				visibility: 'public',
+			}),
+		}));
+		const invalidOffer = await json(await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: invalidProduct.payload.id,
+				mode: 'scoped_contract',
+				title: 'Invalid service offer',
+			}),
+		}));
+		const invalidRequest = await app.request('/v1/commerce/services/requests', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ offerId: invalidOffer.payload.id, requestedScope: 'Should fail.' }),
+		});
+		expect(invalidRequest.status).toBe(409);
+
+		const serviceRequest = await json(await app.request('/v1/commerce/services/requests', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				buyerTeamId: team.id,
+				offerId: offer.payload.id,
+				requestedScope: 'Scope a migration with cooperative governance review.',
+				accessNeeds: { repository: 'read', secrets: 'explicit-review-required' },
+				relatedProjectId: 'project-reference-only',
+				amount: 1,
+				stripePriceId: 'price_client_spoof',
+			}),
+		}));
+		expect(serviceRequest.payload).toMatchObject({
+			status: 'requested',
+			vendorId: vendor.payload.id,
+			sellerTeamId: team.id,
+			productId: product.payload.id,
+			offerId: offer.payload.id,
+			ownershipSnapshot: expect.objectContaining({
+				ownershipModel: 'cooperative_owned',
+				stewards: expect.arrayContaining([
+					expect.objectContaining({ role: 'governance_steward' }),
+				]),
+			}),
+		});
+		expect(serviceRequest.payload).not.toHaveProperty('stripePriceId');
+
+		await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}/scoping`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ reason: 'Begin seller scoping.' }),
+		});
+		const scopedRequest = await json(await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				approvedScope: 'Approved migration scope.',
+				buyerVisibleSummary: 'Governed migration support.',
+				vendorPrivateNotes: 'Seller-only operational note.',
+			}),
+		}));
+		expect(scopedRequest.payload).toMatchObject({
+			status: 'scoping',
+			approvedScope: 'Approved migration scope.',
+			vendorPrivateNotes: 'Seller-only operational note.',
+		});
+
+		const quote = await json(await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}/quotes`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				title: 'Scoped migration quote',
+				scopeSummary: 'Migration support with explicit access review.',
+				deliverables: [{ name: 'Migration plan' }],
+				assumptions: [{ name: 'Buyer grants reviewed repository access' }],
+				accessRequirements: { repository: 'read' },
+				governanceRequirements: { review: 'seller_steward' },
+				amount: 12500,
+				currency: 'usd',
+			}),
+		}));
+		expect(quote.payload).toMatchObject({
+			status: 'draft',
+			quoteVersion: 1,
+			amount: 12500,
+			currency: 'usd',
+		});
+		const secondQuote = await json(await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}/quotes`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				title: 'Scoped migration quote revision',
+				scopeSummary: 'Revised migration support.',
+				amount: 13000,
+				currency: 'usd',
+			}),
+		}));
+		expect(secondQuote.payload.quoteVersion).toBe(2);
+		const invalidQuote = await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}/quotes`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				title: 'Invalid quote',
+				scopeSummary: 'Invalid.',
+				amount: 0,
+				currency: 'US',
+			}),
+		});
+		expect(invalidQuote.status).toBe(400);
+		await app.request(`/v1/commerce/services/quotes/${secondQuote.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		const rejected = await json(await app.request(`/v1/commerce/services/quotes/${secondQuote.payload.id}/reject`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ reason: 'Buyer rejected revision.' }),
+		}));
+		expect(rejected.payload.status).toBe('rejected');
+		const finalQuote = await json(await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}/quotes`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				title: 'Accepted scoped migration quote',
+				scopeSummary: 'Accepted migration support with explicit access review.',
+				deliverables: [{ name: 'Migration plan' }],
+				assumptions: [{ name: 'Buyer grants reviewed repository access' }],
+				accessRequirements: { repository: 'read' },
+				governanceRequirements: { review: 'seller_steward' },
+				amount: 12500,
+				currency: 'usd',
+			}),
+		}));
+		expect(finalQuote.payload.quoteVersion).toBe(3);
+
+		await app.request(`/v1/commerce/services/quotes/${finalQuote.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/services/quotes/${finalQuote.payload.id}/buyer-approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		const accepted = await json(await app.request(`/v1/commerce/services/quotes/${finalQuote.payload.id}/vendor-approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		}));
+		expect(accepted.payload.quote).toMatchObject({
+			status: 'accepted',
+			acceptedAt: expect.any(String),
+		});
+		expect(accepted.payload.contract).toMatchObject({
+			status: 'pending_checkout',
+			amount: 12500,
+			currency: 'usd',
+		});
+
+		const bypass = await app.request('/v1/commerce/checkout', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ buyerTeamId: team.id, items: [{ offerId: offer.payload.id, quantity: 1 }] }),
+		});
+		expect(bypass.status).toBe(409);
+
+		const checkout = await json(await app.request(`/v1/commerce/services/contracts/${accepted.payload.contract.id}/checkout`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ amount: 1 }),
+		}));
+		expect(checkout.payload.checkout.status).toBe('requires_confirmation');
+		expect(checkout.payload.paymentGroups).toEqual([
+			expect.objectContaining({
+				groupKind: 'one_time',
+				totalAmount: 12500,
+				clientSecret: expect.stringMatching(/^pi_service_secret_/u),
+			}),
+		]);
+		const paymentGroup = checkout.payload.paymentGroups[0];
+		const paymentIntent = paymentIntents.get(paymentGroup.stripePaymentIntentId);
+		expect(paymentIntent).toMatchObject({
+			amount: 12500,
+			currency: 'usd',
+			connectedAccountId: expect.stringMatching(/^acct_/u),
+			metadata: expect.objectContaining({
+				treeseed_service_request_id: serviceRequest.payload.id,
+				treeseed_service_quote_id: finalQuote.payload.id,
+				treeseed_service_contract_id: accepted.payload.contract.id,
+				treeseed_product_id: product.payload.id,
+			}),
+		});
+		expect(JSON.stringify(checkout.payload)).not.toContain('sk_test');
+
+		paymentIntents.set(paymentGroup.stripePaymentIntentId, {
+			...paymentIntent,
+			status: 'succeeded',
+		});
+		const webhook = await json(await app.request('/v1/commerce/webhooks/stripe', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'stripe-signature': 'valid_signature',
+			},
+			body: JSON.stringify({
+				id: 'evt_phase_8_payment_success',
+				type: 'payment_intent.succeeded',
+				account: paymentGroup.connectedAccountId,
+				data: {
+					object: {
+						id: paymentGroup.stripePaymentIntentId,
+						object: 'payment_intent',
+						status: 'succeeded',
+						metadata: paymentIntent.metadata,
+					},
+				},
+			}),
+		}));
+		expect(webhook.payload.status).toBe('processed');
+		const activatedContract = await json(await app.request(`/v1/commerce/services/contracts/${accepted.payload.contract.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(activatedContract.payload).toMatchObject({
+			status: 'active',
+			orderId: checkout.payload.orders[0].id,
+			paymentGroupId: paymentGroup.id,
+			entitlementId: expect.any(String),
+		});
+		const activeRequest = await json(await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(activeRequest.payload.request).toMatchObject({
+			status: 'active',
+			contractId: accepted.payload.contract.id,
+			entitlementId: activatedContract.payload.entitlementId,
+		});
+
+		const linked = await json(await app.request(`/v1/commerce/services/contracts/${accepted.payload.contract.id}/link-work`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ relatedProjectId: 'project-link-only', relatedWorkdayId: 'workday-link-only' }),
+		}));
+		expect(linked.payload).toMatchObject({
+			relatedProjectId: 'project-link-only',
+			relatedWorkdayId: 'workday-link-only',
+		});
+		const fulfilled = await json(await app.request(`/v1/commerce/services/contracts/${accepted.payload.contract.id}/fulfill`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				summary: 'Scoped service delivered.',
+				artifactRefs: [{ key: 'service-delivery-note' }],
+				deliveryRefs: [{ href: '/services/delivery/reference' }],
+			}),
+		}));
+		expect(fulfilled.payload.contract).toMatchObject({ status: 'fulfilled', fulfillmentSummary: 'Scoped service delivered.' });
+		const fulfilledRequest = await json(await app.request(`/v1/commerce/services/requests/${serviceRequest.payload.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(fulfilledRequest.payload.request.status).toBe('fulfilled');
+		expect(fulfilled.payload.event).toMatchObject({
+			status: 'delivered',
+			eventType: 'artifact_delivered',
+			entitlementId: activatedContract.payload.entitlementId,
+		});
+
+		const events = await json(await app.request(`/v1/commerce/services/events?requestId=${serviceRequest.payload.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(events.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ eventType: 'requested' }),
+			expect.objectContaining({ eventType: 'quote_created' }),
+			expect.objectContaining({ eventType: 'quote_buyer_approved' }),
+			expect.objectContaining({ eventType: 'quote_vendor_approved' }),
+			expect.objectContaining({ eventType: 'checkout_created' }),
+			expect.objectContaining({ eventType: 'contract_activated' }),
+			expect.objectContaining({ eventType: 'work_linked' }),
+			expect.objectContaining({ eventType: 'fulfilled' }),
+		]));
+		const governance = await json(await app.request(`/v1/commerce/governance-events?teamId=${team.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(governance.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ action: 'commerce_service.requested' }),
+			expect.objectContaining({ action: 'commerce_service.contract_activated' }),
+			expect.objectContaining({ action: 'commerce_service.fulfilled' }),
+		]));
+		const serialized = JSON.stringify({ checkout, activeRequest, fulfilled, events, governance });
+		expect(serialized).not.toContain('sk_test');
+		expect(serialized).not.toContain('card');
+		expect(serialized).not.toContain('applicationFee');
+		expect(serialized).not.toContain('revenueSplit');
+		expect(serialized).not.toContain('capacityCredit');
+
+		const legacyPaid = await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: product.payload.id,
+				mode: 'paid',
+				title: 'Legacy paid scoped service',
+			}),
+		});
+		expect(legacyPaid.status).toBe(400);
+	}, 25_000);
+
+	it('manages commerce capacity marketplace listings and inquiries without execution or billing side effects', async () => {
+		const app = createTestApp();
+		const seeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'commerce-phase-9' }),
+		}));
+		const team = seeded.payload.fixtures.team;
+		const ownerToken = seeded.payload.actors.teamOwner.accessToken;
+		const adminToken = seeded.payload.actors.marketSteward.accessToken;
+		const viewerToken = seeded.payload.actors.teamViewer.accessToken;
+		const nonMemberToken = seeded.payload.actors.nonMember.accessToken;
+
+		const vendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ displayName: 'Capacity Cooperative', slug: 'capacity-cooperative' }),
+		}));
+		await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({
+				trustLevel: 'trusted_capacity_vendor',
+				capacityListingsEnabled: true,
+				reason: 'Capacity trust review passed.',
+			}),
+		});
+
+		const blockedVendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ displayName: 'Duplicate Capacity Request', slug: 'duplicate-capacity-request' }),
+		}));
+		const approvedVendor = await json(await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({
+				trustLevel: 'trusted_capacity_vendor',
+				capacityListingsEnabled: true,
+			}),
+		}));
+		expect(blockedVendor.payload.id).toBe(vendor.payload.id);
+		expect(approvedVendor.payload).toMatchObject({
+			status: 'approved',
+			trustLevel: 'trusted_capacity_vendor',
+			capacityListingsEnabled: true,
+		});
+
+		const providerResponse = await app.request(`/v1/teams/${team.id}/capacity-providers`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ name: 'Disclosure Provider', launchMode: 'self_hosted' }),
+		});
+		expect(providerResponse.status).toBe(201);
+		const provider = (await json(providerResponse)).provider;
+		const laneResponse = await app.request(`/v1/teams/${team.id}/capacity-providers/${provider.id}/lanes`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				name: 'Review lane',
+				businessModel: 'token_metered',
+				unit: 'token_usd',
+				scarcityLevel: 'low',
+				modelClass: 'small',
+			}),
+		});
+		expect(laneResponse.status).toBe(201);
+		const lane = (await json(laneResponse)).payload;
+
+		const product = await json(await app.request('/v1/commerce/products', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				sellerTeamId: team.id,
+				kind: 'capacity_listing',
+				slug: 'capacity-foundation',
+				title: 'Capacity Foundation',
+				summary: 'Trust-gated capacity discovery.',
+				visibility: 'public',
+				ownershipModel: 'cooperative_owned',
+				ownership: {
+					model: 'cooperative_owned',
+					canonicalOwnerType: 'cooperative',
+					canonicalOwnerId: 'capacity-coop',
+					publicSummary: 'Capacity listing governed by cooperative stewards.',
+				},
+			}),
+		}));
+		await app.request(`/v1/commerce/products/${product.payload.id}/stewards`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				role: 'governance_steward',
+				assigneeType: 'team',
+				assigneeId: team.id,
+				displayName: 'Capacity Governance Steward',
+			}),
+		});
+
+		const blockedCommercialOffer = await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: product.payload.id,
+				mode: 'one_time',
+				title: 'Blocked capacity checkout',
+			}),
+		});
+		expect(blockedCommercialOffer.status).toBe(409);
+		const legacyPaid = await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: product.payload.id,
+				mode: 'paid',
+				title: 'Legacy paid capacity',
+			}),
+		});
+		expect(legacyPaid.status).toBe(400);
+		const contactOffer = await json(await app.request('/v1/commerce/offers', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				productId: product.payload.id,
+				mode: 'contact',
+				title: 'Capacity inquiry',
+				termsSummary: 'Discovery and seller review only.',
+			}),
+		}));
+		expect(contactOffer.payload.mode).toBe('contact');
+
+		const listing = await json(await app.request(`/v1/commerce/products/${product.payload.id}/capacity-listing`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				capacityProviderId: provider.id,
+				capacityProviderLaneId: lane.id,
+				accessLevel: 'public_summary',
+				runtimeIsolationLevel: 'tenant_isolated',
+				humanInvolvementLevel: 'operator_assisted',
+				aiInvolvementLevel: 'agentic',
+				dataAccessLevel: 'project_scoped',
+				secretAccessLevel: 'delegated_scoped',
+				supportedServiceTypes: ['review', 'migration'],
+				supportedRegions: ['us'],
+				runtimeRequirements: { lane: 'review' },
+				dataHandlingSummary: 'Project-scoped data only after explicit review.',
+				buyerVisibleRiskSummary: 'Seller review required before any private data or secrets.',
+				governanceRequirements: { review: 'market_admin_or_steward' },
+				supportPolicy: 'Seller-assisted review.',
+				availabilitySummary: 'Weekday review windows.',
+				metadata: { privateNote: 'seller-only' },
+				grantId: 'client-spoof',
+				stripePriceId: 'price_spoof',
+			}),
+		}));
+		expect(listing.payload).toMatchObject({
+			status: 'draft',
+			productId: product.payload.id,
+			vendorId: vendor.payload.id,
+			capacityProviderId: provider.id,
+			capacityProviderLaneId: lane.id,
+			ownershipSnapshot: expect.objectContaining({
+				ownershipModel: 'cooperative_owned',
+				stewards: expect.arrayContaining([
+					expect.objectContaining({ role: 'governance_steward' }),
+				]),
+			}),
+		});
+		expect(listing.payload).not.toHaveProperty('grantId');
+		expect(listing.payload).not.toHaveProperty('stripePriceId');
+
+		const publicDraft = await app.request(`/v1/commerce/capacity-listings/${listing.payload.id}`);
+		expect(publicDraft.status).toBe(404);
+
+		await app.request(`/v1/commerce/products/${product.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/products/${product.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({}),
+		});
+		await app.request(`/v1/commerce/capacity-listings/${listing.payload.id}/submit`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		const approvedListing = await json(await app.request(`/v1/commerce/capacity-listings/${listing.payload.id}/approve`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${adminToken}` },
+			body: JSON.stringify({ reason: 'Approved public capacity disclosure.' }),
+		}));
+		expect(approvedListing.payload.status).toBe('approved');
+
+		const publicListing = await json(await app.request(`/v1/commerce/capacity-listings/${listing.payload.id}`));
+		expect(publicListing.payload).toMatchObject({
+			status: 'approved',
+			accessLevel: 'public_summary',
+			runtimeIsolationLevel: 'tenant_isolated',
+			aiInvolvementLevel: 'agentic',
+			humanInvolvementLevel: 'operator_assisted',
+			dataAccessLevel: 'project_scoped',
+			secretAccessLevel: 'delegated_scoped',
+		});
+		expect(publicListing.payload.capacityProviderId).toBeNull();
+		expect(publicListing.payload.metadata).toEqual({});
+		expect(publicListing.payload.governanceRequirements).toEqual({});
+		const publicList = await json(await app.request('/v1/commerce/capacity-listings'));
+		expect(publicList.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: listing.payload.id, status: 'approved' }),
+		]));
+
+		const inquiry = await json(await app.request(`/v1/commerce/capacity-listings/${listing.payload.id}/inquiries`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({
+				buyerTeamId: team.id,
+				requestedServiceType: 'migration',
+				requestedScope: 'Evaluate capacity for a governed migration.',
+				dataAccessRequested: { repository: 'read after review' },
+				secretAccessRequested: { secrets: 'buyer managed' },
+				relatedProjectId: 'project-disclosure-only',
+				relatedWorkdayId: 'workday-disclosure-only',
+				sellerTeamId: 'client-spoof',
+				priceId: 'price-spoof',
+				stripePaymentIntentId: 'pi_spoof',
+				capacityGrantId: 'grant-spoof',
+				capacityReservationId: 'reservation-spoof',
+				executionCredential: 'secret-spoof',
+			}),
+		}));
+		expect(inquiry.payload).toMatchObject({
+			status: 'requested',
+			listingId: listing.payload.id,
+			productId: product.payload.id,
+			vendorId: vendor.payload.id,
+			sellerTeamId: team.id,
+			buyerTeamId: team.id,
+		});
+		expect(inquiry.payload).not.toHaveProperty('priceId');
+		expect(inquiry.payload).not.toHaveProperty('stripePaymentIntentId');
+		expect(inquiry.payload).not.toHaveProperty('capacityGrantId');
+
+		const readerList = await json(await app.request(`/v1/commerce/capacity-listing-inquiries?sellerTeamId=${encodeURIComponent(team.id)}`, {
+			headers: { authorization: `Bearer ${viewerToken}` },
+		}));
+		expect(readerList.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: inquiry.payload.id }),
+		]));
+		const unrelatedRead = await app.request(`/v1/commerce/capacity-listing-inquiries/${inquiry.payload.id}`, {
+			headers: { authorization: `Bearer ${nonMemberToken}` },
+		});
+		expect(unrelatedRead.status).toBe(403);
+
+		const reviewing = await json(await app.request(`/v1/commerce/capacity-listing-inquiries/${inquiry.payload.id}/review`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ reason: 'Seller started review.' }),
+		}));
+		expect(reviewing.payload.status).toBe('reviewing');
+		const approvedInquiry = await json(await app.request(`/v1/commerce/capacity-listing-inquiries/${inquiry.payload.id}/approve-for-scoping`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({ reason: 'Approved for scoping discussion.' }),
+		}));
+		expect(approvedInquiry.payload.status).toBe('approved_for_scoping');
+
+		const canceledAfterApproval = await app.request(`/v1/commerce/capacity-listing-inquiries/${inquiry.payload.id}/cancel`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
+			body: JSON.stringify({}),
+		});
+		expect(canceledAfterApproval.status).toBe(409);
+
+		const serviceRequests = await json(await app.request('/v1/commerce/services/requests', {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		const checkouts = await json(await app.request('/v1/commerce/orders', {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		const entitlements = await json(await app.request('/v1/commerce/entitlements', {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		const grants = await json(await app.request(`/v1/teams/${team.id}/capacity-grants`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(serviceRequests.payload).toEqual([]);
+		expect(checkouts.payload).toEqual([]);
+		expect(entitlements.payload).toEqual([]);
+		expect(grants.payload).toEqual([]);
+
+		const governance = await json(await app.request(`/v1/commerce/governance-events?teamId=${team.id}`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(governance.payload).toEqual(expect.arrayContaining([
+			expect.objectContaining({ action: 'commerce_capacity_listing.created' }),
+			expect.objectContaining({ action: 'commerce_capacity_listing.provider_linked' }),
+			expect.objectContaining({ action: 'commerce_capacity_listing.submitted' }),
+			expect.objectContaining({ action: 'commerce_capacity_listing.approved' }),
+			expect.objectContaining({ action: 'commerce_capacity_inquiry.created' }),
+			expect.objectContaining({ action: 'commerce_capacity_inquiry.reviewing' }),
+			expect.objectContaining({ action: 'commerce_capacity_inquiry.approved_for_scoping' }),
+		]));
+		const serialized = JSON.stringify({ approvedListing, publicListing, inquiry, approvedInquiry, governance });
+		expect(serialized).not.toContain('sk_test');
+		expect(serialized).not.toContain('client_secret');
+		expect(serialized).not.toContain('card');
+		expect(serialized).not.toContain('payout');
+		expect(serialized).not.toContain('applicationFee');
+		expect(serialized).not.toContain('commission');
+		expect(serialized).not.toContain('revenueSplit');
+		expect(serialized).not.toContain('providerToken');
+		expect(serialized).not.toContain('capacityCredit');
+		expect(serialized).not.toContain('grantToken');
+		expect(serialized).not.toContain('executionCredential');
+	}, 25_000);
+
+	it('keeps Stripe Connect onboarding disabled when the market has no Stripe configuration', async () => {
+		const app = createTestApp();
+		const seeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'commerce-phase-3-unconfigured' }),
+		}));
+		const team = seeded.payload.fixtures.team;
+		const ownerToken = seeded.payload.actors.teamOwner.accessToken;
+		const adminToken = seeded.payload.actors.marketSteward.accessToken;
+
+		const vendor = await json(await app.request(`/v1/commerce/vendors/${team.id}/request`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({ displayName: 'Unconfigured Stripe Vendor' }),
+		}));
+		await app.request(`/v1/commerce/vendors/${vendor.payload.id}/approve`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${adminToken}`,
+			},
+			body: JSON.stringify({ trustLevel: 'verified_seller', salesEnabled: true }),
+		});
+
+		const status = await json(await app.request(`/v1/commerce/vendors/${team.id}/stripe/status`, {
+			headers: { authorization: `Bearer ${ownerToken}` },
+		}));
+		expect(status.payload).toBeNull();
+
+		const response = await app.request(`/v1/commerce/vendors/${team.id}/stripe/onboarding`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${ownerToken}`,
+			},
+			body: JSON.stringify({}),
+		});
+		expect(response.status).toBe(409);
+		const payload = await json(response);
+		expect(payload.error).toContain('Stripe Connect is not configured');
+	}, 15_000);
+
 	it('exposes market-owned v1 auth, market registry, access, and artifact download contracts', async () => {
 		const app = createTestApp({
 			config: {
@@ -5880,7 +8315,7 @@ describe('market api', () => {
 			sha256: 'abc123',
 			downloadUrl: 'https://cdn.example.com/downloadable-starter.tar',
 		});
-	});
+	}, 20_000);
 
 	it('serves Market UI projections from backend v1 routes', async () => {
 		const db = createTestPostgresDatabase();

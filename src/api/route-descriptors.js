@@ -127,6 +127,7 @@ function ownerDomain(path) {
 	if (path.startsWith('/v1/auth/')) return 'auth';
 	if (path.startsWith('/v1/teams/')) return 'team';
 	if (path.startsWith('/v1/projects/')) return 'project';
+	if (path.startsWith('/v1/commerce/')) return 'commerce';
 	if (path.startsWith('/v1/capacity/') || path.includes('/capacity-')) return 'capacity';
 	if (path.startsWith('/v1/catalog')) return 'catalog';
 	if (path.startsWith('/v1/seeds/')) return 'seed';
@@ -135,7 +136,7 @@ function ownerDomain(path) {
 	return 'market';
 }
 
-function authClass(path) {
+function authClass(path, method = 'get') {
 	if (path.startsWith('/v1/provider/')) return 'provider-key';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
@@ -143,6 +144,15 @@ function authClass(path) {
 		return 'public';
 	}
 	if (path.startsWith('/v1/platform/operations')) return 'platform-admin';
+	if (path.startsWith('/v1/commerce/products') && path.includes(':productId') && method === 'get') return 'public';
+	if (path === '/v1/commerce/products' && method === 'get') return 'public';
+	if (path === '/v1/commerce/webhooks/stripe') return 'service-webhook';
+	if (path.startsWith('/v1/commerce/marketplace')) return 'public';
+	if (path.startsWith('/v1/commerce/capacity-listings/') && (path.endsWith('/approve') || path.endsWith('/reject') || path.endsWith('/suspend'))) return 'platform-admin';
+	if (path.startsWith('/v1/commerce/capacity-listings') && method === 'get') return 'public';
+	if (path.startsWith('/v1/commerce/capacity-listings/')) return 'team-member';
+	if (path.startsWith('/v1/commerce/capacity-listing-inquiries')) return 'team-member';
+	if (path.startsWith('/v1/commerce/')) return path.includes('/approve') ? 'platform-admin' : 'team-member';
 	if (path.startsWith('/v1/ui/')) return 'user';
 	if (path.startsWith('/v1/teams/:teamId')) return 'team-member';
 	if (path.startsWith('/v1/projects/:projectId')) return 'project-member';
@@ -198,6 +208,37 @@ function successActorsFor(path, method) {
 		: ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path.startsWith('/v1/capacity/providers/:providerId/heartbeat')) return ['providerKey'];
 	if (path.startsWith('/v1/capacity/')) return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/approve')) return PLATFORM_ADMIN_ACTORS;
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/approve')) return PLATFORM_ADMIN_ACTORS;
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/versions/') && path.endsWith('/approve')) return PLATFORM_ADMIN_ACTORS;
+	if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/approve')) return PLATFORM_ADMIN_ACTORS;
+	if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/stripe/status')) return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/stripe/reconcile')) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/prices/') && path.endsWith('/stripe/reconcile')) return TEAM_MANAGER_ACTORS;
+	if (path === '/v1/commerce/webhooks/stripe') return [];
+	if (path.startsWith('/v1/commerce/vendors/') && path.includes('/sales/')) return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/monitoring')) return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/marketplace')) return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commerce/orders/') && path.endsWith('/refunds')) return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/order-items/') && path.endsWith('/fulfillment/artifact')) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/entitlements/') && path.endsWith('/revoke')) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/cart') || path.startsWith('/v1/commerce/checkout') || path.startsWith('/v1/commerce/payment-groups')) return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/orders') || path.startsWith('/v1/commerce/entitlements')) return TEAM_MEMBER_ACTORS;
+	if (path === '/v1/commerce/stripe/config') return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/capacity-listings/') && (path.endsWith('/approve') || path.endsWith('/reject') || path.endsWith('/suspend'))) return PLATFORM_ADMIN_ACTORS;
+	if (path.startsWith('/v1/commerce/capacity-listings/') && path.endsWith('/inquiries')) return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/capacity-listings/') && method !== 'get') return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/capacity-listing-inquiries/') && (path.endsWith('/review') || path.endsWith('/approve-for-scoping') || path.endsWith('/decline'))) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/capacity-listing-inquiries')) return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/capacity-listings')) return method === 'get' ? ACCEPTANCE_ACTORS : TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/services/contracts/') && (path.endsWith('/link-work') || path.endsWith('/fulfill'))) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/services/requests/') && (path.endsWith('/scoping') || path.endsWith('/quotes'))) return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/services/quotes/') && (path.endsWith('/submit') || path.endsWith('/vendor-approve'))) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commerce/services/')) return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/products') && method === 'get') return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commerce/offers') && method === 'get') return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commerce/governance-events')) return TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/commerce/')) return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
 	if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates') || path.startsWith('/v1/knowledge-packs')) return ACCEPTANCE_ACTORS;
 	if (path.startsWith('/v1/seeds/') && method === 'get') return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path.startsWith('/v1/seeds/')) return ['siteAdmin', 'marketSteward'];
@@ -266,6 +307,63 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/teams') && path.includes('/hosting-audit')) return 'hostingAudit';
 	if (path.includes('/teams') && path.includes('/seeds/export')) return 'seedExport';
 	if (path === '/v1/teams') return 'teamCreate';
+	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/request')) return 'commerceVendorRequest';
+	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/approve')) return 'commerceVendorApproval';
+	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/stripe/onboarding')) return 'commerceStripeOnboarding';
+	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/stripe/return')) return 'commerceTransition';
+	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/stripe/login-link')) return 'empty';
+	if (path === '/v1/commerce/services/requests') return method === 'get' ? 'empty' : 'commerceServiceRequest';
+	if (path.startsWith('/v1/commerce/services/requests/') && path.endsWith('/cancel')) return 'commerceServiceDecision';
+	if (path.startsWith('/v1/commerce/services/requests/') && path.endsWith('/scoping')) return 'commerceServiceDecision';
+	if (path.startsWith('/v1/commerce/services/requests/') && path.endsWith('/quotes')) return method === 'get' ? 'empty' : 'commerceServiceQuote';
+	if (path.startsWith('/v1/commerce/services/requests/')) return method === 'patch' ? 'commerceServiceRequestUpdate' : 'empty';
+	if (path.startsWith('/v1/commerce/services/quotes/') && (path.endsWith('/submit') || path.endsWith('/buyer-approve') || path.endsWith('/vendor-approve') || path.endsWith('/reject'))) return 'commerceServiceDecision';
+	if (path.startsWith('/v1/commerce/services/contracts/') && path.endsWith('/checkout')) return 'commerceServiceContractCheckout';
+	if (path.startsWith('/v1/commerce/services/contracts/') && path.endsWith('/link-work')) return 'commerceServiceWorkLink';
+	if (path.startsWith('/v1/commerce/services/contracts/') && path.endsWith('/fulfill')) return 'commerceServiceFulfillment';
+	if (path.startsWith('/v1/commerce/services/contracts/') && path.endsWith('/cancel')) return 'commerceServiceDecision';
+	if (path.startsWith('/v1/commerce/services/')) return 'empty';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/capacity-listing')) return method === 'get' ? 'empty' : 'commerceCapacityListing';
+	if (path.startsWith('/v1/commerce/capacity-listings/') && path.endsWith('/inquiries')) return 'commerceCapacityInquiry';
+	if (path.startsWith('/v1/commerce/capacity-listings/') && (path.endsWith('/submit') || path.endsWith('/approve') || path.endsWith('/reject') || path.endsWith('/suspend') || path.endsWith('/archive'))) return 'commerceCapacityListingDecision';
+	if (path.startsWith('/v1/commerce/capacity-listings/')) return method === 'patch' ? 'commerceCapacityListingUpdate' : 'empty';
+	if (path.startsWith('/v1/commerce/capacity-listing-inquiries/') && (path.endsWith('/review') || path.endsWith('/approve-for-scoping') || path.endsWith('/decline') || path.endsWith('/cancel'))) return 'commerceCapacityInquiryDecision';
+	if (path.startsWith('/v1/commerce/capacity-listing-inquiries')) return 'empty';
+	if (path.startsWith('/v1/commerce/orders/') && path.endsWith('/refunds')) return method === 'get' ? 'empty' : 'commerceRefund';
+	if (path.startsWith('/v1/commerce/order-items/') && path.endsWith('/fulfillment/artifact')) return 'commerceFulfillment';
+	if (path.startsWith('/v1/commerce/entitlements/') && path.endsWith('/revoke')) return 'commerceTransition';
+	if (path === '/v1/commerce/cart') return 'commerceCart';
+	if (path.startsWith('/v1/commerce/cart/') && path.endsWith('/items')) return 'commerceCartItem';
+	if (path.startsWith('/v1/commerce/cart/') && path.includes('/items/')) return 'empty';
+	if (path === '/v1/commerce/checkout') return 'commerceCheckout';
+	if (path.startsWith('/v1/commerce/payment-groups/') && path.endsWith('/refresh')) return 'empty';
+	if (path === '/v1/commerce/webhooks/stripe') return 'empty';
+	if (path === '/v1/commerce/products') return 'commerceProductDraft';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/ownership')) return 'commerceOwnership';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/ownership/')) return 'commerceOwnershipUpdate';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/stewards')) return 'commerceSteward';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/stewards/') && path.endsWith('/end')) return 'commerceStewardEnd';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/stewards/')) return 'commerceStewardUpdate';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/contributions')) return 'commerceContribution';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/contributions/')) return 'commerceContributionUpdate';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/governance-policy')) return 'commerceGovernancePolicy';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/governance-policy/')) return 'commerceGovernancePolicyUpdate';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/ownership-transfer/') && (path.endsWith('/submit') || path.endsWith('/approve') || path.endsWith('/reject') || path.endsWith('/cancel'))) return 'commerceOwnershipTransferDecision';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/ownership-transfer')) return 'commerceOwnershipTransfer';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/succession-events')) return method === 'get' ? 'empty' : 'commerceSuccessionEvent';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/versions')) return 'commerceProductVersion';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/submit')) return 'commerceTransition';
+	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/approve')) return 'commerceTransition';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/versions/') && path.endsWith('/submit')) return 'commerceTransition';
+	if (path.startsWith('/v1/commerce/products/') && path.includes('/versions/') && path.endsWith('/approve')) return 'commerceTransition';
+	if (path === '/v1/commerce/offers') return 'commerceOffer';
+	if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/prices')) return 'commercePrice';
+	if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/submit')) return 'commerceTransition';
+	if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/approve')) return 'commerceTransition';
+	if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/stripe/reconcile')) return 'empty';
+	if (path.startsWith('/v1/commerce/prices/') && path.endsWith('/stripe/reconcile')) return 'empty';
+	if (path.startsWith('/v1/commerce/offers/')) return 'commerceOffer';
+	if (path.startsWith('/v1/commerce/prices/') && path.endsWith('/activate')) return 'commerceTransition';
 	if (path.startsWith('/v1/project-deployments/')) return 'projectDeployment';
 	if (path.startsWith('/v1/projects/:projectId')) return path.endsWith('/local-content/:collection') ? 'localContentWrite'
 		: path.endsWith('/related') ? 'localContentRelated'
@@ -317,7 +415,7 @@ export function extractActiveApiRoutes(source = `${readFileSync(appSourcePath, '
 			method: method.toUpperCase(),
 			path,
 			ownerDomain: ownerDomain(path),
-			authClass: authClass(path),
+			authClass: authClass(path, method),
 			mutability: mutability(method),
 			safeProduction: safeProduction(path, method),
 			fixtures: fixtureRequirements(path),
