@@ -2,9 +2,66 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../src/api/route-descriptors.js';
+
+let inProcessAcceptanceApp = null;
+let inProcessAcceptanceStore = null;
+
+async function createInProcessAcceptanceApp() {
+	if (inProcessAcceptanceApp) return inProcessAcceptanceApp;
+	process.env.TREESEED_ENVIRONMENT ??= 'local';
+	process.env.TREESEED_PLATFORM_RUNNER_SECRET ??= 'acceptance-platform-runner-secret';
+	process.env.CLOUDFLARE_API_TOKEN ??= 'acceptance-cloudflare-token';
+	process.env.CLOUDFLARE_ACCOUNT_ID ??= 'acceptance-cloudflare-account';
+	const [{ DataType, newDb }, { createApiApp }, { MarketPostgresDatabase }, { MarketControlPlaneStore }] = await Promise.all([
+		import('pg-mem'),
+		import('../src/api/app.js'),
+		import('../src/api/market-postgres.js'),
+		import('../src/api/store.js'),
+	]);
+	const memory = newDb();
+	memory.public.registerFunction({
+		name: 'md5',
+		args: [DataType.text],
+		returns: DataType.text,
+		implementation: (value) => `md5:${value}`,
+	});
+	const pg = memory.adapters.createPg();
+	const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+	const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
+		? resolve(packageRoot, '../sdk/drizzle/market')
+		: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+	const db = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	const config = {
+		repoRoot: packageRoot,
+		authSecret: 'acceptance-local-secret',
+		baseUrl: 'http://127.0.0.1',
+		siteUrl: 'http://127.0.0.1:4321',
+		issuer: 'http://127.0.0.1',
+		environment: 'local',
+		projectId: 'treeseed-market',
+		projectApiKey: 'market-project-key',
+		projectApiPermissions: ['sdk:execute:global', 'agent:execute:global', 'operations:execute:global'],
+		platformRunnerSecret: process.env.TREESEED_PLATFORM_RUNNER_SECRET,
+		webServiceId: process.env.TREESEED_ACCEPTANCE_SERVICE_ID ?? 'web',
+		webServiceSecret: process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET ?? 'web-test-secret',
+		webAssertionSecret: 'web-assertion-secret',
+	};
+	inProcessAcceptanceStore = new MarketControlPlaneStore({
+		...config,
+		assertionSecret: config.webAssertionSecret,
+		serviceId: config.webServiceId,
+		serviceSecret: config.webServiceSecret,
+	}, db);
+	inProcessAcceptanceApp = createApiApp({
+		db,
+		store: inProcessAcceptanceStore,
+		config,
+	});
+	return inProcessAcceptanceApp;
+}
 
 function parseArgs(argv) {
 	const args = {
@@ -130,6 +187,13 @@ async function fetchWithTimeout(url, init = {}, label = String(url)) {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(new Error(`Acceptance request timed out after ${timeoutMs}ms: ${label}`)), timeoutMs);
 	try {
+		if (process.env.TREESEED_ACCEPTANCE_IN_PROCESS === '1') {
+			const app = await createInProcessAcceptanceApp();
+			return await app.fetch(new Request(url, {
+				...init,
+				signal: init.signal ?? controller.signal,
+			}));
+		}
 		return await fetch(url, {
 			...init,
 			signal: init.signal ?? controller.signal,
@@ -654,7 +718,78 @@ async function requestAcceptanceJson({ variables, actors, actorId, method = 'GET
 	return { response, body: envelope };
 }
 
-function runMockedDeploymentRunner({ variables, actors, flow, args }) {
+async function completeInProcessMockDeployment(deployment, flow = {}) {
+	const store = inProcessAcceptanceStore;
+	if (!store || !deployment?.id) {
+		throw new Error('In-process mocked deployment completion requires the acceptance store and deployment id.');
+	}
+	const operationId = deployment.platformOperationId ?? deployment.operationId ?? null;
+	const action = deployment.action ?? flow.action ?? 'deploy_web';
+	const environment = deployment.environment ?? flow.environment ?? 'staging';
+	const timestamp = new Date().toISOString();
+	const output = {
+		status: 'succeeded',
+		acceptance: true,
+		mockExternal: true,
+		environment,
+		action,
+		result: {
+			status: 'succeeded',
+			previewId: `acceptance-${deployment.id}`,
+			previewUrl: `https://${deployment.projectId}.acceptance.example.test`,
+			target: environment,
+		},
+	};
+	await store.updateProjectDeployment(deployment.id, {
+		status: 'succeeded',
+		finishedAt: timestamp,
+		completedAt: timestamp,
+		summary: `Mocked ${action} succeeded for ${environment}.`,
+		monitor: action === 'monitor'
+			? {
+				status: 'healthy',
+				checkedAt: timestamp,
+				acceptance: true,
+			}
+			: deployment.monitor ?? {},
+		metadata: {
+			...(deployment.metadata ?? {}),
+			acceptanceMockRunner: true,
+			mockedAt: timestamp,
+		},
+	});
+	await store.appendProjectDeploymentEvent(deployment.id, {
+		kind: 'deployment.mock_runner_completed',
+		message: `Acceptance mock runner completed ${action}.`,
+		status: 'succeeded',
+		operationId,
+		payload: output,
+	});
+	if (operationId) {
+		await store.run(
+			`UPDATE platform_operations
+			 SET status = 'succeeded',
+			     output_json = ?,
+			     error_json = NULL,
+			     lease_expires_at = NULL,
+			     updated_at = ?,
+			     finished_at = ?
+			 WHERE id = ?`,
+			[JSON.stringify(output), timestamp, timestamp, operationId],
+		);
+		await store.appendPlatformOperationEvent(operationId, 'acceptance.mock_runner_completed', {
+			deploymentId: deployment.id,
+			environment,
+			action,
+		}).catch(() => null);
+	}
+	return { status: 0, stdout: JSON.stringify({ ok: true, deploymentId: deployment.id }), stderr: '' };
+}
+
+async function runMockedDeploymentRunner({ variables, actors, flow, args, deployment }) {
+	if (process.env.TREESEED_ACCEPTANCE_IN_PROCESS === '1') {
+		return completeInProcessMockDeployment(deployment, flow);
+	}
 	const runnerActor = actors[flow.runnerActor ?? 'platformRunner'] ?? {};
 	const runnerSecret = runnerActor.token ?? process.env.TREESEED_PLATFORM_RUNNER_SECRET;
 	if (!runnerSecret) {
@@ -662,9 +797,9 @@ function runMockedDeploymentRunner({ variables, actors, flow, args }) {
 	}
 	const market = flow.market ?? args.environment ?? 'local';
 	const runnerArgs = [
+		'--experimental-transform-types',
+		'./src/operations-runner/entrypoint.js',
 		'run',
-		'market:operations-runner',
-		'--',
 		'--market',
 		market,
 		'--once',
@@ -674,12 +809,13 @@ function runMockedDeploymentRunner({ variables, actors, flow, args }) {
 		'--mock-result',
 		flow.mockResult ?? 'success',
 	];
-	const result = spawnSync('npm', runnerArgs, {
+	const result = spawnSync(process.execPath, runnerArgs, {
 		cwd: process.cwd(),
 		encoding: 'utf8',
 		env: {
 			...process.env,
 			TREESEED_API_BASE_URL: variables.baseUrl,
+			TREESEED_DATABASE_URL: process.env.TREESEED_DATABASE_URL ?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api',
 			TREESEED_URL: variables.baseUrl,
 			TREESEED_MANAGER_ID: market,
 			TREESEED_PLATFORM_RUNNER_SECRET: runnerSecret,
@@ -724,12 +860,14 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 			environment: flow.environment ?? 'staging',
 			action: 'deploy_web',
 			source: 'acceptance',
+			dryRun: true,
 			idempotencyKey: `acceptance-${variables.runNonce}-deploy`,
 		},
 	});
 	failures.push(...assertNoForbiddenDeploymentOutput(deploy.body, 'queued deployment'));
-	runMockedDeploymentRunner({ variables, actors, flow, args });
 	const deploymentId = deploy.body?.payload?.deployment?.id ?? deploy.body?.deployment?.id;
+	const queuedDeployment = deploy.body?.payload?.deployment ?? deploy.body?.deployment;
+	await runMockedDeploymentRunner({ variables, actors, flow, args, deployment: queuedDeployment });
 	const deploymentDetail = await requestAcceptanceJson({
 		variables,
 		actors,
@@ -751,12 +889,14 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 			environment: flow.environment ?? 'staging',
 			action: 'monitor',
 			source: 'acceptance',
+			dryRun: true,
 			idempotencyKey: `acceptance-${variables.runNonce}-monitor`,
 		},
 	});
 	failures.push(...assertNoForbiddenDeploymentOutput(monitor.body, 'queued monitor'));
-	runMockedDeploymentRunner({ variables, actors, flow, args });
 	const monitorDeploymentId = monitor.body?.payload?.deployment?.id ?? monitor.body?.deployment?.id;
+	const queuedMonitorDeployment = monitor.body?.payload?.deployment ?? monitor.body?.deployment;
+	await runMockedDeploymentRunner({ variables, actors, flow: { ...flow, action: 'monitor' }, args, deployment: queuedMonitorDeployment });
 	const monitorDetail = await requestAcceptanceJson({
 		variables,
 		actors,

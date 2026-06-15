@@ -161,6 +161,24 @@ sdkMethodMatrices:
     actor: teamOwner
     expect:
       statusAny: [201, 409]
+  - method: auditProjectHosts
+    actor: teamOwner
+    environments: [local]
+    expect:
+      status: 202
+      envelope: { ok: true }
+  - method: resyncProjectHost
+    actor: teamOwner
+    environments: [local]
+    expect:
+      status: 202
+      envelope: { ok: true }
+  - method: rotateProjectHost
+    actor: teamOwner
+    environments: [local]
+    expect:
+      status: 202
+      envelope: { ok: true }
 
 deploymentFlows:
   - id: deployment-flow.mocked-web-deployment

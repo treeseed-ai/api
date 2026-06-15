@@ -17,7 +17,7 @@ export const FORBIDDEN_DEPLOYMENT_REQUEST_FIELDS = [
 ] as const;
 
 const SECRET_FIELD_PATTERN = /(?:secret|token|password|apiKey|privateKey|credential|ciphertext|passphrase)/iu;
-const SECRET_VALUE_PATTERN = /(?:runner-token-secret|capacity-provider-secret|secret-token|github_pat_|ghp_|sk-[a-z0-9_-]{8,}|prjrun_|tsk_)/iu;
+const SECRET_VALUE_PATTERN = /(?:runner-token-secret|capacity-provider-secret|secret-token|github_pat_|ghp_|sk-[a-z0-9_-]{8,}|tsp_[a-z0-9_-]+|prjrun_|tsk_)/iu;
 
 export function isProjectWebDeploymentAction(value: unknown): value is ProjectWebDeploymentAction {
 	return typeof value === 'string' && PROJECT_WEB_DEPLOYMENT_ACTIONS.includes(value as ProjectWebDeploymentAction);

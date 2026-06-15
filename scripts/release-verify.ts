@@ -2,6 +2,11 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { createServer } from 'node:http';
+import { Readable } from 'node:stream';
+import { DataType, newDb } from 'pg-mem';
+import { createApiApp } from '../src/api/app.js';
+import { MarketPostgresDatabase } from '../src/api/market-postgres.js';
 import { packageRoot } from './package-tools.ts';
 
 const textExtensions = new Set(['.js', '.ts', '.mjs', '.cjs', '.d.ts', '.json', '.md']);
@@ -88,17 +93,110 @@ function assertCleanDist() {
 	scanDirectory(distRoot);
 }
 
-function runAcceptanceIfConfigured() {
+function createAcceptanceDatabase() {
+	const memory = newDb();
+	memory.public.registerFunction({
+		name: 'md5',
+		args: [DataType.text],
+		returns: DataType.text,
+		implementation: (value: string) => `md5:${value}`,
+	});
+	const pg = memory.adapters.createPg();
+	const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
+		? resolve(packageRoot, '../sdk/drizzle/market')
+		: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+	return MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+}
+
+function hasRequestBody(method = 'GET') {
+	return method !== 'GET' && method !== 'HEAD';
+}
+
+async function honoNodeHandler(app: ReturnType<typeof createApiApp>, request: any, response: any) {
+	const origin = request.headers.host ? `http://${request.headers.host}` : 'http://127.0.0.1';
+	const url = new URL(request.url ?? '/', origin);
+	const webRequest = new Request(url, {
+		method: request.method,
+		headers: request.headers,
+		body: hasRequestBody(request.method) ? request : undefined,
+		duplex: 'half',
+	} as RequestInit & { duplex: 'half' });
+	const webResponse = await app.fetch(webRequest);
+	response.statusCode = webResponse.status;
+	webResponse.headers.forEach((value, key) => response.setHeader(key, value));
+	if (!webResponse.body) {
+		response.end();
+		return;
+	}
+	Readable.fromWeb(webResponse.body as any).pipe(response);
+}
+
+async function startLocalAcceptanceApi() {
+	const app = createApiApp({
+		db: createAcceptanceDatabase(),
+		config: {
+			repoRoot: packageRoot,
+			authSecret: 'acceptance-local-secret',
+			baseUrl: 'http://127.0.0.1:0',
+			siteUrl: 'http://127.0.0.1:4321',
+			issuer: 'http://127.0.0.1:0',
+			environment: 'local',
+			projectId: 'treeseed-market',
+			projectApiKey: 'market-project-key',
+			projectApiPermissions: ['sdk:execute:global', 'agent:execute:global', 'operations:execute:global'],
+			platformRunnerSecret: process.env.TREESEED_PLATFORM_RUNNER_SECRET ?? 'acceptance-platform-runner-secret',
+			webServiceId: 'web',
+			webServiceSecret: 'web-test-secret',
+			webAssertionSecret: 'web-assertion-secret',
+		},
+	});
+	const server = createServer((request, response) => {
+		void honoNodeHandler(app, request, response).catch((error) => {
+			response.statusCode = 500;
+			response.end(error instanceof Error ? error.message : String(error));
+		});
+	});
+	await new Promise<void>((resolvePromise) => {
+		server.listen(0, '127.0.0.1', () => resolvePromise());
+	});
+	const address = server.address();
+	if (!address || typeof address === 'string') throw new Error('Could not determine local acceptance API address.');
+	return {
+		baseUrl: `http://127.0.0.1:${address.port}`,
+		async close() {
+			await new Promise<void>((resolvePromise, rejectPromise) => {
+				server.close((error) => (error ? rejectPromise(error) : resolvePromise()));
+			});
+		},
+	};
+}
+
+async function runAcceptanceIfConfigured() {
 	const baseUrl = process.env.TREESEED_API_BASE_URL;
-	if (!baseUrl) {
-		console.log('Skipping API acceptance tests: TREESEED_API_BASE_URL is not set.');
+	if (baseUrl) {
+		if (!process.env.TREESEED_ACCEPTANCE_SERVICE_ID || !process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET) {
+			throw new Error('TREESEED_ACCEPTANCE_SERVICE_ID and TREESEED_ACCEPTANCE_SERVICE_SECRET are required when TREESEED_API_BASE_URL is set.');
+		}
+		run('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
 		return;
 	}
-	if (!process.env.TREESEED_ACCEPTANCE_SERVICE_ID || !process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET) {
-		console.log('Skipping API acceptance tests: TREESEED_ACCEPTANCE_SERVICE_ID and TREESEED_ACCEPTANCE_SERVICE_SECRET are not both set.');
-		return;
+	console.log('Starting isolated local API acceptance target because TREESEED_API_BASE_URL is not set.');
+	const server = await startLocalAcceptanceApi();
+	try {
+		run('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', server.baseUrl], {
+			TREESEED_ACCEPTANCE_SERVICE_ID: process.env.TREESEED_ACCEPTANCE_SERVICE_ID ?? 'web',
+			TREESEED_ACCEPTANCE_SERVICE_SECRET: process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET ?? 'web-test-secret',
+			TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS: '1',
+			TREESEED_ACCEPTANCE_REQUEST_TIMEOUT_MS: process.env.TREESEED_ACCEPTANCE_REQUEST_TIMEOUT_MS ?? '120000',
+			TREESEED_ACCEPTANCE_IN_PROCESS: '1',
+			TREESEED_ENVIRONMENT: 'local',
+			TREESEED_PLATFORM_RUNNER_SECRET: process.env.TREESEED_PLATFORM_RUNNER_SECRET ?? 'acceptance-platform-runner-secret',
+			CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN ?? 'acceptance-cloudflare-token',
+			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? 'acceptance-cloudflare-account',
+		});
+	} finally {
+		await server.close();
 	}
-	run('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
 }
 
 async function smokeImportDist() {
@@ -119,5 +217,5 @@ scanDirectory(resolve(packageRoot, 'src'));
 run('npm', ['run', 'lint']);
 assertCleanDist();
 run('npm', ['run', 'test:unit']);
-runAcceptanceIfConfigured();
+await runAcceptanceIfConfigured();
 await smokeImportDist();

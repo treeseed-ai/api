@@ -102,6 +102,22 @@ const PHASE4_CAPACITY_PROVIDER_SCOPES = [
 	'provider:capabilities:write',
 ];
 
+const CAPACITY_PROVIDER_BOOTSTRAP_SCOPES = [
+	'provider:register',
+	'provider:heartbeat',
+	'provider:capabilities:write',
+];
+
+const CAPACITY_PROVIDER_SESSION_SCOPES = [
+	'provider:heartbeat',
+	'provider:portfolio:read',
+	'provider:tasks:claim',
+	'provider:tasks:update',
+	'provider:usage:report',
+	'provider:reports:write',
+	'provider:capabilities:write',
+];
+
 const CAPACITY_PROVIDER_LAUNCH_MODES = new Set(['self_hosted', 'managed_market_host', 'connected_host']);
 
 function providerLaunchMode(value) {
@@ -433,6 +449,36 @@ function serializeTeam(row) {
 	};
 }
 
+function teamIsPrivate(team) {
+	const visibility = String(team?.metadata?.visibility ?? team?.metadata?.access ?? 'private').toLowerCase();
+	return team?.metadata?.privateTreeDx !== false && visibility !== 'public' && team?.metadata?.publicTeam !== true;
+}
+
+function centralTreeDxRegistryUrl(config = {}) {
+	return normalizeBaseUrl(
+		process.env.TREESEED_PUBLIC_TREEDX_REGISTRY_URL
+		?? process.env.TREESEED_CENTRAL_TREEDX_REGISTRY_URL
+		?? config.publicTreeDxRegistryUrl
+		?? config.treedxRegistryUrl
+		?? 'https://api.treeseed.ai/treedx',
+	);
+}
+
+function normalizeAllocationSlices(value, fallback = []) {
+	const raw = Array.isArray(value) ? value : fallback;
+	return raw
+		.map((slice) => ({
+			id: String(slice?.id ?? '').trim(),
+			name: String(slice?.name ?? slice?.label ?? slice?.id ?? '').trim(),
+			percentage: numberValue(slice?.percentage ?? slice?.allocationPercent, null),
+		}))
+		.filter((slice) => slice.id && slice.name && slice.percentage !== null)
+		.map((slice) => ({
+			...slice,
+			percentage: Math.max(0, Math.min(100, slice.percentage)),
+		}));
+}
+
 function serializeTeamMember(row, roles = []) {
 	if (!row) return null;
 	const roleKey = primaryTeamRole(roles);
@@ -620,6 +666,7 @@ function serializeExecutionProvider(row, extras = {}) {
 
 function serializeExecutionProviderNativeLimit(row) {
 	if (!row) return null;
+	const metadata = parseJson(row.metadata_json, {});
 	return {
 		id: row.id,
 		executionProviderId: row.execution_provider_id,
@@ -631,7 +678,8 @@ function serializeExecutionProviderNativeLimit(row) {
 		resetAt: row.reset_at,
 		confidence: row.confidence,
 		source: row.source,
-		metadata: parseJson(row.metadata_json, {}),
+		dailyUsageCapPercent: numberValue(metadata.dailyUsageCapPercent ?? metadata.maxDailyUsagePercent, null),
+		metadata,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -1003,9 +1051,9 @@ function serializeSeedRun(row) {
 		actorType: row.actor_type,
 		actorId: row.actor_id,
 		manifestHash: row.manifest_hash,
-		plan: parseJson(row.plan_json, null),
-		result: parseJson(row.result_json, null),
-		error: parseJson(row.error_json, null),
+		plan: redactDeploymentValue(parseJson(row.plan_json, null)),
+		result: redactDeploymentValue(parseJson(row.result_json, null)),
+		error: redactDeploymentValue(parseJson(row.error_json, null)),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		completedAt: row.completed_at,
@@ -2486,6 +2534,8 @@ export class MarketControlPlaneStore {
 		}
 		const displayName = String(input.displayName ?? input.display_name ?? input.label ?? input.name ?? validation.name).trim() || validation.name;
 		const metadata = {
+			visibility: 'private',
+			privateTreeDx: true,
 			...(typeof input.metadata === 'object' && input.metadata ? input.metadata : {}),
 		};
 		await this.run(
@@ -2509,6 +2559,15 @@ export class MarketControlPlaneStore {
 		);
 		if (input.ownerUserId) {
 			await this.upsertTeamMember(id, input.ownerUserId, 'team_owner');
+		}
+		const team = await this.getTeam(id);
+		if (teamIsPrivate(team)) {
+			await this.provisionTeamTreeDx(id, {
+				metadata: {
+					automaticPrivateTeamTreeDx: true,
+					createdFrom: 'private_team_creation',
+				},
+			});
 		}
 		return this.getTeam(id);
 	}
@@ -3422,7 +3481,9 @@ export class MarketControlPlaneStore {
 		await this.ensureInitialized();
 		const provider = await this.getCapacityProvider(teamId, providerId);
 		if (!provider) return null;
-		const token = `tsp_${randomUUID().replaceAll('-', '')}`;
+		const token = typeof input.plaintextKey === 'string' && input.plaintextKey.trim()
+			? input.plaintextKey.trim()
+			: `tsp_${randomUUID().replaceAll('-', '')}`;
 		const timestamp = isoNow();
 		const id = input.id ?? randomUUID();
 		const scopes = input.scopes ?? PHASE4_CAPACITY_PROVIDER_SCOPES;
@@ -3457,6 +3518,25 @@ export class MarketControlPlaneStore {
 		};
 	}
 
+	async createCapacityProviderBootstrapKey(teamId, providerId, input = {}) {
+		return this.createCapacityProviderApiKey(teamId, providerId, {
+			...input,
+			name: input.name ?? 'Capacity provider bootstrap key',
+			scopes: input.scopes ?? CAPACITY_PROVIDER_BOOTSTRAP_SCOPES,
+		});
+	}
+
+	async createCapacityProviderSessionToken(teamId, providerId, input = {}) {
+		const ttlSeconds = Number.isFinite(Number(input.ttlSeconds)) ? Number(input.ttlSeconds) : 3600;
+		const expiresAt = input.expiresAt ?? new Date(Date.now() + Math.max(300, ttlSeconds) * 1000).toISOString();
+		return this.createCapacityProviderApiKey(teamId, providerId, {
+			...input,
+			name: input.name ?? 'Capacity provider session token',
+			scopes: input.scopes ?? CAPACITY_PROVIDER_SESSION_SCOPES,
+			expiresAt,
+		});
+	}
+
 	async resetCapacityProviderApiKey(teamId, providerId, input = {}) {
 		await this.ensureInitialized();
 		if (!(await this.getCapacityProvider(teamId, providerId))) return null;
@@ -3467,14 +3547,12 @@ export class MarketControlPlaneStore {
 			 ORDER BY created_at DESC LIMIT 1`,
 			[providerId, teamId],
 		);
-		if (previous) {
-			await this.run(
-				`UPDATE capacity_provider_api_keys
-				 SET status = 'revoked', revoked_at = ?, updated_at = ?
-				 WHERE id = ?`,
-				[timestamp, timestamp, previous.id],
-			);
-		}
+		await this.run(
+			`UPDATE capacity_provider_api_keys
+			 SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ?
+			 WHERE capacity_provider_id = ? AND team_id = ? AND status = 'active' AND revoked_at IS NULL`,
+			[timestamp, timestamp, providerId, teamId],
+		);
 		const result = await this.createCapacityProviderApiKey(teamId, providerId, {
 			...input,
 			name: input.name ?? previous?.name ?? 'Default provider security code',
@@ -3492,9 +3570,9 @@ export class MarketControlPlaneStore {
 
 	async rotateCapacityProviderApiKey(teamId, providerId, input = {}) {
 		return this.resetCapacityProviderApiKey(teamId, providerId, {
-			name: 'Capacity provider API key',
-			scopes: PHASE4_CAPACITY_PROVIDER_SCOPES,
-			expiresAt: null,
+			name: input.name ?? 'Capacity provider bootstrap key',
+			scopes: input.scopes ?? CAPACITY_PROVIDER_BOOTSTRAP_SCOPES,
+			expiresAt: input.expiresAt ?? null,
 			createdById: input.createdById ?? null,
 		});
 	}
@@ -3868,6 +3946,11 @@ export class MarketControlPlaneStore {
 			[id, executionProviderId],
 		);
 		const timestamp = isoNow();
+		const metadata = objectValue(input.metadata ?? input.metadataJson ?? parseJson(existing?.metadata_json, {}));
+		const dailyUsageCapPercent = numberValue(input.dailyUsageCapPercent ?? input.maxDailyUsagePercent, null);
+		if (dailyUsageCapPercent !== null) {
+			metadata.dailyUsageCapPercent = Math.max(0, Math.min(100, dailyUsageCapPercent));
+		}
 		const values = [
 			executionProviderId,
 			scope,
@@ -3878,7 +3961,7 @@ export class MarketControlPlaneStore {
 			stringValue(input.resetAt ?? input.reset_at, existing?.reset_at ?? '') || null,
 			stringValue(input.confidence, existing?.confidence ?? 'estimated'),
 			stringValue(input.source, existing?.source ?? 'configured'),
-			JSON.stringify(objectValue(input.metadata ?? input.metadataJson ?? parseJson(existing?.metadata_json, {}))),
+			JSON.stringify(metadata),
 			timestamp,
 			id,
 		];
@@ -3907,7 +3990,7 @@ export class MarketControlPlaneStore {
 					stringValue(input.resetAt ?? input.reset_at, '') || null,
 					stringValue(input.confidence, 'estimated'),
 					stringValue(input.source, 'configured'),
-					JSON.stringify(objectValue(input.metadata ?? input.metadataJson)),
+					JSON.stringify(metadata),
 					timestamp,
 					timestamp,
 				],
@@ -4076,10 +4159,15 @@ export class MarketControlPlaneStore {
 
 	async getPrimaryTreeDxInstance(teamId) {
 		await this.ensureInitialized();
-		return serializeTreeDxInstance(await this.first(
+		const primary = serializeTreeDxInstance(await this.first(
 			`SELECT * FROM treedx_instances WHERE team_id = ? AND COALESCE("primary", 1) != 0 AND status != 'disabled' ORDER BY updated_at DESC LIMIT 1`,
 			[teamId],
 		));
+		if (primary) return primary;
+		const rows = await this.all(`SELECT * FROM treedx_instances ORDER BY updated_at DESC`);
+		return rows
+			.map(serializeTreeDxInstance)
+			.find((instance) => instance?.teamId === teamId && instance.primary && instance.status !== 'disabled') ?? null;
 	}
 
 	async getTeamTreeDx(teamId) {
@@ -4186,7 +4274,9 @@ export class MarketControlPlaneStore {
 	async provisionTeamTreeDx(teamId, input = {}) {
 		const team = await this.getTeam(teamId);
 		if (!team) return null;
-		const publicRead = input.publicRead ?? (team.visibility === 'public');
+		const publicRead = input.publicRead ?? !teamIsPrivate(team);
+		const registryUrl = input.registryUrl ?? centralTreeDxRegistryUrl(this.config);
+		const trustTokenRef = input.trustTokenRef ?? `treedx-trust:${teamId}:central-public`;
 		const existing = await this.getPrimaryTreeDxInstance(teamId);
 		const status = input.status
 			?? (input.baseUrl || existing?.baseUrl ? 'active' : 'pending');
@@ -4196,12 +4286,20 @@ export class MarketControlPlaneStore {
 			provider: 'railway',
 			publicRead,
 			name: input.name ?? (publicRead ? 'TreeSeed public federation' : `${team.slug} TreeDX`),
+			registryUrl,
 			status,
 			imageRef: input.imageRef ?? 'treeseed/treedx:latest',
 			volumeMountPath: '/data',
 			metadata: {
 				...(objectValue(input.metadata, {}) ?? {}),
 				deploymentScope: publicRead ? 'public_federation' : 'private_team',
+				centralPublicRegistry: {
+					url: registryUrl,
+					trustMode: 'scoped_node_token',
+					trustTokenRef,
+					mirrorAllowed: !publicRead,
+					queryDelegationAllowed: true,
+				},
 			},
 		});
 		const timestamp = isoNow();
@@ -4232,7 +4330,29 @@ export class MarketControlPlaneStore {
 				instance.baseUrl ? timestamp : null,
 			],
 		);
-		const payload = await this.getTeamTreeDx(teamId);
+		let payload = await this.getTeamTreeDx(teamId);
+		if (!publicRead) {
+			const mirrors = payload.mirrors ?? await this.listTreeDxMirrors(teamId, instance.id);
+			const hasCentralMirror = mirrors.some((mirror) => mirror.metadata?.centralPublicRegistry === true || mirror.targetUrl === registryUrl);
+			if (!hasCentralMirror) {
+				await this.createTreeDxMirror(teamId, {
+					instanceId: instance.id,
+					name: 'TreeSeed public registry mirror',
+					direction: 'pull',
+					targetKind: 'treedx',
+					targetUrl: registryUrl,
+					status: 'pending',
+					instructions: 'Use the scoped TreeDX node trust token to mirror public templates, workflow imports, and knowledge packs from the central public registry.',
+					metadata: {
+						centralPublicRegistry: true,
+						trustMode: 'scoped_node_token',
+						trustTokenRef,
+						privateDataEgress: 'deny_by_default',
+					},
+				});
+				payload = await this.getTeamTreeDx(teamId);
+			}
+		}
 		if (payload.instance) return payload;
 		return {
 			instance,
@@ -4283,26 +4403,34 @@ export class MarketControlPlaneStore {
 
 	async listTreeDxDeployments(teamId, instanceId = null) {
 		await this.ensureInitialized();
-		const rows = instanceId
+		let rows = instanceId
 			? await this.all(`SELECT * FROM treedx_deployments WHERE team_id = ? AND instance_id = ? ORDER BY created_at DESC`, [teamId, instanceId])
 			: await this.all(`SELECT * FROM treedx_deployments WHERE team_id = ? ORDER BY created_at DESC`, [teamId]);
+		if (rows.length === 0) {
+			rows = (await this.all(`SELECT * FROM treedx_deployments ORDER BY created_at DESC`))
+				.filter((row) => row.team_id === teamId && (!instanceId || row.instance_id === instanceId));
+		}
 		return rows.map(serializeTreeDxDeployment).filter(Boolean);
 	}
 
 	async listTreeDxMirrors(teamId, instanceId = null) {
 		await this.ensureInitialized();
-		const rows = instanceId
+		let rows = instanceId
 			? await this.all(`SELECT * FROM treedx_mirrors WHERE team_id = ? AND instance_id = ? ORDER BY created_at ASC`, [teamId, instanceId])
 			: await this.all(`SELECT * FROM treedx_mirrors WHERE team_id = ? ORDER BY created_at ASC`, [teamId]);
+		if (rows.length === 0) {
+			rows = (await this.all(`SELECT * FROM treedx_mirrors ORDER BY created_at ASC`))
+				.filter((row) => row.team_id === teamId && (!instanceId || row.instance_id === instanceId));
+		}
 		return rows.map(serializeTreeDxMirror).filter(Boolean);
 	}
 
 	async createTreeDxMirror(teamId, input = {}) {
 		await this.ensureInitialized();
 		const instance = input.instanceId
-			? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, input.instanceId]))
+			? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))
 			: await this.getPrimaryTreeDxInstance(teamId);
-		if (!instance) return null;
+		if (!instance || instance.teamId !== teamId) return null;
 		const timestamp = isoNow();
 		const id = input.id ?? randomUUID();
 		await this.run(
@@ -4355,7 +4483,12 @@ export class MarketControlPlaneStore {
 
 	async listTreeDxShares(teamId) {
 		await this.ensureInitialized();
-		return (await this.all(`SELECT * FROM treedx_shares WHERE team_id = ? ORDER BY created_at ASC`, [teamId]))
+		let rows = await this.all(`SELECT * FROM treedx_shares WHERE team_id = ? ORDER BY created_at ASC`, [teamId]);
+		if (rows.length === 0) {
+			rows = (await this.all(`SELECT * FROM treedx_shares ORDER BY created_at ASC`))
+				.filter((row) => row.team_id === teamId);
+		}
+		return rows
 			.map(serializeTreeDxShare)
 			.filter(Boolean);
 	}
@@ -4364,8 +4497,9 @@ export class MarketControlPlaneStore {
 		await this.ensureInitialized();
 		const timestamp = isoNow();
 		const instance = input.instanceId
-			? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, input.instanceId]))
+			? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))
 			: await this.getPrimaryTreeDxInstance(teamId);
+		if (instance && instance.teamId !== teamId) return null;
 		const id = input.id ?? randomUUID();
 		await this.run(
 			`INSERT INTO treedx_shares (
@@ -4398,9 +4532,9 @@ export class MarketControlPlaneStore {
 		const project = await this.getProject(projectId);
 		if (!project) return null;
 		const instance = input.instanceId
-			? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE team_id = ? AND id = ? LIMIT 1`, [project.teamId, input.instanceId]))
+			? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))
 			: await this.getPrimaryTreeDxInstance(project.teamId);
-		if (!instance) return null;
+		if (!instance || instance.teamId !== project.teamId) return null;
 		const existing = await this.getProjectTreeDxLibrary(projectId);
 		const repositories = await this.listHubRepositories(projectId);
 		const contentRepository = repositories.find((entry) => entry.role === 'content') ?? null;
@@ -4498,6 +4632,53 @@ export class MarketControlPlaneStore {
 
 	async upsertProjectRepositoryTopology(projectId, topology = {}) {
 		return this.upsertProjectTreeDxLibrary(projectId, { topology });
+	}
+
+	async getProjectAgentClassAllocation(projectId) {
+		await this.ensureInitialized();
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		const existing = project.metadata?.capacityAllocation?.agentClasses;
+		const fallback = [
+			{ id: 'planning', name: 'Planning', percentage: 15 },
+			{ id: 'research', name: 'Research', percentage: 20 },
+			{ id: 'architecture', name: 'Architecture', percentage: 10 },
+			{ id: 'implementation', name: 'Implementation', percentage: 30 },
+			{ id: 'review', name: 'Review', percentage: 10 },
+			{ id: 'release', name: 'Release', percentage: 5 },
+			{ id: 'reporting', name: 'Reporting', percentage: 5 },
+			{ id: 'knowledge', name: 'Knowledge', percentage: 5 },
+		];
+		return {
+			projectId,
+			teamId: project.teamId,
+			slices: normalizeAllocationSlices(existing, fallback),
+			metadata: project.metadata?.capacityAllocation?.metadata ?? {},
+		};
+	}
+
+	async updateProjectAgentClassAllocation(projectId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		const slices = normalizeAllocationSlices(input.allocations ?? input.slices);
+		const total = Math.round(slices.reduce((sum, slice) => sum + slice.percentage, 0) * 100) / 100;
+		if (slices.length === 0) throw new Error('At least one agent class allocation slice is required.');
+		if (Math.abs(total - 100) > 0.01) throw new Error('Agent class allocation must total 100%.');
+		const nextMetadata = {
+			...(project.metadata ?? {}),
+			capacityAllocation: {
+				...(project.metadata?.capacityAllocation ?? {}),
+				agentClasses: slices,
+				metadata: {
+					...(project.metadata?.capacityAllocation?.metadata ?? {}),
+					source: 'project_agent_class_allocation_ui',
+					updatedAt: isoNow(),
+				},
+			},
+		};
+		await this.updateProject(projectId, { metadata: nextMetadata });
+		return this.getProjectAgentClassAllocation(projectId);
 	}
 
 	async ensureHubContentSourceTreeDx(projectId, teamId, contentRepositoryId, topology) {
@@ -4776,6 +4957,71 @@ export class MarketControlPlaneStore {
 			values,
 		);
 		return rows.map(serializeCapacityGrant);
+	}
+
+	async getTeamPortfolioAllocation(teamId) {
+		await this.ensureInitialized();
+		const [projects, providers, grants] = await Promise.all([
+			this.listTeamProjects(teamId),
+			this.listTeamCapacityProviders(teamId),
+			this.listCapacityGrants(teamId),
+		]);
+		const projectGrants = grants.filter((grant) => grant.grantScope === 'project' && grant.projectId);
+		const slices = normalizeAllocationSlices(projects.map((project, index) => {
+			const grant = projectGrants.find((entry) => entry.projectId === project.id);
+			const even = projects.length > 0 ? 100 / projects.length : 100;
+			return {
+				id: project.id,
+				name: project.name ?? project.slug,
+				percentage: grant?.portfolioAllocationPercent ?? even,
+			};
+		}));
+		return {
+			teamId,
+			providers,
+			projects,
+			grants,
+			slices,
+		};
+	}
+
+	async updateTeamPortfolioAllocation(teamId, input = {}) {
+		await this.ensureInitialized();
+		const providerId = stringValue(input.capacityProviderId, '');
+		if (!providerId) throw new Error('capacityProviderId is required.');
+		const provider = await this.getCapacityProvider(teamId, providerId);
+		if (!provider) throw new Error('Unknown capacity provider.');
+		const projects = await this.listTeamProjects(teamId);
+		const byId = new Map(projects.map((project) => [project.id, project]));
+		const slices = normalizeAllocationSlices(input.allocations ?? input.slices);
+		const total = Math.round(slices.reduce((sum, slice) => sum + slice.percentage, 0) * 100) / 100;
+		if (slices.length === 0) throw new Error('At least one allocation slice is required.');
+		if (Math.abs(total - 100) > 0.01) throw new Error('Portfolio allocation must total 100%.');
+		const grants = [];
+		for (const slice of slices) {
+			if (!byId.has(slice.id)) throw new Error(`Unknown project allocation target "${slice.id}".`);
+			grants.push(await this.upsertCapacityGrant(teamId, {
+				id: `${providerId}:${slice.id}:portfolio-allocation`,
+				capacityProviderId: providerId,
+				grantScope: 'project',
+				teamId,
+				projectId: slice.id,
+				environment: stringValue(input.environment, 'local'),
+				state: 'active',
+				priorityWeight: 1,
+				overflowPolicy: 'approval_required',
+				portfolioAllocationPercent: slice.percentage,
+				metadata: {
+					source: 'portfolio_allocation_ui',
+					allocationName: slice.name,
+					allocationTreeLevel: 'team_project',
+				},
+			}));
+		}
+		return {
+			...await this.getTeamPortfolioAllocation(teamId),
+			updatedGrants: grants,
+		};
 	}
 
 	async upsertCapacityGrant(teamId, input) {
@@ -6752,8 +6998,15 @@ export class MarketControlPlaneStore {
 			manifestKey: input.metadata?.manifestKey ?? null,
 			artifactKey: input.metadata?.artifactKey ?? null,
 			searchText: [input.name, input.description].filter(Boolean).join(' ').trim() || null,
-			metadata: input.metadata ?? {},
-		});
+				metadata: input.metadata ?? {},
+			});
+		await this.upsertProjectTreeDxLibrary(id, {
+			contentPath: input.metadata?.contentRoot ?? 'src/content',
+			metadata: {
+				source: 'project_creation_default',
+				privateTeamTreeDxDefault: true,
+			},
+		}).catch(() => null);
 		return this.getProjectDetails(id);
 	}
 
@@ -8979,6 +9232,65 @@ export class MarketControlPlaneStore {
 		};
 	}
 
+	async collectControlPlaneGeneratedArtifacts(projectId) {
+		const tasks = await this.listRuntimeTasks(projectId, { limit: 1000 }).catch(() => []);
+		const items = [];
+		for (const task of tasks) {
+			const outputs = await this.listRuntimeTaskOutputs(projectId, task.id).catch(() => []);
+			for (const output of outputs) {
+				const parsedOutput = output?.output && typeof output.output === 'object'
+					? output.output
+					: parseJson(output?.outputJson, {});
+				const body = parsedOutput && typeof parsedOutput === 'object' ? parsedOutput : {};
+				const generated = Array.isArray(body.generatedArtifacts) ? body.generatedArtifacts : [];
+				for (const artifact of generated) {
+					items.push({
+						...artifact,
+						taskId: artifact.taskId ?? task.id,
+						workDayId: artifact.workDayId ?? task.workDayId ?? task.work_day_id ?? null,
+						taskState: task.state ?? null,
+						outputRef: artifact.outputRef ?? output.outputRef ?? body.outputRef ?? null,
+					});
+				}
+				if (body.artifactKind && generated.length === 0) {
+					items.push({
+						...body,
+						id: body.id ?? `${task.id}:${body.artifactKind}`,
+						taskId: task.id,
+						workDayId: task.workDayId ?? task.work_day_id ?? null,
+						taskState: task.state ?? null,
+						outputRef: output.outputRef ?? body.outputRef ?? null,
+					});
+				}
+			}
+		}
+		const jobs = await this.listRecentJobsForProject(projectId, 50).catch(() => []);
+		for (const job of jobs) {
+			const body = job?.output && typeof job.output === 'object' ? job.output : {};
+			const generated = Array.isArray(body.generatedArtifacts) ? body.generatedArtifacts : [];
+			for (const artifact of generated) {
+				items.push({
+					...artifact,
+					taskId: artifact.taskId ?? job.id,
+					workDayId: artifact.workDayId ?? body.workDayId ?? null,
+					taskState: job.status ?? null,
+					outputRef: artifact.outputRef ?? body.outputRef ?? null,
+				});
+			}
+			if (body.artifactKind && generated.length === 0) {
+				items.push({
+					...body,
+					id: body.id ?? `${job.id}:${body.artifactKind}`,
+					taskId: job.id,
+					workDayId: body.workDayId ?? null,
+					taskState: job.status ?? null,
+					outputRef: body.outputRef ?? null,
+				});
+			}
+		}
+		return items;
+	}
+
 	async getProjectAgentsSummary(projectId, principal = null) {
 		const details = await this.getProjectDetails(projectId);
 		if (!details) {
@@ -9017,7 +9329,13 @@ export class MarketControlPlaneStore {
 			),
 		]);
 		const runtimeUnavailableWarning = 'Project runtime is not connected or unavailable.';
-		const generatedArtifacts = Array.isArray(artifactPayload?.items) ? artifactPayload.items : [];
+		const controlPlaneGeneratedArtifacts = Array.isArray(artifactPayload?.items) && artifactPayload.items.length > 0
+			? []
+			: await this.collectControlPlaneGeneratedArtifacts(projectId);
+		const generatedArtifacts = [
+			...(Array.isArray(artifactPayload?.items) ? artifactPayload.items : []),
+			...controlPlaneGeneratedArtifacts,
+		];
 		const approvals = Array.isArray(approvalPayload?.items) ? approvalPayload.items : [];
 		const operationGrants = Array.isArray(operationGrantPayload?.items) ? operationGrantPayload.items : [];
 		const operationEvents = Array.isArray(operationEventPayload?.items) ? operationEventPayload.items : [];

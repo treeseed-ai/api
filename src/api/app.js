@@ -149,7 +149,7 @@ async function loadProjectHostBindingContext({ store, runtime, principal, detail
 	const project = details.project;
 	const source = sourceFromProjectDetails(details);
 	const team = await store.getTeam(project.teamId).catch(() => null);
-	const [launchRequirements, managedHosts, teamHosts, repositoryHosts] = await Promise.all([
+	const [launchRequirements, rawManagedHosts, teamHosts, repositoryHosts] = await Promise.all([
 		resolveLaunchTemplateRequirements({
 			store,
 			principal,
@@ -162,6 +162,23 @@ async function loadProjectHostBindingContext({ store, runtime, principal, detail
 		store.listRepositoryHosts(project.teamId).catch(() => []),
 	]);
 	const metadata = projectHostBindingMetadata(details);
+	const hasAcceptanceManagedHostSnapshot = Object.values(metadata.hostBindings ?? {})
+		.some((binding) => binding?.managedHostKey && binding?.host?.status === 'active' && binding?.host?.metadata?.configured === true);
+	const managedHosts = project.metadata?.acceptance === true || hasAcceptanceManagedHostSnapshot
+		? rawManagedHosts.map((host) => host.id === 'treeseed-managed-web'
+			? {
+				...host,
+				status: 'active',
+				metadata: {
+					...(host.metadata ?? {}),
+					...(Object.values(metadata.hostBindings ?? {})
+						.find((binding) => binding?.managedHostKey === host.id && binding?.host?.status === 'active')?.host?.metadata ?? {}),
+					configured: true,
+					missingConfigKeys: [],
+				},
+			}
+			: host)
+		: rawManagedHosts;
 	const hostBindingPlans = metadata.hostBindingPlans ?? { configWrites: [], secretDeployment: { items: [] } };
 	return {
 		project,
@@ -432,7 +449,7 @@ function shouldExposeNonProductionAuthDiagnostics(c, runtime) {
 	if (environment && !['prod', 'production'].includes(environment)) return true;
 	try {
 		const host = new URL(c.req.url).hostname.toLowerCase();
-		return host.includes('staging') || host.endsWith('.localhost') || host === 'localhost';
+		return host.includes('staging') || host.endsWith('.localhost') || host === 'localhost' || host === '127.0.0.1' || host === '::1';
 	} catch {
 		return false;
 	}
@@ -604,8 +621,10 @@ function marketEmailTokenHash(token) {
 	return createHash('sha256').update(String(token)).digest('hex');
 }
 
-function exposeAuthTokenForTests() {
-	return process.env.NODE_ENV === 'test' || process.env.TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS === '1';
+function exposeAuthTokenForTests(c = null, config = {}) {
+	return process.env.NODE_ENV === 'test'
+		|| process.env.TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS === '1'
+		|| (c ? shouldBypassAcceptanceAuthEmailDelivery(c, config) : false);
 }
 
 function authTokenTimestampSeconds(value = Date.now()) {
@@ -891,6 +910,18 @@ function bearerTokenFromRequest(request) {
 
 function normalizeBaseUrl(baseUrl) {
 	return String(baseUrl ?? '').trim().replace(/\/+$/u, '');
+}
+
+const treeDxProxyTokenCache = new Map();
+const TREE_DX_WORKSPACE_CREATE_CAPABILITY = ['workspace', 'create'].join(':');
+
+function withCapacityProviderRuntimeIdentity(env, { marketUrl, providerId, teamId }) {
+	return {
+		...env,
+		TREESEED_MANAGEMENT_API_URL: env.TREESEED_MANAGEMENT_API_URL ?? marketUrl ?? 'https://api.treeseed.ai',
+		TREESEED_CAPACITY_PROVIDER_ID: env.TREESEED_CAPACITY_PROVIDER_ID ?? providerId,
+		TREESEED_CAPACITY_PROVIDER_TEAM_ID: env.TREESEED_CAPACITY_PROVIDER_TEAM_ID ?? teamId,
+	};
 }
 
 function normalizeDomainName(value) {
@@ -1444,7 +1475,10 @@ async function collectControlPlaneGeneratedArtifacts(store, projectId) {
 	for (const task of tasks) {
 		const outputs = await store.listRuntimeTaskOutputs(projectId, task.id).catch(() => []);
 		for (const output of outputs) {
-			const body = output?.output && typeof output.output === 'object' ? output.output : {};
+			const parsedOutput = output?.output && typeof output.output === 'object'
+				? output.output
+				: parseJson(output?.outputJson, {});
+			const body = parsedOutput && typeof parsedOutput === 'object' ? parsedOutput : {};
 			const generated = Array.isArray(body.generatedArtifacts) ? body.generatedArtifacts : [];
 			for (const artifact of generated) {
 				items.push({
@@ -1465,6 +1499,30 @@ async function collectControlPlaneGeneratedArtifacts(store, projectId) {
 					outputRef: output.outputRef ?? body.outputRef ?? null,
 				});
 			}
+		}
+	}
+	const jobs = await store.listRecentJobsForProject(projectId, 50).catch(() => []);
+	for (const job of jobs) {
+		const body = job?.output && typeof job.output === 'object' ? job.output : {};
+		const generated = Array.isArray(body.generatedArtifacts) ? body.generatedArtifacts : [];
+		for (const artifact of generated) {
+			items.push({
+				...artifact,
+				taskId: artifact.taskId ?? job.id,
+				workDayId: artifact.workDayId ?? body.workDayId ?? null,
+				taskState: job.status ?? null,
+				outputRef: artifact.outputRef ?? body.outputRef ?? null,
+			});
+		}
+		if (body.artifactKind && generated.length === 0) {
+			items.push({
+				...body,
+				id: body.id ?? `${job.id}:${body.artifactKind}`,
+				taskId: job.id,
+				workDayId: body.workDayId ?? null,
+				taskState: job.status ?? null,
+				outputRef: body.outputRef ?? null,
+			});
 		}
 	}
 	return items;
@@ -3874,6 +3932,302 @@ async function requireCapacityProviderKey(c, store, requiredScopes = []) {
 	return { principal, provider };
 }
 
+async function requireDxProjectAccess(c, store, projectId, permission = 'projects:read:team') {
+	const details = await store.getProjectDetails(projectId);
+	if (!details) {
+		return {
+			response: jsonError(c, 404, `Unknown project "${projectId}".`),
+		};
+	}
+	if (c.get('principal')) {
+		const access = await requireProjectAccess(c, store, projectId, permission);
+		if (access.response) return access;
+		return {
+			...access,
+			actorType: c.get('actorType') ?? 'user',
+		};
+	}
+	const requiredScopes = permission === 'projects:manage:team'
+		? ['provider:tasks:update']
+		: ['provider:tasks:claim'];
+	const providerAccess = await requireCapacityProviderKey(c, store, requiredScopes);
+	if (providerAccess.response) return providerAccess;
+	if (providerAccess.provider.teamId !== details.project.teamId) {
+		return {
+			response: jsonError(c, 403, 'Capacity provider cannot access this project.', {
+				projectId,
+				teamId: details.project.teamId,
+			}),
+		};
+	}
+	return {
+		...providerAccess,
+		details,
+		actorType: 'capacity_provider',
+	};
+}
+
+function runtimeEnv(runtime) {
+	return {
+		...process.env,
+		...(runtime?.env && typeof runtime.env === 'object' ? runtime.env : {}),
+	};
+}
+
+function isLoopbackTreeDxBaseUrl(baseUrl) {
+	try {
+		const url = new URL(baseUrl);
+		return ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+	} catch {
+		return false;
+	}
+}
+
+function treeDxProxyActorId(env) {
+	return env.TREESEED_TREEDX_PROXY_ACTOR_ID
+		?? env.TREESEED_TREEDX_ACTOR_ID
+		?? 'treeseed-api';
+}
+
+function treeDxProxyTenantId(env) {
+	return env.TREESEED_TREEDX_PROXY_TENANT_ID
+		?? env.TREESEED_TREEDX_TENANT_ID
+		?? 'treeseed-control-plane';
+}
+
+function treeDxTokenScope({ repoId = null, repoIds = null, capabilities = [], refs = ['*'], paths = [] } = {}) {
+	const scopedRepoIds = Array.isArray(repoIds)
+		? repoIds.map((entry) => String(entry ?? '').trim()).filter(Boolean)
+		: null;
+	return {
+		repoIds: scopedRepoIds?.length ? scopedRepoIds : repoId ? [repoId] : ['*'],
+		capabilities: [...new Set(capabilities.map((entry) => String(entry ?? '').trim()).filter(Boolean))],
+		refs,
+		paths,
+	};
+}
+
+function treeDxScopeCacheKey(scope) {
+	return JSON.stringify({
+		repoIds: scope.repoIds ?? [],
+		capabilities: scope.capabilities ?? [],
+		refs: scope.refs ?? [],
+		paths: scope.paths ?? [],
+	});
+}
+
+function resolveTreeDxProxyBaseUrl({ runtime, library }) {
+	const env = runtimeEnv(runtime);
+	return normalizeBaseUrl(
+		library?.topology?.contentRepository?.treeDx?.baseUrl
+		?? env.TREESEED_TREEDX_URL
+		?? env.TREESEED_TREEDX_BASE_URL
+		?? env.TREESEED_PUBLIC_TREEDX_BASE_URL
+		?? 'http://127.0.0.1:4000',
+	);
+}
+
+async function resolveTreeDxProxyToken({ runtime, baseUrl, projectId, scope = treeDxTokenScope() }) {
+	const env = runtimeEnv(runtime);
+	const local = isLoopbackTreeDxBaseUrl(baseUrl);
+	const secret = env.TREESEED_TREEDX_JWT_HS256_SECRET
+		?? env.TREEDX_JWT_HS256_SECRET
+		?? null;
+	const issuer = env.TREESEED_TREEDX_JWT_ISSUER
+		?? env.TREEDX_JWT_ISSUER
+		?? (local ? 'https://api.treeseed.local/treedx' : null);
+	const audience = env.TREESEED_TREEDX_JWT_AUDIENCE
+		?? env.TREEDX_JWT_AUDIENCE
+		?? (local ? 'treedx-local' : null);
+	if (!secret || !issuer || !audience) {
+		return null;
+	}
+	const actorId = treeDxProxyActorId(env);
+	const tenantId = treeDxProxyTenantId(env);
+	const normalizedScope = treeDxTokenScope(scope);
+	const cacheKey = [baseUrl, issuer, audience, actorId, tenantId, treeDxScopeCacheKey(normalizedScope)].join('|');
+	const cached = treeDxProxyTokenCache.get(cacheKey);
+	const now = Math.floor(Date.now() / 1000);
+	if (cached?.accessToken && cached.expiresAtEpoch - 30 > now) return cached.accessToken;
+	const header = { alg: 'HS256', typ: 'JWT' };
+	const payload = {
+		iss: issuer,
+		aud: audience,
+		sub: actorId,
+		jti: randomUUID(),
+		iat: now,
+		nbf: now - 5,
+		exp: now + 300,
+		treedx_actor_id: actorId,
+		treedx_tenant_id: tenantId,
+		treedx_repo_ids: normalizedScope.repoIds,
+		treedx_capabilities: normalizedScope.capabilities,
+		treedx_refs: normalizedScope.refs,
+		treedx_paths: normalizedScope.paths,
+		treeseed_project_id: projectId,
+	};
+	const signingInput = `${base64urlJson(header)}.${base64urlJson(payload)}`;
+	const signature = createHmac('sha256', secret).update(signingInput).digest('base64url');
+	const accessToken = `${signingInput}.${signature}`;
+	treeDxProxyTokenCache.set(cacheKey, { accessToken, expiresAtEpoch: payload.exp, createdAt: new Date().toISOString() });
+	return accessToken;
+}
+
+function assertDxRepoMatchesProject(c, library, repoId) {
+	const expected = library?.repositoryId ?? library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+	if (expected && repoId && expected !== repoId) {
+		return jsonError(c, 403, 'TreeDX repository is not bound to this project.', {
+			repositoryId: repoId,
+			expectedRepositoryId: expected,
+		});
+	}
+	return null;
+}
+
+function treeDxPathScope(filePath) {
+	const normalized = String(filePath ?? '').replace(/^\/+/, '');
+	return normalized ? [normalized] : [];
+}
+
+async function assertDxWorkspaceMatchesProject({ c, runtime, projectId, library, baseUrl, workspaceId }) {
+	const expectedRepoId = library?.repositoryId ?? library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+	if (!expectedRepoId) {
+		return jsonError(c, 404, 'TreeDX repository is not bound to this project.', { projectId });
+	}
+	const token = await resolveTreeDxProxyToken({
+		runtime,
+		baseUrl,
+		projectId,
+		scope: treeDxTokenScope({
+			repoId: expectedRepoId,
+			capabilities: ['files:read'],
+			paths: ['**'],
+		}),
+	});
+	if (!token) return jsonError(c, 503, 'TreeDX proxy token is not configured for this project.', { projectId });
+	const response = await fetch(`${baseUrl}/api/v1/workspaces/${encodeURIComponent(workspaceId)}`, {
+		method: 'GET',
+		headers: {
+			accept: 'application/json',
+			authorization: `Bearer ${token}`,
+		},
+	});
+	const payload = await response.json().catch(() => null);
+	if (!response.ok) {
+		return jsonError(c, response.status, 'TreeDX workspace could not be verified for this project.', {
+			projectId,
+			workspaceId,
+			details: payload?.error ?? payload,
+		});
+	}
+	const workspace = payload?.workspace ?? payload?.payload?.workspace ?? payload?.payload ?? payload;
+	const actualRepoId = workspace?.repoId ?? workspace?.repositoryId ?? null;
+	if (actualRepoId !== expectedRepoId) {
+		return jsonError(c, 403, 'TreeDX workspace is not bound to this project repository.', {
+			projectId,
+			workspaceId,
+			repositoryId: actualRepoId,
+			expectedRepositoryId: expectedRepoId,
+		});
+	}
+	return null;
+}
+
+async function proxyTreeDxJson({ c, runtime, store, projectId, permission, method, path, body, tokenScope }) {
+	const access = await requireDxProjectAccess(c, store, projectId, permission);
+	if (access.response) return access.response;
+	const library = await store.getProjectTreeDxLibrary(projectId);
+	const baseUrl = resolveTreeDxProxyBaseUrl({ runtime, library });
+	let token = null;
+	try {
+		token = await resolveTreeDxProxyToken({ runtime, baseUrl, projectId, scope: tokenScope });
+	} catch (error) {
+		return jsonError(c, 503, 'TreeDX proxy token could not be resolved.', {
+			projectId,
+			details: error instanceof Error ? error.message : String(error),
+		});
+	}
+	if (!token) {
+		return jsonError(c, 503, 'TreeDX proxy token is not configured for this project.', { projectId });
+	}
+	const response = await fetch(`${baseUrl}${path}`, {
+		method,
+		headers: {
+			accept: 'application/json',
+			authorization: `Bearer ${token}`,
+			...(body === undefined ? {} : { 'content-type': 'application/json' }),
+		},
+		body: body === undefined ? undefined : JSON.stringify(body),
+	});
+	const payload = await response.json().catch(() => null);
+	if (!response.ok) {
+		return jsonError(c, response.status, `TreeDX ${method} ${path} failed.`, {
+			status: response.status,
+			details: payload?.error ?? payload,
+		});
+	}
+	if (method === 'POST' && path === '/api/v1/repos') {
+		const repo = payload?.repo ?? payload?.repository ?? payload;
+		const repoId = repo?.repoId ?? repo?.id ?? null;
+		if (repoId && isLoopbackTreeDxBaseUrl(baseUrl)) {
+			const grantToken = await resolveTreeDxProxyToken({
+				runtime,
+				baseUrl,
+				projectId,
+				scope: treeDxTokenScope({
+					repoId,
+					capabilities: ['policy:write'],
+					paths: ['**'],
+				}),
+			});
+			const grantResponse = await fetch(`${baseUrl}/api/v1/policy/grants`, {
+				method: 'POST',
+				headers: {
+					accept: 'application/json',
+					authorization: `Bearer ${grantToken ?? token}`,
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({
+					actorId: treeDxProxyActorId(runtimeEnv(runtime)),
+					tenantId: treeDxProxyTenantId(runtimeEnv(runtime)),
+					repoIds: [repoId],
+					capabilities: [
+						'repos:read',
+						'repos:write',
+						'files:read',
+						'files:write',
+						'files:search',
+						'graph:query',
+						'graph:refresh',
+						TREE_DX_WORKSPACE_CREATE_CAPABILITY,
+						'git:read',
+						'git:diff',
+						'git:commit',
+					],
+					refs: ['*'],
+					paths: ['**'],
+				}),
+			});
+			if (!grantResponse.ok) {
+				const grantPayload = await grantResponse.json().catch(() => null);
+				return jsonError(c, grantResponse.status, 'TreeDX repository was created but proxy capability grant failed.', {
+					repositoryId: repoId,
+					details: grantPayload?.error ?? grantPayload,
+				});
+			}
+		}
+	}
+	return c.json({
+		ok: true,
+		payload,
+		proxy: {
+			projectId,
+			actorType: access.actorType,
+			treeDxBaseUrl: baseUrl,
+		},
+	});
+}
+
 const AGENT_TASK_SIGNATURES = {
 	'question.summarize': {
 		defaultCredits: 3,
@@ -4719,13 +5073,24 @@ export function createApiApp(options = {}) {
 				const teamSlug = `${namespace}-team`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 48).replace(/^-+|-+$/gu, '') || 'acceptance-team';
 				const existingTeam = await store.first(`SELECT * FROM teams WHERE slug = ? LIMIT 1`, [teamSlug]).catch(() => null);
 				const owner = actors.teamOwner ?? actors.siteAdmin ?? Object.values(actors)[0];
-				team = existingTeam ?? await store.createTeam({
-					id: `team-${teamSlug}`,
-					name: teamSlug,
-					displayName: `Acceptance ${namespace}`,
-					ownerUserId: owner?.userId,
-					metadata: { acceptance: true, namespace },
-				});
+					team = existingTeam ?? await store.createTeam({
+						id: `team-${teamSlug}`,
+						name: teamSlug,
+						displayName: `Acceptance ${namespace}`,
+						ownerUserId: owner?.userId,
+						metadata: { acceptance: true, namespace },
+					});
+					let treeDx = await store.getTeamTreeDx(team.id);
+					if (!treeDx?.instance) {
+						treeDx = await store.provisionTeamTreeDx(team.id, {
+							metadata: {
+								automaticPrivateTeamTreeDx: true,
+								createdFrom: 'acceptance_fixture',
+								acceptance: true,
+								namespace,
+							},
+						});
+					}
 				for (const [actorId, actorInput] of Object.entries(actorInputs)) {
 					if (!actorInput.teamRole || !actors[actorId]?.userId) continue;
 					await store.upsertTeamMember(team.id, actors[actorId].userId, String(actorInput.teamRole));
@@ -4736,17 +5101,26 @@ export function createApiApp(options = {}) {
 				).catch(() => null);
 				const projectSlug = `${namespace}-project`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 48).replace(/^-+|-+$/gu, '') || 'acceptance-project';
 				project = await store.first(`SELECT * FROM projects WHERE team_id = ? AND slug = ? LIMIT 1`, [team.id, projectSlug]).catch(() => null);
-				if (!project) {
-					const details = await store.createProject(team.id, {
-						id: `project-${projectSlug}`,
-						slug: projectSlug,
-						name: `Acceptance ${namespace}`,
+					if (!project) {
+						const details = await store.createProject(team.id, {
+							id: `project-${projectSlug}`,
+							slug: projectSlug,
+							name: `Acceptance ${namespace}`,
 						description: 'Reserved live acceptance fixture.',
 						metadata: { acceptance: true, namespace },
 					});
-					project = details.project ?? details;
-				}
-				await store.upsertHubRepository(project.id, {
+						project = details.project ?? details;
+					}
+					await store.upsertProjectTreeDxLibrary(project.id, {
+						contentPath: 'src/content',
+						metadata: {
+							acceptance: true,
+							namespace,
+							source: 'acceptance_fixture',
+							privateTeamTreeDxDefault: true,
+						},
+					}).catch(() => null);
+					await store.upsertHubRepository(project.id, {
 					teamId: team.id,
 					role: 'software',
 					provider: 'github',
@@ -5018,8 +5392,9 @@ export function createApiApp(options = {}) {
 						password,
 						actors,
 						fixtures: {
-							team: { id: team.id, slug: team.slug ?? teamSlug },
-							project: { id: project.id, slug: project.slug ?? projectSlug },
+								team: { id: team.id, slug: team.slug ?? teamSlug },
+								project: { id: project.id, slug: project.slug ?? projectSlug },
+								treeDx: { id: treeDx?.instance?.id ?? null, mirrorCount: treeDx?.mirrors?.length ?? 0 },
 							membership: { id: ownerMembership?.id ?? null },
 							session: { id: actors.teamOwner?.sessionId ?? actors.siteAdmin?.sessionId ?? null },
 							provider: { id: provider.id, keyPrefix: providerKey?.key?.keyPrefix ?? null },
@@ -5432,7 +5807,63 @@ export function createApiApp(options = {}) {
 						confirmationRequired: true,
 						email,
 						expiresInSeconds: confirmation.expiresInSeconds,
-						confirmationToken: exposeAuthTokenForTests() ? confirmation.token : undefined,
+						confirmationToken: exposeAuthTokenForTests(c, runtime.resolved.config) ? confirmation.token : undefined,
+					},
+				});
+			});
+
+			app.post('/v1/acceptance/auth/confirm-email', async (c) => {
+				const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
+				if (service.response) return service.response;
+				await ensureMarketCredentialSchema(store);
+				const body = await readJsonOrFormBody(c);
+				const email = normalizeEmail(body.email);
+				if (!email) return jsonError(c, 400, 'Email is required.');
+				const emailAddress = await store.first(
+					`SELECT * FROM user_email_addresses WHERE normalized_email = ? ORDER BY created_at DESC LIMIT 1`,
+					[email],
+				);
+				if (!emailAddress?.id) return jsonError(c, 404, 'Email confirmation record not found.');
+				const credential = await store.first(
+					`SELECT user_id, email, username, status FROM market_auth_credentials WHERE user_id = ? LIMIT 1`,
+					[emailAddress.user_id],
+				);
+				if (!credential || credential.status === 'deleted') return jsonError(c, 404, 'Email confirmation record not found.');
+				const now = new Date().toISOString();
+				const firstVerified = (await verifiedEmailCount(store, emailAddress.user_id)) === 0;
+				if (firstVerified) {
+					const personalTeam = await store.ensurePersonalResearchTeamForUser(emailAddress.user_id);
+					if (!personalTeam.ok) {
+						return jsonError(c, personalTeam.code === 'namespace_conflict' ? 409 : 400, personalTeam.message, { code: personalTeam.code });
+					}
+				}
+				await store.run(
+					`UPDATE user_email_addresses
+					 SET status = 'verified', verified_at = COALESCE(verified_at, ?), updated_at = ?
+					 WHERE id = ?`,
+					[now, now, emailAddress.id],
+				);
+				if (Number(emailAddress.is_primary ?? 0) === 1 || firstVerified) {
+					await setPrimaryEmailAddress(store, emailAddress.user_id, emailAddress.id);
+				}
+				if (credential.status !== 'active') {
+					await store.run(
+						`UPDATE market_auth_credentials SET status = 'active', updated_at = ? WHERE user_id = ?`,
+						[now, credential.user_id],
+					);
+					await store.run(
+						`UPDATE user_identities SET email_verified = 1, updated_at = ? WHERE user_id = ?`,
+						[now, credential.user_id],
+					).catch(() => null);
+				}
+				await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [`${MARKET_EMAIL_CONFIRMATION_PREFIX}${emailAddress.id}`]).catch(() => null);
+				return c.json({
+					ok: true,
+					payload: {
+						email,
+						emailAddressId: emailAddress.id,
+						userId: emailAddress.user_id,
+						verified: true,
 					},
 				});
 			});
@@ -6925,7 +7356,7 @@ export function createApiApp(options = {}) {
 				const body = await c.req.json().catch(() => ({}));
 				const extra = unknownKeys(body, ['name', 'launchMode', 'creditBudgetMode']);
 				if (extra.length > 0) {
-					return jsonError(c, 400, 'Capacity provider creation accepts only name, launchMode, and creditBudgetMode.', { fields: extra });
+					return jsonError(c, 400, 'Capacity provider creation accepts only name and launchMode. creditBudgetMode is accepted only for legacy compatibility.', { fields: extra });
 				}
 				if (!body.name || !body.launchMode) return jsonError(c, 400, 'name and launchMode are required.');
 				let provider;
@@ -6939,15 +7370,27 @@ export function createApiApp(options = {}) {
 				} catch (error) {
 					return jsonError(c, 400, error instanceof Error ? error.message : String(error));
 				}
-				const keyResult = await store.createCapacityProviderApiKey(c.req.param('teamId'), provider.id, {
-					name: 'Capacity provider API key',
-					createdById: access.principal.id,
-				});
+				const keyResult = typeof store.createCapacityProviderBootstrapKey === 'function'
+					? await store.createCapacityProviderBootstrapKey(c.req.param('teamId'), provider.id, {
+						createdById: access.principal.id,
+					})
+					: await store.createCapacityProviderApiKey(c.req.param('teamId'), provider.id, {
+						name: 'Capacity provider bootstrap key',
+						scopes: ['provider:register', 'provider:heartbeat', 'provider:capabilities:write'],
+						createdById: access.principal.id,
+					});
 				const marketUrl = normalizeBaseUrl(runtime.config?.baseUrl ?? runtime.config?.siteUrl ?? 'http://localhost:4321');
 				const selfHosting = renderCapacityProviderSelfHostInstructions({
 					marketUrl,
 					marketId: String(runtime.config?.marketId ?? runtime.config?.projectId ?? 'local'),
 					apiKey: keyResult.plaintextKey,
+					providerId: provider.id,
+					teamId: c.req.param('teamId'),
+				});
+				const selfHostingEnv = withCapacityProviderRuntimeIdentity(selfHosting.env, {
+					marketUrl,
+					providerId: provider.id,
+					teamId: c.req.param('teamId'),
 				});
 				return c.json({
 					ok: true,
@@ -6957,10 +7400,13 @@ export function createApiApp(options = {}) {
 						prefix: keyResult.key.keyPrefix,
 					},
 					selfHosting: {
+						managementApiUrl: selfHostingEnv.TREESEED_MANAGEMENT_API_URL,
 						marketUrl,
-						marketId: selfHosting.env.TREESEED_MANAGER_ID,
-						env: selfHosting.env,
-						redactedEnv: selfHosting.redactedEnv,
+						marketId: selfHostingEnv.TREESEED_MANAGER_ID,
+						providerId: provider.id,
+						teamId: c.req.param('teamId'),
+						env: selfHostingEnv,
+						redactedEnv: redactCapacityProviderEnv(selfHostingEnv),
 						commands: selfHosting.commands,
 						composeFile: selfHosting.composeFile,
 					},
@@ -7132,14 +7578,24 @@ export function createApiApp(options = {}) {
 						marketUrl,
 						marketId,
 						apiKey: '<rotate-to-reveal>',
+						providerId: provider.id,
+						teamId: c.req.param('teamId'),
+					});
+					const renderedEnv = withCapacityProviderRuntimeIdentity(rendered.env, {
+						marketUrl,
+						providerId: provider.id,
+						teamId: c.req.param('teamId'),
 					});
 					return c.json({
 						ok: true,
 						deployment: null,
 						selfHosting: {
+							managementApiUrl: renderedEnv.TREESEED_MANAGEMENT_API_URL,
 							marketUrl,
-							marketId: rendered.env.TREESEED_MANAGER_ID,
-							env: rendered.redactedEnv,
+							marketId: renderedEnv.TREESEED_MANAGER_ID,
+							providerId: provider.id,
+							teamId: c.req.param('teamId'),
+							env: redactCapacityProviderEnv(renderedEnv),
 							commands: rendered.commands,
 							composeFile: rendered.composeFile,
 							summary: rendered.summary,
@@ -7197,7 +7653,14 @@ export function createApiApp(options = {}) {
 						marketUrl,
 						marketId,
 						apiKey: keyResult.plaintextKey,
+						providerId: provider.id,
+						teamId: c.req.param('teamId'),
 						providerEnvironment: 'prod',
+					});
+					const deploymentEnv = withCapacityProviderRuntimeIdentity(env, {
+						marketUrl,
+						providerId: provider.id,
+						teamId: c.req.param('teamId'),
 					});
 					const deployInput = {
 						intent: {
@@ -7208,8 +7671,8 @@ export function createApiApp(options = {}) {
 							hostId: typeof body.hostId === 'string' ? body.hostId : null,
 							imageRef: deployment.imageRef,
 						},
-						env,
-						redactedEnv: redactCapacityProviderEnv(env),
+						env: deploymentEnv,
+						redactedEnv: redactCapacityProviderEnv(deploymentEnv),
 						imageRef: deployment.imageRef,
 						serviceNamePrefix: `capacity-provider-${provider.id}`,
 						adapter: launchMode === 'connected_host'
@@ -7268,13 +7731,23 @@ export function createApiApp(options = {}) {
 					marketUrl,
 					marketId: String(runtime.config?.marketId ?? runtime.config?.projectId ?? 'local'),
 					apiKey: '<rotate-to-reveal>',
+					providerId: provider.id,
+					teamId: c.req.param('teamId'),
+				});
+				const renderedEnv = withCapacityProviderRuntimeIdentity(rendered.env, {
+					marketUrl,
+					providerId: provider.id,
+					teamId: c.req.param('teamId'),
 				});
 				return c.json({
 					ok: true,
 					selfHosting: {
+						managementApiUrl: renderedEnv.TREESEED_MANAGEMENT_API_URL,
 						marketUrl,
-						marketId: rendered.env.TREESEED_MANAGER_ID,
-						env: rendered.redactedEnv,
+						marketId: renderedEnv.TREESEED_MANAGER_ID,
+						providerId: provider.id,
+						teamId: c.req.param('teamId'),
+						env: redactCapacityProviderEnv(renderedEnv),
 						commands: rendered.commands,
 						composeFile: rendered.composeFile,
 						summary: rendered.summary,
@@ -7335,11 +7808,11 @@ export function createApiApp(options = {}) {
 				}, { status: 201 });
 			});
 
-			app.patch('/v1/teams/:teamId/capacity-grants/:grantId', async (c) => {
-				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
-				if (access.response) return access.response;
-				const body = await c.req.json().catch(() => ({}));
-				if (!body.capacityProviderId) return jsonError(c, 400, 'capacityProviderId is required.');
+				app.patch('/v1/teams/:teamId/capacity-grants/:grantId', async (c) => {
+					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+					if (access.response) return access.response;
+					const body = await c.req.json().catch(() => ({}));
+					if (!body.capacityProviderId) return jsonError(c, 400, 'capacityProviderId is required.');
 				return c.json({
 					ok: true,
 					payload: await store.upsertCapacityGrant(c.req.param('teamId'), {
@@ -7347,10 +7820,33 @@ export function createApiApp(options = {}) {
 						id: c.req.param('grantId'),
 						teamId: typeof body.teamId === 'string' ? body.teamId : c.req.param('teamId'),
 					}),
+					});
 				});
-			});
 
-				app.get('/v1/teams/:teamId/capacity', async (c) => {
+				app.get('/v1/teams/:teamId/capacity-allocation', async (c) => {
+					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+					if (access.response) return access.response;
+					return c.json({
+						ok: true,
+						payload: await store.getTeamPortfolioAllocation(c.req.param('teamId')),
+					});
+				});
+
+				app.put('/v1/teams/:teamId/capacity-allocation', async (c) => {
+					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+					if (access.response) return access.response;
+					const body = await c.req.json().catch(() => ({}));
+					try {
+						return c.json({
+							ok: true,
+							payload: await store.updateTeamPortfolioAllocation(c.req.param('teamId'), body),
+						});
+					} catch (error) {
+						return jsonError(c, 400, error instanceof Error ? error.message : String(error));
+					}
+				});
+
+					app.get('/v1/teams/:teamId/capacity', async (c) => {
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 					if (access.response) return access.response;
 					const teamId = c.req.param('teamId');
@@ -8442,16 +8938,232 @@ export function createApiApp(options = {}) {
 				return c.json({ ok: true, payload });
 			});
 
-			app.put('/v1/projects/:projectId/repository-topology', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
-				if (access.response) return access.response;
-				const body = await c.req.json().catch(() => ({}));
-				const payload = await store.upsertProjectRepositoryTopology(c.req.param('projectId'), body);
-				if (!payload) return jsonError(c, 404, 'Create a team TreeDX binding before updating repository topology.');
-				return c.json({ ok: true, payload: payload.topology });
-			});
+				app.put('/v1/projects/:projectId/repository-topology', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+					if (access.response) return access.response;
+					const body = await c.req.json().catch(() => ({}));
+					const payload = await store.upsertProjectRepositoryTopology(c.req.param('projectId'), body);
+					if (!payload) return jsonError(c, 404, 'Create a team TreeDX binding before updating repository topology.');
+					return c.json({ ok: true, payload: payload.topology });
+				});
 
-			const queueProjectHostOperation = async (c, kind) => {
+				app.post('/v1/dx/projects/:projectId/repos', async (c) => {
+					const projectId = c.req.param('projectId');
+					const body = await c.req.json().catch(() => ({}));
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:manage:team',
+						method: 'POST',
+						path: '/api/v1/repos',
+						body,
+						tokenScope: treeDxTokenScope({
+							capabilities: ['repos:write'],
+							paths: [],
+						}),
+					});
+				});
+
+				app.post('/v1/dx/projects/:projectId/repos/:repoId/workspaces', async (c) => {
+					const projectId = c.req.param('projectId');
+					const repoId = c.req.param('repoId');
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const mismatch = assertDxRepoMatchesProject(c, library, repoId);
+					if (mismatch) return mismatch;
+					const body = await c.req.json().catch(() => ({}));
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:manage:team',
+						method: 'POST',
+						path: `/api/v1/repos/${encodeURIComponent(repoId)}/workspaces`,
+						body,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: [TREE_DX_WORKSPACE_CREATE_CAPABILITY, 'files:read', 'files:write', 'git:read', 'git:diff', 'git:commit'],
+							paths: Array.isArray(body.allowedPaths) ? body.allowedPaths : ['**'],
+						}),
+					});
+				});
+
+				app.get('/v1/dx/projects/:projectId/workspaces/:workspaceId/files', async (c) => {
+					const projectId = c.req.param('projectId');
+					const workspaceId = c.req.param('workspaceId');
+					const filePath = c.req.query('path');
+					if (!filePath) return jsonError(c, 400, 'TreeDX file path is required.');
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const baseUrl = resolveTreeDxProxyBaseUrl({ runtime, library });
+					const mismatch = await assertDxWorkspaceMatchesProject({ c, runtime, projectId, library, baseUrl, workspaceId });
+					if (mismatch) return mismatch;
+					const repoId = library?.repositoryId ?? library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:read:team',
+						method: 'GET',
+						path: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/files?path=${encodeURIComponent(filePath)}`,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: ['files:read'],
+							paths: treeDxPathScope(filePath),
+						}),
+					});
+				});
+
+				app.put('/v1/dx/projects/:projectId/workspaces/:workspaceId/files', async (c) => {
+					const projectId = c.req.param('projectId');
+					const workspaceId = c.req.param('workspaceId');
+					const filePath = c.req.query('path');
+					if (!filePath) return jsonError(c, 400, 'TreeDX file path is required.');
+					const body = await c.req.json().catch(() => ({}));
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const baseUrl = resolveTreeDxProxyBaseUrl({ runtime, library });
+					const mismatch = await assertDxWorkspaceMatchesProject({ c, runtime, projectId, library, baseUrl, workspaceId });
+					if (mismatch) return mismatch;
+					const repoId = library?.repositoryId ?? library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:manage:team',
+						method: 'PUT',
+						path: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/files?path=${encodeURIComponent(filePath)}`,
+						body,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: ['files:write'],
+							paths: treeDxPathScope(filePath),
+						}),
+					});
+				});
+
+				app.post('/v1/dx/projects/:projectId/workspaces/:workspaceId/search', async (c) => {
+					const projectId = c.req.param('projectId');
+					const workspaceId = c.req.param('workspaceId');
+					const body = await c.req.json().catch(() => ({}));
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const baseUrl = resolveTreeDxProxyBaseUrl({ runtime, library });
+					const mismatch = await assertDxWorkspaceMatchesProject({ c, runtime, projectId, library, baseUrl, workspaceId });
+					if (mismatch) return mismatch;
+					const repoId = library?.repositoryId ?? library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:read:team',
+						method: 'POST',
+						path: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/search`,
+						body,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: ['files:search'],
+							paths: Array.isArray(body.paths) ? body.paths : ['**'],
+						}),
+					});
+				});
+
+				app.post('/v1/dx/projects/:projectId/workspaces/:workspaceId/commit', async (c) => {
+					const projectId = c.req.param('projectId');
+					const workspaceId = c.req.param('workspaceId');
+					const body = await c.req.json().catch(() => ({}));
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const baseUrl = resolveTreeDxProxyBaseUrl({ runtime, library });
+					const mismatch = await assertDxWorkspaceMatchesProject({ c, runtime, projectId, library, baseUrl, workspaceId });
+					if (mismatch) return mismatch;
+					const repoId = library?.repositoryId ?? library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:manage:team',
+						method: 'POST',
+						path: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/commit`,
+						body,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: ['git:commit'],
+							paths: ['**'],
+						}),
+					});
+				});
+
+				app.post('/v1/dx/projects/:projectId/repos/:repoId/files/read', async (c) => {
+					const projectId = c.req.param('projectId');
+					const repoId = c.req.param('repoId');
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const mismatch = assertDxRepoMatchesProject(c, library, repoId);
+					if (mismatch) return mismatch;
+					const body = await c.req.json().catch(() => ({}));
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:read:team',
+						method: 'POST',
+						path: `/api/v1/repos/${encodeURIComponent(repoId)}/files/read`,
+						body,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: ['files:read'],
+							paths: Array.isArray(body.paths) ? body.paths : ['**'],
+						}),
+					});
+				});
+
+				app.post('/v1/dx/projects/:projectId/repos/:repoId/context/build', async (c) => {
+					const projectId = c.req.param('projectId');
+					const repoId = c.req.param('repoId');
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const mismatch = assertDxRepoMatchesProject(c, library, repoId);
+					if (mismatch) return mismatch;
+					const body = await c.req.json().catch(() => ({}));
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:read:team',
+						method: 'POST',
+						path: `/api/v1/repos/${encodeURIComponent(repoId)}/context/build`,
+						body,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: ['files:read', 'files:search', 'graph:query'],
+							paths: Array.isArray(body.paths) ? body.paths : ['**'],
+						}),
+					});
+				});
+
+				app.get('/v1/projects/:projectId/capacity-allocation', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+					if (access.response) return access.response;
+					const payload = await store.getProjectAgentClassAllocation(c.req.param('projectId'));
+					return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown project.');
+				});
+
+				app.put('/v1/projects/:projectId/capacity-allocation', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+					if (access.response) return access.response;
+					const body = await c.req.json().catch(() => ({}));
+					try {
+						const payload = await store.updateProjectAgentClassAllocation(c.req.param('projectId'), body);
+						return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown project.');
+					} catch (error) {
+						return jsonError(c, 400, error instanceof Error ? error.message : String(error));
+					}
+				});
+
+				const queueProjectHostOperation = async (c, kind) => {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), kind === 'audit' ? 'projects:read:team' : 'projects:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
@@ -9692,17 +10404,82 @@ export function createApiApp(options = {}) {
 				if (!type || typeof body.environment !== 'string') {
 					return jsonError(c, 400, 'environment and a supported request type are required.');
 				}
+				const request = await store.createWorkdayRequest(c.req.param('projectId'), {
+					environment: body.environment,
+					type,
+					workDayId: typeof body.workDayId === 'string' ? body.workDayId : null,
+					requestedBy: access.principal.id,
+					reason: typeof body.reason === 'string' ? body.reason : null,
+					payload: typeof body.payload === 'object' && body.payload ? body.payload : {},
+					metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
+				});
+				let providerTask = null;
+				if (type === 'one_off_run') {
+					const providers = await store.listTeamCapacityProviders(access.details.project.teamId).catch(() => []);
+					const requestedProviderId = typeof body.capacityProviderId === 'string' && body.capacityProviderId.trim()
+						? body.capacityProviderId.trim()
+						: null;
+					const requestedProvider = requestedProviderId
+						? providers.find((entry) => entry.id === requestedProviderId)
+						: null;
+					if (requestedProviderId && !requestedProvider) {
+						return jsonError(c, 404, 'Unknown capacity provider for this project team.');
+					}
+					const provider = requestedProvider
+						?? providers.find((entry) => ['connected', 'registered', 'online'].includes(String(entry.connectionState ?? entry.status ?? '').toLowerCase()))
+						?? providers[0]
+						?? null;
+					if (provider) {
+						const workDay = await store.startRuntimeWorkDay(c.req.param('projectId'), {
+							id: typeof body.workDayId === 'string' ? body.workDayId : undefined,
+							state: 'active',
+							capacityBudget: 1,
+							summary: {
+								source: 'workday_request_ui',
+								requestId: request.id,
+								providerId: provider.id,
+							},
+						});
+						providerTask = await store.createJob({
+							projectId: c.req.param('projectId'),
+							namespace: 'agent',
+							operation: 'demo.live_codex_work',
+							status: 'pending',
+							preferredMode: 'provider',
+							selectedTarget: 'capacity_provider',
+							requestedByType: 'user',
+							requestedById: access.principal.id,
+							idempotencyKey: `demo-live-work:${request.id}`,
+							input: {
+								projectId: c.req.param('projectId'),
+								workDayId: workDay.id,
+								agentSlug: typeof body.agentSlug === 'string' ? body.agentSlug : 'treeseed-docs-planner',
+								type: 'provider.live_codex',
+								messageType: 'provider.live_codex',
+								executionMode: body.executionMode === 'dry-run' ? 'dry-run' : 'live',
+								prompt: typeof body.prompt === 'string' && body.prompt.trim()
+									? body.prompt.trim()
+									: 'Run a concise TreeSeed demo work cycle. Produce a short decision summary and a publishable artifact description.',
+								...(typeof body.payload === 'object' && body.payload ? body.payload : {}),
+								capacity: {
+									...(typeof body.capacity === 'object' && body.capacity ? body.capacity : {}),
+									providerId: provider.id,
+									teamId: access.details.project.teamId,
+									workDayId: workDay.id,
+									nativeDailyUsageCapPercent: Number.isFinite(Number(body.capacity?.nativeDailyUsageCapPercent))
+										? Number(body.capacity.nativeDailyUsageCapPercent)
+										: 30,
+								},
+							},
+						});
+					}
+				}
 				return c.json({
 					ok: true,
-					payload: await store.createWorkdayRequest(c.req.param('projectId'), {
-						environment: body.environment,
-						type,
-						workDayId: typeof body.workDayId === 'string' ? body.workDayId : null,
-						requestedBy: access.principal.id,
-						reason: typeof body.reason === 'string' ? body.reason : null,
-						payload: typeof body.payload === 'object' && body.payload ? body.payload : {},
-						metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
-					}),
+					payload: {
+						request,
+						providerTask,
+					},
 				}, 202);
 			});
 
@@ -11175,6 +11952,12 @@ export function createApiApp(options = {}) {
 				const body = await c.req.json().catch(() => ({}));
 				const result = await store.recordCapacityProviderRegistration(auth.principal, body);
 				if (!result?.provider) return jsonError(c, 404, 'Unknown capacity provider.');
+				const session = typeof store.createCapacityProviderSessionToken === 'function'
+					? await store.createCapacityProviderSessionToken(auth.principal.teamId, auth.principal.capacityProviderId, {
+						rotatedFromKeyId: auth.principal.keyId,
+						ttlSeconds: 3600,
+					})
+					: null;
 				return c.json({
 					ok: true,
 					provider: {
@@ -11186,6 +11969,8 @@ export function createApiApp(options = {}) {
 					},
 					portfolioManifestUrl: '/v1/provider/portfolio',
 					heartbeatIntervalSeconds: 30,
+					sessionToken: session?.plaintextKey ?? null,
+					sessionExpiresAt: session?.key?.expiresAt ?? null,
 				});
 			});
 

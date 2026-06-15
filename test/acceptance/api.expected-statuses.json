@@ -254,6 +254,18 @@
       "providerKey": 200,
       "platformRunner": 200
     },
+    "get.v1.internal.treedx.public-federation.status": {
+      "anonymous": 401,
+      "siteAdmin": 401,
+      "marketSteward": 401,
+      "teamOwner": 401,
+      "teamOperator": 401,
+      "teamViewer": 401,
+      "nonMember": 401,
+      "providerOperator": 401,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "get.v1.jobs.jobId": {
       "anonymous": 401,
       "siteAdmin": 404,
@@ -275,18 +287,6 @@
       "teamViewer": 404,
       "nonMember": 404,
       "providerOperator": 404,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "get.v1.internal.treedx.public-federation.status": {
-      "anonymous": 401,
-      "siteAdmin": 401,
-      "marketSteward": 401,
-      "teamOwner": 401,
-      "teamOperator": 401,
-      "teamViewer": 401,
-      "nonMember": 401,
-      "providerOperator": 401,
       "providerKey": 401,
       "platformRunner": 401
     },
@@ -579,6 +579,18 @@
       "platformRunner": 401
     },
     "get.v1.projects.projectId.capacity": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.capacity-allocation": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -1226,6 +1238,18 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "get.v1.teams.teamId.capacity-allocation": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "get.v1.teams.teamId.capacity-grants": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -1742,6 +1766,18 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "post.v1.acceptance.auth.confirm-email": {
+      "anonymous": 401,
+      "siteAdmin": 401,
+      "marketSteward": 401,
+      "teamOwner": 401,
+      "teamOperator": 401,
+      "teamViewer": 401,
+      "nonMember": 401,
+      "providerOperator": 401,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "post.v1.acceptance.seed": {
       "anonymous": 401,
       "siteAdmin": 401,
@@ -1991,6 +2027,18 @@
       "teamViewer": 400,
       "nonMember": 403,
       "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.internal.treedx.public-federation.provision": {
+      "anonymous": 401,
+      "siteAdmin": 401,
+      "marketSteward": 401,
+      "teamOwner": 401,
+      "teamOperator": 401,
+      "teamViewer": 401,
+      "nonMember": 401,
+      "providerOperator": 401,
       "providerKey": 401,
       "platformRunner": 401
     },
@@ -2715,18 +2763,6 @@
       "platformRunner": 401
     },
     "post.v1.projects.projectId.runner.jobs.pull": {
-      "anonymous": 401,
-      "siteAdmin": 401,
-      "marketSteward": 401,
-      "teamOwner": 401,
-      "teamOperator": 401,
-      "teamViewer": 401,
-      "nonMember": 401,
-      "providerOperator": 401,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "post.v1.internal.treedx.public-federation.provision": {
       "anonymous": 401,
       "siteAdmin": 401,
       "marketSteward": 401,
@@ -3662,6 +3698,18 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "put.v1.projects.projectId.capacity-allocation": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 403,
+      "teamViewer": 403,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "put.v1.projects.projectId.environments.environment": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -3734,6 +3782,18 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "put.v1.teams.teamId.capacity-allocation": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 403,
+      "teamViewer": 403,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "put.v1.teams.teamId.hosts.hostId": {
       "anonymous": 401,
       "siteAdmin": 404,
@@ -3793,6 +3853,102 @@
       "providerOperator": 403,
       "providerKey": 401,
       "platformRunner": 401
+    },
+    "get.v1.dx.projects.projectId.workspaces.workspaceId.files": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
+    },
+    "post.v1.dx.projects.projectId.repos": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
+    },
+    "post.v1.dx.projects.projectId.repos.repoId.context.build": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
+    },
+    "post.v1.dx.projects.projectId.repos.repoId.files.read": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
+    },
+    "post.v1.dx.projects.projectId.repos.repoId.workspaces": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
+    },
+    "post.v1.dx.projects.projectId.workspaces.workspaceId.commit": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
+    },
+    "post.v1.dx.projects.projectId.workspaces.workspaceId.search": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
+    },
+    "put.v1.dx.projects.projectId.workspaces.workspaceId.files": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 403,
+      "platformRunner": 403
     }
   }
 }

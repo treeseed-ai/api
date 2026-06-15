@@ -6560,8 +6560,16 @@ describe('market api', () => {
 			}),
 		});
 		expect(providerResponse.status).toBe(201);
-		const provider = (await json(providerResponse)).provider;
+		const createdPayload = await json(providerResponse);
+		const provider = createdPayload.provider;
 		expect(provider).toMatchObject({ creditBudgetMode: 'derived', dailyCreditBudget: 0, monthlyCreditBudget: 0 });
+		expect(createdPayload.selfHosting.env).toMatchObject({
+			TREESEED_MANAGEMENT_API_URL: 'http://localhost:4321',
+			TREESEED_MARKET_URL: 'http://localhost:4321',
+			TREESEED_CAPACITY_PROVIDER_ID: provider.id,
+			TREESEED_CAPACITY_PROVIDER_TEAM_ID: team.id,
+		});
+		expect(createdPayload.selfHosting.redactedEnv.TREESEED_CAPACITY_PROVIDER_API_KEY).toContain('<redacted>');
 
 		const laneResponse = await app.request(`/v1/teams/${team.id}/capacity-providers/${provider.id}/lanes`, {
 			method: 'POST',
@@ -6683,6 +6691,20 @@ describe('market api', () => {
 			}),
 		}));
 		const provider = createdProvider.provider;
+		const registration = await json(await app.request('/v1/provider/register', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+			},
+			body: JSON.stringify({
+				runtime: { package: '@treeseed/agent', version: 'test', entrypoint: 'test', roles: ['api', 'manager', 'runner'] },
+				capabilities: [],
+				budgets: {},
+				health: { dataDirWritable: true },
+			}),
+		}));
+		expect(registration.sessionToken).toMatch(/^tsp_/);
 		await store.upsertCapacityProvider(team.id, {
 			...provider,
 			status: 'active',
@@ -6815,7 +6837,7 @@ describe('market api', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+				authorization: `Bearer ${registration.sessionToken}`,
 			},
 			body: JSON.stringify({
 				projectId: project.id,
@@ -6848,7 +6870,7 @@ describe('market api', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+				authorization: `Bearer ${registration.sessionToken}`,
 			},
 			body: JSON.stringify({
 				projectId: project.id,
@@ -6895,7 +6917,7 @@ describe('market api', () => {
 				method: 'POST',
 				headers: {
 					'content-type': 'application/json',
-					authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+					authorization: `Bearer ${registration.sessionToken}`,
 				},
 				body: JSON.stringify({
 					projectId: project.id,
@@ -6927,7 +6949,7 @@ describe('market api', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+				authorization: `Bearer ${registration.sessionToken}`,
 			},
 			body: JSON.stringify({
 				projectId: project.id,
@@ -6955,7 +6977,7 @@ describe('market api', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+				authorization: `Bearer ${registration.sessionToken}`,
 			},
 			body: JSON.stringify({
 				projectId: project.id,
@@ -7175,7 +7197,7 @@ describe('market api', () => {
 			}],
 		};
 
-		const registration = await app.request('/v1/provider/register', {
+		const registrationResponse = await app.request('/v1/provider/register', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -7189,13 +7211,15 @@ describe('market api', () => {
 				health: { dataDirWritable: true },
 			}),
 		});
-		expect(registration.status).toBe(200);
+		expect(registrationResponse.status).toBe(200);
+		const registration = await json(registrationResponse);
+		expect(registration.sessionToken).toMatch(/^tsp_/);
 
 		const heartbeat = await app.request('/v1/provider/heartbeat', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${providerKey}`,
+				authorization: `Bearer ${registration.sessionToken}`,
 			},
 			body: JSON.stringify({
 				marketId: 'test',
@@ -7338,7 +7362,35 @@ describe('market api', () => {
 			},
 			body: JSON.stringify({ workDayId: 'missing', kind: 'test', body: {} }),
 		});
-		expect(insufficient.status).toBe(404);
+		expect(insufficient.status).toBe(403);
+
+		const registrationResponse = await app.request('/v1/provider/register', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${firstKey}`,
+			},
+			body: JSON.stringify({
+				runtime: { package: '@treeseed/agent', version: 'test', entrypoint: 'test', roles: ['api', 'manager', 'runner'] },
+				capabilities: [],
+				budgets: {},
+				health: { dataDirWritable: true },
+			}),
+		});
+		expect(registrationResponse.status).toBe(200);
+		const registration = await json(registrationResponse);
+		expect(registration.sessionToken).toMatch(/^tsp_/);
+		expect(registration.sessionToken).not.toBe(firstKey);
+
+		const missingReport = await app.request('/v1/provider/reports', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${registration.sessionToken}`,
+			},
+			body: JSON.stringify({ workDayId: 'missing', kind: 'test', body: {} }),
+		});
+		expect(missingReport.status).toBe(404);
 
 		const rotateResponse = await app.request(`/v1/teams/${team.id}/capacity-providers/${provider.id}/keys/rotate`, {
 			method: 'POST',
@@ -7657,8 +7709,22 @@ describe('market api', () => {
 			}),
 		}));
 		const providerKey = createdProvider.apiKey.plaintext;
+		const registration = await json(await app.request('/v1/provider/register', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${providerKey}`,
+			},
+			body: JSON.stringify({
+				runtime: { package: '@treeseed/agent', version: 'test', entrypoint: 'test', roles: ['api', 'manager', 'runner'] },
+				capabilities: [],
+				budgets: {},
+				health: { dataDirWritable: true },
+			}),
+		}));
+		expect(registration.sessionToken).toMatch(/^tsp_/);
 		const portfolioResponse = await app.request('/v1/provider/portfolio', {
-			headers: { authorization: `Bearer ${providerKey}` },
+			headers: { authorization: `Bearer ${registration.sessionToken}` },
 		});
 		expect(portfolioResponse.status).toBe(200);
 		const portfolioPayload = await json(portfolioResponse);
@@ -7675,10 +7741,10 @@ describe('market api', () => {
 
 		const workdayResponse = await app.request('/v1/provider/workdays', {
 			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${providerKey}`,
-			},
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${registration.sessionToken}`,
+				},
 			body: JSON.stringify({
 				projectId: project.id,
 				environment: 'local',
@@ -7699,7 +7765,7 @@ describe('market api', () => {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${providerKey}`,
+				authorization: `Bearer ${registration.sessionToken}`,
 			},
 			body: JSON.stringify({
 				workDayId: workdayPayload.workDay.id,
@@ -7932,7 +7998,7 @@ describe('market api', () => {
 		expect(planResponse.status).toBe(200);
 		const plan = await json(planResponse);
 		expect(plan.ok).toBe(true);
-		expect(plan.summary).toMatchObject({ create: 5, update: 1, unchanged: 0, skip: 4 });
+		expect(plan.summary).toMatchObject({ create: 13, update: 1, unchanged: 0, skip: 4 });
 		expect(plan.run).toMatchObject({ state: 'completed', mode: 'plan', seedName: 'treeseed' });
 
 		const firstApplyResponse = await app.request('/v1/seeds/treeseed/apply', {
@@ -7946,9 +8012,9 @@ describe('market api', () => {
 		expect(firstApplyResponse.status).toBe(200);
 		const firstApply = await json(firstApplyResponse);
 		expect(firstApply.ok).toBe(true);
-		expect(firstApply.summary).toMatchObject({ create: 5, update: 1, unchanged: 0, skip: 4 });
+		expect(firstApply.summary).toMatchObject({ create: 13, update: 1, unchanged: 0, skip: 4 });
 		expect(firstApply.run).toMatchObject({ state: 'completed', mode: 'apply', seedName: 'treeseed' });
-		expect(firstApply.result.actionCount).toBe(6);
+		expect(firstApply.result.actionCount).toBe(14);
 		expect(firstApply.result.capacityProviderKeys.created).toHaveLength(0);
 
 		const runs = await json(await app.request('/v1/seeds/runs', {
@@ -7973,7 +8039,7 @@ describe('market api', () => {
 		});
 		expect(secondApplyResponse.status).toBe(200);
 		const secondApply = await json(secondApplyResponse);
-		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 6, skip: 4 });
+		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 14, skip: 4 });
 		expect(secondApply.result.actionCount).toBe(0);
 		expect(secondApply.result.capacityProviderKeys.created).toHaveLength(0);
 		expect(secondApply.result.capacityProviderKeys.existing).toHaveLength(0);
@@ -8136,7 +8202,10 @@ describe('TreeDX market integration', () => {
 		const status = await json(await app.request(`/v1/teams/${team.id}/treedx`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		expect(status.payload.mirrors).toHaveLength(1);
+		expect(status.payload.mirrors).toEqual(expect.arrayContaining([
+			expect.objectContaining({ name: 'TreeSeed public registry mirror', targetKind: 'treedx' }),
+			expect.objectContaining({ name: 'Customer mirror', targetUrl: 'https://customer.example' }),
+		]));
 		expect(status.payload.shares).toHaveLength(1);
 	});
 
@@ -8403,5 +8472,233 @@ describe('TreeDX market integration', () => {
 		expect(manifest.projects[0].repository.name).toBe('hub-one-site');
 		expect(manifest.projects[0].repositoryTopology.contentRepository.accessMode).toBe('treedx');
 		expect(manifest.projects[0].repositoryTopology.siteRepository.accessMode).toBe('filesystem');
+	});
+
+	it('does not proxy normal TreeDX project calls with static admin tokens or implicit local secrets', async () => {
+		await withEnv({
+			TREESEED_TREEDX_JWT_HS256_SECRET: undefined,
+			TREEDX_JWT_HS256_SECRET: undefined,
+			TREESEED_TREEDX_ADMIN_TOKEN: 'static-admin-token',
+			TREESEED_TREEDX_TOKEN: 'static-general-token',
+			TREEDX_TOKEN: 'static-legacy-token',
+		}, async () => {
+			const db = createTestPostgresDatabase();
+			const store = createTestStore(db);
+			const app = createTestApp({ db, store });
+			const token = await authorizeApp(app);
+			const { team, project } = await createTeamAndProject(app, token, {
+				slug: 'dx-static-token-block',
+				name: 'DX Static Token Block',
+			});
+			await store.upsertTeamTreeDx(team.id, {
+				baseUrl: 'http://127.0.0.1:4011',
+				status: 'active',
+			});
+			await store.upsertProjectTreeDxLibrary(project.id, {
+				libraryId: 'team-one/dx-static-token-block',
+				repositoryId: 'repo_dx_static_token_block',
+			});
+			const fetchSpy = vi.spyOn(globalThis, 'fetch');
+			const response = await app.request(`/v1/dx/projects/${project.id}/repos/repo_dx_static_token_block/files/read`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+				body: JSON.stringify({ paths: ['books/intro.mdx'] }),
+			});
+			expect(response.status).toBe(503);
+			expect(await json(response)).toMatchObject({
+				ok: false,
+				error: 'TreeDX proxy token is not configured for this project.',
+			});
+			expect(fetchSpy).not.toHaveBeenCalled();
+			fetchSpy.mockRestore();
+		});
+	});
+
+	it('mints scoped TreeSeed-issued TreeDX tokens for normal project proxy calls', async () => {
+		await withEnv({
+			TREESEED_TREEDX_JWT_HS256_SECRET: 'test-treedx-signing-secret',
+			TREEDX_JWT_HS256_SECRET: undefined,
+			TREESEED_TREEDX_ADMIN_TOKEN: 'static-admin-token',
+			TREESEED_TREEDX_TOKEN: undefined,
+			TREEDX_TOKEN: undefined,
+		}, async () => {
+			const db = createTestPostgresDatabase();
+			const store = createTestStore(db);
+			const app = createTestApp({ db, store });
+			const token = await authorizeApp(app);
+			const { team, project } = await createTeamAndProject(app, token, {
+				slug: 'dx-scoped-token',
+				name: 'DX Scoped Token',
+			});
+			await store.upsertTeamTreeDx(team.id, {
+				baseUrl: 'http://127.0.0.1:4012',
+				status: 'active',
+			});
+			await store.upsertProjectTreeDxLibrary(project.id, {
+				libraryId: 'team-one/dx-scoped-token',
+				repositoryId: 'repo_dx_scoped_token',
+			});
+			const authorizations: string[] = [];
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init = {}) => {
+				const authorization = init.headers instanceof Headers
+					? init.headers.get('authorization')
+					: (init.headers as Record<string, string> | undefined)?.authorization;
+				if (authorization) authorizations.push(authorization);
+				return new Response(JSON.stringify({ ok: true, files: [{ path: 'books/intro.mdx', content: '# Intro' }] }), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				});
+			});
+			const response = await app.request(`/v1/dx/projects/${project.id}/repos/repo_dx_scoped_token/files/read`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+				body: JSON.stringify({ paths: ['books/intro.mdx'] }),
+			});
+			expect(response.status).toBe(200);
+			expect(authorizations).toHaveLength(1);
+			expect(authorizations[0]).not.toBe('Bearer static-admin-token');
+			const jwt = authorizations[0].replace(/^Bearer\s+/u, '');
+			const [, payloadSegment] = jwt.split('.');
+			const payload = JSON.parse(Buffer.from(payloadSegment, 'base64url').toString('utf8'));
+			expect(payload).toMatchObject({
+				aud: 'treedx-local',
+				iss: 'https://api.treeseed.local/treedx',
+				sub: 'treeseed-api',
+				treedx_repo_ids: ['repo_dx_scoped_token'],
+				treedx_capabilities: ['files:read'],
+				treedx_paths: ['books/intro.mdx'],
+				treeseed_project_id: project.id,
+			});
+			expect(payload.treedx_repo_ids).not.toContain('*');
+			expect(payload.treedx_capabilities).not.toContain('policy:write');
+			fetchSpy.mockRestore();
+		});
+	});
+
+	it('automatically provisions private TreeDX and central public mirror trust for private teams', async () => {
+		const app = createTestApp();
+		const token = await authorizeApp(app, { principalId: 'private-owner' });
+		const team = await json(await app.request('/v1/teams', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ slug: 'private-demo-team', name: 'Private Demo Team' }),
+		}));
+		expect(team.payload.metadata).toMatchObject({
+			visibility: 'private',
+			privateTreeDx: true,
+		});
+
+		const treedx = await json(await app.request(`/v1/teams/${team.payload.id}/treedx`, {
+			headers: { authorization: `Bearer ${token}` },
+		}));
+		expect(treedx.payload.instance).toMatchObject({
+			kind: 'managed_private',
+			publicRead: false,
+			registryUrl: 'https://api.treeseed.ai/treedx',
+			metadata: expect.objectContaining({
+				automaticPrivateTeamTreeDx: true,
+				centralPublicRegistry: expect.objectContaining({
+					trustMode: 'scoped_node_token',
+					mirrorAllowed: true,
+					queryDelegationAllowed: true,
+				}),
+			}),
+		});
+		expect(treedx.payload.mirrors).toEqual(expect.arrayContaining([
+			expect.objectContaining({
+				name: 'TreeSeed public registry mirror',
+				direction: 'pull',
+				targetKind: 'treedx',
+				targetUrl: 'https://api.treeseed.ai/treedx',
+				metadata: expect.objectContaining({
+					centralPublicRegistry: true,
+					privateDataEgress: 'deny_by_default',
+				}),
+			}),
+		]));
+	});
+
+	it('accepts native Codex caps plus portfolio and agent-class allocation contracts', async () => {
+		const app = createTestApp();
+		const token = await authorizeApp(app, { principalId: 'allocation-owner' });
+		const team = await json(await app.request('/v1/teams', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ slug: 'allocation-demo-team', name: 'Allocation Demo Team' }),
+		}));
+		const createProject = async (slug: string, name: string) => json(await app.request(`/v1/teams/${team.payload.id}/projects`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ slug, name, metadata: { sourceKind: 'template', sourceRef: slug.includes('engineering') ? 'engineering' : 'research' } }),
+		}));
+		const engineering = await createProject('engineering-demo', 'Engineering Demo');
+		const research = await createProject('research-demo', 'Research Demo');
+		const provider = await json(await app.request(`/v1/teams/${team.payload.id}/capacity-providers`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ name: 'Local Codex Provider', launchMode: 'self_hosted' }),
+		}));
+		const providerId = provider.provider.id;
+		const executionProvider = await json(await app.request(`/v1/teams/${team.payload.id}/capacity-providers/${providerId}/execution-providers`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({
+				name: 'Codex daily pool',
+				kind: 'codex_subscription',
+				nativeUnit: 'wall_minute',
+				nativeLimits: [{
+					scope: 'daily',
+					nativeUnit: 'wall_minute',
+					limitAmount: 300,
+					dailyUsageCapPercent: 30,
+					reserveBufferPercent: 20,
+				}],
+			}),
+		}));
+		expect(executionProvider.payload.nativeLimits[0]).toMatchObject({
+			limitAmount: 300,
+			dailyUsageCapPercent: 30,
+			metadata: expect.objectContaining({ dailyUsageCapPercent: 30 }),
+		});
+
+		const portfolio = await json(await app.request(`/v1/teams/${team.payload.id}/capacity-allocation`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({
+				capacityProviderId: providerId,
+				allocations: [
+					{ id: engineering.payload.project.id, name: 'Engineering Demo', percentage: 70 },
+					{ id: research.payload.project.id, name: 'Research Demo', percentage: 30 },
+				],
+			}),
+		}));
+		expect(portfolio.payload.slices).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: engineering.payload.project.id, percentage: 70 }),
+			expect.objectContaining({ id: research.payload.project.id, percentage: 30 }),
+		]));
+		expect(portfolio.payload.updatedGrants).toEqual(expect.arrayContaining([
+			expect.objectContaining({
+				projectId: engineering.payload.project.id,
+				portfolioAllocationPercent: 70,
+			}),
+		]));
+
+		const agentClasses = await json(await app.request(`/v1/projects/${engineering.payload.project.id}/capacity-allocation`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({
+				allocations: [
+					{ id: 'planning', name: 'Planning', percentage: 10 },
+					{ id: 'research', name: 'Research', percentage: 20 },
+					{ id: 'implementation', name: 'Implementation', percentage: 45 },
+					{ id: 'review', name: 'Review', percentage: 15 },
+					{ id: 'knowledge', name: 'Knowledge', percentage: 10 },
+				],
+			}),
+		}));
+		expect(agentClasses.payload.slices).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: 'implementation', percentage: 45 }),
+			expect.objectContaining({ id: 'knowledge', percentage: 10 }),
+		]));
 	});
 });

@@ -1010,6 +1010,7 @@ async function ensureCapacityProviderApiKeys({ plan, store, ids, actor }) {
 		}
 		const created = await store.createCapacityProviderApiKey(teamId, providerId, {
 			name: typeof apiKey.name === 'string' && apiKey.name.trim() ? apiKey.name.trim() : 'Seed provider security code',
+			plaintextKey: typeof apiKey.plaintextKey === 'string' && apiKey.plaintextKey.trim() ? apiKey.plaintextKey.trim() : undefined,
 			scopes: Array.isArray(apiKey.scopes) && apiKey.scopes.length > 0 ? apiKey.scopes.map(String) : undefined,
 			expiresAt: typeof apiKey.expiresAt === 'string' && apiKey.expiresAt.trim() ? apiKey.expiresAt.trim() : null,
 			createdById: actorId(actor),

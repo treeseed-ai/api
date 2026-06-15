@@ -95,7 +95,7 @@ describe('local seed apply', () => {
 			} as any);
 
 			expect(applied.plan.summary).toMatchObject({
-				create: 8,
+				create: 16,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -113,7 +113,7 @@ describe('local seed apply', () => {
 			const teamContext = await store.resolvePrincipalTeamContext(team!.id, { id: 'user-local', roles: [] });
 			expect(teamContext?.roles).toContain('team_owner');
 			const projects = await store.listTeamProjects(team!.id);
-			expect(projects.map((project: any) => project.slug).sort()).toEqual(['market']);
+			expect(projects.map((project: any) => project.slug).sort()).toEqual(['karyon', 'market']);
 		} finally {
 			db.close();
 		}
@@ -130,7 +130,7 @@ describe('local seed apply', () => {
 			});
 
 			expect(first.plan.summary).toMatchObject({
-				create: 8,
+				create: 16,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -182,6 +182,43 @@ describe('local seed apply', () => {
 				executionOwner: 'project_runner',
 			});
 			expect((await store.getProjectSummary(marketProject!.id))?.health.state).not.toBe('setup_needed');
+
+			const karyonProject = await store.getProjectByTeamAndSlug(team!.id, 'karyon');
+			expect(karyonProject).toMatchObject({
+				slug: 'karyon',
+				name: 'Karyon Live Proof',
+			});
+			expect(karyonProject?.metadata?.metadata).toMatchObject({
+				demoRole: 'live-proof-project',
+				contentRoot: 'docs',
+				repositoryTopology: expect.objectContaining({
+					contentRepository: expect.objectContaining({ accessMode: 'treedx' }),
+					siteRepository: expect.objectContaining({ accessMode: 'filesystem' }),
+					projectRepository: expect.objectContaining({ accessMode: 'filesystem' }),
+				}),
+			});
+			const karyonRepositories = await store.listHubRepositories(karyonProject!.id);
+			expect(karyonRepositories).toEqual(expect.arrayContaining([
+				expect.objectContaining({
+					role: 'primary',
+					provider: 'github',
+					owner: 'karyon-life',
+					name: 'karyon',
+					url: 'https://github.com/karyon-life/karyon.git',
+					defaultBranch: 'main',
+				}),
+				expect.objectContaining({
+					role: 'content',
+					provider: 'github',
+					owner: 'karyon-life',
+					name: 'karyon',
+					submodulePath: 'docs',
+					metadata: expect.objectContaining({
+						contentCanonical: 'treedx',
+						demoRole: 'karyon-docs-content',
+					}),
+				}),
+			]));
 
 			const providers = await store.listTeamCapacityProviders(team!.id);
 			const provider = providers.find((entry: any) => entry.name === 'treeseed-local-dev');
@@ -283,6 +320,12 @@ describe('local seed apply', () => {
 			]));
 
 			const products = await store.listTeamProducts(team!.id, { type: 'user', id: 'user-1', permissions: ['teams:manage:team'] } as any);
+			expect(products.map((product: any) => product.slug).sort()).toEqual(expect.arrayContaining([
+				'engineering',
+				'information-hub',
+				'research',
+				'treeseed-market',
+			]));
 			const template = products.find((product: any) => product.slug === 'treeseed-market');
 			expect(template).toMatchObject({
 				kind: 'template',
@@ -330,7 +373,7 @@ describe('local seed apply', () => {
 			expect(second.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 8,
+				unchanged: 16,
 				skip: 2,
 			});
 			const secondResult = second.result as any;
@@ -365,7 +408,7 @@ describe('local seed apply', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 8,
+				unchanged: 16,
 				skip: 2,
 			});
 			expect((repaired.result as any).repairs).toEqual([
@@ -474,7 +517,7 @@ describe('local seed apply', () => {
 			expect(seedPage.selectedSeed).toBe('treeseed');
 			expect(seedPage.selectedEnvironments).toBe('local');
 			expect(seedPage.plan.summary).toMatchObject({
-				create: 7,
+				create: 15,
 				update: 1,
 				unchanged: 0,
 				skip: 2,
