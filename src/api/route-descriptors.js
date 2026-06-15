@@ -125,6 +125,7 @@ function ownerDomain(path) {
 	if (path.startsWith('/v1/platform/operations')) return 'platform-operation';
 	if (path.startsWith('/v1/ui/')) return 'market-ui';
 	if (path.startsWith('/v1/auth/')) return 'auth';
+	if (path.startsWith('/v1/commons/')) return 'commons';
 	if (path.startsWith('/v1/teams/')) return 'team';
 	if (path.startsWith('/v1/projects/')) return 'project';
 	if (path.startsWith('/v1/commerce/')) return 'commerce';
@@ -144,6 +145,15 @@ function authClass(path, method = 'get') {
 		return 'public';
 	}
 	if (path.startsWith('/v1/platform/operations')) return 'platform-admin';
+	if (path === '/v1/commons/summary') return 'public';
+	if (path.startsWith('/v1/commons/questions') && method === 'get') return 'public';
+	if (path.startsWith('/v1/commons/proposals') && method === 'get') return 'public';
+	if (path.startsWith('/v1/commons/decisions') && method === 'get') return 'public';
+	if (path.startsWith('/v1/commons/events') && method === 'get') return 'public';
+	if (path.startsWith('/v1/commons/participants') && !path.endsWith('/me')) return 'team-member';
+	if (path.startsWith('/v1/commons/proposals/') && (path.endsWith('/review') || path.endsWith('/start-voting') || path.endsWith('/evaluate') || path.endsWith('/steward-decision') || path.endsWith('/archive'))) return 'team-member';
+	if (path.startsWith('/v1/commons/questions/') && path.endsWith('/answer')) return 'team-member';
+	if (path.startsWith('/v1/commons/')) return 'user';
 	if (path.startsWith('/v1/commerce/products') && path.includes(':productId') && method === 'get') return 'public';
 	if (path === '/v1/commerce/products' && method === 'get') return 'public';
 	if (path === '/v1/commerce/webhooks/stripe') return 'service-webhook';
@@ -208,6 +218,15 @@ function successActorsFor(path, method) {
 		: ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path.startsWith('/v1/capacity/providers/:providerId/heartbeat')) return ['providerKey'];
 	if (path.startsWith('/v1/capacity/')) return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
+	if (path === '/v1/commons/summary') return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commons/questions') && method === 'get') return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commons/proposals') && method === 'get') return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commons/decisions') && method === 'get') return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commons/events') && method === 'get') return ACCEPTANCE_ACTORS;
+	if (path.startsWith('/v1/commons/participants') && !path.endsWith('/me')) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commons/proposals/') && (path.endsWith('/review') || path.endsWith('/start-voting') || path.endsWith('/evaluate') || path.endsWith('/steward-decision') || path.endsWith('/archive'))) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commons/questions/') && path.endsWith('/answer')) return TEAM_MANAGER_ACTORS;
+	if (path.startsWith('/v1/commons/')) return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/approve')) return PLATFORM_ADMIN_ACTORS;
 	if (path.startsWith('/v1/commerce/products/') && path.endsWith('/approve')) return PLATFORM_ADMIN_ACTORS;
 	if (path.startsWith('/v1/commerce/products/') && path.includes('/versions/') && path.endsWith('/approve')) return PLATFORM_ADMIN_ACTORS;
@@ -307,6 +326,18 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/teams') && path.includes('/hosting-audit')) return 'hostingAudit';
 	if (path.includes('/teams') && path.includes('/seeds/export')) return 'seedExport';
 	if (path === '/v1/teams') return 'teamCreate';
+	if (path === '/v1/commons/questions') return method === 'get' ? 'empty' : 'commonsQuestion';
+	if (path.startsWith('/v1/commons/questions/') && path.endsWith('/answer')) return 'commonsQuestionAnswer';
+	if (path.startsWith('/v1/commons/questions/') && path.endsWith('/convert-to-proposal')) return 'commonsProposal';
+	if (path === '/v1/commons/proposals') return method === 'get' ? 'empty' : 'commonsProposal';
+	if (path.startsWith('/v1/commons/proposals/') && path.endsWith('/back')) return 'commonsBacking';
+	if (path.startsWith('/v1/commons/proposals/') && path.endsWith('/vote')) return 'commonsVote';
+	if (path.startsWith('/v1/commons/proposals/') && path.endsWith('/steward-decision')) return 'commonsStewardDecision';
+	if (path.startsWith('/v1/commons/proposals/')) return method === 'get' ? 'empty' : 'commonsDecision';
+	if (path === '/v1/commons/delegations') return method === 'get' ? 'empty' : 'commonsDelegation';
+	if (path.startsWith('/v1/commons/delegations/') && path.endsWith('/revoke')) return 'commonsDecision';
+	if (path.startsWith('/v1/commons/participants/') && path.endsWith('/backfill')) return 'empty';
+	if (path.startsWith('/v1/commons/')) return 'empty';
 	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/request')) return 'commerceVendorRequest';
 	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/approve')) return 'commerceVendorApproval';
 	if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/stripe/onboarding')) return 'commerceStripeOnboarding';

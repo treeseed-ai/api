@@ -384,6 +384,34 @@ function bodyForFactory(factory, descriptor, actor) {
 		hostingAudit: { environment: '${environment}' },
 		seedExport: { includeSecrets: false },
 		teamCreate: { slug: `${stamp}-${actor}-team`, name: `Acceptance ${actor} Team` },
+		commonsQuestion: {
+			title: `Acceptance ${actor} Commons Question`,
+			body: 'How should TreeSeed prioritize cooperative governance improvements?',
+		},
+		commonsQuestionAnswer: {
+			answer: 'Acceptance steward answer.',
+		},
+		commonsProposal: {
+			title: `Acceptance ${actor} Commons Proposal`,
+			summary: 'Acceptance proposal summary.',
+			body: 'Acceptance proposal body with evidence and expected outcomes.',
+			scope: 'treeseed_commons',
+			decisionType: 'advisory',
+		},
+		commonsBacking: { reason: 'Acceptance backing.' },
+		commonsVote: { vote: 'support', reason: 'Acceptance vote.' },
+		commonsDecision: { reason: 'Acceptance Commons decision.', evidence: { acceptance: true } },
+		commonsStewardDecision: {
+			status: 'accepted',
+			reason: 'Acceptance steward decision.',
+			evidence: { acceptance: true },
+			capacityBudget: 'acceptance',
+		},
+		commonsDelegation: {
+			toParticipantId: '${fixtures.commonsParticipant.id}',
+			scope: 'treeseed_commons',
+			reason: 'Acceptance delegation.',
+		},
 		commerceVendorRequest: { displayName: `Acceptance ${actor} Vendor`, slug: `${stamp}-${actor}-vendor`, reason: 'Acceptance vendor capability request.' },
 		commerceVendorApproval: { trustLevel: 'verified_seller', salesEnabled: true, reason: 'Acceptance vendor approval.' },
 		commerceStripeOnboarding: {

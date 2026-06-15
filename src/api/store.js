@@ -449,6 +449,7 @@ const TEAM_ROLE_CAPABILITIES = {
 	contributor: ['edit_direct', 'manage_workstreams'],
 	reviewer: ['stage_releases', 'approve_remote_execution'],
 	finance: ['manage_billing', 'manage_products'],
+	viewer: [],
 };
 
 const TEAM_ROLE_DESCRIPTIONS = {
@@ -458,6 +459,7 @@ const TEAM_ROLE_DESCRIPTIONS = {
 	contributor: 'Edit direction and move workstreams forward.',
 	reviewer: 'Review staged work and approve remote execution.',
 	finance: 'Manage billing and commercial product settings.',
+	viewer: 'Read-only participant in team and Commons governance surfaces.',
 };
 
 const ALL_TEAM_CAPABILITIES = [...new Set(Object.values(TEAM_ROLE_CAPABILITIES).flat())];
@@ -493,6 +495,12 @@ const TEAM_RESERVED_NAMES = new Set([
 	'logout',
 	'signup',
 ]);
+const TREESEED_COMMONS_TEAM_SLUG = 'treeseed';
+const COMMONS_WEIGHT_POLICY_VERSION = 'commons-v1';
+const COMMONS_BACKING_THRESHOLD = 3;
+const COMMONS_WEIGHT_THRESHOLD = 3;
+const COMMONS_TOTAL_WEIGHT_CAP = 5;
+const COMMONS_DELEGATED_WEIGHT_CAP = 2;
 
 export function normalizeTeamName(value) {
 	return String(value ?? '').trim().toLowerCase();
@@ -575,7 +583,7 @@ function normalizeTeamRoleKey(value, fallback = 'contributor') {
 }
 
 function primaryTeamRole(roles = []) {
-	const preferredOrder = ['team_owner', 'project_lead', 'market_steward', 'contributor', 'reviewer', 'finance'];
+	const preferredOrder = ['team_owner', 'project_lead', 'market_steward', 'contributor', 'reviewer', 'finance', 'viewer'];
 	return preferredOrder.find((role) => roles.includes(role)) ?? roles[0] ?? null;
 }
 
@@ -1161,6 +1169,178 @@ function serializeApprovalRequest(row) {
 		metadata: parseJson(row.metadata_json, {}),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
+	};
+}
+
+function serializeCommonsParticipant(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		userId: row.user_id,
+		teamId: row.team_id,
+		status: row.status,
+		displayName: row.display_name,
+		verifiedEmail: Number(row.verified_email ?? 0) === 1,
+		baseWeight: Number(row.base_weight ?? 1),
+		trustWeight: Number(row.trust_weight ?? 0),
+		contributionWeight: Number(row.contribution_weight ?? 0),
+		stakeholderWeight: Number(row.stakeholder_weight ?? 0),
+		delegatedWeight: Number(row.delegated_weight ?? 0),
+		totalWeight: Number(row.total_weight ?? 1),
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeCommonsQuestion(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		participantId: row.participant_id,
+		userId: row.user_id,
+		teamId: row.team_id,
+		status: row.status,
+		title: row.title,
+		body: row.body,
+		answer: row.answer,
+		convertedProposalId: row.converted_proposal_id,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeCommonsProposal(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		participantId: row.participant_id,
+		userId: row.user_id,
+		teamId: row.team_id,
+		status: row.status,
+		title: row.title,
+		summary: row.summary,
+		body: row.body,
+		scope: row.scope,
+		decisionType: row.decision_type,
+		contentProposalSlug: row.content_proposal_slug,
+		contentDecisionSlug: row.content_decision_slug,
+		backingCount: Number(row.backing_count ?? 0),
+		voteSupportWeight: Number(row.vote_support_weight ?? 0),
+		voteObjectWeight: Number(row.vote_object_weight ?? 0),
+		voteAbstainWeight: Number(row.vote_abstain_weight ?? 0),
+		qualifiedAt: row.qualified_at,
+		votingStartsAt: row.voting_starts_at,
+		votingEndsAt: row.voting_ends_at,
+		stewardDecisionAt: row.steward_decision_at,
+		stewardDecisionBy: row.steward_decision_by,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeCommonsWeightSnapshot(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		participantId: row.participant_id,
+		policyVersion: row.policy_version,
+		baseWeight: Number(row.base_weight ?? 1),
+		verifiedEmailWeight: Number(row.verified_email_weight ?? 0),
+		accountAgeWeight: Number(row.account_age_weight ?? 0),
+		contributionWeight: Number(row.contribution_weight ?? 0),
+		stakeholderWeight: Number(row.stakeholder_weight ?? 0),
+		trustRoleWeight: Number(row.trust_role_weight ?? 0),
+		delegatedWeight: Number(row.delegated_weight ?? 0),
+		totalWeight: Number(row.total_weight ?? 1),
+		evidence: parseJson(row.evidence_json, {}),
+		createdAt: row.created_at,
+	};
+}
+
+function serializeCommonsProposalBacking(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		proposalId: row.proposal_id,
+		participantId: row.participant_id,
+		userId: row.user_id,
+		weightSnapshotId: row.weight_snapshot_id,
+		weight: Number(row.weight ?? 0),
+		reason: row.reason,
+		createdAt: row.created_at,
+	};
+}
+
+function serializeCommonsProposalVote(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		proposalId: row.proposal_id,
+		participantId: row.participant_id,
+		userId: row.user_id,
+		vote: row.vote,
+		weightSnapshotId: row.weight_snapshot_id,
+		weight: Number(row.weight ?? 0),
+		reason: row.reason,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeCommonsDelegation(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		fromParticipantId: row.from_participant_id,
+		toParticipantId: row.to_participant_id,
+		scope: row.scope,
+		status: row.status,
+		weightLimit: row.weight_limit == null ? null : Number(row.weight_limit),
+		reason: row.reason,
+		createdAt: row.created_at,
+		revokedAt: row.revoked_at,
+	};
+}
+
+function serializeCommonsDecision(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		proposalId: row.proposal_id,
+		status: row.status,
+		decisionRecordId: row.decision_record_id,
+		decisionRecordSlug: row.decision_record_slug,
+		title: row.title,
+		summary: row.summary,
+		stewardReason: row.steward_reason,
+		capacityBudget: row.capacity_budget,
+		scheduledFor: row.scheduled_for,
+		implementedAt: row.implemented_at,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeCommonsGovernanceEvent(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		eventType: row.event_type,
+		actorType: row.actor_type,
+		actorId: row.actor_id,
+		participantId: row.participant_id,
+		proposalId: row.proposal_id,
+		questionId: row.question_id,
+		decisionId: row.decision_id,
+		priorState: row.prior_state,
+		nextState: row.next_state,
+		message: row.message,
+		evidence: parseJson(row.evidence_json, {}),
+		createdAt: row.created_at,
 	};
 }
 
@@ -6644,6 +6824,682 @@ export class MarketControlPlaneStore {
 			],
 		);
 		return this.getApprovalRequest(id);
+	}
+
+	async ensureCommonsTreeSeedTeam() {
+		await this.ensureInitialized();
+		const existing = await this.getTeamBySlug(TREESEED_COMMONS_TEAM_SLUG);
+		if (existing?.id) return existing;
+		const timestamp = isoNow();
+		await this.run(
+			`INSERT INTO teams (id, slug, name, display_name, logo_url, profile_summary, metadata_json, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+			[
+				TREESEED_COMMONS_TEAM_SLUG,
+				TREESEED_COMMONS_TEAM_SLUG,
+				TREESEED_COMMONS_TEAM_SLUG,
+				'TreeSeed',
+				'Commons team for registered participants, proposals, questions, voting, and bounded steward decisions.',
+				JSON.stringify({ commons: true, cooperativeGovernance: true }),
+				timestamp,
+				timestamp,
+			],
+		);
+		return this.getTeam(TREESEED_COMMONS_TEAM_SLUG);
+	}
+
+	async recordCommonsGovernanceEvent(input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO commons_governance_events (
+				id, event_type, actor_type, actor_id, participant_id, proposal_id, question_id, decision_id,
+				prior_state, next_state, message, evidence_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				stringValue(input.eventType, 'decision.updated'),
+				stringValue(input.actorType, 'system'),
+				input.actorId ?? null,
+				input.participantId ?? null,
+				input.proposalId ?? null,
+				input.questionId ?? null,
+				input.decisionId ?? null,
+				input.priorState ?? null,
+				input.nextState ?? null,
+				input.message ?? null,
+				JSON.stringify(input.evidence ?? {}),
+				timestamp,
+			],
+		);
+		return serializeCommonsGovernanceEvent(await this.first(`SELECT * FROM commons_governance_events WHERE id = ?`, [id]));
+	}
+
+	async getCommonsParticipantByUserId(userId) {
+		await this.ensureInitialized();
+		return serializeCommonsParticipant(await this.first(`SELECT * FROM commons_participants WHERE user_id = ? LIMIT 1`, [userId]));
+	}
+
+	async getCommonsParticipant(participantId) {
+		await this.ensureInitialized();
+		return serializeCommonsParticipant(await this.first(`SELECT * FROM commons_participants WHERE id = ? LIMIT 1`, [participantId]));
+	}
+
+	async ensureCommonsParticipantForPrincipal(principal, input = {}) {
+		await this.ensureInitialized();
+		if (!principal?.id) {
+			const error = new Error('Authenticated Commons participant is required.');
+			error.status = 401;
+			throw error;
+		}
+		const team = await this.ensureCommonsTreeSeedTeam();
+		await this.upsertTeamMember(team.id, principal.id, 'viewer');
+		const timestamp = isoNow();
+		const user = await this.first(`SELECT * FROM users WHERE id = ? LIMIT 1`, [principal.id]).catch(() => null);
+		const email = await this.first(
+			`SELECT verified_at, status FROM user_email_addresses WHERE user_id = ? AND is_primary = 1 LIMIT 1`,
+			[principal.id],
+		).catch(() => null);
+		const verifiedEmail = Boolean(email?.verified_at || email?.status === 'verified');
+		const existing = await this.first(`SELECT * FROM commons_participants WHERE user_id = ? LIMIT 1`, [principal.id]);
+		const displayName = optionalStringValue(input.displayName) ?? optionalStringValue(user?.display_name) ?? optionalStringValue(principal.displayName) ?? null;
+		const weights = this.computeCommonsWeights({ verifiedEmail, participant: existing, principal });
+		if (existing?.id) {
+			await this.run(
+				`UPDATE commons_participants
+				 SET team_id = ?, status = CASE WHEN status = 'archived' THEN 'active' ELSE status END, display_name = ?,
+					 verified_email = ?, base_weight = ?, trust_weight = ?, contribution_weight = ?, stakeholder_weight = ?,
+					 delegated_weight = ?, total_weight = ?, metadata_json = ?, updated_at = ?
+				 WHERE id = ?`,
+				[
+					team.id,
+					displayName,
+					verifiedEmail ? 1 : 0,
+					weights.baseWeight,
+					weights.trustWeight,
+					weights.contributionWeight,
+					weights.stakeholderWeight,
+					weights.delegatedWeight,
+					weights.totalWeight,
+					JSON.stringify({ ...parseJson(existing.metadata_json, {}), ...(input.metadata ?? {}) }),
+					timestamp,
+					existing.id,
+				],
+			);
+			return this.getCommonsParticipant(existing.id);
+		}
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO commons_participants (
+				id, user_id, team_id, status, display_name, verified_email, base_weight, trust_weight,
+				contribution_weight, stakeholder_weight, delegated_weight, total_weight, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				principal.id,
+				team.id,
+				displayName,
+				verifiedEmail ? 1 : 0,
+				weights.baseWeight,
+				weights.trustWeight,
+				weights.contributionWeight,
+				weights.stakeholderWeight,
+				weights.delegatedWeight,
+				weights.totalWeight,
+				JSON.stringify(input.metadata ?? {}),
+				timestamp,
+				timestamp,
+			],
+		);
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'participant.joined',
+			actorType: 'user',
+			actorId: principal.id,
+			participantId: id,
+			nextState: 'active',
+			message: 'Registered participant joined TreeSeed Commons.',
+			evidence: { teamId: team.id, role: 'viewer', policyVersion: COMMONS_WEIGHT_POLICY_VERSION },
+		});
+		return this.getCommonsParticipant(id);
+	}
+
+	computeCommonsWeights({ verifiedEmail = false, participant = null, principal = null } = {}) {
+		const metadata = objectValue(principal?.metadata, {});
+		const baseWeight = 1;
+		const verifiedEmailWeight = verifiedEmail ? 0.25 : 0;
+		const trustRoleWeight = Array.isArray(principal?.roles) && principal.roles.some((role) => ['platform_admin', 'market_admin'].includes(role)) ? 0.5 : 0;
+		const contributionWeight = Math.min(1, numberValue(metadata.commonsContributionWeight, numberValue(participant?.contribution_weight, 0)) ?? 0);
+		const stakeholderWeight = Math.min(1, numberValue(metadata.commonsStakeholderWeight, numberValue(participant?.stakeholder_weight, 0)) ?? 0);
+		const delegatedWeight = Math.min(COMMONS_DELEGATED_WEIGHT_CAP, numberValue(participant?.delegated_weight, 0) ?? 0);
+		const totalWeight = Math.min(COMMONS_TOTAL_WEIGHT_CAP, baseWeight + verifiedEmailWeight + trustRoleWeight + contributionWeight + stakeholderWeight + delegatedWeight);
+		return { baseWeight, verifiedEmailWeight, accountAgeWeight: 0, trustRoleWeight, trustWeight: trustRoleWeight, contributionWeight, stakeholderWeight, delegatedWeight, totalWeight };
+	}
+
+	async createCommonsWeightSnapshot(participantId, evidence = {}) {
+		await this.ensureInitialized();
+		const participant = await this.getCommonsParticipant(participantId);
+		if (!participant) return null;
+		const timestamp = isoNow();
+		const id = randomUUID();
+		await this.run(
+			`INSERT INTO commons_weight_snapshots (
+				id, participant_id, policy_version, base_weight, verified_email_weight, account_age_weight,
+				contribution_weight, stakeholder_weight, trust_role_weight, delegated_weight, total_weight, evidence_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				participantId,
+				COMMONS_WEIGHT_POLICY_VERSION,
+				participant.baseWeight,
+				participant.verifiedEmail ? 0.25 : 0,
+				0,
+				participant.contributionWeight,
+				participant.stakeholderWeight,
+				participant.trustWeight,
+				participant.delegatedWeight,
+				participant.totalWeight,
+				JSON.stringify({ ...evidence, participantStatus: participant.status }),
+				timestamp,
+			],
+		);
+		return serializeCommonsWeightSnapshot(await this.first(`SELECT * FROM commons_weight_snapshots WHERE id = ?`, [id]));
+	}
+
+	async listCommonsParticipants(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
+		const rows = await this.all(
+			`SELECT * FROM commons_participants
+			 ${filters.status ? 'WHERE status = ?' : ''}
+			 ORDER BY updated_at DESC LIMIT ?`,
+			filters.status ? [filters.status, limit] : [limit],
+		);
+		return rows.map(serializeCommonsParticipant);
+	}
+
+	async createCommonsQuestion(principal, input = {}) {
+		const participant = await this.ensureCommonsParticipantForPrincipal(principal);
+		const title = stringValue(input.title);
+		const body = stringValue(input.body);
+		if (!title || !body) {
+			const error = new Error('Question title and body are required.');
+			error.status = 400;
+			throw error;
+		}
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO commons_questions (
+				id, participant_id, user_id, team_id, status, title, body, answer, converted_proposal_id,
+				metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, 'open', ?, ?, NULL, NULL, ?, ?, ?)`,
+			[id, participant.id, participant.userId, participant.teamId, title, body, JSON.stringify(input.metadata ?? {}), timestamp, timestamp],
+		);
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'question.created',
+			actorType: 'user',
+			actorId: principal.id,
+			participantId: participant.id,
+			questionId: id,
+			nextState: 'open',
+			message: 'Commons question submitted.',
+		});
+		return this.getCommonsQuestion(id);
+	}
+
+	async getCommonsQuestion(questionId) {
+		await this.ensureInitialized();
+		return serializeCommonsQuestion(await this.first(`SELECT * FROM commons_questions WHERE id = ? LIMIT 1`, [questionId]));
+	}
+
+	async listCommonsQuestions(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
+		const rows = await this.all(
+			`SELECT * FROM commons_questions
+			 ${filters.status ? 'WHERE status = ?' : ''}
+			 ORDER BY updated_at DESC LIMIT ?`,
+			filters.status ? [filters.status, limit] : [limit],
+		);
+		return rows.map(serializeCommonsQuestion);
+	}
+
+	async answerCommonsQuestion(questionId, input = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getCommonsQuestion(questionId);
+		if (!existing) return null;
+		const timestamp = isoNow();
+		const answer = stringValue(input.answer ?? input.message);
+		await this.run(
+			`UPDATE commons_questions SET status = 'answered', answer = ?, updated_at = ? WHERE id = ?`,
+			[answer, timestamp, questionId],
+		);
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'question.answered',
+			actorType: input.actorType ?? 'operator',
+			actorId: input.actorId ?? null,
+			participantId: existing.participantId,
+			questionId,
+			priorState: existing.status,
+			nextState: 'answered',
+			message: 'Commons question answered by steward.',
+		});
+		return this.getCommonsQuestion(questionId);
+	}
+
+	async createCommonsProposal(principal, input = {}) {
+		const participant = await this.ensureCommonsParticipantForPrincipal(principal);
+		const title = stringValue(input.title);
+		const summary = stringValue(input.summary);
+		const body = stringValue(input.body);
+		if (!title || !summary || !body) {
+			const error = new Error('Proposal title, summary, and body are required.');
+			error.status = 400;
+			throw error;
+		}
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO commons_proposals (
+				id, participant_id, user_id, team_id, status, title, summary, body, scope, decision_type,
+				content_proposal_slug, content_decision_slug, backing_count, vote_support_weight, vote_object_weight,
+				vote_abstain_weight, qualified_at, voting_starts_at, voting_ends_at, steward_decision_at,
+				steward_decision_by, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)`,
+			[
+				id,
+				participant.id,
+				participant.userId,
+				participant.teamId,
+				input.status === 'submitted' ? 'submitted' : 'draft',
+				title,
+				summary,
+				body,
+				optionalStringValue(input.scope, 'treeseed_commons'),
+				optionalStringValue(input.decisionType, 'advisory'),
+				JSON.stringify(input.metadata ?? {}),
+				timestamp,
+				timestamp,
+			],
+		);
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'proposal.created',
+			actorType: 'user',
+			actorId: principal.id,
+			participantId: participant.id,
+			proposalId: id,
+			nextState: input.status === 'submitted' ? 'submitted' : 'draft',
+			message: 'Commons proposal created.',
+		});
+		return this.getCommonsProposal(id);
+	}
+
+	async getCommonsProposal(proposalId) {
+		await this.ensureInitialized();
+		return serializeCommonsProposal(await this.first(`SELECT * FROM commons_proposals WHERE id = ? LIMIT 1`, [proposalId]));
+	}
+
+	async listCommonsProposals(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
+		const clauses = [];
+		const params = [];
+		if (filters.status) {
+			clauses.push('status = ?');
+			params.push(filters.status);
+		}
+		if (filters.scope) {
+			clauses.push('scope = ?');
+			params.push(filters.scope);
+		}
+		params.push(limit);
+		const rows = await this.all(
+			`SELECT * FROM commons_proposals ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY updated_at DESC LIMIT ?`,
+			params,
+		);
+		return rows.map(serializeCommonsProposal);
+	}
+
+	async transitionCommonsProposal(proposalId, nextState, input = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getCommonsProposal(proposalId);
+		if (!existing) return null;
+		const timestamp = isoNow();
+		const fields = ['status = ?', 'updated_at = ?'];
+		const params = [nextState, timestamp];
+		if (nextState === 'qualified') {
+			fields.push('qualified_at = ?');
+			params.push(timestamp);
+		}
+		if (nextState === 'voting') {
+			fields.push('voting_starts_at = ?', 'voting_ends_at = ?');
+			params.push(timestamp, input.votingEndsAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString());
+		}
+		if (['accepted', 'rejected', 'deferred'].includes(nextState)) {
+			fields.push('steward_decision_at = ?', 'steward_decision_by = ?');
+			params.push(timestamp, input.actorId ?? null);
+		}
+		params.push(proposalId);
+		await this.run(`UPDATE commons_proposals SET ${fields.join(', ')} WHERE id = ?`, params);
+		const eventMap = {
+			submitted: 'proposal.submitted',
+			qualified: 'proposal.qualified',
+			under_review: 'proposal.review_started',
+			voting: 'proposal.voting_started',
+			accepted: 'proposal.steward_decision',
+			rejected: 'proposal.steward_decision',
+			deferred: 'proposal.steward_decision',
+			archived: 'proposal.archived',
+		};
+		await this.recordCommonsGovernanceEvent({
+			eventType: eventMap[nextState] ?? 'proposal.steward_decision',
+			actorType: input.actorType ?? 'user',
+			actorId: input.actorId ?? null,
+			participantId: existing.participantId,
+			proposalId,
+			priorState: existing.status,
+			nextState,
+			message: input.reason ?? null,
+			evidence: input.evidence ?? {},
+		});
+		return this.getCommonsProposal(proposalId);
+	}
+
+	async submitCommonsProposal(proposalId, input = {}) {
+		const existing = await this.getCommonsProposal(proposalId);
+		if (!existing || !['draft', 'submitted'].includes(existing.status)) return existing;
+		return this.transitionCommonsProposal(proposalId, 'submitted', input);
+	}
+
+	async backCommonsProposal(principal, proposalId, input = {}) {
+		const proposal = await this.getCommonsProposal(proposalId);
+		if (!proposal) return null;
+		if (!['submitted', 'backing', 'qualified', 'under_review', 'voting'].includes(proposal.status)) {
+			const error = new Error('Proposal is not open for backing.');
+			error.status = 409;
+			throw error;
+		}
+		const participant = await this.ensureCommonsParticipantForPrincipal(principal);
+		const snapshot = await this.createCommonsWeightSnapshot(participant.id, { action: 'backing', proposalId });
+		const timestamp = isoNow();
+		const existing = await this.first(
+			`SELECT * FROM commons_proposal_backings WHERE proposal_id = ? AND participant_id = ? LIMIT 1`,
+			[proposalId, participant.id],
+		);
+		if (!existing?.id) {
+			await this.run(
+				`INSERT INTO commons_proposal_backings (
+					id, proposal_id, participant_id, user_id, weight_snapshot_id, weight, reason, created_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				[randomUUID(), proposalId, participant.id, participant.userId, snapshot.id, snapshot.totalWeight, optionalStringValue(input.reason), timestamp],
+			);
+		}
+		const aggregates = await this.first(
+			`SELECT COUNT(*) AS backing_count, COALESCE(SUM(weight), 0) AS backing_weight
+			 FROM commons_proposal_backings WHERE proposal_id = ?`,
+			[proposalId],
+		);
+		const backingCount = Number(aggregates?.backing_count ?? 0);
+		const backingWeight = Number(aggregates?.backing_weight ?? 0);
+		const nextState = backingCount >= COMMONS_BACKING_THRESHOLD && backingWeight >= COMMONS_WEIGHT_THRESHOLD ? 'qualified' : 'backing';
+		await this.run(
+			`UPDATE commons_proposals SET status = ?, backing_count = ?, qualified_at = COALESCE(qualified_at, ?), updated_at = ? WHERE id = ?`,
+			[nextState, backingCount, nextState === 'qualified' ? timestamp : null, timestamp, proposalId],
+		);
+		await this.recordCommonsGovernanceEvent({
+			eventType: nextState === 'qualified' ? 'proposal.qualified' : 'proposal.backed',
+			actorType: 'user',
+			actorId: principal.id,
+			participantId: participant.id,
+			proposalId,
+			priorState: proposal.status,
+			nextState,
+			message: optionalStringValue(input.reason),
+			evidence: { backingCount, backingWeight, weightSnapshotId: snapshot.id },
+		});
+		return this.getCommonsProposal(proposalId);
+	}
+
+	async voteCommonsProposal(principal, proposalId, input = {}) {
+		const vote = requireEnumValue(input.vote, new Set(['support', 'object', 'abstain']), 'Commons vote');
+		const proposal = await this.getCommonsProposal(proposalId);
+		if (!proposal) return null;
+		if (proposal.status !== 'voting') {
+			const error = new Error('Proposal is not open for voting.');
+			error.status = 409;
+			throw error;
+		}
+		const participant = await this.ensureCommonsParticipantForPrincipal(principal);
+		const snapshot = await this.createCommonsWeightSnapshot(participant.id, { action: 'vote', proposalId, vote });
+		const timestamp = isoNow();
+		const existing = await this.first(
+			`SELECT * FROM commons_proposal_votes WHERE proposal_id = ? AND participant_id = ? LIMIT 1`,
+			[proposalId, participant.id],
+		);
+		if (existing?.id) {
+			await this.run(
+				`UPDATE commons_proposal_votes SET vote = ?, weight_snapshot_id = ?, weight = ?, reason = ?, updated_at = ? WHERE id = ?`,
+				[vote, snapshot.id, snapshot.totalWeight, optionalStringValue(input.reason), timestamp, existing.id],
+			);
+		} else {
+			await this.run(
+				`INSERT INTO commons_proposal_votes (
+					id, proposal_id, participant_id, user_id, vote, weight_snapshot_id, weight, reason, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				[randomUUID(), proposalId, participant.id, participant.userId, vote, snapshot.id, snapshot.totalWeight, optionalStringValue(input.reason), timestamp, timestamp],
+			);
+		}
+		await this.recalculateCommonsProposalVoteTotals(proposalId);
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'proposal.voted',
+			actorType: 'user',
+			actorId: principal.id,
+			participantId: participant.id,
+			proposalId,
+			nextState: vote,
+			message: optionalStringValue(input.reason),
+			evidence: { weightSnapshotId: snapshot.id },
+		});
+		return this.getCommonsProposal(proposalId);
+	}
+
+	async recalculateCommonsProposalVoteTotals(proposalId) {
+		await this.ensureInitialized();
+		const rows = await this.all(
+			`SELECT vote, COALESCE(SUM(weight), 0) AS total FROM commons_proposal_votes WHERE proposal_id = ? GROUP BY vote`,
+			[proposalId],
+		);
+		const totals = Object.fromEntries(rows.map((row) => [row.vote, Number(row.total ?? 0)]));
+		await this.run(
+			`UPDATE commons_proposals SET vote_support_weight = ?, vote_object_weight = ?, vote_abstain_weight = ?, updated_at = ? WHERE id = ?`,
+			[totals.support ?? 0, totals.object ?? 0, totals.abstain ?? 0, isoNow(), proposalId],
+		);
+	}
+
+	async stewardDecisionForCommonsProposal(proposalId, input = {}) {
+		const status = ['accepted', 'rejected', 'deferred'].includes(input.status) ? input.status : 'accepted';
+		const proposal = await this.transitionCommonsProposal(proposalId, status, input);
+		if (!proposal) return null;
+		const timestamp = isoNow();
+		let decision = await this.first(`SELECT * FROM commons_decisions WHERE proposal_id = ? LIMIT 1`, [proposalId]);
+		if (!decision?.id) {
+			const id = randomUUID();
+			await this.run(
+				`INSERT INTO commons_decisions (
+					id, proposal_id, status, decision_record_id, decision_record_slug, title, summary, steward_reason,
+					capacity_budget, scheduled_for, implemented_at, metadata_json, created_at, updated_at
+				) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+				[
+					id,
+					proposalId,
+					status === 'accepted' ? 'accepted' : 'rejected',
+					proposal.contentDecisionSlug,
+					proposal.title,
+					proposal.summary,
+					optionalStringValue(input.reason),
+					optionalStringValue(input.capacityBudget),
+					optionalStringValue(input.scheduledFor),
+					JSON.stringify(input.metadata ?? {}),
+					timestamp,
+					timestamp,
+				],
+			);
+			decision = await this.first(`SELECT * FROM commons_decisions WHERE id = ? LIMIT 1`, [id]);
+		} else {
+			await this.run(
+				`UPDATE commons_decisions SET status = ?, steward_reason = ?, capacity_budget = ?, scheduled_for = ?, updated_at = ? WHERE id = ?`,
+				[status === 'accepted' ? 'accepted' : 'rejected', optionalStringValue(input.reason), optionalStringValue(input.capacityBudget), optionalStringValue(input.scheduledFor), timestamp, decision.id],
+			);
+			decision = await this.first(`SELECT * FROM commons_decisions WHERE id = ? LIMIT 1`, [decision.id]);
+		}
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'decision.created',
+			actorType: input.actorType ?? 'operator',
+			actorId: input.actorId ?? null,
+			participantId: proposal.participantId,
+			proposalId,
+			decisionId: decision.id,
+			nextState: status,
+			message: optionalStringValue(input.reason),
+			evidence: input.evidence ?? {},
+		});
+		return { proposal, decision: serializeCommonsDecision(decision) };
+	}
+
+	async listCommonsProposalBackings(proposalId) {
+		await this.ensureInitialized();
+		const rows = await this.all(`SELECT * FROM commons_proposal_backings WHERE proposal_id = ? ORDER BY created_at ASC`, [proposalId]);
+		return rows.map(serializeCommonsProposalBacking);
+	}
+
+	async listCommonsProposalVotes(proposalId) {
+		await this.ensureInitialized();
+		const rows = await this.all(`SELECT * FROM commons_proposal_votes WHERE proposal_id = ? ORDER BY updated_at ASC`, [proposalId]);
+		return rows.map(serializeCommonsProposalVote);
+	}
+
+	async createCommonsDelegation(principal, input = {}) {
+		const from = await this.ensureCommonsParticipantForPrincipal(principal);
+		const toParticipantId = stringValue(input.toParticipantId);
+		if (!toParticipantId || toParticipantId === from.id) {
+			const error = new Error('A different delegate participant is required.');
+			error.status = 400;
+			throw error;
+		}
+		const to = await this.getCommonsParticipant(toParticipantId);
+		if (!to) {
+			const error = new Error('Delegate participant not found.');
+			error.status = 404;
+			throw error;
+		}
+		const scope = optionalStringValue(input.scope, 'treeseed_commons');
+		const timestamp = isoNow();
+		const id = randomUUID();
+		await this.run(
+			`INSERT INTO commons_delegations (
+				id, from_participant_id, to_participant_id, scope, status, weight_limit, reason, created_at, revoked_at
+			) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, NULL)`,
+			[id, from.id, to.id, scope, numberValue(input.weightLimit, null), optionalStringValue(input.reason), timestamp],
+		);
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'delegation.created',
+			actorType: 'user',
+			actorId: principal.id,
+			participantId: from.id,
+			nextState: 'active',
+			evidence: { toParticipantId: to.id, scope },
+		});
+		return serializeCommonsDelegation(await this.first(`SELECT * FROM commons_delegations WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async listCommonsDelegations(principal = null) {
+		await this.ensureInitialized();
+		if (!principal?.id) return [];
+		const participant = await this.getCommonsParticipantByUserId(principal.id);
+		if (!participant) return [];
+		const rows = await this.all(
+			`SELECT * FROM commons_delegations WHERE from_participant_id = ? OR to_participant_id = ? ORDER BY created_at DESC`,
+			[participant.id, participant.id],
+		);
+		return rows.map(serializeCommonsDelegation);
+	}
+
+	async revokeCommonsDelegation(principal, delegationId, input = {}) {
+		const participant = await this.ensureCommonsParticipantForPrincipal(principal);
+		const existing = await this.first(`SELECT * FROM commons_delegations WHERE id = ? LIMIT 1`, [delegationId]);
+		if (!existing?.id) return null;
+		if (existing.from_participant_id !== participant.id && !principalIsAdmin(principal)) {
+			const error = new Error('Permission denied.');
+			error.status = 403;
+			throw error;
+		}
+		const timestamp = isoNow();
+		await this.run(`UPDATE commons_delegations SET status = 'revoked', revoked_at = ? WHERE id = ?`, [timestamp, delegationId]);
+		await this.recordCommonsGovernanceEvent({
+			eventType: 'delegation.revoked',
+			actorType: 'user',
+			actorId: principal.id,
+			participantId: participant.id,
+			priorState: existing.status,
+			nextState: 'revoked',
+			message: optionalStringValue(input.reason),
+		});
+		return serializeCommonsDelegation(await this.first(`SELECT * FROM commons_delegations WHERE id = ? LIMIT 1`, [delegationId]));
+	}
+
+	async listCommonsDecisions(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
+		const rows = await this.all(`SELECT * FROM commons_decisions ORDER BY updated_at DESC LIMIT ?`, [limit]);
+		return rows.map(serializeCommonsDecision);
+	}
+
+	async listCommonsGovernanceEvents(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(300, Number(filters.limit) || 100));
+		const clauses = [];
+		const params = [];
+		for (const [key, column] of [
+			['proposalId', 'proposal_id'],
+			['questionId', 'question_id'],
+			['participantId', 'participant_id'],
+			['decisionId', 'decision_id'],
+			['eventType', 'event_type'],
+		]) {
+			if (filters[key]) {
+				clauses.push(`${column} = ?`);
+				params.push(filters[key]);
+			}
+		}
+		params.push(limit);
+		const rows = await this.all(
+			`SELECT * FROM commons_governance_events ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY created_at DESC LIMIT ?`,
+			params,
+		);
+		return rows.map(serializeCommonsGovernanceEvent);
+	}
+
+	async commonsSummary(principal = null) {
+		await this.ensureInitialized();
+		const [participants, proposals, questions, decisions] = await Promise.all([
+			this.first(`SELECT COUNT(*) AS count FROM commons_participants WHERE status = 'active'`),
+			this.first(`SELECT COUNT(*) AS count FROM commons_proposals WHERE status NOT IN ('archived')`),
+			this.first(`SELECT COUNT(*) AS count FROM commons_questions WHERE status = 'open'`),
+			this.first(`SELECT COUNT(*) AS count FROM commons_decisions WHERE status IN ('accepted', 'scheduled', 'implemented')`),
+		]);
+		return {
+			team: await this.ensureCommonsTreeSeedTeam(),
+			participant: principal?.id ? await this.getCommonsParticipantByUserId(principal.id) : null,
+			counts: {
+				activeParticipants: Number(participants?.count ?? 0),
+				activeProposals: Number(proposals?.count ?? 0),
+				openQuestions: Number(questions?.count ?? 0),
+				acceptedDecisions: Number(decisions?.count ?? 0),
+			},
+			recentProposals: await this.listCommonsProposals({ limit: 6 }),
+			recentEvents: await this.listCommonsGovernanceEvents({ limit: 12 }),
+		};
 	}
 
 	async createSeedRun(input) {
