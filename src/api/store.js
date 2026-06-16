@@ -5,6 +5,7 @@ import {
 	deriveAvailableCredits,
 	nativeUsageUnit,
 } from '@treeseed/sdk/capacity';
+import { buildAgentCapacityPlanDraft } from '@treeseed/sdk/agent-capacity';
 import { redactDeploymentValue } from '../market/deployment-actions.ts';
 import { projectDeploymentAuditPayload } from '../market/deployment-governance.ts';
 
@@ -836,6 +837,10 @@ function serializeCapacityReservation(row) {
 		capacityProviderId: row.capacity_provider_id,
 		executionProviderId: row.execution_provider_id,
 		laneId: row.lane_id,
+		allocationSetId: row.allocation_set_id,
+		projectAgentClassId: row.project_agent_class_id,
+		assignmentId: row.assignment_id,
+		mode: row.mode,
 		teamId: row.team_id,
 		projectId: row.project_id,
 		workDayId: row.work_day_id,
@@ -864,6 +869,9 @@ function serializeCapacityLedgerEntry(row) {
 		capacityProviderId: row.capacity_provider_id,
 		laneId: row.lane_id,
 		reservationId: row.reservation_id,
+		assignmentId: row.assignment_id,
+		modeRunId: row.mode_run_id,
+		mode: row.mode,
 		teamId: row.team_id,
 		projectId: row.project_id,
 		workDayId: row.work_day_id,
@@ -931,6 +939,9 @@ function serializeTaskUsageActual(row) {
 		projectId: row.project_id,
 		taskSignature: row.task_signature,
 		executionProfileId: executionProfileId(row.execution_profile_id),
+		assignmentId: row.assignment_id,
+		modeRunId: row.mode_run_id,
+		mode: row.mode,
 		capacityProviderId: row.capacity_provider_id,
 		executionProviderId: row.execution_provider_id,
 		laneId: row.lane_id,
@@ -954,6 +965,297 @@ function serializeTaskUsageActual(row) {
 		nativeUsage: parseJson(row.native_usage_json, {}),
 		metadata: parseJson(row.metadata_json, {}),
 		createdAt: row.created_at,
+	};
+}
+
+function serializeCapacityAllocationSet(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		version: row.version,
+		status: row.status,
+		effectiveFrom: row.effective_from,
+		effectiveUntil: row.effective_until,
+		policy: parseJson(row.policy_json, {}),
+		slices: parseJson(row.slices_json, []),
+		metadata: parseJson(row.metadata_json, {}),
+		createdById: row.created_by_id,
+		activatedAt: row.activated_at,
+		supersededById: row.superseded_by_id,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeProjectAgentClass(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		slug: row.slug,
+		name: row.name,
+		status: row.status,
+		allowedModes: parseJson(row.allowed_modes_json, []),
+		requiredCapabilities: parseJson(row.required_capabilities_json, []),
+		kernelProfile: parseJson(row.kernel_profile_json, {}),
+		kernelPolicy: parseJson(row.kernel_policy_json, {}),
+		handlerRefs: parseJson(row.handler_refs_json, {}),
+		outputContracts: parseJson(row.output_contracts_json, {}),
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeProviderAvailabilitySession(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		capacityProviderId: row.capacity_provider_id,
+		registrationId: row.registration_id,
+		environment: row.environment,
+		status: row.status,
+		checkedInAt: row.checked_in_at,
+		availableFrom: row.available_from,
+		availableUntil: row.available_until,
+		executionProviders: parseJson(row.execution_providers_json, []),
+		capabilities: parseJson(row.capabilities_json, []),
+		grants: parseJson(row.grants_json, []),
+		nativeLimits: parseJson(row.native_limits_json, {}),
+		runnerPressure: parseJson(row.runner_pressure_json, {}),
+		constraints: parseJson(row.constraints_json, {}),
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		closedAt: row.closed_at,
+	};
+}
+
+function serializeProviderAssignment(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		capacityProviderId: row.capacity_provider_id,
+		providerSessionId: row.provider_session_id,
+		executionProviderId: row.execution_provider_id,
+		allocationSetId: row.allocation_set_id,
+		projectAgentClassId: row.project_agent_class_id,
+		reservationId: row.reservation_id,
+		workDayId: row.work_day_id,
+		taskId: row.task_id,
+		mode: row.mode,
+		status: row.status,
+		leaseState: row.lease_state,
+		leaseExpiresAt: row.lease_expires_at,
+		leaseToken: row.lease_token,
+		leaseRenewedAt: row.lease_renewed_at,
+		runnerId: row.runner_id,
+		agentId: row.agent_id,
+		handlerId: row.handler_id,
+		capacityEnvelope: parseJson(row.capacity_envelope_json, {}),
+		decisionInput: parseJson(row.decision_input_json, {}),
+		workspaceContext: parseJson(row.workspace_context_json, {}),
+		allowedOutputs: parseJson(row.allowed_outputs_json, {}),
+		explanation: parseJson(row.explanation_json, {}),
+		attemptCount: Number(row.attempt_count ?? 0),
+		assignedAt: row.assigned_at,
+		claimedAt: row.claimed_at,
+		completedAt: row.completed_at,
+		returnedAt: row.returned_at,
+		failedAt: row.failed_at,
+		lifecycleReason: row.lifecycle_reason,
+		lifecycleCode: row.lifecycle_code,
+		lifecycleOutput: parseJson(row.lifecycle_output_json, {}),
+		synthesizedFrom: row.synthesized_from,
+		synthesisKey: row.synthesis_key,
+		decisionId: row.decision_id,
+		proposalId: row.proposal_id,
+		fallbackOutputId: row.fallback_output_id,
+		treedxProxyHandle: parseJson(row.treedx_proxy_handle_json, {}),
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeDecisionPlanningStatus(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		humanApprovalState: row.human_approval_state,
+		executionReadiness: row.execution_readiness,
+		planningInputsStatus: row.planning_inputs_status,
+		scopeHash: row.scope_hash,
+		staleReason: row.stale_reason,
+		readyAt: row.ready_at,
+		staleAt: row.stale_at,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializePlanningInputRequest(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		projectAgentClassId: row.project_agent_class_id,
+		mode: row.mode,
+		status: row.status,
+		scopeHash: row.scope_hash,
+		prompt: row.prompt,
+		response: parseJson(row.response_json, {}),
+		metadata: parseJson(row.metadata_json, {}),
+		requestedAt: row.requested_at,
+		completedAt: row.completed_at,
+		staleAt: row.stale_at,
+	};
+}
+
+function serializeDecisionExecutionInput(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		projectAgentClassId: row.project_agent_class_id,
+		mode: row.mode,
+		status: row.status,
+		scopeHash: row.scope_hash,
+		input: parseJson(row.input_json, {}),
+		metadata: parseJson(row.metadata_json, {}),
+		acceptedAt: row.accepted_at,
+		revisionRequestedAt: row.revision_requested_at,
+		staleAt: row.stale_at,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeWorkdayCapacityEnvelope(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		allocationSetId: row.allocation_set_id,
+		status: row.status,
+		startedAt: row.started_at,
+		pausedAt: row.paused_at,
+		completedAt: row.completed_at,
+		envelope: parseJson(row.envelope_json, {}),
+		modeSplits: parseJson(row.mode_splits_json, {}),
+		caps: parseJson(row.caps_json, {}),
+		reserves: parseJson(row.reserves_json, {}),
+		borrowingRules: parseJson(row.borrowing_rules_json, {}),
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeAgentCapacityPlan(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		status: row.status,
+		scopeHash: row.scope_hash,
+		allocationSetId: row.allocation_set_id,
+		workDayId: row.work_day_id,
+		expectedCredits: Number(row.expected_credits ?? 0),
+		highCredits: Number(row.high_credits ?? 0),
+		workUnits: parseJson(row.work_units_json, []),
+		capabilityNeeds: parseJson(row.capability_needs_json, []),
+		environmentNeeds: parseJson(row.environment_needs_json, []),
+		reserves: parseJson(row.reserves_json, {}),
+		blockers: parseJson(row.blockers_json, []),
+		priorityRationale: row.priority_rationale,
+		metadata: parseJson(row.metadata_json, {}),
+		acceptedAt: row.accepted_at,
+		scheduledAt: row.scheduled_at,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeProviderAssignmentExplanation(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		assignmentId: row.assignment_id,
+		source: row.source,
+		sourceId: row.source_id,
+		eligible: Number(row.eligible ?? 1) === 1,
+		reasons: parseJson(row.reasons_json, []),
+		gates: parseJson(row.gates_json, {}),
+		allocationPolicyVersion: row.allocation_policy_version,
+		grantScope: row.grant_scope,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+	};
+}
+
+function serializeAgentFallbackOutput(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		assignmentId: row.assignment_id,
+		mode: row.mode,
+		code: row.code,
+		status: row.status,
+		output: parseJson(row.output_json, {}),
+		provenance: parseJson(row.provenance_json, {}),
+		quota: parseJson(row.quota_json, {}),
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+	};
+}
+
+function serializeAgentModeRun(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		providerAssignmentId: row.provider_assignment_id,
+		capacityProviderId: row.capacity_provider_id,
+		executionProviderId: row.execution_provider_id,
+		projectAgentClassId: row.project_agent_class_id,
+		agentId: row.agent_id,
+		handlerId: row.handler_id,
+		mode: row.mode,
+		status: row.status,
+		selectedInput: parseJson(row.selected_input_json, {}),
+		capacityEnvelope: parseJson(row.capacity_envelope_json, {}),
+		outputs: parseJson(row.outputs_json, {}),
+		traceRefs: parseJson(row.trace_refs_json, {}),
+		usageActual: parseJson(row.usage_actual_json, {}),
+		validation: parseJson(row.validation_json, {}),
+		fallbackReason: row.fallback_reason,
+		startedAt: row.started_at,
+		completedAt: row.completed_at,
+		failedAt: row.failed_at,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
 	};
 }
 
@@ -5084,6 +5386,1410 @@ export class MarketControlPlaneStore {
 		return serializeCapacityGrant(await this.first(`SELECT * FROM capacity_grants WHERE id = ? LIMIT 1`, [id]));
 	}
 
+	async createCapacityAllocationSet(teamId, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		const version = stringValue(input.version, timestamp);
+		await this.run(
+			`INSERT OR REPLACE INTO capacity_allocation_sets (
+				id, team_id, version, status, effective_from, effective_until, policy_json, slices_json,
+				metadata_json, created_by_id, activated_at, superseded_by_id, created_at, updated_at
+			) VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM capacity_allocation_sets WHERE id = ?), ?),
+				?
+			)`,
+			[
+				id,
+				teamId,
+				version,
+				stringValue(input.status, 'draft'),
+				input.effectiveFrom ?? null,
+				input.effectiveUntil ?? null,
+				JSON.stringify(objectValue(input.policy)),
+				JSON.stringify(arrayValue(input.slices)),
+				JSON.stringify(objectValue(input.metadata)),
+				input.createdById ?? null,
+				input.activatedAt ?? null,
+				input.supersededById ?? null,
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		return this.getCapacityAllocationSet(teamId, id);
+	}
+
+	async listCapacityAllocationSets(teamId) {
+		await this.ensureInitialized();
+		const rows = await this.all(
+			`SELECT * FROM capacity_allocation_sets
+			 WHERE team_id = ?
+			 ORDER BY created_at DESC`,
+			[teamId],
+		);
+		return rows.map(serializeCapacityAllocationSet);
+	}
+
+	async getCapacityAllocationSet(teamId, allocationSetId) {
+		await this.ensureInitialized();
+		return serializeCapacityAllocationSet(await this.first(
+			`SELECT * FROM capacity_allocation_sets WHERE id = ? AND team_id = ? LIMIT 1`,
+			[allocationSetId, teamId],
+		));
+	}
+
+	async activateCapacityAllocationSet(teamId, allocationSetId) {
+		await this.ensureInitialized();
+		const existing = await this.getCapacityAllocationSet(teamId, allocationSetId);
+		if (!existing) return null;
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE capacity_allocation_sets
+			 SET status = CASE WHEN id = ? THEN 'active' ELSE 'superseded' END,
+			     activated_at = CASE WHEN id = ? THEN COALESCE(activated_at, ?) ELSE activated_at END,
+			     superseded_by_id = CASE WHEN id = ? THEN superseded_by_id ELSE ? END,
+			     updated_at = ?
+			 WHERE team_id = ? AND status IN ('draft', 'active')`,
+			[allocationSetId, allocationSetId, timestamp, allocationSetId, allocationSetId, timestamp, teamId],
+		);
+		return this.getCapacityAllocationSet(teamId, allocationSetId);
+	}
+
+	async upsertProjectAgentClass(projectId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		const timestamp = isoNow();
+		const slug = safeIdPart(input.slug ?? input.name, 'agent-class');
+		const id = input.id ?? `${projectId}:${slug}`;
+		const allowedModes = arrayValue(input.allowedModes ?? input.allowed_modes).map(String).filter(Boolean);
+		await this.run(
+			`INSERT OR REPLACE INTO project_agent_classes (
+				id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json,
+				kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json,
+				created_at, updated_at
+			) VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM project_agent_classes WHERE id = ?), ?),
+				?
+			)`,
+			[
+				id,
+				project.teamId,
+				projectId,
+				slug,
+				stringValue(input.name, slug),
+				stringValue(input.status, 'active'),
+				JSON.stringify(allowedModes.length > 0 ? allowedModes : ['planning', 'acting']),
+				JSON.stringify(arrayValue(input.requiredCapabilities ?? input.required_capabilities).map(String).filter(Boolean)),
+				JSON.stringify(objectValue(input.kernelProfile ?? input.kernel_profile)),
+				JSON.stringify(objectValue(input.kernelPolicy ?? input.kernel_policy)),
+				JSON.stringify(objectValue(input.handlerRefs ?? input.handler_refs)),
+				JSON.stringify(objectValue(input.outputContracts ?? input.output_contracts)),
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		return this.getProjectAgentClass(projectId, id);
+	}
+
+	async listProjectAgentClasses(projectId) {
+		await this.ensureInitialized();
+		const rows = await this.all(
+			`SELECT * FROM project_agent_classes
+			 WHERE project_id = ?
+			 ORDER BY created_at ASC`,
+			[projectId],
+		);
+		return rows.map(serializeProjectAgentClass);
+	}
+
+	async getProjectAgentClass(projectId, classId) {
+		await this.ensureInitialized();
+		return serializeProjectAgentClass(await this.first(
+			`SELECT * FROM project_agent_classes WHERE project_id = ? AND id = ? LIMIT 1`,
+			[projectId, classId],
+		));
+	}
+
+	async createProviderAvailabilitySession(principal, input = {}) {
+		await this.ensureInitialized();
+		const provider = await this.getCapacityProvider(principal.teamId, principal.capacityProviderId);
+		if (!provider) return null;
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT OR REPLACE INTO provider_availability_sessions (
+				id, team_id, capacity_provider_id, registration_id, environment, status, checked_in_at, available_from, available_until,
+				execution_providers_json, capabilities_json, grants_json, native_limits_json, runner_pressure_json, constraints_json,
+				metadata_json, created_at, updated_at, closed_at
+			) VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM provider_availability_sessions WHERE id = ?), ?),
+				?, ?
+			)`,
+			[
+				id,
+				principal.teamId,
+				principal.capacityProviderId,
+				input.registrationId ?? input.registration_id ?? null,
+				input.environment ?? null,
+				stringValue(input.status, 'open'),
+				input.checkedInAt ?? timestamp,
+				input.availableFrom ?? null,
+				input.availableUntil ?? null,
+				JSON.stringify(arrayValue(input.executionProviders ?? input.execution_providers)),
+				JSON.stringify(arrayValue(input.capabilities).map(String).filter(Boolean)),
+				JSON.stringify(arrayValue(input.grants)),
+				JSON.stringify(objectValue(input.nativeLimits ?? input.native_limits)),
+				JSON.stringify(objectValue(input.runnerPressure ?? input.runner_pressure)),
+				JSON.stringify(objectValue(input.constraints)),
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				timestamp,
+				input.closedAt ?? null,
+			],
+		);
+		await this.updateCapacityProviderApiKeyMetadata(principal.teamId, principal.capacityProviderId, {
+			lastAvailabilitySessionId: id,
+			lastUsedAt: timestamp,
+		}).catch(() => null);
+		return this.getProviderAvailabilitySession(principal.teamId, id);
+	}
+
+	async listProviderAvailabilitySessions(teamId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['team_id = ?'];
+		const values = [teamId];
+		if (filters.providerId) {
+			clauses.push('capacity_provider_id = ?');
+			values.push(filters.providerId);
+		}
+		if (filters.status) {
+			clauses.push('status = ?');
+			values.push(filters.status);
+		}
+		const rows = await this.all(
+			`SELECT * FROM provider_availability_sessions
+			 WHERE ${clauses.join(' AND ')}
+			 ORDER BY checked_in_at DESC LIMIT 200`,
+			values,
+		);
+		return rows.map(serializeProviderAvailabilitySession);
+	}
+
+	async getProviderAvailabilitySession(teamId, sessionId) {
+		await this.ensureInitialized();
+		return serializeProviderAvailabilitySession(await this.first(
+			`SELECT * FROM provider_availability_sessions WHERE id = ? AND team_id = ? LIMIT 1`,
+			[sessionId, teamId],
+		));
+	}
+
+	async createProviderAssignment(teamId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project || project.teamId !== teamId) return null;
+		const provider = await this.getCapacityProvider(teamId, input.capacityProviderId);
+		if (!provider) return null;
+		const agentClass = await this.getProjectAgentClass(project.id, input.projectAgentClassId);
+		if (!agentClass) return null;
+		const mode = stringValue(input.mode, 'planning');
+		if (!['planning', 'acting'].includes(mode)) throw new Error('mode must be planning or acting.');
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT OR REPLACE INTO provider_assignments (
+				id, team_id, project_id, capacity_provider_id, provider_session_id, execution_provider_id, allocation_set_id,
+				project_agent_class_id, reservation_id, work_day_id, task_id, mode, status, lease_state, lease_expires_at,
+				lease_token, lease_renewed_at, runner_id,
+				agent_id, handler_id, capacity_envelope_json, decision_input_json, workspace_context_json, allowed_outputs_json,
+				explanation_json, attempt_count, assigned_at, claimed_at, completed_at, returned_at, failed_at,
+				lifecycle_reason, lifecycle_code, lifecycle_output_json, synthesized_from, synthesis_key, decision_id,
+				proposal_id, fallback_output_id, treedx_proxy_handle_json, metadata_json, created_at, updated_at
+			) VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM provider_assignments WHERE id = ?), ?),
+				?
+			)`,
+			[
+				id,
+				teamId,
+				project.id,
+				provider.id,
+				input.providerSessionId ?? null,
+				input.executionProviderId ?? null,
+				input.allocationSetId ?? null,
+				agentClass.id,
+				input.reservationId ?? null,
+				input.workDayId ?? null,
+				input.taskId ?? null,
+				mode,
+				stringValue(input.status, 'pending'),
+				stringValue(input.leaseState, 'unleased'),
+				input.leaseExpiresAt ?? null,
+				input.leaseToken ?? null,
+				input.leaseRenewedAt ?? null,
+				input.runnerId ?? null,
+				input.agentId ?? null,
+				input.handlerId ?? null,
+				JSON.stringify(objectValue(input.capacityEnvelope ?? input.capacity_envelope)),
+				JSON.stringify(objectValue(input.decisionInput ?? input.decision_input)),
+				JSON.stringify(objectValue(input.workspaceContext ?? input.workspace_context)),
+				JSON.stringify(objectValue(input.allowedOutputs ?? input.allowed_outputs)),
+				JSON.stringify(objectValue(input.explanation)),
+				Number(input.attemptCount ?? 0),
+				input.assignedAt ?? timestamp,
+				input.claimedAt ?? null,
+				input.completedAt ?? null,
+				input.returnedAt ?? null,
+				input.failedAt ?? null,
+				input.lifecycleReason ?? null,
+				input.lifecycleCode ?? null,
+				JSON.stringify(objectValue(input.lifecycleOutput ?? input.lifecycle_output)),
+				input.synthesizedFrom ?? input.synthesized_from ?? null,
+				input.synthesisKey ?? input.synthesis_key ?? null,
+				input.decisionId ?? input.decision_id ?? null,
+				input.proposalId ?? input.proposal_id ?? null,
+				input.fallbackOutputId ?? input.fallback_output_id ?? null,
+				JSON.stringify(objectValue(input.treedxProxyHandle ?? input.treedx_proxy_handle)),
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		if (input.reservationId) {
+			await this.run(
+				`UPDATE capacity_reservations
+				 SET assignment_id = ?, allocation_set_id = ?, project_agent_class_id = ?, mode = ?, updated_at = ?
+				 WHERE id = ?`,
+				[id, input.allocationSetId ?? null, agentClass.id, mode, timestamp, input.reservationId],
+			).catch(() => null);
+		}
+		return this.getProviderAssignment(teamId, id);
+	}
+
+	async listProviderAssignments(teamId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['team_id = ?'];
+		const values = [teamId];
+		if (filters.projectId) {
+			clauses.push('project_id = ?');
+			values.push(filters.projectId);
+		}
+		if (filters.providerId) {
+			clauses.push('capacity_provider_id = ?');
+			values.push(filters.providerId);
+		}
+		if (filters.status) {
+			clauses.push('status = ?');
+			values.push(filters.status);
+		}
+		const rows = await this.all(
+			`SELECT * FROM provider_assignments
+			 WHERE ${clauses.join(' AND ')}
+			 ORDER BY created_at DESC LIMIT 200`,
+			values,
+		);
+		return rows.map(serializeProviderAssignment);
+	}
+
+	async getProviderAssignment(teamId, assignmentId) {
+		await this.ensureInitialized();
+		return serializeProviderAssignment(await this.first(
+			`SELECT * FROM provider_assignments WHERE id = ? AND team_id = ? LIMIT 1`,
+			[assignmentId, teamId],
+		));
+	}
+
+	async recordProviderCheckIn(principal, input = {}) {
+		const session = await this.createProviderAvailabilitySession(principal, {
+			...input,
+			status: input.status ?? 'open',
+			checkedInAt: input.checkedInAt ?? isoNow(),
+		});
+		if (!session) return null;
+		await this.run(
+			`UPDATE provider_availability_sessions
+			 SET status = 'closed', closed_at = ?, updated_at = ?
+			 WHERE team_id = ? AND capacity_provider_id = ? AND id != ? AND status = 'open'
+			 ${session.environment ? 'AND environment = ?' : ''}`,
+			session.environment
+				? [session.checkedInAt, session.checkedInAt, principal.teamId, principal.capacityProviderId, session.id, session.environment]
+				: [session.checkedInAt, session.checkedInAt, principal.teamId, principal.capacityProviderId, session.id],
+		).catch(() => null);
+		await this.synthesizeProviderAssignments(principal, { ...input, sessionId: session.id }).catch(() => []);
+		return session;
+	}
+
+	async leaseNextProviderAssignment(principal, input = {}) {
+		await this.ensureInitialized();
+		await this.synthesizeProviderAssignments(principal, input).catch(() => []);
+		const now = isoNow();
+		const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
+		const rows = await this.all(
+			`SELECT * FROM provider_assignments
+			 WHERE team_id = ? AND capacity_provider_id = ?
+			   AND status IN ('pending', 'returned', 'leased')
+			 ORDER BY assigned_at ASC, created_at ASC, id ASC
+			 LIMIT 100`,
+			[principal.teamId, principal.capacityProviderId],
+		);
+		const nowMs = Date.parse(now);
+		const eligible = rows
+			.map(serializeProviderAssignment)
+			.filter(Boolean)
+			.filter((assignment) => {
+				if (assignment.status === 'pending' && assignment.leaseState === 'unleased') return true;
+				if (assignment.status === 'returned' && assignment.leaseState === 'released') return true;
+				if (assignment.leaseState === 'leased' && assignment.leaseExpiresAt) {
+					const expiresAt = Date.parse(assignment.leaseExpiresAt);
+					return Number.isFinite(expiresAt) && expiresAt <= nowMs;
+				}
+				return false;
+			})
+			.sort((left, right) => {
+				const leftPriority = Number(left.metadata?.priority ?? 0);
+				const rightPriority = Number(right.metadata?.priority ?? 0);
+				if (Number.isFinite(leftPriority) && Number.isFinite(rightPriority) && leftPriority !== rightPriority) return rightPriority - leftPriority;
+				return String(left.assignedAt ?? left.createdAt ?? left.id).localeCompare(String(right.assignedAt ?? right.createdAt ?? right.id))
+					|| String(left.createdAt ?? left.id).localeCompare(String(right.createdAt ?? right.id))
+					|| String(left.id).localeCompare(String(right.id));
+			});
+		const assignment = eligible[0];
+		if (!assignment) {
+			return { assignment: null, leaseToken: null, leaseSeconds };
+		}
+		const leaseToken = randomUUID();
+		const leaseExpiresAt = new Date(nowMs + leaseSeconds * 1000).toISOString();
+		await this.run(
+			`UPDATE provider_assignments
+			 SET status = 'leased',
+			     lease_state = 'leased',
+			     lease_token = ?,
+			     lease_expires_at = ?,
+			     lease_renewed_at = ?,
+			     runner_id = ?,
+			     provider_session_id = COALESCE(?, provider_session_id),
+			     claimed_at = COALESCE(claimed_at, ?),
+			     updated_at = ?
+			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?`,
+			[
+				leaseToken,
+				leaseExpiresAt,
+				now,
+				input.runnerId ?? null,
+				input.sessionId ?? null,
+				now,
+				now,
+				assignment.id,
+				principal.teamId,
+				principal.capacityProviderId,
+			],
+		);
+		return {
+			assignment: await this.getProviderAssignment(principal.teamId, assignment.id),
+			leaseToken,
+			leaseSeconds,
+		};
+	}
+
+	async renewProviderAssignmentLease(principal, assignmentId, input = {}) {
+		await this.ensureInitialized();
+		const assignment = await this.getProviderAssignment(principal.teamId, assignmentId);
+		if (!assignment || assignment.capacityProviderId !== principal.capacityProviderId) return null;
+		const now = isoNow();
+		if (assignment.leaseState !== 'leased' || assignment.leaseToken !== input.leaseToken) return null;
+		if (assignment.leaseExpiresAt && Date.parse(assignment.leaseExpiresAt) <= Date.parse(now)) return null;
+		const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
+		const leaseExpiresAt = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
+		await this.run(
+			`UPDATE provider_assignments
+			 SET lease_expires_at = ?, lease_renewed_at = ?, runner_id = COALESCE(?, runner_id), updated_at = ?
+			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?`,
+			[leaseExpiresAt, now, input.runnerId ?? null, now, assignment.id, principal.teamId, principal.capacityProviderId],
+		);
+		return {
+			assignment: await this.getProviderAssignment(principal.teamId, assignment.id),
+			leaseToken: assignment.leaseToken,
+			leaseSeconds,
+		};
+	}
+
+	async returnProviderAssignment(principal, assignmentId, input = {}) {
+		await this.ensureInitialized();
+		const assignment = await this.getProviderAssignment(principal.teamId, assignmentId);
+		if (!assignment || assignment.capacityProviderId !== principal.capacityProviderId) return null;
+		if (assignment.leaseState === 'leased' && assignment.leaseToken !== input.leaseToken) return null;
+		const now = isoNow();
+		const metadata = {
+			...(assignment.metadata ?? {}),
+			lastReturn: {
+				reason: input.reason ?? input.message ?? null,
+				code: input.code ?? null,
+				runnerId: input.runnerId ?? assignment.runnerId ?? null,
+				at: now,
+			},
+		};
+		await this.run(
+			`UPDATE provider_assignments
+			 SET status = 'returned',
+			     lease_state = 'released',
+			     lease_token = NULL,
+			     lease_expires_at = NULL,
+			     lease_renewed_at = NULL,
+			     runner_id = COALESCE(?, runner_id),
+			     returned_at = ?,
+			     lifecycle_reason = ?,
+			     lifecycle_code = ?,
+			     lifecycle_output_json = ?,
+			     metadata_json = ?,
+			     attempt_count = attempt_count + 1,
+			     updated_at = ?
+			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?`,
+			[
+				input.runnerId ?? null,
+				now,
+				input.reason ?? input.message ?? null,
+				input.code ?? 'provider_assignment_returned',
+				JSON.stringify(objectValue(input.output ?? input.summary)),
+				JSON.stringify(metadata),
+				now,
+				assignment.id,
+				principal.teamId,
+				principal.capacityProviderId,
+			],
+		);
+		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
+	}
+
+	async completeProviderAssignment(principal, assignmentId, input = {}) {
+		await this.ensureInitialized();
+		const assignment = await this.getProviderAssignment(principal.teamId, assignmentId);
+		if (!assignment || assignment.capacityProviderId !== principal.capacityProviderId) return null;
+		if (assignment.leaseState === 'leased' && assignment.leaseToken !== input.leaseToken) return null;
+		const now = isoNow();
+		await this.run(
+			`UPDATE provider_assignments
+			 SET status = 'completed',
+			     lease_state = 'released',
+			     lease_token = NULL,
+			     lease_expires_at = NULL,
+			     lease_renewed_at = NULL,
+			     runner_id = COALESCE(?, runner_id),
+			     completed_at = ?,
+			     lifecycle_reason = ?,
+			     lifecycle_code = ?,
+			     lifecycle_output_json = ?,
+			     updated_at = ?
+			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?`,
+			[
+				input.runnerId ?? null,
+				now,
+				input.reason ?? null,
+				input.code ?? 'provider_assignment_completed',
+				JSON.stringify(objectValue(input.output ?? input.summary)),
+				now,
+				assignment.id,
+				principal.teamId,
+				principal.capacityProviderId,
+			],
+		);
+		if (input.usageActualId) {
+			await this.run(
+				`UPDATE task_usage_actuals SET assignment_id = ?, mode = ?, mode_run_id = COALESCE(?, mode_run_id) WHERE id = ?`,
+				[assignment.id, assignment.mode, input.modeRunId ?? null, input.usageActualId],
+			).catch(() => null);
+		}
+		if (input.modeRunId) {
+			await this.run(
+				`UPDATE capacity_ledger_entries SET assignment_id = ?, mode_run_id = ?, mode = ? WHERE mode_run_id = ?`,
+				[assignment.id, input.modeRunId, assignment.mode, input.modeRunId],
+			).catch(() => null);
+		}
+		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
+	}
+
+	async failProviderAssignment(principal, assignmentId, input = {}) {
+		if (input.retryable === true) {
+			return this.returnProviderAssignment(principal, assignmentId, {
+				...input,
+				code: input.code ?? 'provider_assignment_retryable_failure',
+				reason: input.reason ?? input.message ?? 'Provider assignment failed and can be retried.',
+			});
+		}
+		await this.ensureInitialized();
+		const assignment = await this.getProviderAssignment(principal.teamId, assignmentId);
+		if (!assignment || assignment.capacityProviderId !== principal.capacityProviderId) return null;
+		if (assignment.leaseState === 'leased' && assignment.leaseToken !== input.leaseToken) return null;
+		const now = isoNow();
+		await this.run(
+			`UPDATE provider_assignments
+			 SET status = 'failed',
+			     lease_state = 'released',
+			     lease_token = NULL,
+			     lease_expires_at = NULL,
+			     lease_renewed_at = NULL,
+			     runner_id = COALESCE(?, runner_id),
+			     failed_at = ?,
+			     lifecycle_reason = ?,
+			     lifecycle_code = ?,
+			     lifecycle_output_json = ?,
+			     updated_at = ?
+			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?`,
+			[
+				input.runnerId ?? null,
+				now,
+				input.reason ?? input.message ?? 'Provider assignment failed.',
+				input.code ?? 'provider_assignment_failed',
+				JSON.stringify(objectValue(input.output ?? input.summary)),
+				now,
+				assignment.id,
+				principal.teamId,
+				principal.capacityProviderId,
+			],
+		);
+		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
+	}
+
+	async createAgentModeRun(input = {}) {
+		await this.ensureInitialized();
+		const assignment = await this.getProviderAssignment(input.teamId, input.providerAssignmentId);
+		if (!assignment) return null;
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT OR REPLACE INTO agent_mode_runs (
+				id, team_id, project_id, provider_assignment_id, capacity_provider_id, execution_provider_id,
+				project_agent_class_id, agent_id, handler_id, mode, status, selected_input_json, capacity_envelope_json,
+				outputs_json, trace_refs_json, usage_actual_json, validation_json, fallback_reason,
+				started_at, completed_at, failed_at, metadata_json, created_at, updated_at
+			) VALUES (
+				?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM agent_mode_runs WHERE id = ?), ?),
+				?
+			)`,
+			[
+				id,
+				assignment.teamId,
+				assignment.projectId,
+				assignment.id,
+				assignment.capacityProviderId,
+				input.executionProviderId ?? assignment.executionProviderId ?? null,
+				assignment.projectAgentClassId,
+				input.agentId ?? assignment.agentId ?? null,
+				input.handlerId ?? assignment.handlerId ?? null,
+				input.mode ?? assignment.mode,
+				stringValue(input.status, 'queued'),
+				JSON.stringify(objectValue(input.selectedInput ?? input.selected_input)),
+				JSON.stringify(objectValue(input.capacityEnvelope ?? input.capacity_envelope ?? assignment.capacityEnvelope)),
+				JSON.stringify(objectValue(input.outputs)),
+				JSON.stringify(objectValue(input.traceRefs ?? input.trace_refs)),
+				JSON.stringify(objectValue(input.usageActual ?? input.usage_actual)),
+				JSON.stringify(objectValue(input.validation)),
+				input.fallbackReason ?? null,
+				input.startedAt ?? null,
+				input.completedAt ?? null,
+				input.failedAt ?? null,
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		if (input.usageActualId || input.taskUsageActualId) {
+			await this.run(
+				`UPDATE task_usage_actuals SET assignment_id = ?, mode_run_id = ?, mode = ? WHERE id = ?`,
+				[assignment.id, id, input.mode ?? assignment.mode, input.usageActualId ?? input.taskUsageActualId],
+			).catch(() => null);
+		}
+		return this.getAgentModeRun(assignment.teamId, id);
+	}
+
+	async listAgentModeRuns(projectId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['project_id = ?'];
+		const values = [projectId];
+		if (filters.mode) {
+			clauses.push('mode = ?');
+			values.push(filters.mode);
+		}
+		if (filters.assignmentId) {
+			clauses.push('provider_assignment_id = ?');
+			values.push(filters.assignmentId);
+		}
+		const rows = await this.all(
+			`SELECT * FROM agent_mode_runs
+			 WHERE ${clauses.join(' AND ')}
+			 ORDER BY created_at DESC LIMIT 200`,
+			values,
+		);
+		return rows.map(serializeAgentModeRun);
+	}
+
+	async getAgentModeRun(teamId, modeRunId) {
+		await this.ensureInitialized();
+		return serializeAgentModeRun(await this.first(
+			`SELECT * FROM agent_mode_runs WHERE id = ? AND team_id = ? LIMIT 1`,
+			[modeRunId, teamId],
+		));
+	}
+
+	scopeHash(value = {}) {
+		return `scope_${createHash('sha256').update(JSON.stringify(value, Object.keys(objectValue(value)).sort())).digest('hex').slice(0, 16)}`;
+	}
+
+	async upsertDecisionPlanningStatus(input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const timestamp = isoNow();
+		const decisionId = stringValue(input.decisionId);
+		if (!decisionId) throw new Error('decisionId is required.');
+		const scopeHash = input.scopeHash ?? this.scopeHash(input.scope ?? { projectId: project.id, decisionId, metadata: objectValue(input.metadata) });
+		const id = input.id ?? `dps_${safeIdPart(decisionId)}`;
+		const readiness = stringValue(input.executionReadiness ?? input.execution_readiness, 'draft');
+		await this.run(
+			`INSERT OR REPLACE INTO decision_planning_statuses (
+				id, team_id, project_id, decision_id, human_approval_state, execution_readiness, planning_inputs_status,
+				scope_hash, stale_reason, ready_at, stale_at, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM decision_planning_statuses WHERE id = ?), ?),
+				?
+			)`,
+			[
+				id,
+				project.teamId,
+				project.id,
+				decisionId,
+				input.humanApprovalState ?? input.human_approval_state ?? null,
+				readiness,
+				stringValue(input.planningInputsStatus ?? input.planning_inputs_status, readiness === 'ready' ? 'complete' : 'requested'),
+				scopeHash,
+				input.staleReason ?? input.stale_reason ?? null,
+				input.readyAt ?? (readiness === 'ready' ? timestamp : null),
+				input.staleAt ?? (readiness === 'stale' ? timestamp : null),
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		return this.getDecisionPlanningStatus(decisionId);
+	}
+
+	async getDecisionPlanningStatus(decisionId) {
+		await this.ensureInitialized();
+		return serializeDecisionPlanningStatus(await this.first(
+			`SELECT * FROM decision_planning_statuses WHERE decision_id = ? LIMIT 1`,
+			[decisionId],
+		));
+	}
+
+	async createPlanningInputRequest(decisionId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		const mode = stringValue(input.mode, 'planning');
+		const scopeHash = input.scopeHash ?? this.scopeHash(input.scope ?? { decisionId, projectId: project.id, projectAgentClassId: input.projectAgentClassId ?? null, mode });
+		await this.upsertDecisionPlanningStatus({
+			projectId: project.id,
+			decisionId,
+			humanApprovalState: input.humanApprovalState ?? 'approved',
+			executionReadiness: input.executionReadiness ?? 'blocked',
+			planningInputsStatus: input.status ?? 'requested',
+			scopeHash,
+			metadata: { source: 'planning_input_request', ...(objectValue(input.statusMetadata)) },
+		});
+		await this.run(
+			`INSERT OR REPLACE INTO planning_input_requests (
+				id, team_id, project_id, decision_id, project_agent_class_id, mode, status, scope_hash, prompt,
+				response_json, metadata_json, requested_at, completed_at, stale_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT requested_at FROM planning_input_requests WHERE id = ?), ?), ?, ?)`,
+			[
+				id,
+				project.teamId,
+				project.id,
+				decisionId,
+				input.projectAgentClassId ?? null,
+				mode,
+				stringValue(input.status, 'requested'),
+				scopeHash,
+				input.prompt ?? null,
+				JSON.stringify(objectValue(input.response)),
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				input.completedAt ?? null,
+				input.staleAt ?? null,
+			],
+		);
+		return serializePlanningInputRequest(await this.first(`SELECT * FROM planning_input_requests WHERE id = ?`, [id]));
+	}
+
+	async listPlanningInputRequests(decisionId) {
+		await this.ensureInitialized();
+		const rows = await this.all(
+			`SELECT * FROM planning_input_requests WHERE decision_id = ? ORDER BY requested_at DESC LIMIT 200`,
+			[decisionId],
+		);
+		return rows.map(serializePlanningInputRequest);
+	}
+
+	async createDecisionExecutionInput(decisionId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const mode = stringValue(input.mode ?? input.input?.mode, 'acting');
+		const projectAgentClassId = stringValue(input.projectAgentClassId, input.input?.projectAgentClassId);
+		if (!projectAgentClassId) throw new Error('projectAgentClassId is required.');
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		const normalizedInput = {
+			teamId: project.teamId,
+			projectId: project.id,
+			projectAgentClassId,
+			mode,
+			capacity: objectValue(input.input?.capacity ?? input.capacity),
+			input: objectValue(input.input?.input ?? input.payload),
+			metadata: objectValue(input.input?.metadata ?? input.metadata),
+		};
+		const scopeHash = input.scopeHash ?? this.scopeHash(input.scope ?? normalizedInput);
+		await this.upsertDecisionPlanningStatus({
+			projectId: project.id,
+			decisionId,
+			humanApprovalState: input.humanApprovalState ?? 'approved',
+			executionReadiness: input.status === 'accepted' ? 'ready' : 'blocked',
+			planningInputsStatus: input.planningInputsStatus ?? 'complete',
+			scopeHash,
+			metadata: { source: 'decision_execution_input' },
+		});
+		await this.run(
+			`INSERT OR REPLACE INTO decision_execution_inputs (
+				id, team_id, project_id, decision_id, project_agent_class_id, mode, status, scope_hash, input_json,
+				metadata_json, accepted_at, revision_requested_at, stale_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM decision_execution_inputs WHERE id = ?), ?),
+				?
+			)`,
+			[
+				id,
+				project.teamId,
+				project.id,
+				decisionId,
+				projectAgentClassId,
+				mode,
+				stringValue(input.status, 'proposed'),
+				scopeHash,
+				JSON.stringify(normalizedInput),
+				JSON.stringify(objectValue(input.metadata)),
+				input.acceptedAt ?? (input.status === 'accepted' ? timestamp : null),
+				input.revisionRequestedAt ?? null,
+				input.staleAt ?? null,
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		return serializeDecisionExecutionInput(await this.first(`SELECT * FROM decision_execution_inputs WHERE id = ?`, [id]));
+	}
+
+	async listDecisionExecutionInputs(decisionId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['decision_id = ?'];
+		const values = [decisionId];
+		if (filters.status) {
+			clauses.push('status = ?');
+			values.push(filters.status);
+		}
+		const rows = await this.all(
+			`SELECT * FROM decision_execution_inputs WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`,
+			values,
+		);
+		return rows.map(serializeDecisionExecutionInput);
+	}
+
+	async getDecisionExecutionInput(inputId) {
+		await this.ensureInitialized();
+		return serializeDecisionExecutionInput(await this.first(`SELECT * FROM decision_execution_inputs WHERE id = ? LIMIT 1`, [inputId]));
+	}
+
+	async updateDecisionExecutionInputStatus(inputId, status, input = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getDecisionExecutionInput(inputId);
+		if (!existing) return null;
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE decision_execution_inputs
+			 SET status = ?, accepted_at = COALESCE(?, accepted_at), revision_requested_at = COALESCE(?, revision_requested_at),
+			     metadata_json = ?, updated_at = ?
+			 WHERE id = ?`,
+			[
+				status,
+				status === 'accepted' ? timestamp : null,
+				status === 'revision_requested' ? timestamp : null,
+				JSON.stringify({ ...(existing.metadata ?? {}), ...(objectValue(input.metadata)), reason: input.reason ?? null }),
+				timestamp,
+				inputId,
+			],
+		);
+		await this.upsertDecisionPlanningStatus({
+			projectId: existing.projectId,
+			decisionId: existing.decisionId,
+			humanApprovalState: 'approved',
+			executionReadiness: status === 'accepted' ? 'ready' : 'blocked',
+			planningInputsStatus: status === 'accepted' ? 'complete' : 'requested',
+			scopeHash: existing.scopeHash,
+			metadata: { latestExecutionInputId: existing.id, latestExecutionInputStatus: status },
+		});
+		return this.getDecisionExecutionInput(inputId);
+	}
+
+	async createAgentCapacityPlan(decisionId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const executionInputs = await this.listDecisionExecutionInputs(decisionId, { status: 'accepted' });
+		if (!executionInputs.length) throw new Error('At least one accepted decision execution input is required to build a capacity plan.');
+		const timestamp = isoNow();
+		const scopeHash = input.scopeHash ?? this.scopeHash({
+			decisionId,
+			projectId: project.id,
+			executionInputIds: executionInputs.map((entry) => entry.id).sort(),
+			allocationSetId: input.allocationSetId ?? null,
+			workDayId: input.workDayId ?? null,
+		});
+		const id = input.id ?? `acp_${safeIdPart(decisionId)}_${safeIdPart(scopeHash)}`;
+		const plan = buildAgentCapacityPlanDraft({
+			id,
+			teamId: project.teamId,
+			projectId: project.id,
+			decisionId,
+			scopeHash,
+			executionInputs,
+			allocationSetId: input.allocationSetId ?? null,
+			workDayId: input.workDayId ?? null,
+			status: input.status ?? 'draft',
+			metadata: {
+				...(objectValue(input.metadata)),
+				source: 'accepted_decision_execution_inputs',
+				executionInputIds: executionInputs.map((entry) => entry.id),
+			},
+			now: timestamp,
+		});
+		await this.run(
+			`INSERT OR REPLACE INTO agent_capacity_plans (
+				id, team_id, project_id, decision_id, status, scope_hash, allocation_set_id, work_day_id,
+				expected_credits, high_credits, work_units_json, capability_needs_json, environment_needs_json,
+				reserves_json, blockers_json, priority_rationale, metadata_json, accepted_at, scheduled_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM agent_capacity_plans WHERE id = ?), ?),
+				?
+			)`,
+			[
+				plan.id,
+				plan.teamId,
+				plan.projectId,
+				plan.decisionId,
+				plan.status,
+				plan.scopeHash,
+				plan.allocationSetId ?? null,
+				plan.workDayId ?? null,
+				plan.expectedCredits,
+				plan.highCredits,
+				JSON.stringify(plan.workUnits),
+				JSON.stringify(plan.capabilityNeeds),
+				JSON.stringify(plan.environmentNeeds),
+				JSON.stringify(plan.reserves),
+				JSON.stringify(plan.blockers),
+				plan.priorityRationale ?? null,
+				JSON.stringify(plan.metadata ?? {}),
+				plan.status === 'accepted' ? timestamp : null,
+				plan.status === 'scheduled' ? timestamp : null,
+				plan.id,
+				timestamp,
+				timestamp,
+			],
+		);
+		await this.upsertDecisionPlanningStatus({
+			projectId: project.id,
+			decisionId,
+			humanApprovalState: input.humanApprovalState ?? 'approved',
+			executionReadiness: plan.status === 'accepted' || plan.status === 'scheduled' ? 'ready' : 'blocked',
+			planningInputsStatus: 'complete',
+			scopeHash,
+			metadata: { source: 'agent_capacity_plan', latestCapacityPlanId: plan.id, latestCapacityPlanStatus: plan.status },
+		});
+		return this.getAgentCapacityPlan(plan.id);
+	}
+
+	async listAgentCapacityPlans(decisionId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['decision_id = ?'];
+		const values = [decisionId];
+		if (filters.status) {
+			clauses.push('status = ?');
+			values.push(filters.status);
+		}
+		const rows = await this.all(
+			`SELECT * FROM agent_capacity_plans WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`,
+			values,
+		);
+		return rows.map(serializeAgentCapacityPlan);
+	}
+
+	async getAgentCapacityPlan(planId) {
+		await this.ensureInitialized();
+		return serializeAgentCapacityPlan(await this.first(`SELECT * FROM agent_capacity_plans WHERE id = ? LIMIT 1`, [planId]));
+	}
+
+	async updateAgentCapacityPlanStatus(planId, status, input = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getAgentCapacityPlan(planId);
+		if (!existing) return null;
+		const timestamp = isoNow();
+		const metadata = { ...(existing.metadata ?? {}), ...(objectValue(input.metadata)), statusReason: input.reason ?? null };
+		await this.run(
+			`UPDATE agent_capacity_plans
+			 SET status = ?,
+			     work_day_id = COALESCE(?, work_day_id),
+			     allocation_set_id = COALESCE(?, allocation_set_id),
+			     accepted_at = CASE WHEN ? = 'accepted' THEN COALESCE(accepted_at, ?) ELSE accepted_at END,
+			     scheduled_at = CASE WHEN ? = 'scheduled' THEN COALESCE(scheduled_at, ?) ELSE scheduled_at END,
+			     metadata_json = ?,
+			     updated_at = ?
+			 WHERE id = ?`,
+			[
+				status,
+				input.workDayId ?? null,
+				input.allocationSetId ?? null,
+				status,
+				timestamp,
+				status,
+				timestamp,
+				JSON.stringify(metadata),
+				timestamp,
+				planId,
+			],
+		);
+		const updated = await this.getAgentCapacityPlan(planId);
+		await this.upsertDecisionPlanningStatus({
+			projectId: existing.projectId,
+			decisionId: existing.decisionId,
+			humanApprovalState: 'approved',
+			executionReadiness: ['accepted', 'scheduled', 'active'].includes(status) ? 'ready' : 'blocked',
+			planningInputsStatus: 'complete',
+			scopeHash: existing.scopeHash,
+			metadata: { source: 'agent_capacity_plan', latestCapacityPlanId: planId, latestCapacityPlanStatus: status },
+		});
+		return updated;
+	}
+
+	async createWorkdayCapacityEnvelope(input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const timestamp = isoNow();
+		const id = input.id ?? input.workDayId ?? randomUUID();
+		const envelope = {
+			teamId: project.teamId,
+			projectId: project.id,
+			workDayId: id,
+			environment: input.environment ?? null,
+			allocationSetId: input.allocationSetId ?? null,
+			availableCredits: numberValue(input.availableCredits, null),
+			reservedCredits: numberValue(input.reservedCredits, 0),
+			consumedCredits: numberValue(input.consumedCredits, 0),
+			metadata: objectValue(input.envelope?.metadata ?? input.metadata),
+			...(objectValue(input.envelope)),
+		};
+		await this.run(
+			`INSERT OR REPLACE INTO workday_capacity_envelopes (
+				id, team_id, project_id, allocation_set_id, status, started_at, paused_at, completed_at,
+				envelope_json, mode_splits_json, caps_json, reserves_json, borrowing_rules_json, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				COALESCE((SELECT created_at FROM workday_capacity_envelopes WHERE id = ?), ?),
+				?
+			)`,
+			[
+				id,
+				project.teamId,
+				project.id,
+				input.allocationSetId ?? envelope.allocationSetId ?? null,
+				stringValue(input.status, 'draft'),
+				input.startedAt ?? null,
+				input.pausedAt ?? null,
+				input.completedAt ?? null,
+				JSON.stringify(envelope),
+				JSON.stringify(objectValue(input.modeSplits)),
+				JSON.stringify(objectValue(input.caps)),
+				JSON.stringify(objectValue(input.reserves)),
+				JSON.stringify(objectValue(input.borrowingRules)),
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		return this.getWorkdayCapacityEnvelope(id);
+	}
+
+	async getWorkdayCapacityEnvelope(workdayId) {
+		await this.ensureInitialized();
+		return serializeWorkdayCapacityEnvelope(await this.first(`SELECT * FROM workday_capacity_envelopes WHERE id = ? LIMIT 1`, [workdayId]));
+	}
+
+	async listWorkdayCapacityEnvelopes(projectId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['project_id = ?'];
+		const values = [projectId];
+		if (filters.status) {
+			clauses.push('status = ?');
+			values.push(filters.status);
+		}
+		const rows = await this.all(`SELECT * FROM workday_capacity_envelopes WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT 200`, values);
+		return rows.map(serializeWorkdayCapacityEnvelope);
+	}
+
+	async updateWorkdayCapacityEnvelopeState(workdayId, status) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		const field = status === 'active' ? 'started_at' : status === 'paused' ? 'paused_at' : status === 'completed' ? 'completed_at' : null;
+		await this.run(
+			`UPDATE workday_capacity_envelopes
+			 SET status = ?, ${field ? `${field} = COALESCE(${field}, ?),` : ''} updated_at = ?
+			 WHERE id = ?`,
+			field ? [status, timestamp, timestamp, workdayId] : [status, timestamp, workdayId],
+		);
+		return this.getWorkdayCapacityEnvelope(workdayId);
+	}
+
+	async getWorkdayCapacitySummary(workdayId) {
+		await this.ensureInitialized();
+		const envelope = await this.getWorkdayCapacityEnvelope(workdayId);
+		if (!envelope) return null;
+		const [assignments, modeRuns, usageRows, ledgerRows] = await Promise.all([
+			this.all(`SELECT * FROM provider_assignments WHERE work_day_id = ? ORDER BY created_at DESC LIMIT 500`, [workdayId]),
+			this.all(`SELECT * FROM agent_mode_runs WHERE json_extract(capacity_envelope_json, '$.workDayId') = ? OR provider_assignment_id IN (SELECT id FROM provider_assignments WHERE work_day_id = ?)`, [workdayId, workdayId]).catch(() => []),
+			this.all(`SELECT * FROM task_usage_actuals WHERE work_day_id = ? OR assignment_id IN (SELECT id FROM provider_assignments WHERE work_day_id = ?)`, [workdayId, workdayId]).catch(() => []),
+			this.all(`SELECT * FROM capacity_ledger_entries WHERE work_day_id = ? OR assignment_id IN (SELECT id FROM provider_assignments WHERE work_day_id = ?)`, [workdayId, workdayId]).catch(() => []),
+		]);
+		const reservedCredits = sumNumbers(assignments.map((row) => parseJson(row.capacity_envelope_json, {}).reservedCredits));
+		const consumedCredits = sumNumbers(usageRows.map((row) => row.actual_credits));
+		const warnings = [];
+		const seenUsage = new Set();
+		for (const row of usageRows) {
+			if (seenUsage.has(row.id)) warnings.push(`duplicate usage actual ${row.id}`);
+			seenUsage.add(row.id);
+			if (Number(row.actual_credits ?? 0) < 0) warnings.push(`negative usage actual ${row.id}`);
+		}
+		return {
+			ok: true,
+			payload: {
+				workday: envelope,
+				assignments: assignments.map(serializeProviderAssignment),
+				modeRuns: modeRuns.map(serializeAgentModeRun),
+				settlement: {
+					teamId: envelope.teamId,
+					projectId: envelope.projectId,
+					workDayId: envelope.id,
+					allocationSetId: envelope.allocationSetId,
+					reservedCredits,
+					consumedCredits,
+					releasedCredits: Math.max(0, reservedCredits - consumedCredits),
+					refundedCredits: sumNumbers(ledgerRows.filter((row) => String(row.kind ?? '').includes('refund')).map((row) => row.amount_credits)),
+					nativeUsage: usageRows.reduce((acc, row) => ({ ...acc, [row.id]: parseJson(row.native_usage_json, {}) }), {}),
+					providerConfidence: warnings.length ? 'medium' : 'high',
+					warnings,
+				},
+			},
+		};
+	}
+
+	async recordProviderAssignmentExplanation(teamId, assignmentId, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		const id = input.id ?? `pae_${safeIdPart(assignmentId)}`;
+		await this.run(
+			`INSERT OR REPLACE INTO provider_assignment_explanations (
+				id, team_id, assignment_id, source, source_id, eligible, reasons_json, gates_json,
+				allocation_policy_version, grant_scope, metadata_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM provider_assignment_explanations WHERE id = ?), ?))`,
+			[
+				id,
+				teamId,
+				assignmentId,
+				stringValue(input.source, 'fixture'),
+				input.sourceId ?? null,
+				input.eligible === false ? 0 : 1,
+				JSON.stringify(Array.isArray(input.reasons) ? input.reasons : []),
+				JSON.stringify(objectValue(input.gates)),
+				input.allocationPolicyVersion ?? null,
+				input.grantScope ?? null,
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+			],
+		);
+		return this.getProviderAssignmentExplanation(teamId, assignmentId);
+	}
+
+	async getProviderAssignmentExplanation(teamId, assignmentId) {
+		await this.ensureInitialized();
+		return serializeProviderAssignmentExplanation(await this.first(
+			`SELECT * FROM provider_assignment_explanations WHERE team_id = ? AND assignment_id = ? LIMIT 1`,
+			[teamId, assignmentId],
+		));
+	}
+
+	async recordAgentFallbackOutput(input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT OR REPLACE INTO agent_fallback_outputs (
+				id, team_id, project_id, assignment_id, mode, code, status, output_json, provenance_json, quota_json, metadata_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM agent_fallback_outputs WHERE id = ?), ?))`,
+			[
+				id,
+				project.teamId,
+				project.id,
+				input.assignmentId ?? null,
+				stringValue(input.mode, 'planning'),
+				stringValue(input.code, 'fallback_output'),
+				stringValue(input.status, 'draft'),
+				JSON.stringify(objectValue(input.output)),
+				JSON.stringify(objectValue(input.provenance)),
+				JSON.stringify(objectValue(input.quota)),
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+			],
+		);
+		return serializeAgentFallbackOutput(await this.first(`SELECT * FROM agent_fallback_outputs WHERE id = ?`, [id]));
+	}
+
+	async recordTreeDxProxyAudit(input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO treedx_project_proxy_audit (
+				id, team_id, project_id, assignment_id, actor_type, actor_id, method, path, handle_json, result_status, metadata_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				input.teamId,
+				input.projectId,
+				input.assignmentId ?? null,
+				stringValue(input.actorType, 'user'),
+				input.actorId ?? null,
+				stringValue(input.method, 'GET'),
+				stringValue(input.path, '/'),
+				JSON.stringify(objectValue(input.handle)),
+				stringValue(input.resultStatus, 'observed'),
+				JSON.stringify(objectValue(input.metadata)),
+				timestamp,
+			],
+		);
+		return { id, createdAt: timestamp };
+	}
+
+	async synthesizeProviderAssignments(principal, input = {}) {
+		await this.ensureInitialized();
+		const now = isoNow();
+		const sessionId = input.sessionId ?? input.providerSessionId ?? null;
+		const treeDxScope = (resource, action) => `${resource}:${action}`;
+		const created = [];
+		const existingKeys = new Set((await this.all(
+			`SELECT synthesis_key FROM provider_assignments WHERE team_id = ? AND capacity_provider_id = ? AND synthesis_key IS NOT NULL`,
+			[principal.teamId, principal.capacityProviderId],
+		)).map((row) => row.synthesis_key));
+		const provider = await this.getCapacityProvider(principal.teamId, principal.capacityProviderId);
+		if (!provider) return created;
+		const planningRows = await this.all(
+			`SELECT pir.*, pac.id AS class_id
+			 FROM planning_input_requests pir
+			 LEFT JOIN project_agent_classes pac ON pac.project_id = pir.project_id AND (pac.id = pir.project_agent_class_id OR pir.project_agent_class_id IS NULL)
+			 WHERE pir.team_id = ? AND pir.status IN ('requested','stale')
+			 ORDER BY pir.requested_at ASC LIMIT 50`,
+			[principal.teamId],
+		).catch(() => []);
+		for (const row of planningRows) {
+			const projectAgentClassId = row.project_agent_class_id ?? row.class_id;
+			if (!projectAgentClassId) continue;
+			const key = `planning:${row.id}:${principal.capacityProviderId}`;
+			if (existingKeys.has(key)) continue;
+			const assignment = await this.createProviderAssignment(principal.teamId, {
+				id: `pa_${safeIdPart(key)}`,
+				projectId: row.project_id,
+				capacityProviderId: principal.capacityProviderId,
+				providerSessionId: sessionId,
+				projectAgentClassId,
+				mode: 'planning',
+				agentId: objectValue(parseJson(row.metadata_json, {})).agentId ?? null,
+				capacityEnvelope: {
+					teamId: principal.teamId,
+					projectId: row.project_id,
+					mode: 'planning',
+					projectAgentClassId,
+					capacityProviderId: principal.capacityProviderId,
+					availableCredits: null,
+					reservedCredits: 0,
+					consumedCredits: 0,
+					metadata: { synthesizedFrom: 'planning_input_request', planningInputRequestId: row.id },
+				},
+				decisionInput: {
+					teamId: principal.teamId,
+					projectId: row.project_id,
+					projectAgentClassId,
+					mode: 'planning',
+					capacity: {},
+					input: { decisionId: row.decision_id, planningInputRequestId: row.id, prompt: row.prompt },
+					metadata: { scopeHash: row.scope_hash },
+				},
+				explanation: { source: 'planning_input_request', sourceId: row.id, reasons: ['open planning input request'], gates: { status: row.status } },
+				synthesizedFrom: 'planning_input_request',
+				synthesisKey: key,
+				decisionId: row.decision_id,
+				metadata: { source: 'request_scoped_assignment_synthesis', synthesizedAt: now, priority: 50 },
+			});
+			if (assignment) {
+				await this.recordProviderAssignmentExplanation(principal.teamId, assignment.id, {
+					source: 'planning_input_request',
+					sourceId: row.id,
+					eligible: true,
+					reasons: ['open planning input request'],
+					gates: { provider: principal.capacityProviderId, status: row.status },
+				}).catch(() => null);
+				created.push(assignment);
+			}
+		}
+		const capacityPlanRows = await this.all(
+			`SELECT acp.*, dps.execution_readiness, dps.planning_inputs_status
+			 FROM agent_capacity_plans acp
+			 LEFT JOIN decision_planning_statuses dps ON dps.decision_id = acp.decision_id
+			 WHERE acp.team_id = ? AND acp.status IN ('accepted','scheduled','active')
+			 ORDER BY acp.accepted_at ASC, acp.created_at ASC LIMIT 50`,
+			[principal.teamId],
+		).catch(() => []);
+		for (const row of capacityPlanRows) {
+			if (row.execution_readiness && !['ready', 'waived'].includes(row.execution_readiness)) continue;
+			if (row.planning_inputs_status && !['complete', 'waived'].includes(row.planning_inputs_status)) continue;
+			const workUnits = Array.isArray(parseJson(row.work_units_json, [])) ? parseJson(row.work_units_json, []) : [];
+			for (const unit of workUnits) {
+				const workUnit = objectValue(unit);
+				if (workUnit.mode && workUnit.mode !== 'acting') continue;
+				const projectAgentClassId = stringValue(workUnit.projectAgentClassId);
+				if (!projectAgentClassId) continue;
+				const sourceId = stringValue(workUnit.id, `${row.id}:work-unit`);
+				const key = `capacity-plan:${row.id}:${sourceId}:${principal.capacityProviderId}`;
+				if (existingKeys.has(key)) continue;
+				const assignmentId = `pa_${safeIdPart(key)}`;
+				const treedxProxyHandle = {
+					id: `tdx_${safeIdPart(key)}`,
+					teamId: principal.teamId,
+					projectId: row.project_id,
+					assignmentId,
+					scopes: ['project:read', treeDxScope('workspace', 'read'), treeDxScope('workspace', 'write')],
+					expiresAt: new Date(Date.parse(now) + 3600_000).toISOString(),
+					metadata: { capacityPlanId: row.id, workUnitId: sourceId },
+				};
+				const decisionInput = {
+					...objectValue(workUnit.decisionInput),
+					teamId: principal.teamId,
+					projectId: row.project_id,
+					projectAgentClassId,
+					mode: 'acting',
+					metadata: {
+						...(objectValue(workUnit.decisionInput?.metadata)),
+						capacityPlanId: row.id,
+						workUnitId: sourceId,
+					},
+				};
+				const capacityEnvelope = {
+					teamId: principal.teamId,
+					projectId: row.project_id,
+					mode: 'acting',
+					projectAgentClassId,
+					capacityProviderId: principal.capacityProviderId,
+					allocationSetId: row.allocation_set_id ?? null,
+					workDayId: row.work_day_id ?? workUnit.workDayId ?? null,
+					reservedCredits: Number(workUnit.highCredits ?? workUnit.expectedCredits ?? 0),
+					...(objectValue(workUnit.capacityEnvelope)),
+					metadata: {
+						...(objectValue(workUnit.capacityEnvelope?.metadata)),
+						synthesizedFrom: 'capacity_plan',
+						capacityPlanId: row.id,
+						workUnitId: sourceId,
+						decisionExecutionInputId: workUnit.decisionExecutionInputId ?? null,
+					},
+				};
+				const assignment = await this.createProviderAssignment(principal.teamId, {
+					id: assignmentId,
+					projectId: row.project_id,
+					capacityProviderId: principal.capacityProviderId,
+					providerSessionId: sessionId,
+					projectAgentClassId,
+					mode: 'acting',
+					workDayId: capacityEnvelope.workDayId ?? null,
+					allocationSetId: capacityEnvelope.allocationSetId ?? null,
+					agentId: decisionInput.agentId ?? decisionInput.input?.agentId ?? null,
+					handlerId: decisionInput.handlerId ?? null,
+					capacityEnvelope,
+					decisionInput,
+					workspaceContext: { treedxProxyHandle },
+					explanation: {
+						source: 'capacity_plan',
+						sourceId: row.id,
+						reasons: ['accepted capacity plan work unit and ready decision status'],
+						gates: {
+							capacityPlanStatus: row.status,
+							executionReadiness: row.execution_readiness,
+							planningInputsStatus: row.planning_inputs_status,
+						},
+					},
+					synthesizedFrom: 'capacity_plan',
+					synthesisKey: key,
+					decisionId: row.decision_id,
+					treedxProxyHandle,
+					metadata: {
+						source: 'request_scoped_assignment_synthesis',
+						synthesizedAt: now,
+						priority: Number(objectValue(workUnit.metadata).priority ?? 100),
+						capacityPlanId: row.id,
+						workUnitId: sourceId,
+						decisionExecutionInputId: workUnit.decisionExecutionInputId ?? null,
+					},
+				});
+				if (assignment) {
+					await this.recordProviderAssignmentExplanation(principal.teamId, assignment.id, {
+						source: 'capacity_plan',
+						sourceId: row.id,
+						eligible: true,
+						reasons: ['accepted capacity plan work unit and ready decision status'],
+						gates: { capacityPlanStatus: row.status, executionReadiness: row.execution_readiness, planningInputsStatus: row.planning_inputs_status },
+						metadata: { workUnitId: sourceId },
+					}).catch(() => null);
+					created.push(assignment);
+				}
+			}
+		}
+		return created;
+	}
+
 	async launchManagedCapacityProvider(teamId, input = {}) {
 		await this.ensureInitialized();
 		const projects = await this.listTeamProjects(teamId);
@@ -5213,16 +6919,21 @@ export class MarketControlPlaneStore {
 		const id = input.id ?? randomUUID();
 		await this.run(
 			`INSERT INTO capacity_reservations (
-				id, capacity_provider_id, execution_provider_id, lane_id, team_id, project_id, work_day_id, task_id, state,
+				id, capacity_provider_id, execution_provider_id, lane_id, allocation_set_id, project_agent_class_id, assignment_id, mode,
+				team_id, project_id, work_day_id, task_id, state,
 				reserved_credits, consumed_credits, native_unit, reserved_native_amount, consumed_native_amount,
 				reserved_provider_units, consumed_provider_units,
 				reserved_usd, consumed_usd, expires_at, metadata_json, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?)`,
 			[
 				id,
 				input.capacityProviderId,
 				input.executionProviderId ?? null,
 				input.laneId,
+				input.allocationSetId ?? null,
+				input.projectAgentClassId ?? null,
+				input.assignmentId ?? null,
+				input.mode ?? null,
 				input.teamId,
 				input.projectId,
 				input.workDayId ?? null,
@@ -5275,14 +6986,17 @@ export class MarketControlPlaneStore {
 		const phase = input.phase ?? 'consume';
 		await this.run(
 			`INSERT INTO capacity_ledger_entries (
-				id, capacity_provider_id, lane_id, reservation_id, team_id, project_id, work_day_id, task_id,
+				id, capacity_provider_id, lane_id, reservation_id, assignment_id, mode_run_id, mode, team_id, project_id, work_day_id, task_id,
 				phase, credits, provider_units, usd, source, metadata_json, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				id,
 				input.capacityProviderId,
 				input.laneId ?? null,
 				input.reservationId ?? null,
+				input.assignmentId ?? null,
+				input.modeRunId ?? null,
+				input.mode ?? null,
 				input.teamId,
 				input.projectId ?? null,
 				input.workDayId ?? null,
@@ -5672,12 +7386,13 @@ export class MarketControlPlaneStore {
 		if (creditCalculation.interrupted) metadata.interrupted = true;
 		await this.run(
 			`INSERT INTO task_usage_actuals (
-				id, task_id, work_day_id, project_id, task_signature, execution_profile_id, capacity_provider_id, execution_provider_id, lane_id,
+				id, task_id, work_day_id, project_id, task_signature, execution_profile_id, assignment_id, mode_run_id, mode,
+				capacity_provider_id, execution_provider_id, lane_id,
 				business_model, model_name, input_tokens, output_tokens, cached_input_tokens, quota_minutes,
 				wall_minutes, files_opened, files_changed, diff_lines_added, diff_lines_removed,
 				test_runs, retry_count, actual_credits, actual_usd, credit_formula_version, actual_credit_source,
 				native_usage_json, metadata_json, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				id,
 				input.taskId ?? null,
@@ -5685,6 +7400,9 @@ export class MarketControlPlaneStore {
 				input.projectId,
 				input.taskSignature,
 				profileId,
+				input.assignmentId ?? null,
+				input.modeRunId ?? null,
+				input.mode ?? null,
 				input.capacityProviderId ?? null,
 				input.executionProviderId ?? null,
 				input.laneId ?? null,

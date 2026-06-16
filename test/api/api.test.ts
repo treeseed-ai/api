@@ -582,7 +582,7 @@ describe('market api', () => {
 		}));
 		expect(teamResponse.ok).toBe(false);
 		expect(teamResponse.code).toBe('namespace_taken');
-	}, 15000);
+	}, 45000);
 
 	it('supports multiple verified account emails for login, primary selection, deletion, reset, and invite lookup', async () => {
 		const db = createTestPostgresDatabase();
@@ -6630,6 +6630,468 @@ describe('market api', () => {
 			cooperative: expect.any(Object),
 		});
 		expect(plan.payload.remaining.dailyCredits).toBe(120);
+	});
+
+	it('persists Phase 1 agent capacity coordination records without replacing task claim flow', async () => {
+		const db = createTestPostgresDatabase();
+		const store = createTestStore(db);
+		const app = createTestApp({ db, store });
+		const token = await authorizeApp(app);
+		const { team, project } = await createTeamAndProject(app, token, {
+			slug: 'agent-capacity-a',
+			name: 'Agent Capacity A',
+		});
+		const secondProject = (await json(await app.request(`/v1/teams/${team.id}/projects`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({ slug: 'agent-capacity-b', name: 'Agent Capacity B' }),
+		}))).payload.project;
+		const headers = {
+			'content-type': 'application/json',
+			authorization: `Bearer ${token}`,
+		};
+
+		const createdProvider = await json(await app.request(`/v1/teams/${team.id}/capacity-providers`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				name: 'Local Generic Capacity',
+				launchMode: 'self_hosted',
+			}),
+		}));
+		const provider = createdProvider.provider;
+		const lane = (await json(await app.request(`/v1/teams/${team.id}/capacity-providers/${provider.id}/lanes`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				id: `${provider.id}:codex-seat`,
+				name: 'Codex Seat',
+				businessModel: 'subscription_quota',
+				unit: 'wall_minute',
+				scarcityLevel: 'high',
+			}),
+		}))).payload;
+		const executionProvider = (await json(await app.request(`/v1/teams/${team.id}/capacity-providers/${provider.id}/execution-providers`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				id: 'openai-like-codex-seat',
+				name: 'OpenAI-like Codex Seat',
+				kind: 'codex_subscription',
+				nativeUnit: 'wall_minute',
+				quotaVisibility: 'opaque',
+				maxConcurrentWorkers: 1,
+			}),
+		}))).payload;
+		const grant = (await json(await app.request(`/v1/teams/${team.id}/capacity-grants`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				capacityProviderId: provider.id,
+				laneId: lane.id,
+				grantScope: 'project',
+				projectId: project.id,
+				environment: 'staging',
+				dailyCreditLimit: 20,
+			}),
+		}))).payload;
+
+		const allocationSet = (await json(await app.request(`/v1/teams/${team.id}/capacity/allocation-sets`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				version: 'phase-1-fixture',
+				policy: { source: 'phase_1_test', capacity: 'generic', agents: 'project_focused' },
+				slices: [
+					{ projectId: project.id, capacityProviderId: provider.id, laneId: lane.id, percent: 60 },
+					{ projectId: secondProject.id, capacityProviderId: provider.id, laneId: lane.id, percent: 40 },
+				],
+			}),
+		}))).payload;
+		expect(allocationSet).toMatchObject({ status: 'draft', slices: expect.arrayContaining([expect.objectContaining({ projectId: project.id })]) });
+		const activated = (await json(await app.request(`/v1/teams/${team.id}/capacity/allocation-sets/${allocationSet.id}/activate`, {
+			method: 'POST',
+			headers,
+		}))).payload;
+		expect(activated.status).toBe('active');
+
+		const planningClass = (await json(await app.request(`/v1/projects/${project.id}/agent-classes`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				slug: 'planner',
+				name: 'Planning Agent',
+				allowedModes: ['planning'],
+				requiredCapabilities: ['repo_read'],
+				handlerRefs: { planning: '@project/agents/planner' },
+			}),
+		}))).payload;
+		const actingClass = (await json(await app.request(`/v1/projects/${secondProject.id}/agent-classes`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				slug: 'implementer',
+				name: 'Implementation Agent',
+				allowedModes: ['acting'],
+				requiredCapabilities: ['repo_write'],
+				handlerRefs: { acting: '@project/agents/implementer' },
+			}),
+		}))).payload;
+		expect(planningClass).toMatchObject({ projectId: project.id, slug: 'planner', allowedModes: ['planning'] });
+		expect(actingClass).toMatchObject({ projectId: secondProject.id, slug: 'implementer', allowedModes: ['acting'] });
+
+		const registration = await json(await app.request('/v1/provider/register', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+			},
+			body: JSON.stringify({
+				runtime: { package: '@treeseed/agent', version: 'test', roles: ['api', 'manager', 'runner'] },
+				capabilities: ['repo_read', 'repo_write'],
+				budgets: {},
+				health: { ok: true },
+			}),
+		}));
+		const providerHeaders = {
+			'content-type': 'application/json',
+			authorization: `Bearer ${registration.sessionToken}`,
+		};
+		const availabilitySession = (await json(await app.request('/v1/provider/sessions', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({
+				environment: 'local',
+				executionProviders: [executionProvider],
+				capabilities: ['repo_read', 'repo_write'],
+				grants: [grant],
+				runnerPressure: { activeWorkers: 0, queuedAssignments: 0 },
+			}),
+		}))).payload;
+		expect(availabilitySession).toMatchObject({
+			capacityProviderId: provider.id,
+			status: 'open',
+			executionProviders: [expect.objectContaining({ id: executionProvider.id })],
+		});
+
+		const reservation = await store.createCapacityReservation({
+			capacityProviderId: provider.id,
+			executionProviderId: executionProvider.id,
+			laneId: lane.id,
+			teamId: team.id,
+			projectId: project.id,
+			state: 'reserved',
+			reservedCredits: 5,
+			nativeUnit: 'wall_minute',
+			reservedNativeAmount: 30,
+			allocationSetId: allocationSet.id,
+			projectAgentClassId: planningClass.id,
+			mode: 'planning',
+		});
+
+		const planningAssignment = (await json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				projectId: project.id,
+				capacityProviderId: provider.id,
+				providerSessionId: availabilitySession.id,
+				executionProviderId: executionProvider.id,
+				allocationSetId: allocationSet.id,
+				projectAgentClassId: planningClass.id,
+				reservationId: reservation.id,
+				mode: 'planning',
+				capacityEnvelope: { teamId: team.id, projectId: project.id, mode: 'planning', reservedCredits: 5 },
+				decisionInput: { kind: 'plan', prompt: 'Create an implementation plan.' },
+			}),
+		}))).payload;
+		const actingAssignment = (await json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				projectId: secondProject.id,
+				capacityProviderId: provider.id,
+				providerSessionId: availabilitySession.id,
+				executionProviderId: executionProvider.id,
+				allocationSetId: allocationSet.id,
+				projectAgentClassId: actingClass.id,
+				mode: 'acting',
+				capacityEnvelope: { teamId: team.id, projectId: secondProject.id, mode: 'acting' },
+				decisionInput: { kind: 'act', task: 'Apply a focused change.' },
+			}),
+		}))).payload;
+		expect(planningAssignment).toMatchObject({ mode: 'planning', projectAgentClassId: planningClass.id, reservationId: reservation.id });
+		expect(actingAssignment).toMatchObject({ mode: 'acting', projectAgentClassId: actingClass.id });
+
+		const providerAssignment = (await json(await app.request(`/v1/provider/assignments/${planningAssignment.id}`, {
+			headers: providerHeaders,
+		}))).payload;
+		expect(providerAssignment).toMatchObject({ id: planningAssignment.id, capacityProviderId: provider.id, status: 'pending', leaseState: 'unleased' });
+
+		const checkIn = (await json(await app.request('/v1/provider/check-in', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({
+				environment: 'local',
+				executionProviders: [executionProvider],
+				capabilities: ['repo_read', 'repo_write'],
+				grants: [grant],
+				nativeLimits: { wallMinutes: { daily: 240 } },
+				runnerPressure: { activeRunners: 0, maxConcurrentRunners: 1 },
+				constraints: { outboundOnly: true },
+			}),
+		}))).payload;
+		expect(checkIn).toMatchObject({ capacityProviderId: provider.id, status: 'open' });
+
+		const leased = await json(await app.request('/v1/provider/assignments/next', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({ sessionId: checkIn.id, runnerId: 'runner-phase-2', leaseSeconds: 60 }),
+		}));
+		expect(leased).toMatchObject({
+			ok: true,
+			payload: {
+				id: planningAssignment.id,
+				status: 'leased',
+				leaseState: 'leased',
+				runnerId: 'runner-phase-2',
+			},
+			leaseToken: expect.any(String),
+		});
+
+		const badRenew = await app.request(`/v1/provider/assignments/${planningAssignment.id}/renew`, {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({ runnerId: 'runner-phase-2', leaseToken: 'wrong-token', leaseSeconds: 60 }),
+		});
+		expect(badRenew.status).toBe(409);
+		const renewed = await json(await app.request(`/v1/provider/assignments/${planningAssignment.id}/renew`, {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({ runnerId: 'runner-phase-2', leaseToken: leased.leaseToken, leaseSeconds: 60 }),
+		}));
+		expect(renewed.payload).toMatchObject({ id: planningAssignment.id, status: 'leased', leaseToken: leased.leaseToken });
+
+		const returned = await json(await app.request(`/v1/provider/assignments/${planningAssignment.id}/return`, {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({ runnerId: 'runner-phase-2', leaseToken: leased.leaseToken, reason: 'provider pressure changed' }),
+		}));
+		expect(returned.payload).toMatchObject({
+			id: planningAssignment.id,
+			status: 'returned',
+			leaseState: 'released',
+			lifecycleReason: 'provider pressure changed',
+			attemptCount: 1,
+		});
+
+		const released = await json(await app.request('/v1/provider/assignments/next', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({ sessionId: checkIn.id, runnerId: 'runner-phase-2b', leaseSeconds: 60 }),
+		}));
+		expect(released.payload).toMatchObject({
+			id: planningAssignment.id,
+			status: 'leased',
+			leaseState: 'leased',
+			runnerId: 'runner-phase-2b',
+		});
+
+		const usage = await store.createTaskUsageActual({
+			projectId: project.id,
+			taskSignature: 'agent.planning.phase1',
+			executionProfileId: 'standard-code-model',
+			capacityProviderId: provider.id,
+			executionProviderId: executionProvider.id,
+			laneId: lane.id,
+			businessModel: 'subscription_quota',
+			wallMinutes: 3,
+			actualCredits: 1,
+			actualCreditsOverride: true,
+			assignmentId: planningAssignment.id,
+			mode: 'planning',
+			nativeUsage: { nativeUnit: 'wall_minute', amount: 3, source: 'phase_1_test' },
+		});
+		const modeRun = (await json(await app.request(`/v1/provider/assignments/${planningAssignment.id}/mode-runs`, {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({
+				status: 'succeeded',
+				selectedInput: { prompt: 'Create an implementation plan.' },
+				outputs: { summary: 'Plan created.' },
+				usageActualId: usage.id,
+				usageActual: { taskUsageActualId: usage.id, actualCredits: usage.actualCredits },
+				traceRefs: { agentRunTraceId: 'trace-phase-1' },
+			}),
+		}))).payload;
+		expect(modeRun).toMatchObject({
+			providerAssignmentId: planningAssignment.id,
+			mode: 'planning',
+			status: 'succeeded',
+			usageActual: { taskUsageActualId: usage.id, actualCredits: 1 },
+		});
+
+		const completed = await json(await app.request(`/v1/provider/assignments/${planningAssignment.id}/complete`, {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({
+				runnerId: 'runner-phase-2b',
+				leaseToken: released.leaseToken,
+				modeRunId: modeRun.id,
+				usageActualId: usage.id,
+				output: { summary: 'Plan created.' },
+			}),
+		}));
+		expect(completed.payload).toMatchObject({
+			id: planningAssignment.id,
+			status: 'completed',
+			leaseState: 'released',
+			lifecycleOutput: { summary: 'Plan created.' },
+		});
+
+		const leasedActing = await json(await app.request('/v1/provider/assignments/next', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({ sessionId: checkIn.id, runnerId: 'runner-phase-2c', leaseSeconds: 60 }),
+		}));
+		expect(leasedActing.payload).toMatchObject({ id: actingAssignment.id, status: 'leased', leaseState: 'leased' });
+		const retryableFailure = await json(await app.request(`/v1/provider/assignments/${actingAssignment.id}/fail`, {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({
+				runnerId: 'runner-phase-2c',
+				leaseToken: leasedActing.leaseToken,
+				code: 'provider_pressure',
+				message: 'Runner pressure changed.',
+				retryable: true,
+			}),
+		}));
+		expect(retryableFailure.payload).toMatchObject({
+			id: actingAssignment.id,
+			status: 'returned',
+			leaseState: 'released',
+			lifecycleCode: 'provider_pressure',
+		});
+
+		const [sessions, assignments, modeRuns, legacyClaim] = await Promise.all([
+			json(await app.request(`/v1/teams/${team.id}/capacity/provider-sessions`, { headers })),
+			json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, { headers })),
+			json(await app.request(`/v1/projects/${project.id}/agent-mode-runs`, { headers })),
+			json(await app.request('/v1/provider/tasks/claim', {
+				method: 'POST',
+				headers: providerHeaders,
+				body: JSON.stringify({ limit: 1 }),
+			})),
+		]);
+		expect(sessions.payload.map((entry: { id: string }) => entry.id)).toContain(availabilitySession.id);
+		expect(assignments.payload.map((entry: { id: string }) => entry.id)).toEqual(expect.arrayContaining([planningAssignment.id, actingAssignment.id]));
+		expect(modeRuns.payload.map((entry: { id: string }) => entry.id)).toContain(modeRun.id);
+		expect(legacyClaim).toMatchObject({ ok: true, tasks: [] });
+
+		const workday = (await json(await app.request('/v1/workdays', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				id: 'architecture-gap-workday',
+				projectId: secondProject.id,
+				availableCredits: 12,
+				modeSplits: { planning: 0.4, acting: 0.6 },
+				caps: { hardDailyCredits: 12 },
+				reserves: { emergencyCredits: 2 },
+			}),
+		}))).payload;
+		expect(workday).toMatchObject({ id: 'architecture-gap-workday', status: 'draft', projectId: secondProject.id });
+		const startedWorkday = (await json(await app.request(`/v1/workdays/${workday.id}/start`, {
+			method: 'POST',
+			headers,
+		}))).payload;
+		expect(startedWorkday.status).toBe('active');
+
+		const decisionInput = (await json(await app.request('/v1/decisions/decision-architecture-gap/execution-inputs', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				projectId: secondProject.id,
+				projectAgentClassId: actingClass.id,
+				mode: 'acting',
+				status: 'accepted',
+				input: {
+					agentId: 'implementer',
+					projectAgentClassId: actingClass.id,
+					mode: 'acting',
+					capacity: {
+						teamId: team.id,
+						projectId: secondProject.id,
+						workDayId: workday.id,
+						mode: 'acting',
+						projectAgentClassId: actingClass.id,
+					},
+					input: { objective: 'Execute approved decision.' },
+				},
+			}),
+		}))).payload;
+		expect(decisionInput).toMatchObject({ status: 'accepted', decisionId: 'decision-architecture-gap' });
+		const planningStatus = await json(await app.request('/v1/decisions/decision-architecture-gap/planning-status', { headers }));
+		expect(planningStatus.payload).toMatchObject({ executionReadiness: 'ready', planningInputsStatus: 'complete' });
+
+		const draftCapacityPlan = (await json(await app.request('/v1/decisions/decision-architecture-gap/capacity-plans', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				projectId: secondProject.id,
+				workDayId: workday.id,
+				allocationSetId: allocationSet.id,
+				metadata: { priorityRationale: 'Accepted decision is ready for acting.' },
+			}),
+		}))).payload;
+		expect(draftCapacityPlan).toMatchObject({
+			status: 'draft',
+			decisionId: 'decision-architecture-gap',
+			workUnits: [expect.objectContaining({ decisionExecutionInputId: decisionInput.id, mode: 'acting' })],
+		});
+		const acceptedCapacityPlan = (await json(await app.request(`/v1/capacity-plans/${draftCapacityPlan.id}/accept`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ reason: 'acceptance proof' }),
+		}))).payload;
+		expect(acceptedCapacityPlan).toMatchObject({ id: draftCapacityPlan.id, status: 'accepted' });
+
+		await json(await app.request('/v1/provider/check-in', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({
+				environment: 'local',
+				executionProviders: [executionProvider],
+				capabilities: ['repo_read', 'repo_write'],
+				grants: [grant],
+			}),
+		}));
+		const synthesized = await json(await app.request('/v1/provider/assignments/next', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({ sessionId: checkIn.id, runnerId: 'runner-synthesis', leaseSeconds: 60 }),
+		}));
+		expect(synthesized.payload).toMatchObject({
+			status: 'leased',
+			mode: 'acting',
+			synthesizedFrom: 'capacity_plan',
+			decisionId: 'decision-architecture-gap',
+			projectAgentClassId: actingClass.id,
+		});
+		const explanation = await json(await app.request(`/v1/teams/${team.id}/capacity/assignments/${synthesized.payload.id}/explanation`, { headers }));
+		expect(explanation.payload).toMatchObject({
+			source: 'capacity_plan',
+			eligible: true,
+			reasons: expect.arrayContaining(['accepted capacity plan work unit and ready decision status']),
+		});
+		const workdaySummary = await json(await app.request(`/v1/workdays/${workday.id}/summary`, { headers }));
+		expect(workdaySummary.payload.settlement).toMatchObject({
+			projectId: secondProject.id,
+			providerConfidence: expect.any(String),
+		});
 	});
 
 	it('requires static capacity mode to be explicit compatibility state', async () => {

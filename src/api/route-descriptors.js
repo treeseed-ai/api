@@ -65,7 +65,38 @@ export const SDK_METHOD_ROUTE_MAP = {
 	createExecutionProvider: 'post.v1.teams.teamId.capacity-providers.providerId.execution-providers',
 	updateExecutionProvider: 'patch.v1.teams.teamId.capacity-providers.providerId.execution-providers.executionProviderId',
 	createExecutionProviderNativeLimit: 'post.v1.teams.teamId.capacity-providers.providerId.execution-providers.executionProviderId.native-limits',
+	capacityAllocationSets: 'get.v1.teams.teamId.capacity.allocation-sets',
+	createCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets',
+	capacityAllocationSet: 'get.v1.teams.teamId.capacity.allocation-sets.allocationSetId',
+	activateCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.activate',
+	providerAvailabilitySessions: 'get.v1.teams.teamId.capacity.provider-sessions',
+	providerAssignments: 'get.v1.teams.teamId.capacity.assignments',
+	createProviderAssignment: 'post.v1.teams.teamId.capacity.assignments',
+	providerAssignmentExplanation: 'get.v1.teams.teamId.capacity.assignments.assignmentId.explanation',
 	projectCapacityPlan: 'get.v1.projects.projectId.capacity-plan',
+	projectAgentClasses: 'get.v1.projects.projectId.agent-classes',
+	createProjectAgentClass: 'post.v1.projects.projectId.agent-classes',
+	projectAgentClass: 'get.v1.projects.projectId.agent-classes.classId',
+	updateProjectAgentClass: 'patch.v1.projects.projectId.agent-classes.classId',
+	projectAgentModeRuns: 'get.v1.projects.projectId.agent-mode-runs',
+	decisionPlanningStatus: 'get.v1.decisions.decisionId.planning-status',
+	createPlanningInputRequest: 'post.v1.decisions.decisionId.planning-input-requests',
+	decisionExecutionInputs: 'get.v1.decisions.decisionId.execution-inputs',
+	createDecisionExecutionInput: 'post.v1.decisions.decisionId.execution-inputs',
+	acceptDecisionExecutionInput: 'post.v1.decision-execution-inputs.inputId.accept',
+	requestDecisionExecutionInputRevision: 'post.v1.decision-execution-inputs.inputId.request-revision',
+	decisionCapacityPlans: 'get.v1.decisions.decisionId.capacity-plans',
+	createDecisionCapacityPlan: 'post.v1.decisions.decisionId.capacity-plans',
+	capacityPlan: 'get.v1.capacity-plans.capacityPlanId',
+	acceptCapacityPlan: 'post.v1.capacity-plans.capacityPlanId.accept',
+	requestCapacityPlanRevision: 'post.v1.capacity-plans.capacityPlanId.request-revision',
+	scheduleCapacityPlan: 'post.v1.capacity-plans.capacityPlanId.schedule',
+	createWorkday: 'post.v1.workdays',
+	workday: 'get.v1.workdays.workdayId',
+	startWorkday: 'post.v1.workdays.workdayId.start',
+	pauseWorkday: 'post.v1.workdays.workdayId.pause',
+	completeWorkday: 'post.v1.workdays.workdayId.complete',
+	workdaySummary: 'get.v1.workdays.workdayId.summary',
 	teamTreeDx: 'get.v1.teams.teamId.treedx',
 	updateTeamTreeDx: 'put.v1.teams.teamId.treedx',
 	provisionTeamTreeDx: 'post.v1.teams.teamId.treedx.provision',
@@ -172,7 +203,7 @@ function safeProduction(path, method) {
 
 function routeNeedsManagement(path, method) {
 	if (method === 'get') return false;
-	return /\/members\/|\/invites|\/api-keys|\/repository-hosts|\/web-hosts|\/hosts|\/capacity-providers|\/capacity-grants|\/provider-credential-sessions|\/projects\/launch|\/treedx/u.test(path);
+	return /\/members\/|\/invites|\/api-keys|\/repository-hosts|\/web-hosts|\/hosts|\/capacity\/|\/capacity-providers|\/capacity-grants|\/provider-credential-sessions|\/projects\/launch|\/treedx/u.test(path);
 }
 
 function successActorsFor(path, method) {
@@ -189,6 +220,8 @@ function successActorsFor(path, method) {
 	if (path.startsWith('/v1/auth/web/sign-') || path.startsWith('/v1/auth/oauth/')) return ['anonymous'];
 	if (path.startsWith('/v1/auth/')) return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path.startsWith('/v1/teams/:teamId')) return routeNeedsManagement(path, method) ? TEAM_MANAGER_ACTORS : TEAM_MEMBER_ACTORS;
+	if (path.startsWith('/v1/decisions/') || path.startsWith('/v1/decision-execution-inputs/') || path.startsWith('/v1/capacity-plans/')) return method === 'get' ? PROJECT_MEMBER_ACTORS : PROJECT_MANAGER_ACTORS;
+	if (path.startsWith('/v1/workdays')) return method === 'get' ? PROJECT_MEMBER_ACTORS : PROJECT_MANAGER_ACTORS;
 	if (path.startsWith('/v1/projects/:projectId') && path.includes('/workday-policy') && method !== 'get') {
 		return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer'];
 	}
@@ -243,13 +276,30 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/platform/runners/jobs/') && path.endsWith('/fail')) return 'platformRunnerFail';
 	if (path.includes('/provider/register')) return 'providerRegister';
 	if (path.includes('/provider/heartbeat')) return 'providerHeartbeat';
+	if (path.includes('/provider/check-in')) return 'providerCheckIn';
 	if (path.includes('/provider/workdays')) return 'providerWorkday';
 	if (path.includes('/provider/tasks/claim')) return 'providerTaskClaim';
 	if (path.includes('/provider/tasks/') && path.endsWith('/events')) return 'providerTaskEvent';
 	if (path.includes('/provider/tasks/') && path.endsWith('/complete')) return 'providerTaskComplete';
 	if (path.includes('/provider/tasks/') && path.endsWith('/fail')) return 'providerTaskFail';
+	if (path.includes('/provider/sessions')) return 'providerAvailabilitySession';
+	if (path.includes('/provider/assignments/next')) return 'providerNextAssignment';
+	if (path.includes('/provider/assignments/') && path.endsWith('/mode-runs')) return 'agentModeRun';
+	if (path.includes('/provider/assignments/') && path.endsWith('/renew')) return 'providerAssignmentRenew';
+	if (path.includes('/provider/assignments/') && path.endsWith('/return')) return 'providerAssignmentReturn';
+	if (path.includes('/provider/assignments/') && path.endsWith('/complete')) return 'providerAssignmentComplete';
+	if (path.includes('/provider/assignments/') && path.endsWith('/fail')) return 'providerAssignmentFail';
 	if (path.includes('/provider/usage')) return 'providerUsage';
 	if (path.includes('/provider/reports')) return 'providerReport';
+	if (path.includes('/decisions/') && path.endsWith('/planning-input-requests')) return 'planningInputRequest';
+	if (path.includes('/decisions/') && path.endsWith('/execution-inputs')) return 'decisionExecutionInput';
+	if (path.includes('/decision-execution-inputs/') && path.endsWith('/accept')) return 'empty';
+	if (path.includes('/decision-execution-inputs/') && path.endsWith('/request-revision')) return 'decisionExecutionRevision';
+	if (path.includes('/decisions/') && path.endsWith('/capacity-plans')) return 'agentCapacityPlan';
+	if (path.includes('/capacity-plans/') && (path.endsWith('/accept') || path.endsWith('/schedule'))) return 'empty';
+	if (path.includes('/capacity-plans/') && path.endsWith('/request-revision')) return 'decisionExecutionRevision';
+	if (path === '/v1/workdays') return 'workdayCapacityEnvelope';
+	if (path.includes('/workdays/') && (path.endsWith('/start') || path.endsWith('/pause') || path.endsWith('/complete'))) return 'empty';
 	if (path.includes('/teams') && path.endsWith('/projects')) return 'projectCreate';
 	if (path.includes('/teams') && path.endsWith('/projects/launch')) return 'projectLaunch';
 	if (path.includes('/teams') && path.endsWith('/invites')) return 'teamInvite';
@@ -262,6 +312,8 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/teams') && path.includes('/capacity-providers') && path.includes('/execution-providers')) return 'executionProvider';
 	if (path.includes('/teams') && path.includes('/capacity-providers')) return method === 'patch' ? 'capacityProviderPatch' : 'capacityProviderCreate';
 	if (path.includes('/teams') && path.includes('/capacity-grants')) return 'capacityGrant';
+	if (path.includes('/teams') && path.includes('/capacity/allocation-sets')) return path.endsWith('/activate') ? 'empty' : 'capacityAllocationSet';
+	if (path.includes('/teams') && path.includes('/capacity/assignments')) return 'providerAssignment';
 	if (path.includes('/teams') && path.includes('/provider-credential-sessions')) return 'providerCredentialSession';
 	if (path.includes('/teams') && path.includes('/hosting-audit')) return 'hostingAudit';
 	if (path.includes('/teams') && path.includes('/seeds/export')) return 'seedExport';
@@ -271,7 +323,8 @@ function bodyFactoryFor(path, method) {
 		: path.endsWith('/related') ? 'localContentRelated'
 			: path.endsWith('/decisions/from-proposals') ? 'decisionFromProposals'
 				: path.includes('/approval') ? 'approvalDecision'
-					: path.includes('/runner/') ? 'runnerProjectBody'
+					: path.includes('/agent-classes') ? 'projectAgentClass'
+						: path.includes('/runner/') ? 'runnerProjectBody'
 						: path.includes('/work-policy') || path.includes('/workday-policy') ? 'workPolicy'
 							: path.includes('/priority-overrides') ? 'priorityOverride'
 								: path.includes('/agent-tasks') ? 'agentTask'

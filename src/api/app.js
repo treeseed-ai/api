@@ -4217,6 +4217,22 @@ async function proxyTreeDxJson({ c, runtime, store, projectId, permission, metho
 			}
 		}
 	}
+	const auditProject = await store.getProject(projectId).catch(() => null);
+	await store.recordTreeDxProxyAudit?.({
+		teamId: auditProject?.teamId ?? access.provider?.teamId ?? access.principal?.teamId ?? null,
+		projectId,
+		assignmentId: c.req.header('x-treeseed-assignment-id') ?? c.req.query('assignmentId') ?? null,
+		actorType: access.actorType,
+		actorId: access.principal?.id ?? access.provider?.id ?? null,
+		method,
+		path,
+		handle: {
+			projectId,
+			assignmentId: c.req.header('x-treeseed-assignment-id') ?? c.req.query('assignmentId') ?? null,
+			scopes: tokenScope?.capabilities ?? [],
+		},
+		resultStatus: 'proxied',
+	}).catch(() => null);
 	return c.json({
 		ok: true,
 		payload,
@@ -7806,6 +7822,83 @@ export function createApiApp(options = {}) {
 						teamId: typeof body.teamId === 'string' ? body.teamId : c.req.param('teamId'),
 					}),
 				}, { status: 201 });
+			});
+
+			app.get('/v1/teams/:teamId/capacity/allocation-sets', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCapacityAllocationSets(c.req.param('teamId')) });
+			});
+
+			app.post('/v1/teams/:teamId/capacity/allocation-sets', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const allocationSet = await store.createCapacityAllocationSet(c.req.param('teamId'), {
+					...body,
+					createdById: access.principal.id,
+				});
+				return c.json({ ok: true, payload: allocationSet }, { status: 201 });
+			});
+
+			app.get('/v1/teams/:teamId/capacity/allocation-sets/:allocationSetId', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				const allocationSet = await store.getCapacityAllocationSet(c.req.param('teamId'), c.req.param('allocationSetId'));
+				return allocationSet ? c.json({ ok: true, payload: allocationSet }) : jsonError(c, 404, 'Unknown allocation set.');
+			});
+
+			app.post('/v1/teams/:teamId/capacity/allocation-sets/:allocationSetId/activate', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const allocationSet = await store.activateCapacityAllocationSet(c.req.param('teamId'), c.req.param('allocationSetId'));
+				return allocationSet ? c.json({ ok: true, payload: allocationSet }) : jsonError(c, 404, 'Unknown allocation set.');
+			});
+
+			app.get('/v1/teams/:teamId/capacity/provider-sessions', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({
+					ok: true,
+					payload: await store.listProviderAvailabilitySessions(c.req.param('teamId'), {
+						providerId: typeof c.req.query('providerId') === 'string' ? c.req.query('providerId') : null,
+						status: typeof c.req.query('status') === 'string' ? c.req.query('status') : null,
+					}),
+				});
+			});
+
+			app.get('/v1/teams/:teamId/capacity/assignments', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({
+					ok: true,
+					payload: await store.listProviderAssignments(c.req.param('teamId'), {
+						projectId: typeof c.req.query('projectId') === 'string' ? c.req.query('projectId') : null,
+						providerId: typeof c.req.query('providerId') === 'string' ? c.req.query('providerId') : null,
+						status: typeof c.req.query('status') === 'string' ? c.req.query('status') : null,
+					}),
+				});
+			});
+
+			app.post('/v1/teams/:teamId/capacity/assignments', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const assignment = await store.createProviderAssignment(c.req.param('teamId'), body);
+					return assignment ? c.json({ ok: true, payload: assignment }, { status: 201 }) : jsonError(c, 404, 'Unknown project, provider, or project agent class.');
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error));
+				}
+			});
+
+			app.get('/v1/teams/:teamId/capacity/assignments/:assignmentId/explanation', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				const assignment = await store.getProviderAssignment(c.req.param('teamId'), c.req.param('assignmentId'));
+				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
+				const explanation = await store.getProviderAssignmentExplanation(c.req.param('teamId'), assignment.id);
+				return c.json({ ok: true, payload: explanation ?? assignment.explanation ?? {} });
 			});
 
 				app.patch('/v1/teams/:teamId/capacity-grants/:grantId', async (c) => {
@@ -11946,6 +12039,225 @@ export function createApiApp(options = {}) {
 				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown project.');
 			});
 
+			app.get('/v1/projects/:projectId/agent-classes', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listProjectAgentClasses(c.req.param('projectId')) });
+			});
+
+			app.post('/v1/projects/:projectId/agent-classes', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const agentClass = await store.upsertProjectAgentClass(c.req.param('projectId'), body);
+				return agentClass ? c.json({ ok: true, payload: agentClass }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
+			});
+
+			app.get('/v1/projects/:projectId/agent-classes/:classId', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+				if (access.response) return access.response;
+				const agentClass = await store.getProjectAgentClass(c.req.param('projectId'), c.req.param('classId'));
+				return agentClass ? c.json({ ok: true, payload: agentClass }) : jsonError(c, 404, 'Unknown project agent class.');
+			});
+
+			app.patch('/v1/projects/:projectId/agent-classes/:classId', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const agentClass = await store.upsertProjectAgentClass(c.req.param('projectId'), {
+					...body,
+					id: c.req.param('classId'),
+				});
+				return agentClass ? c.json({ ok: true, payload: agentClass }) : jsonError(c, 404, 'Unknown project agent class.');
+			});
+
+			app.get('/v1/projects/:projectId/agent-mode-runs', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({
+					ok: true,
+					payload: await store.listAgentModeRuns(c.req.param('projectId'), {
+						mode: typeof c.req.query('mode') === 'string' ? c.req.query('mode') : null,
+						assignmentId: typeof c.req.query('assignmentId') === 'string' ? c.req.query('assignmentId') : null,
+					}),
+				});
+			});
+
+			app.get('/v1/decisions/:decisionId/planning-status', async (c) => {
+				const status = await store.getDecisionPlanningStatus(c.req.param('decisionId'));
+				if (!status) return jsonError(c, 404, 'Unknown decision planning status.');
+				const access = await requireProjectAccess(c, store, status.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: status });
+			});
+
+			app.post('/v1/decisions/:decisionId/planning-input-requests', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
+				if (!projectId) return jsonError(c, 400, 'projectId is required.');
+				const access = await requireProjectAccess(c, store, projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const request = await store.createPlanningInputRequest(c.req.param('decisionId'), body);
+				return request ? c.json({ ok: true, payload: request }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
+			});
+
+			app.get('/v1/decisions/:decisionId/execution-inputs', async (c) => {
+				const status = await store.getDecisionPlanningStatus(c.req.param('decisionId'));
+				if (!status) return jsonError(c, 404, 'Unknown decision planning status.');
+				const access = await requireProjectAccess(c, store, status.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({
+					ok: true,
+					payload: await store.listDecisionExecutionInputs(c.req.param('decisionId'), {
+						status: typeof c.req.query('status') === 'string' ? c.req.query('status') : null,
+					}),
+				});
+			});
+
+			app.post('/v1/decisions/:decisionId/execution-inputs', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
+				if (!projectId) return jsonError(c, 400, 'projectId is required.');
+				const access = await requireProjectAccess(c, store, projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				try {
+					const input = await store.createDecisionExecutionInput(c.req.param('decisionId'), body);
+					return input ? c.json({ ok: true, payload: input }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error));
+				}
+			});
+
+			app.post('/v1/decision-execution-inputs/:inputId/accept', async (c) => {
+				const existing = await store.getDecisionExecutionInput(c.req.param('inputId'));
+				if (!existing) return jsonError(c, 404, 'Unknown decision execution input.');
+				const access = await requireProjectAccess(c, store, existing.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateDecisionExecutionInputStatus(existing.id, 'accepted', body) });
+			});
+
+			app.post('/v1/decision-execution-inputs/:inputId/request-revision', async (c) => {
+				const existing = await store.getDecisionExecutionInput(c.req.param('inputId'));
+				if (!existing) return jsonError(c, 404, 'Unknown decision execution input.');
+				const access = await requireProjectAccess(c, store, existing.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateDecisionExecutionInputStatus(existing.id, 'revision_requested', body) });
+			});
+
+			app.get('/v1/decisions/:decisionId/capacity-plans', async (c) => {
+				const status = await store.getDecisionPlanningStatus(c.req.param('decisionId'));
+				if (!status) return jsonError(c, 404, 'Unknown decision planning status.');
+				const access = await requireProjectAccess(c, store, status.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({
+					ok: true,
+					payload: await store.listAgentCapacityPlans(c.req.param('decisionId'), {
+						status: typeof c.req.query('status') === 'string' ? c.req.query('status') : null,
+					}),
+				});
+			});
+
+			app.post('/v1/decisions/:decisionId/capacity-plans', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
+				if (!projectId) return jsonError(c, 400, 'projectId is required.');
+				const access = await requireProjectAccess(c, store, projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				try {
+					const plan = await store.createAgentCapacityPlan(c.req.param('decisionId'), body);
+					return plan ? c.json({ ok: true, payload: plan }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error));
+				}
+			});
+
+			app.get('/v1/capacity-plans/:capacityPlanId', async (c) => {
+				const plan = await store.getAgentCapacityPlan(c.req.param('capacityPlanId'));
+				if (!plan) return jsonError(c, 404, 'Unknown capacity plan.');
+				const access = await requireProjectAccess(c, store, plan.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: plan });
+			});
+
+			app.post('/v1/capacity-plans/:capacityPlanId/accept', async (c) => {
+				const plan = await store.getAgentCapacityPlan(c.req.param('capacityPlanId'));
+				if (!plan) return jsonError(c, 404, 'Unknown capacity plan.');
+				const access = await requireProjectAccess(c, store, plan.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateAgentCapacityPlanStatus(plan.id, 'accepted', body) });
+			});
+
+			app.post('/v1/capacity-plans/:capacityPlanId/request-revision', async (c) => {
+				const plan = await store.getAgentCapacityPlan(c.req.param('capacityPlanId'));
+				if (!plan) return jsonError(c, 404, 'Unknown capacity plan.');
+				const access = await requireProjectAccess(c, store, plan.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateAgentCapacityPlanStatus(plan.id, 'revision_requested', body) });
+			});
+
+			app.post('/v1/capacity-plans/:capacityPlanId/schedule', async (c) => {
+				const plan = await store.getAgentCapacityPlan(c.req.param('capacityPlanId'));
+				if (!plan) return jsonError(c, 404, 'Unknown capacity plan.');
+				const access = await requireProjectAccess(c, store, plan.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateAgentCapacityPlanStatus(plan.id, 'scheduled', body) });
+			});
+
+			app.post('/v1/workdays', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
+				if (!projectId) return jsonError(c, 400, 'projectId is required.');
+				const access = await requireProjectAccess(c, store, projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const workday = await store.createWorkdayCapacityEnvelope(body);
+				return workday ? c.json({ ok: true, payload: workday }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
+			});
+
+			app.get('/v1/workdays/:workdayId', async (c) => {
+				const workday = await store.getWorkdayCapacityEnvelope(c.req.param('workdayId'));
+				if (!workday) return jsonError(c, 404, 'Unknown workday.');
+				const access = await requireProjectAccess(c, store, workday.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: workday });
+			});
+
+			app.post('/v1/workdays/:workdayId/start', async (c) => {
+				const workday = await store.getWorkdayCapacityEnvelope(c.req.param('workdayId'));
+				if (!workday) return jsonError(c, 404, 'Unknown workday.');
+				const access = await requireProjectAccess(c, store, workday.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.updateWorkdayCapacityEnvelopeState(workday.id, 'active') });
+			});
+
+			app.post('/v1/workdays/:workdayId/pause', async (c) => {
+				const workday = await store.getWorkdayCapacityEnvelope(c.req.param('workdayId'));
+				if (!workday) return jsonError(c, 404, 'Unknown workday.');
+				const access = await requireProjectAccess(c, store, workday.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.updateWorkdayCapacityEnvelopeState(workday.id, 'paused') });
+			});
+
+			app.post('/v1/workdays/:workdayId/complete', async (c) => {
+				const workday = await store.getWorkdayCapacityEnvelope(c.req.param('workdayId'));
+				if (!workday) return jsonError(c, 404, 'Unknown workday.');
+				const access = await requireProjectAccess(c, store, workday.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.updateWorkdayCapacityEnvelopeState(workday.id, 'completed') });
+			});
+
+			app.get('/v1/workdays/:workdayId/summary', async (c) => {
+				const summary = await store.getWorkdayCapacitySummary(c.req.param('workdayId'));
+				if (!summary?.payload?.workday) return jsonError(c, 404, 'Unknown workday.');
+				const access = await requireProjectAccess(c, store, summary.payload.workday.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json(summary);
+			});
+
 			app.post('/v1/provider/register', async (c) => {
 				const auth = await requireCapacityProviderKey(c, store, ['provider:register', 'provider:capabilities:write']);
 				if (auth.response) return auth.response;
@@ -11995,6 +12307,110 @@ export function createApiApp(options = {}) {
 						: undefined,
 					heartbeatIntervalSeconds: 30,
 				});
+			});
+
+			app.post('/v1/provider/sessions', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:heartbeat', 'provider:capabilities:write']);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const session = await store.createProviderAvailabilitySession(auth.principal, body);
+				return session ? c.json({ ok: true, payload: session }, { status: 201 }) : jsonError(c, 404, 'Unknown capacity provider.');
+			});
+
+			app.post('/v1/provider/check-in', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:heartbeat', 'provider:capabilities:write']);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const session = await store.recordProviderCheckIn(auth.principal, body);
+				return session ? c.json({ ok: true, payload: session }, { status: 201 }) : jsonError(c, 404, 'Unknown capacity provider.');
+			});
+
+			app.post('/v1/provider/assignments/next', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const result = await store.leaseNextProviderAssignment(auth.principal, body);
+				return c.json({
+					ok: true,
+					payload: result.assignment,
+					assignment: result.assignment,
+					leaseToken: result.leaseToken,
+					leaseSeconds: result.leaseSeconds,
+				});
+			});
+
+			app.get('/v1/provider/assignments/:assignmentId', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				if (auth.response) return auth.response;
+				const assignment = await store.getProviderAssignment(auth.principal.teamId, c.req.param('assignmentId'));
+				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
+				if (assignment.capacityProviderId !== auth.principal.capacityProviderId) return jsonError(c, 403, 'Provider cannot access this assignment.');
+				return c.json({ ok: true, payload: assignment });
+			});
+
+			app.get('/v1/provider/assignments/:assignmentId/explanation', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				if (auth.response) return auth.response;
+				const assignment = await store.getProviderAssignment(auth.principal.teamId, c.req.param('assignmentId'));
+				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
+				if (assignment.capacityProviderId !== auth.principal.capacityProviderId) return jsonError(c, 403, 'Provider cannot access this assignment.');
+				const explanation = await store.getProviderAssignmentExplanation(auth.principal.teamId, assignment.id);
+				return c.json({ ok: true, payload: explanation ?? assignment.explanation ?? {} });
+			});
+
+			app.post('/v1/provider/assignments/:assignmentId/renew', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const result = await store.renewProviderAssignmentLease(auth.principal, c.req.param('assignmentId'), body);
+				if (!result) return jsonError(c, 409, 'Assignment lease cannot be renewed.');
+				return c.json({ ok: true, payload: result.assignment, assignment: result.assignment, leaseToken: result.leaseToken, leaseSeconds: result.leaseSeconds });
+			});
+
+			app.post('/v1/provider/assignments/:assignmentId/return', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update']);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const result = await store.returnProviderAssignment(auth.principal, c.req.param('assignmentId'), body);
+				if (!result) return jsonError(c, 409, 'Assignment lease cannot be returned.');
+				return c.json({ ok: true, payload: result.assignment, assignment: result.assignment });
+			});
+
+			app.post('/v1/provider/assignments/:assignmentId/complete', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const scopes = ['provider:tasks:update'];
+				if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:report');
+				const auth = await requireCapacityProviderKey(c, store, scopes);
+				if (auth.response) return auth.response;
+				const result = await store.completeProviderAssignment(auth.principal, c.req.param('assignmentId'), body);
+				if (!result) return jsonError(c, 409, 'Assignment lease cannot be completed.');
+				return c.json({ ok: true, payload: result.assignment, assignment: result.assignment });
+			});
+
+			app.post('/v1/provider/assignments/:assignmentId/fail', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const scopes = ['provider:tasks:update'];
+				if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:report');
+				const auth = await requireCapacityProviderKey(c, store, scopes);
+				if (auth.response) return auth.response;
+				const result = await store.failProviderAssignment(auth.principal, c.req.param('assignmentId'), body);
+				if (!result) return jsonError(c, 409, 'Assignment lease cannot be failed.');
+				return c.json({ ok: true, payload: result.assignment, assignment: result.assignment });
+			});
+
+			app.post('/v1/provider/assignments/:assignmentId/mode-runs', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update', 'provider:usage:report']);
+				if (auth.response) return auth.response;
+				const assignment = await store.getProviderAssignment(auth.principal.teamId, c.req.param('assignmentId'));
+				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
+				if (assignment.capacityProviderId !== auth.principal.capacityProviderId) return jsonError(c, 403, 'Provider cannot update this assignment.');
+				const body = await c.req.json().catch(() => ({}));
+				const modeRun = await store.createAgentModeRun({
+					...body,
+					teamId: auth.principal.teamId,
+					providerAssignmentId: assignment.id,
+				});
+				return modeRun ? c.json({ ok: true, payload: modeRun }, { status: 201 }) : jsonError(c, 404, 'Unknown assignment.');
 			});
 
 			app.get('/v1/provider/portfolio', async (c) => {
