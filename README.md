@@ -1,6 +1,6 @@
 # @treeseed/api
 
-`@treeseed/api` runs the Treeseed backend control plane: HTTP API, PostgreSQL-backed state, backend auth, operation lifecycle, migrations, seed application, route descriptors, operations runner, and public TreeDX federation hosting.
+`@treeseed/api` runs the Treeseed backend control plane: HTTP API, PostgreSQL-backed state, backend auth, operation lifecycle, migrations, seed application, route descriptors, operations runner, durable capacity coordination records, assignment APIs, and public TreeDX federation hosting.
 
 Use this package when you operate or develop the Treeseed backend. Ordinary admin users interact with it through the web/admin UI or CLI, not by importing this package.
 
@@ -10,6 +10,7 @@ Use this package when you operate or develop the Treeseed backend. Ordinary admi
 - maintainers changing backend routes, storage, auth, migrations, or operation execution
 - acceptance-test runners validating hosted API behavior
 - platform engineers wiring TreeDX federation into the Treeseed backend
+- platform engineers implementing provider sessions, assignment leases, mode-run persistence, and capacity ledger settlement
 
 The root market/admin web app reaches this package through HTTP/proxy/client surfaces only.
 
@@ -112,6 +113,14 @@ Web/API trust:
 
 Provider credentials are required only for enabled operation types. Manage them through Treeseed config and provider secret stores, not plaintext env files.
 
+## Capacity Coordination Boundary
+
+API owns durable provider availability sessions, assignment leases, reservations, mode-run records, usage actuals, and ledger settlement. The assignment function is request-scoped and runs during provider check-in, next-assignment requests, or explicit operator actions.
+
+`@treeseed/agent` owns provider-local runtime behavior and AgentKernel execution. `@treeseed/sdk` owns portable contracts. Admin and CLI consume API contracts for operator visibility.
+
+Provider runners should receive project-scoped TreeDX proxy handles rather than raw TreeDX credentials. API owns authentication, project scope checks, TreeDX node resolution, credential holding, and forwarding allowed `/v1/dx/projects/:projectId/...` operations.
+
 ## Public Exports
 
 ```text
@@ -139,7 +148,7 @@ treeseed-api-db-migrate
 - root `@treeseed/market` hosts the web tenant and future ecommerce overlays.
 - `@treeseed/sdk` owns shared contracts, reconciliation, config, and workflow primitives used by API.
 - `@treeseed/cli` exposes operator commands that call SDK/API surfaces.
-- `@treeseed/agent` owns capacity-provider runtime; API owns backend control-plane routes and operation state for that runtime.
+- `@treeseed/agent` owns capacity-provider runtime, provider manager/runner behavior, and AgentKernel execution; API owns backend control-plane routes, provider sessions, assignment leases, mode-run records, and usage settlement for that runtime.
 - `packages/treedx` owns the generic repository service image consumed by API hosting.
 
 ## What API Does Not Own
@@ -148,7 +157,7 @@ treeseed-api-db-migrate
 - reusable UI primitives
 - root market content, public messaging, or ecommerce
 - CLI command UX
-- capacity provider manager/runner/worker implementation
+- capacity provider manager/runner/worker implementation or AgentKernel execution
 - TreeDX internals
 
 ## Release
