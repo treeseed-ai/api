@@ -95,12 +95,21 @@ function runAcceptanceIfConfigured() {
 		console.log('Skipping API acceptance: TREESEED_API_ACCEPTANCE=skip.');
 		return;
 	}
-	if (process.env.CI === 'true' && !process.env.TREESEED_API_BASE_URL && !required) {
-		console.log('Skipping API acceptance in CI: TREESEED_API_BASE_URL is not configured.');
+	if (!process.env.TREESEED_API_BASE_URL) {
+		if (required) {
+			throw new Error('API acceptance requires TREESEED_API_BASE_URL for the current worktree or hosted API.');
+		}
+		console.log('Skipping API acceptance: TREESEED_API_BASE_URL is not configured.');
 		return;
 	}
 
-	const baseUrl = process.env.TREESEED_API_BASE_URL || 'http://127.0.0.1:3000';
+	const baseUrl = process.env.TREESEED_API_BASE_URL;
+	const parsedBaseUrl = new URL(baseUrl);
+	const isLoopback = ['127.0.0.1', 'localhost', '::1'].includes(parsedBaseUrl.hostname);
+	if (isLoopback && !required) {
+		console.log('Skipping API acceptance: loopback TREESEED_API_BASE_URL requires TREESEED_API_ACCEPTANCE=required to avoid cross-worktree leakage.');
+		return;
+	}
 	const serviceId = process.env.TREESEED_ACCEPTANCE_SERVICE_ID || process.env.TREESEED_WEB_SERVICE_ID || process.env.TREESEED_API_WEB_SERVICE_ID || 'web';
 	const serviceSecret = process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET
 		|| process.env.TREESEED_WEB_SERVICE_SECRET

@@ -44,3 +44,30 @@ dockerImages:
     staging:
       - "dev-staging-<short-sha>"
       - dev-staging
+localDev:
+  services:
+    api:
+      script: dev:api
+      hostEnv: HOST
+      portEnv: PORT
+      defaultPort: 3000
+      healthPath: /healthz
+    operationsRunner:
+      script: dev:runner
+  database:
+    kind: postgres
+    managed: true
+    host: 127.0.0.1
+    defaultPort: 55432
+    portEnv: TREESEED_MARKET_LOCAL_POSTGRES_PORT
+    urlEnv: TREESEED_DATABASE_URL
+    compatibilityUrlEnv: TREESEED_MARKET_DATABASE_URL
+    containerName: treeseed-market-local-postgres
+    volumeName: treeseed-market-local-postgres-data
+    user: treeseed
+    password: treeseed
+    database: market_local
+  migrations:
+    command: node
+    args:
+      - scripts/migrate-db.mjs
