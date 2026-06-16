@@ -160,6 +160,10 @@ function preparedSdkPackageRoot(installedSdkRoot: string) {
 	if (existsSync(resolve(installedSdkRoot, 'dist', 'index.js')) && existsSync(resolve(installedSdkRoot, 'dist', 'api', 'index.js'))) {
 		return { root: installedSdkRoot, cleanup: () => {} };
 	}
+	const workspaceSdkRoot = resolve(packageRoot, '..', 'sdk');
+	if (existsSync(resolve(workspaceSdkRoot, 'package.json')) && existsSync(resolve(workspaceSdkRoot, 'dist', 'index.js')) && existsSync(resolve(workspaceSdkRoot, 'dist', 'api', 'index.js'))) {
+		return { root: workspaceSdkRoot, cleanup: () => {} };
+	}
 	const sdkSpec = packageJson().dependencies?.['@treeseed/sdk'];
 	if (!sdkSpec) throw new Error('@treeseed/api requires @treeseed/sdk to vendor runtime artifacts.');
 	const tempRoot = mkdtempSync(resolve(tmpdir(), 'treeseed-api-sdk-pack-'));
