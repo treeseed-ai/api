@@ -89,6 +89,17 @@ function assertCleanDist() {
 }
 
 function runAcceptanceIfConfigured() {
+	const mode = (process.env.TREESEED_API_ACCEPTANCE ?? '').toLowerCase();
+	const required = mode === 'required' || process.env.TREESEED_API_ACCEPTANCE_REQUIRED === '1';
+	if (mode === 'skip') {
+		console.log('Skipping API acceptance: TREESEED_API_ACCEPTANCE=skip.');
+		return;
+	}
+	if (process.env.CI === 'true' && !process.env.TREESEED_API_BASE_URL && !required) {
+		console.log('Skipping API acceptance in CI: TREESEED_API_BASE_URL is not configured.');
+		return;
+	}
+
 	const baseUrl = process.env.TREESEED_API_BASE_URL || 'http://127.0.0.1:3000';
 	const serviceId = process.env.TREESEED_ACCEPTANCE_SERVICE_ID || process.env.TREESEED_WEB_SERVICE_ID || process.env.TREESEED_API_WEB_SERVICE_ID || 'web';
 	const serviceSecret = process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET
