@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { resolveApiConfig } from '@treeseed/sdk/api';
 import { createApiApp } from './app.js';
 
+/**
+ * @typedef {{ fetch(request: Request, ...args: unknown[]): Response | Promise<Response> }} TreeseedMarketApiApp
+ */
+
 function hasRequestBody(method) {
 	return method !== 'GET' && method !== 'HEAD';
 }
@@ -36,6 +40,10 @@ async function honoNodeHandler(app, request, response) {
 	Readable.fromWeb(webResponse.body).pipe(res);
 }
 
+/**
+ * @param {Record<string, any>} [options]
+ * @returns {Promise<{ app: TreeseedMarketApiApp, config: ReturnType<typeof resolveApiConfig>, server: import('node:http').Server, url: string, close(): Promise<void> }>}
+ */
 export async function createApiServer(options = {}) {
 	const config = {
 		...resolveApiConfig(),

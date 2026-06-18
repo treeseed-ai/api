@@ -6113,6 +6113,14 @@ export function createApiExtension(options = {}) {
 	};
 }
 
+/**
+ * @typedef {{ fetch(request: Request, ...args: unknown[]): Response | Promise<Response> }} TreeseedMarketApiApp
+ */
+
+/**
+ * @param {Record<string, any>} [options]
+ * @returns {TreeseedMarketApiApp}
+ */
 export function createApiApp(options = {}) {
 	const config = defaultConfig(options.config ?? {});
 	const apiDatabaseUrl = config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? null;
