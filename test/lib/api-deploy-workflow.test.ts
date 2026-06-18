@@ -29,9 +29,9 @@ describe('API deploy workflow', () => {
 		expect(deployRun).toContain('--app api --json');
 		expect(deployRun).toContain('trsd hosting apply');
 		expect(deployRun).toContain('--app api --execute --json');
-		expect(deployRun).toContain('RAILWAY_API_TOKEN');
-		expect(deployRun).toContain('CLOUDFLARE_API_TOKEN');
-		expect(deployRun).toContain('CLOUDFLARE_ACCOUNT_ID');
+		expect(deployRun).toContain('TREESEED_RAILWAY_API_TOKEN');
+		expect(deployRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');
+		expect(deployRun).toContain('TREESEED_CLOUDFLARE_ACCOUNT_ID');
 
 		const liveRun = JSON.stringify(deploy.jobs['live-verify']);
 		expect(liveRun).toContain('npm ci --workspaces=false');
@@ -43,7 +43,7 @@ describe('API deploy workflow', () => {
 		expect(liveRun).toContain('node ./scripts/api-acceptance.mjs');
 		expect(liveRun).toContain('reports/api-acceptance.json');
 		expect(liveRun).toContain('reports/api-acceptance.xml');
-		expect(liveRun).toContain('CLOUDFLARE_API_TOKEN');
-		expect(liveRun).toContain('CLOUDFLARE_ACCOUNT_ID');
+		expect(liveRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');
+		expect(liveRun).toContain('TREESEED_CLOUDFLARE_ACCOUNT_ID');
 	});
 });

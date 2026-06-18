@@ -38,6 +38,10 @@ import {
 	resolveApiConfig,
 } from '@treeseed/sdk/api';
 import { MarketControlPlaneStore, validateProjectSlug } from './store.js';
+import { createClientEncryptedEscrowService } from './client-encrypted-escrow.ts';
+import { createGitHubAppAdapter } from './github-app-adapter.ts';
+import { createGitHubActionsSecretEnclave } from './github-actions-secret-enclave.ts';
+import { createTreeDxCredentialBridge } from './treedx-credential-bridge.ts';
 import { createMarketPostgresDatabase } from './market-postgres.js';
 import { installProjectDeploymentRoutes } from './project-deployment-routes.js';
 import { applySeedWithStore, exportSeedWithStore, planSeedWithStore } from '../market/seeds/apply.js';
@@ -72,6 +76,15 @@ function jsonError(c, status, error, details = {}) {
 		error,
 		...details,
 	}, { status });
+}
+
+function jsonThrownError(c, error, fallbackStatus = 500) {
+	const status = Number(error?.status ?? fallbackStatus);
+	const message = error instanceof Error ? error.message : String(error ?? 'Request failed.');
+	return jsonError(c, status >= 400 && status < 600 ? status : fallbackStatus, message, {
+		code: error?.code ?? 'request_failed',
+		details: error?.details,
+	});
 }
 
 const POSTGRES_AUTH_PROVIDER_ID = 'market-postgres';
@@ -362,13 +375,17 @@ async function persistProjectHostBindingOperationMetadata({ store, details, next
 
 const PLAINTEXT_HOST_CREDENTIAL_FIELD_NAMES = new Set([
 	'githubToken',
+	'TREESEED_GITHUB_TOKEN',
 	'GH_TOKEN',
 	'GITHUB_TOKEN',
 	'cloudflareAccountId',
 	'cloudflareApiToken',
+	'TREESEED_CLOUDFLARE_ACCOUNT_ID',
+	'TREESEED_CLOUDFLARE_API_TOKEN',
 	'CLOUDFLARE_ACCOUNT_ID',
 	'CLOUDFLARE_API_TOKEN',
 	'railwayApiToken',
+	'TREESEED_RAILWAY_API_TOKEN',
 	'railwayWorkspace',
 	'RAILWAY_API_TOKEN',
 	'TREESEED_RAILWAY_WORKSPACE',
@@ -406,6 +423,21 @@ function rejectPlaintextHostCredentialFields(c, body) {
 	const fields = plaintextHostCredentialFieldPaths(body);
 	if (fields.length === 0) return null;
 	return jsonError(c, 400, 'Host credential values must be encrypted in encryptedPayload before submission.', {
+		fields,
+	});
+}
+
+function rejectProjectSecretUnlockMaterial(c, body, message = 'Project operations no longer accept passphrases or credential sessions. Re-enter or migrate the secret into an approved target, then retry.') {
+	const fields = [];
+	if (body && typeof body === 'object') {
+		if (typeof body.sensitivePassphrase === 'string' && body.sensitivePassphrase) fields.push('sensitivePassphrase');
+		if (typeof body.passphrase === 'string' && body.passphrase) fields.push('passphrase');
+		if (body.credentialSessions && typeof body.credentialSessions === 'object' && Object.keys(body.credentialSessions).length > 0) fields.push('credentialSessions');
+		if (body.providerCredentialSessions && typeof body.providerCredentialSessions === 'object' && Object.keys(body.providerCredentialSessions).length > 0) fields.push('providerCredentialSessions');
+	}
+	if (fields.length === 0) return null;
+	return jsonError(c, 400, message, {
+		code: 'sensitive_passphrase_rejected',
 		fields,
 	});
 }
@@ -1656,13 +1688,14 @@ function decryptCredentialSessionPayload(runtime, envelope) {
 function normalizeProviderCredentialConfig(hostKind, config, host = null) {
 	const source = config && typeof config === 'object' ? config : {};
 	if (hostKind === 'repository_host') {
-		const token = source.GH_TOKEN ?? source.GITHUB_TOKEN ?? source.githubToken ?? source.token;
+		const token = source.TREESEED_GITHUB_TOKEN ?? source.githubToken ?? source.token;
 		if (!token || typeof token !== 'string') {
-			throw new Error('Repository Host credentials must include GH_TOKEN or GITHUB_TOKEN.');
+			throw new Error('Repository Host credentials must include TREESEED_GITHUB_TOKEN.');
 		}
 		return {
+			TREESEED_GITHUB_TOKEN: token,
 			GH_TOKEN: token,
-			GITHUB_TOKEN: typeof source.GITHUB_TOKEN === 'string' ? source.GITHUB_TOKEN : token,
+			GITHUB_TOKEN: token,
 			...(typeof source.owner === 'string' && source.owner.trim() ? { owner: source.owner.trim() } : {}),
 			...(typeof source.organizationOrOwner === 'string' && source.organizationOrOwner.trim() ? { organizationOrOwner: source.organizationOrOwner.trim() } : {}),
 		};
@@ -1680,15 +1713,17 @@ function normalizeProviderCredentialConfig(hostKind, config, host = null) {
 		};
 	}
 	if (hostKind === 'web_host') {
-		const token = source.CLOUDFLARE_API_TOKEN ?? source.cloudflareApiToken ?? source.apiToken ?? source.token;
-		const accountId = source.CLOUDFLARE_ACCOUNT_ID ?? source.cloudflareAccountId ?? source.accountId;
+		const token = source.TREESEED_CLOUDFLARE_API_TOKEN ?? source.cloudflareApiToken ?? source.apiToken ?? source.token;
+		const accountId = source.TREESEED_CLOUDFLARE_ACCOUNT_ID ?? source.cloudflareAccountId ?? source.accountId;
 		if (!token || typeof token !== 'string') {
-			throw new Error('Web Host credentials must include CLOUDFLARE_API_TOKEN.');
+			throw new Error('Web Host credentials must include TREESEED_CLOUDFLARE_API_TOKEN.');
 		}
 		if (!accountId || typeof accountId !== 'string') {
-			throw new Error('Web Host credentials must include CLOUDFLARE_ACCOUNT_ID.');
+			throw new Error('Web Host credentials must include TREESEED_CLOUDFLARE_ACCOUNT_ID.');
 		}
 		return {
+			TREESEED_CLOUDFLARE_API_TOKEN: token,
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: accountId,
 			CLOUDFLARE_API_TOKEN: token,
 			CLOUDFLARE_ACCOUNT_ID: accountId,
 		};
@@ -1716,10 +1751,10 @@ function normalizeAuditHostKinds(value) {
 function providerCredentialValuesForAudit(hostKind, payload) {
 	const config = payload?.config && typeof payload.config === 'object' ? payload.config : {};
 	if (hostKind === 'repository_host') {
-		const token = config.GH_TOKEN ?? config.GITHUB_TOKEN ?? config.token ?? null;
+		const token = config.TREESEED_GITHUB_TOKEN ?? config.token ?? null;
 		const owner = config.organizationOrOwner ?? config.owner ?? null;
 		return {
-			...(typeof token === 'string' ? { GH_TOKEN: token, GITHUB_TOKEN: token } : {}),
+			...(typeof token === 'string' ? { TREESEED_GITHUB_TOKEN: token } : {}),
 			...(typeof owner === 'string' ? {
 				TREESEED_HOSTED_HUBS_GITHUB_OWNER: owner,
 			} : {}),
@@ -1727,13 +1762,13 @@ function providerCredentialValuesForAudit(hostKind, payload) {
 	}
 	if (hostKind === 'web_host') {
 		return {
-			...(typeof config.CLOUDFLARE_API_TOKEN === 'string' ? { CLOUDFLARE_API_TOKEN: config.CLOUDFLARE_API_TOKEN } : {}),
-			...(typeof config.CLOUDFLARE_ACCOUNT_ID === 'string' ? { CLOUDFLARE_ACCOUNT_ID: config.CLOUDFLARE_ACCOUNT_ID } : {}),
+			...(typeof config.TREESEED_CLOUDFLARE_API_TOKEN === 'string' ? { TREESEED_CLOUDFLARE_API_TOKEN: config.TREESEED_CLOUDFLARE_API_TOKEN } : {}),
+			...(typeof config.TREESEED_CLOUDFLARE_ACCOUNT_ID === 'string' ? { TREESEED_CLOUDFLARE_ACCOUNT_ID: config.TREESEED_CLOUDFLARE_ACCOUNT_ID } : {}),
 		};
 	}
 	if (hostKind === 'capacity_provider_host') {
 		return {
-			...(typeof config.RAILWAY_API_TOKEN === 'string' ? { RAILWAY_API_TOKEN: config.RAILWAY_API_TOKEN } : {}),
+			...(typeof config.TREESEED_RAILWAY_API_TOKEN === 'string' ? { TREESEED_RAILWAY_API_TOKEN: config.TREESEED_RAILWAY_API_TOKEN } : {}),
 			...(typeof config.TREESEED_RAILWAY_WORKSPACE === 'string' ? { TREESEED_RAILWAY_WORKSPACE: config.TREESEED_RAILWAY_WORKSPACE } : {}),
 		};
 	}
@@ -2927,15 +2962,22 @@ async function retryApiLaunchBootstrapFromRequest({
 	resume = false,
 	mockExternal = false,
 }) {
-	const sensitivePassphrase = typeof body.sensitivePassphrase === 'string' && body.sensitivePassphrase
-		? body.sensitivePassphrase
-		: null;
+	const rejectedUnlock = rejectProjectSecretUnlockMaterial(
+		c,
+		body,
+		'Launch recovery no longer accepts passphrases or credential sessions. Re-enter or migrate team-owned secrets into approved targets, then retry.',
+	);
+	if (rejectedUnlock) return { response: rejectedUnlock };
 	const launchIntent = job.input?.launchIntent && typeof job.input.launchIntent === 'object' ? job.input.launchIntent : null;
 	if (!launchIntent) {
 		return { response: jsonError(c, 400, 'Launch retry cannot run because the original launch intent is missing.', { code: 'missing_launch_intent' }) };
 	}
-	if (job.input?.bootstrap?.requiresPassphrase && !sensitivePassphrase) {
-		return { response: jsonError(c, 400, 'Sensitive data passphrase is required to retry project setup because the selected hosts are team-owned.', { code: 'sensitive_passphrase_required' }) };
+	if (job.input?.bootstrap?.requiresPassphrase) {
+		return {
+			response: jsonError(c, 400, 'Launch retry cannot unlock team-owned secrets in the API. Re-enter or migrate the selected host secrets through CLI/Admin client-side flows, then retry.', {
+				code: 'sensitive_passphrase_rejected',
+			}),
+		};
 	}
 	const teamId = typeof job.input?.teamId === 'string' ? job.input.teamId : access.details.project.teamId;
 	const repositoryHostId = typeof job.input?.repositoryHostId === 'string'
@@ -3021,8 +3063,8 @@ async function retryApiLaunchBootstrapFromRequest({
 			status: 'running',
 			title: resume ? 'Launch resume queued' : 'Launch retry queued',
 			summary: resume
-				? 'TreeSeed will rerun API-owned credential bootstrap and resume provider setup with the submitted passphrase.'
-				: 'TreeSeed will rerun API-owned credential bootstrap with the submitted passphrase.',
+				? 'TreeSeed will rerun API-owned credential bootstrap and resume provider setup without API-side secret unlock material.'
+				: 'TreeSeed will rerun API-owned credential bootstrap without API-side secret unlock material.',
 			data: { jobId: job.id },
 		});
 	}
@@ -3039,7 +3081,7 @@ async function retryApiLaunchBootstrapFromRequest({
 		runtime,
 		jobId: job.id,
 		launchIntent: retryLaunchIntent,
-		passphrase: sensitivePassphrase,
+		passphrase: null,
 		repositoryHost,
 		cloudflareHost,
 		emailHost,
@@ -3948,8 +3990,8 @@ async function requireDxProjectAccess(c, store, projectId, permission = 'project
 		};
 	}
 	const requiredScopes = permission === 'projects:manage:team'
-		? ['provider:tasks:update']
-		: ['provider:tasks:claim'];
+		? ['provider:assignments:write']
+		: ['provider:assignments:read'];
 	const providerAccess = await requireCapacityProviderKey(c, store, requiredScopes);
 	if (providerAccess.response) return providerAccess;
 	if (providerAccess.provider.teamId !== details.project.teamId) {
@@ -3965,6 +4007,164 @@ async function requireDxProjectAccess(c, store, projectId, permission = 'project
 		details,
 		actorType: 'capacity_provider',
 	};
+}
+
+function treeDxRequiredProxyScope(tokenScope) {
+	const handleScope = (resource, action) => `${resource}:${action}`;
+	const capabilities = Array.isArray(tokenScope?.capabilities) ? tokenScope.capabilities.map(String) : [];
+	const writeCapability = capabilities.some((capability) => /write|commit|create|delete|refresh/.test(capability));
+	if (writeCapability) return ['project:write', handleScope('workspace', 'write'), 'git:commit'];
+	return ['project:read', handleScope('workspace', 'read'), 'files:read'];
+}
+
+function treeDxPathMatches(pattern, candidate) {
+	const normalizedPattern = String(pattern ?? '').replace(/^\/+/, '');
+	const normalizedCandidate = String(candidate ?? '').replace(/^\/+/, '');
+	if (!normalizedPattern || normalizedPattern === '**' || normalizedPattern === '*') return true;
+	if (normalizedPattern.endsWith('/**')) {
+		const prefix = normalizedPattern.slice(0, -3);
+		return normalizedCandidate === prefix || normalizedCandidate.startsWith(`${prefix}/`);
+	}
+	if (normalizedPattern.endsWith('*')) return normalizedCandidate.startsWith(normalizedPattern.slice(0, -1));
+	return normalizedCandidate === normalizedPattern || normalizedCandidate.startsWith(`${normalizedPattern}/`);
+}
+
+function evaluateTreeDxProxyHandleAccessLocal(handle, request) {
+	if (!handle?.id) return { ok: false, code: 'treedx_proxy_handle_missing', reason: 'TreeDX proxy handle is required.' };
+	if (handle.status === 'revoked' || handle.revokedAt) return { ok: false, code: 'treedx_proxy_handle_revoked', reason: 'TreeDX proxy handle has been revoked.' };
+	if (handle.status === 'expired') return { ok: false, code: 'treedx_proxy_handle_expired', reason: 'TreeDX proxy handle has expired.' };
+	if (handle.projectId !== request.projectId || (request.teamId && handle.teamId !== request.teamId)) {
+		return { ok: false, code: 'treedx_proxy_scope_mismatch', reason: 'TreeDX proxy handle scope does not match the project.' };
+	}
+	if (request.assignmentId && handle.assignmentId && handle.assignmentId !== request.assignmentId) {
+		return { ok: false, code: 'treedx_proxy_assignment_mismatch', reason: 'TreeDX proxy handle is bound to a different assignment.' };
+	}
+	if (request.repositoryId && handle.repositoryId && handle.repositoryId !== request.repositoryId) {
+		return { ok: false, code: 'treedx_proxy_repository_mismatch', reason: 'TreeDX proxy handle is bound to a different repository.' };
+	}
+	if (request.workspaceId && handle.workspaceId && handle.workspaceId !== request.workspaceId) {
+		return { ok: false, code: 'treedx_proxy_workspace_mismatch', reason: 'TreeDX proxy handle is bound to a different workspace.' };
+	}
+	if (handle.expiresAt && Date.parse(handle.expiresAt) <= Date.now()) {
+		return { ok: false, code: 'treedx_proxy_handle_expired', reason: 'TreeDX proxy handle has expired.' };
+	}
+	if (handle.tokenHash && !request.token) {
+		return { ok: false, code: 'treedx_proxy_token_mismatch', reason: 'TreeDX proxy handle token is required.' };
+	}
+	const operation = request.operation ? String(request.operation) : null;
+	const allowedOperations = Array.isArray(handle.allowedOperations) ? handle.allowedOperations.map(String) : [];
+	if (operation && allowedOperations.length && !allowedOperations.includes(operation) && !allowedOperations.includes('*')) {
+		return { ok: false, code: 'treedx_proxy_operation_denied', reason: 'TreeDX proxy handle does not allow this operation.', metadata: { operation, allowedOperations } };
+	}
+	const path = request.path ? String(request.path).replace(/^\/+/, '') : null;
+	const allowedPaths = Array.isArray(handle.allowedPaths) ? handle.allowedPaths.map(String).filter(Boolean) : [];
+	if (path && allowedPaths.length && !allowedPaths.some((pattern) => treeDxPathMatches(pattern, path))) {
+		return { ok: false, code: 'treedx_proxy_path_denied', reason: 'TreeDX proxy handle does not allow this path.', metadata: { path, allowedPaths } };
+	}
+	return { ok: true };
+}
+
+async function requireAssignmentScopedTreeDxProxyAccess(c, store, access, projectId, tokenScope) {
+	if (access.actorType !== 'capacity_provider') return { assignment: null, handle: null };
+	const assignmentId = c.req.header('x-treeseed-assignment-id') ?? c.req.query('assignmentId') ?? null;
+	const handleId = c.req.header('x-treeseed-treedx-proxy-handle-id') ?? c.req.query('treeDxProxyHandleId') ?? null;
+	const providerTeamId = access.principal.teamId;
+	const denied = async (status, error, details = {}) => {
+		const requestPath = new URL(c.req.url, 'http://treeseed.local').pathname;
+		await store.recordTreeDxProxyAudit?.({
+			teamId: providerTeamId,
+			projectId,
+			assignmentId: assignmentId ?? null,
+			actorType: access.actorType,
+			actorId: access.principal?.id ?? access.provider?.id ?? null,
+			method: c.req.method,
+			path: requestPath,
+			handle: { id: handleId ?? null },
+			resultStatus: 'denied',
+			reasonCode: details.code ?? 'treedx_proxy_denied',
+			reason: error,
+			metadata: { details },
+		}).catch(() => null);
+		return { response: jsonError(c, status, error, details) };
+	};
+	if (!assignmentId || !handleId) {
+		return denied(403, 'Capacity provider TreeDX proxy access requires an assignment-scoped proxy handle.', {
+			code: 'treedx_proxy_handle_missing',
+			projectId,
+			assignmentId: assignmentId ?? null,
+		});
+	}
+	const assignment = await store.getProviderAssignment(access.principal.teamId, assignmentId);
+	if (!assignment || assignment.projectId !== projectId || assignment.capacityProviderId !== access.principal.capacityProviderId) {
+		return denied(403, 'TreeDX proxy handle is not bound to this provider assignment.', {
+			code: 'treedx_proxy_assignment_mismatch',
+			projectId,
+			assignmentId,
+		});
+	}
+	if (assignment.leaseState !== 'leased' || !assignment.leaseExpiresAt || Date.parse(assignment.leaseExpiresAt) <= Date.now()) {
+		return denied(403, 'TreeDX proxy handle requires an active assignment lease.', {
+			code: 'treedx_proxy_assignment_not_leased',
+			projectId,
+			assignmentId,
+			leaseState: assignment.leaseState,
+		});
+	}
+	const storedHandle = await store.getTreeDxProxyHandle?.(providerTeamId, projectId, handleId).catch(() => null);
+	const embeddedHandle = assignment.treedxProxyHandle && typeof assignment.treedxProxyHandle === 'object' ? assignment.treedxProxyHandle : {};
+	const handle = storedHandle ?? embeddedHandle;
+	if (handle.id !== handleId || handle.projectId !== projectId || handle.teamId !== access.principal.teamId || (handle.assignmentId && handle.assignmentId !== assignmentId)) {
+		return denied(403, 'TreeDX proxy handle scope does not match the active assignment.', {
+			code: 'treedx_proxy_scope_mismatch',
+			projectId,
+			assignmentId,
+			handleId,
+		});
+	}
+	const presentedToken = c.req.header('x-treeseed-treedx-proxy-handle') ?? c.req.query('treeDxProxyToken') ?? null;
+	if (handle.tokenHash && (!presentedToken || createHash('sha256').update(presentedToken).digest('hex') !== handle.tokenHash)) {
+		return denied(403, 'TreeDX proxy handle token does not match.', {
+			code: 'treedx_proxy_token_mismatch',
+			projectId,
+			assignmentId,
+			handleId,
+		});
+	}
+	const scopes = Array.isArray(handle.scopes) ? handle.scopes.map(String) : [];
+	const acceptableScopes = treeDxRequiredProxyScope(tokenScope);
+	if (!acceptableScopes.some((scope) => scopes.includes(scope))) {
+		return denied(403, 'TreeDX proxy handle does not allow this operation.', {
+			code: 'treedx_proxy_scope_denied',
+			projectId,
+			assignmentId,
+			requiredAny: acceptableScopes,
+		});
+	}
+	const capability = Array.isArray(tokenScope?.capabilities) ? tokenScope.capabilities.map(String).find(Boolean) : null;
+	const repoIds = Array.isArray(tokenScope?.repoIds) ? tokenScope.repoIds.map(String).filter((entry) => entry && entry !== '*') : [];
+	const paths = Array.isArray(tokenScope?.paths) ? tokenScope.paths.map(String).filter((entry) => entry && entry !== '**') : [];
+	const requestPath = paths.length === 1 ? paths[0] : null;
+	const workspaceMatch = new URL(c.req.url, 'http://treeseed.local').pathname.match(/\/workspaces\/([^/]+)/u);
+	const accessResult = evaluateTreeDxProxyHandleAccessLocal(handle, {
+		teamId: providerTeamId,
+		projectId,
+		assignmentId,
+		repositoryId: repoIds[0] ?? null,
+		workspaceId: workspaceMatch?.[1] ? decodeURIComponent(workspaceMatch[1]) : null,
+		operation: capability,
+		path: requestPath,
+		token: presentedToken,
+	});
+	if (!accessResult.ok) {
+		return denied(403, accessResult.reason ?? 'TreeDX proxy handle does not allow this request.', {
+			code: accessResult.code ?? 'treedx_proxy_request_denied',
+			projectId,
+			assignmentId,
+			handleId,
+			...(accessResult.metadata ?? {}),
+		});
+	}
+	return { assignment, handle };
 }
 
 function runtimeEnv(runtime) {
@@ -4136,6 +4336,8 @@ async function assertDxWorkspaceMatchesProject({ c, runtime, projectId, library,
 async function proxyTreeDxJson({ c, runtime, store, projectId, permission, method, path, body, tokenScope }) {
 	const access = await requireDxProjectAccess(c, store, projectId, permission);
 	if (access.response) return access.response;
+	const scopedProxyAccess = await requireAssignmentScopedTreeDxProxyAccess(c, store, access, projectId, tokenScope);
+	if (scopedProxyAccess.response) return scopedProxyAccess.response;
 	const library = await store.getProjectTreeDxLibrary(projectId);
 	const baseUrl = resolveTreeDxProxyBaseUrl({ runtime, library });
 	let token = null;
@@ -4221,17 +4423,22 @@ async function proxyTreeDxJson({ c, runtime, store, projectId, permission, metho
 	await store.recordTreeDxProxyAudit?.({
 		teamId: auditProject?.teamId ?? access.provider?.teamId ?? access.principal?.teamId ?? null,
 		projectId,
-		assignmentId: c.req.header('x-treeseed-assignment-id') ?? c.req.query('assignmentId') ?? null,
+		assignmentId: scopedProxyAccess.assignment?.id ?? c.req.header('x-treeseed-assignment-id') ?? c.req.query('assignmentId') ?? null,
 		actorType: access.actorType,
 		actorId: access.principal?.id ?? access.provider?.id ?? null,
 		method,
 		path,
 		handle: {
+			...(scopedProxyAccess.handle ?? {}),
 			projectId,
-			assignmentId: c.req.header('x-treeseed-assignment-id') ?? c.req.query('assignmentId') ?? null,
+			assignmentId: scopedProxyAccess.assignment?.id ?? c.req.header('x-treeseed-assignment-id') ?? c.req.query('assignmentId') ?? null,
 			scopes: tokenScope?.capabilities ?? [],
 		},
 		resultStatus: 'proxied',
+		metadata: {
+			tokenScope,
+			providerAssignmentScoped: access.actorType === 'capacity_provider',
+		},
 	}).catch(() => null);
 	return c.json({
 		ok: true,
@@ -6891,6 +7098,27 @@ export function createApiApp(options = {}) {
 				return c.json({ ok: true, payload: { ...payload, team, operation } }, { status: 202 });
 			});
 
+			app.post('/v1/internal/github/app/webhook', async (c) => {
+				const bodyText = await c.req.text();
+				const adapter = createGitHubAppAdapter({
+					store,
+					config: runtime.resolved.config,
+				});
+				if (!adapter.verifyWebhook({
+					body: bodyText,
+					signature: c.req.header('x-hub-signature-256'),
+				})) {
+					return jsonError(c, 401, 'Invalid GitHub App webhook signature.');
+				}
+				const payload = JSON.parse(bodyText || '{}');
+				const result = await adapter.applyWebhookEvent({
+					event: c.req.header('x-github-event'),
+					deliveryId: c.req.header('x-github-delivery'),
+					payload,
+				});
+				return c.json({ ok: true, payload: result });
+			});
+
 			app.get('/v1/internal/treedx/public-federation/status', async (c) => {
 				const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
 				if (service.response) return service.response;
@@ -6905,6 +7133,23 @@ export function createApiApp(options = {}) {
 					? payload.deployments
 					: await store.listTreeDxDeployments(team.id).catch(() => []);
 				return c.json({ ok: true, payload: { ...payload, deployments, team } });
+			});
+
+			app.post('/v1/internal/treedx/credentials/github-app', async (c) => {
+				const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
+				if (service.response) return service.response;
+				const body = await c.req.json().catch(() => ({}));
+				const bridge = createTreeDxCredentialBridge({
+					store,
+					config: runtime.resolved.config,
+					githubAppAdapter: options.githubAppAdapter,
+				});
+				try {
+					const payload = await bridge.issueGitCredential(body);
+					return c.json({ ok: true, payload }, { status: 201 });
+				} catch (error) {
+					return jsonThrownError(c, error, 403);
+				}
 			});
 
 			app.get('/v1/teams/:teamId/treedx/mirrors', async (c) => {
@@ -7581,7 +7826,7 @@ export function createApiApp(options = {}) {
 				const provider = await store.getCapacityProvider(c.req.param('teamId'), c.req.param('providerId'));
 				if (!provider) return jsonError(c, 404, 'Unknown capacity provider.');
 				const body = await c.req.json().catch(() => ({}));
-				const plaintextFields = ['apiKey', 'providerApiKey', 'TREESEED_CAPACITY_PROVIDER_API_KEY', 'railwayApiToken', 'RAILWAY_API_TOKEN', 'decryptedConfig'];
+				const plaintextFields = ['apiKey', 'providerApiKey', 'TREESEED_CAPACITY_PROVIDER_API_KEY', 'railwayApiToken', 'TREESEED_RAILWAY_API_TOKEN', 'RAILWAY_API_TOKEN', 'decryptedConfig'];
 				const leakedField = plaintextFields.find((field) => Object.prototype.hasOwnProperty.call(body, field));
 				if (leakedField) {
 					return jsonError(c, 400, 'Plaintext capacity provider deployment credentials are not accepted. Use a provider credential session or the one-time key reveal.', { field: leakedField });
@@ -7888,7 +8133,9 @@ export function createApiApp(options = {}) {
 					const assignment = await store.createProviderAssignment(c.req.param('teamId'), body);
 					return assignment ? c.json({ ok: true, payload: assignment }, { status: 201 }) : jsonError(c, 404, 'Unknown project, provider, or project agent class.');
 				} catch (error) {
-					return jsonError(c, 400, error instanceof Error ? error.message : String(error));
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error), {
+						code: error && typeof error === 'object' && 'code' in error ? error.code : 'invalid_provider_assignment',
+					});
 				}
 			});
 
@@ -8263,6 +8510,179 @@ export function createApiApp(options = {}) {
 				}, { status: 201 });
 			});
 
+			app.get('/v1/projects/:projectId/secrets/github-actions/public-key', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const enclave = createGitHubActionsSecretEnclave({
+					store,
+					config: runtime.resolved.config,
+				});
+				try {
+					const payload = await enclave.fetchPublicKey({
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						installationId: c.req.query('installationId'),
+						repository: c.req.query('repository'),
+						scope: c.req.query('scope') ?? 'environment',
+						environment: c.req.query('environment'),
+						requester: { type: 'user', id: access.principal.id },
+					});
+					return c.json({ ok: true, payload });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
+			app.post('/v1/projects/:projectId/secrets/github-actions/deploy', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const enclave = createGitHubActionsSecretEnclave({
+					store,
+					config: runtime.resolved.config,
+				});
+				try {
+					const payload = await enclave.deployEncryptedSecret({
+						...body,
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						requester: { type: 'user', id: access.principal.id },
+					});
+					return c.json({ ok: true, payload }, { status: 202 });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
+			app.get('/v1/projects/:projectId/secrets/escrow', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const service = createClientEncryptedEscrowService({ store });
+				try {
+					const payload = await service.list({
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						secretId: c.req.query('secretId'),
+						status: c.req.query('status'),
+						limit: c.req.query('limit'),
+					});
+					return c.json({ ok: true, payload });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
+			app.post('/v1/projects/:projectId/secrets/escrow', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const service = createClientEncryptedEscrowService({ store });
+				try {
+					const payload = await service.create({
+						...body,
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						requester: { type: 'user', id: access.principal.id },
+					});
+					return c.json({ ok: true, payload }, { status: 201 });
+				} catch (error) {
+					return jsonThrownError(c, error, 400);
+				}
+			});
+
+			app.get('/v1/projects/:projectId/secrets/escrow/:escrowId', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const service = createClientEncryptedEscrowService({ store });
+				try {
+					const payload = await service.get({
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						escrowId: c.req.param('escrowId'),
+					});
+					return c.json({ ok: true, payload });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
+			app.patch('/v1/projects/:projectId/secrets/escrow/:escrowId', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const service = createClientEncryptedEscrowService({ store });
+				try {
+					const payload = await service.update({
+						...body,
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						escrowId: c.req.param('escrowId'),
+						requester: { type: 'user', id: access.principal.id },
+					});
+					return c.json({ ok: true, payload });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
+			app.post('/v1/projects/:projectId/secrets/escrow/:escrowId/migrate', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const service = createClientEncryptedEscrowService({ store });
+				try {
+					const payload = await service.migrate({
+						...body,
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						escrowId: c.req.param('escrowId'),
+						requester: { type: 'user', id: access.principal.id },
+					});
+					return c.json({ ok: true, payload });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
+			app.delete('/v1/projects/:projectId/secrets/escrow/:escrowId', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const service = createClientEncryptedEscrowService({ store });
+				try {
+					const payload = await service.tombstone({
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						escrowId: c.req.param('escrowId'),
+						requester: { type: 'user', id: access.principal.id },
+					});
+					return c.json({ ok: true, payload });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
+			app.post('/v1/projects/:projectId/workflow-operations/:operationId/dispatch', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const enclave = createGitHubActionsSecretEnclave({
+					store,
+					config: runtime.resolved.config,
+				});
+				try {
+					const payload = await enclave.dispatchWorkflowOperation({
+						...body,
+						teamId: access.details.project.teamId,
+						projectId: c.req.param('projectId'),
+						operationId: c.req.param('operationId'),
+						requester: { type: 'user', id: access.principal.id },
+					});
+					return c.json({ ok: true, payload }, { status: 202 });
+				} catch (error) {
+					return jsonThrownError(c, error);
+				}
+			});
+
 			app.get('/v1/projects', async (c) => {
 				const auth = await ensurePrincipal(c);
 				if (auth.response) return auth.response;
@@ -8311,21 +8731,18 @@ export function createApiApp(options = {}) {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
-				const credentialSessions = body.credentialSessions && typeof body.credentialSessions === 'object'
-					? body.credentialSessions
-					: {};
-				if (Object.keys(credentialSessions).length > 0) {
-					return jsonError(c, 400, 'Project launch no longer accepts provider credential sessions. Submit sensitivePassphrase for API-owned credential bootstrap.');
-				}
+				const rejectedUnlock = rejectProjectSecretUnlockMaterial(
+					c,
+					body,
+					'Project launch no longer accepts passphrases or provider credential sessions. Re-enter or migrate team-owned secrets into approved targets before launch.',
+				);
+				if (rejectedUnlock) return rejectedUnlock;
 				let normalizedHostBindings;
 				try {
 					normalizedHostBindings = normalizeProjectLaunchHostBindings(body);
 				} catch (error) {
 					return jsonError(c, 400, error instanceof Error ? error.message : String(error), { code: 'invalid_host_bindings' });
 				}
-				const sensitivePassphrase = typeof body.sensitivePassphrase === 'string' && body.sensitivePassphrase
-					? body.sensitivePassphrase
-					: null;
 				const canonicalIntent = body.intent && typeof body.intent === 'object' ? body.intent : null;
 				const requestedHub = canonicalIntent?.hub && typeof canonicalIntent.hub === 'object' ? canonicalIntent.hub : null;
 				const requestedTeam = canonicalIntent?.team && typeof canonicalIntent.team === 'object' ? canonicalIntent.team : null;
@@ -8391,7 +8808,7 @@ export function createApiApp(options = {}) {
 						['process', 'ingHostConfig'].join(''),
 					];
 					const removedRuntimeSessionKey = ['process', 'ingHost'].join('');
-					if (removedRuntimeHostFields.some((field) => body[field] !== undefined) || credentialSessions[removedRuntimeSessionKey] !== undefined) {
+					if (removedRuntimeHostFields.some((field) => body[field] !== undefined) || body.credentialSessions?.[removedRuntimeSessionKey] !== undefined) {
 						return jsonError(c, 400, 'Project launch no longer accepts runtime host configuration. Create and deploy a capacity provider from the capacity provider lifecycle pages.');
 					}
 					let templateLaunchRequirements;
@@ -8466,11 +8883,9 @@ export function createApiApp(options = {}) {
 						return jsonError(c, 400, 'Selected team-owned Cloudflare host is not available for this team.');
 					}
 					if (body.cloudflareHostConfig && typeof body.cloudflareHostConfig === 'object') {
-						return jsonError(c, 400, 'Plaintext Cloudflare provider configs are not accepted. Submit sensitivePassphrase so the API can unlock the selected host for this launch.');
+						return jsonError(c, 400, 'Plaintext Cloudflare provider configs are not accepted. Re-enter or migrate this host secret through CLI/Admin client-side flows before launch.', { code: 'sensitive_passphrase_rejected' });
 					}
-					if (!sensitivePassphrase) {
-						return jsonError(c, 400, 'sensitivePassphrase is required after unlocking a team-owned Cloudflare host.');
-					}
+					return jsonError(c, 400, 'Team-owned Cloudflare host secrets must be re-entered or migrated into an approved target before project launch.', { code: 'sensitive_passphrase_rejected' });
 				}
 					let emailHost = null;
 				if (emailHostMode === 'team_owned') {
@@ -8483,11 +8898,9 @@ export function createApiApp(options = {}) {
 						return jsonError(c, 400, 'Selected team-owned Email host is not available for this team.');
 					}
 					if (body.emailHostConfig && typeof body.emailHostConfig === 'object') {
-						return jsonError(c, 400, 'Plaintext Email provider configs are not accepted. Submit sensitivePassphrase so the API can unlock the selected host for this launch.');
+						return jsonError(c, 400, 'Plaintext Email provider configs are not accepted. Re-enter or migrate this host secret through CLI/Admin client-side flows before launch.', { code: 'sensitive_passphrase_rejected' });
 					}
-					if (!sensitivePassphrase) {
-						return jsonError(c, 400, 'sensitivePassphrase is required after unlocking a team-owned Email host.');
-					}
+					return jsonError(c, 400, 'Team-owned Email host secrets must be re-entered or migrated into an approved target before project launch.', { code: 'sensitive_passphrase_rejected' });
 				}
 					const cloudflareLaunchConfig = cloudflareHostMode === 'treeseed_managed'
 							? await resolveTreeseedManagedCloudflareHostConfigFromConfig(runtime)
@@ -8611,11 +9024,9 @@ export function createApiApp(options = {}) {
 				}
 				if (repositoryHost.ownership === 'team_owned') {
 					if (body.repositoryHostConfig && typeof body.repositoryHostConfig === 'object') {
-						return jsonError(c, 400, 'Plaintext Repository Host provider configs are not accepted. Submit sensitivePassphrase so the API can unlock the selected host for this launch.');
+						return jsonError(c, 400, 'Plaintext Repository Host provider configs are not accepted. Re-enter or migrate this host secret through CLI/Admin client-side flows before launch.', { code: 'sensitive_passphrase_rejected' });
 					}
-					if (!sensitivePassphrase) {
-						return jsonError(c, 400, 'sensitivePassphrase is required for team-owned Repository Hosts.');
-					}
+					return jsonError(c, 400, 'Team-owned Repository Host secrets must be re-entered or migrated into an approved target before project launch.', { code: 'sensitive_passphrase_rejected' });
 				}
 					const auditHostKinds = ['repository', 'web', 'email'];
 				const templateLineage = [{
@@ -8864,7 +9275,7 @@ export function createApiApp(options = {}) {
 						hostingMode,
 						bootstrap: {
 							ownedBy: 'api',
-							requiresPassphrase: Boolean(sensitivePassphrase),
+							requiresPassphrase: false,
 						},
 					}),
 				});
@@ -8956,7 +9367,7 @@ export function createApiApp(options = {}) {
 					runtime,
 					jobId: launchJob.id,
 					launchIntent,
-					passphrase: sensitivePassphrase,
+					passphrase: null,
 					repositoryHost,
 					cloudflareHost,
 					emailHost,
@@ -9260,6 +9671,12 @@ export function createApiApp(options = {}) {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), kind === 'audit' ? 'projects:read:team' : 'projects:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
+				const rejectedUnlock = rejectProjectSecretUnlockMaterial(
+					c,
+					body,
+					'Project host operations no longer accept passphrases or credential sessions. Re-enter or migrate team-owned host secrets through CLI/Admin client-side flows before retrying.',
+				);
+				if (rejectedUnlock) return rejectedUnlock;
 				const requirementKey = optionalTrimmedString(c.req.param('requirementKey')) ?? optionalTrimmedString(body.requirementKey);
 				const context = await loadProjectHostBindingContext({
 					store,
@@ -9312,28 +9729,12 @@ export function createApiApp(options = {}) {
 				const scopedRequirementKeys = requirementKey ? [requirementKey] : plan.operationSummary.changedRequirementKeys;
 				const requiresUnlock = Object.entries(plan.nextHostBindings)
 					.some(([key, binding]) => (scopedRequirementKeys.length === 0 || scopedRequirementKeys.includes(key)) && hostBindingRequiresUnlock(binding));
-				if ((kind === 'rotate' || kind === 'replace' || kind === 'resync') && requiresUnlock && !body.sensitivePassphrase) {
-					return jsonError(c, 400, 'sensitivePassphrase is required for project host operations involving team-owned hosts.', {
-						code: 'sensitive_passphrase_required',
+				if ((kind === 'rotate' || kind === 'replace' || kind === 'resync') && requiresUnlock) {
+					return jsonError(c, 400, 'Project host operations cannot unlock team-owned secrets in the API. Re-enter or migrate the selected host secrets through CLI/Admin client-side flows before retrying.', {
+						code: 'sensitive_passphrase_rejected',
 					});
 				}
-				let credentialSessions = {};
-				try {
-					credentialSessions = await createProjectHostCredentialSessions({
-						store,
-						runtime,
-						teamId: context.project.teamId,
-						principalId: access.principal.id,
-						hostBindings: plan.nextHostBindings,
-						requirementKeys: scopedRequirementKeys,
-						passphrase: body.sensitivePassphrase,
-					});
-				} catch (error) {
-					return jsonError(c, 400, 'Unable to unlock provider credentials for this project host operation.', {
-						code: 'provider_credential_unlock_failed',
-						message: error instanceof Error ? error.message : String(error),
-					});
-				}
+				const credentialSessions = {};
 				const repository = resolvePlatformRepositoryDescriptor(runtime.resolved.config, access.details, {
 					repository: {
 						role: 'software',
@@ -9527,6 +9928,12 @@ export function createApiApp(options = {}) {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
+				const rejectedUnlock = rejectProjectSecretUnlockMaterial(
+					c,
+					body,
+					'Project deletion no longer accepts passphrases or credential sessions. Re-enter or migrate team-owned secrets into approved targets before deleting connected infrastructure.',
+				);
+				if (rejectedUnlock) return rejectedUnlock;
 				const project = await store.getProject(c.req.param('projectId'));
 				if (!project) return jsonError(c, 404, 'Project not found.');
 				if (!projectDeletionConfirmationMatches(body.confirmation, project)) {
@@ -9545,9 +9952,9 @@ export function createApiApp(options = {}) {
 				const hasTeamRepositoryHost = repositoryHosts.some((host) => host?.ownership === 'team_owned');
 				const webHostRef = project.metadata?.cloudflareHost ?? details?.hosting?.metadata?.cloudflareHost ?? {};
 				const hasTeamWebHost = webHostRef?.mode === 'team_owned' && webHostRef?.hostId;
-				if ((hasTeamRepositoryHost || hasTeamWebHost) && !body.sensitivePassphrase) {
-					return jsonError(c, 400, 'Sensitive data passphrase is required to delete project infrastructure from connected hosts.', {
-						code: 'sensitive_passphrase_required',
+				if (hasTeamRepositoryHost || hasTeamWebHost) {
+					return jsonError(c, 400, 'Project deletion cannot unlock team-owned connected hosts in the API. Re-enter or migrate the selected secrets through CLI/Admin client-side flows before deleting infrastructure.', {
+						code: 'sensitive_passphrase_rejected',
 					});
 				}
 				const existingDeletion = (await store.listProjectDeployments(project.id, { action: 'delete_project', limit: 10 }).catch(() => []))
@@ -9623,7 +10030,7 @@ export function createApiApp(options = {}) {
 					store,
 					projectId: project.id,
 					jobId: job.id,
-					passphrase: body.sensitivePassphrase,
+					passphrase: null,
 					mockExternal: options.mockExternal === true,
 				}));
 				return c.json({
@@ -12083,6 +12490,31 @@ export function createApiApp(options = {}) {
 				});
 			});
 
+			app.get('/v1/projects/:projectId/agent-fallback-outputs', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({
+					ok: true,
+					payload: await store.listAgentFallbackOutputs(c.req.param('projectId'), {
+						mode: typeof c.req.query('mode') === 'string' ? c.req.query('mode') : null,
+						status: typeof c.req.query('status') === 'string' ? c.req.query('status') : null,
+						assignmentId: typeof c.req.query('assignmentId') === 'string' ? c.req.query('assignmentId') : null,
+					}),
+				});
+			});
+
+			app.get('/v1/projects/:projectId/treedx-proxy-audit', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({
+					ok: true,
+					payload: await store.listTreeDxProxyAudit(c.req.param('projectId'), {
+						assignmentId: typeof c.req.query('assignmentId') === 'string' ? c.req.query('assignmentId') : null,
+						actorType: typeof c.req.query('actorType') === 'string' ? c.req.query('actorType') : null,
+					}),
+				});
+			});
+
 			app.get('/v1/decisions/:decisionId/planning-status', async (c) => {
 				const status = await store.getDecisionPlanningStatus(c.req.param('decisionId'));
 				if (!status) return jsonError(c, 404, 'Unknown decision planning status.');
@@ -12208,6 +12640,15 @@ export function createApiApp(options = {}) {
 				return c.json({ ok: true, payload: await store.updateAgentCapacityPlanStatus(plan.id, 'scheduled', body) });
 			});
 
+			app.post('/v1/capacity-plans/:capacityPlanId/supersede', async (c) => {
+				const plan = await store.getAgentCapacityPlan(c.req.param('capacityPlanId'));
+				if (!plan) return jsonError(c, 404, 'Unknown capacity plan.');
+				const access = await requireProjectAccess(c, store, plan.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateAgentCapacityPlanStatus(plan.id, 'superseded', body) });
+			});
+
 			app.post('/v1/workdays', async (c) => {
 				const body = await c.req.json().catch(() => ({}));
 				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
@@ -12326,7 +12767,7 @@ export function createApiApp(options = {}) {
 			});
 
 			app.post('/v1/provider/assignments/next', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:read']);
 				if (auth.response) return auth.response;
 				const body = await c.req.json().catch(() => ({}));
 				const result = await store.leaseNextProviderAssignment(auth.principal, body);
@@ -12340,7 +12781,7 @@ export function createApiApp(options = {}) {
 			});
 
 			app.get('/v1/provider/assignments/:assignmentId', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:read']);
 				if (auth.response) return auth.response;
 				const assignment = await store.getProviderAssignment(auth.principal.teamId, c.req.param('assignmentId'));
 				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
@@ -12349,7 +12790,7 @@ export function createApiApp(options = {}) {
 			});
 
 			app.get('/v1/provider/assignments/:assignmentId/explanation', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:read']);
 				if (auth.response) return auth.response;
 				const assignment = await store.getProviderAssignment(auth.principal.teamId, c.req.param('assignmentId'));
 				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
@@ -12359,7 +12800,7 @@ export function createApiApp(options = {}) {
 			});
 
 			app.post('/v1/provider/assignments/:assignmentId/renew', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:read']);
 				if (auth.response) return auth.response;
 				const body = await c.req.json().catch(() => ({}));
 				const result = await store.renewProviderAssignmentLease(auth.principal, c.req.param('assignmentId'), body);
@@ -12368,7 +12809,7 @@ export function createApiApp(options = {}) {
 			});
 
 			app.post('/v1/provider/assignments/:assignmentId/return', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update']);
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:write']);
 				if (auth.response) return auth.response;
 				const body = await c.req.json().catch(() => ({}));
 				const result = await store.returnProviderAssignment(auth.principal, c.req.param('assignmentId'), body);
@@ -12378,7 +12819,7 @@ export function createApiApp(options = {}) {
 
 			app.post('/v1/provider/assignments/:assignmentId/complete', async (c) => {
 				const body = await c.req.json().catch(() => ({}));
-				const scopes = ['provider:tasks:update'];
+				const scopes = ['provider:assignments:write'];
 				if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:report');
 				const auth = await requireCapacityProviderKey(c, store, scopes);
 				if (auth.response) return auth.response;
@@ -12389,7 +12830,7 @@ export function createApiApp(options = {}) {
 
 			app.post('/v1/provider/assignments/:assignmentId/fail', async (c) => {
 				const body = await c.req.json().catch(() => ({}));
-				const scopes = ['provider:tasks:update'];
+				const scopes = ['provider:assignments:write'];
 				if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:report');
 				const auth = await requireCapacityProviderKey(c, store, scopes);
 				if (auth.response) return auth.response;
@@ -12399,7 +12840,7 @@ export function createApiApp(options = {}) {
 			});
 
 			app.post('/v1/provider/assignments/:assignmentId/mode-runs', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update', 'provider:usage:report']);
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:write', 'provider:usage:report']);
 				if (auth.response) return auth.response;
 				const assignment = await store.getProviderAssignment(auth.principal.teamId, c.req.param('assignmentId'));
 				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
@@ -12413,6 +12854,82 @@ export function createApiApp(options = {}) {
 				return modeRun ? c.json({ ok: true, payload: modeRun }, { status: 201 }) : jsonError(c, 404, 'Unknown assignment.');
 			});
 
+			app.post('/v1/provider/assignments/:assignmentId/workflow-operations/:operationId/dispatch', async (c) => {
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:write']);
+				if (auth.response) return auth.response;
+				const assignment = await store.getProviderAssignment(auth.principal.teamId, c.req.param('assignmentId'));
+				if (!assignment) return jsonError(c, 404, 'Unknown assignment.');
+				if (assignment.capacityProviderId !== auth.principal.capacityProviderId) return jsonError(c, 403, 'Provider cannot update this assignment.');
+				const body = await c.req.json().catch(() => ({}));
+				if (assignment.leaseState === 'leased' && assignment.leaseToken !== body.leaseToken) {
+					return jsonError(c, 409, 'Assignment lease token is required for workflow operation dispatch.', { code: 'assignment_lease_token_required' });
+				}
+				if (assignment.leaseExpiresAt && Date.parse(assignment.leaseExpiresAt) <= Date.now()) {
+					return jsonError(c, 409, 'Assignment lease has expired.', { code: 'assignment_lease_expired' });
+				}
+				const capabilityHandles = assignment.capabilityHandles && typeof assignment.capabilityHandles === 'object' ? assignment.capabilityHandles : {};
+				const workflowHandles = Array.isArray(capabilityHandles.workflowOperations) ? capabilityHandles.workflowOperations : [];
+				const requestedHandleId = typeof body.handleId === 'string' ? body.handleId : null;
+				const operationId = c.req.param('operationId');
+				const handle = workflowHandles.find((entry) => entry && typeof entry === 'object'
+					&& entry.operationId === operationId
+					&& (!requestedHandleId || entry.id === requestedHandleId));
+				if (!handle) {
+					return jsonError(c, 403, 'Assignment does not include an active workflow operation handle for this operation.', { code: 'assignment_workflow_operation_denied' });
+				}
+				if (handle.status && !['active', 'issued'].includes(String(handle.status))) {
+					return jsonError(c, 403, 'Assignment workflow operation handle is not active.', { code: 'assignment_workflow_operation_denied' });
+				}
+				if (handle.expiresAt && Date.parse(handle.expiresAt) <= Date.now()) {
+					return jsonError(c, 403, 'Assignment workflow operation handle has expired.', { code: 'assignment_workflow_operation_denied' });
+				}
+				const operations = Array.isArray(handle.operations) ? handle.operations.map(String) : [];
+				if (!operations.includes('dispatch_workflow')) {
+					return jsonError(c, 403, 'Assignment workflow operation handle is not dispatch-capable.', { code: 'assignment_workflow_operation_denied' });
+				}
+				const extraFields = ['workflow', 'workflowFile', 'workflow_file', 'repository', 'ref', 'branch', 'command', 'commands', 'providerCommands']
+					.filter((field) => Object.prototype.hasOwnProperty.call(body, field));
+				if (extraFields.length) {
+					return jsonError(c, 400, 'Provider workflow operation dispatch accepts only assignment handle inputs, not arbitrary workflow scope.', { code: 'arbitrary_secret_workflow_dispatch', fields: extraFields });
+				}
+				const enclave = createGitHubActionsSecretEnclave({
+					store,
+					config: runtime.resolved.config,
+				});
+				try {
+					const payload = await enclave.dispatchWorkflowOperation({
+						inputs: body.inputs && typeof body.inputs === 'object' && !Array.isArray(body.inputs) ? body.inputs : {},
+						wait: body.wait === true,
+						teamId: assignment.teamId,
+						projectId: assignment.projectId,
+						operationId,
+						requester: {
+							type: 'capacity_provider',
+							id: auth.principal.capacityProviderId,
+							assignmentId: assignment.id,
+							handleId: handle.id,
+						},
+						metadata: {
+							providerAssignmentId: assignment.id,
+							capacityProviderId: auth.principal.capacityProviderId,
+							workflowOperationHandleId: handle.id,
+						},
+					});
+					await store.recordSecretCapabilityAudit('provider_assignment.workflow_operation_dispatched', {
+						teamId: assignment.teamId,
+						projectId: assignment.projectId,
+						assignmentId: assignment.id,
+						capacityProviderId: auth.principal.capacityProviderId,
+						workflowOperationId: operationId,
+						handleId: handle.id,
+						dispatchId: payload?.dispatch?.id ?? null,
+					}).catch(() => null);
+					return c.json({ ok: true, payload }, { status: 202 });
+				} catch (error) {
+					return jsonThrownError(c, error, 403);
+				}
+			});
+
 			app.get('/v1/provider/portfolio', async (c) => {
 				const auth = await requireCapacityProviderKey(c, store, ['provider:portfolio:read']);
 				if (auth.response) return auth.response;
@@ -12422,7 +12939,7 @@ export function createApiApp(options = {}) {
 			});
 
 			app.post('/v1/provider/workdays', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update']);
+				const auth = await requireCapacityProviderKey(c, store, ['provider:assignments:write']);
 				if (auth.response) return auth.response;
 				const body = await c.req.json().catch(() => ({}));
 				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
@@ -12453,70 +12970,6 @@ export function createApiApp(options = {}) {
 					},
 				});
 				return c.json({ ok: true, workDay });
-			});
-
-			app.post('/v1/provider/tasks/claim', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:claim']);
-				if (auth.response) return auth.response;
-				const body = await c.req.json().catch(() => ({}));
-				const limit = Number.isFinite(Number(body.limit)) ? Number(body.limit) : 1;
-				const runnerId = typeof body.runnerId === 'string' ? body.runnerId : null;
-				const projects = typeof body.projectId === 'string'
-					? [await store.getProject(body.projectId)].filter(Boolean)
-					: await store.listTeamProjects(auth.principal.teamId);
-				const tasks = [];
-				for (const project of projects) {
-					if (project.teamId !== auth.principal.teamId) continue;
-					const remaining = Math.max(0, limit - tasks.length);
-					if (remaining <= 0) break;
-					tasks.push(...await store.pullCapacityProviderJobs(auth.provider.id, project.id, {
-						limit: remaining,
-						runnerId,
-					}));
-				}
-				return c.json({ ok: true, tasks, leaseSeconds: 300 });
-			});
-
-			app.post('/v1/provider/tasks/:taskId/events', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update']);
-				if (auth.response) return auth.response;
-				const job = await store.findJobById(c.req.param('taskId'));
-				if (!job) return jsonError(c, 404, 'Unknown task.');
-				const capacity = job.input?.capacity && typeof job.input.capacity === 'object' ? job.input.capacity : null;
-				if (capacity?.providerId !== auth.provider.id) return jsonError(c, 403, 'Provider cannot update this task.');
-				const body = await c.req.json().catch(() => ({}));
-				const event = await store.appendJobEvent(job.id, typeof body.kind === 'string' ? body.kind : 'provider_event', {
-					...(body.data && typeof body.data === 'object' ? body.data : {}),
-					runnerId: body.runnerId ?? null,
-				});
-				return c.json({ ok: true, event });
-			});
-
-			app.post('/v1/provider/tasks/:taskId/complete', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update']);
-				if (auth.response) return auth.response;
-				const job = await store.findJobById(c.req.param('taskId'));
-				if (!job) return jsonError(c, 404, 'Unknown task.');
-				const capacity = job.input?.capacity && typeof job.input.capacity === 'object' ? job.input.capacity : null;
-				if (capacity?.providerId !== auth.provider.id) return jsonError(c, 403, 'Provider cannot complete this task.');
-				const body = await c.req.json().catch(() => ({}));
-				const task = await store.completeJob(job.id, { output: body.output ?? body.summary ?? null });
-				return c.json({ ok: true, task });
-			});
-
-			app.post('/v1/provider/tasks/:taskId/fail', async (c) => {
-				const auth = await requireCapacityProviderKey(c, store, ['provider:tasks:update']);
-				if (auth.response) return auth.response;
-				const job = await store.findJobById(c.req.param('taskId'));
-				if (!job) return jsonError(c, 404, 'Unknown task.');
-				const capacity = job.input?.capacity && typeof job.input.capacity === 'object' ? job.input.capacity : null;
-				if (capacity?.providerId !== auth.provider.id) return jsonError(c, 403, 'Provider cannot fail this task.');
-				const body = await c.req.json().catch(() => ({}));
-				const task = await store.failJob(job.id, {
-					code: typeof body.errorCode === 'string' ? body.errorCode : 'provider_task_failed',
-					message: typeof body.errorMessage === 'string' ? body.errorMessage : 'Provider task failed.',
-				});
-				return c.json({ ok: true, task });
 			});
 
 			app.post('/v1/provider/usage', async (c) => {

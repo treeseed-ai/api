@@ -5,7 +5,19 @@ import {
 	deriveAvailableCredits,
 	nativeUsageUnit,
 } from '@treeseed/sdk/capacity';
-import { buildAgentCapacityPlanDraft } from '@treeseed/sdk/agent-capacity';
+import {
+	buildAgentCapacityPlanDraft,
+	hasAcceptedCapacityPlanProvenance,
+	providerAssignmentCapabilityHandlesContainSecretMaterial,
+	redactedProviderAssignmentCapabilityHandles,
+	validateProviderAssignmentCapabilityHandles,
+} from '@treeseed/sdk/agent-capacity';
+import {
+	containsTreeseedPlaintextSecretMaterial,
+	validateTreeseedClientEncryptedEscrowMetadata,
+	validateTreeseedSecretsCapabilityRegistry,
+	validateTreeseedWritableSecretMetadata,
+} from '@treeseed/sdk/secrets-capability';
 import { redactDeploymentValue } from '../market/deployment-actions.ts';
 import { projectDeploymentAuditPayload } from '../market/deployment-governance.ts';
 
@@ -96,8 +108,8 @@ const PHASE4_CAPACITY_PROVIDER_SCOPES = [
 	'provider:register',
 	'provider:heartbeat',
 	'provider:portfolio:read',
-	'provider:tasks:claim',
-	'provider:tasks:update',
+	'provider:assignments:read',
+	'provider:assignments:write',
 	'provider:usage:report',
 	'provider:reports:write',
 	'provider:capabilities:write',
@@ -112,8 +124,8 @@ const CAPACITY_PROVIDER_BOOTSTRAP_SCOPES = [
 const CAPACITY_PROVIDER_SESSION_SCOPES = [
 	'provider:heartbeat',
 	'provider:portfolio:read',
-	'provider:tasks:claim',
-	'provider:tasks:update',
+	'provider:assignments:read',
+	'provider:assignments:write',
 	'provider:usage:report',
 	'provider:reports:write',
 	'provider:capabilities:write',
@@ -1036,6 +1048,7 @@ function serializeProviderAvailabilitySession(row) {
 
 function serializeProviderAssignment(row) {
 	if (!row) return null;
+	const workspaceContext = parseJson(row.workspace_context_json, {});
 	return {
 		id: row.id,
 		teamId: row.team_id,
@@ -1059,7 +1072,7 @@ function serializeProviderAssignment(row) {
 		handlerId: row.handler_id,
 		capacityEnvelope: parseJson(row.capacity_envelope_json, {}),
 		decisionInput: parseJson(row.decision_input_json, {}),
-		workspaceContext: parseJson(row.workspace_context_json, {}),
+		workspaceContext,
 		allowedOutputs: parseJson(row.allowed_outputs_json, {}),
 		explanation: parseJson(row.explanation_json, {}),
 		attemptCount: Number(row.attempt_count ?? 0),
@@ -1077,10 +1090,193 @@ function serializeProviderAssignment(row) {
 		proposalId: row.proposal_id,
 		fallbackOutputId: row.fallback_output_id,
 		treedxProxyHandle: parseJson(row.treedx_proxy_handle_json, {}),
+		capabilityHandles: objectValue(workspaceContext.capabilityHandles),
 		metadata: parseJson(row.metadata_json, {}),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
+}
+
+function normalizedStrings(values) {
+	return arrayValue(values).map((value) => String(value ?? '').trim()).filter(Boolean);
+}
+
+function providerStatusIsActive(provider) {
+	return ['active', 'online'].includes(String(provider?.status ?? '').toLowerCase());
+}
+
+function sessionIsOpen(session) {
+	return Boolean(session && session.status === 'open' && !session.closedAt);
+}
+
+function assignmentWorkspaceAccessMode(input = {}) {
+	const explicit = stringValue(input.workspaceAccessMode ?? input.workspace_access_mode);
+	if (['context_only', 'brokered_workspace', 'full_workspace_no_credentials', 'trusted_direct'].includes(explicit)) return explicit;
+	return input.mode === 'acting' ? 'brokered_workspace' : 'context_only';
+}
+
+function deriveProviderAssignmentCapabilityHandles(input = {}) {
+	const workspaceContext = objectValue(input.workspaceContext ?? input.workspace_context);
+	const supplied = objectValue(input.capabilityHandles ?? input.capability_handles ?? workspaceContext.capabilityHandles);
+	const workspaceAccessMode = assignmentWorkspaceAccessMode({
+		...input,
+		workspaceAccessMode: supplied.workspaceAccessMode ?? workspaceContext.workspaceAccessMode,
+	});
+	const next = redactedProviderAssignmentCapabilityHandles({
+		workspaceAccessMode,
+		repository: arrayValue(supplied.repository),
+		treeDx: arrayValue(supplied.treeDx),
+		workflowOperations: arrayValue(supplied.workflowOperations ?? input.workflowOperationHandles ?? input.workflow_operation_handles),
+		secrets: arrayValue(supplied.secrets),
+		metadata: objectValue(supplied.metadata),
+	});
+	const treedxProxyHandle = objectValue(input.treedxProxyHandle ?? input.treedx_proxy_handle ?? workspaceContext.treedxProxyHandle);
+	if (treedxProxyHandle.id) {
+		const repositoryId = stringValue(treedxProxyHandle.repositoryId);
+		const workspaceId = stringValue(treedxProxyHandle.workspaceId);
+		if (!next.treeDx?.some((handle) => handle.proxyHandleId === treedxProxyHandle.id || handle.id === `tdx-workspace-${treedxProxyHandle.id}`)) {
+			next.treeDx = [
+				...(next.treeDx ?? []),
+				{
+					id: `tdx-workspace-${treedxProxyHandle.id}`,
+					kind: 'treedx_workspace',
+					teamId: input.teamId,
+					projectId: input.projectId,
+					assignmentId: input.id,
+					status: 'active',
+					workspaceAccessMode,
+					proxyHandleId: treedxProxyHandle.id,
+					repositoryId: repositoryId || null,
+					workspaceId: workspaceId || null,
+					operations: arrayValue(treedxProxyHandle.allowedOperations),
+					allowedOperations: arrayValue(treedxProxyHandle.allowedOperations),
+					allowedPaths: arrayValue(treedxProxyHandle.allowedPaths),
+					expiresAt: treedxProxyHandle.expiresAt ?? null,
+					metadata: { source: 'treedx_proxy_handle' },
+				},
+			];
+		}
+		if (repositoryId && !next.repository?.some((handle) => handle.repositoryId === repositoryId)) {
+			next.repository = [
+				...(next.repository ?? []),
+				{
+					id: `repo-access-${treedxProxyHandle.id}`,
+					kind: 'repository_access',
+					teamId: input.teamId,
+					projectId: input.projectId,
+					assignmentId: input.id,
+					status: 'active',
+					workspaceAccessMode,
+					provider: 'treedx_proxy',
+					repositoryId,
+					operations: workspaceAccessMode === 'context_only' ? ['read'] : ['read', 'write', 'commit', 'test'],
+					allowedPaths: arrayValue(treedxProxyHandle.allowedPaths),
+					credentialMode: 'brokered',
+					expiresAt: treedxProxyHandle.expiresAt ?? null,
+					metadata: { source: 'treedx_proxy_handle' },
+				},
+			];
+		}
+	}
+	return next;
+}
+
+function isWithinAvailabilityWindow(session, now = isoNow()) {
+	if (!session) return false;
+	const nowMs = Date.parse(now);
+	if (session.availableFrom) {
+		const availableFrom = Date.parse(session.availableFrom);
+		if (Number.isFinite(availableFrom) && nowMs < availableFrom) return false;
+	}
+	if (session.availableUntil) {
+		const availableUntil = Date.parse(session.availableUntil);
+		if (Number.isFinite(availableUntil) && nowMs > availableUntil) return false;
+	}
+	return true;
+}
+
+function sessionCapabilities(session, provider) {
+	return [...new Set([
+		...normalizedStrings(provider?.capabilities),
+		...normalizedStrings(session?.capabilities),
+		...normalizedStrings(session?.metadata?.capabilities),
+	])];
+}
+
+function assignmentRequiredCapabilities(assignment, agentClass = null, workUnit = null) {
+	return [...new Set([
+		...normalizedStrings(agentClass?.requiredCapabilities),
+		...normalizedStrings(workUnit?.requiredCapabilities),
+		...normalizedStrings(assignment?.decisionInput?.requiredCapabilities),
+		...normalizedStrings(assignment?.decisionInput?.metadata?.requiredCapabilities),
+		...normalizedStrings(assignment?.capacityEnvelope?.metadata?.requiredCapabilities),
+		...normalizedStrings(assignment?.metadata?.requiredCapabilities),
+	])];
+}
+
+function missingRequiredCapabilities(requiredCapabilities, availableCapabilities) {
+	if (!requiredCapabilities.length) return [];
+	if (!availableCapabilities.length) return requiredCapabilities;
+	return requiredCapabilities.filter((capability) => !availableCapabilities.includes(capability));
+}
+
+function grantMatchesScope(grant, input = {}) {
+	if (!grant || grant.state !== 'active') return false;
+	if (grant.teamId && grant.teamId !== input.teamId) return false;
+	if (grant.capacityProviderId && grant.capacityProviderId !== input.capacityProviderId) return false;
+	if (grant.projectId && input.projectId && grant.projectId !== input.projectId) return false;
+	if (grant.environment && input.environment && grant.environment !== input.environment) return false;
+	if (grant.grantScope === 'project' && grant.projectId && grant.projectId !== input.projectId) return false;
+	if (grant.grantScope === 'team') return true;
+	return !grant.projectId || !input.projectId || grant.projectId === input.projectId;
+}
+
+function checkedInGrantMatches(grant, sessionGrants) {
+	const grants = arrayValue(sessionGrants);
+	if (!grants.length) return false;
+	return grants.some((entry) => {
+		if (typeof entry === 'string') {
+			return [grant.id, grant.grantScope, grant.projectId, grant.teamId].filter(Boolean).includes(entry);
+		}
+		const record = objectValue(entry, null);
+		if (!record) return false;
+		const ids = [record.id, record.grantId, record.capacityGrantId, record.scopeId].map((value) => typeof value === 'string' ? value : null).filter(Boolean);
+		if (ids.includes(grant.id)) return true;
+		const scope = stringValue(record.grantScope ?? record.scope, '');
+		if (scope && grant.grantScope && scope !== grant.grantScope) return false;
+		const projectId = stringValue(record.projectId, '');
+		if (projectId && grant.projectId && projectId !== grant.projectId) return false;
+		const teamId = stringValue(record.teamId, '');
+		if (teamId && grant.teamId && teamId !== grant.teamId) return false;
+		const providerId = stringValue(record.capacityProviderId ?? record.providerId, '');
+		if (providerId && grant.capacityProviderId && providerId !== grant.capacityProviderId) return false;
+		const environment = stringValue(record.environment, '');
+		if (environment && grant.environment && environment !== grant.environment) return false;
+		return Boolean(scope || projectId || teamId || providerId || environment);
+	});
+}
+
+function runnerPressureLimit(session) {
+	const pressure = objectValue(session?.runnerPressure);
+	const nested = objectValue(pressure.pressure);
+	const value = finiteMetric(pressure.maxConcurrentRunners)
+		?? finiteMetric(pressure.maxRunners)
+		?? finiteMetric(nested.maxConcurrentRunners)
+		?? finiteMetric(nested.maxRunners);
+	return value !== null && value >= 0 ? value : null;
+}
+
+function assignmentPriority(assignment) {
+	const priority = Number(assignment?.metadata?.priority ?? assignment?.explanation?.priority ?? 0);
+	return Number.isFinite(priority) ? priority : 0;
+}
+
+function compareAssignmentsForLease(left, right) {
+	const priority = assignmentPriority(right) - assignmentPriority(left);
+	if (priority !== 0) return priority;
+	return String(left.assignedAt ?? left.createdAt ?? left.id).localeCompare(String(right.assignedAt ?? right.createdAt ?? right.id))
+		|| String(left.createdAt ?? left.id).localeCompare(String(right.createdAt ?? right.id))
+		|| String(left.id).localeCompare(String(right.id));
 }
 
 function serializeDecisionPlanningStatus(row) {
@@ -1185,9 +1381,11 @@ function serializeAgentCapacityPlan(row) {
 		reserves: parseJson(row.reserves_json, {}),
 		blockers: parseJson(row.blockers_json, []),
 		priorityRationale: row.priority_rationale,
+		review: parseJson(row.review_json, {}),
 		metadata: parseJson(row.metadata_json, {}),
 		acceptedAt: row.accepted_at,
 		scheduledAt: row.scheduled_at,
+		supersededAt: row.superseded_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	};
@@ -1226,6 +1424,49 @@ function serializeAgentFallbackOutput(row) {
 		quota: parseJson(row.quota_json, {}),
 		metadata: parseJson(row.metadata_json, {}),
 		createdAt: row.created_at,
+	};
+}
+
+function serializeTreeDxProxyAudit(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		assignmentId: row.assignment_id,
+		actorType: row.actor_type,
+		actorId: row.actor_id,
+		method: row.method,
+		path: row.path,
+		handle: parseJson(row.handle_json, {}),
+		resultStatus: row.result_status,
+		reasonCode: row.reason_code ?? null,
+		reason: row.reason ?? null,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+	};
+}
+
+function serializeTreeDxProxyHandle(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		assignmentId: row.assignment_id,
+		repositoryId: row.repository_id,
+		workspaceId: row.workspace_id,
+		status: row.status,
+		scopes: parseJson(row.scopes_json, []),
+		allowedOperations: parseJson(row.allowed_operations_json, []),
+		allowedPaths: parseJson(row.allowed_paths_json, []),
+		tokenHash: row.token_hash,
+		expiresAt: row.expires_at,
+		issuedAt: row.issued_at,
+		revokedAt: row.revoked_at,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
 	};
 }
 
@@ -2056,6 +2297,230 @@ function serializeAuditEvent(row) {
 		data: redactDeploymentValue(parseJson(row.data_json, {})),
 		createdAt: row.created_at,
 	};
+}
+
+function serializeSecretMetadataRecord(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		name: row.name,
+		secretClass: row.secret_class,
+		custodyMode: row.custody_mode,
+		owner: { kind: row.owner_kind, teamId: row.team_id, projectId: row.project_id },
+		status: row.status,
+		githubSecretTarget: parseJson(row.github_secret_target_json, {}),
+		escrowRecordId: row.escrow_record_id,
+		apiDecryptable: Number(row.api_decryptable ?? 0) === 1,
+		plaintextAllowed: Number(row.plaintext_allowed ?? 0) === 1,
+		failClosedCode: row.fail_closed_code,
+		metadata: redactDeploymentValue(parseJson(row.metadata_json, {})),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		tombstonedAt: row.tombstoned_at,
+	};
+}
+
+function serializeClientEncryptedEscrowRecord(row) {
+	if (!row) return null;
+	const rawMetadata = parseJson(row.metadata_json, {});
+	const rawEnvelope = rawMetadata?.envelope && typeof rawMetadata.envelope === 'object' ? rawMetadata.envelope : {};
+	const metadata = {
+		...redactDeploymentValue(rawMetadata),
+		envelope: {
+			ciphertext: rawEnvelope.ciphertext ?? null,
+			nonce: rawEnvelope.nonce ?? null,
+			salt: rawEnvelope.salt ?? null,
+			kdf: rawEnvelope.kdf ?? null,
+			kdfParams: rawEnvelope.kdfParams ?? null,
+			encryptionVersion: rawEnvelope.encryptionVersion ?? null,
+			deploymentIntent: rawEnvelope.deploymentIntent ?? null,
+		},
+	};
+	const envelope = metadata.envelope;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		secretId: row.secret_id,
+		status: row.status,
+		ciphertext: envelope.ciphertext ?? null,
+		ciphertextRef: row.ciphertext_ref,
+		algorithm: row.algorithm,
+		nonce: envelope.nonce ?? null,
+		salt: envelope.salt ?? null,
+		kdf: envelope.kdf ?? null,
+		kdfParams: envelope.kdfParams ?? null,
+		wrappingKeyId: row.wrapping_key_id,
+		encryptionVersion: envelope.encryptionVersion ?? null,
+		createdByClientId: row.created_by_client_id,
+		expiresAt: row.expires_at,
+		deploymentIntent: envelope.deploymentIntent ?? null,
+		migratedTo: row.migrated_to,
+		metadata,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		tombstonedAt: row.tombstoned_at,
+	};
+}
+
+function serializeGitHubRepositoryGrant(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		repository: row.repository,
+		installationId: row.installation_id,
+		accountLogin: row.account_login,
+		accountId: row.account_id,
+		status: row.status,
+		permissions: parseJson(row.permissions_json, {}),
+		environments: parseJson(row.environments_json, []),
+		driftCode: row.drift_code,
+		observedAt: row.observed_at,
+		revokedAt: row.revoked_at,
+		metadata: redactDeploymentValue(parseJson(row.metadata_json, {})),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeGitHubAppInstallationRecord(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		installationId: row.installation_id,
+		accountLogin: row.account_login,
+		accountId: row.account_id,
+		accountType: row.account_type,
+		status: row.status,
+		permissions: parseJson(row.permissions_json, {}),
+		repositorySelection: row.repository_selection,
+		driftCode: row.drift_code,
+		observedAt: row.observed_at,
+		revokedAt: row.revoked_at,
+		suspendedAt: row.suspended_at,
+		metadata: redactDeploymentValue(parseJson(row.metadata_json, {})),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeGitHubAppTokenIssuanceRecord(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		assignmentId: row.assignment_id,
+		providerId: row.provider_id,
+		workdayId: row.workday_id,
+		operationId: row.operation_id,
+		repository: row.repository,
+		installationId: row.installation_id,
+		status: row.status,
+		tokenPrefix: row.token_prefix,
+		tokenHash: row.token_hash,
+		permissions: parseJson(row.permissions_json, {}),
+		allowedOperations: parseJson(row.allowed_operations_json, []),
+		expiresAt: row.expires_at,
+		issuedAt: row.issued_at,
+		revokedAt: row.revoked_at,
+		failClosedCode: row.fail_closed_code,
+		metadata: redactDeploymentValue(parseJson(row.metadata_json, {})),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeWorkflowOperationRecord(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		name: row.name,
+		repository: row.repository,
+		workflowFile: row.workflow_file,
+		secretBearing: Number(row.secret_bearing ?? 0) === 1,
+		trustedExecutionSetId: row.trusted_execution_set_id,
+		dispatch: parseJson(row.dispatch_json, {}),
+		inputs: parseJson(row.inputs_json, []),
+		secretClasses: parseJson(row.secret_classes_json, []),
+		status: row.status,
+		failClosedCode: row.fail_closed_code,
+		metadata: redactDeploymentValue(parseJson(row.metadata_json, {})),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		blockedAt: row.blocked_at,
+	};
+}
+
+function serializeWorkflowDispatchRecord(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		workflowOperationId: row.workflow_operation_id,
+		platformOperationId: row.platform_operation_id,
+		repository: row.repository,
+		workflowFile: row.workflow_file,
+		ref: row.ref,
+		status: row.status,
+		inputs: redactDeploymentValue(parseJson(row.inputs_json, {})),
+		result: redactDeploymentValue(parseJson(row.result_json, {})),
+		failClosedCode: row.fail_closed_code,
+		metadata: redactDeploymentValue(parseJson(row.metadata_json, {})),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		dispatchedAt: row.dispatched_at,
+		completedAt: row.completed_at,
+	};
+}
+
+function serializeTreeDxCredentialIssuanceRecord(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		assignmentId: row.assignment_id,
+		repository: row.repository,
+		credentialProvider: row.credential_provider,
+		status: row.status,
+		tokenPrefix: row.token_prefix,
+		tokenHash: row.token_hash,
+		scopes: parseJson(row.scopes_json, []),
+		allowedOperations: parseJson(row.allowed_operations_json, []),
+		expiresAt: row.expires_at,
+		issuedAt: row.issued_at,
+		revokedAt: row.revoked_at,
+		failClosedCode: row.fail_closed_code,
+		metadata: redactDeploymentValue(parseJson(row.metadata_json, {})),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function secretCapabilityValidationError(problems, message = 'Invalid secret capability record.') {
+	const error = new Error(message);
+	error.status = 400;
+	error.code = problems?.[0]?.code ?? 'invalid_secret_capability_record';
+	error.details = { problems };
+	return error;
+}
+
+function rejectSecretCapabilityPlaintext(input, path = '$') {
+	if (!containsTreeseedPlaintextSecretMaterial(input)) return;
+	throw secretCapabilityValidationError([{
+		path,
+		code: 'plaintext_escrow_material',
+		message: 'Secret capability records must not include plaintext secret material.',
+	}], 'Secret capability records must not include plaintext secret material.');
 }
 
 function serializeKnowledgePack(row) {
@@ -5299,9 +5764,38 @@ export class MarketControlPlaneStore {
 		const total = Math.round(slices.reduce((sum, slice) => sum + slice.percentage, 0) * 100) / 100;
 		if (slices.length === 0) throw new Error('At least one allocation slice is required.');
 		if (Math.abs(total - 100) > 0.01) throw new Error('Portfolio allocation must total 100%.');
-		const grants = [];
 		for (const slice of slices) {
 			if (!byId.has(slice.id)) throw new Error(`Unknown project allocation target "${slice.id}".`);
+		}
+		const allocationSet = await this.createCapacityAllocationSet(teamId, {
+			id: input.allocationSetId ?? `alloc_${safeIdPart(providerId)}_${safeIdPart(isoNow())}`,
+			version: input.version ?? isoNow(),
+			status: 'draft',
+			policy: {
+				source: 'portfolio_allocation_ui',
+				capacityProviderId: providerId,
+				environment: stringValue(input.environment, 'local'),
+				totalPercent: total,
+			},
+			slices: slices.map((slice) => ({
+				projectId: slice.id,
+				capacityProviderId: providerId,
+				environment: stringValue(input.environment, 'local'),
+				percent: slice.percentage,
+				metadata: {
+					name: slice.name,
+					allocationTreeLevel: 'team_project',
+				},
+			})),
+			metadata: {
+				source: 'portfolio_allocation_ui',
+				activatesGrants: true,
+			},
+			createdById: input.createdById ?? null,
+		});
+		const activeAllocationSet = allocationSet ? await this.activateCapacityAllocationSet(teamId, allocationSet.id) : null;
+		const grants = [];
+		for (const slice of slices) {
 			grants.push(await this.upsertCapacityGrant(teamId, {
 				id: `${providerId}:${slice.id}:portfolio-allocation`,
 				capacityProviderId: providerId,
@@ -5315,6 +5809,8 @@ export class MarketControlPlaneStore {
 				portfolioAllocationPercent: slice.percentage,
 				metadata: {
 					source: 'portfolio_allocation_ui',
+					allocationSetId: activeAllocationSet?.id ?? allocationSet?.id ?? null,
+					allocationPolicyVersion: activeAllocationSet?.version ?? allocationSet?.version ?? null,
 					allocationName: slice.name,
 					allocationTreeLevel: 'team_project',
 				},
@@ -5322,6 +5818,7 @@ export class MarketControlPlaneStore {
 		}
 		return {
 			...await this.getTeamPortfolioAllocation(teamId),
+			allocationSet: activeAllocationSet ?? allocationSet,
 			updatedGrants: grants,
 		};
 	}
@@ -5591,6 +6088,136 @@ export class MarketControlPlaneStore {
 		));
 	}
 
+	async resolveProviderEligibilityContext(principal, input = {}) {
+		const provider = await this.getCapacityProvider(principal.teamId, principal.capacityProviderId);
+		const sessionId = input.sessionId ?? input.providerSessionId ?? provider?.metadata?.lastAvailabilitySessionId ?? null;
+		let session = sessionId ? await this.getProviderAvailabilitySession(principal.teamId, sessionId).catch(() => null) : null;
+		if (!session) {
+			session = serializeProviderAvailabilitySession(await this.first(
+				`SELECT * FROM provider_availability_sessions
+				 WHERE team_id = ? AND capacity_provider_id = ? AND status = 'open'
+				 ORDER BY checked_in_at DESC, created_at DESC LIMIT 1`,
+				[principal.teamId, principal.capacityProviderId],
+			));
+		}
+		return {
+			provider,
+			session,
+			now: input.now ?? isoNow(),
+			environment: input.environment ?? session?.environment ?? null,
+		};
+	}
+
+	async activeCapacityGrantsForProvider(teamId, providerId, projectId = null, environment = null) {
+		const rows = await this.all(
+			`SELECT * FROM capacity_grants
+			 WHERE team_id = ? AND capacity_provider_id = ? AND state = 'active'
+			   AND (project_id IS NULL OR project_id = ?)
+			 LIMIT 100`,
+			[teamId, providerId, projectId],
+		).catch(() => []);
+		return rows
+			.map(serializeCapacityGrant)
+			.filter(Boolean)
+			.filter((grant) => grantMatchesScope(grant, {
+				teamId,
+				capacityProviderId: providerId,
+				projectId,
+				environment,
+			}));
+	}
+
+	async countActiveProviderLeases(teamId, providerId, sessionId = null, now = isoNow()) {
+		const values = [teamId, providerId, now];
+		const sessionClause = sessionId ? 'AND provider_session_id = ?' : '';
+		if (sessionId) values.push(sessionId);
+		const row = await this.first(
+			`SELECT COUNT(*) AS count
+			 FROM provider_assignments
+			 WHERE team_id = ? AND capacity_provider_id = ?
+			   AND status = 'leased'
+			   AND lease_state = 'leased'
+			   AND (lease_expires_at IS NULL OR lease_expires_at > ?)
+			   ${sessionClause}`,
+			values,
+		).catch(() => ({ count: 0 }));
+		return Number(row?.count ?? 0);
+	}
+
+	async evaluateProviderAssignmentEligibility(principal, input = {}) {
+		const context = input.context ?? await this.resolveProviderEligibilityContext(principal, input);
+		const assignment = input.assignment ?? null;
+		const agentClass = input.agentClass ?? (assignment?.projectAgentClassId
+			? await this.getProjectAgentClass(assignment.projectId, assignment.projectAgentClassId).catch(() => null)
+			: null);
+		const requiredCapabilities = assignmentRequiredCapabilities(assignment, agentClass, input.workUnit);
+		const availableCapabilities = sessionCapabilities(context.session, context.provider);
+		const missingCapabilities = missingRequiredCapabilities(requiredCapabilities, availableCapabilities);
+		const environment = input.environment ?? context.environment ?? assignment?.capacityEnvelope?.environment ?? null;
+		const matchingGrants = await this.activeCapacityGrantsForProvider(
+			principal.teamId,
+			principal.capacityProviderId,
+			input.projectId ?? assignment?.projectId ?? null,
+			environment,
+		);
+		const checkedInGrants = matchingGrants.filter((grant) => checkedInGrantMatches(grant, context.session?.grants));
+		const reasons = [];
+		const gates = {
+			providerStatus: context.provider?.status ?? null,
+			sessionId: context.session?.id ?? null,
+			sessionStatus: context.session?.status ?? null,
+			environment,
+			requiredCapabilities,
+			availableCapabilities,
+			matchingGrantIds: matchingGrants.map((grant) => grant.id),
+			checkedInGrantIds: checkedInGrants.map((grant) => grant.id),
+		};
+		if (!context.provider || !providerStatusIsActive(context.provider)) reasons.push('provider_inactive');
+		if (!sessionIsOpen(context.session)) reasons.push('provider_session_not_open');
+		if (context.session && !isWithinAvailabilityWindow(context.session, context.now)) reasons.push('outside_availability_window');
+		if (missingCapabilities.length) {
+			reasons.push('missing_required_capability');
+			gates.missingCapabilities = missingCapabilities;
+		}
+		if (!checkedInGrants.length) reasons.push(matchingGrants.length ? 'missing_checked_in_grant' : 'missing_active_grant');
+		const workDayId = input.workDayId ?? assignment?.workDayId ?? assignment?.capacityEnvelope?.workDayId ?? null;
+		if (workDayId) {
+			const workday = await this.getWorkdayCapacityEnvelope(workDayId).catch(() => null);
+			gates.workDayStatus = workday?.status ?? null;
+			if (!workday || workday.status !== 'active') reasons.push('workday_not_active');
+		}
+		if ((assignment?.mode ?? input.mode) === 'acting') {
+			const readiness = input.readiness ?? assignment?.decisionInput?.metadata?.readiness ?? null;
+			const planningInputsStatus = readiness?.planningInputsStatus ?? input.planningInputsStatus ?? null;
+			const executionReadiness = readiness?.executionReadiness ?? input.executionReadiness ?? null;
+			if (executionReadiness && !['ready', 'waived'].includes(executionReadiness)) reasons.push('decision_readiness_not_ready');
+			if (planningInputsStatus && !['complete', 'waived'].includes(planningInputsStatus)) reasons.push('decision_readiness_not_ready');
+			if (assignment && !hasAcceptedCapacityPlanProvenance({
+				assignment,
+				decisionInput: assignment.decisionInput,
+				capacityEnvelope: assignment.capacityEnvelope,
+			})) {
+				reasons.push('capacity_plan_not_ready');
+			}
+		}
+		const pressureLimitValue = runnerPressureLimit(context.session);
+		if (pressureLimitValue !== null) {
+			const activeLeases = input.activeLeases ?? await this.countActiveProviderLeases(principal.teamId, principal.capacityProviderId, context.session?.id ?? null, context.now);
+			gates.runnerPressure = { maxConcurrentRunners: pressureLimitValue, activeLeases };
+			if (activeLeases >= pressureLimitValue) reasons.push('runner_pressure_exhausted');
+		}
+		return {
+			eligible: reasons.length === 0,
+			reasons,
+			gates,
+			context,
+			requiredCapabilities,
+			availableCapabilities,
+			matchingGrant: checkedInGrants[0] ?? null,
+			checkedInGrants,
+		};
+	}
+
 	async createProviderAssignment(teamId, input = {}) {
 		await this.ensureInitialized();
 		const project = await this.getProject(input.projectId);
@@ -5601,8 +6228,62 @@ export class MarketControlPlaneStore {
 		if (!agentClass) return null;
 		const mode = stringValue(input.mode, 'planning');
 		if (!['planning', 'acting'].includes(mode)) throw new Error('mode must be planning or acting.');
+		if (mode === 'acting' && !hasAcceptedCapacityPlanProvenance({
+			assignment: {
+				metadata: objectValue(input.metadata),
+				decisionInput: objectValue(input.decisionInput ?? input.decision_input),
+				capacityEnvelope: objectValue(input.capacityEnvelope ?? input.capacity_envelope),
+				synthesizedFrom: input.synthesizedFrom ?? input.synthesized_from ?? null,
+			},
+			decisionInput: objectValue(input.decisionInput ?? input.decision_input),
+			capacityEnvelope: objectValue(input.capacityEnvelope ?? input.capacity_envelope),
+		})) {
+			const error = new Error('acting assignment requires accepted, scheduled, or active capacity plan provenance.');
+			error.code = 'capacity_plan_not_ready';
+			throw error;
+		}
 		const timestamp = isoNow();
 		const id = input.id ?? randomUUID();
+		const workspaceContext = objectValue(input.workspaceContext ?? input.workspace_context);
+		const rawCapabilityHandles = input.capabilityHandles ?? input.capability_handles ?? workspaceContext.capabilityHandles ?? null;
+		if (rawCapabilityHandles && providerAssignmentCapabilityHandlesContainSecretMaterial(rawCapabilityHandles)) {
+			const error = new Error('Provider assignment capability handles must not contain secret material.');
+			error.code = 'assignment_capability_handle_secret_material';
+			throw error;
+		}
+		const capabilityHandles = deriveProviderAssignmentCapabilityHandles({
+			...input,
+			id,
+			teamId,
+			projectId: project.id,
+			mode,
+			workspaceContext,
+		});
+		const capabilityFallback = validateProviderAssignmentCapabilityHandles({
+			assignment: {
+				id,
+				teamId,
+				projectId: project.id,
+				mode,
+				metadata: objectValue(input.metadata),
+				decisionInput: objectValue(input.decisionInput ?? input.decision_input),
+				capacityEnvelope: objectValue(input.capacityEnvelope ?? input.capacity_envelope),
+				synthesizedFrom: input.synthesizedFrom ?? input.synthesized_from ?? null,
+				capabilityHandles,
+			},
+			capabilityHandles,
+		});
+		if (capabilityFallback) {
+			const error = new Error(capabilityFallback.reason ?? 'Invalid provider assignment capability handles.');
+			error.code = capabilityFallback.code ?? 'assignment_capability_handle_invalid';
+			error.details = capabilityFallback.metadata ?? {};
+			throw error;
+		}
+		const nextWorkspaceContext = {
+			...workspaceContext,
+			workspaceAccessMode: capabilityHandles.workspaceAccessMode,
+			capabilityHandles,
+		};
 		await this.run(
 			`INSERT OR REPLACE INTO provider_assignments (
 				id, team_id, project_id, capacity_provider_id, provider_session_id, execution_provider_id, allocation_set_id,
@@ -5642,7 +6323,7 @@ export class MarketControlPlaneStore {
 				input.handlerId ?? null,
 				JSON.stringify(objectValue(input.capacityEnvelope ?? input.capacity_envelope)),
 				JSON.stringify(objectValue(input.decisionInput ?? input.decision_input)),
-				JSON.stringify(objectValue(input.workspaceContext ?? input.workspace_context)),
+				JSON.stringify(nextWorkspaceContext),
 				JSON.stringify(objectValue(input.allowedOutputs ?? input.allowed_outputs)),
 				JSON.stringify(objectValue(input.explanation)),
 				Number(input.attemptCount ?? 0),
@@ -5673,6 +6354,22 @@ export class MarketControlPlaneStore {
 				 WHERE id = ?`,
 				[id, input.allocationSetId ?? null, agentClass.id, mode, timestamp, input.reservationId],
 			).catch(() => null);
+		}
+		const treeDxHandle = objectValue(input.treedxProxyHandle ?? input.treedx_proxy_handle);
+		if (treeDxHandle.id && treeDxHandle.projectId) {
+			await this.issueTreeDxProxyHandle({
+				...treeDxHandle,
+				projectId: project.id,
+				assignmentId: treeDxHandle.assignmentId ?? id,
+				scopes: arrayValue(treeDxHandle.scopes),
+				allowedOperations: arrayValue(treeDxHandle.allowedOperations),
+				allowedPaths: arrayValue(treeDxHandle.allowedPaths),
+				metadata: {
+					...(objectValue(treeDxHandle.metadata)),
+					source: 'provider_assignment',
+					assignmentId: id,
+				},
+			}).catch(() => null);
 		}
 		return this.getProviderAssignment(teamId, id);
 	}
@@ -5734,6 +6431,7 @@ export class MarketControlPlaneStore {
 		await this.ensureInitialized();
 		await this.synthesizeProviderAssignments(principal, input).catch(() => []);
 		const now = isoNow();
+		const context = await this.resolveProviderEligibilityContext(principal, { ...input, now });
 		const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
 		const rows = await this.all(
 			`SELECT * FROM provider_assignments
@@ -5744,7 +6442,7 @@ export class MarketControlPlaneStore {
 			[principal.teamId, principal.capacityProviderId],
 		);
 		const nowMs = Date.parse(now);
-		const eligible = rows
+		const leasable = rows
 			.map(serializeProviderAssignment)
 			.filter(Boolean)
 			.filter((assignment) => {
@@ -5756,14 +6454,39 @@ export class MarketControlPlaneStore {
 				}
 				return false;
 			})
-			.sort((left, right) => {
-				const leftPriority = Number(left.metadata?.priority ?? 0);
-				const rightPriority = Number(right.metadata?.priority ?? 0);
-				if (Number.isFinite(leftPriority) && Number.isFinite(rightPriority) && leftPriority !== rightPriority) return rightPriority - leftPriority;
-				return String(left.assignedAt ?? left.createdAt ?? left.id).localeCompare(String(right.assignedAt ?? right.createdAt ?? right.id))
-					|| String(left.createdAt ?? left.id).localeCompare(String(right.createdAt ?? right.id))
-					|| String(left.id).localeCompare(String(right.id));
+			.sort(compareAssignmentsForLease);
+		const activeLeases = await this.countActiveProviderLeases(principal.teamId, principal.capacityProviderId, context.session?.id ?? null, now);
+		const eligible = [];
+		for (const candidate of leasable) {
+			const eligibility = await this.evaluateProviderAssignmentEligibility(principal, {
+				context,
+				assignment: candidate,
+				activeLeases,
 			});
+			if (eligibility.eligible) {
+				eligible.push({
+					...candidate,
+					metadata: {
+						...(candidate.metadata ?? {}),
+						eligibility: {
+							selected: true,
+							reasons: eligibility.reasons,
+							gates: eligibility.gates,
+							evaluatedAt: now,
+						},
+					},
+				});
+			} else {
+				await this.recordProviderAssignmentExplanation(principal.teamId, candidate.id, {
+					source: 'lease_next_assignment',
+					sourceId: candidate.synthesisKey ?? candidate.id,
+					eligible: false,
+					reasons: eligibility.reasons,
+					gates: eligibility.gates,
+					metadata: { evaluatedAt: now },
+				}).catch(() => null);
+			}
+		}
 		const assignment = eligible[0];
 		if (!assignment) {
 			return { assignment: null, leaseToken: null, leaseSeconds };
@@ -5780,6 +6503,7 @@ export class MarketControlPlaneStore {
 			     runner_id = ?,
 			     provider_session_id = COALESCE(?, provider_session_id),
 			     claimed_at = COALESCE(claimed_at, ?),
+			     metadata_json = ?,
 			     updated_at = ?
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?`,
 			[
@@ -5787,14 +6511,19 @@ export class MarketControlPlaneStore {
 				leaseExpiresAt,
 				now,
 				input.runnerId ?? null,
-				input.sessionId ?? null,
+				input.sessionId ?? context.session?.id ?? null,
 				now,
+				JSON.stringify(assignment.metadata ?? {}),
 				now,
 				assignment.id,
 				principal.teamId,
 				principal.capacityProviderId,
 			],
 		);
+		await this.settleProviderAssignmentLifecycle(principal, assignment, 'start', {
+			modeRunId: input.modeRunId ?? null,
+			source: 'provider_assignment_lease',
+		}).catch(() => null);
 		return {
 			assignment: await this.getProviderAssignment(principal.teamId, assignment.id),
 			leaseToken,
@@ -5822,6 +6551,163 @@ export class MarketControlPlaneStore {
 			leaseToken: assignment.leaseToken,
 			leaseSeconds,
 		};
+	}
+
+	async getCapacityReservation(reservationId) {
+		await this.ensureInitialized();
+		return serializeCapacityReservation(await this.first(
+			`SELECT * FROM capacity_reservations WHERE id = ? LIMIT 1`,
+			[reservationId],
+		));
+	}
+
+	async evaluateCapacityReservationAvailability(input = {}, grant = null) {
+		const requestedCredits = Number(input.reservedCredits ?? 0);
+		const rows = await this.all(
+			`SELECT * FROM capacity_reservations
+			 WHERE team_id = ?
+			   AND capacity_provider_id = ?
+			   AND (project_id IS NULL OR project_id = ?)
+			   AND (? IS NULL OR work_day_id IS NULL OR work_day_id = ?)
+			   AND (? IS NULL OR allocation_set_id IS NULL OR allocation_set_id = ?)
+			   AND state IN ('reserved','consuming','consumed','overrun_hold','overran_pending_approval')`,
+			[
+				input.teamId,
+				input.capacityProviderId,
+				input.projectId ?? null,
+				input.workDayId ?? null,
+				input.workDayId ?? null,
+				input.allocationSetId ?? null,
+				input.allocationSetId ?? null,
+			],
+		).catch(() => []);
+		const reservations = rows
+			.map(serializeCapacityReservation)
+			.filter(Boolean)
+			.filter((reservation) => {
+				const metadata = objectValue(reservation.metadata);
+				return !grant?.id || !metadata.capacityGrantId || metadata.capacityGrantId === grant.id;
+			});
+		const committedCredits = reservations.reduce((sum, reservation) =>
+			sum + Math.max(Number(reservation.reservedCredits ?? 0), Number(reservation.consumedCredits ?? 0)), 0);
+		const hardLimits = [
+			numberValue(grant?.dailyCreditLimit, null),
+			numberValue(grant?.maxDailyProjectCredits, null),
+			numberValue(grant?.metadata?.maxDailyProjectCredits, null),
+		].filter((value) => value !== null);
+		const hardLimit = hardLimits.length ? Math.min(...hardLimits) : null;
+		if (hardLimit !== null && committedCredits + requestedCredits > hardLimit) {
+			const overrunAllowed = grant?.overflowPolicy === 'approval_required' || grant?.metadata?.overflowPolicy === 'approval_required';
+			return {
+				ok: false,
+				hold: overrunAllowed,
+				reason: overrunAllowed ? 'allocation_overrun_hold' : 'allocation_exhausted',
+				gates: {
+					grantId: grant?.id ?? null,
+					committedCredits,
+					requestedCredits,
+					hardLimit,
+					overflowPolicy: grant?.overflowPolicy ?? null,
+				},
+			};
+		}
+		return {
+			ok: true,
+			hold: false,
+			reason: null,
+			gates: {
+				grantId: grant?.id ?? null,
+				committedCredits,
+				requestedCredits,
+				hardLimit,
+			},
+		};
+	}
+
+	async settleProviderAssignmentLifecycle(principal, assignment, phase, input = {}) {
+		if (!assignment?.reservationId) return null;
+		const reservation = await this.getCapacityReservation(assignment.reservationId).catch(() => null);
+		if (!reservation) return null;
+		const base = {
+			capacityProviderId: assignment.capacityProviderId,
+			laneId: reservation.laneId ?? assignment.capacityEnvelope?.laneId ?? `${assignment.capacityProviderId}:agent-capacity`,
+			reservationId: reservation.id,
+			assignmentId: assignment.id,
+			modeRunId: input.modeRunId ?? null,
+			mode: assignment.mode,
+			teamId: assignment.teamId ?? principal.teamId,
+			projectId: assignment.projectId,
+			workDayId: assignment.workDayId ?? reservation.workDayId ?? null,
+			taskId: assignment.taskId ?? reservation.taskId ?? null,
+			source: input.source ?? 'provider_assignment_lifecycle',
+			metadata: {
+				assignmentId: assignment.id,
+				leaseToken: input.leaseToken ?? null,
+				runnerId: input.runnerId ?? assignment.runnerId ?? null,
+				reason: input.reason ?? null,
+				code: input.code ?? null,
+			},
+		};
+		if (phase === 'start') {
+			return this.recordCapacityUsage({
+				...base,
+				phase: 'task_started',
+				credits: 0,
+			});
+		}
+		if (phase === 'complete') {
+			let usageActual = input.usageActual ?? null;
+			if (!usageActual && input.usageActualId) {
+				usageActual = serializeTaskUsageActual(await this.first(
+					`SELECT * FROM task_usage_actuals WHERE id = ? LIMIT 1`,
+					[input.usageActualId],
+				).catch(() => null));
+			}
+			const actualCredits = numberValue(input.actualCredits ?? usageActual?.actualCredits ?? input.usage?.actualCredits, reservation.reservedCredits);
+			const actualUsd = numberValue(input.actualUsd ?? usageActual?.actualUsd ?? input.usage?.actualUsd, null);
+			const nativeUsage = objectValue(input.nativeUsage ?? usageActual?.nativeUsage ?? input.usage?.nativeUsage, {});
+			const nativeUnit = stringValue(input.nativeUnit ?? nativeUsage.unit ?? reservation.nativeUnit, reservation.nativeUnit ?? '');
+			await this.recordCapacityUsage({
+				...base,
+				modeRunId: input.modeRunId ?? usageActual?.modeRunId ?? null,
+				phase: 'task_completed_actual_settlement',
+				credits: actualCredits,
+				usd: actualUsd,
+				nativeUnit: nativeUnit || null,
+				nativeAmount: numberValue(input.nativeAmount ?? nativeUsage.amount ?? nativeUsage.wallMinutes ?? nativeUsage.quotaMinutes, null),
+				providerUnits: numberValue(input.providerUnits ?? nativeUsage.providerUnits, null),
+				metadata: {
+					...base.metadata,
+					usageActualId: input.usageActualId ?? usageActual?.id ?? null,
+					nativeUsage,
+				},
+			});
+			return this.recordCapacityUsage({
+				...base,
+				phase: 'reservation_released',
+				credits: Math.max(0, Number(reservation.reservedCredits ?? 0) - Number(actualCredits ?? 0)),
+				metadata: {
+					...base.metadata,
+					settledCredits: actualCredits,
+					releasedUnusedCredits: Math.max(0, Number(reservation.reservedCredits ?? 0) - Number(actualCredits ?? 0)),
+				},
+			});
+		}
+		if (phase === 'return') {
+			return this.recordCapacityUsage({
+				...base,
+				phase: 'reservation_released',
+				credits: reservation.reservedCredits,
+			});
+		}
+		if (phase === 'fail') {
+			return this.recordCapacityUsage({
+				...base,
+				phase: 'task_failed_refund',
+				credits: reservation.reservedCredits,
+			});
+		}
+		return null;
 	}
 
 	async returnProviderAssignment(principal, assignmentId, input = {}) {
@@ -5868,6 +6754,21 @@ export class MarketControlPlaneStore {
 				principal.capacityProviderId,
 			],
 		);
+		if (input.fallbackOutput) {
+			await this.recordAgentFallbackOutput({
+				...objectValue(input.fallbackOutput),
+				projectId: assignment.projectId,
+				assignmentId: assignment.id,
+				mode: assignment.mode,
+			}).catch(() => null);
+		}
+		await this.settleProviderAssignmentLifecycle(principal, assignment, 'return', {
+			leaseToken: input.leaseToken ?? null,
+			runnerId: input.runnerId ?? null,
+			reason: input.reason ?? input.message ?? null,
+			code: input.code ?? 'provider_assignment_returned',
+			source: 'provider_assignment_return',
+		}).catch(() => null);
 		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
 	}
 
@@ -5915,6 +6816,20 @@ export class MarketControlPlaneStore {
 				[assignment.id, input.modeRunId, assignment.mode, input.modeRunId],
 			).catch(() => null);
 		}
+		await this.settleProviderAssignmentLifecycle(principal, assignment, 'complete', {
+			leaseToken: input.leaseToken ?? null,
+			runnerId: input.runnerId ?? null,
+			reason: input.reason ?? null,
+			code: input.code ?? 'provider_assignment_completed',
+			modeRunId: input.modeRunId ?? null,
+			usageActualId: input.usageActualId ?? null,
+			usageActual: objectValue(input.usageActual, null),
+			usage: objectValue(input.usage, null),
+			actualCredits: input.actualCredits ?? null,
+			actualUsd: input.actualUsd ?? null,
+			nativeUsage: objectValue(input.nativeUsage, null),
+			source: 'provider_assignment_complete',
+		}).catch(() => null);
 		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
 	}
 
@@ -5957,6 +6872,22 @@ export class MarketControlPlaneStore {
 				principal.capacityProviderId,
 			],
 		);
+		if (input.fallbackOutput) {
+			await this.recordAgentFallbackOutput({
+				...objectValue(input.fallbackOutput),
+				projectId: assignment.projectId,
+				assignmentId: assignment.id,
+				mode: assignment.mode,
+				status: objectValue(input.fallbackOutput).status ?? 'suppressed',
+			}).catch(() => null);
+		}
+		await this.settleProviderAssignmentLifecycle(principal, assignment, 'fail', {
+			leaseToken: input.leaseToken ?? null,
+			runnerId: input.runnerId ?? null,
+			reason: input.reason ?? input.message ?? 'Provider assignment failed.',
+			code: input.code ?? 'provider_assignment_failed',
+			source: 'provider_assignment_fail',
+		}).catch(() => null);
 		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
 	}
 
@@ -6175,6 +7106,18 @@ export class MarketControlPlaneStore {
 			metadata: { source: 'decision_execution_input' },
 		});
 		await this.run(
+			`UPDATE decision_execution_inputs
+			 SET status = 'stale', stale_at = COALESCE(stale_at, ?), updated_at = ?
+			 WHERE decision_id = ? AND project_id = ? AND scope_hash != ? AND status IN ('proposed', 'accepted')`,
+			[timestamp, timestamp, decisionId, project.id, scopeHash],
+		).catch(() => null);
+		await this.run(
+			`UPDATE agent_capacity_plans
+			 SET status = 'superseded', superseded_at = COALESCE(superseded_at, ?), updated_at = ?
+			 WHERE decision_id = ? AND project_id = ? AND scope_hash != ? AND status IN ('draft', 'accepted', 'scheduled', 'active')`,
+			[timestamp, timestamp, decisionId, project.id, scopeHash],
+		).catch(() => null);
+		await this.run(
 			`INSERT OR REPLACE INTO decision_execution_inputs (
 				id, team_id, project_id, decision_id, project_agent_class_id, mode, status, scope_hash, input_json,
 				metadata_json, accepted_at, revision_requested_at, stale_at, created_at, updated_at
@@ -6291,8 +7234,8 @@ export class MarketControlPlaneStore {
 			`INSERT OR REPLACE INTO agent_capacity_plans (
 				id, team_id, project_id, decision_id, status, scope_hash, allocation_set_id, work_day_id,
 				expected_credits, high_credits, work_units_json, capability_needs_json, environment_needs_json,
-				reserves_json, blockers_json, priority_rationale, metadata_json, accepted_at, scheduled_at, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				reserves_json, blockers_json, priority_rationale, review_json, metadata_json, accepted_at, scheduled_at, superseded_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 				COALESCE((SELECT created_at FROM agent_capacity_plans WHERE id = ?), ?),
 				?
 			)`,
@@ -6313,9 +7256,11 @@ export class MarketControlPlaneStore {
 				JSON.stringify(plan.reserves),
 				JSON.stringify(plan.blockers),
 				plan.priorityRationale ?? null,
+				JSON.stringify(objectValue(input.review)),
 				JSON.stringify(plan.metadata ?? {}),
 				plan.status === 'accepted' ? timestamp : null,
 				plan.status === 'scheduled' ? timestamp : null,
+				plan.status === 'superseded' ? timestamp : null,
 				plan.id,
 				timestamp,
 				timestamp,
@@ -6366,6 +7311,8 @@ export class MarketControlPlaneStore {
 			     allocation_set_id = COALESCE(?, allocation_set_id),
 			     accepted_at = CASE WHEN ? = 'accepted' THEN COALESCE(accepted_at, ?) ELSE accepted_at END,
 			     scheduled_at = CASE WHEN ? = 'scheduled' THEN COALESCE(scheduled_at, ?) ELSE scheduled_at END,
+			     superseded_at = CASE WHEN ? = 'superseded' THEN COALESCE(superseded_at, ?) ELSE superseded_at END,
+			     review_json = ?,
 			     metadata_json = ?,
 			     updated_at = ?
 			 WHERE id = ?`,
@@ -6377,6 +7324,9 @@ export class MarketControlPlaneStore {
 				timestamp,
 				status,
 				timestamp,
+				status,
+				timestamp,
+				JSON.stringify({ ...(existing.review ?? {}), ...(objectValue(input.review)) }),
 				JSON.stringify(metadata),
 				timestamp,
 				planId,
@@ -6581,14 +7531,39 @@ export class MarketControlPlaneStore {
 		return serializeAgentFallbackOutput(await this.first(`SELECT * FROM agent_fallback_outputs WHERE id = ?`, [id]));
 	}
 
+	async listAgentFallbackOutputs(projectId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['project_id = ?'];
+		const values = [projectId];
+		if (filters.assignmentId) {
+			clauses.push('assignment_id = ?');
+			values.push(filters.assignmentId);
+		}
+		if (filters.status) {
+			clauses.push('status = ?');
+			values.push(filters.status);
+		}
+		if (filters.mode) {
+			clauses.push('mode = ?');
+			values.push(filters.mode);
+		}
+		const limit = Math.max(1, Math.min(500, Number(filters.limit ?? 200) || 200));
+		const rows = await this.all(
+			`SELECT * FROM agent_fallback_outputs WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT ?`,
+			[...values, limit],
+		).catch(() => []);
+		return rows.map(serializeAgentFallbackOutput);
+	}
+
 	async recordTreeDxProxyAudit(input = {}) {
 		await this.ensureInitialized();
 		const timestamp = isoNow();
 		const id = input.id ?? randomUUID();
 		await this.run(
 			`INSERT INTO treedx_project_proxy_audit (
-				id, team_id, project_id, assignment_id, actor_type, actor_id, method, path, handle_json, result_status, metadata_json, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, team_id, project_id, assignment_id, actor_type, actor_id, method, path, handle_json, result_status,
+				reason_code, reason, metadata_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				id,
 				input.teamId,
@@ -6600,6 +7575,8 @@ export class MarketControlPlaneStore {
 				stringValue(input.path, '/'),
 				JSON.stringify(objectValue(input.handle)),
 				stringValue(input.resultStatus, 'observed'),
+				input.reasonCode ?? null,
+				input.reason ?? null,
 				JSON.stringify(objectValue(input.metadata)),
 				timestamp,
 			],
@@ -6607,10 +7584,96 @@ export class MarketControlPlaneStore {
 		return { id, createdAt: timestamp };
 	}
 
+	async issueTreeDxProxyHandle(input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		const token = stringValue(input.token, '');
+		await this.run(
+			`INSERT OR REPLACE INTO treedx_proxy_handles (
+				id, team_id, project_id, assignment_id, repository_id, workspace_id, status, scopes_json,
+				allowed_operations_json, allowed_paths_json, token_hash, expires_at, issued_at, revoked_at,
+				metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+				?, COALESCE((SELECT created_at FROM treedx_proxy_handles WHERE id = ?), ?), ?)`,
+			[
+				id,
+				project.teamId,
+				project.id,
+				input.assignmentId ?? null,
+				input.repositoryId ?? null,
+				input.workspaceId ?? null,
+				stringValue(input.status, 'issued'),
+				JSON.stringify(arrayValue(input.scopes).map(String).filter(Boolean)),
+				JSON.stringify(arrayValue(input.allowedOperations).map(String).filter(Boolean)),
+				JSON.stringify(arrayValue(input.allowedPaths).map(String).filter(Boolean)),
+				token ? createHash('sha256').update(token).digest('hex') : input.tokenHash ?? null,
+				input.expiresAt ?? null,
+				input.issuedAt ?? timestamp,
+				input.revokedAt ?? null,
+				JSON.stringify(objectValue(input.metadata)),
+				id,
+				timestamp,
+				timestamp,
+			],
+		);
+		return this.getTreeDxProxyHandle(project.teamId, project.id, id);
+	}
+
+	async getTreeDxProxyHandle(teamId, projectId, handleId) {
+		await this.ensureInitialized();
+		return serializeTreeDxProxyHandle(await this.first(
+			`SELECT * FROM treedx_proxy_handles WHERE id = ? AND team_id = ? AND project_id = ? LIMIT 1`,
+			[handleId, teamId, projectId],
+		).catch(() => null));
+	}
+
+	async revokeTreeDxProxyHandle(teamId, projectId, handleId, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE treedx_proxy_handles
+			 SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), metadata_json = ?, updated_at = ?
+			 WHERE id = ? AND team_id = ? AND project_id = ?`,
+			[
+				timestamp,
+				JSON.stringify(objectValue(input.metadata)),
+				timestamp,
+				handleId,
+				teamId,
+				projectId,
+			],
+		).catch(() => null);
+		return this.getTreeDxProxyHandle(teamId, projectId, handleId);
+	}
+
+	async listTreeDxProxyAudit(projectId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['project_id = ?'];
+		const values = [projectId];
+		if (filters.assignmentId) {
+			clauses.push('assignment_id = ?');
+			values.push(filters.assignmentId);
+		}
+		if (filters.actorType) {
+			clauses.push('actor_type = ?');
+			values.push(filters.actorType);
+		}
+		const limit = Math.max(1, Math.min(500, Number(filters.limit ?? 200) || 200));
+		const rows = await this.all(
+			`SELECT * FROM treedx_project_proxy_audit WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC LIMIT ?`,
+			[...values, limit],
+		).catch(() => []);
+		return rows.map(serializeTreeDxProxyAudit);
+	}
+
 	async synthesizeProviderAssignments(principal, input = {}) {
 		await this.ensureInitialized();
 		const now = isoNow();
-		const sessionId = input.sessionId ?? input.providerSessionId ?? null;
+		const context = await this.resolveProviderEligibilityContext(principal, { ...input, now });
+		const sessionId = input.sessionId ?? input.providerSessionId ?? context.session?.id ?? null;
 		const treeDxScope = (resource, action) => `${resource}:${action}`;
 		const created = [];
 		const existingKeys = new Set((await this.all(
@@ -6623,7 +7686,7 @@ export class MarketControlPlaneStore {
 			`SELECT pir.*, pac.id AS class_id
 			 FROM planning_input_requests pir
 			 LEFT JOIN project_agent_classes pac ON pac.project_id = pir.project_id AND (pac.id = pir.project_agent_class_id OR pir.project_agent_class_id IS NULL)
-			 WHERE pir.team_id = ? AND pir.status IN ('requested','stale')
+			 WHERE pir.team_id = ? AND pir.status = 'requested'
 			 ORDER BY pir.requested_at ASC LIMIT 50`,
 			[principal.teamId],
 		).catch(() => []);
@@ -6632,8 +7695,37 @@ export class MarketControlPlaneStore {
 			if (!projectAgentClassId) continue;
 			const key = `planning:${row.id}:${principal.capacityProviderId}`;
 			if (existingKeys.has(key)) continue;
+			const assignmentId = `pa_${safeIdPart(key)}`;
+			const eligibility = await this.evaluateProviderAssignmentEligibility(principal, {
+				context,
+				projectId: row.project_id,
+				mode: 'planning',
+				assignment: {
+					id: assignmentId,
+					teamId: principal.teamId,
+					projectId: row.project_id,
+					capacityProviderId: principal.capacityProviderId,
+					projectAgentClassId,
+					mode: 'planning',
+					status: 'pending',
+					leaseState: 'unleased',
+					metadata: { priority: 50 },
+					decisionInput: { metadata: { scopeHash: row.scope_hash } },
+					capacityEnvelope: { mode: 'planning' },
+				},
+			});
+			if (!eligibility.eligible) {
+				await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+					source: 'planning_input_request',
+					sourceId: row.id,
+					eligible: false,
+					reasons: eligibility.reasons,
+					gates: eligibility.gates,
+				}).catch(() => null);
+				continue;
+			}
 			const assignment = await this.createProviderAssignment(principal.teamId, {
-				id: `pa_${safeIdPart(key)}`,
+				id: assignmentId,
 				projectId: row.project_id,
 				capacityProviderId: principal.capacityProviderId,
 				providerSessionId: sessionId,
@@ -6664,7 +7756,12 @@ export class MarketControlPlaneStore {
 				synthesizedFrom: 'planning_input_request',
 				synthesisKey: key,
 				decisionId: row.decision_id,
-				metadata: { source: 'request_scoped_assignment_synthesis', synthesizedAt: now, priority: 50 },
+				metadata: {
+					source: 'request_scoped_assignment_synthesis',
+					synthesizedAt: now,
+					priority: 50,
+					eligibility: { selected: true, reasons: eligibility.reasons, gates: eligibility.gates },
+				},
 			});
 			if (assignment) {
 				await this.recordProviderAssignmentExplanation(principal.teamId, assignment.id, {
@@ -6672,7 +7769,7 @@ export class MarketControlPlaneStore {
 					sourceId: row.id,
 					eligible: true,
 					reasons: ['open planning input request'],
-					gates: { provider: principal.capacityProviderId, status: row.status },
+					gates: { ...eligibility.gates, provider: principal.capacityProviderId, status: row.status },
 				}).catch(() => null);
 				created.push(assignment);
 			}
@@ -6686,6 +7783,15 @@ export class MarketControlPlaneStore {
 			[principal.teamId],
 		).catch(() => []);
 		for (const row of capacityPlanRows) {
+			const newerPlan = await this.first(
+				`SELECT id FROM agent_capacity_plans
+				 WHERE team_id = ? AND project_id = ? AND decision_id = ?
+				   AND status IN ('accepted','scheduled','active')
+				   AND datetime(created_at) > datetime(?)
+				 LIMIT 1`,
+				[principal.teamId, row.project_id, row.decision_id, row.created_at],
+			).catch(() => null);
+			if (newerPlan) continue;
 			if (row.execution_readiness && !['ready', 'waived'].includes(row.execution_readiness)) continue;
 			if (row.planning_inputs_status && !['complete', 'waived'].includes(row.planning_inputs_status)) continue;
 			const workUnits = Array.isArray(parseJson(row.work_units_json, [])) ? parseJson(row.work_units_json, []) : [];
@@ -6694,16 +7800,162 @@ export class MarketControlPlaneStore {
 				if (workUnit.mode && workUnit.mode !== 'acting') continue;
 				const projectAgentClassId = stringValue(workUnit.projectAgentClassId);
 				if (!projectAgentClassId) continue;
+				const requiredCapabilities = arrayValue(workUnit.requiredCapabilities).map(String).filter(Boolean);
 				const sourceId = stringValue(workUnit.id, `${row.id}:work-unit`);
 				const key = `capacity-plan:${row.id}:${sourceId}:${principal.capacityProviderId}`;
 				if (existingKeys.has(key)) continue;
 				const assignmentId = `pa_${safeIdPart(key)}`;
+				const workDayId = row.work_day_id ?? workUnit.workDayId ?? null;
+				const eligibility = await this.evaluateProviderAssignmentEligibility(principal, {
+					context,
+					projectId: row.project_id,
+					mode: 'acting',
+					workUnit,
+					workDayId,
+					readiness: {
+						executionReadiness: row.execution_readiness ?? 'ready',
+						planningInputsStatus: row.planning_inputs_status ?? 'complete',
+					},
+					assignment: {
+						id: assignmentId,
+						teamId: principal.teamId,
+						projectId: row.project_id,
+						capacityProviderId: principal.capacityProviderId,
+						projectAgentClassId,
+						mode: 'acting',
+						status: 'pending',
+						leaseState: 'unleased',
+						synthesizedFrom: 'capacity_plan',
+						metadata: {
+							priority: Number(objectValue(workUnit.metadata).priority ?? 100),
+							capacityPlanId: row.id,
+							capacityPlanStatus: row.status,
+							requiredCapabilities,
+						},
+						decisionInput: {
+							metadata: {
+								capacityPlanId: row.id,
+								capacityPlanStatus: row.status,
+								requiredCapabilities,
+								readiness: {
+									executionReadiness: row.execution_readiness ?? 'ready',
+									planningInputsStatus: row.planning_inputs_status ?? 'complete',
+								},
+							},
+						},
+						capacityEnvelope: {
+							mode: 'acting',
+							metadata: {
+								capacityPlanId: row.id,
+								capacityPlanStatus: row.status,
+								requiredCapabilities,
+								synthesizedFrom: 'capacity_plan',
+							},
+						},
+					},
+				});
+				if (!eligibility.eligible) {
+					await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+						source: 'capacity_plan',
+						sourceId: row.id,
+						eligible: false,
+						reasons: eligibility.reasons,
+						gates: eligibility.gates,
+						metadata: { workUnitId: sourceId },
+					}).catch(() => null);
+					continue;
+				}
+				const reservedCredits = Number(workUnit.highCredits ?? workUnit.expectedCredits ?? 0);
+				const allocation = await this.evaluateCapacityReservationAvailability({
+					teamId: principal.teamId,
+					capacityProviderId: principal.capacityProviderId,
+					projectId: row.project_id,
+					workDayId,
+					allocationSetId: row.allocation_set_id ?? null,
+					reservedCredits,
+				}, eligibility.matchingGrant);
+				if (!allocation.ok && !allocation.hold) {
+					await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+						source: 'capacity_plan',
+						sourceId: row.id,
+						eligible: false,
+						reasons: [allocation.reason ?? 'allocation_exhausted'],
+						gates: allocation.gates,
+						metadata: { workUnitId: sourceId },
+					}).catch(() => null);
+					continue;
+				}
+				const reservation = await this.createCapacityReservation({
+					id: `res_${safeIdPart(key)}`,
+					capacityProviderId: principal.capacityProviderId,
+					executionProviderId: null,
+					laneId: `${principal.capacityProviderId}:agent-capacity`,
+					allocationSetId: row.allocation_set_id ?? null,
+					projectAgentClassId,
+					assignmentId,
+					mode: 'acting',
+					teamId: principal.teamId,
+					projectId: row.project_id,
+					workDayId,
+					state: allocation.hold ? 'overrun_hold' : 'reserved',
+					reservedCredits,
+					metadata: {
+						source: 'provider_assignment_synthesis',
+						capacityPlanId: row.id,
+						workUnitId: sourceId,
+						allocationPolicyVersion: row.allocation_set_id ?? null,
+						capacityGrantId: eligibility.matchingGrant?.id ?? null,
+					},
+				}).catch(() => null);
+				if (allocation.hold && reservation?.id) {
+					await this.recordCapacityUsage({
+						capacityProviderId: principal.capacityProviderId,
+						laneId: `${principal.capacityProviderId}:agent-capacity`,
+						reservationId: reservation.id,
+						assignmentId,
+						mode: 'acting',
+						teamId: principal.teamId,
+						projectId: row.project_id,
+						workDayId,
+						phase: 'overrun_hold',
+						credits: reservedCredits,
+						source: 'provider_assignment_synthesis',
+						metadata: {
+							capacityPlanId: row.id,
+							workUnitId: sourceId,
+							reason: allocation.reason,
+							gates: allocation.gates,
+						},
+					}).catch(() => null);
+					await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+						source: 'capacity_plan',
+						sourceId: row.id,
+						eligible: false,
+						reasons: [allocation.reason ?? 'allocation_overrun_hold'],
+						gates: allocation.gates,
+						metadata: { workUnitId: sourceId, reservationId: reservation.id },
+					}).catch(() => null);
+					continue;
+				}
+				if (!reservation) {
+					await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+						source: 'capacity_plan',
+						sourceId: row.id,
+						eligible: false,
+						reasons: ['allocation_exhausted'],
+						gates: { reservationCreated: false },
+						metadata: { workUnitId: sourceId },
+					}).catch(() => null);
+					continue;
+				}
 				const treedxProxyHandle = {
 					id: `tdx_${safeIdPart(key)}`,
 					teamId: principal.teamId,
 					projectId: row.project_id,
 					assignmentId,
 					scopes: ['project:read', treeDxScope('workspace', 'read'), treeDxScope('workspace', 'write')],
+					allowedOperations: ['files:read', 'files:write', 'files:search', 'git:commit'],
+					allowedPaths: ['**'],
 					expiresAt: new Date(Date.parse(now) + 3600_000).toISOString(),
 					metadata: { capacityPlanId: row.id, workUnitId: sourceId },
 				};
@@ -6716,7 +7968,12 @@ export class MarketControlPlaneStore {
 					metadata: {
 						...(objectValue(workUnit.decisionInput?.metadata)),
 						capacityPlanId: row.id,
+						capacityPlanStatus: row.status,
 						workUnitId: sourceId,
+						readiness: {
+							executionReadiness: row.execution_readiness ?? 'ready',
+							planningInputsStatus: row.planning_inputs_status ?? 'complete',
+						},
 					},
 				};
 				const capacityEnvelope = {
@@ -6726,14 +7983,18 @@ export class MarketControlPlaneStore {
 					projectAgentClassId,
 					capacityProviderId: principal.capacityProviderId,
 					allocationSetId: row.allocation_set_id ?? null,
-					workDayId: row.work_day_id ?? workUnit.workDayId ?? null,
-					reservedCredits: Number(workUnit.highCredits ?? workUnit.expectedCredits ?? 0),
+					workDayId,
+					reservationId: reservation?.id ?? null,
+					reservedCredits,
 					...(objectValue(workUnit.capacityEnvelope)),
 					metadata: {
 						...(objectValue(workUnit.capacityEnvelope?.metadata)),
 						synthesizedFrom: 'capacity_plan',
 						capacityPlanId: row.id,
+						capacityPlanStatus: row.status,
 						workUnitId: sourceId,
+						requiredCapabilities,
+						eligibility: { selected: true, reasons: eligibility.reasons, gates: eligibility.gates },
 						decisionExecutionInputId: workUnit.decisionExecutionInputId ?? null,
 					},
 				};
@@ -6746,6 +8007,7 @@ export class MarketControlPlaneStore {
 					mode: 'acting',
 					workDayId: capacityEnvelope.workDayId ?? null,
 					allocationSetId: capacityEnvelope.allocationSetId ?? null,
+					reservationId: reservation?.id ?? null,
 					agentId: decisionInput.agentId ?? decisionInput.input?.agentId ?? null,
 					handlerId: decisionInput.handlerId ?? null,
 					capacityEnvelope,
@@ -6770,7 +8032,10 @@ export class MarketControlPlaneStore {
 						synthesizedAt: now,
 						priority: Number(objectValue(workUnit.metadata).priority ?? 100),
 						capacityPlanId: row.id,
+						capacityPlanStatus: row.status,
 						workUnitId: sourceId,
+						requiredCapabilities,
+						eligibility: { selected: true, reasons: eligibility.reasons, gates: eligibility.gates },
 						decisionExecutionInputId: workUnit.decisionExecutionInputId ?? null,
 					},
 				});
@@ -6780,7 +8045,7 @@ export class MarketControlPlaneStore {
 						sourceId: row.id,
 						eligible: true,
 						reasons: ['accepted capacity plan work unit and ready decision status'],
-						gates: { capacityPlanStatus: row.status, executionReadiness: row.execution_readiness, planningInputsStatus: row.planning_inputs_status },
+						gates: { ...eligibility.gates, capacityPlanStatus: row.status, executionReadiness: row.execution_readiness, planningInputsStatus: row.planning_inputs_status },
 						metadata: { workUnitId: sourceId },
 					}).catch(() => null);
 					created.push(assignment);
@@ -7345,6 +8610,11 @@ export class MarketControlPlaneStore {
 		await this.ensureInitialized();
 		const timestamp = isoNow();
 		const id = input.id ?? randomUUID();
+		const existing = await this.first(`SELECT id FROM task_usage_actuals WHERE id = ? LIMIT 1`, [id]).catch(() => null);
+		if (existing) throw new Error(`Duplicate task usage actual "${id}".`);
+		if (Number(input.actualCredits ?? 0) < 0 || Number(input.actualUsd ?? 0) < 0) {
+			throw new Error('Task usage actuals cannot report negative credits or negative USD.');
+		}
 		const profileId = executionProfileId(input.executionProfileId);
 		const profileNativeUnit = nativeUsageUnit(input.nativeUsage) ?? nativeUsageUnit(input);
 		const executionProviderKind = input.executionProviderKind
@@ -11449,6 +12719,876 @@ export class MarketControlPlaneStore {
 		return rows
 			.map(serializeKnowledgePack)
 			.filter((pack) => pack.visibility === 'public' || principalIsAdmin(principal) || teamIds.includes(pack.teamId));
+	}
+
+	async createSecretMetadataRecord(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		const record = {
+			id,
+			name: input.name,
+			secretClass: input.secretClass ?? input.secret_class,
+			custodyMode: input.custodyMode ?? input.custody_mode,
+			owner: input.owner ?? { kind: input.ownerKind ?? input.owner_kind ?? 'customer', teamId: input.teamId, projectId: input.projectId ?? null },
+			apiDecryptable: input.apiDecryptable === true,
+			plaintextAllowed: input.plaintextAllowed === true,
+			githubSecretTarget: input.githubSecretTarget ?? input.github_secret_target,
+			escrowRecordId: input.escrowRecordId ?? input.escrow_record_id,
+			metadata: input.metadata ?? {},
+		};
+		const problems = validateTreeseedWritableSecretMetadata(record);
+		if (problems.length > 0) throw secretCapabilityValidationError(problems, 'Invalid secret metadata record.');
+		await this.run(
+			`INSERT INTO secret_metadata_records (
+				id, team_id, project_id, name, secret_class, custody_mode, owner_kind, status,
+				github_secret_target_json, escrow_record_id, api_decryptable, plaintext_allowed,
+				fail_closed_code, metadata_json, created_at, updated_at, tombstoned_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+			[
+				id,
+				input.teamId,
+				input.projectId ?? null,
+				record.name,
+				record.secretClass,
+				record.custodyMode,
+				record.owner.kind,
+				input.status ?? 'active',
+				JSON.stringify(record.githubSecretTarget ?? {}),
+				record.escrowRecordId ?? null,
+				record.apiDecryptable ? 1 : 0,
+				record.plaintextAllowed ? 1 : 0,
+				input.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(record.metadata ?? {})),
+				timestamp,
+				timestamp,
+			],
+		);
+		const created = await this.getSecretMetadataRecord(id);
+		await this.recordSecretCapabilityAudit('secret_metadata_record.created', created);
+		return created;
+	}
+
+	async getSecretMetadataRecord(id) {
+		await this.ensureInitialized();
+		return serializeSecretMetadataRecord(await this.first(`SELECT * FROM secret_metadata_records WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async listSecretMetadataRecords(input = {}) {
+		await this.ensureInitialized();
+		const clauses = [];
+		const values = [];
+		if (input.teamId) {
+			clauses.push('team_id = ?');
+			values.push(input.teamId);
+		}
+		if (input.projectId !== undefined) {
+			clauses.push('project_id = ?');
+			values.push(input.projectId);
+		}
+		if (input.status) {
+			clauses.push('status = ?');
+			values.push(input.status);
+		}
+		const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+		const rows = await this.all(
+			`SELECT * FROM secret_metadata_records ${where} ORDER BY updated_at DESC LIMIT ?`,
+			[...values, Math.max(1, Math.min(Number(input.limit ?? 100) || 100, 500))],
+		);
+		return rows.map(serializeSecretMetadataRecord);
+	}
+
+	async updateSecretMetadataRecord(id, patch = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getSecretMetadataRecord(id);
+		if (!existing) return null;
+		const next = {
+			...existing,
+			...patch,
+			owner: patch.owner ?? existing.owner,
+			githubSecretTarget: patch.githubSecretTarget ?? existing.githubSecretTarget,
+			escrowRecordId: patch.escrowRecordId ?? existing.escrowRecordId,
+			metadata: patch.metadata ?? existing.metadata,
+		};
+		const problems = validateTreeseedWritableSecretMetadata(next);
+		if (problems.length > 0) throw secretCapabilityValidationError(problems, 'Invalid secret metadata record update.');
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE secret_metadata_records
+			 SET name = ?, secret_class = ?, custody_mode = ?, owner_kind = ?, status = ?,
+			     github_secret_target_json = ?, escrow_record_id = ?, api_decryptable = ?, plaintext_allowed = ?,
+			     fail_closed_code = ?, metadata_json = ?, updated_at = ?
+			 WHERE id = ?`,
+			[
+				next.name,
+				next.secretClass,
+				next.custodyMode,
+				next.owner.kind,
+				next.status,
+				JSON.stringify(next.githubSecretTarget ?? {}),
+				next.escrowRecordId ?? null,
+				next.apiDecryptable ? 1 : 0,
+				next.plaintextAllowed ? 1 : 0,
+				next.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(next.metadata ?? {})),
+				timestamp,
+				id,
+			],
+		);
+		const updated = await this.getSecretMetadataRecord(id);
+		await this.recordSecretCapabilityAudit('secret_metadata_record.updated', updated);
+		return updated;
+	}
+
+	async tombstoneSecretMetadataRecord(id, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE secret_metadata_records
+			 SET status = 'tombstoned', tombstoned_at = ?, fail_closed_code = COALESCE(?, fail_closed_code), updated_at = ?
+			 WHERE id = ?`,
+			[timestamp, input.failClosedCode ?? null, timestamp, id],
+		);
+		const tombstoned = await this.getSecretMetadataRecord(id);
+		await this.recordSecretCapabilityAudit('secret_metadata_record.tombstoned', tombstoned);
+		return tombstoned;
+	}
+
+	async createClientEncryptedEscrowRecord(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		const record = {
+			id,
+			secretId: input.secretId,
+			ciphertext: input.ciphertext ?? null,
+			ciphertextRef: input.ciphertextRef,
+			algorithm: input.algorithm,
+			nonce: input.nonce ?? null,
+			salt: input.salt ?? null,
+			kdf: input.kdf ?? null,
+			kdfParams: input.kdfParams ?? null,
+			wrappingKeyId: input.wrappingKeyId,
+			encryptionVersion: input.encryptionVersion ?? null,
+			createdByClientId: input.createdByClientId ?? null,
+			expiresAt: input.expiresAt ?? null,
+			deploymentIntent: input.deploymentIntent ?? null,
+			migratedTo: input.migratedTo ?? null,
+			metadata: {
+				...(input.metadata ?? {}),
+				envelope: {
+					ciphertext: input.ciphertext ?? null,
+					nonce: input.nonce ?? null,
+					salt: input.salt ?? null,
+					kdf: input.kdf ?? null,
+					kdfParams: input.kdfParams ?? null,
+					encryptionVersion: input.encryptionVersion ?? null,
+					deploymentIntent: input.deploymentIntent ?? null,
+				},
+			},
+		};
+		const problems = validateTreeseedClientEncryptedEscrowMetadata(record);
+		if (problems.length > 0) throw secretCapabilityValidationError(problems, 'Invalid client-encrypted escrow record.');
+		await this.run(
+			`INSERT INTO client_encrypted_escrow_records (
+				id, team_id, project_id, secret_id, status, ciphertext_ref, algorithm, wrapping_key_id,
+				created_by_client_id, expires_at, migrated_to, metadata_json, created_at, updated_at, tombstoned_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+			[
+				id,
+				input.teamId,
+				input.projectId ?? null,
+				record.secretId,
+				input.status ?? 'active',
+				record.ciphertextRef,
+				record.algorithm,
+				record.wrappingKeyId,
+				record.createdByClientId,
+				record.expiresAt,
+				record.migratedTo,
+				JSON.stringify(record.metadata ?? {}),
+				timestamp,
+				timestamp,
+			],
+		);
+		const created = await this.getClientEncryptedEscrowRecord(id);
+		await this.recordSecretCapabilityAudit('client_encrypted_escrow_record.created', created);
+		return created;
+	}
+
+	async getClientEncryptedEscrowRecord(id) {
+		await this.ensureInitialized();
+		return serializeClientEncryptedEscrowRecord(await this.first(`SELECT * FROM client_encrypted_escrow_records WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async listClientEncryptedEscrowRecords(filters = {}) {
+		await this.ensureInitialized();
+		const clauses = [];
+		const args = [];
+		if (filters.teamId) {
+			clauses.push('team_id = ?');
+			args.push(filters.teamId);
+		}
+		if (filters.projectId) {
+			clauses.push('project_id = ?');
+			args.push(filters.projectId);
+		}
+		if (filters.secretId) {
+			clauses.push('secret_id = ?');
+			args.push(filters.secretId);
+		}
+		if (filters.status) {
+			clauses.push('status = ?');
+			args.push(filters.status);
+		}
+		const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+		const limit = Math.min(Math.max(Number(filters.limit ?? 100) || 100, 1), 250);
+		const rows = await this.all(
+			`SELECT * FROM client_encrypted_escrow_records ${where} ORDER BY updated_at DESC, created_at DESC LIMIT ?`,
+			[...args, limit],
+		);
+		return rows.map(serializeClientEncryptedEscrowRecord);
+	}
+
+	async updateClientEncryptedEscrowRecord(id, patch = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getClientEncryptedEscrowRecord(id);
+		if (!existing) return null;
+		const next = {
+			...existing,
+			...patch,
+			metadata: {
+				...(patch.metadata ?? existing.metadata ?? {}),
+				envelope: {
+					...((existing.metadata ?? {}).envelope ?? {}),
+					...(patch.ciphertext !== undefined ? { ciphertext: patch.ciphertext } : {}),
+					...(patch.nonce !== undefined ? { nonce: patch.nonce } : {}),
+					...(patch.salt !== undefined ? { salt: patch.salt } : {}),
+					...(patch.kdf !== undefined ? { kdf: patch.kdf } : {}),
+					...(patch.kdfParams !== undefined ? { kdfParams: patch.kdfParams } : {}),
+					...(patch.encryptionVersion !== undefined ? { encryptionVersion: patch.encryptionVersion } : {}),
+					...(patch.deploymentIntent !== undefined ? { deploymentIntent: patch.deploymentIntent } : {}),
+				},
+			},
+			ciphertext: patch.ciphertext ?? existing.metadata?.envelope?.ciphertext ?? null,
+			nonce: patch.nonce ?? existing.metadata?.envelope?.nonce ?? null,
+			salt: patch.salt ?? existing.metadata?.envelope?.salt ?? null,
+			kdf: patch.kdf ?? existing.metadata?.envelope?.kdf ?? null,
+			kdfParams: patch.kdfParams ?? existing.metadata?.envelope?.kdfParams ?? null,
+			encryptionVersion: patch.encryptionVersion ?? existing.metadata?.envelope?.encryptionVersion ?? null,
+			deploymentIntent: patch.deploymentIntent ?? existing.metadata?.envelope?.deploymentIntent ?? null,
+		};
+		const problems = validateTreeseedClientEncryptedEscrowMetadata(next);
+		if (problems.length > 0) throw secretCapabilityValidationError(problems, 'Invalid client-encrypted escrow update.');
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE client_encrypted_escrow_records
+			 SET status = ?, ciphertext_ref = ?, algorithm = ?, wrapping_key_id = ?, created_by_client_id = ?,
+			     expires_at = ?, migrated_to = ?, metadata_json = ?, updated_at = ?
+			 WHERE id = ?`,
+			[
+				next.status,
+				next.ciphertextRef,
+				next.algorithm,
+				next.wrappingKeyId,
+				next.createdByClientId ?? null,
+				next.expiresAt ?? null,
+				next.migratedTo ?? null,
+				JSON.stringify(next.metadata ?? {}),
+				timestamp,
+				id,
+			],
+		);
+		const updated = await this.getClientEncryptedEscrowRecord(id);
+		await this.recordSecretCapabilityAudit('client_encrypted_escrow_record.updated', updated);
+		return updated;
+	}
+
+	async migrateClientEncryptedEscrowRecord(id, input = {}) {
+		return this.updateClientEncryptedEscrowRecord(id, {
+			status: 'migrated',
+			migratedTo: input.migratedTo ?? 'github_actions_secret_enclave',
+			metadata: input.metadata,
+		});
+	}
+
+	async tombstoneClientEncryptedEscrowRecord(id, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE client_encrypted_escrow_records
+			 SET status = 'tombstoned', tombstoned_at = ?, metadata_json = ?, updated_at = ?
+			 WHERE id = ?`,
+			[ timestamp, JSON.stringify(redactDeploymentValue(input.metadata ?? {})), timestamp, id ],
+		);
+		const tombstoned = await this.getClientEncryptedEscrowRecord(id);
+		await this.recordSecretCapabilityAudit('client_encrypted_escrow_record.tombstoned', tombstoned);
+		return tombstoned;
+	}
+
+	async upsertGitHubRepositoryGrant(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const timestamp = isoNow();
+		const id = input.id ?? `${input.teamId}:${safeIdPart(input.repository, 'repository')}`;
+		await this.run(
+			`INSERT INTO github_repository_grants (
+				id, team_id, project_id, repository, installation_id, account_login, account_id, status,
+				permissions_json, environments_json, drift_code, observed_at, revoked_at, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				project_id = excluded.project_id,
+				repository = excluded.repository,
+				installation_id = excluded.installation_id,
+				account_login = excluded.account_login,
+				account_id = excluded.account_id,
+				status = excluded.status,
+				permissions_json = excluded.permissions_json,
+				environments_json = excluded.environments_json,
+				drift_code = excluded.drift_code,
+				observed_at = excluded.observed_at,
+				revoked_at = excluded.revoked_at,
+				metadata_json = excluded.metadata_json,
+				updated_at = excluded.updated_at`,
+			[
+				id,
+				input.teamId,
+				input.projectId ?? null,
+				input.repository,
+				input.installationId ?? null,
+				input.accountLogin ?? null,
+				input.accountId ?? null,
+				input.status ?? 'active',
+				JSON.stringify(input.permissions ?? {}),
+				JSON.stringify(Array.isArray(input.environments) ? input.environments : []),
+				input.driftCode ?? null,
+				input.observedAt ?? timestamp,
+				input.revokedAt ?? null,
+				JSON.stringify(redactDeploymentValue(input.metadata ?? {})),
+				timestamp,
+				timestamp,
+			],
+		);
+		const grant = serializeGitHubRepositoryGrant(await this.first(`SELECT * FROM github_repository_grants WHERE id = ?`, [id]));
+		await this.recordSecretCapabilityAudit('github_repository_grant.upserted', grant);
+		return grant;
+	}
+
+	async listGitHubRepositoryGrants(input = {}) {
+		await this.ensureInitialized();
+		const clauses = [];
+		const values = [];
+		if (input.teamId) {
+			clauses.push('team_id = ?');
+			values.push(input.teamId);
+		}
+		if (input.projectId !== undefined) {
+			clauses.push('project_id = ?');
+			values.push(input.projectId);
+		}
+		if (input.status) {
+			clauses.push('status = ?');
+			values.push(input.status);
+		}
+		const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+		const rows = await this.all(
+			`SELECT * FROM github_repository_grants ${where} ORDER BY updated_at DESC LIMIT ?`,
+			[...values, Math.max(1, Math.min(Number(input.limit ?? 100) || 100, 500))],
+		);
+		return rows.map(serializeGitHubRepositoryGrant);
+	}
+
+	async updateGitHubRepositoryGrantStatus(id, status, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE github_repository_grants
+			 SET status = ?, drift_code = ?, revoked_at = ?, observed_at = COALESCE(?, observed_at), updated_at = ?
+			 WHERE id = ?`,
+			[
+				status,
+				input.driftCode ?? input.failClosedCode ?? null,
+				status === 'revoked' ? (input.revokedAt ?? timestamp) : (input.revokedAt ?? null),
+				input.observedAt ?? null,
+				timestamp,
+				id,
+			],
+		);
+		const grant = serializeGitHubRepositoryGrant(await this.first(`SELECT * FROM github_repository_grants WHERE id = ?`, [id]));
+		await this.recordSecretCapabilityAudit(`github_repository_grant.${status}`, grant);
+		return grant;
+	}
+
+	async upsertGitHubAppInstallationRecord(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const timestamp = isoNow();
+		const id = input.id ?? `${input.teamId}:github-app-installation:${input.installationId}`;
+		await this.run(
+			`INSERT INTO github_app_installation_records (
+				id, team_id, installation_id, account_login, account_id, account_type, status,
+				permissions_json, repository_selection, drift_code, observed_at, revoked_at, suspended_at,
+				metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				installation_id = excluded.installation_id,
+				account_login = excluded.account_login,
+				account_id = excluded.account_id,
+				account_type = excluded.account_type,
+				status = excluded.status,
+				permissions_json = excluded.permissions_json,
+				repository_selection = excluded.repository_selection,
+				drift_code = excluded.drift_code,
+				observed_at = excluded.observed_at,
+				revoked_at = excluded.revoked_at,
+				suspended_at = excluded.suspended_at,
+				metadata_json = excluded.metadata_json,
+				updated_at = excluded.updated_at`,
+			[
+				id,
+				input.teamId,
+				String(input.installationId ?? ''),
+				input.accountLogin ?? null,
+				input.accountId == null ? null : String(input.accountId),
+				input.accountType ?? null,
+				input.status ?? 'active',
+				JSON.stringify(input.permissions ?? {}),
+				input.repositorySelection ?? null,
+				input.driftCode ?? input.failClosedCode ?? null,
+				input.observedAt ?? timestamp,
+				input.revokedAt ?? null,
+				input.suspendedAt ?? null,
+				JSON.stringify(redactDeploymentValue(input.metadata ?? {})),
+				timestamp,
+				timestamp,
+			],
+		);
+		const record = serializeGitHubAppInstallationRecord(await this.first(`SELECT * FROM github_app_installation_records WHERE id = ?`, [id]));
+		await this.recordSecretCapabilityAudit('github_app_installation_record.upserted', record);
+		return record;
+	}
+
+	async getGitHubAppInstallationRecord(input = {}) {
+		await this.ensureInitialized();
+		if (typeof input === 'string') {
+			return serializeGitHubAppInstallationRecord(await this.first(`SELECT * FROM github_app_installation_records WHERE id = ? LIMIT 1`, [input]));
+		}
+		const teamId = input.teamId;
+		const installationId = input.installationId == null ? null : String(input.installationId);
+		if (!teamId || !installationId) return null;
+		return serializeGitHubAppInstallationRecord(await this.first(
+			`SELECT * FROM github_app_installation_records WHERE team_id = ? AND installation_id = ? LIMIT 1`,
+			[teamId, installationId],
+		));
+	}
+
+	async listGitHubAppInstallationRecords(input = {}) {
+		await this.ensureInitialized();
+		const clauses = [];
+		const values = [];
+		if (input.teamId) {
+			clauses.push('team_id = ?');
+			values.push(input.teamId);
+		}
+		if (input.status) {
+			clauses.push('status = ?');
+			values.push(input.status);
+		}
+		const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+		const rows = await this.all(
+			`SELECT * FROM github_app_installation_records ${where} ORDER BY updated_at DESC LIMIT ?`,
+			[...values, Math.max(1, Math.min(Number(input.limit ?? 100) || 100, 500))],
+		);
+		return rows.map(serializeGitHubAppInstallationRecord);
+	}
+
+	async updateGitHubAppInstallationRecordStatus(id, status, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE github_app_installation_records
+			 SET status = ?, drift_code = ?, revoked_at = ?, suspended_at = ?, observed_at = COALESCE(?, observed_at), updated_at = ?
+			 WHERE id = ?`,
+			[
+				status,
+				input.driftCode ?? input.failClosedCode ?? null,
+				status === 'revoked' ? (input.revokedAt ?? timestamp) : (input.revokedAt ?? null),
+				status === 'suspended' ? (input.suspendedAt ?? timestamp) : (input.suspendedAt ?? null),
+				input.observedAt ?? null,
+				timestamp,
+				id,
+			],
+		);
+		const record = serializeGitHubAppInstallationRecord(await this.first(`SELECT * FROM github_app_installation_records WHERE id = ?`, [id]));
+		await this.recordSecretCapabilityAudit(`github_app_installation_record.${status}`, record);
+		return record;
+	}
+
+	async recordGitHubAppTokenIssuance(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO github_app_token_issuance_records (
+				id, team_id, project_id, assignment_id, provider_id, workday_id, operation_id, repository, installation_id,
+				status, token_prefix, token_hash, permissions_json, allowed_operations_json, expires_at, issued_at,
+				revoked_at, fail_closed_code, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				input.teamId,
+				input.projectId ?? null,
+				input.assignmentId ?? null,
+				input.providerId ?? null,
+				input.workdayId ?? null,
+				input.operationId ?? null,
+				input.repository,
+				String(input.installationId ?? ''),
+				input.status ?? 'issued',
+				input.tokenPrefix ?? null,
+				input.tokenHash ?? null,
+				JSON.stringify(input.permissions ?? {}),
+				JSON.stringify(Array.isArray(input.allowedOperations) ? input.allowedOperations : []),
+				input.expiresAt ?? null,
+				input.issuedAt ?? timestamp,
+				input.revokedAt ?? null,
+				input.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(input.metadata ?? {})),
+				timestamp,
+				timestamp,
+			],
+		);
+		const record = await this.getGitHubAppTokenIssuanceRecord(id);
+		await this.recordSecretCapabilityAudit('github_app_token_issuance_record.created', record);
+		return record;
+	}
+
+	async getGitHubAppTokenIssuanceRecord(id) {
+		await this.ensureInitialized();
+		return serializeGitHubAppTokenIssuanceRecord(await this.first(`SELECT * FROM github_app_token_issuance_records WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async listGitHubAppTokenIssuanceRecords(input = {}) {
+		await this.ensureInitialized();
+		const clauses = [];
+		const values = [];
+		if (input.teamId) {
+			clauses.push('team_id = ?');
+			values.push(input.teamId);
+		}
+		if (input.projectId !== undefined) {
+			clauses.push('project_id = ?');
+			values.push(input.projectId);
+		}
+		if (input.repository) {
+			clauses.push('repository = ?');
+			values.push(input.repository);
+		}
+		if (input.status) {
+			clauses.push('status = ?');
+			values.push(input.status);
+		}
+		const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+		const rows = await this.all(
+			`SELECT * FROM github_app_token_issuance_records ${where} ORDER BY updated_at DESC LIMIT ?`,
+			[...values, Math.max(1, Math.min(Number(input.limit ?? 100) || 100, 500))],
+		);
+		return rows.map(serializeGitHubAppTokenIssuanceRecord);
+	}
+
+	async updateGitHubAppTokenIssuanceStatus(id, status, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE github_app_token_issuance_records
+			 SET status = ?, revoked_at = ?, fail_closed_code = ?, metadata_json = ?, updated_at = ?
+			 WHERE id = ?`,
+			[
+				status,
+				status === 'revoked' ? (input.revokedAt ?? timestamp) : (input.revokedAt ?? null),
+				input.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(input.metadata ?? {})),
+				timestamp,
+				id,
+			],
+		);
+		const record = await this.getGitHubAppTokenIssuanceRecord(id);
+		await this.recordSecretCapabilityAudit(`github_app_token_issuance_record.${status}`, record);
+		return record;
+	}
+
+	async upsertWorkflowOperationRecord(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const metadata = {
+			...(input.metadata ?? {}),
+			...(input.trustPolicy ? { trustPolicy: input.trustPolicy } : {}),
+		};
+		const operation = {
+			id: input.id,
+			name: input.name,
+			repository: input.repository,
+			workflowFile: input.workflowFile,
+			secretBearing: input.secretBearing === true,
+			trustedExecutionSetId: input.trustedExecutionSetId,
+			dispatch: input.dispatch ?? {},
+			inputs: input.inputs ?? [],
+			secretClasses: input.secretClasses ?? [],
+			providerSuppliedCommandsAllowed: input.providerSuppliedCommandsAllowed === true,
+			trustPolicy: input.trustPolicy ?? input.metadata?.trustPolicy ?? {},
+			metadata,
+		};
+		const validation = validateTreeseedSecretsCapabilityRegistry({
+			repositoryCredentialProviders: { githubApp: { type: 'github-app' } },
+			workflowOperations: {
+				trustedExecutionSets: input.trustedExecutionSets ?? [],
+				operations: [operation],
+			},
+		});
+		if (!validation.ok) throw secretCapabilityValidationError(validation.problems, 'Invalid workflow operation record.');
+		const timestamp = isoNow();
+		await this.run(
+			`INSERT INTO workflow_operation_records (
+				id, team_id, project_id, name, repository, workflow_file, secret_bearing, trusted_execution_set_id,
+				dispatch_json, inputs_json, secret_classes_json, status, fail_closed_code, metadata_json, created_at, updated_at, blocked_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				name = excluded.name,
+				repository = excluded.repository,
+				workflow_file = excluded.workflow_file,
+				secret_bearing = excluded.secret_bearing,
+				trusted_execution_set_id = excluded.trusted_execution_set_id,
+				dispatch_json = excluded.dispatch_json,
+				inputs_json = excluded.inputs_json,
+				secret_classes_json = excluded.secret_classes_json,
+				status = excluded.status,
+				fail_closed_code = excluded.fail_closed_code,
+				metadata_json = excluded.metadata_json,
+				updated_at = excluded.updated_at,
+				blocked_at = excluded.blocked_at`,
+			[
+				operation.id,
+				input.teamId,
+				input.projectId ?? null,
+				operation.name,
+				operation.repository,
+				operation.workflowFile,
+				operation.secretBearing ? 1 : 0,
+				operation.trustedExecutionSetId,
+				JSON.stringify(operation.dispatch),
+				JSON.stringify(operation.inputs),
+				JSON.stringify(operation.secretClasses),
+				input.status ?? 'active',
+				input.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(operation.metadata ?? {})),
+				timestamp,
+				timestamp,
+				input.blockedAt ?? null,
+			],
+		);
+		const record = serializeWorkflowOperationRecord(await this.first(`SELECT * FROM workflow_operation_records WHERE id = ?`, [operation.id]));
+		await this.recordSecretCapabilityAudit('workflow_operation_record.upserted', record);
+		return record;
+	}
+
+	async listWorkflowOperationRecords(input = {}) {
+		await this.ensureInitialized();
+		const clauses = [];
+		const values = [];
+		if (input.teamId) {
+			clauses.push('team_id = ?');
+			values.push(input.teamId);
+		}
+		if (input.projectId !== undefined) {
+			clauses.push('project_id = ?');
+			values.push(input.projectId);
+		}
+		if (input.status) {
+			clauses.push('status = ?');
+			values.push(input.status);
+		}
+		const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+		const rows = await this.all(
+			`SELECT * FROM workflow_operation_records ${where} ORDER BY updated_at DESC LIMIT ?`,
+			[...values, Math.max(1, Math.min(Number(input.limit ?? 100) || 100, 500))],
+		);
+		return rows.map(serializeWorkflowOperationRecord);
+	}
+
+	async getWorkflowOperationRecord(id) {
+		await this.ensureInitialized();
+		return serializeWorkflowOperationRecord(await this.first(`SELECT * FROM workflow_operation_records WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async updateWorkflowOperationRecordStatus(id, status, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE workflow_operation_records
+			 SET status = ?, fail_closed_code = ?, blocked_at = ?, updated_at = ?
+			 WHERE id = ?`,
+			[status, input.failClosedCode ?? null, status === 'blocked' ? (input.blockedAt ?? timestamp) : (input.blockedAt ?? null), timestamp, id],
+		);
+		const record = serializeWorkflowOperationRecord(await this.first(`SELECT * FROM workflow_operation_records WHERE id = ?`, [id]));
+		await this.recordSecretCapabilityAudit(`workflow_operation_record.${status}`, record);
+		return record;
+	}
+
+	async createWorkflowDispatchRecord(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO workflow_dispatch_records (
+				id, team_id, project_id, workflow_operation_id, platform_operation_id, repository, workflow_file, ref,
+				status, inputs_json, result_json, fail_closed_code, metadata_json, created_at, updated_at, dispatched_at, completed_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				input.teamId,
+				input.projectId ?? null,
+				input.workflowOperationId,
+				input.platformOperationId ?? null,
+				input.repository,
+				input.workflowFile,
+				input.ref ?? null,
+				input.status ?? 'queued',
+				JSON.stringify(redactDeploymentValue(input.inputs ?? {})),
+				JSON.stringify(redactDeploymentValue(input.result ?? {})),
+				input.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(input.metadata ?? {})),
+				timestamp,
+				timestamp,
+				input.dispatchedAt ?? null,
+				input.completedAt ?? null,
+			],
+		);
+		const record = await this.getWorkflowDispatchRecord(id);
+		await this.recordSecretCapabilityAudit('workflow_dispatch_record.created', record);
+		return record;
+	}
+
+	async getWorkflowDispatchRecord(id) {
+		await this.ensureInitialized();
+		return serializeWorkflowDispatchRecord(await this.first(`SELECT * FROM workflow_dispatch_records WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async updateWorkflowDispatchRecord(id, patch = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(patch);
+		const existing = await this.getWorkflowDispatchRecord(id);
+		if (!existing) return null;
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE workflow_dispatch_records
+			 SET status = ?, result_json = ?, fail_closed_code = ?, metadata_json = ?, updated_at = ?,
+			     dispatched_at = COALESCE(?, dispatched_at), completed_at = COALESCE(?, completed_at)
+			 WHERE id = ?`,
+			[
+				patch.status ?? existing.status,
+				JSON.stringify(redactDeploymentValue(patch.result ?? existing.result ?? {})),
+				patch.failClosedCode ?? existing.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(patch.metadata ?? existing.metadata ?? {})),
+				timestamp,
+				patch.dispatchedAt ?? null,
+				patch.completedAt ?? null,
+				id,
+			],
+		);
+		const record = await this.getWorkflowDispatchRecord(id);
+		await this.recordSecretCapabilityAudit('workflow_dispatch_record.updated', record);
+		return record;
+	}
+
+	async recordTreeDxCredentialIssuance(input = {}) {
+		await this.ensureInitialized();
+		rejectSecretCapabilityPlaintext(input);
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO treedx_credential_issuance_records (
+				id, team_id, project_id, assignment_id, repository, credential_provider, status, token_prefix, token_hash,
+				scopes_json, allowed_operations_json, expires_at, issued_at, revoked_at, fail_closed_code,
+				metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				input.teamId,
+				input.projectId,
+				input.assignmentId ?? null,
+				input.repository ?? null,
+				input.credentialProvider ?? 'github-app',
+				input.status ?? 'issued',
+				input.tokenPrefix ?? null,
+				input.tokenHash ?? null,
+				JSON.stringify(Array.isArray(input.scopes) ? input.scopes : []),
+				JSON.stringify(Array.isArray(input.allowedOperations) ? input.allowedOperations : []),
+				input.expiresAt ?? null,
+				input.issuedAt ?? timestamp,
+				input.revokedAt ?? null,
+				input.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(input.metadata ?? {})),
+				timestamp,
+				timestamp,
+			],
+		);
+		const record = await this.getTreeDxCredentialIssuanceRecord(id);
+		await this.recordSecretCapabilityAudit('treedx_credential_issuance_record.created', record);
+		return record;
+	}
+
+	async getTreeDxCredentialIssuanceRecord(id) {
+		await this.ensureInitialized();
+		return serializeTreeDxCredentialIssuanceRecord(await this.first(`SELECT * FROM treedx_credential_issuance_records WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async updateTreeDxCredentialIssuanceStatus(id, status, input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE treedx_credential_issuance_records
+			 SET status = ?, revoked_at = ?, fail_closed_code = ?, metadata_json = ?, updated_at = ?
+			 WHERE id = ?`,
+			[
+				status,
+				status === 'revoked' ? (input.revokedAt ?? timestamp) : (input.revokedAt ?? null),
+				input.failClosedCode ?? null,
+				JSON.stringify(redactDeploymentValue(input.metadata ?? {})),
+				timestamp,
+				id,
+			],
+		);
+		const record = await this.getTreeDxCredentialIssuanceRecord(id);
+		await this.recordSecretCapabilityAudit(`treedx_credential_issuance_record.${status}`, record);
+		return record;
+	}
+
+	async recordSecretCapabilityAudit(eventType, record, input = {}) {
+		if (!record) return null;
+		const data = {
+			teamId: record.teamId ?? input.teamId ?? null,
+			projectId: record.projectId ?? input.projectId ?? null,
+			repository: record.repository ?? record.githubSecretTarget?.repository ?? input.repository ?? null,
+			workflowOperationId: record.workflowOperationId ?? record.id ?? null,
+			workflowFile: record.workflowFile ?? null,
+			providerId: input.providerId ?? record.capacityProviderId ?? null,
+			assignmentId: record.assignmentId ?? input.assignmentId ?? null,
+			status: record.status ?? null,
+			failClosedCode: record.failClosedCode ?? record.driftCode ?? input.failClosedCode ?? null,
+			record,
+		};
+		return this.recordAuditEvent({
+			eventType,
+			actorType: input.actorType ?? 'system',
+			actorId: input.actorId ?? null,
+			targetType: input.targetType ?? (record.projectId ? 'project' : 'team'),
+			targetId: input.targetId ?? record.projectId ?? record.teamId ?? null,
+			data,
+		});
 	}
 
 	async appendPlatformOperationEvent(operationId, kind, data = {}) {

@@ -256,7 +256,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 		const workflowFile = stringValue(input.workflowFile ?? repository.workflowFile, 'deploy-web.yml');
 		if (!treeDxPublish && !workflowFile.endsWith('.yml') && !workflowFile.endsWith('.yaml')) throw new Error('Deployment workflow file must be a YAML workflow.');
 		if (input.action !== 'monitor' && (!deployment.target || Object.keys(objectValue(deployment.target)).length === 0)) throw new Error('Deployment web host target is not configured.');
-		if (input.action !== 'monitor' && !treeDxPublish && !mockExternal && !effectiveDryRun && !String(process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? '').trim()) {
+		if (input.action !== 'monitor' && !treeDxPublish && !mockExternal && !effectiveDryRun && !String(process.env.TREESEED_GITHUB_TOKEN ?? process.env.TREESEED_GITHUB_TOKEN ?? '').trim()) {
 			throw new Error('Configure GH_TOKEN before dispatching a project web deployment.');
 		}
 		return {

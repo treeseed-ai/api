@@ -161,6 +161,16 @@ sdkMethodMatrices:
     actor: teamOwner
     expect:
       statusAny: [201, 409]
+  - method: projectGitHubActionsSecretPublicKey
+    actor: teamOwner
+    expect:
+      status: 403
+      envelope: { ok: false }
+  - method: deployProjectGitHubActionsSecret
+    actor: teamOwner
+    expect:
+      status: 403
+      envelope: { ok: false }
   - method: auditProjectHosts
     actor: teamOwner
     environments: [local]

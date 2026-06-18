@@ -57,14 +57,18 @@ describe('API backend boundaries', () => {
 		expect(createJob).toBeGreaterThan(createProject);
 		expect(createHubLaunch).toBeGreaterThan(createJob);
 		expect(bootstrap).toBeGreaterThan(createHubLaunch);
-		expect(launchRoute).toContain('sensitivePassphrase');
+		expect(launchRoute).toContain('rejectProjectSecretUnlockMaterial');
+		expect(launchRoute).toContain('sensitive_passphrase_rejected');
 		expect(launchRoute).not.toContain('bindProviderCredentialSession');
+		expect(launchRoute).not.toContain('Submit sensitivePassphrase');
 	});
 
 	it('keeps backend credential and launch recovery guardrails in API routes', () => {
 		const api = readFileSync('src/api/app.js', 'utf8');
 		expect(api).toContain('retryApiLaunchBootstrapFromRequest');
-		expect(api).toContain('sensitive_passphrase_required');
+		expect(api).toContain('rejectProjectSecretUnlockMaterial');
+		expect(api).toContain('sensitive_passphrase_rejected');
+		expect(api).not.toContain('sensitive_passphrase_required');
 		expect(api).toContain('runProjectLaunchApiBootstrap');
 		expect(api).toContain('rejectPlaintextHostCredentialFields');
 		expect(api).toContain("if (hostKind === 'email_host')");

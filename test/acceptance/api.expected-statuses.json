@@ -578,6 +578,30 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "get.v1.projects.projectId.agent-fallback-outputs": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.treedx-proxy-audit": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "get.v1.projects.projectId.agent-pools": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -825,6 +849,42 @@
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.secrets.github-actions.public-key": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 403,
+      "providerOperator": 400,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.secrets.escrow": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.secrets.escrow.escrowId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
       "nonMember": 403,
       "providerOperator": 403,
       "providerKey": 401,
@@ -2222,6 +2282,18 @@
       "platformRunner": 404,
       "providerKey": 404
     },
+    "post.v1.capacity-plans.capacityPlanId.supersede": {
+      "anonymous": 404,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "platformRunner": 404,
+      "providerKey": 404
+    },
     "post.v1.capacity.providers.providerId.api-keys": {
       "anonymous": 410,
       "siteAdmin": 410,
@@ -2413,6 +2485,30 @@
       "providerOperator": 404,
       "providerKey": 403,
       "platformRunner": 403
+    },
+    "post.v1.internal.github.app.webhook": {
+      "anonymous": 401,
+      "siteAdmin": 401,
+      "marketSteward": 401,
+      "teamOwner": 401,
+      "teamOperator": 401,
+      "teamViewer": 401,
+      "nonMember": 401,
+      "providerOperator": 401,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.internal.treedx.credentials.github-app": {
+      "anonymous": 401,
+      "siteAdmin": 401,
+      "marketSteward": 401,
+      "teamOwner": 401,
+      "teamOperator": 401,
+      "teamViewer": 401,
+      "nonMember": 401,
+      "providerOperator": 401,
+      "providerKey": 401,
+      "platformRunner": 401
     },
     "post.v1.internal.treedx.public-federation.provision": {
       "anonymous": 401,
@@ -2733,6 +2829,78 @@
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.projects.projectId.secrets.github-actions.deploy": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.projects.projectId.secrets.escrow": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "patch.v1.projects.projectId.secrets.escrow.escrowId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.projects.projectId.secrets.escrow.escrowId.migrate": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "delete.v1.projects.projectId.secrets.escrow.escrowId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.projects.projectId.workflow-operations.operationId.dispatch": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
       "nonMember": 403,
       "providerOperator": 403,
       "providerKey": 401,
@@ -3591,6 +3759,18 @@
       "providerKey": 409
     },
     "post.v1.provider.assignments.assignmentId.mode-runs": {
+      "anonymous": 401,
+      "siteAdmin": 401,
+      "marketSteward": 401,
+      "teamOwner": 401,
+      "teamOperator": 401,
+      "teamViewer": 401,
+      "nonMember": 401,
+      "providerOperator": 401,
+      "providerKey": 404,
+      "platformRunner": 401
+    },
+    "post.v1.provider.assignments.assignmentId.workflow-operations.operationId.dispatch": {
       "anonymous": 401,
       "siteAdmin": 401,
       "marketSteward": 401,

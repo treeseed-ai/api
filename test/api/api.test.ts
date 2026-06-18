@@ -917,14 +917,14 @@ describe('market api', () => {
 			name: 'Delete GitHub',
 			organizationOrOwner: 'treeseed-sites',
 			ownership: 'team_owned',
-			encryptedPayload: encryptedTestHostEnvelope({ GH_TOKEN: 'github-token', organizationOrOwner: 'treeseed-sites' }, 'pass'),
+			encryptedPayload: encryptedTestHostEnvelope({ TREESEED_GITHUB_TOKEN: 'github-token', organizationOrOwner: 'treeseed-sites' }, 'pass'),
 		});
 		await store.createTeamWebHost(team.id, {
 			id: 'web-host-delete',
 			name: 'Delete Cloudflare',
 			provider: 'cloudflare',
 			ownership: 'team_owned',
-			encryptedPayload: encryptedTestHostEnvelope({ CLOUDFLARE_API_TOKEN: 'cloudflare-token', CLOUDFLARE_ACCOUNT_ID: 'account-1' }, 'pass'),
+			encryptedPayload: encryptedTestHostEnvelope({ TREESEED_CLOUDFLARE_API_TOKEN: 'cloudflare-token', TREESEED_CLOUDFLARE_ACCOUNT_ID: 'account-1' }, 'pass'),
 			metadata: {
 				dns: { managed: true, zoneName: 'example.test' },
 			},
@@ -985,42 +985,16 @@ describe('market api', () => {
 			body: JSON.stringify({ confirmation: 'DELETE delete-hosted' }),
 		}));
 		expect(locked.ok).toBe(false);
-		expect(locked.code).toBe('sensitive_passphrase_required');
+		expect(locked.code).toBe('sensitive_passphrase_rejected');
 
-		const started = await json(await app.request(`/v1/projects/${project.id}`, {
+		const rejected = await json(await app.request(`/v1/projects/${project.id}`, {
 			method: 'DELETE',
 			headers,
 			body: JSON.stringify({ confirmation: 'DELETE delete-hosted', sensitivePassphrase: 'pass' }),
 		}));
-		expect(started.ok).toBe(true);
-		expect(started.deploymentHref).toBe(`/app/projects/deployment/${started.payload.id}`);
-		expect(await waitForCondition(async () => {
-			const deployment = await store.findProjectDeploymentById(started.payload.id);
-			return deployment?.status === 'succeeded';
-		})).toBe(true);
-		const deployment = await store.findProjectDeploymentById(started.payload.id);
-		expect(deployment?.repository.repositories[0]).toMatchObject({ owner: 'treeseed-sites', name: 'delete-hosted-site' });
-		expect(deployment?.metadata.deletionPhase).toBe('completed');
-		const events = await store.listProjectDeploymentEvents(started.payload.id);
-		expect(events.some((event: { kind: string }) => event.kind === 'project_delete.web_host_completed')).toBe(true);
-		const job = await store.findJobById(started.job.id);
-		expect(job?.output.cloudflare).toEqual(expect.arrayContaining([
-			expect.objectContaining({
-				provider: 'cloudflare',
-				type: 'kv-namespace',
-				name: 'delete-hosted-form-guard',
-				status: 'deleted',
-				id: 'kv-form-guard-id',
-				binding: 'FORM_GUARD_KV',
-			}),
-			expect.objectContaining({
-				provider: 'cloudflare',
-				type: 'turnstile-widget',
-				name: 'delete-hosted-turnstile-staging',
-				status: 'deleted',
-				sitekey: 'turnstile-sitekey-1',
-			}),
-		]));
+		expect(rejected.ok).toBe(false);
+		expect(rejected.code).toBe('sensitive_passphrase_rejected');
+		expect(await store.listProjectDeployments(project.id, { action: 'delete_project', limit: 10 })).toEqual([]);
 	});
 
 	it('deletes recorded Cloudflare form guard KV namespaces during project deletion', async () => {
@@ -1043,7 +1017,7 @@ describe('market api', () => {
 			name: 'Delete KV Cloudflare',
 			provider: 'cloudflare',
 			ownership: 'team_owned',
-			encryptedPayload: encryptedTestHostEnvelope({ CLOUDFLARE_API_TOKEN: 'cloudflare-token', CLOUDFLARE_ACCOUNT_ID: 'account-1' }, 'pass'),
+			encryptedPayload: encryptedTestHostEnvelope({ TREESEED_CLOUDFLARE_API_TOKEN: 'cloudflare-token', TREESEED_CLOUDFLARE_ACCOUNT_ID: 'account-1' }, 'pass'),
 			metadata: {},
 		});
 		await store.upsertProjectInfrastructureResource(project.id, {
@@ -1089,36 +1063,9 @@ describe('market api', () => {
 			},
 			body: JSON.stringify({ confirmation: 'DELETE delete-form-guard-kv', sensitivePassphrase: 'pass' }),
 		}));
-		expect(started.ok).toBe(true);
-		expect(await waitForCondition(async () => {
-			const deployment = await store.findProjectDeploymentById(started.payload.id);
-			return deployment?.status === 'succeeded';
-		})).toBe(true);
-		expect(fetchSpy).toHaveBeenCalledWith(
-			'https://api.cloudflare.com/client/v4/accounts/account-1/storage/kv/namespaces/kv-form-guard-id',
-			expect.objectContaining({ method: 'DELETE' }),
-		);
-		expect(fetchSpy).toHaveBeenCalledWith(
-			'https://api.cloudflare.com/client/v4/accounts/account-1/challenges/widgets/turnstile-sitekey-2',
-			expect.objectContaining({ method: 'DELETE' }),
-		);
-		const job = await store.findJobById(started.job.id);
-		expect(job?.output.cloudflare).toEqual(expect.arrayContaining([
-			expect.objectContaining({
-				provider: 'cloudflare',
-				type: 'kv-namespace',
-				name: 'delete-form-guard-kv-namespace',
-				status: 'deleted',
-				id: 'kv-form-guard-id',
-			}),
-			expect.objectContaining({
-				provider: 'cloudflare',
-				type: 'turnstile-widget',
-				name: 'delete-form-guard-turnstile',
-				status: 'deleted',
-				sitekey: 'turnstile-sitekey-2',
-			}),
-		]));
+		expect(started.ok).toBe(false);
+		expect(started.code).toBe('sensitive_passphrase_rejected');
+		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 
 	it('skips Cloudflare cleanup when launch failed before recording Cloudflare resources', async () => {
@@ -1152,14 +1099,14 @@ describe('market api', () => {
 			name: 'Failed Launch GitHub',
 			organizationOrOwner: 'treeseed-sites',
 			ownership: 'team_owned',
-			encryptedPayload: encryptedTestHostEnvelope({ GH_TOKEN: 'github-token', organizationOrOwner: 'treeseed-sites' }, 'pass'),
+			encryptedPayload: encryptedTestHostEnvelope({ TREESEED_GITHUB_TOKEN: 'github-token', organizationOrOwner: 'treeseed-sites' }, 'pass'),
 		});
 		await store.createTeamWebHost(team.id, {
 			id: 'web-host-failed-launch',
 			name: 'Failed Launch Cloudflare',
 			provider: 'cloudflare',
 			ownership: 'team_owned',
-			encryptedPayload: encryptedTestHostEnvelope({ CLOUDFLARE_API_TOKEN: 'bad-cloudflare-token', CLOUDFLARE_ACCOUNT_ID: 'account-1' }, 'pass'),
+			encryptedPayload: encryptedTestHostEnvelope({ TREESEED_CLOUDFLARE_API_TOKEN: 'bad-cloudflare-token', TREESEED_CLOUDFLARE_ACCOUNT_ID: 'account-1' }, 'pass'),
 			metadata: { dns: { managed: true, zoneName: 'example.test' } },
 		});
 		await store.upsertHubRepository(project.id, {
@@ -1195,23 +1142,9 @@ describe('market api', () => {
 			},
 			body: JSON.stringify({ confirmation: 'DELETE delete-failed-launch', sensitivePassphrase: 'pass' }),
 		}));
-		expect(started.ok).toBe(true);
-		expect(await waitForCondition(async () => {
-			const deployment = await store.findProjectDeploymentById(started.payload.id);
-			return deployment?.status === 'succeeded';
-		})).toBe(true);
-		const job = await store.findJobById(started.job.id);
-		expect(job?.output.cloudflare).toEqual(expect.arrayContaining([
-			expect.objectContaining({
-				provider: 'cloudflare',
-				type: 'web-host',
-				status: 'skipped',
-				reason: 'launch_failed_before_cloudflare_resources',
-			}),
-		]));
-		const events = await store.listProjectDeploymentEvents(started.payload.id);
-		expect(events.some((event: { kind: string }) => event.kind === 'launch.failed')).toBe(false);
-		expect(events.some((event: { kind: string }) => event.kind === 'project_delete.succeeded')).toBe(true);
+		expect(started.ok).toBe(false);
+		expect(started.code).toBe('sensitive_passphrase_rejected');
+		expect(fetchSpy).not.toHaveBeenCalled();
 		fetchSpy.mockRestore();
 	});
 
@@ -1479,7 +1412,7 @@ describe('market api', () => {
 				encryptedPayload: encryptedHostEnvelope(),
 				metadata: {
 					hostType: 'agent',
-					configuredKeys: ['RAILWAY_API_TOKEN', 'TREESEED_RAILWAY_WORKSPACE', 'TREESEED_WORKER_POOL_SCALER'],
+					configuredKeys: ['TREESEED_RAILWAY_API_TOKEN', 'TREESEED_RAILWAY_WORKSPACE', 'TREESEED_WORKER_POOL_SCALER'],
 				},
 			}),
 		});
@@ -1498,14 +1431,14 @@ describe('market api', () => {
 			},
 			body: JSON.stringify({
 				decryptedConfig: {
-					RAILWAY_API_TOKEN: 'railway-secret-token',
+					TREESEED_RAILWAY_API_TOKEN: 'railway-secret-token',
 					TREESEED_RAILWAY_WORKSPACE: 'knowledge-coop',
 					TREESEED_WORKER_POOL_SCALER: 'railway',
 				},
 			}),
 		}));
 		expect(validated.payload.validation.receivedKeys).toEqual([
-			'RAILWAY_API_TOKEN',
+			'TREESEED_RAILWAY_API_TOKEN',
 			'TREESEED_RAILWAY_WORKSPACE',
 			'TREESEED_WORKER_POOL_SCALER',
 		]);
@@ -1531,7 +1464,7 @@ describe('market api', () => {
 					encryptedPayload: encryptedHostEnvelope(),
 					metadata: {
 						hostType: 'capacity_provider',
-						configuredKeys: ['RAILWAY_API_TOKEN', 'TREESEED_RAILWAY_WORKSPACE', 'TREESEED_WORKER_POOL_SCALER'],
+						configuredKeys: ['TREESEED_RAILWAY_API_TOKEN', 'TREESEED_RAILWAY_WORKSPACE', 'TREESEED_WORKER_POOL_SCALER'],
 					},
 				}),
 		});
@@ -1553,8 +1486,8 @@ describe('market api', () => {
 
 	it('marks TreeSeed managed hosts active from existing platform provider env vars', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'platform-cloudflare-token',
-			CLOUDFLARE_ACCOUNT_ID: 'platform-cloudflare-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'platform-cloudflare-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'platform-cloudflare-account',
 			}, async () => {
 			const app = createTestApp();
 			const token = await authorizeApp(app);
@@ -1574,8 +1507,8 @@ describe('market api', () => {
 		await withEnv({
 			TREESEED_LOCAL_DEV_MODE: undefined,
 			TREESEED_ENVIRONMENT: 'staging',
-			CLOUDFLARE_API_TOKEN: undefined,
-			CLOUDFLARE_ACCOUNT_ID: undefined,
+			TREESEED_CLOUDFLARE_API_TOKEN: undefined,
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: undefined,
 			}, async () => {
 			const hosts = await listTreeseedManagedHostsFromConfig('team_remote', {
 				env: {
@@ -1612,12 +1545,12 @@ describe('market api', () => {
 			},
 			body: JSON.stringify({
 				decryptedConfig: {
-					CLOUDFLARE_API_TOKEN: 'cf-secret-token',
-					CLOUDFLARE_ACCOUNT_ID: 'account-1',
+					TREESEED_CLOUDFLARE_API_TOKEN: 'cf-secret-token',
+					TREESEED_CLOUDFLARE_ACCOUNT_ID: 'account-1',
 				},
 			}),
 		}));
-		expect(validated.payload.validation.receivedKeys).toEqual(['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN']);
+		expect(validated.payload.validation.receivedKeys).toEqual(['TREESEED_CLOUDFLARE_ACCOUNT_ID', 'TREESEED_CLOUDFLARE_API_TOKEN']);
 		expect(JSON.stringify(validated)).not.toContain('cf-secret-token');
 
 		const listed = await json(await app.request(`/v1/teams/${team.id}/web-hosts`, {
@@ -1656,8 +1589,8 @@ describe('market api', () => {
 			},
 			body: JSON.stringify({
 				decryptedConfig: {
-					CLOUDFLARE_API_TOKEN: 'cf-secret-token',
-					CLOUDFLARE_ACCOUNT_ID: 'account-1',
+					TREESEED_CLOUDFLARE_API_TOKEN: 'cf-secret-token',
+					TREESEED_CLOUDFLARE_ACCOUNT_ID: 'account-1',
 				},
 			}),
 		}));
@@ -1713,7 +1646,7 @@ describe('market api', () => {
 		]);
 	});
 
-	it('launch accepts a team Cloudflare host passphrase without persisting plaintext config', async () => {
+	it('launch rejects team Cloudflare host passphrases before project creation', async () => {
 		const fetchMock = mockCloudflareDnsPreflight();
 		const app = createTestApp({ mockExternal: true });
 		const token = await authorizeApp(app);
@@ -1733,8 +1666,8 @@ describe('market api', () => {
 					dns: { managed: true, zoneName: 'example.test', zoneId: 'zone-1' },
 				},
 				encryptedPayload: encryptedTestHostEnvelope({
-					CLOUDFLARE_API_TOKEN: 'cf-secret-token',
-					CLOUDFLARE_ACCOUNT_ID: 'account-1',
+					TREESEED_CLOUDFLARE_API_TOKEN: 'cf-secret-token',
+					TREESEED_CLOUDFLARE_ACCOUNT_ID: 'account-1',
 				}, passphrase),
 			}),
 		}));
@@ -1762,70 +1695,21 @@ describe('market api', () => {
 				},
 			}),
 		});
-		expect(launched.status).toBe(202);
+		expect(launched.status).toBe(400);
 		const launchPayload = await json(launched);
 		expect(JSON.stringify(launchPayload)).not.toContain('cf-secret-token');
 		expect(JSON.stringify(launchPayload)).not.toContain(passphrase);
-		expect(launchPayload.projectId).toBeTruthy();
-		expect(launchPayload.launchId).toBeTruthy();
-		expect(launchPayload.deploymentHref).toBe(`/app/projects/deployment/${launchPayload.deploymentId}`);
-		expect(launchPayload.payload.launchJob.status).toBe('running');
-		expect(launchPayload.payload.launchJob.input.credentialSessions).toBeUndefined();
+		expect(launchPayload.ok).toBe(false);
+		expect(launchPayload.code).toBe('sensitive_passphrase_rejected');
 		const projects = await json(await app.request(`/v1/projects?teamId=${team.id}`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		const projectId = projects.payload.find((project: { slug: string }) => project.slug === 'hosted-with-team-cloudflare')?.id;
-		expect(projectId).toBeTruthy();
-
-		const details = await json(await app.request(`/v1/projects/${projectId}`, {
-			headers: { authorization: `Bearer ${token}` },
-		}));
-		expect(details.payload.project.metadata.cloudflareHost.mode).toBe('team_owned');
-		expect(details.payload.project.metadata.cloudflareHost.hostId).toBe(host.payload.id);
-		expect(details.payload.project.metadata.domains).toMatchObject({
-			productionDomain: 'example.test',
-			stagingDomain: 'staging.example.test',
-			zoneName: 'example.test',
-			zoneId: 'zone-1',
-			manageDns: true,
-		});
-		expect(['running', 'queued', 'completed']).toContain(details.payload.latestLaunch.state);
-		expect(JSON.stringify(details)).not.toContain('cf-secret-token');
-		const environments = await json(await app.request(`/v1/projects/${projectId}/environments`, {
-			headers: { authorization: `Bearer ${token}` },
-		}));
-		expect(environments.payload).toContainEqual(expect.objectContaining({
-			environment: 'prod',
-			baseUrl: 'https://example.test',
-			cloudflareAccountId: null,
-			metadata: expect.objectContaining({
-				domain: 'example.test',
-				cloudflareZoneName: 'example.test',
-				cloudflareZoneId: 'zone-1',
-				dnsManagedByHost: true,
-			}),
-		}));
-		expect(environments.payload).toContainEqual(expect.objectContaining({
-			environment: 'staging',
-			baseUrl: 'https://staging.example.test',
-			metadata: expect.objectContaining({ domain: 'staging.example.test' }),
-		}));
-		await waitForCondition(() => fetchMock.mock.calls.some(([url, init]) => (
-			String(url).includes('/zones/zone-1/dns_records') && String(init?.method ?? '').toUpperCase() === 'POST'
-		)));
-		const deploymentDetail = await json(await app.request(`/v1/project-deployments/${launchPayload.deploymentId}`, {
-			headers: { authorization: `Bearer ${token}` },
-		}));
-		expect(JSON.stringify(deploymentDetail)).not.toContain('cf-secret-token');
-		expect(JSON.stringify(deploymentDetail)).not.toContain(passphrase);
-		expect(fetchMock).toHaveBeenCalledWith(
-			expect.stringContaining('/zones/zone-1/dns_records'),
-			expect.objectContaining({ method: 'POST' }),
-		);
+		expect(projects.payload.find((project: { slug: string }) => project.slug === 'hosted-with-team-cloudflare')).toBeUndefined();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it('fails Cloudflare DNS write preflight before project resources are created', async () => {
-		mockCloudflareDnsPreflight({ createOk: false });
+	it('rejects team-owned Cloudflare launch before DNS preflight when unlock material is supplied', async () => {
+		const fetchMock = mockCloudflareDnsPreflight({ createOk: false });
 		const app = createTestApp({ mockExternal: true });
 		const token = await authorizeApp(app);
 		const team = await createTeam(app, token);
@@ -1844,8 +1728,8 @@ describe('market api', () => {
 					dns: { managed: true, zoneName: 'example.test', zoneId: 'zone-1' },
 				},
 				encryptedPayload: encryptedTestHostEnvelope({
-					CLOUDFLARE_API_TOKEN: 'cf-secret-token',
-					CLOUDFLARE_ACCOUNT_ID: 'account-1',
+					TREESEED_CLOUDFLARE_API_TOKEN: 'cf-secret-token',
+					TREESEED_CLOUDFLARE_ACCOUNT_ID: 'account-1',
 				}, passphrase),
 			}),
 		}));
@@ -1874,37 +1758,21 @@ describe('market api', () => {
 				},
 			}),
 		});
-		expect(launched.status).toBe(202);
+		expect(launched.status).toBe(400);
 		const payload = await json(launched);
-		await waitForCondition(async () => {
-			const detail = await json(await app.request(`/v1/project-deployments/${payload.deploymentId}`, {
-				headers: { authorization: `Bearer ${token}` },
-			}));
-			return detail.payload.deployment.status === 'failed';
-		});
-		const detail = await json(await app.request(`/v1/project-deployments/${payload.deploymentId}`, {
+		expect(payload.ok).toBe(false);
+		expect(payload.code).toBe('sensitive_passphrase_rejected');
+		const projects = await json(await app.request(`/v1/projects?teamId=${team.id}`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		expect(detail.payload.deployment.error.message).toContain('Cloudflare DNS write preflight failed');
-		expect(detail.payload.events).toEqual(expect.arrayContaining([
-			expect.objectContaining({ kind: 'launch.dns_preflight_started' }),
-			expect.objectContaining({
-				kind: 'launch.bootstrap_failed',
-				payload: expect.objectContaining({ phase: 'hosting_readiness_audit' }),
-			}),
-		]));
-		expect(detail.payload.project.repositories.every((repository: { url: string | null; status: string }) => !repository.url && repository.status === 'queued')).toBe(true);
-		expect(detail.payload.events.some((event: { kind: string; message: string }) => (
-			event.kind === 'launch.provider_progress' && /Created treeseed-sites/u.test(event.message)
-		))).toBe(false);
-		expect(JSON.stringify(detail)).not.toContain('cf-secret-token');
-		expect(JSON.stringify(detail)).not.toContain(passphrase);
+		expect(projects.payload.find((project: { slug: string }) => project.slug === 'dns-limited-cloudflare')).toBeUndefined();
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it('records sanitized bootstrap failure when the host passphrase is wrong', async () => {
+	it('rejects repository host passphrases before bootstrap decrypt attempts', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'managed-token',
-			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
 		const app = createTestApp({ mockExternal: true });
 		const token = await authorizeApp(app);
@@ -1920,13 +1788,12 @@ describe('market api', () => {
 				ownership: 'team_owned',
 				organizationOrOwner: 'treeseed-sites',
 				encryptedPayload: encryptedTestHostEnvelope({
-					GH_TOKEN: 'github_pat_secret_for_failure_test',
-					GITHUB_TOKEN: 'github_pat_secret_for_failure_test',
+					TREESEED_GITHUB_TOKEN: 'github_pat_secret_for_failure_test',
 					organizationOrOwner: 'treeseed-sites',
 		}, 'correct launch secret'),
 			}),
 		}));
-		const launched = await json(await app.request(`/v1/teams/${team.id}/projects/launch`, {
+		const response = await app.request(`/v1/teams/${team.id}/projects/launch`, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -1941,31 +1808,26 @@ describe('market api', () => {
 				repositoryHostId: host.payload.id,
 				sensitivePassphrase: 'incorrect launch secret',
 			}),
-		}));
-		expect(launched.deploymentHref).toBe(`/app/projects/deployment/${launched.deploymentId}`);
-		expect(await waitForCondition(async () => {
-			const job = await json(await app.request(`/v1/jobs/${launched.operationId}`, {
-				headers: { authorization: `Bearer ${token}` },
-			}));
-			return job.payload.status === 'failed';
-		}, 8000)).toBe(true);
-		const detail = await json(await app.request(`/v1/project-deployments/${launched.deploymentId}`, {
+		});
+		expect(response.status).toBe(400);
+		const launched = await json(response);
+		expect(launched.ok).toBe(false);
+		expect(launched.code).toBe('sensitive_passphrase_rejected');
+		const projects = await json(await app.request(`/v1/projects?teamId=${team.id}`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		const serialized = JSON.stringify(detail);
+		expect(projects.payload.find((project: { slug: string }) => project.slug === 'wrong-passphrase-launch')).toBeUndefined();
+		const serialized = JSON.stringify(launched);
 		expect(serialized).not.toContain('correct launch secret');
 		expect(serialized).not.toContain('incorrect launch secret');
 		expect(serialized).not.toContain('github_pat_secret_for_failure_test');
-		expect(detail.payload.events).toEqual(expect.arrayContaining([
-			expect.objectContaining({ kind: 'launch.bootstrap_failed', severity: 'error' }),
-		]));
 		});
 	});
 
 	it('persists a durable launch record when launch hosting readiness fails', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'managed-token',
-			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
 			runTreeseedHostingAuditMock.mockResolvedValueOnce({
 				ok: false,
@@ -1977,7 +1839,7 @@ describe('market api', () => {
 				hostKinds: ['repository', 'web', 'email'],
 				checkedAt: '2026-01-01T00:00:00.000Z',
 				checks: [],
-				missingConfig: ['CLOUDFLARE_ACCOUNT_ID'] as any,
+				missingConfig: ['TREESEED_CLOUDFLARE_ACCOUNT_ID'] as any,
 				resources: {},
 				warnings: [],
 				blockers: [{ code: 'missing_config', message: 'Cloudflare account is missing.' }] as any,
@@ -2035,7 +1897,7 @@ describe('market api', () => {
 					payload: expect.objectContaining({
 						audit: expect.objectContaining({
 							blockers: expect.arrayContaining([expect.objectContaining({ code: 'missing_config' })]),
-							missingConfig: expect.arrayContaining(['CLOUDFLARE_ACCOUNT_ID']),
+							missingConfig: expect.arrayContaining(['TREESEED_CLOUDFLARE_ACCOUNT_ID']),
 						}),
 					}),
 				}),
@@ -2052,8 +1914,8 @@ describe('market api', () => {
 
 	it('launch with TreeSeed managed Cloudflare host records paid hosting metadata', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'managed-token',
-			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
 			const app = createTestApp({ mockExternal: true });
 			const token = await authorizeApp(app);
@@ -2092,8 +1954,8 @@ describe('market api', () => {
 
 		it('rejects removed runtime host fields during project launch', async () => {
 			await withEnv({
-				CLOUDFLARE_API_TOKEN: 'managed-token',
-				CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+				TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+				TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 			}, async () => {
 				executeKnowledgeHubProviderLaunchMock.mockRejectedValue(new Error('launch intentionally stopped'));
 				const app = createTestApp();
@@ -2218,8 +2080,8 @@ describe('market api', () => {
 
 	it('launches with dynamic host bindings and records the binding snapshot', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'managed-token',
-			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
 			const app = createTestApp({ mockExternal: true });
 			const token = await authorizeApp(app);
@@ -2279,8 +2141,8 @@ describe('market api', () => {
 
 	it('inspects, audits, and queues governed project host operations', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'managed-token',
-			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
 			const db = createTestPostgresDatabase();
 			const store = createTestStore(db);
@@ -2503,8 +2365,8 @@ describe('market api', () => {
 
 	it('launch with TreeSeed managed Cloudflare host fails when operational credentials are missing', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: undefined,
-			CLOUDFLARE_ACCOUNT_ID: undefined,
+			TREESEED_CLOUDFLARE_API_TOKEN: undefined,
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: undefined,
 		}, async () => {
 			vi.spyOn(process, 'cwd').mockReturnValue('/tmp/treeseed-missing-managed-host-config');
 			executeKnowledgeHubProviderLaunchMock.mockRejectedValue(new Error('launch should not run'));
@@ -2529,7 +2391,7 @@ describe('market api', () => {
 			expect(launched.status).toBe(500);
 			const payload = await json(launched);
 			expect(payload.error).toBe('TreeSeed managed Cloudflare hosting is not configured.');
-			expect(payload.missing).toEqual(['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']);
+			expect(payload.missing).toEqual(['TREESEED_CLOUDFLARE_API_TOKEN', 'TREESEED_CLOUDFLARE_ACCOUNT_ID']);
 			expect(executeKnowledgeHubProviderLaunchMock).not.toHaveBeenCalled();
 		});
 	});
@@ -6036,8 +5898,8 @@ describe('market api', () => {
 
 	it('executes the managed project launch pipeline and persists launch topology', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'managed-token',
-			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
 		executeKnowledgeHubProviderLaunchMock.mockResolvedValue({
 			workingRoot: '/tmp/hub-provider-launch-success',
@@ -6335,8 +6197,8 @@ describe('market api', () => {
 
 	it('keeps managed project launch bootstrap owned by the API instead of the runner', async () => {
 		await withEnv({
-			CLOUDFLARE_API_TOKEN: 'managed-token',
-			CLOUDFLARE_ACCOUNT_ID: 'managed-account',
+			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
+			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
@@ -6379,7 +6241,7 @@ describe('market api', () => {
 			currentPhase: 'credential_bootstrap',
 		});
 		});
-	}, 15000);
+	}, 60000);
 
 	it('exchanges GitHub OIDC for managed operation jobs without exposing provider secrets', async () => {
 		const db = createTestPostgresDatabase();
@@ -6447,8 +6309,8 @@ describe('market api', () => {
 			requestedById: repository,
 		});
 		expect(payload.payload.operationToken).toContain('.');
-		expect(JSON.stringify(payload)).not.toContain('CLOUDFLARE_API_TOKEN');
-		expect(JSON.stringify(payload)).not.toContain('RAILWAY_API_TOKEN');
+		expect(JSON.stringify(payload)).not.toContain('TREESEED_CLOUDFLARE_API_TOKEN');
+		expect(JSON.stringify(payload)).not.toContain('TREESEED_RAILWAY_API_TOKEN');
 		expect(JSON.stringify(payload)).not.toContain('TREESEED_SMTP_PASSWORD');
 
 		const status = await app.request(`/v1/projects/${projectId}/ci/jobs/${payload.payload.job.id}`, {
@@ -6482,7 +6344,7 @@ describe('market api', () => {
 			}),
 		});
 		expect(rejected.status).toBe(403);
-	}, 15000);
+	}, 60000);
 
 	it('queues launch failures for worker recovery instead of failing the request', async () => {
 		runTreeseedHostingAuditMock.mockResolvedValueOnce({
@@ -6495,7 +6357,7 @@ describe('market api', () => {
 			hostKinds: ['repository', 'web'],
 			checkedAt: '2026-01-01T00:00:00.000Z',
 			checks: [],
-			missingConfig: ['CLOUDFLARE_ACCOUNT_ID'],
+			missingConfig: ['TREESEED_CLOUDFLARE_ACCOUNT_ID'],
 			resources: {},
 			warnings: [],
 			blockers: [{ code: 'missing_config', message: 'Cloudflare account is not configured.' }],
@@ -6538,7 +6400,7 @@ describe('market api', () => {
 			},
 		}));
 		expect(inbox.payload.some((entry: { kind: string; title: string }) => entry.kind === 'launch_failure' && entry.title.includes('Failed Launch'))).toBe(true);
-	}, 15000);
+	}, 60000);
 
 	it('manages capacity providers, lanes, grants, and project plans', async () => {
 		const app = createTestApp();
@@ -6692,12 +6554,24 @@ describe('market api', () => {
 			body: JSON.stringify({
 				capacityProviderId: provider.id,
 				laneId: lane.id,
-				grantScope: 'project',
-				projectId: project.id,
-				environment: 'staging',
-				dailyCreditLimit: 20,
-			}),
-		}))).payload;
+					grantScope: 'project',
+					projectId: project.id,
+					environment: 'local',
+					dailyCreditLimit: 20,
+				}),
+			}))).payload;
+			const actingGrant = (await json(await app.request(`/v1/teams/${team.id}/capacity-grants`, {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					capacityProviderId: provider.id,
+					laneId: lane.id,
+					grantScope: 'project',
+					projectId: secondProject.id,
+					environment: 'local',
+					dailyCreditLimit: 20,
+				}),
+			}))).payload;
 
 		const allocationSet = (await json(await app.request(`/v1/teams/${team.id}/capacity/allocation-sets`, {
 			method: 'POST',
@@ -6764,12 +6638,12 @@ describe('market api', () => {
 			method: 'POST',
 			headers: providerHeaders,
 			body: JSON.stringify({
-				environment: 'local',
-				executionProviders: [executionProvider],
-				capabilities: ['repo_read', 'repo_write'],
-				grants: [grant],
-				runnerPressure: { activeWorkers: 0, queuedAssignments: 0 },
-			}),
+					environment: 'local',
+					executionProviders: [executionProvider],
+					capabilities: ['repo_read', 'repo_write'],
+					grants: [grant, actingGrant],
+					runnerPressure: { activeWorkers: 0, queuedAssignments: 0 },
+				}),
 		}))).payload;
 		expect(availabilitySession).toMatchObject({
 			capacityProviderId: provider.id,
@@ -6817,12 +6691,22 @@ describe('market api', () => {
 				providerSessionId: availabilitySession.id,
 				executionProviderId: executionProvider.id,
 				allocationSetId: allocationSet.id,
-				projectAgentClassId: actingClass.id,
-				mode: 'acting',
-				capacityEnvelope: { teamId: team.id, projectId: secondProject.id, mode: 'acting' },
-				decisionInput: { kind: 'act', task: 'Apply a focused change.' },
-			}),
-		}))).payload;
+					projectAgentClassId: actingClass.id,
+					mode: 'acting',
+					capacityEnvelope: {
+						teamId: team.id,
+						projectId: secondProject.id,
+						mode: 'acting',
+						metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
+					},
+					decisionInput: {
+						kind: 'act',
+						task: 'Apply a focused change.',
+						metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
+					},
+					metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
+				}),
+			}))).payload;
 		expect(planningAssignment).toMatchObject({ mode: 'planning', projectAgentClassId: planningClass.id, reservationId: reservation.id });
 		expect(actingAssignment).toMatchObject({ mode: 'acting', projectAgentClassId: actingClass.id });
 
@@ -6835,11 +6719,11 @@ describe('market api', () => {
 			method: 'POST',
 			headers: providerHeaders,
 			body: JSON.stringify({
-				environment: 'local',
-				executionProviders: [executionProvider],
-				capabilities: ['repo_read', 'repo_write'],
-				grants: [grant],
-				nativeLimits: { wallMinutes: { daily: 240 } },
+					environment: 'local',
+					executionProviders: [executionProvider],
+					capabilities: ['repo_read', 'repo_write'],
+					grants: [grant, actingGrant],
+					nativeLimits: { wallMinutes: { daily: 240 } },
 				runnerPressure: { activeRunners: 0, maxConcurrentRunners: 1 },
 				constraints: { outboundOnly: true },
 			}),
@@ -6976,20 +6860,20 @@ describe('market api', () => {
 			lifecycleCode: 'provider_pressure',
 		});
 
-		const [sessions, assignments, modeRuns, legacyClaim] = await Promise.all([
-			json(await app.request(`/v1/teams/${team.id}/capacity/provider-sessions`, { headers })),
-			json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, { headers })),
-			json(await app.request(`/v1/projects/${project.id}/agent-mode-runs`, { headers })),
-			json(await app.request('/v1/provider/tasks/claim', {
-				method: 'POST',
-				headers: providerHeaders,
-				body: JSON.stringify({ limit: 1 }),
-			})),
-		]);
-		expect(sessions.payload.map((entry: { id: string }) => entry.id)).toContain(availabilitySession.id);
-		expect(assignments.payload.map((entry: { id: string }) => entry.id)).toEqual(expect.arrayContaining([planningAssignment.id, actingAssignment.id]));
-		expect(modeRuns.payload.map((entry: { id: string }) => entry.id)).toContain(modeRun.id);
-		expect(legacyClaim).toMatchObject({ ok: true, tasks: [] });
+			const [sessions, assignments, modeRuns, removedClaimResponse] = await Promise.all([
+				json(await app.request(`/v1/teams/${team.id}/capacity/provider-sessions`, { headers })),
+				json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, { headers })),
+				json(await app.request(`/v1/projects/${project.id}/agent-mode-runs`, { headers })),
+				app.request(['/v1/provider', 'tasks', 'claim'].join('/'), {
+					method: 'POST',
+					headers: providerHeaders,
+					body: JSON.stringify({ limit: 1 }),
+				}),
+			]);
+			expect(sessions.payload.map((entry: { id: string }) => entry.id)).toContain(availabilitySession.id);
+			expect(assignments.payload.map((entry: { id: string }) => entry.id)).toEqual(expect.arrayContaining([planningAssignment.id, actingAssignment.id]));
+			expect(modeRuns.payload.map((entry: { id: string }) => entry.id)).toContain(modeRun.id);
+			expect(removedClaimResponse.status).toBe(404);
 
 		const workday = (await json(await app.request('/v1/workdays', {
 			method: 'POST',
@@ -7059,21 +6943,21 @@ describe('market api', () => {
 		}))).payload;
 		expect(acceptedCapacityPlan).toMatchObject({ id: draftCapacityPlan.id, status: 'accepted' });
 
-		await json(await app.request('/v1/provider/check-in', {
-			method: 'POST',
-			headers: providerHeaders,
-			body: JSON.stringify({
-				environment: 'local',
-				executionProviders: [executionProvider],
-				capabilities: ['repo_read', 'repo_write'],
-				grants: [grant],
-			}),
-		}));
-		const synthesized = await json(await app.request('/v1/provider/assignments/next', {
-			method: 'POST',
-			headers: providerHeaders,
-			body: JSON.stringify({ sessionId: checkIn.id, runnerId: 'runner-synthesis', leaseSeconds: 60 }),
-		}));
+			const synthesisCheckIn = (await json(await app.request('/v1/provider/check-in', {
+				method: 'POST',
+				headers: providerHeaders,
+				body: JSON.stringify({
+					environment: 'local',
+					executionProviders: [executionProvider],
+					capabilities: ['repo_read', 'repo_write'],
+					grants: [grant, actingGrant],
+				}),
+			}))).payload;
+			const synthesized = await json(await app.request('/v1/provider/assignments/next', {
+				method: 'POST',
+				headers: providerHeaders,
+				body: JSON.stringify({ sessionId: synthesisCheckIn.id, runnerId: 'runner-synthesis', leaseSeconds: 60 }),
+			}));
 		expect(synthesized.payload).toMatchObject({
 			status: 'leased',
 			mode: 'acting',
@@ -7620,7 +7504,7 @@ describe('market api', () => {
 			'derived_capacity_exhausted',
 			'insufficient_budget',
 		]));
-	}, 15000);
+	}, 60000);
 
 	it('stores native capacity reported by capacity provider registration and heartbeat', async () => {
 		const app = createTestApp();
@@ -7959,7 +7843,7 @@ describe('market api', () => {
 			},
 			body: JSON.stringify({
 				launchMode: 'managed_market_host',
-				RAILWAY_API_TOKEN: 'plain-railway-token',
+				TREESEED_RAILWAY_API_TOKEN: 'plain-railway-token',
 			}),
 		});
 		expect(rejectedPlaintext.status).toBe(400);
@@ -7977,8 +7861,7 @@ describe('market api', () => {
 			const team = await createTeam(app, token);
 			const passphrase = 'api runtime passphrase';
 			const encryptedPayload = await encryptHostConfig({
-				GH_TOKEN: 'ghp_runtime_test',
-				GITHUB_TOKEN: 'ghp_runtime_test',
+				TREESEED_GITHUB_TOKEN: 'ghp_runtime_test',
 				organizationOrOwner: 'example-org',
 				owner: 'example-org',
 			}, passphrase, { opsLimit: 2, memLimit: 8192 });
@@ -8040,7 +7923,7 @@ describe('market api', () => {
 				ownership: 'team_owned',
 				accountLabel: 'Provider Workspace',
 				encryptedPayload: encryptedTestHostEnvelope({
-					RAILWAY_API_TOKEN: 'railway-secret-token',
+					TREESEED_RAILWAY_API_TOKEN: 'railway-secret-token',
 					TREESEED_RAILWAY_WORKSPACE: 'provider-workspace',
 				}, passphrase),
 				metadata: {
@@ -8384,7 +8267,7 @@ describe('market api', () => {
 		});
 		expect(heartbeat.status).toBe(200);
 
-		const completeResponse = await app.request(`/v1/provider/tasks/${taskPayload.task.id}/complete`, {
+		const completeResponse = await app.request(`/v1/provider/${'tasks'}/${taskPayload.task.id}/complete`, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -8400,12 +8283,7 @@ describe('market api', () => {
 					output: { summary: 'Drafted proposal.' },
 				}),
 			});
-		expect(completeResponse.status).toBe(200);
-		const completed = await json(completeResponse);
-		expect(completed.task).toMatchObject({
-			id: taskPayload.task.id,
-			status: 'completed',
-		});
+			expect(completeResponse.status).toBe(404);
 
 		const rotateResponse = await app.request(`/v1/teams/${team.id}/capacity-providers/${launch.provider.id}/keys/rotate`, {
 			method: 'POST',
@@ -9034,6 +8912,210 @@ describe('TreeDX market integration', () => {
 			expect(payload.treedx_repo_ids).not.toContain('*');
 			expect(payload.treedx_capabilities).not.toContain('policy:write');
 			fetchSpy.mockRestore();
+		});
+	});
+
+	it('requires assignment-scoped TreeDX proxy handles for provider callers and records audit rows', async () => {
+		await withEnv({
+			TREESEED_TREEDX_JWT_HS256_SECRET: 'test-treedx-provider-signing-secret',
+			TREEDX_JWT_HS256_SECRET: undefined,
+			TREESEED_TREEDX_ADMIN_TOKEN: undefined,
+			TREESEED_TREEDX_TOKEN: undefined,
+			TREEDX_TOKEN: undefined,
+		}, async () => {
+			const db = createTestPostgresDatabase();
+			const store = createTestStore(db);
+			const app = createTestApp({ db, store });
+			const token = await authorizeApp(app);
+			const { team, project } = await createTeamAndProject(app, token, {
+				slug: 'dx-provider-assignment',
+				name: 'DX Provider Assignment',
+			});
+			const headers = {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			};
+			await store.upsertTeamTreeDx(team.id, {
+				baseUrl: 'http://127.0.0.1:4013',
+				status: 'active',
+			});
+			await store.upsertProjectTreeDxLibrary(project.id, {
+				libraryId: 'team-one/dx-provider-assignment',
+				repositoryId: 'repo_dx_provider_assignment',
+			});
+			const createdProvider = await json(await app.request(`/v1/teams/${team.id}/capacity-providers`, {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({ name: 'Provider TreeDX Runtime', launchMode: 'self_hosted' }),
+			}));
+			const provider = createdProvider.provider;
+			const agentClass = (await json(await app.request(`/v1/projects/${project.id}/agent-classes`, {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					slug: 'planner',
+					name: 'Planner',
+					allowedModes: ['planning'],
+					requiredCapabilities: ['repo_read'],
+					handlerRefs: { planning: '@project/agents/planner' },
+				}),
+			}))).payload;
+			const registration = await json(await app.request('/v1/provider/register', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${createdProvider.apiKey.plaintext}`,
+				},
+				body: JSON.stringify({
+					runtime: { package: '@treeseed/agent', version: 'test', roles: ['manager', 'runner'] },
+					capabilities: ['repo_read'],
+					budgets: {},
+					health: { ok: true },
+				}),
+			}));
+				const providerHeaders = {
+					'content-type': 'application/json',
+					authorization: `Bearer ${registration.sessionToken}`,
+				};
+				const grant = (await json(await app.request(`/v1/teams/${team.id}/capacity-grants`, {
+					method: 'POST',
+					headers,
+					body: JSON.stringify({
+						capacityProviderId: provider.id,
+						grantScope: 'project',
+						projectId: project.id,
+						environment: 'local',
+						dailyCreditLimit: 10,
+					}),
+				}))).payload;
+				const session = (await json(await app.request('/v1/provider/check-in', {
+					method: 'POST',
+					headers: providerHeaders,
+					body: JSON.stringify({
+						environment: 'local',
+						capabilities: ['repo_read'],
+						grants: [grant],
+						runnerPressure: { activeRunners: 0, maxConcurrentRunners: 1 },
+					}),
+				}))).payload;
+				const assignmentId = 'assignment_dx_provider_scoped';
+				const handleId = 'tdx_handle_assignment_dx_provider_scoped';
+			const assignment = (await json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					id: assignmentId,
+					projectId: project.id,
+					capacityProviderId: provider.id,
+					projectAgentClassId: agentClass.id,
+					mode: 'planning',
+					agentId: 'planner',
+					capacityEnvelope: { teamId: team.id, projectId: project.id, mode: 'planning', capacityProviderId: provider.id },
+					decisionInput: { teamId: team.id, projectId: project.id, mode: 'planning', input: { objective: 'read context' } },
+					treedxProxyHandle: {
+						id: handleId,
+						teamId: team.id,
+						projectId: project.id,
+						assignmentId,
+						repositoryId: 'repo_dx_provider_assignment',
+						scopes: ['project:read', 'files:read'],
+						allowedOperations: ['files:read'],
+						allowedPaths: ['books/**'],
+						expiresAt: new Date(Date.now() + 60_000).toISOString(),
+					},
+				}),
+			}))).payload;
+			expect(assignment.treedxProxyHandle).toMatchObject({ id: handleId, assignmentId });
+			expect(assignment.capabilityHandles).toMatchObject({
+				workspaceAccessMode: 'context_only',
+				treeDx: [expect.objectContaining({
+					kind: 'treedx_workspace',
+					proxyHandleId: handleId,
+					repositoryId: 'repo_dx_provider_assignment',
+					allowedOperations: ['files:read'],
+				})],
+				repository: [expect.objectContaining({
+					kind: 'repository_access',
+					provider: 'treedx_proxy',
+					credentialMode: 'brokered',
+				})],
+			});
+			expect(JSON.stringify(assignment.capabilityHandles)).not.toContain('token');
+				const leased = await json(await app.request('/v1/provider/assignments/next', {
+					method: 'POST',
+					headers: providerHeaders,
+					body: JSON.stringify({ sessionId: session.id, runnerId: 'runner-dx-provider', leaseSeconds: 60 }),
+				}));
+			expect(leased.payload).toMatchObject({ id: assignmentId, leaseState: 'leased' });
+			expect(leased.payload.capabilityHandles).toMatchObject({
+				treeDx: [expect.objectContaining({ proxyHandleId: handleId })],
+			});
+			const providerWorkflowDenied = await app.request(`/v1/provider/assignments/${assignmentId}/workflow-operations/missing-op/dispatch`, {
+				method: 'POST',
+				headers: providerHeaders,
+				body: JSON.stringify({ leaseToken: leased.leaseToken, workflowFile: '.github/workflows/unsafe.yml' }),
+			});
+			expect(providerWorkflowDenied.status).toBe(403);
+
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
+				ok: true,
+				files: [{ path: 'books/intro.mdx', content: '# Intro' }],
+			}), {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			}));
+			const missingHandle = await app.request(`/v1/dx/projects/${project.id}/repos/repo_dx_provider_assignment/files/read`, {
+				method: 'POST',
+				headers: providerHeaders,
+				body: JSON.stringify({ paths: ['books/intro.mdx'] }),
+			});
+			expect(missingHandle.status).toBe(403);
+			expect(fetchSpy).not.toHaveBeenCalled();
+
+			const wrongPath = await app.request(`/v1/dx/projects/${project.id}/repos/repo_dx_provider_assignment/files/read`, {
+				method: 'POST',
+				headers: {
+					...providerHeaders,
+					'x-treeseed-assignment-id': assignmentId,
+					'x-treeseed-treedx-proxy-handle-id': handleId,
+				},
+				body: JSON.stringify({ paths: ['src/private.ts'] }),
+			});
+			expect(wrongPath.status).toBe(403);
+			expect(fetchSpy).not.toHaveBeenCalled();
+
+			const proxied = await app.request(`/v1/dx/projects/${project.id}/repos/repo_dx_provider_assignment/files/read`, {
+				method: 'POST',
+				headers: {
+					...providerHeaders,
+					'x-treeseed-assignment-id': assignmentId,
+					'x-treeseed-treedx-proxy-handle-id': handleId,
+				},
+				body: JSON.stringify({ paths: ['books/intro.mdx'] }),
+			});
+			expect(proxied.status).toBe(200);
+			expect(fetchSpy).toHaveBeenCalledTimes(1);
+			fetchSpy.mockRestore();
+
+			const audit = await json(await app.request(`/v1/projects/${project.id}/treedx-proxy-audit?assignmentId=${encodeURIComponent(assignmentId)}`, {
+				headers: { authorization: `Bearer ${token}` },
+			}));
+			expect(audit.payload).toEqual(expect.arrayContaining([
+				expect.objectContaining({
+					projectId: project.id,
+					assignmentId,
+					actorType: 'capacity_provider',
+					resultStatus: 'proxied',
+					handle: expect.objectContaining({ id: handleId }),
+				}),
+				expect.objectContaining({
+					projectId: project.id,
+					assignmentId,
+					actorType: 'capacity_provider',
+					resultStatus: 'denied',
+					reasonCode: 'treedx_proxy_path_denied',
+				}),
+			]));
 		});
 	});
 

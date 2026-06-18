@@ -41,6 +41,15 @@ export const SDK_METHOD_ROUTE_MAP = {
 	projectAccess: 'get.v1.projects.projectId.access',
 	projectDeploymentState: 'get.v1.projects.projectId.deployment-state',
 	projectHosts: 'get.v1.projects.projectId.hosts',
+	projectSecretEscrowRecords: 'get.v1.projects.projectId.secrets.escrow',
+	createProjectSecretEscrow: 'post.v1.projects.projectId.secrets.escrow',
+	projectSecretEscrow: 'get.v1.projects.projectId.secrets.escrow.escrowId',
+	updateProjectSecretEscrow: 'patch.v1.projects.projectId.secrets.escrow.escrowId',
+	migrateProjectSecretEscrow: 'post.v1.projects.projectId.secrets.escrow.escrowId.migrate',
+	tombstoneProjectSecretEscrow: 'delete.v1.projects.projectId.secrets.escrow.escrowId',
+	projectGitHubActionsSecretPublicKey: 'get.v1.projects.projectId.secrets.github-actions.public-key',
+	deployProjectGitHubActionsSecret: 'post.v1.projects.projectId.secrets.github-actions.deploy',
+	dispatchProjectWorkflowOperation: 'post.v1.projects.projectId.workflow-operations.operationId.dispatch',
 	auditProjectHosts: 'post.v1.projects.projectId.hosts.audit',
 	replaceProjectHost: 'post.v1.projects.projectId.hosts.requirementKey.replace',
 	resyncProjectHost: 'post.v1.projects.projectId.hosts.requirementKey.resync',
@@ -79,6 +88,8 @@ export const SDK_METHOD_ROUTE_MAP = {
 	projectAgentClass: 'get.v1.projects.projectId.agent-classes.classId',
 	updateProjectAgentClass: 'patch.v1.projects.projectId.agent-classes.classId',
 	projectAgentModeRuns: 'get.v1.projects.projectId.agent-mode-runs',
+	projectAgentFallbackOutputs: 'get.v1.projects.projectId.agent-fallback-outputs',
+	projectTreeDxProxyAudit: 'get.v1.projects.projectId.treedx-proxy-audit',
 	decisionPlanningStatus: 'get.v1.decisions.decisionId.planning-status',
 	createPlanningInputRequest: 'post.v1.decisions.decisionId.planning-input-requests',
 	decisionExecutionInputs: 'get.v1.decisions.decisionId.execution-inputs',
@@ -91,6 +102,7 @@ export const SDK_METHOD_ROUTE_MAP = {
 	acceptCapacityPlan: 'post.v1.capacity-plans.capacityPlanId.accept',
 	requestCapacityPlanRevision: 'post.v1.capacity-plans.capacityPlanId.request-revision',
 	scheduleCapacityPlan: 'post.v1.capacity-plans.capacityPlanId.schedule',
+	supersedeCapacityPlan: 'post.v1.capacity-plans.capacityPlanId.supersede',
 	createWorkday: 'post.v1.workdays',
 	workday: 'get.v1.workdays.workdayId',
 	startWorkday: 'post.v1.workdays.workdayId.start',
@@ -109,6 +121,8 @@ export const SDK_METHOD_ROUTE_MAP = {
 	upsertProjectTreeDxLibrary: 'post.v1.projects.projectId.treedx-library',
 	projectRepositoryTopology: 'get.v1.projects.projectId.repository-topology',
 	updateProjectRepositoryTopology: 'put.v1.projects.projectId.repository-topology',
+	treeDxBuildContext: 'post.v1.dx.projects.projectId.repos.repoId.context.build',
+	treeDxReadRepositoryFiles: 'post.v1.dx.projects.projectId.repos.repoId.files.read',
 	planSeed: 'post.v1.seeds.name.plan',
 	applySeed: 'post.v1.seeds.name.apply',
 	listSeedRuns: 'get.v1.seeds.runs',
@@ -151,6 +165,8 @@ function routeId(method, path) {
 }
 
 function ownerDomain(path) {
+	if (path === '/v1/internal/github/app/webhook') return 'secrets-capability';
+	if (path === '/v1/internal/treedx/credentials/github-app') return 'secrets-capability';
 	if (path.startsWith('/v1/provider/')) return 'provider-ingress';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/platform/operations')) return 'platform-operation';
@@ -167,6 +183,8 @@ function ownerDomain(path) {
 }
 
 function authClass(path) {
+	if (path === '/v1/internal/github/app/webhook') return 'github-webhook';
+	if (path === '/v1/internal/treedx/credentials/github-app') return 'service';
 	if (path.startsWith('/v1/provider/')) return 'provider-key';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
@@ -207,6 +225,8 @@ function routeNeedsManagement(path, method) {
 }
 
 function successActorsFor(path, method) {
+	if (path === '/v1/internal/github/app/webhook') return [];
+	if (path === '/v1/internal/treedx/credentials/github-app') return [];
 	if (path.startsWith('/v1/provider/')) return ['providerKey'];
 	if (path.startsWith('/v1/platform/runners/')) return ['platformRunner'];
 	if (path.startsWith('/v1/acceptance/')) return [];
@@ -239,6 +259,8 @@ function successActorsFor(path, method) {
 
 function productionSafeStrategy(path, method) {
 	if (method === 'get') return 'read';
+	if (path === '/v1/internal/github/app/webhook') return 'signature-authenticated-callback';
+	if (path === '/v1/internal/treedx/credentials/github-app') return 'service-credential-callback';
 	if (path.startsWith('/v1/auth/web/appearance') || path.startsWith('/v1/auth/logout') || path.startsWith('/v1/auth/web/sessions/')) return 'acceptance-owned';
 	if (path.startsWith('/v1/platform/runners/') || path.startsWith('/v1/provider/')) return 'acceptance-owned';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
@@ -247,6 +269,8 @@ function productionSafeStrategy(path, method) {
 
 function bodyFactoryFor(path, method) {
 	if (method === 'get') return null;
+	if (path === '/v1/internal/github/app/webhook') return 'empty';
+	if (path === '/v1/internal/treedx/credentials/github-app') return 'treedxCredentialBridge';
 	if (path.includes('/auth/device/start')) return 'deviceStart';
 	if (path.includes('/auth/device/poll')) return 'devicePoll';
 	if (path.includes('/auth/device/approve')) return 'deviceApprove';
@@ -278,13 +302,10 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/provider/heartbeat')) return 'providerHeartbeat';
 	if (path.includes('/provider/check-in')) return 'providerCheckIn';
 	if (path.includes('/provider/workdays')) return 'providerWorkday';
-	if (path.includes('/provider/tasks/claim')) return 'providerTaskClaim';
-	if (path.includes('/provider/tasks/') && path.endsWith('/events')) return 'providerTaskEvent';
-	if (path.includes('/provider/tasks/') && path.endsWith('/complete')) return 'providerTaskComplete';
-	if (path.includes('/provider/tasks/') && path.endsWith('/fail')) return 'providerTaskFail';
 	if (path.includes('/provider/sessions')) return 'providerAvailabilitySession';
 	if (path.includes('/provider/assignments/next')) return 'providerNextAssignment';
 	if (path.includes('/provider/assignments/') && path.endsWith('/mode-runs')) return 'agentModeRun';
+	if (path.includes('/provider/assignments/') && path.includes('/workflow-operations/') && path.endsWith('/dispatch')) return 'providerAssignmentWorkflowOperationDispatch';
 	if (path.includes('/provider/assignments/') && path.endsWith('/renew')) return 'providerAssignmentRenew';
 	if (path.includes('/provider/assignments/') && path.endsWith('/return')) return 'providerAssignmentReturn';
 	if (path.includes('/provider/assignments/') && path.endsWith('/complete')) return 'providerAssignmentComplete';
@@ -298,6 +319,7 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/decisions/') && path.endsWith('/capacity-plans')) return 'agentCapacityPlan';
 	if (path.includes('/capacity-plans/') && (path.endsWith('/accept') || path.endsWith('/schedule'))) return 'empty';
 	if (path.includes('/capacity-plans/') && path.endsWith('/request-revision')) return 'decisionExecutionRevision';
+	if (path.includes('/capacity-plans/') && path.endsWith('/supersede')) return 'decisionExecutionRevision';
 	if (path === '/v1/workdays') return 'workdayCapacityEnvelope';
 	if (path.includes('/workdays/') && (path.endsWith('/start') || path.endsWith('/pause') || path.endsWith('/complete'))) return 'empty';
 	if (path.includes('/teams') && path.endsWith('/projects')) return 'projectCreate';
@@ -319,6 +341,8 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/teams') && path.includes('/seeds/export')) return 'seedExport';
 	if (path === '/v1/teams') return 'teamCreate';
 	if (path.startsWith('/v1/project-deployments/')) return 'projectDeployment';
+	if (path.startsWith('/v1/projects/:projectId/secrets/github-actions/deploy')) return 'githubActionsSecretDeploy';
+	if (path.startsWith('/v1/projects/:projectId/workflow-operations/') && path.endsWith('/dispatch')) return 'workflowOperationDispatch';
 	if (path.startsWith('/v1/projects/:projectId')) return path.endsWith('/local-content/:collection') ? 'localContentWrite'
 		: path.endsWith('/related') ? 'localContentRelated'
 			: path.endsWith('/decisions/from-proposals') ? 'decisionFromProposals'

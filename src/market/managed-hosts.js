@@ -47,9 +47,13 @@ async function collectLocalTreeseedConfigValues(runtime, scope = 'prod') {
 }
 
 export function resolveTreeseedManagedCloudflareHostConfig(runtime, values = {}) {
+	const token = firstRuntimeEnvValue(runtime, ['TREESEED_CLOUDFLARE_API_TOKEN'], values);
+	const accountId = firstRuntimeEnvValue(runtime, ['TREESEED_CLOUDFLARE_ACCOUNT_ID'], values);
 	const config = {
-		CLOUDFLARE_API_TOKEN: firstRuntimeEnvValue(runtime, ['CLOUDFLARE_API_TOKEN'], values),
-		CLOUDFLARE_ACCOUNT_ID: firstRuntimeEnvValue(runtime, ['CLOUDFLARE_ACCOUNT_ID'], values),
+		TREESEED_CLOUDFLARE_API_TOKEN: token,
+		TREESEED_CLOUDFLARE_ACCOUNT_ID: accountId,
+		...(token ? { CLOUDFLARE_API_TOKEN: token } : {}),
+		...(accountId ? { CLOUDFLARE_ACCOUNT_ID: accountId } : {}),
 		TREESEED_CLOUDFLARE_PAGES_PROJECT_NAME: firstRuntimeEnvValue(runtime, ['TREESEED_CLOUDFLARE_PAGES_PROJECT_NAME'], values),
 		TREESEED_CLOUDFLARE_PAGES_PREVIEW_PROJECT_NAME: firstRuntimeEnvValue(runtime, ['TREESEED_CLOUDFLARE_PAGES_PREVIEW_PROJECT_NAME'], values),
 		CLOUDFLARE_ZONE_ID: firstRuntimeEnvValue(runtime, ['CLOUDFLARE_ZONE_ID', 'TREESEED_CLOUDFLARE_ZONE_ID'], values),
@@ -65,7 +69,7 @@ export async function resolveTreeseedManagedCloudflareHostConfigFromConfig(runti
 }
 
 export function managedCloudflareConfigMissing(config) {
-	return ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID'].filter((key) => !config?.[key]);
+	return ['TREESEED_CLOUDFLARE_API_TOKEN', 'TREESEED_CLOUDFLARE_ACCOUNT_ID'].filter((key) => !config?.[key]);
 }
 
 function managedStatus(missing) {
@@ -93,8 +97,8 @@ export function listTreeseedManagedHosts(teamId, runtime, values = {}) {
 				configured: cloudflareMissing.length === 0,
 				missingConfigKeys: cloudflareMissing,
 				requiredOperationalKeys: [
-					'CLOUDFLARE_API_TOKEN',
-					'CLOUDFLARE_ACCOUNT_ID',
+					'TREESEED_CLOUDFLARE_API_TOKEN',
+					'TREESEED_CLOUDFLARE_ACCOUNT_ID',
 				],
 				dns: {
 					managed: Boolean(cloudflareConfig.CLOUDFLARE_ZONE_ID || cloudflareConfig.TREESEED_CLOUDFLARE_ZONE_NAME),
