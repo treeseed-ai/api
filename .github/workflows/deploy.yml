@@ -123,6 +123,9 @@ jobs:
     environment: staging
     permissions:
       contents: read
+    outputs:
+      api_immutable: ${{ steps.tags.outputs.api_immutable }}
+      runner_immutable: ${{ steps.tags.outputs.runner_immutable }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -213,8 +216,8 @@ jobs:
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
       TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || 'treeseed/treedx:dev-staging' }}
-      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || 'treeseed/api:latest' }}
-      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || 'treeseed/op-runner:latest' }}
+      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || needs.publish-dev-images.outputs.api_immutable || vars.TREESEED_API_IMAGE_REF || 'treeseed/api:latest' }}
+      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || needs.publish-dev-images.outputs.runner_immutable || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || 'treeseed/op-runner:latest' }}
       TREESEED_RAILWAY_DEPLOY_TRANSPORT: ${{ vars.TREESEED_RAILWAY_DEPLOY_TRANSPORT || 'api' }}
       TREESEED_KEY_AGENT_TRANSPORT: inline
       TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
