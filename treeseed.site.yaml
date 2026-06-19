@@ -20,7 +20,7 @@ surfaces:
     localBaseUrl: http://127.0.0.1:3000
     environments:
       staging:
-        domain: api-treeseed-staging.treeseed.ai
+        domain: api-treeseed-market-staging-ca844c56.treeseed.ai
       prod:
         domain: api.treeseed.ai
 services:
