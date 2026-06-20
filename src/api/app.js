@@ -57,7 +57,7 @@ import { decryptHostConfig } from '../crypto/host-crypto.ts';
 import { getSiteAuthConfig } from '../auth/config.ts';
 import { accountDeletionConfirmationMatches } from '../auth/account.ts';
 import { validateUsername as validatePublicUsername } from '../auth/profile-validation.ts';
-import { authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason } from '../auth/email.ts';
+import { authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, sendAuthEmail } from '../auth/email.ts';
 import { sendEmailConfirmation } from '../auth/email-confirmation.ts';
 import { sendWelcomeEmail } from '../auth/welcome-email.ts';
 import { createCipheriv, createDecipheriv, createHash, createHmac, createPublicKey, createVerify, pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -643,6 +643,39 @@ function confirmationUrlFor(context, token, returnTo) {
 	target.searchParams.set('token', token);
 	target.searchParams.set('returnTo', sanitizedReturnTo(returnTo));
 	return target.toString();
+}
+
+function teamInviteAcceptUrlFor(context, token) {
+	const authConfig = getSiteAuthConfig(context);
+	return new URL(`/team-invites/${encodeURIComponent(token)}/accept`, `${authConfig.siteBaseUrl.replace(/\/+$/u, '')}/`).toString();
+}
+
+async function sendTeamInviteEmail(context, input) {
+	const teamName = String(input.team?.displayName ?? input.team?.name ?? 'TreeSeed').trim() || 'TreeSeed';
+	const role = String(input.invite?.roleKey ?? input.invite?.role ?? 'member').replace(/_/gu, ' ');
+	const acceptUrl = teamInviteAcceptUrlFor(context, input.token);
+	const text = [
+		`You were invited to join ${teamName} on TreeSeed as ${role}.`,
+		'',
+		'Accept this team invite:',
+		acceptUrl,
+		'',
+		'If you do not recognize this invite, you can ignore this email.',
+	].join('\n');
+	const html = [
+		'<div style="font-family:Inter,Arial,sans-serif;line-height:1.5;color:#17211b">',
+		`<h1 style="font-size:24px">Join ${teamName} on TreeSeed</h1>`,
+		`<p>You were invited as <strong>${role}</strong>.</p>`,
+		`<p><a href="${acceptUrl}" style="display:inline-block;background:#2f6f4e;color:white;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:700">Accept invite</a></p>`,
+		`<p style="word-break:break-all;color:#526052">${acceptUrl}</p>`,
+		'</div>',
+	].join('');
+	await sendAuthEmail(context, {
+		to: input.invite.email,
+		subject: `You're invited to join ${teamName}`,
+		text,
+		html,
+	});
 }
 
 async function createMarketEmailConfirmation(store, context, input) {
@@ -6937,11 +6970,16 @@ export function createApiApp(options = {}) {
 				const password = String(body.password ?? '');
 				const displayName = String(body.displayName ?? body.name ?? email).trim();
 				const returnTo = sanitizedReturnTo(body.returnTo);
+				const inviteToken = String(body.inviteToken ?? '').trim();
 				const appearance = normalizeAppearancePreference(body.appearance && typeof body.appearance === 'object' ? body.appearance : body);
 				const usernameValidation = validatePublicUsername(username);
 				if (!email || !email.includes('@')) return jsonError(c, 400, 'A valid email is required.');
 				if (!usernameValidation.ok) return jsonError(c, 400, usernameValidation.message);
 				if (!validateMarketPassword(password)) return jsonError(c, 400, 'Password must be at least 12 characters.');
+				const inviteProof = inviteToken ? await store.getPendingTeamInviteByToken(inviteToken) : null;
+				if (inviteToken && (!inviteProof?.ok || String(inviteProof.invite?.email ?? '').trim().toLowerCase() !== email)) {
+					return jsonError(c, 400, 'Team invite does not match this registration email.', { code: 'invite_email_mismatch' });
+				}
 				const existingEmailCredential = await store.first(
 					`SELECT user_id FROM market_auth_credentials WHERE email = ? LIMIT 1`,
 					[email],
@@ -6965,7 +7003,7 @@ export function createApiApp(options = {}) {
 					provider: 'credential',
 					providerSubject: email,
 					email,
-					emailVerified: false,
+					emailVerified: Boolean(inviteProof?.ok),
 					username,
 					displayName,
 					profile: {
@@ -6984,16 +7022,29 @@ export function createApiApp(options = {}) {
 				const now = new Date().toISOString();
 				await store.run(
 					`INSERT INTO market_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, 'pending_email_confirmation', ?, ?)`,
-					[synced.principal.id, email, username, hashMarketPassword(password), now, now],
+					 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+					[synced.principal.id, email, username, hashMarketPassword(password), inviteProof?.ok ? 'active' : 'pending_email_confirmation', now, now],
 				);
 				const emailAddressId = randomUUID();
 				await store.run(
 					`INSERT INTO user_email_addresses (
 						id, user_id, email, normalized_email, status, is_primary, verification_requested_at, verified_at, created_at, updated_at
-					) VALUES (?, ?, ?, ?, 'pending', 1, NULL, NULL, ?, ?)`,
-					[emailAddressId, synced.principal.id, email, email, now, now],
+					) VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, ?)`,
+					[emailAddressId, synced.principal.id, email, email, inviteProof?.ok ? 'verified' : 'pending', inviteProof?.ok ? now : null, now, now],
 				);
+				if (inviteProof?.ok) {
+					const personalTeam = await store.ensurePersonalResearchTeamForUser(synced.principal.id);
+					if (!personalTeam.ok) {
+						return jsonError(c, personalTeam.code === 'namespace_conflict' ? 409 : 400, personalTeam.message, { code: personalTeam.code });
+					}
+					await setPrimaryEmailAddress(store, synced.principal.id, emailAddressId);
+					const inviteAcceptance = await store.acceptTeamInvite(inviteToken, synced.principal.id);
+					if (!inviteAcceptance.ok) {
+						return jsonError(c, inviteAcceptance.code === 'email_mismatch' ? 400 : 409, inviteAcceptance.message, { code: inviteAcceptance.code });
+					}
+					const session = await createMarketWebSession(runtimeMarketAuthProvider, synced.principal.id, webSessionData(c, 'team_invite_registration'), { store, authSecret: runtime.resolved.config.authSecret });
+					return c.json({ ok: true, payload: webAuthPayload(session) });
+				}
 				let confirmation;
 				try {
 					confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c), {
@@ -7820,6 +7871,28 @@ export function createApiApp(options = {}) {
 				return c.json(result, result.ok ? 200 : 400);
 			});
 
+			app.get('/v1/team-invites/:token', async (c) => {
+				const result = await store.getTeamInviteByToken(c.req.param('token'));
+				if (!result.ok) return c.json(result, 404);
+				return c.json({
+					ok: true,
+					payload: {
+						invite: {
+							id: result.invite.id,
+							email: result.invite.email,
+							roleKey: result.invite.roleKey,
+							status: result.invite.status,
+							expiresAt: result.invite.expiresAt,
+						},
+						team: result.team ? {
+							id: result.team.id,
+							name: result.team.name,
+							displayName: result.team.displayName,
+						} : null,
+					},
+				});
+			});
+
 			app.get('/v1/teams/:teamId/home', async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 				if (access.response) return access.response;
@@ -7945,6 +8018,24 @@ export function createApiApp(options = {}) {
 					roleKey: body.roleKey ?? body.role,
 					invitedByUserId: access.principal.id,
 				});
+				if (result.ok && result.invite && result.token) {
+					try {
+						const team = await store.getTeam(c.req.param('teamId'));
+						await sendTeamInviteEmail(marketAuthContext(c), {
+							invite: result.invite,
+							team,
+							token: result.token,
+						});
+					} catch (error) {
+						console.warn('[team-invite] Email delivery failed:', error instanceof Error ? error.message : String(error));
+						const reason = authEmailDeliveryFailureReason(error);
+						return jsonError(c, 503, 'Team invite email could not be sent. Please try again shortly.', {
+							code: 'team_invite_delivery_failed',
+							reason,
+							...(shouldExposeNonProductionAuthDiagnostics(c, runtime) ? { detail: authEmailDeliveryFailureDetail(error) } : {}),
+						});
+					}
+				}
 				return c.json(result, result.ok ? 200 : 400);
 			});
 

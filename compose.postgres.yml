@@ -1,0 +1,20 @@
+services:
+  treeseed-api-postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${TREESEED_LOCAL_POSTGRES_DB:-market_local}
+      POSTGRES_USER: ${TREESEED_LOCAL_POSTGRES_USER:-treeseed}
+      POSTGRES_PASSWORD: ${TREESEED_LOCAL_POSTGRES_PASSWORD:-treeseed}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TREESEED_LOCAL_POSTGRES_USER:-treeseed} -d ${TREESEED_LOCAL_POSTGRES_DB:-market_local}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "127.0.0.1:${TREESEED_MARKET_LOCAL_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - treeseed-market-local-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  treeseed-market-local-postgres-data:
+    name: ${TREESEED_MARKET_LOCAL_POSTGRES_VOLUME:-treeseed-market-local-postgres-data}

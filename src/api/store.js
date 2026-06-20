@@ -49,6 +49,14 @@ function parseJson(value, fallback) {
 	}
 }
 
+function missingSchemaError(error) {
+	const message = String(error?.message ?? error ?? '').toLowerCase();
+	return message.includes('no such table')
+		|| message.includes('no such column')
+		|| message.includes('does not exist')
+		|| message.includes('undefined column');
+}
+
 function objectValue(value, fallback = {}) {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback;
 }
@@ -3688,22 +3696,32 @@ export class MarketControlPlaneStore {
 		await this.ensureInitialized();
 		const value = String(username ?? '').trim().toLowerCase();
 		if (!value) return false;
-		const row = await this.first(
-			`SELECT id FROM users WHERE LOWER(username) = LOWER(?) ${excludeUserId ? 'AND id != ?' : ''} LIMIT 1`,
-			excludeUserId ? [value, excludeUserId] : [value],
-		);
-		return Boolean(row?.id);
+		try {
+			const row = await this.first(
+				`SELECT id FROM users WHERE LOWER(username) = LOWER(?) ${excludeUserId ? 'AND id != ?' : ''} LIMIT 1`,
+				excludeUserId ? [value, excludeUserId] : [value],
+			);
+			return Boolean(row?.id);
+		} catch (error) {
+			if (!missingSchemaError(error)) throw error;
+			return false;
+		}
 	}
 
 	async teamPublicNameExists(name, excludeTeamId = null) {
 		await this.ensureInitialized();
 		const value = normalizeTeamName(name);
 		if (!value) return false;
-		const row = await this.first(
-			`SELECT id FROM teams WHERE (LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?)) ${excludeTeamId ? 'AND id != ?' : ''} LIMIT 1`,
-			excludeTeamId ? [value, value, excludeTeamId] : [value, value],
-		);
-		return Boolean(row?.id);
+		try {
+			const row = await this.first(
+				`SELECT id FROM teams WHERE (LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?)) ${excludeTeamId ? 'AND id != ?' : ''} LIMIT 1`,
+				excludeTeamId ? [value, value, excludeTeamId] : [value, value],
+			);
+			return Boolean(row?.id);
+		} catch (error) {
+			if (!missingSchemaError(error)) throw error;
+			return false;
+		}
 	}
 
 	async ensurePersonalResearchTeamForUser(userId) {
@@ -7940,16 +7958,7 @@ export class MarketControlPlaneStore {
 		return serializeTeamInvite(await this.first(`SELECT * FROM team_invites WHERE id = ? LIMIT 1`, [inviteId]));
 	}
 
-	async revokeTeamInvite(teamId, inviteId) {
-		await this.ensureInitialized();
-		await this.run(
-			`UPDATE team_invites SET status = 'revoked', updated_at = ? WHERE id = ? AND team_id = ? AND status = 'pending'`,
-			[isoNow(), inviteId, teamId],
-		);
-		return { ok: true };
-	}
-
-	async acceptTeamInvite(token, userId) {
+	async getPendingTeamInviteByToken(token) {
 		await this.ensureInitialized();
 		const prefix = tokenPrefix(String(token ?? ''));
 		const rows = await this.all(
@@ -7962,6 +7971,65 @@ export class MarketControlPlaneStore {
 				continue;
 			}
 			if (!equalHash(stableHash(token, this.config.authSecret), row.token_hash)) continue;
+			const team = await this.getTeam(row.team_id);
+			return { ok: true, invite: serializeTeamInvite(row), team };
+		}
+		return { ok: false, code: 'invalid', message: 'Invite link is invalid or expired.' };
+	}
+
+	async getTeamInviteByToken(token) {
+		await this.ensureInitialized();
+		const prefix = tokenPrefix(String(token ?? ''));
+		const rows = await this.all(
+			`SELECT * FROM team_invites WHERE token_prefix = ? ORDER BY created_at DESC`,
+			[prefix],
+		);
+		for (const row of rows) {
+			if (!equalHash(stableHash(token, this.config.authSecret), row.token_hash)) continue;
+			if (row.status === 'pending' && row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+				await this.run(`UPDATE team_invites SET status = 'expired', updated_at = ? WHERE id = ?`, [isoNow(), row.id]);
+				return { ok: false, code: 'expired', message: 'Invite link is invalid or expired.' };
+			}
+			const team = await this.getTeam(row.team_id);
+			return { ok: true, invite: serializeTeamInvite(row), team };
+		}
+		return { ok: false, code: 'invalid', message: 'Invite link is invalid or expired.' };
+	}
+
+	async revokeTeamInvite(teamId, inviteId) {
+		await this.ensureInitialized();
+		await this.run(
+			`UPDATE team_invites SET status = 'revoked', updated_at = ? WHERE id = ? AND team_id = ? AND status = 'pending'`,
+			[isoNow(), inviteId, teamId],
+		);
+		return { ok: true };
+	}
+
+	async acceptTeamInvite(token, userId) {
+		await this.ensureInitialized();
+		const prefix = tokenPrefix(String(token ?? ''));
+		const rows = await this.all(`SELECT * FROM team_invites WHERE token_prefix = ? ORDER BY created_at DESC`, [prefix]);
+		for (const row of rows) {
+			if (!equalHash(stableHash(token, this.config.authSecret), row.token_hash)) continue;
+			if (row.status === 'accepted' && row.accepted_by_user_id === userId) {
+				const member = await this.first(
+					`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? AND status = 'active' LIMIT 1`,
+					[row.team_id, userId],
+				);
+				return { ok: true, invite: serializeTeamInvite(row), member, team: await this.getTeam(row.team_id), alreadyAccepted: true };
+			}
+			if (row.status !== 'pending') continue;
+			if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+				await this.run(`UPDATE team_invites SET status = 'expired', updated_at = ? WHERE id = ?`, [isoNow(), row.id]);
+				continue;
+			}
+			const email = await this.first(
+				`SELECT normalized_email FROM user_email_addresses WHERE user_id = ? AND normalized_email = ? AND status = 'verified' LIMIT 1`,
+				[userId, row.email],
+			);
+			if (!email?.normalized_email) {
+				return { ok: false, code: 'email_mismatch', message: `Sign in with ${row.email} to accept this invite.` };
+			}
 			const member = await this.upsertTeamMember(row.team_id, userId, row.role_key);
 			await this.run(
 				`UPDATE team_invites
@@ -12497,9 +12565,9 @@ export class MarketControlPlaneStore {
 		const catalogItems = (await this.listCatalogItems(principal)).filter((item) => profileTeamIds.has(item.teamId));
 		const knowledgePacks = (await this.listKnowledgePacks(principal)).filter((pack) => profileTeamIds.has(pack.teamId));
 		const visibleTeamIds = new Set([
+			...profileTeams.map((team) => team.id),
 			...catalogItems.map((item) => item.teamId),
 			...knowledgePacks.map((pack) => pack.teamId),
-			...profileTeams.filter((team) => viewerTeamIds.has(team.id)).map((team) => team.id),
 		]);
 		const projects = [];
 		for (const team of profileTeams) {

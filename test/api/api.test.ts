@@ -3325,20 +3325,24 @@ describe('market api', () => {
 		expect(invite.ok).toBe(true);
 		expect(invite.token).toMatch(/^tiv_/);
 
-		const memberToken = await authorizeApp(app, { principalId: 'user-2', displayName: 'Invited User' });
-		const accepted = await json(await app.request(`/v1/team-invites/${invite.token}/accept`, {
+		const accepted = await json(await app.request('/v1/auth/web/sign-up', {
 			method: 'POST',
-			headers: {
-				authorization: `Bearer ${memberToken}`,
-			},
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				email: 'new-member@example.com',
+				username: 'new-member',
+				password: 'invite-password-123',
+				displayName: 'Invited User',
+				inviteToken: invite.token,
+			}),
 		}));
 		expect(accepted.ok).toBe(true);
-		expect(accepted.team.name).toBe('alpha-collective');
+		expect(accepted.payload.accessToken).toEqual(expect.any(String));
 
 		const members = await json(await app.request(`/v1/teams/${created.payload.id}/members`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		const member = members.payload.find((entry: { userId: string }) => entry.userId === 'user-2');
+		const member = members.payload.find((entry: { email: string }) => entry.email === 'new-member@example.com');
 		expect(member.roles).toContain('reviewer');
 
 		const updatedRole = await json(await app.request(`/v1/teams/${created.payload.id}/members/${member.id}`, {

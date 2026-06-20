@@ -1,8 +1,8 @@
 import React from 'react';
-import { render } from '@react-email/render';
 import type { APIContext } from 'astro';
 import { sendAuthEmail } from './email.ts';
 import { getSiteAuthConfig } from './config.ts';
+import { render } from './react-email-render.ts';
 
 interface WelcomeEmailInput {
 	email: string;
