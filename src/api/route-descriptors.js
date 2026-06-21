@@ -85,6 +85,8 @@ export const SDK_METHOD_ROUTE_MAP = {
 	createProviderAssignment: 'post.v1.teams.teamId.capacity.assignments',
 	providerAssignmentExplanation: 'get.v1.teams.teamId.capacity.assignments.assignmentId.explanation',
 	projectCapacityPlan: 'get.v1.projects.projectId.capacity-plan',
+	createCapacityReservation: 'post.v1.projects.projectId.capacity.reservations',
+	projectCapacityRuntimeDiagnostics: 'get.v1.projects.projectId.capacity-runtime-diagnostics',
 	projectAgentClasses: 'get.v1.projects.projectId.agent-classes',
 	createProjectAgentClass: 'post.v1.projects.projectId.agent-classes',
 	projectAgentClass: 'get.v1.projects.projectId.agent-classes.classId',
