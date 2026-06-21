@@ -37,6 +37,7 @@ export const SDK_METHOD_ROUTE_MAP = {
 	teams: 'get.v1.teams',
 	teamMembers: 'get.v1.teams.teamId.members',
 	teamPermissions: 'get.v1.teams.teamId.permissions',
+	importProjectRepository: 'post.v1.teams.teamId.projects.import',
 	projects: 'get.v1.projects',
 	projectAccess: 'get.v1.projects.projectId.access',
 	projectDeploymentState: 'get.v1.projects.projectId.deployment-state',
@@ -50,6 +51,7 @@ export const SDK_METHOD_ROUTE_MAP = {
 	projectGitHubActionsSecretPublicKey: 'get.v1.projects.projectId.secrets.github-actions.public-key',
 	deployProjectGitHubActionsSecret: 'post.v1.projects.projectId.secrets.github-actions.deploy',
 	dispatchProjectWorkflowOperation: 'post.v1.projects.projectId.workflow-operations.operationId.dispatch',
+	initializeProjectRepository: 'post.v1.projects.projectId.repositories.role.initialize',
 	auditProjectHosts: 'post.v1.projects.projectId.hosts.audit',
 	replaceProjectHost: 'post.v1.projects.projectId.hosts.requirementKey.replace',
 	resyncProjectHost: 'post.v1.projects.projectId.hosts.requirementKey.resync',
@@ -127,7 +129,6 @@ export const SDK_METHOD_ROUTE_MAP = {
 	applySeed: 'post.v1.seeds.name.apply',
 	listSeedRuns: 'get.v1.seeds.runs',
 	exportSeed: 'post.v1.teams.teamId.seeds.export',
-	enqueueAgentTask: 'post.v1.projects.projectId.agent-tasks',
 	catalog: 'get.v1.catalog',
 	artifactDownload: 'get.v1.catalog.itemId.artifacts.version.download',
 };
@@ -164,9 +165,13 @@ function routeId(method, path) {
 	].join('.');
 }
 
+function isTreeDxCredentialBridgePath(path) {
+	return path === '/v1/internal/treedx/credentials/github';
+}
+
 function ownerDomain(path) {
 	if (path === '/v1/internal/github/app/webhook') return 'secrets-capability';
-	if (path === '/v1/internal/treedx/credentials/github-app') return 'secrets-capability';
+	if (isTreeDxCredentialBridgePath(path)) return 'secrets-capability';
 	if (path.startsWith('/v1/provider/')) return 'provider-ingress';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/platform/operations')) return 'platform-operation';
@@ -184,7 +189,7 @@ function ownerDomain(path) {
 
 function authClass(path) {
 	if (path === '/v1/internal/github/app/webhook') return 'github-webhook';
-	if (path === '/v1/internal/treedx/credentials/github-app') return 'service';
+	if (isTreeDxCredentialBridgePath(path)) return 'service';
 	if (path.startsWith('/v1/provider/')) return 'provider-key';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
@@ -226,7 +231,7 @@ function routeNeedsManagement(path, method) {
 
 function successActorsFor(path, method) {
 	if (path === '/v1/internal/github/app/webhook') return [];
-	if (path === '/v1/internal/treedx/credentials/github-app') return [];
+	if (isTreeDxCredentialBridgePath(path)) return [];
 	if (path.startsWith('/v1/provider/')) return ['providerKey'];
 	if (path.startsWith('/v1/platform/runners/')) return ['platformRunner'];
 	if (path.startsWith('/v1/acceptance/')) return [];
@@ -260,7 +265,7 @@ function successActorsFor(path, method) {
 function productionSafeStrategy(path, method) {
 	if (method === 'get') return 'read';
 	if (path === '/v1/internal/github/app/webhook') return 'signature-authenticated-callback';
-	if (path === '/v1/internal/treedx/credentials/github-app') return 'service-credential-callback';
+	if (isTreeDxCredentialBridgePath(path)) return 'service-credential-callback';
 	if (path.startsWith('/v1/auth/web/appearance') || path.startsWith('/v1/auth/logout') || path.startsWith('/v1/auth/web/sessions/')) return 'acceptance-owned';
 	if (path.startsWith('/v1/platform/runners/') || path.startsWith('/v1/provider/')) return 'acceptance-owned';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
@@ -270,7 +275,7 @@ function productionSafeStrategy(path, method) {
 function bodyFactoryFor(path, method) {
 	if (method === 'get') return null;
 	if (path === '/v1/internal/github/app/webhook') return 'empty';
-	if (path === '/v1/internal/treedx/credentials/github-app') return 'treedxCredentialBridge';
+	if (isTreeDxCredentialBridgePath(path)) return 'treedxCredentialBridge';
 	if (path.includes('/auth/device/start')) return 'deviceStart';
 	if (path.includes('/auth/device/poll')) return 'devicePoll';
 	if (path.includes('/auth/device/approve')) return 'deviceApprove';
@@ -343,6 +348,7 @@ function bodyFactoryFor(path, method) {
 	if (path.startsWith('/v1/project-deployments/')) return 'projectDeployment';
 	if (path.startsWith('/v1/projects/:projectId/secrets/github-actions/deploy')) return 'githubActionsSecretDeploy';
 	if (path.startsWith('/v1/projects/:projectId/workflow-operations/') && path.endsWith('/dispatch')) return 'workflowOperationDispatch';
+	if (path.startsWith('/v1/projects/:projectId/repositories/') && path.endsWith('/initialize')) return 'empty';
 	if (path.startsWith('/v1/projects/:projectId')) return path.endsWith('/local-content/:collection') ? 'localContentWrite'
 		: path.endsWith('/related') ? 'localContentRelated'
 			: path.endsWith('/decisions/from-proposals') ? 'decisionFromProposals'
@@ -351,12 +357,11 @@ function bodyFactoryFor(path, method) {
 						: path.includes('/runner/') ? 'runnerProjectBody'
 						: path.includes('/work-policy') || path.includes('/workday-policy') ? 'workPolicy'
 							: path.includes('/priority-overrides') ? 'priorityOverride'
-								: path.includes('/agent-tasks') ? 'agentTask'
-									: path.includes('/deployments') ? 'projectDeployment'
-										: path.includes('/resources') ? 'projectResource'
-											: path.includes('/hosting') || path.includes('/environments') ? 'projectEnvironment'
-												: path.includes('/workspace-links') ? 'workspaceLink'
-													: path.includes('/update-plans') ? 'updatePlan'
+								: path.includes('/deployments') ? 'projectDeployment'
+									: path.includes('/resources') ? 'projectResource'
+										: path.includes('/hosting') || path.includes('/environments') ? 'projectEnvironment'
+											: path.includes('/workspace-links') ? 'workspaceLink'
+												: path.includes('/update-plans') ? 'updatePlan'
 														: path.includes('/share') ? 'shareOperation'
 															: path.includes('/releases') ? 'releaseOperation'
 																: path.includes('/workstreams') ? 'workstreamOperation'

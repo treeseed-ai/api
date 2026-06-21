@@ -946,11 +946,10 @@ describe('market api', () => {
 			baseUrl: 'https://delete-hosted-staging.example.test',
 			cloudflareAccountId: 'account-1',
 			pagesProjectName: 'delete-hosted-site',
-			workerName: 'delete-hosted-staging-worker',
-			r2BucketName: 'delete-hosted-content',
-			d1DatabaseName: 'delete-hosted-site-data',
-			queueName: 'delete-hosted-agent-work',
-		});
+				workerName: 'delete-hosted-staging-worker',
+				r2BucketName: 'delete-hosted-content',
+				d1DatabaseName: 'delete-hosted-site-data',
+			});
 		await store.upsertProjectInfrastructureResource(project.id, {
 			environment: 'staging',
 			provider: 'cloudflare',
@@ -1822,6 +1821,38 @@ describe('market api', () => {
 		expect(serialized).not.toContain('incorrect launch secret');
 		expect(serialized).not.toContain('github_pat_secret_for_failure_test');
 		});
+	});
+
+	it('launch rejects legacy repository topology names', async () => {
+		const app = createTestApp({ mockExternal: true });
+		const token = await authorizeApp(app);
+		const team = await createTeam(app, token);
+
+		const launched = await app.request(`/v1/teams/${team.id}/projects/launch`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({
+				slug: 'legacy-topology-launch',
+				name: 'Legacy Topology Launch',
+				sourceKind: 'blank',
+				intent: {
+					repository: {
+						topology: 'split_software_content',
+					},
+				},
+			}),
+		});
+
+		expect(launched.status).toBe(400);
+		const payload = await json(launched);
+		expect(payload.code).toBe('legacy_project_topology_rejected');
+		const projects = await json(await app.request(`/v1/projects?teamId=${team.id}`, {
+			headers: { authorization: `Bearer ${token}` },
+		}));
+		expect(projects.payload.find((project: { slug: string }) => project.slug === 'legacy-topology-launch')).toBeUndefined();
 	});
 
 	it('persists a durable launch record when launch hosting readiness fails', async () => {
@@ -3789,6 +3820,19 @@ describe('market api', () => {
 
 	it('runs mocked project web deployments through the Treeseed operations runner', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-deploy-project');
+		await store.upsertProjectArchitecture(project.id, {
+			topology: 'single_repository_site',
+			rootPath: '.',
+			sitePath: '.',
+			contentPath: 'src/content',
+			contentRuntimeSource: 'r2_published_manifest',
+			localContentMaterialization: 'existing_path',
+			contentPublishTarget: {
+				kind: 'cloudflare_r2',
+				bucket: 'treeseed-content',
+				manifestPath: 'teams/runner-web-deploy-project/published/common.json',
+			},
+		});
 		const unrelated = await store.createPlatformOperation({
 			namespace: 'market',
 			operation: 'noop',
@@ -3863,10 +3907,16 @@ describe('market api', () => {
 			},
 			monitor: {
 				status: 'healthy',
+				contentRuntime: {
+					contentRuntimeSource: 'r2_published_manifest',
+					effectiveContentSource: 'r2_published_manifest',
+					manifestKey: 'teams/runner-web-deploy-project/published/common.json',
+				},
 				checks: expect.arrayContaining([
 					expect.objectContaining({ key: 'latest_workflow', status: 'passed' }),
 					expect.objectContaining({ key: 'workflow_file', status: 'passed' }),
 					expect.objectContaining({ key: 'http_response', status: 'passed' }),
+					expect.objectContaining({ key: 'content_runtime', status: 'passed', source: 'r2' }),
 				]),
 			},
 			summary: 'deploy_web for staging succeeded.',
@@ -4459,6 +4509,111 @@ describe('market api', () => {
 			});
 			expect(JSON.stringify(completed.operation.output)).not.toContain(fixture.workspace);
 			expect(existsSync(resolve(fixture.repo, 'src/content/notes/runner-executed-note.mdx'))).toBe(false);
+		} finally {
+			rmSync(fixture.root, { recursive: true, force: true });
+		}
+	});
+
+	it('queues linked repository initialization through the project API and operations runner', async () => {
+		const fixture = createRunnerRepoFixture();
+		try {
+			const app = createTestApp({
+				config: {
+					platformRunnerSecret: 'platform-runner-secret',
+				},
+			});
+			const token = await authorizeApp(app);
+			const { project } = await createTeamAndProject(app, token, {
+				id: 'linked-repository-project',
+				slug: 'linked-repository-project',
+				name: 'Linked Repository Project',
+				metadata: {
+					architecture: {
+						topology: 'single_repository_site',
+						rootPath: '.',
+						sitePath: 'docs',
+						contentPath: 'docs',
+						contentRuntimeSource: 'r2_published_manifest',
+						localContentMaterialization: 'none',
+					},
+				},
+			});
+			const queued = await json(await app.request(`/v1/projects/${project.id}/repositories/primary/initialize`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${token}`,
+				},
+				body: JSON.stringify({
+					repository: {
+						provider: 'local',
+						owner: 'treeseed',
+						name: 'linked-repository-project',
+						defaultBranch: 'staging',
+						cloneUrl: fixture.repo,
+						writeMode: 'workspace',
+					},
+					scaffoldFiles: [{
+						path: 'docs/README.md',
+						content: '# Linked Repository Project\n\nPrepared by a TreeSeed template.\n',
+					}],
+				}),
+			}));
+			expect(queued.ok).toBe(true);
+			expect(queued.operation).toMatchObject({
+				namespace: 'repository',
+				operation: 'initialize_linked_repository',
+				status: 'queued',
+				input: {
+					projectId: project.id,
+					repositoryRole: 'primary',
+					architecture: expect.objectContaining({
+						topology: 'single_repository_site',
+						sitePath: 'docs',
+					}),
+					scaffoldFiles: [{
+						path: 'docs/README.md',
+						content: '# Linked Repository Project\n\nPrepared by a TreeSeed template.\n',
+					}],
+					repository: expect.objectContaining({
+						provider: 'local',
+						name: 'linked-repository-project',
+						cloneUrl: fixture.repo,
+					}),
+				},
+			});
+			await withHttpMarketApp(app, async (baseUrl) => {
+				const client = new PlatformRunnerClient({
+					marketUrl: baseUrl,
+					marketId: 'local',
+					runnerSecret: 'platform-runner-secret',
+				});
+				const result = await runOnceWithClient({
+					runnerId: 'treeseed-ops-test-1',
+					environment: 'local',
+					dataDir: fixture.workspace,
+				}, client, 'test', { operationId: queued.operation.id });
+				expect(result).toMatchObject({ ok: true, claimed: true });
+			});
+			const completed = await json(await app.request(`/v1/platform/operations/${queued.operation.id}`, {
+				headers: { authorization: `Bearer ${token}` },
+			}));
+			expect(completed.operation).toMatchObject({
+				status: 'succeeded',
+				changedPaths: ['docs/README.md'],
+				output: {
+					changedPaths: ['docs/README.md'],
+					workspacePath: '<runner-workspace>',
+					output: expect.objectContaining({
+						kind: 'linked_repository_initialization',
+						mode: 'template_scaffold',
+						scaffoldedPaths: ['docs/README.md'],
+					}),
+				},
+			});
+			expect(JSON.stringify(completed.operation.output)).not.toContain(fixture.workspace);
+			expect(JSON.stringify(completed.operation.output)).not.toMatch(/ghp_|TREESEED_GITHUB_TOKEN=/u);
+			expect(existsSync(resolve(fixture.repo, 'docs/README.md'))).toBe(false);
 		} finally {
 			rmSync(fixture.root, { recursive: true, force: true });
 		}
@@ -7408,64 +7563,7 @@ describe('market api', () => {
 			}),
 		]));
 
-		const allocationBlockedResponse = await app.request(`/v1/projects/${project.id}/agent-tasks`, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${token}`,
-			},
-			body: JSON.stringify({
-				taskKind: 'proposal.draft',
-				estimatedCreditsP50: 16,
-				estimatedCreditsP90: 16,
-			}),
-		});
-		const allocationBlocked = await json(allocationBlockedResponse);
-		expect(allocationBlockedResponse.status).toBe(409);
-		expect(allocationBlocked.payload.candidates[0]).toMatchObject({
-			derivedCapacityMode: 'derived',
-			staticRemainingCredits: 11.85,
-			derivedAvailableCredits: 33,
-			eligible: false,
-		});
-		expect(allocationBlocked.payload.candidates[0].reasons).toEqual(expect.arrayContaining([
-			'portfolio_allocation_applied',
-			'portfolio_allocation_exhausted',
-			'soft_budget_pressure',
-		]));
-
-		const routedTaskResponse = await app.request(`/v1/projects/${project.id}/agent-tasks`, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${token}`,
-			},
-			body: JSON.stringify({
-				taskKind: 'proposal.draft',
-				estimatedCreditsP50: 5,
-				estimatedCreditsP90: 5,
-			}),
-		});
-		expect(routedTaskResponse.status).toBe(201);
-		const routedTask = await json(routedTaskResponse);
-		expect(routedTask.payload.reservation).toMatchObject({
-			capacityProviderId: provider.id,
-			executionProviderId: codex.payload.id,
-			nativeUnit: 'wall_minute',
-			reservedNativeAmount: 25,
-			reservedCredits: 5,
-		});
-		expect(routedTask.payload.task.input.capacity).toMatchObject({
-			executionProviderId: codex.payload.id,
-			nativeUnit: 'wall_minute',
-			reservedNativeAmount: 25,
-			derivedCapacityMode: 'derived',
-			nativePressure: expect.objectContaining({
-				nativeUnit: 'wall_minute',
-			}),
-		});
-
-		await store.createCapacityReservation({
+			await store.createCapacityReservation({
 			id: 'native-derived-exhaustion',
 			capacityProviderId: provider.id,
 			executionProviderId: codex.payload.id,
@@ -7477,33 +7575,15 @@ describe('market api', () => {
 			nativeUnit: 'wall_minute',
 			reservedNativeAmount: 200,
 		});
-		const blockedTaskResponse = await app.request(`/v1/projects/${project.id}/agent-tasks`, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${token}`,
-			},
-			body: JSON.stringify({
-				taskKind: 'proposal.draft',
-				estimatedCreditsP50: 5,
-				estimatedCreditsP90: 5,
-			}),
-		});
-		expect(blockedTaskResponse.status).toBe(409);
-		const blockedTask = await json(blockedTaskResponse);
-		expect(blockedTask.payload).toMatchObject({
-			ok: false,
-			code: 'insufficient_budget',
-		});
-		expect(blockedTask.payload.candidates[0]).toMatchObject({
-			derivedCapacityMode: 'derived',
-			derivedAvailableCredits: 0,
-			eligible: false,
-		});
-		expect(blockedTask.payload.candidates[0].reasons).toEqual(expect.arrayContaining([
-			'derived_capacity_exhausted',
-			'insufficient_budget',
-		]));
+			const exhaustedCapacityPlan = await json(await app.request(`/v1/projects/${project.id}/capacity-plan?environment=staging`, {
+				headers: { authorization: `Bearer ${token}` },
+			}));
+			expect(exhaustedCapacityPlan.payload.derivedCapacity.entries).toEqual(expect.arrayContaining([
+				expect.objectContaining({
+					executionProviderId: codex.payload.id,
+					derivedAvailableCredits: 0,
+				}),
+			]));
 	}, 60000);
 
 	it('stores native capacity reported by capacity provider registration and heartbeat', async () => {
@@ -8210,48 +8290,7 @@ describe('market api', () => {
 		expect(launch.plaintextKey).toMatch(/^tsp_/);
 		expect(launch.lanes.map((lane: { id: string }) => lane.id).join(' ')).toContain('proposal-drafting');
 
-		const taskResponse = await app.request(`/v1/projects/${project.id}/agent-tasks`, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${token}`,
-			},
-			body: JSON.stringify({
-				taskKind: 'proposal.draft',
-				estimatedCreditsP50: 5,
-				estimatedCreditsP90: 8,
-				utilityValue: 75,
-				maintenanceValue: 5,
-				successProbability: 0.9,
-				cooperativeRouting: true,
-				predictiveReservePolicy: { enabled: true, baseReservePercent: 5 },
-				hybridExecutionPlan: {
-					planId: 'market-hybrid-1',
-					phases: [
-						{ kind: 'planning', executionProfileId: 'large-reasoning-model', mutationAllowed: false },
-						{ kind: 'review', executionProfileId: 'cheap-review-model', mutationAllowed: false },
-					],
-				},
-			}),
-		});
-		expect(taskResponse.status).toBe(201);
-		const taskPayload = (await json(taskResponse)).payload;
-		expect(taskPayload.reservation).toMatchObject({
-			state: 'reserved',
-			reservedCredits: 8,
-		});
-		expect(taskPayload.task.input.capacity).toMatchObject({
-			providerId: launch.provider.id,
-			reservationId: taskPayload.reservation.id,
-			reservedCredits: 8,
-		});
-		expect(taskPayload.reservation.metadata).toMatchObject({
-			utilityEstimate: expect.objectContaining({ successProbability: 0.9 }),
-			reservePrediction: expect.objectContaining({ reservePercent: 5 }),
-			hybridExecutionPlan: expect.objectContaining({ planId: 'market-hybrid-1' }),
-		});
-
-		const heartbeat = await app.request('/v1/provider/heartbeat', {
+			const heartbeat = await app.request('/v1/provider/heartbeat', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -8267,25 +8306,7 @@ describe('market api', () => {
 		});
 		expect(heartbeat.status).toBe(200);
 
-		const completeResponse = await app.request(`/v1/provider/${'tasks'}/${taskPayload.task.id}/complete`, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${launch.plaintextKey}`,
-			},
-				body: JSON.stringify({
-					actualCredits: 3,
-					usageActual: {
-						taskSignature: 'proposal.draft',
-						executionProfileId: 'standard-code-model',
-						filesChanged: 1,
-					},
-					output: { summary: 'Drafted proposal.' },
-				}),
-			});
-			expect(completeResponse.status).toBe(404);
-
-		const rotateResponse = await app.request(`/v1/teams/${team.id}/capacity-providers/${launch.provider.id}/keys/rotate`, {
+			const rotateResponse = await app.request(`/v1/teams/${team.id}/capacity-providers/${launch.provider.id}/keys/rotate`, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -8338,7 +8359,7 @@ describe('market api', () => {
 		expect(planResponse.status).toBe(200);
 		const plan = await json(planResponse);
 		expect(plan.ok).toBe(true);
-		expect(plan.summary).toMatchObject({ create: 13, update: 1, unchanged: 0, skip: 4 });
+		expect(plan.summary).toMatchObject({ create: 20, update: 1, unchanged: 0, skip: 20 });
 		expect(plan.run).toMatchObject({ state: 'completed', mode: 'plan', seedName: 'treeseed' });
 
 		const firstApplyResponse = await app.request('/v1/seeds/treeseed/apply', {
@@ -8352,9 +8373,9 @@ describe('market api', () => {
 		expect(firstApplyResponse.status).toBe(200);
 		const firstApply = await json(firstApplyResponse);
 		expect(firstApply.ok).toBe(true);
-		expect(firstApply.summary).toMatchObject({ create: 13, update: 1, unchanged: 0, skip: 4 });
+		expect(firstApply.summary).toMatchObject({ create: 20, update: 1, unchanged: 0, skip: 20 });
 		expect(firstApply.run).toMatchObject({ state: 'completed', mode: 'apply', seedName: 'treeseed' });
-		expect(firstApply.result.actionCount).toBe(14);
+		expect(firstApply.result.actionCount).toBe(21);
 		expect(firstApply.result.capacityProviderKeys.created).toHaveLength(0);
 
 		const runs = await json(await app.request('/v1/seeds/runs', {
@@ -8379,7 +8400,7 @@ describe('market api', () => {
 		});
 		expect(secondApplyResponse.status).toBe(200);
 		const secondApply = await json(secondApplyResponse);
-		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 14, skip: 4 });
+		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 21, skip: 20 });
 		expect(secondApply.result.actionCount).toBe(0);
 		expect(secondApply.result.capacityProviderKeys.created).toHaveLength(0);
 		expect(secondApply.result.capacityProviderKeys.existing).toHaveLength(0);
@@ -8749,7 +8770,7 @@ describe('TreeDX market integration', () => {
 		});
 	});
 
-	it('binds project content to TreeDX and keeps site/project repositories filesystem-backed in provider portfolio', async () => {
+	it('persists canonical repository topology project architecture and exposes it in provider portfolio', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		const app = createTestApp({ db, store });
@@ -8800,18 +8821,117 @@ describe('TreeDX market integration', () => {
 		}));
 		expect(binding.payload.contentRepositoryUrl).toBe('https://github.com/acme/hub-one-content');
 
-		const topology = await json(await app.request(`/v1/projects/${project.id}/repository-topology`, {
+		const architecturePayload = {
+			topology: 'single_repository_site',
+			rootPath: '.',
+			sitePath: 'docs',
+			contentPath: 'docs/src/content',
+			contentRuntimeSource: 'treedx_snapshot',
+			localContentMaterialization: 'none',
+			contentPublishTarget: {
+				kind: 'cloudflare_r2',
+				prefix: 'hub-one',
+			},
+		};
+		const updated = await json(await app.request(`/v1/projects/${project.id}/repository-topology`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify(architecturePayload),
+		}));
+		expect(updated.payload).toMatchObject(architecturePayload);
+
+		const architecture = await json(await app.request(`/v1/projects/${project.id}/repository-topology`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		expect(topology.payload.contentRepository.accessMode).toBe('treedx');
-		expect(topology.payload.siteRepository.accessMode).toBe('filesystem');
-		expect(topology.payload.projectRepository.accessMode).toBe('filesystem');
+		expect(architecture.payload).toMatchObject(architecturePayload);
+
+		const rejectedLegacy = await app.request(`/v1/projects/${project.id}/repository-topology`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ topology: 'split_software_content', sitePath: 'docs' }),
+		});
+		expect(rejectedLegacy.status).toBe(400);
+		expect(await json(rejectedLegacy)).toMatchObject({ code: 'legacy_project_topology_rejected' });
+
+		const rejectedSecret = await app.request(`/v1/projects/${project.id}/repository-topology`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ ...architecturePayload, token: 'ghp_should-not-persist' }),
+		});
+		expect(rejectedSecret.status).toBe(400);
+		expect(await json(rejectedSecret)).toMatchObject({ code: 'project_architecture_secret_material_rejected' });
 
 		const manifest = await store.buildCapacityProviderPortfolio({ teamId: team.id });
 		if (!manifest) throw new Error('Expected capacity provider portfolio manifest for TreeDX project topology test.');
 		expect(manifest.projects[0].repository.name).toBe('hub-one-site');
-		expect(manifest.projects[0].repositoryTopology.contentRepository.accessMode).toBe('treedx');
-		expect(manifest.projects[0].repositoryTopology.siteRepository.accessMode).toBe('filesystem');
+		expect(manifest.projects[0].architecture).toMatchObject(architecturePayload);
+		const details = await store.getProjectDetails(project.id);
+		expect(details?.architecture).toMatchObject(architecturePayload);
+		expect(details?.contentSource?.metadata?.projectArchitecture).toMatchObject(architecturePayload);
+	});
+
+	it('imports existing GitHub repositories as canonical project architecture without token values', async () => {
+		const db = createTestPostgresDatabase();
+		const store = createTestStore(db);
+		const app = createTestApp({ db, store });
+		const token = await authorizeApp(app);
+		const team = await createTeam(app, token);
+		await store.upsertTeamTreeDx(team.id, {
+			baseUrl: 'https://treedx.team.example',
+			status: 'active',
+		});
+		const plan = treeseedCore.planTreeseedRepositoryImport({
+			team: team.slug,
+			repository: 'treeseed-ai/sdk',
+			env: { TREESEED_GITHUB_TOKEN_TREESEED_AI_SDK: 'ghp_should-never-persist' },
+			observation: {
+				defaultBranch: 'main',
+				files: ['package.json', 'treeseed.package.yaml', 'docs/index.md', 'docs/src/content/intro.md'],
+				directories: ['docs', 'docs/src', 'docs/src/content'],
+			},
+		});
+
+		const imported = await json(await app.request(`/v1/teams/${team.slug}/projects/import`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ plan }),
+		}));
+
+		expect(imported.ok).toBe(true);
+		expect(imported.payload.project.slug).toBe('sdk');
+		expect(imported.payload.architecture).toMatchObject({
+			topology: 'single_repository_site',
+			sitePath: 'docs',
+			contentPath: 'docs/src/content',
+			contentRuntimeSource: 'r2_published_manifest',
+		});
+		expect(imported.payload.hubRepository).toMatchObject({
+			role: 'software',
+			provider: 'github',
+			owner: 'treeseed-ai',
+			name: 'sdk',
+			defaultBranch: 'main',
+		});
+		expect(imported.payload.hubRepository.metadata.credentialRef).toBe('env:TREESEED_GITHUB_TOKEN_TREESEED_AI_SDK');
+		expect(imported.payload.contentSource.metadata.projectArchitecture.sitePath).toBe('docs');
+		expect(imported.payload.treeDxLibrary.contentPath).toBe('docs/src/content');
+		expect(JSON.stringify(imported)).not.toContain('ghp_should-never-persist');
+
+		const legacy = await app.request(`/v1/teams/${team.id}/projects/import`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ plan: { ...plan, repositoryTopology: 'split_software_content' } }),
+		});
+		expect(legacy.status).toBe(400);
+		expect(await json(legacy)).toMatchObject({ code: 'legacy_project_topology_rejected' });
+
+		const secret = await app.request(`/v1/teams/${team.id}/projects/import`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+			body: JSON.stringify({ plan: { ...plan, token: 'ghp_should-reject' } }),
+		});
+		expect(secret.status).toBe(400);
+		expect(await json(secret)).toMatchObject({ code: 'project_import_secret_material_rejected' });
 	});
 
 	it('does not proxy normal TreeDX project calls with static admin tokens or implicit local secrets', async () => {

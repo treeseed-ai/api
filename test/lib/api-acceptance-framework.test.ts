@@ -99,6 +99,6 @@ describe('API acceptance framework', () => {
 		const expanded = JSON.parse(readFileSync(output, 'utf8'));
 		expect(expanded.caseCount).toBeGreaterThan(2700);
 		expect(expanded.cases.some((entry: any) => entry.id === 'deployment-flow.mocked-web-deployment' && entry.deploymentFlow === true)).toBe(true);
-		expect(expanded.cases.filter((entry: any) => entry.expect?.statusAny !== undefined).map((entry: any) => entry.id)).toEqual(['sdk.enqueueAgentTask.teamOwner']);
+			expect(expanded.cases.filter((entry: any) => entry.expect?.statusAny !== undefined).map((entry: any) => entry.id)).toEqual([]);
 	});
 });

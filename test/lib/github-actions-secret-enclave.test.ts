@@ -91,6 +91,48 @@ async function seedWorkflowOperation(store: any, patch: Record<string, unknown> 
 	});
 }
 
+async function seedProjectGitHubAppGrant(store: any, patch: Record<string, unknown> = {}) {
+	await store.upsertGitHubAppInstallationRecord({
+		teamId: 'team-1',
+		installationId: '99',
+		accountLogin: 'treeseed-ai',
+		accountId: '12345',
+		accountType: 'Organization',
+		status: 'active',
+		permissions: { metadata: 'read', contents: 'read', actions: 'write' },
+		repositorySelection: 'selected',
+	});
+	return store.upsertGitHubRepositoryGrant({
+		teamId: 'team-1',
+		projectId: 'project-1',
+		repository: 'treeseed-ai/project',
+		installationId: '99',
+		accountLogin: 'treeseed-ai',
+		accountId: '12345',
+		status: 'active',
+		permissions: { metadata: 'read', contents: 'read', actions: 'write' },
+		environments: ['production'],
+		...patch,
+	});
+}
+
+async function seedProjectRepositoryCredentialRef(store: any, credentialRef: string) {
+	await store.createTeam({ id: 'team-1', slug: 'team-one', name: 'Team One' }).catch(() => null);
+	await store.createProject('team-1', { id: 'project-1', slug: 'project-one', name: 'Project One' }).catch(() => null);
+	return store.upsertHubRepository('project-1', {
+		teamId: 'team-1',
+		role: 'software',
+		provider: 'github',
+		owner: 'treeseed-ai',
+		name: 'project',
+		url: 'https://github.com/treeseed-ai/project',
+		defaultBranch: 'main',
+		currentBranch: 'main',
+		status: 'active',
+		metadata: { credentialRef },
+	});
+}
+
 describe('GitHub Actions secret enclave', () => {
 	it('fetches GitHub Actions public keys through GitHub App authority and audits metadata only', async () => {
 		const store = createTestStore();
@@ -201,10 +243,12 @@ describe('GitHub Actions secret enclave', () => {
 	it('dispatches workflow operations only by allowlisted operation id and records dispatch evidence', async () => {
 		const store = createTestStore();
 		await seedWorkflowOperation(store);
+		await seedProjectGitHubAppGrant(store);
+		const tokenCalls: any[] = [];
 		const dispatched: any[] = [];
 		const enclave = createGitHubActionsSecretEnclave({
 			store,
-			githubAppAdapter: fakeGithubAppAdapter(),
+			githubAppAdapter: fakeGithubAppAdapter(tokenCalls),
 			workflowDispatcher: async (input) => {
 				dispatched.push(input);
 				return { ok: true, plans: [], result: { runId: 123, status: 'queued' } };
@@ -215,13 +259,20 @@ describe('GitHub Actions secret enclave', () => {
 		const result = await enclave.dispatchWorkflowOperation({
 			teamId: 'team-1',
 			projectId: 'project-1',
-			installationId: '99',
 			operationId: 'secret-op-1',
 			ref: 'refs/heads/main',
 			environment: 'production',
 			inputs: { planId: 'plan-1' },
 		});
 
+		expect(tokenCalls[0]).toMatchObject({
+			teamId: 'team-1',
+			projectId: 'project-1',
+			installationId: '99',
+			repository: 'treeseed-ai/project',
+			requiredPermissions: { metadata: 'read', contents: 'read', actions: 'write' },
+			allowedOperations: ['github-actions-workflow-dispatch'],
+		});
 		expect(dispatched[0].unit).toMatchObject({
 			unitType: 'github-workflow-dispatch',
 			spec: {
@@ -241,7 +292,99 @@ describe('GitHub Actions secret enclave', () => {
 		expect(JSON.stringify(record)).not.toContain('ghs_transient_token');
 	});
 
-	it('fails closed for arbitrary workflow dispatch, untrusted refs, missing environments, and schema-invalid inputs', async () => {
+	it('falls back to the project repository credentialRef when GitHub App authority is not configured', async () => {
+		const store = createTestStore();
+		await seedWorkflowOperation(store);
+		await seedProjectRepositoryCredentialRef(store, 'env:TREESEED_GITHUB_TOKEN_PROJECT_ONE');
+		const dispatched: any[] = [];
+		const enclave = createGitHubActionsSecretEnclave({
+			store,
+			config: {
+				TREESEED_GITHUB_TOKEN_PROJECT_ONE: 'ghp_project_ref_token',
+				TREESEED_GITHUB_TOKEN_TREESEED_AI_PROJECT: 'ghp_repo_scoped_token',
+				TREESEED_GITHUB_TOKEN: 'ghp_default_token',
+			},
+			workflowDispatcher: async (input) => {
+				dispatched.push(input);
+				return { ok: true, plans: [], result: { runId: 123, status: 'queued' } };
+			},
+		});
+
+		const result = await enclave.dispatchWorkflowOperation({
+			teamId: 'team-1',
+			projectId: 'project-1',
+			operationId: 'secret-op-1',
+			ref: 'refs/heads/main',
+			environment: 'production',
+			inputs: { planId: 'plan-1' },
+		});
+
+		expect(dispatched[0].token).toBe('ghp_project_ref_token');
+		expect(result.dispatch.metadata).toMatchObject({ repositoryAuthority: 'TREESEED_GITHUB_TOKEN_PROJECT_ONE' });
+		const record = await store.getWorkflowDispatchRecord(result.dispatch.id);
+		expect(JSON.stringify(record)).not.toContain('ghp_project_ref_token');
+		expect(JSON.stringify(record)).not.toContain('ghp_repo_scoped_token');
+		expect(JSON.stringify(record)).not.toContain('ghp_default_token');
+	});
+
+	it('falls back to repository-scoped and default GitHub environment tokens without exposing them', async () => {
+		const store = createTestStore();
+		await seedWorkflowOperation(store);
+		const dispatched: any[] = [];
+		const enclave = createGitHubActionsSecretEnclave({
+			store,
+			config: {
+				TREESEED_GITHUB_TOKEN_TREESEED_AI_PROJECT: 'ghp_repo_scoped_token',
+				TREESEED_GITHUB_TOKEN: 'ghp_default_token',
+			},
+			workflowDispatcher: async (input) => {
+				dispatched.push(input);
+				return { ok: true, plans: [], result: { runId: 123, status: 'queued' } };
+			},
+		});
+
+		const repoScoped = await enclave.dispatchWorkflowOperation({
+			teamId: 'team-1',
+			projectId: 'project-1',
+			operationId: 'secret-op-1',
+			ref: 'refs/heads/main',
+			environment: 'production',
+			inputs: { planId: 'plan-1' },
+		});
+
+		expect(dispatched[0].token).toBe('ghp_repo_scoped_token');
+		expect(repoScoped.dispatch.metadata).toMatchObject({ repositoryAuthority: 'TREESEED_GITHUB_TOKEN_TREESEED_AI_PROJECT' });
+		const repoRecord = await store.getWorkflowDispatchRecord(repoScoped.dispatch.id);
+		expect(JSON.stringify(repoRecord)).not.toContain('ghp_repo_scoped_token');
+
+		const fallbackStore = createTestStore();
+		await seedWorkflowOperation(fallbackStore);
+		const fallbackDispatched: any[] = [];
+		const fallbackEnclave = createGitHubActionsSecretEnclave({
+			store: fallbackStore,
+			config: { TREESEED_GITHUB_TOKEN: 'ghp_default_token' },
+			workflowDispatcher: async (input) => {
+				fallbackDispatched.push(input);
+				return { ok: true, plans: [], result: { runId: 456, status: 'queued' } };
+			},
+		});
+
+		const fallback = await fallbackEnclave.dispatchWorkflowOperation({
+			teamId: 'team-1',
+			projectId: 'project-1',
+			operationId: 'secret-op-1',
+			ref: 'refs/heads/main',
+			environment: 'production',
+			inputs: { planId: 'plan-1' },
+		});
+
+		expect(fallbackDispatched[0].token).toBe('ghp_default_token');
+		expect(fallback.dispatch.metadata).toMatchObject({ repositoryAuthority: 'TREESEED_GITHUB_TOKEN' });
+		const fallbackRecord = await fallbackStore.getWorkflowDispatchRecord(fallback.dispatch.id);
+		expect(JSON.stringify(fallbackRecord)).not.toContain('ghp_default_token');
+	});
+
+	it('requires a project-scoped GitHub App repository grant for workflow dispatch', async () => {
 		const store = createTestStore();
 		await seedWorkflowOperation(store);
 		const enclave = createGitHubActionsSecretEnclave({
@@ -255,7 +398,28 @@ describe('GitHub Actions secret enclave', () => {
 		await expect(enclave.dispatchWorkflowOperation({
 			teamId: 'team-1',
 			projectId: 'project-1',
-			installationId: '99',
+			operationId: 'secret-op-1',
+			ref: 'refs/heads/main',
+			environment: 'production',
+			inputs: { planId: 'plan-1' },
+		})).rejects.toMatchObject({ code: 'github_repository_removed' });
+	});
+
+	it('fails closed for arbitrary workflow dispatch, untrusted refs, missing environments, and schema-invalid inputs', async () => {
+		const store = createTestStore();
+		await seedWorkflowOperation(store);
+		await seedProjectGitHubAppGrant(store);
+		const enclave = createGitHubActionsSecretEnclave({
+			store,
+			githubAppAdapter: fakeGithubAppAdapter(),
+			workflowDispatcher: async () => {
+				throw new Error('dispatcher should not run');
+			},
+		});
+
+		await expect(enclave.dispatchWorkflowOperation({
+			teamId: 'team-1',
+			projectId: 'project-1',
 			operationId: 'secret-op-1',
 			ref: 'refs/heads/feature',
 			environment: 'production',
@@ -265,7 +429,6 @@ describe('GitHub Actions secret enclave', () => {
 		await expect(enclave.dispatchWorkflowOperation({
 			teamId: 'team-1',
 			projectId: 'project-1',
-			installationId: '99',
 			operationId: 'secret-op-1',
 			ref: 'refs/heads/main',
 			inputs: { planId: 'plan-1' },
@@ -274,7 +437,6 @@ describe('GitHub Actions secret enclave', () => {
 		await expect(enclave.dispatchWorkflowOperation({
 			teamId: 'team-1',
 			projectId: 'project-1',
-			installationId: '99',
 			operationId: 'secret-op-1',
 			ref: 'refs/heads/main',
 			environment: 'production',
@@ -320,7 +482,6 @@ describe('GitHub Actions secret enclave', () => {
 		await expect(enclave.dispatchWorkflowOperation({
 			teamId: 'team-1',
 			projectId: 'project-1',
-			installationId: '99',
 			operationId: 'unsafe-local-action-op',
 			ref: 'refs/heads/main',
 			environment: 'production',

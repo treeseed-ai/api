@@ -38,6 +38,18 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "delete.v1.projects.projectId.secrets.escrow.escrowId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "delete.v1.teams.teamId": {
       "anonymous": 401,
       "siteAdmin": 400,
@@ -566,18 +578,6 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "get.v1.projects.projectId.agent-mode-runs": {
-      "anonymous": 401,
-      "siteAdmin": 200,
-      "marketSteward": 200,
-      "teamOwner": 200,
-      "teamOperator": 200,
-      "teamViewer": 200,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
     "get.v1.projects.projectId.agent-fallback-outputs": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -590,7 +590,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "get.v1.projects.projectId.treedx-proxy-audit": {
+    "get.v1.projects.projectId.agent-mode-runs": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -854,42 +854,6 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "get.v1.projects.projectId.secrets.github-actions.public-key": {
-      "anonymous": 401,
-      "siteAdmin": 400,
-      "marketSteward": 400,
-      "teamOwner": 400,
-      "teamOperator": 400,
-      "teamViewer": 400,
-      "nonMember": 403,
-      "providerOperator": 400,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "get.v1.projects.projectId.secrets.escrow": {
-      "anonymous": 401,
-      "siteAdmin": 200,
-      "marketSteward": 200,
-      "teamOwner": 200,
-      "teamOperator": 200,
-      "teamViewer": 200,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "get.v1.projects.projectId.secrets.escrow.escrowId": {
-      "anonymous": 401,
-      "siteAdmin": 404,
-      "marketSteward": 404,
-      "teamOwner": 404,
-      "teamOperator": 404,
-      "teamViewer": 404,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
     "get.v1.projects.projectId.operations.events": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -1118,6 +1082,42 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "get.v1.projects.projectId.secrets.escrow": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.secrets.escrow.escrowId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.secrets.github-actions.public-key": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 403,
+      "providerOperator": 400,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "get.v1.projects.projectId.share": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -1179,6 +1179,18 @@
       "platformRunner": 401
     },
     "get.v1.projects.projectId.treedx-library": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.projects.projectId.treedx-proxy-audit": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -1970,6 +1982,18 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "patch.v1.projects.projectId.secrets.escrow.escrowId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "patch.v1.teams.teamId": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -2498,7 +2522,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "post.v1.internal.treedx.credentials.github-app": {
+    "post.v1.internal.treedx.credentials.github": {
       "anonymous": 401,
       "siteAdmin": 401,
       "marketSteward": 401,
@@ -2822,90 +2846,6 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "post.v1.projects.projectId.agent-tasks": {
-      "anonymous": 401,
-      "siteAdmin": 409,
-      "marketSteward": 409,
-      "teamOwner": 409,
-      "teamOperator": 409,
-      "teamViewer": 409,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "post.v1.projects.projectId.secrets.github-actions.deploy": {
-      "anonymous": 401,
-      "siteAdmin": 400,
-      "marketSteward": 400,
-      "teamOwner": 400,
-      "teamOperator": 400,
-      "teamViewer": 400,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "post.v1.projects.projectId.secrets.escrow": {
-      "anonymous": 401,
-      "siteAdmin": 400,
-      "marketSteward": 400,
-      "teamOwner": 400,
-      "teamOperator": 400,
-      "teamViewer": 400,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "patch.v1.projects.projectId.secrets.escrow.escrowId": {
-      "anonymous": 401,
-      "siteAdmin": 404,
-      "marketSteward": 404,
-      "teamOwner": 404,
-      "teamOperator": 404,
-      "teamViewer": 404,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "post.v1.projects.projectId.secrets.escrow.escrowId.migrate": {
-      "anonymous": 401,
-      "siteAdmin": 404,
-      "marketSteward": 404,
-      "teamOwner": 404,
-      "teamOperator": 404,
-      "teamViewer": 404,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "delete.v1.projects.projectId.secrets.escrow.escrowId": {
-      "anonymous": 401,
-      "siteAdmin": 404,
-      "marketSteward": 404,
-      "teamOwner": 404,
-      "teamOperator": 404,
-      "teamViewer": 404,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "post.v1.projects.projectId.workflow-operations.operationId.dispatch": {
-      "anonymous": 401,
-      "siteAdmin": 404,
-      "marketSteward": 404,
-      "teamOwner": 404,
-      "teamOperator": 404,
-      "teamViewer": 404,
-      "nonMember": 403,
-      "providerOperator": 403,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
     "post.v1.projects.projectId.agents.agentSlug.pause": {
       "anonymous": 401,
       "siteAdmin": 404,
@@ -3201,6 +3141,18 @@
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.projects.projectId.repositories.role.initialize": {
+      "anonymous": 401,
+      "siteAdmin": 202,
+      "marketSteward": 202,
+      "teamOwner": 202,
+      "teamOperator": 202,
+      "teamViewer": 202,
       "nonMember": 403,
       "providerOperator": 403,
       "providerKey": 401,
@@ -3542,6 +3494,42 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "post.v1.projects.projectId.secrets.escrow": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.projects.projectId.secrets.escrow.escrowId.migrate": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.projects.projectId.secrets.github-actions.deploy": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "post.v1.projects.projectId.share.export": {
       "anonymous": 401,
       "siteAdmin": 409,
@@ -3674,6 +3662,18 @@
       "providerKey": 401,
       "platformRunner": 401
     },
+    "post.v1.projects.projectId.workflow-operations.operationId.dispatch": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "post.v1.projects.projectId.workspace-links": {
       "anonymous": 401,
       "siteAdmin": 202,
@@ -3770,18 +3770,6 @@
       "providerKey": 404,
       "platformRunner": 401
     },
-    "post.v1.provider.assignments.assignmentId.workflow-operations.operationId.dispatch": {
-      "anonymous": 401,
-      "siteAdmin": 401,
-      "marketSteward": 401,
-      "teamOwner": 401,
-      "teamOperator": 401,
-      "teamViewer": 401,
-      "nonMember": 401,
-      "providerOperator": 401,
-      "providerKey": 404,
-      "platformRunner": 401
-    },
     "post.v1.provider.assignments.assignmentId.renew": {
       "anonymous": 401,
       "siteAdmin": 401,
@@ -3805,6 +3793,18 @@
       "providerOperator": 401,
       "platformRunner": 401,
       "providerKey": 409
+    },
+    "post.v1.provider.assignments.assignmentId.workflow-operations.operationId.dispatch": {
+      "anonymous": 401,
+      "siteAdmin": 401,
+      "marketSteward": 401,
+      "teamOwner": 401,
+      "teamOperator": 401,
+      "teamViewer": 401,
+      "nonMember": 401,
+      "providerOperator": 401,
+      "providerKey": 404,
+      "platformRunner": 401
     },
     "post.v1.provider.assignments.next": {
       "anonymous": 401,
@@ -4257,6 +4257,18 @@
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.teams.teamId.projects.import": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
       "nonMember": 403,
       "providerOperator": 403,
       "providerKey": 401,

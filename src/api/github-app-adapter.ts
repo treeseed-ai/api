@@ -240,7 +240,11 @@ export function createGitHubAppAdapter(options: {
 			throw failClosedError('github_account_mismatch', 'GitHub App installation account does not match the requested account.');
 		}
 		const grants = await store.listGitHubRepositoryGrants({ teamId, limit: 500 });
-		const grant = grants.find((candidate: any) => normalizeRepository(candidate.repository) === repository);
+		const requestedProjectId = input.projectId == null ? null : String(input.projectId);
+		const grant = grants.find((candidate: any) =>
+			normalizeRepository(candidate.repository) === repository
+			&& (!requestedProjectId || String(candidate.projectId ?? '') === requestedProjectId)
+		);
 		if (!grant || String(grant.installationId ?? '') !== installationId) throw failClosedError('github_repository_removed', 'Repository is not granted to this GitHub App installation.');
 		if (grant.status === 'revoked') throw failClosedError('github_grant_revoked', 'GitHub repository grant is revoked.');
 		if (grant.status !== 'active') throw failClosedError('github_grant_drifted', 'GitHub repository grant is not active.');

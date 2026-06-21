@@ -57,27 +57,7 @@ function resourceRowsFromLaunch(projectId, launch) {
 				locator: summary.siteDataDb?.databaseId ?? summary.siteDataDb?.databaseName ?? null,
 				metadata: summary.siteDataDb ?? {},
 			},
-			{
-				projectId,
-				environment,
-				provider: 'cloudflare',
-				resourceKind: 'queue',
-				logicalName: 'agent_work',
-				locator: summary.queue?.queueId ?? summary.queue?.name ?? null,
-				metadata: summary.queue ?? {},
-			},
 		);
-		if (summary.queue?.dlqName || summary.queue?.dlqId) {
-			rows.push({
-				projectId,
-				environment,
-				provider: 'cloudflare',
-				resourceKind: 'dlq',
-				logicalName: 'agent_work_dlq',
-				locator: summary.queue?.dlqId ?? summary.queue?.dlqName ?? null,
-				metadata: summary.queue ?? {},
-			});
-		}
 	}
 	for (const service of launch.railway?.services ?? []) {
 		rows.push({
@@ -116,6 +96,13 @@ function resourceRowsFromLaunch(projectId, launch) {
 		});
 	}
 	return rows.filter((row) => row.locator || row.metadata);
+}
+
+function canonicalArchitectureTopology(value) {
+	if (value === 'combined_compatibility') return 'single_repository_site';
+	if (value === 'split_software_content') return 'split_site_content';
+	if (['single_repository_site', 'split_site_content', 'parent_workspace'].includes(value)) return value;
+	return 'split_site_content';
 }
 
 async function projectAppHref(_store, _teamId, projectSlug, section) {
@@ -267,7 +254,15 @@ export async function applyHubLaunchResult(store, runtime, job, output, principa
 		launchJobId: job.id,
 		launchPhase: 'completed',
 		lastSuccessfulPhase: 'runtime_connection',
-		repositoryTopology: launchResult.plan?.repository?.topology ?? 'split_software_content',
+		architecture: {
+			...(project.metadata?.architecture ?? {}),
+			topology: canonicalArchitectureTopology(launchResult.plan?.repository?.topology),
+			rootPath: project.metadata?.architecture?.rootPath ?? '.',
+			sitePath: project.metadata?.architecture?.sitePath ?? '.',
+			contentPath: project.metadata?.architecture?.contentPath ?? 'src/content',
+			contentRuntimeSource: project.metadata?.architecture?.contentRuntimeSource ?? 'r2_published_manifest',
+			localContentMaterialization: project.metadata?.architecture?.localContentMaterialization ?? 'none',
+		},
 		repositories: launchResult.repositories ?? [],
 		repository: launchResult.repository,
 		contentRepository: launchResult.contentRepository ?? null,
@@ -345,7 +340,6 @@ export async function applyHubLaunchResult(store, runtime, job, output, principa
 			workerName: summary?.workerName ?? null,
 			r2BucketName: summary?.content?.bucketName ?? null,
 			d1DatabaseName: summary?.siteDataDb?.databaseName ?? null,
-			queueName: summary?.queue?.name ?? null,
 			railwayProjectName: environment === 'prod' ? railwayApiService?.projectName ?? null : null,
 			metadata: {
 				launchPhase: 'completed',

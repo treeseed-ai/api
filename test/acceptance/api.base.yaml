@@ -157,10 +157,11 @@ sdkMethodMatrices:
     expect:
       status: 200
       envelope: { ok: true }
-  - method: enqueueAgentTask
+  - method: importProjectRepository
     actor: teamOwner
     expect:
-      statusAny: [201, 409]
+      status: 201
+      envelope: { ok: true }
   - method: projectGitHubActionsSecretPublicKey
     actor: teamOwner
     expect:

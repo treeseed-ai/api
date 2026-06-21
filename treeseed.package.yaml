@@ -44,3 +44,13 @@ dockerImages:
     staging:
       - "dev-staging-<short-sha>"
       - dev-staging
+projectArchitecture:
+  topology: single_repository_site
+  rootPath: .
+  sitePath: docs
+  contentPath: docs
+  contentRuntimeSource: r2_published_manifest
+  localContentMaterialization: none
+  contentPublishTarget:
+    kind: cloudflare_r2
+    prefix: packages/api

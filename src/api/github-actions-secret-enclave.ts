@@ -4,8 +4,9 @@ import {
 	validateTreeseedSecretsCapabilityRegistry,
 } from '@treeseed/sdk/secrets-capability';
 import { reconcileTreeseedTarget, type TreeseedDesiredUnit } from '@treeseed/sdk/reconcile';
+import { resolveGitHubCredentialForRepository } from '@treeseed/sdk/operations/github-credentials';
 import { Octokit } from 'octokit';
-import { createGitHubAppAdapter } from './github-app-adapter.ts';
+import { createGitHubAppAdapter, resolveGitHubAppConfig } from './github-app-adapter.ts';
 
 function failClosedError(code: string, message: string, status = 403) {
 	const error = new Error(message);
@@ -32,6 +33,18 @@ function objectValue(value: unknown): Record<string, any> {
 
 function stringArray(value: unknown): string[] {
 	return Array.isArray(value) ? value.map((entry) => String(entry ?? '').trim()).filter(Boolean) : [];
+}
+
+function configuredString(value: unknown): string | null {
+	const next = typeof value === 'string' ? value.trim() : '';
+	return next || null;
+}
+
+function credentialRefEnvName(value: unknown): string | null {
+	const ref = configuredString(value);
+	if (!ref) return null;
+	const envName = ref.startsWith('env:') ? ref.slice(4) : ref;
+	return envName.startsWith('TREESEED_GITHUB_TOKEN') ? envName : null;
 }
 
 function trustPolicyFor(operation: any) {
@@ -110,6 +123,12 @@ export function createGitHubActionsSecretEnclave(options: {
 	const store = options.store;
 	const now = options.now ?? (() => new Date());
 	const githubAppAdapter = options.githubAppAdapter ?? createGitHubAppAdapter({ store, config: options.config ?? {} });
+	const githubAppConfig = resolveGitHubAppConfig(options.config ?? {}, process.env);
+	const githubAppConfigured = Boolean(options.githubAppAdapter || (githubAppConfig.appId && githubAppConfig.privateKey));
+	const envValues: Record<string, string | undefined> = {
+		...process.env,
+		...(options.config ?? {}),
+	};
 
 	function githubClient(input: { token: string; installationId: string; repository: string }) {
 		return options.githubClientFactory?.(input) ?? new Octokit({ auth: input.token });
@@ -128,6 +147,95 @@ export function createGitHubActionsSecretEnclave(options: {
 				requireWorkday: input.requireWorkday === true,
 			},
 		});
+	}
+
+	async function resolveProjectRepositoryGrant(input: { teamId: string; projectId?: string | null; repository: string }) {
+		const teamId = String(input.teamId ?? '').trim();
+		const projectId = input.projectId == null ? null : String(input.projectId).trim();
+		const repository = normalizeRepository(input.repository);
+		if (!teamId || !projectId || !repository) {
+			throw failClosedError('github_installation_missing', 'Workflow dispatch requires a project-scoped GitHub App repository grant.');
+		}
+		const grants = await store.listGitHubRepositoryGrants({ teamId, projectId, status: 'active', limit: 500 });
+		const grant = grants.find((candidate: any) => normalizeRepository(candidate.repository) === repository);
+		if (!grant) {
+			throw failClosedError('github_repository_removed', 'Repository is not granted to this project GitHub App installation.');
+		}
+		const installationId = String(grant.installationId ?? '').trim();
+		if (!installationId) {
+			throw failClosedError('github_installation_missing', 'Project GitHub App repository grant is missing an installation id.');
+		}
+		return grant;
+	}
+
+	async function resolveProjectCredentialRef(input: { projectId?: string | null; repository: string }) {
+		const projectId = configuredString(input.projectId);
+		if (!projectId || typeof store.listHubRepositories !== 'function') return null;
+		const repository = normalizeRepository(input.repository);
+		const repositories = await store.listHubRepositories(projectId).catch(() => []);
+		const match = repositories.find((candidate: any) => normalizeRepository(`${candidate?.owner ?? ''}/${candidate?.name ?? ''}`) === repository);
+		return credentialRefEnvName(match?.metadata?.credentialRef);
+	}
+
+	async function resolveWorkflowDispatchAuthority(input: {
+		teamId: string;
+		projectId?: string | null;
+		repository: string;
+		operation: any;
+		ref: string;
+		protectedRefs: string[];
+	}) {
+		const repository = normalizeRepository(input.repository);
+		if (githubAppConfigured) {
+			const grant = await resolveProjectRepositoryGrant({
+				teamId: input.teamId,
+				projectId: input.projectId,
+				repository,
+			});
+			const authority = await mintToken({
+				teamId: input.teamId,
+				projectId: input.projectId ?? null,
+				repository,
+				installationId: grant.installationId,
+				accountId: grant.accountId,
+				operationId: input.operation.id,
+				ref: input.ref,
+				allowedRefs: input.protectedRefs,
+			}, { metadata: 'read', contents: 'read', actions: 'write' }, ['github-actions-workflow-dispatch']);
+			return {
+				kind: 'github_app',
+				token: authority.token,
+				installationId: String(grant.installationId ?? ''),
+				repositoryAuthority: 'github_app',
+			};
+		}
+
+		const explicitEnvName = credentialRefEnvName(input.operation?.credentialRef)
+			?? credentialRefEnvName(input.operation?.metadata?.credentialRef)
+			?? await resolveProjectCredentialRef({ projectId: input.projectId, repository });
+		if (explicitEnvName) {
+			const token = configuredString(envValues[explicitEnvName]);
+			if (!token) {
+				throw failClosedError('github_credential_missing', `GitHub credential reference ${explicitEnvName} is not configured.`);
+			}
+			return {
+				kind: 'environment_token',
+				token,
+				installationId: '',
+				repositoryAuthority: explicitEnvName,
+			};
+		}
+
+		const resolved = resolveGitHubCredentialForRepository(repository, { values: envValues });
+		if (!resolved.token) {
+			throw failClosedError('github_credential_missing', `GitHub credential is not configured for ${repository}. Configure ${resolved.envName} or TREESEED_GITHUB_TOKEN.`);
+		}
+		return {
+			kind: 'environment_token',
+			token: resolved.token,
+			installationId: '',
+			repositoryAuthority: resolved.source === 'repository' ? resolved.envName : 'TREESEED_GITHUB_TOKEN',
+		};
 	}
 
 	async function fetchPublicKey(input: any) {
@@ -287,13 +395,14 @@ export function createGitHubActionsSecretEnclave(options: {
 			inputs,
 			metadata: { environment },
 		});
-		const authority = await mintToken({
-			...input,
+		const authority = await resolveWorkflowDispatchAuthority({
+			teamId: input.teamId,
+			projectId: input.projectId ?? operation.projectId ?? null,
 			repository: operation.repository,
-			operationId: operation.id,
+			operation,
 			ref,
-			allowedRefs: protectedRefs,
-		}, { metadata: 'read', contents: 'read', actions: 'write' }, ['github-actions-workflow-dispatch']);
+			protectedRefs,
+		});
 		const unit = workflowDispatchUnit({
 			repository: operation.repository,
 			workflow: operation.workflowFile,
@@ -315,7 +424,7 @@ export function createGitHubActionsSecretEnclave(options: {
 			dispatchedAt: now().toISOString(),
 			completedAt: input.wait === true ? now().toISOString() : null,
 			failClosedCode: result?.ok === false ? 'workflow_dispatch_blocked' : null,
-			metadata: { environment, reconcileUnitId: unit.unitId },
+			metadata: { environment, reconcileUnitId: unit.unitId, repositoryAuthority: authority.repositoryAuthority },
 		});
 		return { dispatch: updated, reconcile: result };
 	}

@@ -70,6 +70,113 @@ function arrayValue(value) {
 	return Array.isArray(value) ? value : [];
 }
 
+const PROJECT_ARCHITECTURE_TOPOLOGIES = new Set(['single_repository_site', 'split_site_content', 'parent_workspace']);
+const CONTENT_RUNTIME_SOURCES = new Set(['local_directory', 'treedx_snapshot', 'r2_published_manifest', 'r2_preview_overlay']);
+const LOCAL_CONTENT_MATERIALIZATIONS = new Set(['none', 'existing_path', 'managed_clone', 'submodule']);
+const CONTENT_PUBLISH_TARGETS = new Set(['none', 'cloudflare_r2']);
+const LEGACY_PROJECT_TOPOLOGIES = new Set(['split_software_content', 'combined_compatibility']);
+
+function projectArchitectureError(message, code = 'invalid_project_architecture') {
+	const error = new Error(message);
+	error.code = code;
+	return error;
+}
+
+function normalizeProjectPath(value, fallback) {
+	const text = typeof value === 'string' ? value.trim() : '';
+	return text || fallback;
+}
+
+function normalizeProjectContentPublishTarget(value) {
+	if (value === undefined || value === null) return undefined;
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw projectArchitectureError('contentPublishTarget must be an object when provided.');
+	}
+	const kind = normalizeProjectPath(value.kind, '');
+	if (!CONTENT_PUBLISH_TARGETS.has(kind)) {
+		throw projectArchitectureError(`Unsupported content publish target: ${kind || String(value.kind)}.`);
+	}
+	const target = { kind };
+	if (typeof value.bucket === 'string' && value.bucket.trim()) target.bucket = value.bucket.trim();
+	if (typeof value.prefix === 'string' && value.prefix.trim()) target.prefix = value.prefix.trim();
+	if (typeof value.manifestPath === 'string' && value.manifestPath.trim()) target.manifestPath = value.manifestPath.trim();
+	if (value.metadata && typeof value.metadata === 'object' && !Array.isArray(value.metadata)) target.metadata = value.metadata;
+	return target;
+}
+
+function normalizeProjectArchitecture(input) {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw projectArchitectureError('Project architecture must be an object.');
+	}
+	if (
+		input.repositoryTopology !== undefined
+		|| input.contentRoot !== undefined
+		|| input.metadata?.repositoryTopology !== undefined
+		|| input.metadata?.contentRoot !== undefined
+		|| input.metadata?.sitePath !== undefined
+		|| input.metadata?.contentPath !== undefined
+	) {
+		throw projectArchitectureError('Project topology must be declared as canonical architecture, not legacy metadata.', 'legacy_project_topology_rejected');
+	}
+	if (containsTreeseedPlaintextSecretMaterial(input)) {
+		throw projectArchitectureError('Project architecture cannot contain plaintext credentials, tokens, or secret material.', 'project_architecture_secret_material_rejected');
+	}
+	const topology = normalizeProjectPath(input.topology, '');
+	if (LEGACY_PROJECT_TOPOLOGIES.has(topology)) {
+		throw projectArchitectureError(`Unsupported legacy project topology: ${topology}.`, 'legacy_project_topology_rejected');
+	}
+	if (!PROJECT_ARCHITECTURE_TOPOLOGIES.has(topology)) {
+		throw projectArchitectureError(`Unsupported project topology: ${topology || String(input.topology)}.`);
+	}
+	const contentRuntimeSource = normalizeProjectPath(input.contentRuntimeSource, '');
+	if (!CONTENT_RUNTIME_SOURCES.has(contentRuntimeSource)) {
+		throw projectArchitectureError(`Unsupported content runtime source: ${contentRuntimeSource || String(input.contentRuntimeSource)}.`);
+	}
+	const localContentMaterialization = normalizeProjectPath(input.localContentMaterialization, '');
+	if (!LOCAL_CONTENT_MATERIALIZATIONS.has(localContentMaterialization)) {
+		throw projectArchitectureError(`Unsupported local content materialization: ${localContentMaterialization || String(input.localContentMaterialization)}.`);
+	}
+	const sitePath = normalizeProjectPath(input.sitePath, '');
+	if (!sitePath) {
+		throw projectArchitectureError('Project architecture requires sitePath.');
+	}
+	const architecture = {
+		topology,
+		rootPath: normalizeProjectPath(input.rootPath, '.'),
+		sitePath,
+		contentPath: normalizeProjectPath(input.contentPath, ''),
+		contentRuntimeSource,
+		localContentMaterialization,
+	};
+	if (!architecture.contentPath) delete architecture.contentPath;
+	const contentPublishTarget = normalizeProjectContentPublishTarget(input.contentPublishTarget);
+	if (contentPublishTarget) architecture.contentPublishTarget = contentPublishTarget;
+	if (typeof input.requiresLocalContentForCi === 'boolean') architecture.requiresLocalContentForCi = input.requiresLocalContentForCi;
+	if (typeof input.requiresLocalContentForDeploy === 'boolean') architecture.requiresLocalContentForDeploy = input.requiresLocalContentForDeploy;
+	if (architecture.topology === 'split_site_content' && architecture.contentRuntimeSource === 'local_directory' && !architecture.contentPath) {
+		throw projectArchitectureError('split_site_content projects using local_directory content must declare contentPath.');
+	}
+	if (
+		!architecture.requiresLocalContentForCi
+		&& !architecture.requiresLocalContentForDeploy
+		&& architecture.contentRuntimeSource !== 'local_directory'
+		&& ['managed_clone', 'submodule'].includes(architecture.localContentMaterialization)
+	) {
+		throw projectArchitectureError('CI/deploy defaults must not require managed_clone or submodule content unless explicitly requested.');
+	}
+	if (architecture.contentPublishTarget?.kind === 'cloudflare_r2' && architecture.contentRuntimeSource === 'local_directory' && !architecture.contentPath) {
+		throw projectArchitectureError('Cloudflare R2 content publish targets need a contentPath when runtime source is local_directory.');
+	}
+	return architecture;
+}
+
+function projectArchitectureContentSource(architecture) {
+	if (!architecture) return null;
+	if (architecture.contentRuntimeSource === 'treedx_snapshot') return 'treedx';
+	if (architecture.contentRuntimeSource === 'r2_published_manifest' || architecture.contentRuntimeSource === 'r2_preview_overlay') return 'r2_published_artifacts';
+	return 'local_directory';
+}
+
 function stringValue(value, fallback = '') {
 	const next = typeof value === 'string' ? value.trim() : '';
 	return next || fallback;
@@ -2625,7 +2732,6 @@ function serializeProjectEnvironment(row) {
 		workerName: row.worker_name,
 		r2BucketName: row.r2_bucket_name,
 		d1DatabaseName: row.d1_database_name,
-		queueName: row.queue_name,
 		railwayProjectName: row.railway_project_name,
 		metadata: parseJson(row.metadata_json, {}),
 		createdAt: row.created_at,
@@ -5387,18 +5493,181 @@ export class MarketControlPlaneStore {
 	}
 
 	async getProjectRepositoryTopology(projectId) {
-		const binding = await this.getProjectTreeDxLibrary(projectId);
-		if (binding?.topology && Object.keys(binding.topology).length > 0) return binding.topology;
-		const project = await this.getProject(projectId);
-		if (!project) return null;
-		const instance = await this.getPrimaryTreeDxInstance(project.teamId);
-		if (!instance) return null;
-		const created = await this.upsertProjectTreeDxLibrary(projectId, {});
-		return created?.topology ?? null;
+		return this.getProjectArchitecture(projectId);
 	}
 
 	async upsertProjectRepositoryTopology(projectId, topology = {}) {
-		return this.upsertProjectTreeDxLibrary(projectId, { topology });
+		return this.upsertProjectArchitecture(projectId, topology);
+	}
+
+	async getProjectArchitecture(projectId) {
+		await this.ensureInitialized();
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		const architecture = project.metadata?.architecture;
+		if (architecture && typeof architecture === 'object' && !Array.isArray(architecture)) {
+			return normalizeProjectArchitecture(architecture);
+		}
+		return null;
+	}
+
+	async upsertProjectArchitecture(projectId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		const architecture = normalizeProjectArchitecture(input);
+		const nextMetadata = {
+			...(project.metadata ?? {}),
+			architecture,
+		};
+		await this.updateProject(projectId, { metadata: nextMetadata });
+		await this.projectArchitectureContentBindings(projectId, architecture).catch(() => null);
+		return architecture;
+	}
+
+	async importProjectRepositoryPlan(teamId, input = {}) {
+		await this.ensureInitialized();
+		if (!input || typeof input !== 'object' || Array.isArray(input)) {
+			throw projectArchitectureError('Project repository import requires a safe import plan.', 'invalid_project_import_plan');
+		}
+		if (containsTreeseedPlaintextSecretMaterial(input)) {
+			throw projectArchitectureError('Project repository import cannot contain plaintext credentials, tokens, or secret material.', 'project_import_secret_material_rejected');
+		}
+		if (
+			input.repositoryTopology !== undefined
+			|| input.contentRoot !== undefined
+			|| input.metadata?.repositoryTopology !== undefined
+			|| input.metadata?.contentRoot !== undefined
+		) {
+			throw projectArchitectureError('Project imports must use canonical architecture, not legacy topology metadata.', 'legacy_project_topology_rejected');
+		}
+		const repository = objectValue(input.repository, {});
+		const plannedRecords = objectValue(input.plannedRecords, {});
+		const plannedProject = objectValue(plannedRecords.project, {});
+		const plannedRepository = objectValue(plannedRecords.hubRepository, {});
+		const architecture = normalizeProjectArchitecture(input.architecture);
+		const owner = normalizeProjectPath(repository.owner ?? plannedRepository.owner, '');
+		const name = normalizeProjectPath(repository.name ?? plannedRepository.name, '');
+		if (!owner || !name) {
+			throw projectArchitectureError('Project repository import requires repository owner and name.', 'invalid_project_import_plan');
+		}
+		const slugResult = validateProjectSlug(plannedProject.slug ?? name);
+		if (!slugResult.ok) {
+			throw projectArchitectureError(slugResult.message, 'invalid_project_import_plan');
+		}
+		const visibility = normalizeProjectPath(repository.visibility ?? plannedProject.visibility, 'public') === 'private' ? 'private' : 'public';
+		const defaultBranch = normalizeProjectPath(repository.defaultBranch ?? plannedRepository.defaultBranch, 'main');
+		const url = normalizeProjectPath(repository.htmlUrl ?? plannedRepository.url, `https://github.com/${owner}/${name}`);
+		const cloneUrl = normalizeProjectPath(repository.cloneUrl, `${url}.git`);
+		const credentialRef = normalizeProjectPath(input.credentialRef ?? plannedRepository.credentialRef, '');
+		if (credentialRef && !credentialRef.startsWith('env:TREESEED_GITHUB_TOKEN')) {
+			throw projectArchitectureError('Project repository import credentialRef must be an env:TREESEED_GITHUB_TOKEN reference.', 'invalid_project_import_plan');
+		}
+		const existing = await this.getProjectByTeamAndSlug(teamId, slugResult.slug);
+		const metadata = {
+			...(existing?.metadata ?? {}),
+			architecture,
+			visibility,
+			import: {
+				provider: 'github',
+				importedAt: isoNow(),
+				repository: `${owner}/${name}`,
+				credentialRef: credentialRef || null,
+				source: 'project_repository_import',
+			},
+		};
+		const details = existing
+			? await this.updateProject(existing.id, {
+				name: normalizeProjectPath(plannedProject.name, existing.name),
+				description: existing.description,
+				metadata,
+			}).then(() => this.getProjectDetails(existing.id))
+			: await this.createProject(teamId, {
+				slug: slugResult.slug,
+				name: normalizeProjectPath(plannedProject.name, name),
+				description: input.description ?? null,
+				metadata,
+			});
+		const project = details?.project ?? details;
+		if (!project?.id) {
+			throw projectArchitectureError('Project repository import could not create or update the project.', 'invalid_project_import_plan');
+		}
+		const hubRepository = await this.upsertHubRepository(project.id, {
+			teamId,
+			role: 'software',
+			provider: 'github',
+			owner,
+			name,
+			url,
+			defaultBranch,
+			currentBranch: defaultBranch,
+			status: 'active',
+			metadata: {
+				credentialRef: credentialRef || null,
+				cloneUrl,
+				importedFromExistingRepository: true,
+				projectArchitecture: architecture,
+			},
+		});
+		const normalizedArchitecture = await this.upsertProjectArchitecture(project.id, architecture);
+		const treeDxLibrary = await this.upsertProjectTreeDxLibrary(project.id, {
+			libraryId: plannedRecords.treeDxLibrary?.libraryId ?? `${teamId}/${slugResult.slug}`,
+			contentPath: architecture.contentPath ?? null,
+			contentRepositoryUrl: url,
+			contentRepositoryDefaultBranch: defaultBranch,
+			contentRepositoryRef: defaultBranch,
+			r2BucketName: architecture.contentPublishTarget?.kind === 'cloudflare_r2' ? architecture.contentPublishTarget.bucket ?? null : null,
+			r2ManifestKey: architecture.contentPublishTarget?.kind === 'cloudflare_r2'
+				? architecture.contentPublishTarget.manifestPath ?? architecture.contentPublishTarget.prefix ?? null
+				: null,
+			metadata: {
+				projectArchitecture: architecture,
+				importedFromExistingRepository: true,
+			},
+		}).catch(() => null);
+		const contentSource = await this.getHubContentSource(project.id);
+		return {
+			project: (await this.getProjectDetails(project.id))?.project ?? project,
+			architecture: normalizedArchitecture,
+			hubRepository,
+			contentSource,
+			treeDxLibrary,
+			diagnostics: Array.isArray(input.diagnostics) ? input.diagnostics : [],
+			plannedRecords,
+		};
+	}
+
+	async projectArchitectureContentBindings(projectId, architecture) {
+		const project = await this.getProject(projectId);
+		if (!project || !architecture) return null;
+		const repositories = await this.listHubRepositories(projectId);
+		const contentRepository = repositories.find((entry) => entry.role === 'content') ?? null;
+		const publishTarget = architecture.contentPublishTarget ?? {};
+		await this.upsertHubContentSource(projectId, {
+			teamId: project.teamId,
+			contentRepositoryId: contentRepository?.id ?? null,
+			productionSource: projectArchitectureContentSource(architecture),
+			overlayPolicy: architecture.contentRuntimeSource,
+			r2BucketName: publishTarget.kind === 'cloudflare_r2' ? publishTarget.bucket ?? null : null,
+			r2ManifestKey: publishTarget.kind === 'cloudflare_r2' ? publishTarget.manifestPath ?? publishTarget.prefix ?? null : null,
+			metadata: {
+				projectArchitecture: architecture,
+				contentPath: architecture.contentPath ?? null,
+				localContentMaterialization: architecture.localContentMaterialization,
+			},
+		});
+		const binding = await this.getProjectTreeDxLibrary(projectId);
+		if (binding) {
+			await this.upsertProjectTreeDxLibrary(projectId, {
+				contentPath: architecture.contentPath ?? binding.contentPath ?? 'src/content',
+				r2BucketName: publishTarget.kind === 'cloudflare_r2' ? publishTarget.bucket ?? binding.r2BucketName ?? null : binding.r2BucketName ?? null,
+				r2ManifestKey: publishTarget.kind === 'cloudflare_r2' ? publishTarget.manifestPath ?? publishTarget.prefix ?? binding.r2ManifestKey ?? null : binding.r2ManifestKey ?? null,
+				metadata: {
+					projectArchitecture: architecture,
+				},
+			});
+		}
+		return this.getHubContentSource(projectId);
 	}
 
 	async getProjectAgentClassAllocation(projectId) {
@@ -5467,7 +5736,7 @@ export class MarketControlPlaneStore {
 						...(existing.metadata ?? {}),
 						contentCanonical: 'treedx',
 						publishSource: 'treedx_to_r2',
-						repositoryTopology: topology,
+						treeDxRepositoryBinding: topology,
 					}),
 					timestamp,
 					projectId,
@@ -5494,7 +5763,7 @@ export class MarketControlPlaneStore {
 					JSON.stringify({
 						contentCanonical: 'treedx',
 						publishSource: 'treedx_to_r2',
-						repositoryTopology: topology,
+						treeDxRepositoryBinding: topology,
 					}),
 					timestamp,
 					timestamp,
@@ -5562,7 +5831,7 @@ export class MarketControlPlaneStore {
 		for (const project of projects) {
 			const metadata = project.metadata ?? {};
 			const repositories = await this.listHubRepositories(project.id);
-			const topology = await this.getProjectRepositoryTopology(project.id).catch(() => null);
+			const architecture = await this.getProjectArchitecture(project.id).catch(() => null);
 			const canonicalRepository = repositories.find((entry) => ['software', 'primary', 'package'].includes(entry.role))
 				?? repositories[0]
 				?? null;
@@ -5586,7 +5855,7 @@ export class MarketControlPlaneStore {
 					submodulePath: canonicalRepository?.submodulePath ?? repository.submodulePath ?? metadata.submodulePath ?? null,
 					webUrl: canonicalRepository?.metadata?.webUrl ?? repository.webUrl ?? null,
 				},
-				...(topology ? { repositoryTopology: topology } : {}),
+				...(architecture ? { architecture } : {}),
 				agentSpecs: {
 					root: String(metadata.agentSpecs?.root ?? 'src/content/agents'),
 					testsRoot: String(metadata.agentSpecs?.testsRoot ?? 'src/content/agent-tests'),
@@ -9988,13 +10257,9 @@ export class MarketControlPlaneStore {
 			searchText: [input.name, input.description].filter(Boolean).join(' ').trim() || null,
 				metadata: input.metadata ?? {},
 			});
-		await this.upsertProjectTreeDxLibrary(id, {
-			contentPath: input.metadata?.contentRoot ?? 'src/content',
-			metadata: {
-				source: 'project_creation_default',
-				privateTeamTreeDxDefault: true,
-			},
-		}).catch(() => null);
+		if (input.metadata?.architecture) {
+			await this.projectArchitectureContentBindings(id, normalizeProjectArchitecture(input.metadata.architecture)).catch(() => null);
+		}
 		return this.getProjectDetails(id);
 	}
 
@@ -10041,6 +10306,9 @@ export class MarketControlPlaneStore {
 					...metadata,
 				},
 			});
+		}
+		if (metadata?.architecture) {
+			await this.projectArchitectureContentBindings(projectId, normalizeProjectArchitecture(metadata.architecture)).catch(() => null);
 		}
 		return this.getProject(projectId);
 	}
@@ -10454,32 +10722,31 @@ export class MarketControlPlaneStore {
 			[projectId, input.environment],
 		);
 		if (existing) {
-			await this.run(
-				`UPDATE project_environments
-				 SET deployment_profile = ?, base_url = ?, cloudflare_account_id = ?, pages_project_name = ?, worker_name = ?, r2_bucket_name = ?, d1_database_name = ?, queue_name = ?, railway_project_name = ?, metadata_json = ?, updated_at = ?
-				 WHERE project_id = ? AND environment = ?`,
-				[
-					input.deploymentProfile,
+				await this.run(
+					`UPDATE project_environments
+					 SET deployment_profile = ?, base_url = ?, cloudflare_account_id = ?, pages_project_name = ?, worker_name = ?, r2_bucket_name = ?, d1_database_name = ?, railway_project_name = ?, metadata_json = ?, updated_at = ?
+					 WHERE project_id = ? AND environment = ?`,
+					[
+						input.deploymentProfile,
 					input.baseUrl ?? null,
 					input.cloudflareAccountId ?? null,
 					input.pagesProjectName ?? null,
-					input.workerName ?? null,
-					input.r2BucketName ?? null,
-					input.d1DatabaseName ?? null,
-					input.queueName ?? null,
-					input.railwayProjectName ?? null,
-					JSON.stringify(input.metadata ?? parseJson(existing.metadata_json, {})),
+						input.workerName ?? null,
+						input.r2BucketName ?? null,
+						input.d1DatabaseName ?? null,
+						input.railwayProjectName ?? null,
+						JSON.stringify(input.metadata ?? parseJson(existing.metadata_json, {})),
 					timestamp,
 					projectId,
 					input.environment,
 				],
 			);
 		} else {
-			await this.run(
-				`INSERT INTO project_environments (
-					id, project_id, environment, deployment_profile, base_url, cloudflare_account_id, pages_project_name, worker_name, r2_bucket_name, d1_database_name, queue_name, railway_project_name, metadata_json, created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				[
+				await this.run(
+					`INSERT INTO project_environments (
+						id, project_id, environment, deployment_profile, base_url, cloudflare_account_id, pages_project_name, worker_name, r2_bucket_name, d1_database_name, railway_project_name, metadata_json, created_at, updated_at
+					) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					[
 					randomUUID(),
 					projectId,
 					input.environment,
@@ -10487,11 +10754,10 @@ export class MarketControlPlaneStore {
 					input.baseUrl ?? null,
 					input.cloudflareAccountId ?? null,
 					input.pagesProjectName ?? null,
-					input.workerName ?? null,
-					input.r2BucketName ?? null,
-					input.d1DatabaseName ?? null,
-					input.queueName ?? null,
-					input.railwayProjectName ?? null,
+						input.workerName ?? null,
+						input.r2BucketName ?? null,
+						input.d1DatabaseName ?? null,
+						input.railwayProjectName ?? null,
 					JSON.stringify(input.metadata ?? {}),
 					timestamp,
 					timestamp,
@@ -12005,7 +12271,7 @@ export class MarketControlPlaneStore {
 		if (!project) {
 			return null;
 		}
-		const [connection, capabilityGrants, entitlement, hosting, environments, resources, deployments, agentPools, repositories, contentSource, latestLaunch] = await Promise.all([
+		const [connection, capabilityGrants, entitlement, hosting, environments, resources, deployments, agentPools, repositories, contentSource, latestLaunch, architecture] = await Promise.all([
 			this.getProjectConnection(projectId),
 			this.listProjectCapabilities(projectId),
 			(async () => serializeEntitlement(await this.first(`SELECT * FROM entitlements WHERE project_id = ? LIMIT 1`, [projectId])))(),
@@ -12017,6 +12283,7 @@ export class MarketControlPlaneStore {
 			this.listHubRepositories(projectId),
 			this.getHubContentSource(projectId),
 			this.getLatestHubLaunchForHub(projectId),
+			this.getProjectArchitecture(projectId),
 		]);
 		const latestLaunchEvents = latestLaunch ? await this.listHubLaunchEvents(latestLaunch.id) : [];
 		return {
@@ -12031,6 +12298,7 @@ export class MarketControlPlaneStore {
 			agentPools,
 			repositories,
 			contentSource,
+			architecture,
 			latestLaunch,
 			latestLaunchEvents,
 		};

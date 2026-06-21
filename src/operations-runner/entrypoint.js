@@ -21,6 +21,7 @@ import {
 	runPlatformOperationOnce,
 	upsertRailwayVariables,
 } from '@treeseed/sdk';
+import { resolveApiDatabaseUrl } from '@treeseed/sdk/api';
 import {
 	createPlatformOperationStoreFromEnv,
 } from '@treeseed/sdk/platform-operation-store';
@@ -94,9 +95,10 @@ async function packageVersion() {
 
 async function loadConfig({ requireSecrets = true } = {}) {
 	const marketId = readArg('--market') ?? env('TREESEED_MANAGER_ID', 'local');
+	const apiDatabaseUrl = resolveApiDatabaseUrl(process.env, env('TREESEED_API_BASE_URL') ?? 'http://127.0.0.1:3000');
 	const config = {
 		marketUrl: env('TREESEED_API_BASE_URL') ?? env('TREESEED_URL'),
-		apiDatabaseUrl: env('TREESEED_DATABASE_URL'),
+		apiDatabaseUrl,
 		marketId,
 		runnerId: env('TREESEED_PLATFORM_RUNNER_ID', marketId === 'prod' ? 'treeseed-ops-prod-1' : marketId === 'staging' ? 'treeseed-ops-staging-1' : 'treeseed-ops-local-1'),
 		runnerSecret: env('TREESEED_PLATFORM_RUNNER_SECRET'),
@@ -607,6 +609,7 @@ export function createExecutorsForOptions(options = {}) {
 	return [
 		noop,
 		diagnostic,
+		repositoryExecutor('initialize_linked_repository'),
 		repositoryExecutor('write_content_record'),
 		repositoryExecutor('create_related_content'),
 		repositoryExecutor('create_decision_from_proposals'),

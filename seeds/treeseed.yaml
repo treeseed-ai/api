@@ -33,43 +33,267 @@ resources:
         gitUrl: https://github.com/knowledge-coop/market.git
         defaultBranch: main
         checkoutPath: .
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: .
+        contentPath: src/content
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: existing_path
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: market
       metadata:
         demoRole: market-control-plane
-        repositoryTopology:
-          contentRepository:
-            accessMode: treedx
-          siteRepository:
-            accessMode: filesystem
-          projectRepository:
-            accessMode: filesystem
+        visibility: private
 
-    - key: project:karyon/live-proof
+    - key: project:treeseed/api
       team: team:treeseed
-      slug: karyon
-      name: Karyon Live Proof
-      description: Live case-study knowledge project proving TreeSeed governance against the Karyon docs corpus.
-      kind: knowledge_hub
+      slug: api
+      name: TreeSeed API
+      description: TreeSeed API first-party package project.
+      kind: package
       repository:
         role: primary
         provider: github
-        owner: karyon-life
-        name: karyon
-        gitUrl: https://github.com/karyon-life/karyon.git
+        owner: treeseed-ai
+        name: api
+        gitUrl: https://github.com/treeseed-ai/api.git
         defaultBranch: main
-        checkoutPath: .treeseed/projects/karyon
-        submodulePath: docs
+        checkoutPath: packages/api
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: none
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/api
       metadata:
-        demoRole: live-proof-project
-        proofProject: true
-        contentRoot: docs
-        repositoryTopology:
-          contentRepository:
-            accessMode: treedx
-            sourcePath: docs
-          siteRepository:
-            accessMode: filesystem
-          projectRepository:
-            accessMode: filesystem
+        packageId: "@treeseed/api"
+        packagePath: packages/api
+        visibility: public
+        docsSiteReadiness: site_not_prepared
+        releaseOwnership: treeseed.package.yaml
+
+    - key: project:treeseed/treedx
+      team: team:treeseed
+      slug: treedx
+      name: TreeDX
+      description: TreeDX first-party package project.
+      kind: package
+      repository:
+        role: primary
+        provider: github
+        owner: treeseed-ai
+        name: treedx
+        gitUrl: https://github.com/treeseed-ai/treedx.git
+        defaultBranch: main
+        checkoutPath: packages/treedx
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: existing_path
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/treedx
+      metadata:
+        packageId: treedx
+        packagePath: packages/treedx
+        visibility: public
+        docsSiteReadiness: ready
+        releaseOwnership: treeseed.package.yaml
+
+    - key: project:treeseed/sdk
+      team: team:treeseed
+      slug: sdk
+      name: TreeSeed SDK
+      description: TreeSeed SDK first-party package project.
+      kind: package
+      repository:
+        role: primary
+        provider: github
+        owner: treeseed-ai
+        name: sdk
+        gitUrl: https://github.com/treeseed-ai/sdk.git
+        defaultBranch: main
+        checkoutPath: packages/sdk
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: existing_path
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/sdk
+      metadata:
+        packageId: "@treeseed/sdk"
+        packagePath: packages/sdk
+        visibility: public
+        docsSiteReadiness: ready
+        releaseOwnership: treeseed.package.yaml
+
+    - key: project:treeseed/ui
+      team: team:treeseed
+      slug: ui
+      name: TreeSeed UI
+      description: TreeSeed UI first-party package project.
+      kind: package
+      repository:
+        role: primary
+        provider: github
+        owner: treeseed-ai
+        name: ui
+        gitUrl: https://github.com/treeseed-ai/ui.git
+        defaultBranch: main
+        checkoutPath: packages/ui
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: none
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/ui
+      metadata:
+        packageId: "@treeseed/ui"
+        packagePath: packages/ui
+        visibility: public
+        docsSiteReadiness: site_not_prepared
+        releaseOwnership: treeseed.package.yaml
+
+    - key: project:treeseed/cli
+      team: team:treeseed
+      slug: cli
+      name: TreeSeed CLI
+      description: TreeSeed CLI first-party package project.
+      kind: package
+      repository:
+        role: primary
+        provider: github
+        owner: treeseed-ai
+        name: cli
+        gitUrl: https://github.com/treeseed-ai/cli.git
+        defaultBranch: main
+        checkoutPath: packages/cli
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: none
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/cli
+      metadata:
+        packageId: "@treeseed/cli"
+        packagePath: packages/cli
+        visibility: public
+        docsSiteReadiness: site_not_prepared
+        releaseOwnership: treeseed.package.yaml
+
+    - key: project:treeseed/core
+      team: team:treeseed
+      slug: core
+      name: TreeSeed Core
+      description: TreeSeed Core first-party package project.
+      kind: package
+      repository:
+        role: primary
+        provider: github
+        owner: treeseed-ai
+        name: core
+        gitUrl: https://github.com/treeseed-ai/core.git
+        defaultBranch: main
+        checkoutPath: packages/core
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: none
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/core
+      metadata:
+        packageId: "@treeseed/core"
+        packagePath: packages/core
+        visibility: public
+        docsSiteReadiness: site_not_prepared
+        releaseOwnership: treeseed.package.yaml
+
+    - key: project:treeseed/admin
+      team: team:treeseed
+      slug: admin
+      name: TreeSeed Admin
+      description: TreeSeed Admin first-party package project.
+      kind: package
+      repository:
+        role: primary
+        provider: github
+        owner: treeseed-ai
+        name: admin
+        gitUrl: https://github.com/treeseed-ai/admin.git
+        defaultBranch: main
+        checkoutPath: packages/admin
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: none
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/admin
+      metadata:
+        packageId: "@treeseed/admin"
+        packagePath: packages/admin
+        visibility: public
+        docsSiteReadiness: site_not_prepared
+        releaseOwnership: treeseed.package.yaml
+
+    - key: project:treeseed/agent
+      team: team:treeseed
+      slug: agent
+      name: TreeSeed Agent
+      description: TreeSeed Agent first-party package project.
+      kind: package
+      repository:
+        role: primary
+        provider: github
+        owner: treeseed-ai
+        name: agent
+        gitUrl: https://github.com/treeseed-ai/agent.git
+        defaultBranch: main
+        checkoutPath: packages/agent
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: docs
+        contentPath: docs
+        contentRuntimeSource: r2_published_manifest
+        localContentMaterialization: existing_path
+        contentPublishTarget:
+          kind: cloudflare_r2
+          prefix: packages/agent
+      metadata:
+        packageId: "@treeseed/agent"
+        packagePath: packages/agent
+        visibility: public
+        docsSiteReadiness: ready
+        releaseOwnership: treeseed.package.yaml
 
   capacityProviders:
     - key: capacity-provider:treeseed/local-dev
@@ -121,7 +345,94 @@ resources:
       project: project:treeseed/market
       environment: local
       grantScope: project
-      portfolioAllocationPercent: 100
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/api
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/api
+      environment: local
+      grantScope: project
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/treedx
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/treedx
+      environment: local
+      grantScope: project
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/sdk
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/sdk
+      environment: local
+      grantScope: project
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/ui
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/ui
+      environment: local
+      grantScope: project
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/cli
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/cli
+      environment: local
+      grantScope: project
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/core
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/core
+      environment: local
+      grantScope: project
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/admin
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/admin
+      environment: local
+      grantScope: project
+      reservePoolPercent: 10
+      maxDailyProjectCredits: 5000
+      priorityWeight: 1
+      overflowPolicy: soft_grant
+    - key: capacity-grant:treeseed/local/agent
+      environments: [local]
+      provider: capacity-provider:treeseed/local-dev
+      team: team:treeseed
+      project: project:treeseed/agent
+      environment: local
+      grantScope: project
       reservePoolPercent: 10
       maxDailyProjectCredits: 5000
       priorityWeight: 1
@@ -131,6 +442,110 @@ resources:
     - key: work-policy:treeseed/local/market
       environments: [local]
       project: project:treeseed/market
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/api
+      environments: [local]
+      project: project:treeseed/api
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/treedx
+      environments: [local]
+      project: project:treeseed/treedx
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/sdk
+      environments: [local]
+      project: project:treeseed/sdk
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/ui
+      environments: [local]
+      project: project:treeseed/ui
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/cli
+      environments: [local]
+      project: project:treeseed/cli
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/core
+      environments: [local]
+      project: project:treeseed/core
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/admin
+      environments: [local]
+      project: project:treeseed/admin
+      environment: local
+      enabled: true
+      startCron: "0 9 * * 1-5"
+      durationMinutes: 480
+      maxRunners: 1
+      maxWorkersPerRunner: 4
+      dailyCreditBudget: 5000
+      maxQueuedTasks: 100
+      maxQueuedCredits: 10000
+
+    - key: work-policy:treeseed/local/agent
+      environments: [local]
+      project: project:treeseed/agent
       environment: local
       enabled: true
       startCron: "0 9 * * 1-5"
@@ -168,38 +583,35 @@ resources:
       maxQueuedCredits: 5000
 
   repositoryHosts:
-    - key: repository-host:treeseed/market-github
+    - key: repository-host:treeseed/knowledge-coop-github
       team: team:treeseed
       provider: github
       name: knowledge-coop
       ownership: treeseed_managed
       accountLabel: Knowledge Coop GitHub organization
       organizationOrOwner: knowledge-coop
+      defaultVisibility: private
+      softwareRepositoryNameTemplate: "{project}"
+      contentRepositoryNameTemplate: "{project}-content"
+      allowedProjectKinds: [market_app, package, knowledge_hub]
+      status: active
+      credentialRef: env:TREESEED_GITHUB_TOKEN
+
+    - key: repository-host:treeseed/treeseed-ai-github
+      team: team:treeseed
+      provider: github
+      name: treeseed-ai
+      ownership: treeseed_managed
+      accountLabel: TreeSeed AI GitHub organization
+      organizationOrOwner: treeseed-ai
       defaultVisibility: public
       softwareRepositoryNameTemplate: "{project}"
       contentRepositoryNameTemplate: "{project}-content"
       allowedProjectKinds: [market_app, package, knowledge_hub]
       status: active
+      credentialRef: env:TREESEED_GITHUB_TOKEN
 
-  hubRepositories:
-    - key: hub-repository:karyon/content-docs
-      project: project:karyon/live-proof
-      role: content
-      provider: github
-      owner: karyon-life
-      name: karyon
-      gitUrl: https://github.com/karyon-life/karyon.git
-      defaultBranch: main
-      submodulePath: docs
-      status: active
-      accessPolicy:
-        contentAccessMode: treedx
-        sourcePath: docs
-      publishPolicy:
-        publishSource: treedx_to_r2
-      metadata:
-        contentCanonical: treedx
-        demoRole: karyon-docs-content
+  hubRepositories: []
 
   products:
     - key: product:treeseed/market-template
@@ -322,3 +734,168 @@ resources:
         gitUrl: https://github.com/treeseed-templates/information-hub.git
 
   agentPools: []
+
+operationRecipes:
+  - id: full-private-team-demo
+    title: Full private team demo
+    environments: [local]
+    entrypoints:
+      - homepage-story
+    steps:
+      - id: homepage-story
+        title: Show marketplace-first homepage
+        actor: visitor
+        channel: ui
+        operation: navigate
+        target: /
+        assertions:
+          - text: Direction, Capacity, Situation, Results, Memory
+          - text: TreeSeed first-party projects
+        artifacts:
+          - screenshot: homepage-marketplace.png
+
+      - id: apply-scaffold
+        title: Reconcile canonical seed scaffold
+        actor: operator
+        channel: cli
+        operation: seed.apply
+        uses:
+          - team:treeseed
+          - project:treeseed/market
+          - project:treeseed/api
+          - project:treeseed/treedx
+          - project:treeseed/sdk
+          - project:treeseed/ui
+          - project:treeseed/cli
+          - project:treeseed/core
+          - project:treeseed/admin
+          - project:treeseed/agent
+          - capacity-provider:treeseed/local-dev
+        command:
+          argv: ["trsd", "seed", "treeseed", "--environments", "local", "--apply", "--json"]
+
+      - id: verify-private-treedx
+        title: Verify TreeDX and project architecture trust
+        actor: team-admin
+        channel: ui
+        operation: verify.treedx
+        dependsOn: [apply-scaffold]
+        uses:
+          - team:treeseed
+          - project:treeseed/treedx
+        target: /app/hosts/knowledge-library
+        assertions:
+          - text: TreeDX is the canonical data plane
+          - text: mirrors and shares
+        artifacts:
+          - screenshot: private-treedx.png
+
+      - id: verify-template-projects
+        title: Verify Engineering and Research starter sources
+        actor: team-admin
+        channel: ui
+        operation: project.create
+        dependsOn: [verify-private-treedx]
+        uses:
+          - product:treeseed/engineering-template
+          - product:treeseed/research-template
+        target: /app/projects/new
+        assertions:
+          - text: Engineering
+          - text: Research
+        artifacts:
+          - screenshot: starter-projects.png
+
+      - id: create-capacity-provider
+        title: Create local Codex capacity provider
+        actor: team-admin
+        channel: ui
+        operation: capacity-provider.create
+        dependsOn: [verify-template-projects]
+        uses:
+          - capacity-provider:treeseed/local-dev
+        target: /app/capacity/providers/new
+        assertions:
+          - field: dailyUsageCapPercent
+            equals: 30
+          - textAbsent: credits
+        artifacts:
+          - screenshot: capacity-provider-before-submit.png
+
+      - id: launch-provider-runtime
+        title: Launch provider runtime from generated env
+        actor: operator
+        channel: cli
+        operation: capacity.up
+        dependsOn: [create-capacity-provider]
+        uses:
+          - capacity-provider:treeseed/local-dev
+        command:
+          argv: ["trsd", "capacity", "up", "--market", "local", "--provider", "local", "--json"]
+
+      - id: verify-provider-registration
+        title: Verify provider registration health
+        actor: team-admin
+        channel: ui
+        operation: capacity.status
+        dependsOn: [launch-provider-runtime]
+        uses:
+          - capacity-provider:treeseed/local-dev
+        target: /app/capacity
+        assertions:
+          - text: registered
+          - text: healthy
+        artifacts:
+          - screenshot: capacity-provider-registered.png
+
+      - id: allocate-portfolio
+        title: Allocate provider capacity across projects
+        actor: team-admin
+        channel: ui
+        operation: capacity.allocate.portfolio
+        dependsOn: [verify-provider-registration]
+        uses:
+          - project:treeseed/market
+          - project:treeseed/api
+          - project:treeseed/treedx
+          - project:treeseed/sdk
+          - project:treeseed/ui
+          - project:treeseed/cli
+          - project:treeseed/core
+          - project:treeseed/admin
+          - project:treeseed/agent
+        target: /app/capacity/allocation
+        assertions:
+          - text: Project portfolio allocation
+          - text: 30% daily native usage
+        artifacts:
+          - screenshot: capacity-allocation-portfolio.png
+
+      - id: allocate-agent-classes
+        title: Allocate project capacity across agent classes
+        actor: team-admin
+        channel: ui
+        operation: capacity.allocate.project
+        dependsOn: [allocate-portfolio]
+        uses:
+          - project:treeseed/market
+        target: /app/capacity/allocation
+        assertions:
+          - text: agent classes
+          - text: Back to portfolio
+        artifacts:
+          - screenshot: capacity-allocation-agent-classes.png
+
+      - id: review-work-and-memory
+        title: Review work, decisions, artifacts, and publishable memory
+        actor: reviewer
+        channel: ui
+        operation: knowledge.inspect-artifacts
+        dependsOn: [allocate-agent-classes]
+        uses:
+          - project:treeseed/market
+        target: /app/knowledge/artifacts
+        assertions:
+          - text: Artifacts
+        artifacts:
+          - screenshot: knowledge-artifacts.png

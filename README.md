@@ -35,7 +35,7 @@ operationsRunner
   volumeMountPath: /data
 ```
 
-Treeseed PostgreSQL targets both services with `TREESEED_DATABASE_URL`.
+Treeseed PostgreSQL targets both services with `TREESEED_DATABASE_URL`. Local development derives the value from the managed local API Postgres settings; hosted environments receive the reconciled PostgreSQL URL as a service secret.
 
 ## Install And Verify
 

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolveApiDatabaseUrl } from '@treeseed/sdk/api';
 import { loadAndPlanSeed } from '@treeseed/sdk/seeds';
 import YAML from 'yaml';
 import { createMarketPostgresDatabase } from '../../api/market-postgres.js';
@@ -133,14 +134,24 @@ function normalizeExecutionProviders(executionProviders, desiredProviders = []) 
 }
 
 export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
-	return env;
+	const localEnv = {
+		...env,
+		TREESEED_ENVIRONMENT: env.TREESEED_ENVIRONMENT ?? 'local',
+		TREESEED_API_ENVIRONMENT: env.TREESEED_API_ENVIRONMENT ?? 'local',
+		TREESEED_LOCAL_DEV_MODE: env.TREESEED_LOCAL_DEV_MODE ?? 'local',
+	};
+	const apiDatabaseUrl = resolveApiDatabaseUrl(localEnv, localEnv.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000');
+	if (apiDatabaseUrl && !localEnv.TREESEED_DATABASE_URL) {
+		localEnv.TREESEED_DATABASE_URL = apiDatabaseUrl;
+	}
+	return localEnv;
 }
 
 async function createLocalSeedStore(projectRoot, env = process.env) {
 	const localEnv = resolveLocalSeedEnv(projectRoot, env);
 	const apiDatabaseUrl = localEnv.TREESEED_DATABASE_URL?.trim();
 	if (!apiDatabaseUrl) {
-		throw new Error('TREESEED_DATABASE_URL is required to apply Treeseed seeds through the PostgreSQL control-plane database.');
+		throw new Error('TREESEED_DATABASE_URL could not be resolved for local Treeseed seed apply.');
 	}
 	const db = createMarketPostgresDatabase(apiDatabaseUrl);
 	return new MarketControlPlaneStore({
@@ -314,6 +325,7 @@ async function projectCurrentPayload(store, action, project) {
 				webUrl: repository.webUrl,
 			}
 			: null,
+		architecture: project.metadata?.architecture,
 		metadata: action.payload.metadata,
 	};
 }
@@ -677,6 +689,7 @@ async function applyAction({ action, store, ids, manifestHash, appliedAt, plan }
 			metadata,
 			kind: action.payload.kind,
 			repository: action.payload.repository,
+			architecture: action.payload.architecture,
 		};
 		const project = action.existing
 			? await store.updateProject(action.existing.id, {
@@ -1351,6 +1364,7 @@ export async function exportSeedWithStore(input) {
 				defaultBranch: repository.defaultBranch ?? undefined,
 				submodulePath: repository.submodulePath ?? undefined,
 			},
+			architecture: project.metadata?.architecture,
 		};
 		if (metadata) resource.metadata = metadata;
 		manifest.resources.projects.push(resource);

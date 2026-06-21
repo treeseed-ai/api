@@ -132,6 +132,10 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 		return deployment;
 	}
 
+	async function loadProjectArchitecture(projectId) {
+		return await deploymentStore?.getProjectArchitecture?.(projectId).catch(() => null) ?? null;
+	}
+
 	async function append(deployment, kind, input = {}) {
 		await deploymentStore.appendProjectDeploymentEvent(deployment.id, {
 			kind,
@@ -273,6 +277,14 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 		if (!binding?.libraryId && !binding?.repositoryId) {
 			throw new Error('Project TreeDX library binding is required before TreeDX content can publish.');
 		}
+		const architecture = await loadProjectArchitecture(deployment.projectId);
+		const publishTarget = objectValue(architecture?.contentPublishTarget);
+		const r2ManifestKey = stringValue(
+			publishTarget.manifestPath
+			?? publishTarget.manifestKey
+			?? binding.r2ManifestKey,
+		);
+		const r2BucketName = stringValue(publishTarget.bucket ?? binding.r2BucketName);
 		await deploymentStore.updateProjectDeployment(deployment.id, { status: 'running' });
 		deployment = await loadDeployment(deployment.id);
 		await emit(deployment, context, 'deployment.treedx_publish.running', {
@@ -293,9 +305,12 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			r2: {
 				status: effectiveDryRun || mockExternal ? 'dry_run' : 'planned',
 				withoutGitHubActions: true,
+				bucket: r2BucketName || null,
+				manifestKey: r2ManifestKey || null,
 			},
 			repository: preflight.repository,
 		};
+		artifact.r2.revision = artifact.snapshotId;
 		await checkpoint(deployment, context, 'treedx_content_exported', { artifact }, {
 			kind: 'deployment.treedx_publish.exported',
 			message: 'TreeDX content snapshot prepared for R2 publishing.',
@@ -323,12 +338,14 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			message: 'Deployment monitor checks started.',
 			status: 'monitoring',
 		});
+		const architecture = await loadProjectArchitecture(deployment.projectId);
+		const monitorTarget = architecture ? { ...(target ?? {}), architecture } : target;
 		const monitor = await buildProjectWebMonitorResult({
 			environment: deployment.environment,
 			action: deployment.action,
 			repository: preflight.repository,
 			workflowFile: preflight.workflowFile,
-			target,
+			target: monitorTarget,
 			externalWorkflow: deployment.externalWorkflow,
 			workflowResult,
 			githubClient: mockExternal ? null : githubClient,

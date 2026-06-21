@@ -2263,18 +2263,6 @@ function cloudflareProjectDeletionResourceNames(project, details) {
 				.map((resource) => resource.metadata?.databaseName ?? resource.locator)
 				.filter(Boolean),
 		].filter(Boolean))],
-		queues: [...new Set([
-			staging?.queueName,
-			prod?.queueName,
-			metadata.cloudflare?.staging?.queue?.name,
-			metadata.cloudflare?.staging?.queue?.dlqName,
-			metadata.cloudflare?.prod?.queue?.name,
-			metadata.cloudflare?.prod?.queue?.dlqName,
-			...resources
-				.filter((resource) => resource.provider === 'cloudflare' && ['queue', 'dlq'].includes(resource.resourceKind))
-				.map((resource) => resource.metadata?.name ?? resource.metadata?.dlqName ?? resource.locator)
-				.filter(Boolean),
-		].filter(Boolean))],
 	};
 }
 
@@ -3490,7 +3478,29 @@ function mergeCapability(baseCapability, override) {
 	};
 }
 
-function launchCapabilityPreset(repositoryTopology = 'split_software_content') {
+function canonicalArchitectureTopology(value) {
+	if (value === 'combined_compatibility') return 'single_repository_site';
+	if (value === 'split_software_content') return 'split_site_content';
+	if (['single_repository_site', 'split_site_content', 'parent_workspace'].includes(value)) return value;
+	return 'split_site_content';
+}
+
+function launchPlannerRepositoryTopology(value) {
+	if (value === undefined || value === null || value === '') return 'split_software_content';
+	if (value === 'single_repository_site' || value === 'parent_workspace') return 'combined_compatibility';
+	if (value === 'split_site_content') return 'split_software_content';
+	if (value === 'combined_compatibility' || value === 'split_software_content') {
+		const error = new Error('Project launch repository topology must use canonical project architecture values.');
+		error.code = 'legacy_project_topology_rejected';
+		throw error;
+	}
+	const error = new Error(`Unsupported project architecture topology: ${String(value)}.`);
+	error.code = 'invalid_project_architecture';
+	throw error;
+}
+
+function launchCapabilityPreset(projectTopology = 'split_site_content') {
+	const architectureTopology = canonicalArchitectureTopology(projectTopology);
 	const approvalDefaults = {
 		'repository.create': {
 			requiresApproval: true,
@@ -3524,7 +3534,7 @@ function launchCapabilityPreset(repositoryTopology = 'split_software_content') {
 		},
 	};
 	const resourceScope = (namespace, operation) => ({
-		repositoryTopology,
+		architectureTopology,
 		repositories: {
 			software: ['workflow', 'repository'].includes(namespace) || operation.includes('release') || operation.includes('deploy'),
 			content: namespace === 'content' || operation.includes('publish'),
@@ -3548,7 +3558,7 @@ function launchCapabilityPreset(repositoryTopology = 'split_software_content') {
 		},
 		resourceScope: resourceScope(namespace, operation),
 		metadata: {
-			repositoryTopology,
+			architectureTopology,
 		},
 	});
 	const inline = (namespace, operation) => ({
@@ -3561,7 +3571,7 @@ function launchCapabilityPreset(repositoryTopology = 'split_software_content') {
 		enabled: true,
 		approvalPolicy: { requiresApproval: false, allowedRoles: ['team_member'], reason: 'Read or draft-only project SDK operation.' },
 		resourceScope: resourceScope(namespace, operation),
-		metadata: { repositoryTopology },
+		metadata: { architectureTopology },
 	});
 	return [
 		remoteJob('workflow', 'launch_project'),
@@ -3641,27 +3651,7 @@ function resourceRowsFromLaunch(projectId, launch) {
 				locator: summary.siteDataDb?.databaseId ?? summary.siteDataDb?.databaseName ?? null,
 				metadata: summary.siteDataDb ?? {},
 			},
-			{
-				projectId,
-				environment,
-				provider: 'cloudflare',
-				resourceKind: 'queue',
-				logicalName: 'agent_work',
-				locator: summary.queue?.queueId ?? summary.queue?.name ?? null,
-				metadata: summary.queue ?? {},
-			},
 		);
-		if (summary.queue?.dlqName || summary.queue?.dlqId) {
-			rows.push({
-				projectId,
-				environment,
-				provider: 'cloudflare',
-				resourceKind: 'dlq',
-				logicalName: 'agent_work_dlq',
-				locator: summary.queue?.dlqId ?? summary.queue?.dlqName ?? null,
-				metadata: summary.queue ?? {},
-			});
-		}
 	}
 	for (const service of launch.railway?.services ?? []) {
 		rows.push({
@@ -4701,7 +4691,7 @@ export async function applyHubLaunchResult(store, runtime, job, output, principa
 			status: repository.url ? 'active' : 'queued',
 			...hubRepositoryPolicies(repository.role),
 			metadata: {
-				topology: launchResult.plan?.repository?.topology ?? null,
+				architectureTopology: canonicalArchitectureTopology(launchResult.plan?.repository?.topology),
 				create: repository.create === true,
 			},
 		});
@@ -4723,7 +4713,15 @@ export async function applyHubLaunchResult(store, runtime, job, output, principa
 		launchJobId: job.id,
 		launchPhase: 'completed',
 		lastSuccessfulPhase: 'runtime_connection',
-		repositoryTopology: launchResult.plan?.repository?.topology ?? 'split_software_content',
+		architecture: {
+			...(project.metadata?.architecture ?? {}),
+			topology: canonicalArchitectureTopology(launchResult.plan?.repository?.topology),
+			rootPath: project.metadata?.architecture?.rootPath ?? '.',
+			sitePath: project.metadata?.architecture?.sitePath ?? '.',
+			contentPath: project.metadata?.architecture?.contentPath ?? 'src/content',
+			contentRuntimeSource: project.metadata?.architecture?.contentRuntimeSource ?? 'r2_published_manifest',
+			localContentMaterialization: project.metadata?.architecture?.localContentMaterialization ?? 'none',
+		},
 		repositories: launchResult.repositories ?? [],
 		repository: launchResult.repository,
 		contentRepository: launchResult.contentRepository ?? null,
@@ -4808,7 +4806,6 @@ export async function applyHubLaunchResult(store, runtime, job, output, principa
 			workerName: summary?.workerName ?? null,
 			r2BucketName: summary?.content?.bucketName ?? null,
 			d1DatabaseName: summary?.siteDataDb?.databaseName ?? null,
-			queueName: summary?.queue?.name ?? null,
 			railwayProjectName: environment === 'prod' ? railwayApiService?.projectName ?? null : null,
 			metadata: {
 				launchPhase: 'completed',
@@ -5323,6 +5320,18 @@ export function createApiApp(options = {}) {
 					[team.id, owner?.userId],
 				).catch(() => null);
 				const projectSlug = `${namespace}-project`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 48).replace(/^-+|-+$/gu, '') || 'acceptance-project';
+				const acceptanceProjectArchitecture = {
+					topology: 'single_repository_site',
+					rootPath: '.',
+					sitePath: '.',
+					contentPath: 'src/content',
+					contentRuntimeSource: 'treedx_snapshot',
+					localContentMaterialization: 'none',
+					contentPublishTarget: {
+						kind: 'cloudflare_r2',
+						prefix: `${projectSlug}/content`,
+					},
+				};
 				project = await store.first(`SELECT * FROM projects WHERE team_id = ? AND slug = ? LIMIT 1`, [team.id, projectSlug]).catch(() => null);
 					if (!project) {
 						const details = await store.createProject(team.id, {
@@ -5330,7 +5339,7 @@ export function createApiApp(options = {}) {
 							slug: projectSlug,
 							name: `Acceptance ${namespace}`,
 						description: 'Reserved live acceptance fixture.',
-						metadata: { acceptance: true, namespace },
+						metadata: { acceptance: true, namespace, architecture: acceptanceProjectArchitecture },
 					});
 						project = details.project ?? details;
 					}
@@ -5437,6 +5446,7 @@ export function createApiApp(options = {}) {
 						...(project.metadata ?? {}),
 						acceptance: true,
 						namespace,
+						architecture: acceptanceProjectArchitecture,
 						sourceKind: 'template',
 						sourceRef: 'research',
 						hostBindings: acceptanceHostBindingResolution.hostBindings,
@@ -7135,7 +7145,7 @@ export function createApiApp(options = {}) {
 				return c.json({ ok: true, payload: { ...payload, deployments, team } });
 			});
 
-			app.post('/v1/internal/treedx/credentials/github-app', async (c) => {
+			const issueTreeDxGitHubCredential = async (c) => {
 				const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
 				if (service.response) return service.response;
 				const body = await c.req.json().catch(() => ({}));
@@ -7150,7 +7160,8 @@ export function createApiApp(options = {}) {
 				} catch (error) {
 					return jsonThrownError(c, error, 403);
 				}
-			});
+			};
+			app.post('/v1/internal/treedx/credentials/github', issueTreeDxGitHubCredential);
 
 			app.get('/v1/teams/:teamId/treedx/mirrors', async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
@@ -8317,199 +8328,6 @@ export function createApiApp(options = {}) {
 				});
 			});
 
-			app.post('/v1/projects/:projectId/agent-tasks', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
-				if (access.response) return access.response;
-				const body = await c.req.json().catch(() => ({}));
-				const environment = typeof body.environment === 'string' ? body.environment : 'staging';
-				const { signature, definition } = resolveAgentTaskSignature(body.taskSignature ?? body.taskKind);
-				if (definition.bindingWork && typeof body.decisionId !== 'string') {
-					return jsonError(c, 403, 'Binding agent work requires an approved decision.');
-				}
-				if (environment === 'prod' && !definition.productionAllowed) {
-					return jsonError(c, 403, 'This agent task is not approved for production execution.');
-				}
-				const estimate = reserveCreditsForEstimate({
-					taskSignature: signature,
-					taskKind: signature,
-					confidence: typeof body.confidence === 'string' ? body.confidence : 'medium',
-					estimatedCreditsP50: Number.isFinite(Number(body.estimatedCreditsP50)) ? Number(body.estimatedCreditsP50) : null,
-					estimatedCreditsP90: Number.isFinite(Number(body.estimatedCreditsP90)) ? Number(body.estimatedCreditsP90) : null,
-					defaultCredits: definition.defaultCredits,
-				});
-				const plan = await store.getProjectCapacityPlan(c.req.param('projectId'), environment);
-				if (!plan) return jsonError(c, 404, 'Unknown project.');
-				const route = routeAndReserveCapacity({
-					plan,
-					estimate,
-					taskKind: signature,
-					requiredCapabilities: definition.requiredCapabilities,
-					repositoryMutation: definition.repositoryMutation === true,
-					production: environment === 'prod',
-					priorityClass: typeof body.priorityClass === 'string' ? body.priorityClass : definition.priorityClass,
-					executionProfiles: Array.isArray(body.executionProfiles)
-						? body.executionProfiles.filter((entry) => typeof entry === 'string')
-						: typeof body.executionProfileId === 'string'
-							? [body.executionProfileId]
-							: undefined,
-					estimateProfiles: plan.estimateProfiles,
-					minimumQualityWeight: Number.isFinite(Number(body.minimumQualityWeight)) ? Number(body.minimumQualityWeight) : null,
-					requiredContextTokens: Number.isFinite(Number(body.requiredContextTokens)) ? Number(body.requiredContextTokens) : null,
-					estimatedContextTokens: Number.isFinite(Number(body.estimatedContextTokens ?? body.contextTokens)) ? Number(body.estimatedContextTokens ?? body.contextTokens) : null,
-					attentionWeight: Number.isFinite(Number(body.attentionWeight)) ? Number(body.attentionWeight) : null,
-					coordinationWeight: Number.isFinite(Number(body.coordinationWeight)) ? Number(body.coordinationWeight) : null,
-					minimumAttentionAvailable: Number.isFinite(Number(body.minimumAttentionAvailable)) ? Number(body.minimumAttentionAvailable) : null,
-					attentionPolicy: {
-						maxAttentionLoad: Number.isFinite(Number(body.maxAttentionLoad)) ? Number(body.maxAttentionLoad) : null,
-						reserveAttentionPercent: Number.isFinite(Number(body.reserveAttentionPercent)) ? Number(body.reserveAttentionPercent) : null,
-						maxContextTokens: Number.isFinite(Number(body.maxContextTokens)) ? Number(body.maxContextTokens) : null,
-						maxContextSaturationPercent: Number.isFinite(Number(body.maxContextSaturationPercent)) ? Number(body.maxContextSaturationPercent) : null,
-						coordinationOverheadFactor: Number.isFinite(Number(body.coordinationOverheadFactor)) ? Number(body.coordinationOverheadFactor) : null,
-					},
-					utilityValue: Number.isFinite(Number(body.utilityValue)) ? Number(body.utilityValue) : null,
-					maintenanceValue: Number.isFinite(Number(body.maintenanceValue)) ? Number(body.maintenanceValue) : null,
-					deadlineAt: typeof body.deadlineAt === 'string' ? body.deadlineAt : null,
-					successProbability: Number.isFinite(Number(body.successProbability)) ? Number(body.successProbability) : null,
-					trustRequirement: Number.isFinite(Number(body.trustRequirement)) ? Number(body.trustRequirement) : null,
-					cooperativeRouting: body.cooperativeRouting === true,
-					predictiveReservePolicy: body.predictiveReservePolicy && typeof body.predictiveReservePolicy === 'object'
-						? body.predictiveReservePolicy
-						: null,
-					hybridExecutionPlan: body.hybridExecutionPlan && typeof body.hybridExecutionPlan === 'object'
-						? body.hybridExecutionPlan
-						: null,
-					preferredExecutionProfiles: Array.isArray(body.preferredExecutionProfiles)
-						? body.preferredExecutionProfiles.filter((entry) => typeof entry === 'string')
-						: undefined,
-					disallowedExecutionProfiles: Array.isArray(body.disallowedExecutionProfiles)
-						? body.disallowedExecutionProfiles.filter((entry) => typeof entry === 'string')
-						: undefined,
-					source: 'market_agent_task',
-					metadata: {
-						requestedByType: c.get('actorType') === 'service' ? 'service' : 'user',
-						requestedById: typeof access.principal.id === 'string' ? access.principal.id : null,
-						cooperativeRouting: body.cooperativeRouting === true,
-						hybridExecutionPlan: body.hybridExecutionPlan && typeof body.hybridExecutionPlan === 'object'
-							? body.hybridExecutionPlan
-							: null,
-					},
-				});
-				if (!route.ok) {
-					await store.upsertTeamInboxItem(access.details.project.teamId, {
-						id: `capacity-blocked:${access.details.project.id}:${Date.now()}`,
-						projectId: access.details.project.id,
-						kind: route.code === 'approval_required' ? 'approval_required' : 'budget_blocked',
-						state: route.code === 'approval_required' ? 'waiting_for_approval' : 'open',
-						title: route.code === 'approval_required' ? 'Helper task needs approval' : 'Helper task is waiting for budget',
-						summary: route.reason,
-						href: await projectAppHref(store, access.details.project.teamId, access.details.project.slug, 'agents'),
-						itemKey: `capacity-blocked:${signature}:${Date.now()}`,
-						metadata: {
-							code: route.code,
-							taskSignature: signature,
-							candidates: route.candidates,
-						},
-					});
-					return c.json({ ok: false, error: route.reason, code: route.code, payload: route }, { status: 409 });
-				}
-				const reservationId = randomUUID();
-				const routingDecisionId = randomUUID();
-				const taskEstimate = await store.createTaskEstimate({
-					projectId: access.details.project.id,
-					estimatePhase: 'pre_enqueue',
-					taskSignature: signature,
-					executionProfileId: route.estimate.executionProfileId,
-					confidence: route.estimate.confidence,
-					estimatedCreditsP50: route.estimate.estimatedCreditsP50,
-					estimatedCreditsP90: route.estimate.estimatedCreditsP90,
-					reservedCredits: route.estimate.reservedCredits,
-					features: body.features && typeof body.features === 'object' ? body.features : {},
-				});
-				const reservation = await store.createCapacityReservation({
-					...route.reservation,
-					id: reservationId,
-					metadata: {
-						...(route.reservation.metadata ?? {}),
-						estimateId: taskEstimate.id,
-						grantId: route.grant.id,
-						routingDecisionId,
-					},
-				});
-				await store.createCapacityRoutingDecision({
-					...route.routingDecision,
-					id: routingDecisionId,
-					metadata: {
-						...(route.routingDecision.metadata ?? {}),
-						estimateId: taskEstimate.id,
-						reservationId: reservation.id,
-					},
-				});
-				await store.recordCapacityUsage({
-					...route.ledgerEntry,
-					reservationId: reservation.id,
-					metadata: {
-						...(route.ledgerEntry.metadata ?? {}),
-						estimateId: taskEstimate.id,
-						routingDecisionId,
-					},
-				});
-				const capacityMetadata = {
-					...route.capacityMetadata,
-					reservationId: reservation.id,
-					routingDecisionId,
-				};
-				const job = await store.createJob({
-					projectId: access.details.project.id,
-					namespace: 'agent',
-					operation: signature,
-					status: 'pending',
-					preferredMode: 'auto',
-					selectedTarget: 'project_runner',
-					requestedByType: c.get('actorType') === 'service' ? 'service' : 'user',
-					requestedById: typeof access.principal.id === 'string' ? access.principal.id : null,
-					idempotencyKey: typeof body.idempotencyKey === 'string' ? body.idempotencyKey : null,
-					input: {
-						...(body.input && typeof body.input === 'object' ? body.input : {}),
-						taskSignature: signature,
-						environment,
-						capacity: capacityMetadata,
-						governance: {
-							teamId: access.details.project.teamId,
-							projectId: access.details.project.id,
-							decisionId: typeof body.decisionId === 'string' ? body.decisionId : null,
-							requestedByType: c.get('actorType') === 'service' ? 'service' : 'user',
-							requestedById: typeof access.principal.id === 'string' ? access.principal.id : null,
-						},
-					},
-				});
-				await store.attachCapacityReservationTask(reservation.id, job.id);
-				await store.recordRunnerScaleDecision(access.details.project.id, {
-					environment,
-					workDayId: null,
-					action: 'wake',
-					reason: 'budgeted_agent_task_enqueued',
-					metadata: {
-						taskId: job.id,
-						reservationId: reservation.id,
-						priorityClass: typeof body.priorityClass === 'string' ? body.priorityClass : definition.priorityClass,
-					},
-				});
-				return c.json({
-					ok: true,
-					payload: {
-						task: job,
-						estimate: taskEstimate,
-						reservation: await store.getCapacityReservation(reservation.id),
-						route: {
-							provider: route.provider,
-							lane: route.lane,
-							grant: route.grant,
-							candidates: route.candidates,
-						},
-					},
-				}, { status: 201 });
-			});
-
 			app.get('/v1/projects/:projectId/secrets/github-actions/public-key', async (c) => {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 				if (access.response) return access.response;
@@ -8702,6 +8520,24 @@ export function createApiApp(options = {}) {
 				});
 			});
 
+			app.post('/v1/teams/:teamId/projects/import', async (c) => {
+				const requestedTeam = c.req.param('teamId');
+				const team = await store.getTeam(requestedTeam).catch(() => null)
+					?? await store.getTeamBySlug(requestedTeam).catch(() => null);
+				if (!team) return jsonError(c, 404, 'Unknown team.', { code: 'team_not_found' });
+				const access = await requireTeamAccess(c, store, team.id, 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const payload = await store.importProjectRepositoryPlan(team.id, body.plan ?? body);
+					return c.json({ ok: true, payload }, { status: 201 });
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : 'Invalid project import plan.', {
+						code: error?.code ?? 'invalid_project_import_plan',
+					});
+				}
+			});
+
 			app.post('/v1/teams/:teamId/projects', async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:manage:team');
 				if (access.response) return access.response;
@@ -8797,6 +8633,14 @@ export function createApiApp(options = {}) {
 				}
 				if (repoProvider !== 'github') {
 					return jsonError(c, 400, 'Knowledge Hub launch currently supports GitHub repositories only.');
+				}
+				let launchRepositoryTopology;
+				try {
+					launchRepositoryTopology = launchPlannerRepositoryTopology(requestedRepository?.topology);
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error), {
+						code: error?.code ?? 'invalid_project_architecture',
+					});
 				}
 				if (hostingMode !== 'managed') {
 					return jsonError(c, 400, 'Live project launch currently supports managed hosting only. Use treeseed config --connect-market for hybrid pairing.');
@@ -9156,7 +9000,7 @@ export function createApiApp(options = {}) {
 						hostId: repositoryHost.id,
 						provider: 'github',
 						owner: repositoryHost.organizationOrOwner,
-						topology: requestedRepository?.topology === 'combined_compatibility' ? 'combined_compatibility' : 'split_software_content',
+						topology: launchRepositoryTopology,
 						visibility: repoVisibility,
 						softwareRepository: requestedRepository?.softwareRepository ?? null,
 						contentRepository: requestedRepository?.contentRepository ?? null,
@@ -9438,7 +9282,7 @@ export function createApiApp(options = {}) {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
 				if (access.response) return access.response;
 				const payload = await store.getProjectRepositoryTopology(c.req.param('projectId'));
-				if (!payload) return jsonError(c, 404, 'Repository topology is not available until the project has a TreeDX library binding.');
+				if (!payload) return jsonError(c, 404, 'Project architecture is not configured for this project.', { code: 'project_architecture_not_configured' });
 				return c.json({ ok: true, payload });
 			});
 
@@ -9446,9 +9290,15 @@ export function createApiApp(options = {}) {
 					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 					if (access.response) return access.response;
 					const body = await c.req.json().catch(() => ({}));
-					const payload = await store.upsertProjectRepositoryTopology(c.req.param('projectId'), body);
-					if (!payload) return jsonError(c, 404, 'Create a team TreeDX binding before updating repository topology.');
-					return c.json({ ok: true, payload: payload.topology });
+					try {
+						const payload = await store.upsertProjectRepositoryTopology(c.req.param('projectId'), body);
+						if (!payload) return jsonError(c, 404, 'Unknown project.', { code: 'project_not_found' });
+						return c.json({ ok: true, payload });
+					} catch (error) {
+						return jsonError(c, 400, error instanceof Error ? error.message : 'Invalid project architecture.', {
+							code: error?.code ?? 'invalid_project_architecture',
+						});
+					}
 				});
 
 				app.post('/v1/dx/projects/:projectId/repos', async (c) => {
@@ -9808,6 +9658,60 @@ export function createApiApp(options = {}) {
 			app.post('/v1/projects/:projectId/hosts/:requirementKey/replace', (c) => queueProjectHostOperation(c, 'replace'));
 			app.post('/v1/projects/:projectId/hosts/:requirementKey/resync', (c) => queueProjectHostOperation(c, 'resync'));
 			app.post('/v1/projects/:projectId/hosts/:requirementKey/rotate', (c) => queueProjectHostOperation(c, 'rotate'));
+
+			app.post('/v1/projects/:projectId/repositories/:role/initialize', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const rejectedUnlock = rejectProjectSecretUnlockMaterial(
+					c,
+					body,
+					'Repository initialization does not accept passphrases or credential sessions. Configure repository credentials through approved host settings before retrying.',
+				);
+				if (rejectedUnlock) return rejectedUnlock;
+				const plaintextCredentials = rejectPlaintextHostCredentialFields(c, body);
+				if (plaintextCredentials) return plaintextCredentials;
+				const role = optionalTrimmedString(c.req.param('role')) ?? 'primary';
+				const repository = resolvePlatformRepositoryDescriptor(runtime.resolved.config, access.details, {
+					...body,
+					repository: {
+						...(body.repository && typeof body.repository === 'object' && !Array.isArray(body.repository) ? body.repository : {}),
+						role,
+						writeMode: body.execute === true ? 'branch' : 'workspace',
+						branchName: optionalTrimmedString(body.branchName) ?? `treeseed/init-${role}-${Date.now()}`,
+						push: body.push === true,
+					},
+				});
+				const operation = await store.createPlatformOperation({
+					namespace: 'repository',
+					operation: 'initialize_linked_repository',
+					target: 'market_operations_runner',
+					idempotencyKey: optionalTrimmedString(body.idempotencyKey) ?? `repository-init:${access.details.project.id}:${role}`,
+					requestedByType: isTeamApiPrincipal(access.principal) ? 'team_api_key' : c.get('actorType') === 'service' ? 'service' : 'user',
+					requestedById: access.principal.id,
+					input: {
+						projectId: access.details.project.id,
+						teamId: access.details.project.teamId,
+						createdBy: access.principal.id,
+						repositoryRole: role,
+						repository,
+						architecture: access.details.project.metadata?.architecture ?? null,
+						scaffoldFiles: Array.isArray(body.scaffoldFiles) ? body.scaffoldFiles : [],
+						commitMessage: optionalTrimmedString(body.commitMessage) ?? `Initialize ${access.details.project.name} ${role} repository`,
+						approvalRequired: true,
+						approvalSatisfied: true,
+						approvalId: `repository-init:${access.details.project.id}:${role}:${Date.now()}`,
+					},
+				});
+				await store.appendPlatformOperationEvent(operation.id, 'repository.initialize_queued', {
+					projectId: access.details.project.id,
+					repositoryRole: role,
+				}).catch(() => {});
+				return c.json({
+					ok: true,
+					operation: decoratePlatformOperation(runtime.resolved.config.baseUrl, operation),
+				}, { status: 202 });
+			});
 
 			app.put('/v1/projects/:projectId', async (c) => {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
@@ -10691,7 +10595,6 @@ export function createApiApp(options = {}) {
 						workerName: typeof body.workerName === 'string' ? body.workerName : null,
 						r2BucketName: typeof body.r2BucketName === 'string' ? body.r2BucketName : null,
 						d1DatabaseName: typeof body.d1DatabaseName === 'string' ? body.d1DatabaseName : null,
-						queueName: typeof body.queueName === 'string' ? body.queueName : null,
 						railwayProjectName: typeof body.railwayProjectName === 'string' ? body.railwayProjectName : null,
 						metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
 					}),
@@ -11933,7 +11836,6 @@ export function createApiApp(options = {}) {
 						workerName: typeof body.workerName === 'string' ? body.workerName : null,
 						r2BucketName: typeof body.r2BucketName === 'string' ? body.r2BucketName : null,
 						d1DatabaseName: typeof body.d1DatabaseName === 'string' ? body.d1DatabaseName : null,
-						queueName: typeof body.queueName === 'string' ? body.queueName : null,
 						railwayProjectName: typeof body.railwayProjectName === 'string' ? body.railwayProjectName : null,
 						metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
 					}),

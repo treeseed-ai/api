@@ -7,6 +7,7 @@ describe('API backend boundaries', () => {
 		const capabilities = createExecutorsForOptions({ operationKey: null })
 			.map((executor) => `${executor.namespace}:${executor.operation}`);
 		expect(capabilities).toEqual(expect.arrayContaining([
+			'repository:initialize_linked_repository',
 			'project_hosts:host_binding_audit',
 			'project_hosts:host_binding_resync',
 			'project_hosts:host_binding_replace',

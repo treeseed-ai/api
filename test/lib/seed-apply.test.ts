@@ -8,7 +8,7 @@ import { DataType, newDb } from 'pg-mem';
 import { MarketControlPlaneStore } from '../../src/api/store.js';
 import { MarketPostgresDatabase } from '../../src/api/market-postgres.js';
 import { loadInfrastructureSeedState } from '../../src/market/infrastructure-seeds.js';
-import { applyLocalSeedFromCli, exportSeedWithStore } from '../../src/market/seeds/apply.js';
+import { applyLocalSeedFromCli, exportSeedWithStore, resolveLocalSeedEnv } from '../../src/market/seeds/apply.js';
 import { applyLocalSeedViaApiFromCli } from '../../src/market/seeds/local-api.js';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -17,6 +17,8 @@ const marketMigrationRoot = existsSync(resolve(projectRoot, '../sdk/drizzle/mark
 	: resolve(projectRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 
 const tempDirs: string[] = [];
+const TREESEED_PROJECT_SLUGS = ['admin', 'agent', 'api', 'cli', 'core', 'market', 'sdk', 'treedx', 'ui'];
+const TREESEED_PACKAGE_SLUGS = ['admin', 'agent', 'api', 'cli', 'core', 'sdk', 'treedx', 'ui'];
 
 function createAccessToken(payload: Record<string, unknown>, secret: string) {
 	const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -68,6 +70,19 @@ afterEach(() => {
 });
 
 describe('local seed apply', () => {
+	it('derives TREESEED_DATABASE_URL for local CLI seed apply', () => {
+		const resolved = resolveLocalSeedEnv(projectRoot, {
+			TREESEED_MARKET_LOCAL_POSTGRES_PORT: '55439',
+		});
+		expect(resolved.TREESEED_DATABASE_URL).toBe('postgres://treeseed:treeseed@127.0.0.1:55439/market_local');
+		expect(resolved).not.toHaveProperty('TREESEED_MARKET_DATABASE_URL');
+
+		const explicit = resolveLocalSeedEnv(projectRoot, {
+			TREESEED_DATABASE_URL: 'postgres://configured-db',
+		});
+		expect(explicit.TREESEED_DATABASE_URL).toBe('postgres://configured-db');
+	});
+
 	it('targets the Treeseed PostgreSQL database and attaches the local owner', async () => {
 		const tempRoot = mkdtempSync(resolve(tmpdir(), 'treeseed-local-seed-root-'));
 		tempDirs.push(tempRoot);
@@ -95,7 +110,7 @@ describe('local seed apply', () => {
 			} as any);
 
 			expect(applied.plan.summary).toMatchObject({
-				create: 16,
+				create: 39,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -113,7 +128,7 @@ describe('local seed apply', () => {
 			const teamContext = await store.resolvePrincipalTeamContext(team!.id, { id: 'user-local', roles: [] });
 			expect(teamContext?.roles).toContain('team_owner');
 			const projects = await store.listTeamProjects(team!.id);
-			expect(projects.map((project: any) => project.slug).sort()).toEqual(['karyon', 'market']);
+			expect(projects.map((project: any) => project.slug).sort()).toEqual(TREESEED_PROJECT_SLUGS);
 		} finally {
 			db.close();
 		}
@@ -130,7 +145,7 @@ describe('local seed apply', () => {
 			});
 
 			expect(first.plan.summary).toMatchObject({
-				create: 16,
+				create: 39,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -183,42 +198,42 @@ describe('local seed apply', () => {
 			});
 			expect((await store.getProjectSummary(marketProject!.id))?.health.state).not.toBe('setup_needed');
 
-			const karyonProject = await store.getProjectByTeamAndSlug(team!.id, 'karyon');
-			expect(karyonProject).toMatchObject({
-				slug: 'karyon',
-				name: 'Karyon Live Proof',
-			});
-			expect(karyonProject?.metadata?.metadata).toMatchObject({
-				demoRole: 'live-proof-project',
-				contentRoot: 'docs',
-				repositoryTopology: expect.objectContaining({
-					contentRepository: expect.objectContaining({ accessMode: 'treedx' }),
-					siteRepository: expect.objectContaining({ accessMode: 'filesystem' }),
-					projectRepository: expect.objectContaining({ accessMode: 'filesystem' }),
-				}),
-			});
-			const karyonRepositories = await store.listHubRepositories(karyonProject!.id);
-			expect(karyonRepositories).toEqual(expect.arrayContaining([
-				expect.objectContaining({
-					role: 'primary',
-					provider: 'github',
-					owner: 'karyon-life',
-					name: 'karyon',
-					url: 'https://github.com/karyon-life/karyon.git',
-					defaultBranch: 'main',
-				}),
-				expect.objectContaining({
-					role: 'content',
-					provider: 'github',
-					owner: 'karyon-life',
-					name: 'karyon',
-					submodulePath: 'docs',
-					metadata: expect.objectContaining({
-						contentCanonical: 'treedx',
-						demoRole: 'karyon-docs-content',
+			const projects = await store.listTeamProjects(team!.id);
+			expect(projects.map((project: any) => project.slug).sort()).toEqual(TREESEED_PROJECT_SLUGS);
+			expect(marketProject?.metadata?.metadata).toMatchObject({ visibility: 'private' });
+			for (const slug of TREESEED_PACKAGE_SLUGS) {
+				const packageProject = await store.getProjectByTeamAndSlug(team!.id, slug);
+				expect(packageProject).toMatchObject({
+					slug,
+				});
+				expect(packageProject?.metadata?.kind).toBe('package');
+				expect(packageProject?.metadata?.metadata).toMatchObject({
+					visibility: 'public',
+					releaseOwnership: 'treeseed.package.yaml',
+				});
+				expect(packageProject?.metadata?.architecture).toMatchObject({
+					topology: 'single_repository_site',
+					rootPath: '.',
+					sitePath: 'docs',
+					contentPath: 'docs',
+					contentRuntimeSource: 'r2_published_manifest',
+					contentPublishTarget: {
+						kind: 'cloudflare_r2',
+						prefix: `packages/${slug}`,
+					},
+				});
+				const packageRepositories = await store.listHubRepositories(packageProject!.id);
+				expect(packageRepositories).toEqual([
+					expect.objectContaining({
+						role: 'primary',
+						provider: 'github',
+						owner: 'treeseed-ai',
+						name: slug,
+						url: `https://github.com/treeseed-ai/${slug}.git`,
+						defaultBranch: 'main',
 					}),
-				}),
-			]));
+				]);
+			}
 
 			const providers = await store.listTeamCapacityProviders(team!.id);
 			const provider = providers.find((entry: any) => entry.name === 'treeseed-local-dev');
@@ -283,15 +298,10 @@ describe('local seed apply', () => {
 			expect(lanes).toHaveLength(0);
 
 			const grants = await store.listCapacityGrants(team!.id, { providerId: provider!.id });
-			expect(grants).toHaveLength(1);
-			expect(grants[0]).toMatchObject({
-				projectId: marketProject!.id,
-				environment: 'local',
-				grantScope: 'project',
-				portfolioAllocationPercent: 100,
-				reservePoolPercent: 10,
-				maxDailyProjectCredits: 5000,
-			});
+			expect(grants).toHaveLength(9);
+			expect(grants.map((grant: any) => grant.environment)).toEqual(Array(9).fill('local'));
+			expect(grants.map((grant: any) => grant.grantScope)).toEqual(Array(9).fill('project'));
+			expect(grants.map((grant: any) => grant.priorityWeight)).toEqual(Array(9).fill(1));
 
 			const policy = await store.getProjectWorkPolicy(marketProject!.id, 'local');
 			expect(policy).toMatchObject({
@@ -302,6 +312,18 @@ describe('local seed apply', () => {
 				maxQueuedCredits: 10000,
 			});
 			expect(policy?.metadata?.seed?.resourceKey).toBe('work-policy:treeseed/local/market');
+			for (const slug of TREESEED_PACKAGE_SLUGS) {
+				const packageProject = await store.getProjectByTeamAndSlug(team!.id, slug);
+				const packagePolicy = await store.getProjectWorkPolicy(packageProject!.id, 'local');
+				expect(packagePolicy).toMatchObject({
+					environment: 'local',
+					enabled: true,
+					dailyCreditBudget: 5000,
+					maxQueuedTasks: 100,
+					maxQueuedCredits: 10000,
+				});
+				expect(packagePolicy?.metadata?.seed?.resourceKey).toBe(`work-policy:treeseed/local/${slug}`);
+			}
 
 			const repositoryHosts = await store.listRepositoryHosts(team!.id, { includePlatform: false });
 			expect(repositoryHosts).toEqual(expect.arrayContaining([
@@ -311,8 +333,23 @@ describe('local seed apply', () => {
 					name: 'knowledge-coop',
 					organizationOrOwner: 'knowledge-coop',
 					metadata: expect.objectContaining({
+						credentialRef: 'env:TREESEED_GITHUB_TOKEN',
 						seed: expect.objectContaining({
-							resourceKey: 'repository-host:treeseed/market-github',
+							resourceKey: 'repository-host:treeseed/knowledge-coop-github',
+							manifestHash: first.result.manifestHash,
+						}),
+					}),
+				}),
+				expect.objectContaining({
+					provider: 'github',
+					ownership: 'treeseed_managed',
+					name: 'treeseed-ai',
+					organizationOrOwner: 'treeseed-ai',
+					defaultVisibility: 'public',
+					metadata: expect.objectContaining({
+						credentialRef: 'env:TREESEED_GITHUB_TOKEN',
+						seed: expect.objectContaining({
+							resourceKey: 'repository-host:treeseed/treeseed-ai-github',
 							manifestHash: first.result.manifestHash,
 						}),
 					}),
@@ -354,13 +391,21 @@ describe('local seed apply', () => {
 			} as any);
 			expect(exported.ok).toBe(true);
 			expect(exported.yaml).toContain('repositoryHosts:');
+			expect(exported.yaml).toContain('architecture:');
+			expect(exported.yaml).toContain('topology: single_repository_site');
+			expect(exported.yaml).toContain('sitePath: docs');
 			expect(exported.yaml).toContain('products:');
 			expect(exported.yaml).toContain('catalogArtifacts:');
 			expect(exported.yaml).toContain('executionProviders:');
 			expect(exported.yaml).toContain('nativeLimits:');
-			expect(exported.yaml).toContain('portfolioAllocationPercent: 100');
+			expect(exported.yaml).toContain('project:treeseed/api');
+			expect(exported.yaml).toContain('project:treeseed/agent');
+			expect(exported.yaml).toContain('priorityWeight: 1');
 			expect(exported.yaml).not.toContain('dailyCreditBudget: 0');
 			expect(exported.yaml).not.toContain('monthlyCreditBudget: 0');
+			expect(exported.yaml).not.toContain('project:karyon');
+			expect(exported.yaml).not.toContain('repositoryTopology');
+			expect(exported.yaml).not.toContain('contentRoot');
 			expect(exported.yaml).not.toMatch(/encryptedPayload|BEGIN PRIVATE KEY|ghp_/u);
 
 			const second = await applyLocalSeedFromCli({
@@ -373,7 +418,7 @@ describe('local seed apply', () => {
 			expect(second.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 16,
+				unchanged: 39,
 				skip: 2,
 			});
 			const secondResult = second.result as any;
@@ -408,7 +453,7 @@ describe('local seed apply', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 16,
+				unchanged: 39,
 				skip: 2,
 			});
 			expect((repaired.result as any).repairs).toEqual([
@@ -517,7 +562,7 @@ describe('local seed apply', () => {
 			expect(seedPage.selectedSeed).toBe('treeseed');
 			expect(seedPage.selectedEnvironments).toBe('local');
 			expect(seedPage.plan.summary).toMatchObject({
-				create: 15,
+				create: 38,
 				update: 1,
 				unchanged: 0,
 				skip: 2,
