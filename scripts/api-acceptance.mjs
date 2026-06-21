@@ -805,6 +805,8 @@ function sdkArgsForMethod(method) {
 		}],
 		providerAssignmentExplanation: ['${fixtures.team.id}', 'acceptance-${runNonce}-missing-assignment'],
 		projectCapacityPlan: ['${fixtures.project.id}', 'staging'],
+		createCapacityReservation: ['${fixtures.project.id}', {}],
+		projectCapacityRuntimeDiagnostics: ['${fixtures.project.id}', '${fixtures.team.id}'],
 		projectAgentClasses: ['${fixtures.project.id}'],
 		createProjectAgentClass: ['${fixtures.project.id}', { slug: `acceptance-sdk-${stamp}`, name: 'Acceptance SDK Agent', allowedModes: ['planning', 'acting'] }],
 		projectAgentClass: ['${fixtures.project.id}', '${fixtures.projectAgentClass.id}'],
