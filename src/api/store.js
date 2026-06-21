@@ -10,6 +10,7 @@ import {
 	hasAcceptedCapacityPlanProvenance,
 	providerAssignmentCapabilityHandlesContainSecretMaterial,
 	redactedProviderAssignmentCapabilityHandles,
+	summarizeCapacityRuntimeDiagnostics,
 	validateProviderAssignmentCapabilityHandles,
 } from '@treeseed/sdk/agent-capacity';
 import {
@@ -4441,6 +4442,32 @@ export class MarketControlPlaneStore {
 		return result;
 	}
 
+	async updateCapacityProviderApiKeyScopes(teamId, providerId, keyId, scopes = []) {
+		await this.ensureInitialized();
+		if (!(await this.getCapacityProvider(teamId, providerId))) return null;
+		const normalizedScopes = Array.isArray(scopes)
+			? [...new Set(scopes.map((scope) => String(scope ?? '').trim()).filter(Boolean))]
+			: [];
+		const timestamp = isoNow();
+		const row = await this.first(
+			`SELECT * FROM capacity_provider_api_keys
+			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND status = 'active' AND revoked_at IS NULL
+			 LIMIT 1`,
+			[keyId, teamId, providerId],
+		);
+		if (!row) return null;
+		await this.run(
+			`UPDATE capacity_provider_api_keys SET scopes_json = ?, updated_at = ? WHERE id = ?`,
+			[JSON.stringify(normalizedScopes), timestamp, keyId],
+		);
+		await this.updateCapacityProviderApiKeyMetadata(teamId, providerId, {
+			activeKeyPrefix: row.key_prefix,
+			scopeReconciledAt: timestamp,
+			rotationRequired: false,
+		});
+		return serializeCapacityProviderApiKey(await this.first(`SELECT * FROM capacity_provider_api_keys WHERE id = ? LIMIT 1`, [keyId]));
+	}
+
 	async rotateCapacityProviderApiKey(teamId, providerId, input = {}) {
 		return this.resetCapacityProviderApiKey(teamId, providerId, {
 			name: input.name ?? 'Capacity provider bootstrap key',
@@ -6109,8 +6136,13 @@ export class MarketControlPlaneStore {
 			['minimumReservePercent', 'reservePoolPercent'],
 			['maxDailyProjectCredits', 'maxDailyProjectCredits'],
 		]) {
+			if (!Object.prototype.hasOwnProperty.call(input, inputKey)) continue;
 			const value = numberValue(input[inputKey], null);
-			if (value !== null) metadata[metadataKey] = value;
+			if (value !== null) {
+				metadata[metadataKey] = value;
+			} else if (input[inputKey] === null) {
+				delete metadata[metadataKey];
+			}
 		}
 		if (input.emergencyOverride !== undefined || input.emergencyOverrideEnabled !== undefined) {
 			metadata.emergencyOverride = input.emergencyOverride === true || input.emergencyOverrideEnabled === true;
@@ -6897,6 +6929,12 @@ export class MarketControlPlaneStore {
 		if (!assignment?.reservationId) return null;
 		const reservation = await this.getCapacityReservation(assignment.reservationId).catch(() => null);
 		if (!reservation) return null;
+		const existingPhase = async (ledgerPhase) => serializeCapacityLedgerEntry(await this.first(
+			`SELECT * FROM capacity_ledger_entries
+			 WHERE assignment_id = ? AND reservation_id = ? AND phase = ?
+			 ORDER BY created_at ASC LIMIT 1`,
+			[assignment.id, reservation.id, ledgerPhase],
+		).catch(() => null));
 		const base = {
 			capacityProviderId: assignment.capacityProviderId,
 			laneId: reservation.laneId ?? assignment.capacityEnvelope?.laneId ?? `${assignment.capacityProviderId}:agent-capacity`,
@@ -6918,6 +6956,8 @@ export class MarketControlPlaneStore {
 			},
 		};
 		if (phase === 'start') {
+			const existing = await existingPhase('task_started');
+			if (existing) return existing;
 			return this.recordCapacityUsage({
 				...base,
 				phase: 'task_started',
@@ -6925,6 +6965,9 @@ export class MarketControlPlaneStore {
 			});
 		}
 		if (phase === 'complete') {
+			const existingCompletion = await existingPhase('task_completed_actual_settlement');
+			const existingRelease = await existingPhase('reservation_released');
+			if (existingCompletion && existingRelease) return existingRelease;
 			let usageActual = input.usageActual ?? null;
 			if (!usageActual && input.usageActualId) {
 				usageActual = serializeTaskUsageActual(await this.first(
@@ -6936,44 +6979,70 @@ export class MarketControlPlaneStore {
 			const actualUsd = numberValue(input.actualUsd ?? usageActual?.actualUsd ?? input.usage?.actualUsd, null);
 			const nativeUsage = objectValue(input.nativeUsage ?? usageActual?.nativeUsage ?? input.usage?.nativeUsage, {});
 			const nativeUnit = stringValue(input.nativeUnit ?? nativeUsage.unit ?? reservation.nativeUnit, reservation.nativeUnit ?? '');
-			await this.recordCapacityUsage({
-				...base,
-				modeRunId: input.modeRunId ?? usageActual?.modeRunId ?? null,
-				phase: 'task_completed_actual_settlement',
-				credits: actualCredits,
-				usd: actualUsd,
-				nativeUnit: nativeUnit || null,
-				nativeAmount: numberValue(input.nativeAmount ?? nativeUsage.amount ?? nativeUsage.wallMinutes ?? nativeUsage.quotaMinutes, null),
-				providerUnits: numberValue(input.providerUnits ?? nativeUsage.providerUnits, null),
-				metadata: {
-					...base.metadata,
-					usageActualId: input.usageActualId ?? usageActual?.id ?? null,
-					nativeUsage,
-				},
-			});
+			if (!existingCompletion) {
+				await this.recordCapacityUsage({
+					...base,
+					modeRunId: input.modeRunId ?? usageActual?.modeRunId ?? null,
+					phase: 'task_completed_actual_settlement',
+					credits: actualCredits,
+					usd: actualUsd,
+					nativeUnit: nativeUnit || null,
+					nativeAmount: numberValue(input.nativeAmount ?? nativeUsage.amount ?? nativeUsage.wallMinutes ?? nativeUsage.quotaMinutes, null),
+					providerUnits: numberValue(input.providerUnits ?? nativeUsage.providerUnits, null),
+					metadata: {
+						...base.metadata,
+						allocationSetId: assignment.allocationSetId ?? reservation.allocationSetId ?? null,
+						allocationPolicyVersion: assignment.explanation?.allocationPolicyVersion ?? null,
+						settlementInvariantStatus: 'pending_validation',
+						usageActualId: input.usageActualId ?? usageActual?.id ?? null,
+						nativeUsage,
+					},
+				});
+			}
+			if (existingRelease) return existingRelease;
+			const releasedUnusedCredits = Math.max(0, Number(reservation.reservedCredits ?? 0) - Number(actualCredits ?? 0));
 			return this.recordCapacityUsage({
 				...base,
 				phase: 'reservation_released',
-				credits: Math.max(0, Number(reservation.reservedCredits ?? 0) - Number(actualCredits ?? 0)),
+				credits: releasedUnusedCredits,
 				metadata: {
 					...base.metadata,
+					allocationSetId: assignment.allocationSetId ?? reservation.allocationSetId ?? null,
+					allocationPolicyVersion: assignment.explanation?.allocationPolicyVersion ?? null,
+					settlementInvariantStatus: 'pending_validation',
 					settledCredits: actualCredits,
-					releasedUnusedCredits: Math.max(0, Number(reservation.reservedCredits ?? 0) - Number(actualCredits ?? 0)),
+					releasedUnusedCredits,
 				},
 			});
 		}
 		if (phase === 'return') {
+			const existing = await existingPhase('reservation_released');
+			if (existing) return existing;
 			return this.recordCapacityUsage({
 				...base,
 				phase: 'reservation_released',
 				credits: reservation.reservedCredits,
+				metadata: {
+					...base.metadata,
+					allocationSetId: assignment.allocationSetId ?? reservation.allocationSetId ?? null,
+					allocationPolicyVersion: assignment.explanation?.allocationPolicyVersion ?? null,
+					settlementInvariantStatus: 'pending_validation',
+				},
 			});
 		}
 		if (phase === 'fail') {
+			const existing = await existingPhase('task_failed_refund');
+			if (existing) return existing;
 			return this.recordCapacityUsage({
 				...base,
 				phase: 'task_failed_refund',
 				credits: reservation.reservedCredits,
+				metadata: {
+					...base.metadata,
+					allocationSetId: assignment.allocationSetId ?? reservation.allocationSetId ?? null,
+					allocationPolicyVersion: assignment.explanation?.allocationPolicyVersion ?? null,
+					settlementInvariantStatus: 'pending_validation',
+				},
 			});
 		}
 		return null;
@@ -7769,6 +7838,56 @@ export class MarketControlPlaneStore {
 			`SELECT * FROM provider_assignment_explanations WHERE team_id = ? AND assignment_id = ? LIMIT 1`,
 			[teamId, assignmentId],
 		));
+	}
+
+	async listProviderAssignmentExplanations(teamId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['team_id = ?'];
+		const values = [teamId];
+		if (Array.isArray(filters.assignmentIds) && filters.assignmentIds.length) {
+			clauses.push(`assignment_id IN (${filters.assignmentIds.map(() => '?').join(', ')})`);
+			values.push(...filters.assignmentIds);
+		}
+		const rows = await this.all(
+			`SELECT * FROM provider_assignment_explanations
+			 WHERE ${clauses.join(' AND ')}
+			 ORDER BY created_at DESC LIMIT 500`,
+			values,
+		);
+		return rows.map(serializeProviderAssignmentExplanation);
+	}
+
+	async getProjectCapacityRuntimeDiagnostics(projectId, teamId) {
+		await this.ensureInitialized();
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		const resolvedTeamId = teamId ?? project.teamId;
+		if (project.teamId !== resolvedTeamId) return null;
+		const assignments = await this.listProviderAssignments(resolvedTeamId, { projectId });
+		const assignmentIds = assignments.map((assignment) => assignment.id);
+		const [
+			explanations,
+			modeRuns,
+			treeDxProxyAudit,
+			ledgerEntries,
+			fallbackOutputs,
+		] = await Promise.all([
+			this.listProviderAssignmentExplanations(resolvedTeamId, { assignmentIds }),
+			this.listAgentModeRuns(projectId),
+			this.listTreeDxProxyAudit(projectId),
+			this.listCapacityLedgerEntries(projectId),
+			this.listAgentFallbackOutputs(projectId),
+		]);
+		return summarizeCapacityRuntimeDiagnostics({
+			projectId,
+			teamId: resolvedTeamId,
+			assignments,
+			explanations,
+			modeRuns,
+			treeDxProxyAudit,
+			ledgerEntries,
+			fallbackOutputs,
+		});
 	}
 
 	async recordAgentFallbackOutput(input = {}) {

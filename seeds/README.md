@@ -10,11 +10,34 @@ Seed ownership is split across packages:
 - root `@treeseed/market` owns tenant content, public catalog messaging, and future marketplace policy.
 - TreeDX may store and index repository-backed content, but it does not interpret Treeseed product semantics.
 
-Phase 1 is plan-only:
+Seed planning is available for every declared environment:
 
 ```bash
 trsd seed treeseed --environments local --plan
 trsd seed treeseed --validate
 ```
 
-Apply support is intentionally blocked until local reconciliation upserts land in the next phase.
+Local apply is implemented through the TreeSeed API control-plane store and is
+idempotent:
+
+```bash
+trsd seed treeseed --environments local --apply
+```
+
+Local apply creates or updates seeded teams, projects, repository hosts,
+capacity providers, execution providers, capacity grants, work policies,
+products, catalog artifacts, project hosting records, and project repository
+bindings. It can attach an existing authenticated or bootstrap user as a
+`team_owner`, but seed manifests do not create user accounts.
+
+Production apply is guarded by approval records. A production apply without a
+matching approved request creates or returns the approval requirement instead
+of mutating resources.
+
+Seed manifests must not store provider or cloud secrets. They may reference
+credential locations such as `env:TREESEED_GITHUB_TOKEN`. Local-only
+capacity-provider bootstrap may use a deterministic disposable provider API key
+through the API key registration flow, but non-local provider connection
+material should be generated or configured outside the manifest. Returned seed
+run records redact plaintext provider keys; the CLI stores newly-created local
+provider connection material in encrypted TreeSeed config.

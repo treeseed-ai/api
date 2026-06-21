@@ -3323,6 +3323,15 @@ function isTeamApiPrincipal(principal) {
 	return Boolean(principal?.roles?.includes?.('team_api_key'));
 }
 
+function localAcceptanceAdminToken() {
+	return process.env.TREESEED_CAPACITY_ACCEPTANCE_ADMIN_TOKEN || 'tsk_local_treeseed_acceptance_admin';
+}
+
+function localAcceptanceAuthEnabled(runtime) {
+	const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
+	return environment === 'local' || process.env.TREESEED_LOCAL_DEV_MODE === '1';
+}
+
 function decorateJob(baseUrl, job) {
 	if (!job) return null;
 	return {
@@ -5213,6 +5222,38 @@ export function createApiApp(options = {}) {
 							});
 							c.set('actorType', 'service');
 							c.set('permissionGrants', match.principal.permissions);
+						}
+					}
+				}
+				if (!c.get('principal') && localAcceptanceAuthEnabled(runtime)) {
+					const token = bearerTokenFromRequest(c.req.raw);
+					if (token && token === localAcceptanceAdminToken()) {
+						const requestedTeam = c.req.param?.('teamId') || c.req.query?.('teamId') || process.env.TREESEED_CAPACITY_ACCEPTANCE_TEAM_ID || 'treeseed';
+						const team = await store.getTeam(requestedTeam).catch(() => null)
+							?? await store.getTeamBySlug(requestedTeam).catch(() => null)
+							?? await store.getTeamBySlug('treeseed').catch(() => null);
+						if (team) {
+							const principal = {
+								id: 'team-key:local-capacity-acceptance',
+								displayName: 'Local Capacity Acceptance',
+								roles: ['team_api_key'],
+								permissions: ['*:*:*'],
+								scopes: ['auth:me'],
+								metadata: {
+									teamId: team.id,
+									teamName: team.name,
+									teamDisplayName: team.displayName ?? team.name,
+									localAcceptance: true,
+								},
+							};
+							c.set('principal', principal);
+							c.set('credential', {
+								type: 'team_api_key',
+								id: 'local-capacity-acceptance',
+								label: 'Local Capacity Acceptance',
+							});
+							c.set('actorType', 'service');
+							c.set('permissionGrants', principal.permissions);
 						}
 					}
 				}
@@ -12415,6 +12456,60 @@ export function createApiApp(options = {}) {
 						actorType: typeof c.req.query('actorType') === 'string' ? c.req.query('actorType') : null,
 					}),
 				});
+			});
+
+			app.post('/v1/projects/:projectId/capacity/reservations', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+				if (access.response) return access.response;
+				const project = access.details?.project ?? await store.getProject(c.req.param('projectId'));
+				if (!project) return jsonError(c, 404, 'Unknown project.');
+				const body = await c.req.json().catch(() => ({}));
+				if (!body.capacityProviderId || !body.laneId || !Number.isFinite(Number(body.reservedCredits))) {
+					return jsonError(c, 400, 'capacityProviderId, laneId, and reservedCredits are required.');
+				}
+				return c.json({
+					ok: true,
+					payload: await store.createCapacityReservation({
+						...body,
+						teamId: typeof body.teamId === 'string' ? body.teamId : project.teamId,
+						projectId: project.id,
+					}),
+				}, { status: 201 });
+			});
+
+			app.get('/v1/projects/:projectId/capacity-runtime-diagnostics', async (c) => {
+				const requestedTeam = typeof c.req.query('teamId') === 'string' && c.req.query('teamId')
+					? c.req.query('teamId')
+					: null;
+				const team = requestedTeam
+					? await store.getTeam(requestedTeam).catch(() => null)
+						?? await store.getTeamBySlug(requestedTeam).catch(() => null)
+					: null;
+				const requestedProject = c.req.param('projectId');
+				let projectDetails = await store.getProjectDetails(requestedProject);
+				if (!projectDetails && team) {
+					const projectBySlug = await store.getProjectByTeamAndSlug(team.id, requestedProject).catch(() => null);
+					projectDetails = projectBySlug ? await store.getProjectDetails(projectBySlug.id) : null;
+				}
+				if (!projectDetails) return jsonError(c, 404, 'Unknown project.');
+				const teamId = team?.id ?? projectDetails.project.teamId;
+				const token = bearerTokenFromRequest(c.req.raw);
+				let providerReadPrincipal = null;
+				if (token && typeof store.authenticateCapacityProviderApiKey === 'function') {
+					const auth = await store.authenticateCapacityProviderApiKey(token, []).catch(() => ({ ok: false }));
+					if (auth.ok && auth.principal?.teamId === projectDetails.project.teamId) {
+						providerReadPrincipal = auth.principal;
+					}
+				}
+				if (!providerReadPrincipal) {
+					const access = await requireProjectAccess(c, store, projectDetails.project.id, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				if (teamId !== projectDetails.project.teamId) return jsonError(c, 404, 'Unknown project or team.');
+				const payload = teamId
+					? await store.getProjectCapacityRuntimeDiagnostics(projectDetails.project.id, teamId)
+					: null;
+				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown project or team.');
 			});
 
 			app.get('/v1/decisions/:decisionId/planning-status', async (c) => {

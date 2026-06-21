@@ -17,6 +17,8 @@ resources:
       name: treeseed
       displayName: TreeSeed
       profileSummary: TreeSeed platform market, integrated package, and agent operations.
+      metadata:
+        visibility: private
 
   projects:
     - key: project:treeseed/market
@@ -61,6 +63,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/api.git
         defaultBranch: main
         checkoutPath: packages/api
+        submodulePath: packages/api
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -92,6 +95,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/treedx.git
         defaultBranch: main
         checkoutPath: packages/treedx
+        submodulePath: packages/treedx
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -123,6 +127,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/sdk.git
         defaultBranch: main
         checkoutPath: packages/sdk
+        submodulePath: packages/sdk
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -154,6 +159,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/ui.git
         defaultBranch: main
         checkoutPath: packages/ui
+        submodulePath: packages/ui
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -185,6 +191,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/cli.git
         defaultBranch: main
         checkoutPath: packages/cli
+        submodulePath: packages/cli
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -216,6 +223,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/core.git
         defaultBranch: main
         checkoutPath: packages/core
+        submodulePath: packages/core
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -247,6 +255,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/admin.git
         defaultBranch: main
         checkoutPath: packages/admin
+        submodulePath: packages/admin
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -278,6 +287,7 @@ resources:
         gitUrl: https://github.com/treeseed-ai/agent.git
         defaultBranch: main
         checkoutPath: packages/agent
+        submodulePath: packages/agent
       architecture:
         topology: single_repository_site
         rootPath: .
@@ -317,7 +327,7 @@ resources:
           nativeLimits:
             - scope: daily
               nativeUnit: wall_minute
-              limitAmount: 480
+              limitAmount: 600
               reserveBufferPercent: 20
               resetCadence: daily
               confidence: estimated
@@ -345,8 +355,8 @@ resources:
       project: project:treeseed/market
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 50
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/api
@@ -356,8 +366,8 @@ resources:
       project: project:treeseed/api
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 6
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/treedx
@@ -367,8 +377,8 @@ resources:
       project: project:treeseed/treedx
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 10
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/sdk
@@ -378,8 +388,8 @@ resources:
       project: project:treeseed/sdk
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 6
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/ui
@@ -389,8 +399,8 @@ resources:
       project: project:treeseed/ui
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 6
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/cli
@@ -400,8 +410,8 @@ resources:
       project: project:treeseed/cli
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 6
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/core
@@ -411,8 +421,8 @@ resources:
       project: project:treeseed/core
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 6
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/admin
@@ -422,8 +432,8 @@ resources:
       project: project:treeseed/admin
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 6
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
     - key: capacity-grant:treeseed/local/agent
@@ -433,8 +443,8 @@ resources:
       project: project:treeseed/agent
       environment: local
       grantScope: project
+      portfolioAllocationPercent: 4
       reservePoolPercent: 10
-      maxDailyProjectCredits: 5000
       priorityWeight: 1
       overflowPolicy: soft_grant
 

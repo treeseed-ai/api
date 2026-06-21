@@ -74,7 +74,7 @@ describe('local seed apply', () => {
 		const resolved = resolveLocalSeedEnv(projectRoot, {
 			TREESEED_MARKET_LOCAL_POSTGRES_PORT: '55439',
 		});
-		expect(resolved.TREESEED_DATABASE_URL).toBe('postgres://treeseed:treeseed@127.0.0.1:55439/market_local');
+		expect(resolved.TREESEED_DATABASE_URL).toBe('postgres://treeseed:treeseed-local-dev@127.0.0.1:55439/treeseed_api');
 		expect(resolved).not.toHaveProperty('TREESEED_MARKET_DATABASE_URL');
 
 		const explicit = resolveLocalSeedEnv(projectRoot, {
@@ -158,6 +158,7 @@ describe('local seed apply', () => {
 				resourceKey: 'team:treeseed',
 				manifestHash: first.result.manifestHash,
 			});
+			expect(team?.metadata?.visibility).toBe('private');
 
 			const marketProject = await store.getProjectByTeamAndSlug(team!.id, 'market');
 			expect(marketProject?.metadata?.metadata?.seed).toMatchObject({
@@ -288,7 +289,7 @@ describe('local seed apply', () => {
 				expect.objectContaining({
 					scope: 'daily',
 					nativeUnit: 'wall_minute',
-					limitAmount: 480,
+					limitAmount: 600,
 					reserveBufferPercent: 20,
 					resetCadence: 'daily',
 				}),
@@ -302,6 +303,23 @@ describe('local seed apply', () => {
 			expect(grants.map((grant: any) => grant.environment)).toEqual(Array(9).fill('local'));
 			expect(grants.map((grant: any) => grant.grantScope)).toEqual(Array(9).fill('project'));
 			expect(grants.map((grant: any) => grant.priorityWeight)).toEqual(Array(9).fill(1));
+			const projectSlugById = new Map(projects.map((project: any) => [project.id, project.slug]));
+			const allocationByProject = Object.fromEntries(grants
+				.map((grant: any) => [projectSlugById.get(grant.projectId), grant.portfolioAllocationPercent])
+				.sort(([left], [right]) => String(left).localeCompare(String(right))));
+			expect(allocationByProject).toEqual({
+				admin: 6,
+				agent: 4,
+				api: 6,
+				cli: 6,
+				core: 6,
+				market: 50,
+				sdk: 6,
+				treedx: 10,
+				ui: 6,
+			});
+			expect(grants.reduce((sum: number, grant: any) => sum + Number(grant.portfolioAllocationPercent ?? 0), 0)).toBe(100);
+			expect(grants.map((grant: any) => grant.maxDailyProjectCredits ?? null)).toEqual(Array(9).fill(null));
 
 			const policy = await store.getProjectWorkPolicy(marketProject!.id, 'local');
 			expect(policy).toMatchObject({
@@ -400,7 +418,10 @@ describe('local seed apply', () => {
 			expect(exported.yaml).toContain('nativeLimits:');
 			expect(exported.yaml).toContain('project:treeseed/api');
 			expect(exported.yaml).toContain('project:treeseed/agent');
+			expect(exported.yaml).toContain('portfolioAllocationPercent: 50');
+			expect(exported.yaml).toContain('portfolioAllocationPercent: 4');
 			expect(exported.yaml).toContain('priorityWeight: 1');
+			expect(exported.yaml).not.toContain('maxDailyProjectCredits');
 			expect(exported.yaml).not.toContain('dailyCreditBudget: 0');
 			expect(exported.yaml).not.toContain('monthlyCreditBudget: 0');
 			expect(exported.yaml).not.toContain('project:karyon');

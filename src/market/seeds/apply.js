@@ -1003,8 +1003,20 @@ function publicProviderKeyRecord(action, providerId, key, extra = {}) {
 	};
 }
 
+function normalizedScopeList(scopes) {
+	return Array.isArray(scopes)
+		? [...new Set(scopes.map((scope) => String(scope ?? '').trim()).filter(Boolean))].sort()
+		: [];
+}
+
+function scopeListsEqual(left, right) {
+	const a = normalizedScopeList(left);
+	const b = normalizedScopeList(right);
+	return a.length === b.length && a.every((scope, index) => scope === b[index]);
+}
+
 async function ensureCapacityProviderApiKeys({ plan, store, ids, actor }) {
-	const result = { created: [], existing: [] };
+	const result = { created: [], existing: [], updated: [] };
 	if (typeof store.listCapacityProviderApiKeys !== 'function' || typeof store.createCapacityProviderApiKey !== 'function') {
 		return result;
 	}
@@ -1018,6 +1030,16 @@ async function ensureCapacityProviderApiKeys({ plan, store, ids, actor }) {
 		const activeKey = (await store.listCapacityProviderApiKeys(teamId, providerId))
 			.find((key) => key.status === 'active' && !key.revokedAt) ?? null;
 		if (activeKey) {
+			const desiredScopes = Array.isArray(apiKey.scopes) && apiKey.scopes.length > 0 ? apiKey.scopes.map(String) : null;
+			if (desiredScopes && !scopeListsEqual(activeKey.scopes, desiredScopes) && typeof store.updateCapacityProviderApiKeyScopes === 'function') {
+				const updated = await store.updateCapacityProviderApiKeyScopes(teamId, providerId, activeKey.id, desiredScopes);
+				if (updated) {
+					result.updated.push(publicProviderKeyRecord(action, providerId, updated, {
+						scopeReconciled: true,
+					}));
+					continue;
+				}
+			}
 			result.existing.push(publicProviderKeyRecord(action, providerId, activeKey));
 			continue;
 		}

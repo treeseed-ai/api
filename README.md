@@ -79,6 +79,7 @@ npm run test:acceptance -- --base-url "$TREESEED_API_BASE_URL"
 Reconciliation must flow through `trsd`; direct provider mutation is diagnostic only.
 
 ```bash
+npx trsd operations smoke --environment local --service operationsRunner --json
 npx trsd ready staging --json
 npx trsd hosting plan --environment staging --app api --json
 npx trsd hosting apply --environment staging --app api --execute --json
