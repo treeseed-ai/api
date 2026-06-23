@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { createExecutorsForOptions } from '../../src/operations-runner/entrypoint.js';
+import { createExecutorsForOptions } from '../../src/operations-runner/entrypoint.ts';
 
 describe('API backend boundaries', () => {
 	it('registers project-host operation executors on the Treeseed operations runner', () => {
@@ -16,7 +16,7 @@ describe('API backend boundaries', () => {
 	});
 
 	it('keeps local content routes job-backed instead of filesystem-backed', () => {
-		const source = readFileSync('src/api/app.js', 'utf8');
+		const source = readFileSync('src/api/app.ts', 'utf8');
 		const routeStart = source.indexOf("app.post('/v1/projects/:projectId/local-content/decisions/from-proposals'");
 		const routeEnd = source.indexOf("app.post('/v1/projects/:projectId/update-plans'", routeStart);
 		expect(routeStart).toBeGreaterThan(-1);
@@ -28,9 +28,9 @@ describe('API backend boundaries', () => {
 	});
 
 	it('keeps migration ownership in the PostgreSQL adapter boundary', () => {
-		const storeSource = readFileSync('src/api/store.js', 'utf8');
-		const appSource = readFileSync('src/api/app.js', 'utf8');
-		const adapterSource = readFileSync('src/api/market-postgres.js', 'utf8');
+		const storeSource = readFileSync('src/api/store.ts', 'utf8');
+		const appSource = readFileSync('src/api/app.ts', 'utf8');
+		const adapterSource = readFileSync('src/api/market-postgres.ts', 'utf8');
 		const testSource = readFileSync('test/api/api.test.ts', 'utf8');
 		expect(storeSource).not.toMatch(/migrations\/|migrationPaths|loadMigrationSql|PostgresD1Database/u);
 		expect(storeSource).not.toMatch(/\bCREATE\s+TABLE\b|\bALTER\s+TABLE\b|PRAGMA\s+table_info/iu);
@@ -42,7 +42,7 @@ describe('API backend boundaries', () => {
 	});
 
 	it('keeps project launch route persistence ahead of hosting readiness work', () => {
-		const api = readFileSync('src/api/app.js', 'utf8');
+		const api = readFileSync('src/api/app.ts', 'utf8');
 		const routeStart = api.indexOf("app.post('/v1/teams/:teamId/projects/launch'");
 		const routeEnd = api.indexOf("app.get('/v1/projects/:projectId'", routeStart);
 		const launchRoute = api.slice(routeStart, routeEnd);
@@ -65,7 +65,7 @@ describe('API backend boundaries', () => {
 	});
 
 	it('keeps backend credential and launch recovery guardrails in API routes', () => {
-		const api = readFileSync('src/api/app.js', 'utf8');
+		const api = readFileSync('src/api/app.ts', 'utf8');
 		expect(api).toContain('retryApiLaunchBootstrapFromRequest');
 		expect(api).toContain('rejectProjectSecretUnlockMaterial');
 		expect(api).toContain('sensitive_passphrase_rejected');

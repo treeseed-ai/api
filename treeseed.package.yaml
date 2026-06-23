@@ -48,9 +48,9 @@ projectArchitecture:
   topology: single_repository_site
   rootPath: .
   sitePath: docs
-  contentPath: docs
+  contentPath: docs/src/content
   contentRuntimeSource: r2_published_manifest
-  localContentMaterialization: none
+  localContentMaterialization: existing_path
   contentPublishTarget:
     kind: cloudflare_r2
     prefix: packages/api

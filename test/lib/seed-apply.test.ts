@@ -216,7 +216,7 @@ describe('local seed apply', () => {
 					topology: 'single_repository_site',
 					rootPath: '.',
 					sitePath: 'docs',
-					contentPath: 'docs',
+					contentPath: 'docs/src/content',
 					contentRuntimeSource: 'r2_published_manifest',
 					contentPublishTarget: {
 						kind: 'cloudflare_r2',

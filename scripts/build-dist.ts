@@ -11,7 +11,7 @@ const srcRoot = resolve(packageRoot, 'src');
 const scriptsRoot = resolve(packageRoot, 'scripts');
 const distRoot = resolve(packageRoot, 'dist');
 
-const JS_SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.ts']);
+const JS_SOURCE_EXTENSIONS = new Set(['.ts']);
 const COPY_EXTENSIONS = new Set(['.d.ts', '.json', '.jsonc', '.md', '.yaml', '.yml']);
 const EXECUTABLE_OUTPUTS = new Set([
 	'api/server.js',
@@ -37,7 +37,6 @@ function walkFiles(root: string): string[] {
 	if (!existsSync(root)) return [];
 	const files: string[] = [];
 	for (const entry of readdirSync(root, { withFileTypes: true })) {
-		if (entry.name.startsWith('.ts-run-')) continue;
 		const fullPath = join(root, entry.name);
 		if (entry.isDirectory()) files.push(...walkFiles(fullPath));
 		else files.push(fullPath);
@@ -57,7 +56,7 @@ function rewriteRuntimeSpecifiers(contents: string) {
 
 function outputPathForSource(filePath: string, sourceRoot: string, outputRoot: string) {
 	const relativePath = relative(sourceRoot, filePath);
-	return resolve(outputRoot, relativePath.replace(/\.(mjs|ts)$/u, '.js'));
+	return resolve(outputRoot, relativePath.replace(/\.ts$/u, '.js'));
 }
 
 async function compileModule(filePath: string, sourceRoot: string, outputRoot: string) {
@@ -87,7 +86,7 @@ function copyAsset(filePath: string, sourceRoot: string, outputRoot: string) {
 
 function transpileScript(filePath: string) {
 	const relativePath = relative(scriptsRoot, filePath);
-	const outputFile = resolve(distRoot, 'scripts', relativePath.replace(/\.(mjs|ts)$/u, '.js'));
+	const outputFile = resolve(distRoot, 'scripts', relativePath.replace(/\.ts$/u, '.js'));
 	const source = readFileSync(filePath, 'utf8');
 	const transformed = extname(filePath) === '.ts'
 		? ts.transpileModule(source, {
@@ -140,7 +139,6 @@ function assertRequiredOutputs() {
 		throw new Error('Build output must not contain dist/src.');
 	}
 	for (const filePath of walkFiles(distRoot)) {
-		if (filePath.includes('.ts-run-')) throw new Error(`Build output contains temporary ts runner artifact: ${filePath}`);
 		if (filePath.endsWith('.d.js')) throw new Error(`Build output contains invalid declaration artifact: ${filePath}`);
 	}
 }
@@ -252,7 +250,7 @@ for (const filePath of walkFiles(srcRoot)) {
 }
 
 for (const filePath of walkFiles(scriptsRoot)) {
-	if (filePath.endsWith('.ts') || filePath.endsWith('.mjs')) transpileScript(filePath);
+	if (filePath.endsWith('.ts')) transpileScript(filePath);
 }
 
 emitDeclarations();

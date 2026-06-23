@@ -40,7 +40,7 @@ describe('API deploy workflow', () => {
 		expect(liveRun).toContain('--app api --live --json');
 		expect(liveRun).toContain('trsd operations smoke');
 		expect(liveRun).toContain('--service operationsRunner --json');
-		expect(liveRun).toContain('node ./scripts/api-acceptance.mjs');
+		expect(liveRun).toContain('tsx ./scripts/api-acceptance.ts');
 		expect(liveRun).toContain('reports/api-acceptance.json');
 		expect(liveRun).toContain('reports/api-acceptance.xml');
 		expect(liveRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');

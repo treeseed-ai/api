@@ -68,9 +68,9 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
-        localContentMaterialization: none
+        localContentMaterialization: existing_path
         contentPublishTarget:
           kind: cloudflare_r2
           prefix: packages/api
@@ -78,7 +78,7 @@ resources:
         packageId: "@treeseed/api"
         packagePath: packages/api
         visibility: public
-        docsSiteReadiness: site_not_prepared
+        docsSiteReadiness: ready
         releaseOwnership: treeseed.package.yaml
 
     - key: project:treeseed/treedx
@@ -100,7 +100,7 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
         localContentMaterialization: existing_path
         contentPublishTarget:
@@ -132,7 +132,7 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
         localContentMaterialization: existing_path
         contentPublishTarget:
@@ -164,9 +164,9 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
-        localContentMaterialization: none
+        localContentMaterialization: existing_path
         contentPublishTarget:
           kind: cloudflare_r2
           prefix: packages/ui
@@ -174,7 +174,7 @@ resources:
         packageId: "@treeseed/ui"
         packagePath: packages/ui
         visibility: public
-        docsSiteReadiness: site_not_prepared
+        docsSiteReadiness: ready
         releaseOwnership: treeseed.package.yaml
 
     - key: project:treeseed/cli
@@ -196,9 +196,9 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
-        localContentMaterialization: none
+        localContentMaterialization: existing_path
         contentPublishTarget:
           kind: cloudflare_r2
           prefix: packages/cli
@@ -206,7 +206,7 @@ resources:
         packageId: "@treeseed/cli"
         packagePath: packages/cli
         visibility: public
-        docsSiteReadiness: site_not_prepared
+        docsSiteReadiness: ready
         releaseOwnership: treeseed.package.yaml
 
     - key: project:treeseed/core
@@ -228,9 +228,9 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
-        localContentMaterialization: none
+        localContentMaterialization: existing_path
         contentPublishTarget:
           kind: cloudflare_r2
           prefix: packages/core
@@ -238,7 +238,7 @@ resources:
         packageId: "@treeseed/core"
         packagePath: packages/core
         visibility: public
-        docsSiteReadiness: site_not_prepared
+        docsSiteReadiness: ready
         releaseOwnership: treeseed.package.yaml
 
     - key: project:treeseed/admin
@@ -260,9 +260,9 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
-        localContentMaterialization: none
+        localContentMaterialization: existing_path
         contentPublishTarget:
           kind: cloudflare_r2
           prefix: packages/admin
@@ -270,7 +270,7 @@ resources:
         packageId: "@treeseed/admin"
         packagePath: packages/admin
         visibility: public
-        docsSiteReadiness: site_not_prepared
+        docsSiteReadiness: ready
         releaseOwnership: treeseed.package.yaml
 
     - key: project:treeseed/agent
@@ -292,7 +292,7 @@ resources:
         topology: single_repository_site
         rootPath: .
         sitePath: docs
-        contentPath: docs
+        contentPath: docs/src/content
         contentRuntimeSource: r2_published_manifest
         localContentMaterialization: existing_path
         contentPublishTarget:

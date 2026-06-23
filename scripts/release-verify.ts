@@ -9,7 +9,7 @@ import { createApiApp } from '../src/api/app.js';
 import { MarketPostgresDatabase } from '../src/api/market-postgres.js';
 import { packageRoot } from './package-tools.ts';
 
-const textExtensions = new Set(['.js', '.ts', '.mjs', '.cjs', '.d.ts', '.json', '.md']);
+const textExtensions = new Set(['.js', '.ts', '.d.ts', '.json', '.md']);
 const forbiddenPatterns = [
 	/['"`]workspace:[^'"`\n]+['"`]/,
 	/['"`]file:[^'"`\n]+['"`]/,
@@ -87,7 +87,6 @@ function assertCleanDist() {
 	if (!existsSync(distRoot)) throw new Error('dist is missing.');
 	if (existsSync(resolve(distRoot, 'src'))) throw new Error('dist/src must not exist.');
 	for (const filePath of walkFiles(distRoot)) {
-		if (filePath.includes('.ts-run-')) throw new Error(`${relative(packageRoot, filePath)} must not exist.`);
 		if (filePath.endsWith('.d.js')) throw new Error(`${relative(packageRoot, filePath)} must not exist.`);
 	}
 	scanDirectory(distRoot);

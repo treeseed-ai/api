@@ -371,6 +371,69 @@ describe('market api', () => {
 		}));
 	});
 
+	it('allows local acceptance admin token to manage workday test runs in local mode', async () => {
+		const db = createTestPostgresDatabase();
+		const store = createTestStore(db);
+		try {
+			await store.ensureInitialized();
+			await store.createTeam({ id: 'treeseed', slug: 'treeseed', name: 'TreeSeed' });
+			const app = createTestApp({ db, store, config: { environment: 'local' } });
+			const headers = {
+				'content-type': 'application/json',
+				authorization: 'Bearer tsk_local_treeseed_acceptance_admin',
+			};
+			const created = await app.request('/v1/teams/treeseed/workday-tests', {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					id: 'run-local-acceptance',
+					capacityProviderId: 'provider-local',
+					status: 'running',
+					parameters: { authMode: 'local_acceptance_admin' },
+				}),
+			});
+			expect(created.status).toBe(201);
+			const createdPayload = await json(created);
+			expect(createdPayload.payload).toMatchObject({
+				id: 'run-local-acceptance',
+				requestedById: 'team-key:local-capacity-acceptance',
+			});
+
+			const event = await app.request('/v1/teams/treeseed/workday-tests/run-local-acceptance/events', {
+				method: 'POST',
+				headers,
+				body: JSON.stringify({
+					eventType: 'command.started',
+					title: 'Started with local acceptance auth',
+				}),
+			});
+			expect(event.status).toBe(201);
+
+			const listed = await json(await app.request('/v1/teams/treeseed/workday-tests', { headers }));
+			expect(listed.payload.map((run: Record<string, unknown>) => run.id)).toContain('run-local-acceptance');
+		} finally {
+			db.close();
+		}
+	});
+
+	it('rejects unauthenticated workday test mutation without local acceptance auth', async () => {
+		const db = createTestPostgresDatabase();
+		const store = createTestStore(db);
+		try {
+			await store.ensureInitialized();
+			await store.createTeam({ id: 'treeseed', slug: 'treeseed', name: 'TreeSeed' });
+			const app = createTestApp({ db, store, config: { environment: 'staging' } });
+			const response = await app.request('/v1/teams/treeseed/workday-tests', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ id: 'run-hosted-denied', status: 'running' }),
+			});
+			expect(response.status).toBe(401);
+		} finally {
+			db.close();
+		}
+	});
+
 	it('logs local API request URLs with sensitive query values redacted', async () => {
 		const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 		const app = createTestApp({ logRequests: true });
@@ -6796,7 +6859,7 @@ describe('market api', () => {
 					environment: 'local',
 					executionProviders: [executionProvider],
 					capabilities: ['repo_read', 'repo_write'],
-					grants: [grant, actingGrant],
+					grants: [grant],
 					runnerPressure: { activeWorkers: 0, queuedAssignments: 0 },
 				}),
 		}))).payload;
@@ -6837,33 +6900,7 @@ describe('market api', () => {
 				decisionInput: { kind: 'plan', prompt: 'Create an implementation plan.' },
 			}),
 		}))).payload;
-		const actingAssignment = (await json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, {
-			method: 'POST',
-			headers,
-			body: JSON.stringify({
-				projectId: secondProject.id,
-				capacityProviderId: provider.id,
-				providerSessionId: availabilitySession.id,
-				executionProviderId: executionProvider.id,
-				allocationSetId: allocationSet.id,
-					projectAgentClassId: actingClass.id,
-					mode: 'acting',
-					capacityEnvelope: {
-						teamId: team.id,
-						projectId: secondProject.id,
-						mode: 'acting',
-						metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
-					},
-					decisionInput: {
-						kind: 'act',
-						task: 'Apply a focused change.',
-						metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
-					},
-					metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
-				}),
-			}))).payload;
 		expect(planningAssignment).toMatchObject({ mode: 'planning', projectAgentClassId: planningClass.id, reservationId: reservation.id });
-		expect(actingAssignment).toMatchObject({ mode: 'acting', projectAgentClassId: actingClass.id });
 
 		const providerAssignment = (await json(await app.request(`/v1/provider/assignments/${planningAssignment.id}`, {
 			headers: providerHeaders,
@@ -6991,10 +7028,52 @@ describe('market api', () => {
 			lifecycleOutput: { summary: 'Plan created.' },
 		});
 
+		const actingAssignment = (await json(await app.request(`/v1/teams/${team.id}/capacity/assignments`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({
+				projectId: secondProject.id,
+				capacityProviderId: provider.id,
+				providerSessionId: availabilitySession.id,
+				executionProviderId: executionProvider.id,
+				allocationSetId: allocationSet.id,
+				projectAgentClassId: actingClass.id,
+				mode: 'acting',
+				capacityEnvelope: {
+					teamId: team.id,
+					projectId: secondProject.id,
+					mode: 'acting',
+					metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
+				},
+				decisionInput: {
+					kind: 'act',
+					task: 'Apply a focused change.',
+					metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
+				},
+				metadata: { capacityPlanId: 'manual-phase-1-plan', capacityPlanStatus: 'accepted' },
+			}),
+		}))).payload;
+		expect(actingAssignment).toMatchObject({ mode: 'acting', projectAgentClassId: actingClass.id });
+
+		const actingCheckIn = (await json(await app.request('/v1/provider/check-in', {
+			method: 'POST',
+			headers: providerHeaders,
+			body: JSON.stringify({
+				environment: 'local',
+				executionProviders: [executionProvider],
+				capabilities: ['repo_read', 'repo_write'],
+				grants: [grant, actingGrant],
+				nativeLimits: { wallMinutes: { daily: 240 } },
+				runnerPressure: { activeRunners: 0, maxConcurrentRunners: 1 },
+				constraints: { outboundOnly: true },
+			}),
+		}))).payload;
+		expect(actingCheckIn).toMatchObject({ capacityProviderId: provider.id, status: 'open' });
+
 		const leasedActing = await json(await app.request('/v1/provider/assignments/next', {
 			method: 'POST',
 			headers: providerHeaders,
-			body: JSON.stringify({ sessionId: checkIn.id, runnerId: 'runner-phase-2c', leaseSeconds: 60 }),
+			body: JSON.stringify({ sessionId: actingCheckIn.id, runnerId: 'runner-phase-2c', leaseSeconds: 60 }),
 		}));
 		expect(leasedActing.payload).toMatchObject({ id: actingAssignment.id, status: 'leased', leaseState: 'leased' });
 		const retryableFailure = await json(await app.request(`/v1/provider/assignments/${actingAssignment.id}/fail`, {

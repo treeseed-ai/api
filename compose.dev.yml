@@ -1,0 +1,12 @@
+services:
+  api:
+    working_dir: /workspace/packages/api
+    command: ["npm", "run", "dev:api"]
+    volumes:
+      - ../..:/workspace
+
+  operations-runner:
+    working_dir: /workspace/packages/api
+    command: ["npm", "run", "dev:runner"]
+    volumes:
+      - ../..:/workspace
