@@ -477,12 +477,74 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 		namespace: 'project',
 		operation: 'web_deployment',
 		async run(rawInput, context) {
-			if (!deploymentStore) {
-				throw new Error('Project web deployment executor requires the Market control-plane store.');
-			}
 			const input = { ...objectValue(rawInput), dryRun: dryRun || rawInput?.dryRun === true };
 			const normalizedInput = validateInput(input);
 			const effectiveDryRun = input.dryRun === true;
+			if (!deploymentStore) {
+				if (!mockExternal && !effectiveDryRun) {
+					throw new Error('Project web deployment executor requires the Market control-plane store for non-mocked deployments.');
+				}
+				const deployment = {
+					id: normalizedInput.deploymentId,
+					projectId: normalizedInput.projectId,
+					teamId: normalizedInput.teamId,
+					environment: normalizedInput.environment,
+					action: normalizedInput.action,
+					repository: {
+						owner: input.repositoryOwner ?? 'mock',
+						name: input.repositoryName ?? normalizedInput.projectId,
+						branch: input.branch ?? (normalizedInput.environment === 'prod' ? 'main' : 'staging'),
+					},
+					target: input.target ?? {},
+				};
+				const workflowResult = normalizedInput.action === 'monitor'
+					? null
+					: mockWorkflowResult(deployment, input, mockResult);
+				const terminalStatus = workflowResult?.conclusion === 'failure' ? 'failed' : 'succeeded';
+				const target = workflowResult ? deploymentTarget(deployment, workflowResult) : deployment.target;
+				const monitor = {
+					status: terminalStatus === 'failed' ? 'failed' : 'passed',
+					checks: [],
+					mockExternal,
+					dryRun: effectiveDryRun,
+				};
+				const summary = normalizedInput.action === 'monitor'
+					? `monitor for ${normalizedInput.environment} completed with ${monitor.status}.`
+					: `${normalizedInput.action} for ${normalizedInput.environment} ${terminalStatus}.`;
+				await context.checkpoint?.({
+					phase: 'mock_deployment_completed',
+					deploymentId: normalizedInput.deploymentId,
+					status: terminalStatus,
+					externalWorkflow: workflowResult,
+					target,
+					monitor,
+				}, {
+					kind: terminalStatus === 'failed' ? 'deployment.failed' : 'deployment.succeeded',
+					data: {
+						deploymentId: normalizedInput.deploymentId,
+						status: terminalStatus,
+						message: summary,
+						mockExternal,
+						dryRun: effectiveDryRun,
+					},
+				});
+				if (terminalStatus === 'failed') {
+					throw new Error(summary);
+				}
+				return {
+					ok: true,
+					status: terminalStatus,
+					deploymentId: normalizedInput.deploymentId,
+					projectId: normalizedInput.projectId,
+					teamId: normalizedInput.teamId,
+					environment: normalizedInput.environment,
+					action: normalizedInput.action,
+					externalWorkflow: workflowResult,
+					target,
+					monitor,
+					summary,
+				};
+			}
 			let deployment = await loadDeployment(normalizedInput.deploymentId);
 			let externalWorkflow = null;
 			try {

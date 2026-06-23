@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
@@ -28,6 +28,24 @@ function run(command: string, args: string[], env: Record<string, string> = {}) 
 		},
 	});
 	if (result.status !== 0) {
+		throw new Error(`${command} ${args.join(' ')} failed`);
+	}
+}
+
+async function runAsync(command: string, args: string[], env: Record<string, string> = {}) {
+	const child = spawn(command, args, {
+		cwd: packageRoot,
+		stdio: 'inherit',
+		env: {
+			...process.env,
+			...env,
+		},
+	});
+	const status = await new Promise<number | null>((resolvePromise, rejectPromise) => {
+		child.once('error', rejectPromise);
+		child.once('exit', (code) => resolvePromise(code));
+	});
+	if (status !== 0) {
 		throw new Error(`${command} ${args.join(' ')} failed`);
 	}
 }
@@ -172,17 +190,17 @@ async function startLocalAcceptanceApi() {
 
 async function runAcceptanceIfConfigured() {
 	const baseUrl = process.env.TREESEED_API_BASE_URL;
-	if (baseUrl) {
-		if (!process.env.TREESEED_ACCEPTANCE_SERVICE_ID || !process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET) {
-			throw new Error('TREESEED_ACCEPTANCE_SERVICE_ID and TREESEED_ACCEPTANCE_SERVICE_SECRET are required when TREESEED_API_BASE_URL is set.');
-		}
-		run('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
+	if (baseUrl && process.env.TREESEED_ACCEPTANCE_SERVICE_ID && process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET) {
+		await runAsync('npm', ['run', 'test:acceptance', '--', '--base-url', baseUrl]);
 		return;
 	}
-	console.log('Starting isolated local API acceptance target because TREESEED_API_BASE_URL is not set.');
+	if (baseUrl) {
+		console.log('TREESEED_API_BASE_URL is set without acceptance service credentials; using isolated local API acceptance target.');
+	}
+	console.log('Starting isolated local API acceptance target.');
 	const server = await startLocalAcceptanceApi();
 	try {
-		run('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', server.baseUrl], {
+		await runAsync('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', server.baseUrl], {
 			TREESEED_ACCEPTANCE_SERVICE_ID: process.env.TREESEED_ACCEPTANCE_SERVICE_ID ?? 'web',
 			TREESEED_ACCEPTANCE_SERVICE_SECRET: process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET ?? 'web-test-secret',
 			TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS: '1',

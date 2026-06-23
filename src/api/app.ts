@@ -1,4 +1,5 @@
 // @ts-nocheck
+import type { Hono } from 'hono';
 import {
 	AgentSdk,
 	RemoteTreeseedClient,
@@ -5120,7 +5121,7 @@ export function createApiExtension(options = {}) {
 	};
 }
 
-export function createApiApp(options = {}) {
+export function createApiApp(options = {}): Hono {
 	const config = defaultConfig(options.config ?? {});
 	const apiDatabaseUrl = config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? null;
 	if (!options.db && !apiDatabaseUrl) {
@@ -5628,6 +5629,37 @@ export function createApiApp(options = {}) {
 						options: [{ id: 'approve', label: 'Approve' }],
 						metadata: { acceptance: true, namespace },
 					}).catch(() => null);
+				const decisionId = `decision-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+				const decisionPlanningStatus = await store.upsertDecisionPlanningStatus({
+					id: `dps-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
+					projectId: project.id,
+					decisionId,
+					executionReadiness: 'draft',
+					planningInputsStatus: 'requested',
+					metadata: { acceptance: true, namespace },
+				}).catch(() => null);
+				const workdayTestRunId = `workday-test-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+				const workdayTestRun = await store.getWorkdayTestRun(team.id, workdayTestRunId).catch(() => null)
+					?? await store.createWorkdayTestRun(team.id, {
+						id: workdayTestRunId,
+						capacityProviderId: provider.id,
+						scenarioId: 'acceptance',
+						status: 'queued',
+						environment: runtime.resolved.config.environment ?? 'local',
+						requestedById: owner?.userId,
+						parameters: { acceptance: true, namespace },
+						summary: { seeded: true },
+					}).catch(() => null);
+				const workdayTestEvent = workdayTestRun ? await store.createWorkdayTestEvent(team.id, workdayTestRun.id, {
+					id: `${workdayTestRun.id}-event-0000`,
+					eventIndex: 0,
+					eventType: 'acceptance.seeded',
+					status: 'recorded',
+					title: 'Acceptance seeded event',
+					message: 'Seeded acceptance workday-test event.',
+					parameters: { namespace },
+					metadata: { acceptance: true, namespace },
+				}).catch(() => null) : null;
 				const resetToken = `reset_acceptance_${namespace}`;
 				await store.run(
 					`INSERT INTO market_auth_password_resets (id, user_id, token_hash, expires_at, used_at, created_at)
@@ -5684,6 +5716,9 @@ export function createApiApp(options = {}) {
 							seedRun: { id: seedRun?.id ?? `seed-${namespace}` },
 							invite: { id: invite?.invite?.id ?? null },
 							approvalRequest: { id: approvalRequest?.id ?? `approval-${namespace}` },
+							decision: { id: decisionPlanningStatus?.decisionId ?? decisionId },
+							workdayTestRun: { id: workdayTestRun?.id ?? workdayTestRunId },
+							workdayTestEvent: { id: workdayTestEvent?.id ?? `${workdayTestRunId}-event-0000` },
 							passwordReset: { token: resetToken },
 							host: { id: acceptanceWebHostId },
 							environment: { id: 'staging' },
@@ -5928,6 +5963,41 @@ export function createApiApp(options = {}) {
 						output: body.output,
 						event: body.event,
 					});
+					if (operation.namespace === 'project' && operation.operation === 'web_deployment') {
+						const output = body.output && typeof body.output === 'object' && !Array.isArray(body.output) ? body.output : {};
+						const input = operation.input && typeof operation.input === 'object' && !Array.isArray(operation.input) ? operation.input : {};
+						const deploymentId = optionalTrimmedString(output.deploymentId) ?? optionalTrimmedString(input.deploymentId);
+						if (deploymentId) {
+							const status = optionalTrimmedString(output.status) ?? (output.ok === true ? 'succeeded' : null);
+							const terminalStatus = status === 'failed' ? 'failed' : status === 'succeeded' ? 'succeeded' : null;
+							if (terminalStatus) {
+								const updated = await store.updateProjectDeployment(deploymentId, {
+									status: terminalStatus,
+									externalWorkflow: output.externalWorkflow ?? null,
+									target: output.target ?? null,
+									monitor: output.monitor ?? null,
+									summary: optionalTrimmedString(output.summary) ?? `Project web deployment ${terminalStatus}.`,
+									error: terminalStatus === 'failed'
+										? output.error ?? { code: 'project_web_deployment_failed', message: optionalTrimmedString(output.summary) ?? 'Project web deployment failed.' }
+										: {},
+								}).catch(() => null);
+								if (updated) {
+									await store.appendProjectDeploymentEvent(deploymentId, {
+										kind: terminalStatus === 'failed' ? 'deployment.failed' : 'deployment.succeeded',
+										message: optionalTrimmedString(output.summary) ?? `Project web deployment ${terminalStatus}.`,
+										status: terminalStatus,
+										severity: terminalStatus === 'failed' ? 'error' : 'info',
+										operationId: operation.id,
+										payload: {
+											externalWorkflow: output.externalWorkflow ?? null,
+											target: output.target ?? null,
+											monitor: output.monitor ?? null,
+										},
+									}).catch(() => null);
+								}
+							}
+						}
+					}
 				} catch (error) {
 					return platformOperationMutationError(c, error);
 				}
@@ -12488,6 +12558,8 @@ export function createApiApp(options = {}) {
 			app.patch('/v1/projects/:projectId/agent-classes/:classId', async (c) => {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 				if (access.response) return access.response;
+				const existing = await store.getProjectAgentClass(c.req.param('projectId'), c.req.param('classId'));
+				if (!existing) return jsonError(c, 404, 'Unknown project agent class.');
 				const body = await c.req.json().catch(() => ({}));
 				const agentClass = await store.upsertProjectAgentClass(c.req.param('projectId'), {
 					...body,

@@ -96,7 +96,11 @@ async function packageVersion() {
 
 async function loadConfig({ requireSecrets = true } = {}) {
 	const marketId = readArg('--market') ?? env('TREESEED_MANAGER_ID', 'local');
-	const apiDatabaseUrl = resolveApiDatabaseUrl(process.env, env('TREESEED_API_BASE_URL') ?? 'http://127.0.0.1:3000');
+	const apiTransport = env('TREESEED_PLATFORM_RUNNER_API_TRANSPORT', 'database');
+	const forceHttpTransport = apiTransport === 'http';
+	const apiDatabaseUrl = forceHttpTransport
+		? null
+		: resolveApiDatabaseUrl(process.env, env('TREESEED_API_BASE_URL') ?? 'http://127.0.0.1:3000');
 	const config = {
 		marketUrl: env('TREESEED_API_BASE_URL') ?? env('TREESEED_URL'),
 		apiDatabaseUrl,
@@ -108,9 +112,12 @@ async function loadConfig({ requireSecrets = true } = {}) {
 		port: Number(env('PORT', '0')),
 	};
 	if (requireSecrets) {
-		const missing = Object.entries({
-			TREESEED_DATABASE_URL: config.apiDatabaseUrl,
-		}).filter(([, value]) => !value).map(([key]) => key);
+		const missing = config.apiDatabaseUrl
+			? []
+			: Object.entries({
+					TREESEED_API_BASE_URL: config.marketUrl,
+					TREESEED_PLATFORM_RUNNER_SECRET: config.runnerSecret,
+				}).filter(([, value]) => !value).map(([key]) => key);
 		if (missing.length > 0) {
 			throw new Error(`Missing required Treeseed operations runner environment: ${missing.join(', ')}`);
 		}

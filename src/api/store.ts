@@ -7710,7 +7710,11 @@ export class MarketControlPlaneStore {
 		const decisionId = stringValue(input.decisionId);
 		if (!decisionId) throw new Error('decisionId is required.');
 		const scopeHash = input.scopeHash ?? this.scopeHash(input.scope ?? { projectId: project.id, decisionId, metadata: objectValue(input.metadata) });
-		const id = input.id ?? `dps_${safeIdPart(decisionId)}`;
+		const existing = await this.first(
+			`SELECT * FROM decision_planning_statuses WHERE decision_id = ? LIMIT 1`,
+			[decisionId],
+		);
+		const id = input.id ?? existing?.id ?? `dps_${safeIdPart(decisionId)}`;
 		const readiness = stringValue(input.executionReadiness ?? input.execution_readiness, 'draft');
 		await this.run(
 			`INSERT OR REPLACE INTO decision_planning_statuses (

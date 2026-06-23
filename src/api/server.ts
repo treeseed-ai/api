@@ -2,9 +2,11 @@
 // @ts-nocheck
 
 import { createServer } from 'node:http';
+import type { Server } from 'node:http';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { resolveApiConfig } from '@treeseed/sdk/api';
+import type { Hono } from 'hono';
 import { createApiApp } from './app.js';
 
 function hasRequestBody(method) {
@@ -37,7 +39,15 @@ async function honoNodeHandler(app, request, response) {
 	Readable.fromWeb(webResponse.body).pipe(res);
 }
 
-export async function createApiServer(options = {}) {
+export type ApiServerInstance = {
+	app: Hono;
+	config: ReturnType<typeof resolveApiConfig>;
+	server: Server;
+	url: string;
+	close(): Promise<void>;
+};
+
+export async function createApiServer(options = {}): Promise<ApiServerInstance> {
 	const config = {
 		...resolveApiConfig(),
 		...(options.config ?? {}),
