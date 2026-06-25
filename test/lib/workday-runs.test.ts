@@ -31,8 +31,8 @@ function createStore() {
 	return { db, store };
 }
 
-describe('workday test runs', () => {
-	it('persists test runs and ordered audit events', async () => {
+describe('workday runs', () => {
+	it('persists workday runs and ordered audit events', async () => {
 		const { db, store } = createStore();
 		try {
 			await store.ensureInitialized();
@@ -45,14 +45,14 @@ describe('workday test runs', () => {
 			const run = await store.createWorkdayTestRun('team-test', {
 				id: 'run-test',
 				capacityProviderId: 'provider-local',
-				status: 'running',
+				status: 'queued',
 				parameters: { providerToken: 'secret-value', projects: ['market'] },
 				expected: { projects: ['market'] },
 			});
 			expect(run).toMatchObject({
 				id: 'run-test',
 				teamId: 'team-test',
-				status: 'running',
+				status: 'queued',
 				capacityProviderId: 'provider-local',
 				parameters: { providerToken: 'secret-value', projects: ['market'] },
 			});
@@ -73,7 +73,7 @@ describe('workday test runs', () => {
 			const updated = await store.updateWorkdayTestRun('team-test', 'run-test', {
 				status: 'completed',
 				metrics: { score: 100 },
-				reportRefs: { jsonPath: '.treeseed/test-reports/workday-test-run-test.json' },
+				reportRefs: { jsonPath: '.treeseed/workday-reports/workday-run-test.json' },
 			});
 			expect(updated).toMatchObject({
 				status: 'completed',

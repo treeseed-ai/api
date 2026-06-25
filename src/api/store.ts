@@ -72,6 +72,78 @@ function arrayValue(value) {
 	return Array.isArray(value) ? value : [];
 }
 
+function treeDxConnectedAuthConfig(config = {}) {
+	const configuredTreeDxUrl = config.TREESEED_TREEDX_URL
+		?? config.TREESEED_TREEDX_BASE_URL
+		?? config.treedxBaseUrl
+		?? process.env.TREESEED_TREEDX_URL
+		?? process.env.TREESEED_TREEDX_BASE_URL
+		?? '';
+	const apiBaseUrl = config.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? '';
+	const localMode = process.env.TREESEED_API_ENVIRONMENT === 'local'
+		|| process.env.TREESEED_ENVIRONMENT === 'local'
+		|| process.env.TREESEED_LOCAL_DEV_MODE === '1'
+		|| isLoopbackUrl(apiBaseUrl)
+		|| isLoopbackUrl(configuredTreeDxUrl);
+	const secret = config.TREESEED_TREEDX_JWT_HS256_SECRET
+		?? config.treedxJwtHs256Secret
+		?? process.env.TREESEED_TREEDX_JWT_HS256_SECRET
+		?? process.env.TREEDX_JWT_HS256_SECRET
+		?? (localMode ? 'treeseed-local-treedx-jwt-secret' : null)
+		?? null;
+	const issuer = config.TREESEED_TREEDX_JWT_ISSUER
+		?? config.treedxJwtIssuer
+		?? process.env.TREESEED_TREEDX_JWT_ISSUER
+		?? process.env.TREEDX_JWT_ISSUER
+		?? 'https://api.treeseed.local/treedx';
+	const audience = config.TREESEED_TREEDX_JWT_AUDIENCE
+		?? config.treedxJwtAudience
+		?? process.env.TREESEED_TREEDX_JWT_AUDIENCE
+		?? process.env.TREEDX_JWT_AUDIENCE
+		?? 'treedx-local';
+	const actorId = config.TREESEED_TREEDX_PROXY_ACTOR_ID
+		?? config.treedxProxyActorId
+		?? process.env.TREESEED_TREEDX_PROXY_ACTOR_ID
+		?? 'treeseed-api';
+	const tenantId = config.TREESEED_TREEDX_PROXY_TENANT_ID
+		?? config.treedxProxyTenantId
+		?? process.env.TREESEED_TREEDX_PROXY_TENANT_ID
+		?? 'treeseed-control-plane';
+	return { secret, issuer, audience, actorId, tenantId };
+}
+
+function base64urlJson(value) {
+	return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+function signTreeDxJwt(config, projectId, scope = {}) {
+	const auth = treeDxConnectedAuthConfig(config);
+	if (!auth.secret || !auth.issuer || !auth.audience) return null;
+	const now = Math.floor(Date.now() / 1000);
+	const payload = {
+		iss: auth.issuer,
+		aud: auth.audience,
+		sub: auth.actorId,
+		jti: randomUUID(),
+		iat: now,
+		nbf: now - 5,
+		exp: now + 300,
+		treedx_actor_id: auth.actorId,
+		treedx_tenant_id: auth.tenantId,
+		treedx_repo_ids: scope.repoIds ?? (scope.repoId ? [scope.repoId] : ['*']),
+		treedx_capabilities: scope.capabilities ?? [],
+		treedx_refs: scope.refs ?? ['*'],
+		treedx_paths: scope.paths ?? ['**'],
+		treeseed_project_id: projectId,
+	};
+	const signingInput = `${base64urlJson({ alg: 'HS256', typ: 'JWT' })}.${base64urlJson(payload)}`;
+	const signature = createHmac('sha256', auth.secret).update(signingInput).digest('base64url');
+	return `${signingInput}.${signature}`;
+}
+
+const workdayTestSynthesisLocks = new Set();
+const workdayTestSynthesisQueueKeys = new Set();
+
 const PROJECT_ARCHITECTURE_TOPOLOGIES = new Set(['single_repository_site', 'split_site_content', 'parent_workspace']);
 const CONTENT_RUNTIME_SOURCES = new Set(['local_directory', 'treedx_snapshot', 'r2_published_manifest', 'r2_preview_overlay']);
 const LOCAL_CONTENT_MATERIALIZATIONS = new Set(['none', 'existing_path', 'managed_clone', 'submodule']);
@@ -1240,7 +1312,7 @@ function sessionIsOpen(session) {
 
 function assignmentWorkspaceAccessMode(input = {}) {
 	const explicit = stringValue(input.workspaceAccessMode ?? input.workspace_access_mode);
-	if (['context_only', 'brokered_workspace', 'full_workspace_no_credentials', 'trusted_direct'].includes(explicit)) return explicit;
+	if (['context_only', 'workspace_write', 'brokered_workspace', 'full_workspace_no_credentials', 'trusted_direct'].includes(explicit)) return explicit;
 	return input.mode === 'acting' ? 'brokered_workspace' : 'context_only';
 }
 
@@ -1383,6 +1455,13 @@ function checkedInGrantMatches(grant, sessionGrants) {
 		if (environment && grant.environment && environment !== grant.environment) return false;
 		return Boolean(scope || projectId || teamId || providerId || environment);
 	});
+}
+
+function grantIsActiveWorkdayTestGrant(grant, activeRunIds = new Set()) {
+	if (!grant || grant.state !== 'active') return false;
+	if (!['workday_test', 'live_workday'].includes(String(grant.metadata?.source ?? ''))) return true;
+	const runId = stringValue(grant.metadata?.runId, '');
+	return Boolean(runId && activeRunIds.has(runId));
 }
 
 function runnerPressureLimit(session) {
@@ -1784,57 +1863,6 @@ function serializeRuntimeWorkDay(row) {
 		endedAt: row.ended_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
-	};
-}
-
-function serializeRuntimeTask(row) {
-	if (!row) return null;
-	return {
-		id: row.id,
-		workDayId: row.work_day_id,
-		agentId: row.agent_id,
-		type: row.type,
-		state: row.state,
-		priority: Number(row.priority ?? 0),
-		idempotencyKey: row.idempotency_key,
-		payloadJson: row.payload_json,
-		payloadHash: row.payload_hash,
-		attemptCount: Number(row.attempt_count ?? 0),
-		maxAttempts: Number(row.max_attempts ?? 3),
-		claimedBy: row.claimed_by,
-		leaseExpiresAt: row.lease_expires_at,
-		availableAt: row.available_at,
-		lastErrorCode: row.last_error_code,
-		lastErrorMessage: row.last_error_message,
-		graphVersion: row.graph_version,
-		parentTaskId: row.parent_task_id,
-		createdAt: row.created_at,
-		startedAt: row.started_at,
-		completedAt: row.completed_at,
-		updatedAt: row.updated_at,
-	};
-}
-
-function serializeRuntimeTaskEvent(row) {
-	if (!row) return null;
-	return {
-		id: row.id,
-		taskId: row.task_id,
-		seq: Number(row.seq ?? 0),
-		kind: row.kind,
-		dataJson: row.data_json,
-		createdAt: row.created_at,
-	};
-}
-
-function serializeRuntimeTaskOutput(row) {
-	if (!row) return null;
-	return {
-		id: row.id,
-		taskId: row.task_id,
-		outputJson: row.output_json,
-		outputRef: row.output_ref,
-		createdAt: row.created_at,
 	};
 }
 
@@ -5958,10 +5986,15 @@ export class MarketControlPlaneStore {
 		await this.ensureInitialized();
 		const team = await this.getTeam(principal.teamId);
 		if (!team) return null;
-		const [projects, grants] = await Promise.all([
+		const [projects, grants, activeWorkdayRuns] = await Promise.all([
 			this.listTeamProjects(principal.teamId),
 			this.listCapacityGrants(principal.teamId, { providerId: principal.capacityProviderId }),
+			this.all(
+				`SELECT id FROM workday_test_runs WHERE team_id = ? AND capacity_provider_id = ? AND status = 'running' LIMIT 200`,
+				[principal.teamId, principal.capacityProviderId],
+			).catch(() => []),
 		]);
+		const activeWorkdayRunIds = new Set(activeWorkdayRuns.map((row) => stringValue(row?.id, '')).filter(Boolean));
 		const manifestProjects = [];
 		for (const project of projects) {
 			const metadata = project.metadata ?? {};
@@ -6025,6 +6058,7 @@ export class MarketControlPlaneStore {
 			},
 			grants: grants
 				.filter((grant) => grant.state === 'active')
+				.filter((grant) => grantIsActiveWorkdayTestGrant(grant, activeWorkdayRunIds))
 				.map((grant) => ({
 					grantId: grant.id,
 					id: grant.id,
@@ -6540,16 +6574,24 @@ export class MarketControlPlaneStore {
 	}
 
 	async activeCapacityGrantsForProvider(teamId, providerId, projectId = null, environment = null) {
-		const rows = await this.all(
-			`SELECT * FROM capacity_grants
-			 WHERE team_id = ? AND capacity_provider_id = ? AND state = 'active'
-			   AND (project_id IS NULL OR project_id = ?)
-			 LIMIT 100`,
-			[teamId, providerId, projectId],
-		).catch(() => []);
+		const [rows, activeWorkdayRuns] = await Promise.all([
+			this.all(
+				`SELECT * FROM capacity_grants
+				 WHERE team_id = ? AND capacity_provider_id = ? AND state = 'active'
+				   AND (project_id IS NULL OR project_id = ?)
+				 LIMIT 200`,
+				[teamId, providerId, projectId],
+			).catch(() => []),
+			this.all(
+				`SELECT id FROM workday_test_runs WHERE team_id = ? AND capacity_provider_id = ? AND status = 'running' LIMIT 200`,
+				[teamId, providerId],
+			).catch(() => []),
+		]);
+		const activeWorkdayRunIds = new Set(activeWorkdayRuns.map((row) => stringValue(row?.id, '')).filter(Boolean));
 		return rows
 			.map(serializeCapacityGrant)
 			.filter(Boolean)
+			.filter((grant) => grantIsActiveWorkdayTestGrant(grant, activeWorkdayRunIds))
 			.filter((grant) => grantMatchesScope(grant, {
 				teamId,
 				capacityProviderId: providerId,
@@ -6854,14 +6896,18 @@ export class MarketControlPlaneStore {
 				? [session.checkedInAt, session.checkedInAt, principal.teamId, principal.capacityProviderId, session.id, session.environment]
 				: [session.checkedInAt, session.checkedInAt, principal.teamId, principal.capacityProviderId, session.id],
 		).catch(() => null);
-		await this.synthesizeProviderAssignments(principal, { ...input, sessionId: session.id }).catch(() => []);
+		this.queueProviderAssignmentSynthesis(principal, {
+			...input,
+			sessionId: session.id,
+			source: input.source ?? 'provider_check_in',
+		}, 'provider_check_in');
 		return session;
 	}
 
 	async leaseNextProviderAssignment(principal, input = {}) {
 		await this.ensureInitialized();
-		await this.synthesizeProviderAssignments(principal, input).catch(() => []);
 		const now = isoNow();
+		await this.expireStaleWorkdayTestAssignments(principal, now).catch(() => null);
 		const context = await this.resolveProviderEligibilityContext(principal, { ...input, now });
 		const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
 		const rows = await this.all(
@@ -7018,6 +7064,16 @@ export class MarketControlPlaneStore {
 			candidates: candidateDiagnostics,
 		};
 		if (!assignment) {
+			const synthesisQueued = this.queueProviderAssignmentSynthesis(principal, {
+				...input,
+				sessionId: input.sessionId ?? context.session?.id ?? null,
+				source: input.source ?? 'provider_lease_poll',
+			}, 'provider_lease_poll');
+			diagnostics.synthesis = {
+				queued: synthesisQueued,
+				reason: 'no_assignment_selected',
+				mode: 'background_api_owned',
+			};
 			for (const candidate of candidateDiagnostics) {
 				if (!candidate.assignmentId) continue;
 				await this.recordProviderAssignmentExplanation(principal.teamId, candidate.assignmentId, {
@@ -7052,7 +7108,12 @@ export class MarketControlPlaneStore {
 			     claimed_at = COALESCE(claimed_at, ?),
 			     metadata_json = ?,
 			     updated_at = ?
-			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?`,
+			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?
+			   AND (
+			     (status = 'pending' AND lease_state = 'unleased')
+			     OR (status = 'returned' AND lease_state = 'released')
+			     OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?)
+			   )`,
 			[
 				leaseToken,
 				leaseExpiresAt,
@@ -7065,26 +7126,213 @@ export class MarketControlPlaneStore {
 				assignment.id,
 				principal.teamId,
 				principal.capacityProviderId,
+				now,
 			],
 		);
+		const leasedAssignment = await this.getProviderAssignment(principal.teamId, assignment.id);
+		if (
+			!leasedAssignment
+			|| leasedAssignment.leaseToken !== leaseToken
+			|| (input.runnerId && leasedAssignment.runnerId !== input.runnerId)
+		) {
+			return {
+				assignment: null,
+				leaseToken: null,
+				leaseSeconds,
+				diagnostics: {
+					...diagnostics,
+					totals: { ...diagnostics.totals, selected: 0 },
+					candidates: diagnostics.candidates.map((candidate) => candidate.assignmentId === assignment.id
+						? {
+							...candidate,
+							selected: false,
+							reasons: [...new Set([...(candidate.reasons ?? []), 'lease_race_lost'])],
+							gates: {
+								...(candidate.gates ?? {}),
+								leaseRace: {
+									expectedRunnerId: input.runnerId ?? null,
+									actualRunnerId: leasedAssignment?.runnerId ?? null,
+									expectedLeaseToken: '<redacted>',
+									actualLeaseToken: leasedAssignment?.leaseToken ? '<redacted>' : null,
+								},
+							},
+						}
+						: candidate),
+				},
+			};
+		}
 		await this.settleProviderAssignmentLifecycle(principal, assignment, 'start', {
 			modeRunId: input.modeRunId ?? null,
 			source: 'provider_assignment_lease',
 		}).catch(() => null);
 		return {
-			assignment: await this.getProviderAssignment(principal.teamId, assignment.id),
+			assignment: leasedAssignment,
 			leaseToken,
 			leaseSeconds,
 		};
 	}
 
+	async expireStaleWorkdayTestAssignments(principal, now = isoNow()) {
+		await this.ensureInitialized();
+		const rows = await this.all(
+			`SELECT * FROM provider_assignments
+			 WHERE team_id = ? AND capacity_provider_id = ?
+			   AND synthesized_from IN ('workday_test', 'live_workday')
+			   AND status IN ('pending', 'returned', 'leased')
+			 ORDER BY assigned_at ASC, created_at ASC, id ASC
+			 LIMIT 1000`,
+			[principal.teamId, principal.capacityProviderId],
+		).catch(() => []);
+		if (!rows.length) return { expired: 0 };
+		const assignments = rows.map(serializeProviderAssignment).filter(Boolean);
+		const workdayIds = [...new Set(assignments.map((assignment) => assignment.workDayId ?? assignment.capacityEnvelope?.workDayId ?? null).filter(Boolean))];
+		const workdayStatuses = new Map();
+		if (workdayIds.length) {
+			const workdayRows = await this.all(
+				`SELECT id, status FROM workday_capacity_envelopes WHERE id IN (${workdayIds.map(() => '?').join(', ')})`,
+				workdayIds,
+			).catch(() => []);
+			for (const row of workdayRows) {
+				if (row?.id) workdayStatuses.set(row.id, row.status ?? null);
+			}
+		}
+		const runIds = [...new Set(assignments.map((assignment) => stringValue(assignment.metadata?.workdayRunId ?? assignment.metadata?.workdayTestRunId, '')).filter(Boolean))];
+		const runs = new Map();
+		if (runIds.length) {
+			const runRows = await this.all(
+				`SELECT * FROM workday_test_runs WHERE team_id = ? AND id IN (${runIds.map(() => '?').join(', ')})`,
+				[principal.teamId, ...runIds],
+			).catch(() => []);
+			for (const row of runRows) {
+				const run = serializeWorkdayTestRun(row);
+				if (run?.id) runs.set(run.id, run);
+			}
+		}
+		const nowMs = Date.parse(now);
+		let expired = 0;
+		for (const assignment of assignments) {
+			const reasons = [];
+			const leaseExpiresMs = Date.parse(assignment.leaseExpiresAt ?? '');
+			const activeLease = assignment.leaseState === 'leased'
+				&& assignment.runnerId
+				&& Number.isFinite(leaseExpiresMs)
+				&& leaseExpiresMs > nowMs;
+			const workdayId = assignment.workDayId ?? assignment.capacityEnvelope?.workDayId ?? null;
+			const workdayStatus = workdayId ? workdayStatuses.get(workdayId) : null;
+			if (!activeLease && workdayId && workdayStatus && workdayStatus !== 'active') reasons.push(`workday_${workdayStatus}`);
+			if (workdayId && !workdayStatus) reasons.push('workday_missing');
+			const runId = stringValue(assignment.metadata?.workdayRunId ?? assignment.metadata?.workdayTestRunId, '');
+			const run = runId ? runs.get(runId) : null;
+			if (runId && !run) reasons.push('workday_run_missing');
+			if (!activeLease && run && run.status !== 'running') reasons.push(`workday_run_${run.status}`);
+			const runParameters = objectValue(run?.parameters);
+			const deadlineMs = Date.parse(runParameters.deadlineAt ?? '');
+			const settlementGraceSeconds = Math.max(300, Number(runParameters.settlementGraceSeconds ?? runParameters.waitSeconds ?? 0) || 0);
+			const staleAtMs = Number.isFinite(deadlineMs) ? deadlineMs + settlementGraceSeconds * 1000 : Number.NaN;
+			if (!activeLease && Number.isFinite(staleAtMs) && staleAtMs <= nowMs) reasons.push('workday_deadline_elapsed');
+			const handleExpiresMs = Date.parse(assignment.treedxProxyHandle?.expiresAt ?? assignment.workspaceContext?.treedxProxyHandle?.expiresAt ?? '');
+			if (Number.isFinite(handleExpiresMs) && handleExpiresMs <= nowMs) reasons.push('treedx_handle_expired');
+			if (reasons.length === 0) continue;
+			const lifecycleReason = `Workday assignment is no longer leasable: ${[...new Set(reasons)].join(', ')}.`;
+			await this.run(
+				`UPDATE provider_assignments
+				 SET status = 'failed',
+				     lease_state = 'released',
+				     lease_token = NULL,
+				     lease_expires_at = NULL,
+				     lease_renewed_at = NULL,
+				     runner_id = NULL,
+				     failed_at = COALESCE(failed_at, ?),
+				     lifecycle_reason = ?,
+				     lifecycle_code = ?,
+				     lifecycle_output_json = ?,
+				     updated_at = ?
+				 WHERE id = ? AND team_id = ? AND capacity_provider_id = ?
+				   AND status IN ('pending', 'returned', 'leased')`,
+				[
+					now,
+					lifecycleReason,
+					'workday_assignment_expired',
+					JSON.stringify({
+						reasons: [...new Set(reasons)],
+						workdayId,
+						workdayStatus,
+						runId,
+						runStatus: run?.status ?? null,
+						deadlineAt: Number.isFinite(deadlineMs) ? new Date(deadlineMs).toISOString() : null,
+						settlementGraceSeconds,
+						staleAt: Number.isFinite(staleAtMs) ? new Date(staleAtMs).toISOString() : null,
+					}),
+					now,
+					assignment.id,
+					principal.teamId,
+					principal.capacityProviderId,
+				],
+			);
+			await this.recordProviderAssignmentExplanation(principal.teamId, assignment.id, {
+				source: 'lease_next_assignment',
+				sourceId: assignment.synthesisKey ?? assignment.id,
+				eligible: false,
+				reasons: [...new Set(reasons)],
+				gates: {
+					workdayId,
+					workdayStatus,
+					runId,
+					runStatus: run?.status ?? null,
+					deadlineAt: Number.isFinite(deadlineMs) ? new Date(deadlineMs).toISOString() : null,
+					settlementGraceSeconds,
+					staleAt: Number.isFinite(staleAtMs) ? new Date(staleAtMs).toISOString() : null,
+					expiredAt: now,
+				},
+				metadata: { diagnosticsSource: 'workday_stale_assignment_cleanup' },
+			}).catch(() => null);
+			expired += 1;
+		}
+		return { expired };
+	}
+
 	async renewProviderAssignmentLease(principal, assignmentId, input = {}) {
 		await this.ensureInitialized();
 		const assignment = await this.getProviderAssignment(principal.teamId, assignmentId);
-		if (!assignment || assignment.capacityProviderId !== principal.capacityProviderId) return null;
+		const recordRenewFailure = async (reason, gates = {}) => {
+			await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+				source: 'provider_assignment_renew',
+				sourceId: assignmentId,
+				eligible: false,
+				reasons: [reason],
+				gates: {
+					capacityProviderId: principal.capacityProviderId,
+					assignmentProviderId: assignment?.capacityProviderId ?? null,
+					assignmentStatus: assignment?.status ?? null,
+					leaseState: assignment?.leaseState ?? null,
+					hasLeaseToken: Boolean(assignment?.leaseToken),
+					runnerId: input.runnerId ?? null,
+					...gates,
+				},
+				metadata: { evaluatedAt: isoNow(), diagnosticsSource: 'provider_assignment_renew' },
+			}).catch(() => null);
+		};
+		if (!assignment) {
+			await recordRenewFailure('assignment_missing');
+			return null;
+		}
+		if (assignment.capacityProviderId !== principal.capacityProviderId) {
+			await recordRenewFailure('assignment_provider_mismatch');
+			return null;
+		}
 		const now = isoNow();
-		if (assignment.leaseState !== 'leased' || assignment.leaseToken !== input.leaseToken) return null;
-		if (assignment.leaseExpiresAt && Date.parse(assignment.leaseExpiresAt) <= Date.parse(now)) return null;
+		if (assignment.leaseState !== 'leased') {
+			await recordRenewFailure('assignment_not_leased');
+			return null;
+		}
+		if (assignment.leaseToken !== input.leaseToken) {
+			await recordRenewFailure('lease_token_mismatch', { providedLeaseToken: input.leaseToken ? '<redacted>' : null });
+			return null;
+		}
+		if (assignment.leaseExpiresAt && Date.parse(assignment.leaseExpiresAt) <= Date.parse(now)) {
+			await recordRenewFailure('lease_expired', { leaseExpiresAt: assignment.leaseExpiresAt, evaluatedAt: now });
+			return null;
+		}
 		const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
 		const leaseExpiresAt = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
 		await this.run(
@@ -7353,6 +7601,11 @@ export class MarketControlPlaneStore {
 			code: input.code ?? 'provider_assignment_returned',
 			source: 'provider_assignment_return',
 		}).catch(() => null);
+		this.queueProviderAssignmentSynthesis(principal, {
+			sessionId: assignment.providerSessionId ?? null,
+			source: 'provider_assignment_return',
+			terminalAssignmentId: assignment.id,
+		}, 'provider_assignment_terminal');
 		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
 	}
 
@@ -7414,6 +7667,11 @@ export class MarketControlPlaneStore {
 			nativeUsage: objectValue(input.nativeUsage, null),
 			source: 'provider_assignment_complete',
 		}).catch(() => null);
+		this.queueProviderAssignmentSynthesis(principal, {
+			sessionId: assignment.providerSessionId ?? null,
+			source: 'provider_assignment_complete',
+			terminalAssignmentId: assignment.id,
+		}, 'provider_assignment_terminal');
 		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
 	}
 
@@ -7472,6 +7730,11 @@ export class MarketControlPlaneStore {
 			code: input.code ?? 'provider_assignment_failed',
 			source: 'provider_assignment_fail',
 		}).catch(() => null);
+		this.queueProviderAssignmentSynthesis(principal, {
+			sessionId: assignment.providerSessionId ?? null,
+			source: 'provider_assignment_fail',
+			terminalAssignmentId: assignment.id,
+		}, 'provider_assignment_terminal');
 		return { assignment: await this.getProviderAssignment(principal.teamId, assignment.id), leaseToken: null, leaseSeconds: null };
 	}
 
@@ -7618,13 +7881,57 @@ export class MarketControlPlaneStore {
 			 ORDER BY COALESCE(m.started_at, m.created_at) DESC
 			 LIMIT ?`,
 			[...values, limit],
-		);
-		return rows.map((row) => {
-			const run = serializeAgentModeRun(row);
-			const finishedAt = row.completed_at ?? row.failed_at ?? row.assignment_completed_at ?? row.assignment_failed_at ?? row.assignment_returned_at ?? null;
-			const contentArtifactRefs = collectContentArtifactRefsFromExecution(row);
-			const tokens = tokenDiagnosticsFromExecution(row);
-			return {
+			);
+			const assignmentIds = [...new Set(rows.map((row) => stringValue(row.provider_assignment_id, '')).filter(Boolean))];
+			const telemetryRows = assignmentIds.length
+				? await this.all(
+					`SELECT * FROM agent_mode_runs
+					 WHERE team_id = ? AND provider_assignment_id IN (${assignmentIds.map(() => '?').join(', ')})
+					 ORDER BY COALESCE(started_at, created_at) ASC, created_at ASC`,
+					[teamId, ...assignmentIds],
+				).catch(() => [])
+				: [];
+			const telemetryByAssignment = new Map();
+			for (const telemetryRow of telemetryRows) {
+				const serialized = serializeAgentModeRun(telemetryRow);
+				if (!serialized) continue;
+				const assignmentId = stringValue(serialized.providerAssignmentId, '');
+				if (!assignmentId) continue;
+				const outputs = objectValue(serialized.outputs);
+				const metadata = objectValue(serialized.metadata);
+				const outputMetadata = objectValue(outputs.metadata);
+				const entry = {
+					id: serialized.id,
+					status: serialized.status,
+					mode: serialized.mode,
+					agentId: serialized.agentId,
+					handlerId: serialized.handlerId,
+					assignmentId: serialized.providerAssignmentId,
+					createdAt: serialized.createdAt,
+					startedAt: serialized.startedAt,
+					completedAt: serialized.completedAt,
+					failedAt: serialized.failedAt,
+					source: stringValue(metadata.source ?? outputMetadata.source, null),
+					outputStatus: outputs.status ?? null,
+					summary: outputs.summary ?? null,
+					outputs,
+					traceRefs: serialized.traceRefs,
+					usageActual: serialized.usageActual,
+					validation: serialized.validation,
+					fallbackReason: serialized.fallbackReason,
+					metadata,
+				};
+				const existing = telemetryByAssignment.get(assignmentId) ?? [];
+				existing.push(entry);
+				telemetryByAssignment.set(assignmentId, existing);
+			}
+			return rows.map((row) => {
+				const run = serializeAgentModeRun(row);
+				const finishedAt = row.completed_at ?? row.failed_at ?? row.assignment_completed_at ?? row.assignment_failed_at ?? row.assignment_returned_at ?? null;
+				const contentArtifactRefs = collectContentArtifactRefsFromExecution(row);
+				const tokens = tokenDiagnosticsFromExecution(row);
+				const assignmentId = stringValue(run.providerAssignmentId, '');
+				return {
 				id: run.id,
 				status: run.status,
 				mode: run.mode,
@@ -7683,12 +7990,13 @@ export class MarketControlPlaneStore {
 					traceRefs: run.traceRefs,
 					assignmentExplanation: parseJson(row.assignment_explanation_json, {}),
 				},
-				metadata: {
-					modeRun: run.metadata,
-				},
-			};
-		});
-	}
+					metadata: {
+						modeRun: run.metadata,
+					},
+					modeRuns: assignmentId ? telemetryByAssignment.get(assignmentId) ?? [] : [],
+				};
+			});
+		}
 
 	async getAgentModeRun(teamId, modeRunId) {
 		await this.ensureInitialized();
@@ -8447,6 +8755,746 @@ export class MarketControlPlaneStore {
 		return rows.map(serializeTreeDxProxyAudit);
 	}
 
+	workdayTestRequestedProjectSlugs(parameters = {}) {
+		const requested = parameters.projects ?? parameters.projectSlugs ?? 'all';
+		const canonical = ['market', 'admin', 'agent', 'api', 'cli', 'core', 'sdk', 'ui', 'treedx'];
+		if (requested === 'all' || requested === undefined || requested === null) return canonical;
+		const values = Array.isArray(requested) ? requested : String(requested).split(',');
+		const slugs = values.map((value) => String(value).trim()).filter(Boolean).filter((slug) => slug !== 'karyon');
+		return slugs.length > 0 ? slugs : canonical;
+	}
+
+	workdayTestContentRoot(project) {
+		const architecture = objectValue(project?.metadata?.architecture ?? project?.architecture);
+		const contentPath = stringValue(architecture.contentPath, '');
+		if (contentPath) return contentPath;
+		const slug = String(project?.slug ?? project?.id ?? '');
+		return slug === 'market' ? 'src/content' : 'docs/src/content';
+	}
+
+	workdayTestRepositoryId(project, run) {
+		const parameters = objectValue(run.parameters);
+		const bySlug = objectValue(parameters.repositoryIdsBySlug ?? parameters.treeDxRepositoryIdsBySlug);
+		const byProject = objectValue(parameters.repositoryIdsByProjectId);
+		const slug = String(project?.slug ?? project?.id ?? '');
+		const projectId = String(project?.id ?? '');
+		return stringValue(byProject[projectId] ?? bySlug[slug], `treeseed-${slug}`).toLowerCase().replace(/[^a-z0-9_.-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'treeseed-project';
+	}
+
+	workdayTestAssignmentIntent(agent = {}) {
+		const slug = String(agent.slug ?? agent.id ?? '');
+		if (slug.includes('docs-planner')) return { objective: 'Propose the highest-value documentation planning work for the core objective.', artifactKind: 'planning_proposal', subjectModel: 'objective', subjectId: 'core' };
+		if (slug.includes('codebase-cartographer')) return { objective: 'Ask the most important repository-structure questions that must be answered before implementation changes.', artifactKind: 'planning_question', subjectModel: 'objective', subjectId: 'core' };
+		if (slug.includes('knowledge-generator')) return { objective: 'Draft a knowledge page that explains one TreeSeed workday concept using only TreeDX-supplied context.', artifactKind: 'knowledge_page', subjectModel: 'objective', subjectId: 'core' };
+		if (slug.includes('knowledge-optimizer')) return { objective: 'Estimate and critique the latest generated planning proposal as a linked note.', artifactKind: 'proposal_estimate', subjectModel: 'proposal', subjectId: null };
+		if (slug.includes('docs-reviewer')) return { objective: 'Review the latest generated planning proposal and record linked feedback.', artifactKind: 'proposal_feedback_note', subjectModel: 'proposal', subjectId: null };
+		if (slug.includes('governance-steward')) return { objective: 'Ask the clearest governance question about what requires approval before source or decision changes.', artifactKind: 'planning_question', subjectModel: 'objective', subjectId: 'core' };
+		if (slug.includes('docs-engineer')) return { objective: 'Plan safe content-only implementation steps for the latest generated proposal without changing source code or approving decisions.', artifactKind: 'implementation_note', subjectModel: 'proposal', subjectId: null };
+		if (slug.includes('workday-reporter')) return { objective: 'Summarize the workday evidence, outputs, and remaining blockers as a linked report note.', artifactKind: 'workday_summary', subjectModel: 'objective', subjectId: 'core' };
+		return { objective: 'Review release and readiness risks for the latest generated planning proposal without approving a release.', artifactKind: 'release_readiness_note', subjectModel: 'proposal', subjectId: null };
+	}
+
+	async workdayTestContentArtifactRefs(run, projectId, limit = 200) {
+		const rows = await this.all(
+			`SELECT amr.outputs_json
+			   FROM agent_mode_runs amr
+			   JOIN provider_assignments pa
+			     ON pa.id = amr.provider_assignment_id
+			    AND pa.team_id = amr.team_id
+			  WHERE pa.team_id = ?
+			    AND pa.project_id = ?
+			    AND pa.synthesized_from IN ('workday_test', 'live_workday')
+			    AND pa.metadata_json LIKE ?
+			    AND amr.status = 'succeeded'
+			  ORDER BY amr.created_at DESC
+			  LIMIT ?`,
+			[run.teamId, projectId, `%"workdayRunId":"${run.id}"%`, Math.max(1, Math.min(Number(limit) || 200, 500))],
+		).catch(() => []);
+		const refs = [];
+		for (const row of rows) {
+			const outputs = objectValue(parseJson(row.outputs_json, {}));
+			const metadata = objectValue(outputs.metadata);
+			const artifact = objectValue(metadata.artifact);
+			const candidates = [
+				...arrayValue(outputs.contentArtifactRefs),
+				...arrayValue(metadata.contentArtifactRefs),
+				...arrayValue(artifact.items),
+			];
+			for (const candidate of candidates) {
+				const ref = objectValue(candidate, null);
+				if (!ref) continue;
+				const contentPath = stringValue(ref.contentPath, '');
+				if (!contentPath) continue;
+				refs.push({
+					...ref,
+					contentPath,
+					model: stringValue(ref.model, ''),
+					artifactKind: stringValue(ref.artifactKind, ref.kind, ''),
+					subjectId: stringValue(ref.subjectId, ''),
+					producedByAgent: stringValue(ref.producedByAgent, ref.agentId, ''),
+				});
+			}
+		}
+		const seen = new Set();
+		return refs.filter((ref) => {
+			const key = `${ref.model}:${ref.artifactKind}:${ref.contentPath}`;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+	}
+
+	async workdayTestResolveAssignmentIntent(run, project, agent) {
+		const intent = { ...this.workdayTestAssignmentIntent(agent) };
+		const slug = String(agent.slug ?? agent.id ?? '');
+		if (slug.includes('workday-reporter')) {
+			const artifacts = await this.workdayTestContentArtifactRefs(run, project.id);
+			return {
+				...intent,
+				relatedArtifacts: artifacts.slice(0, 24),
+			};
+		}
+		if (intent.subjectModel !== 'proposal' || intent.subjectId) return intent;
+		const artifacts = await this.workdayTestContentArtifactRefs(run, project.id);
+		const proposal = artifacts.find((artifact) => artifact.model === 'proposal')
+			?? artifacts.find((artifact) => artifact.artifactKind === 'planning_proposal');
+		if (!proposal) {
+			return {
+				...intent,
+				objective: `${intent.objective} No generated proposal exists yet, so create an objective-scoped planning note that states what proposal context is needed next.`,
+				artifactKind: 'planning_note',
+				subjectModel: 'objective',
+				subjectId: 'core',
+			};
+		}
+		const proposalId = String(proposal.subjectId || proposal.contentPath.replace(/^.*\/([^/]+)\.(md|mdx)$/u, '$1'));
+		return {
+			...intent,
+			subjectId: proposalId,
+			subjectPath: proposal.contentPath,
+			relatedArtifact: proposal,
+		};
+	}
+
+	workdayTestRuntimeHandler(agent = {}) {
+		const handler = String(agent.handler ?? '').trim();
+		if (handler === 'act') return 'plan';
+		return handler || 'plan';
+	}
+
+	workdayTestAgentsFromClasses(agentClasses = []) {
+		const agents = [];
+		for (const agentClass of agentClasses) {
+			const classMetadata = objectValue(agentClass.metadata);
+			const classPlanningAllocationPercent = Number(
+				classMetadata.planningAllocationPercent
+					?? classMetadata.planningPercent
+					?? agentClass.planningAllocationPercent
+					?? agentClass.planning_allocation_percent
+					?? NaN,
+			);
+			const handlerRefs = objectValue(agentClass.handlerRefs ?? agentClass.handler_refs);
+			for (const ref of arrayValue(handlerRefs.agents)) {
+				const record = objectValue(ref);
+				const slug = stringValue(record.slug ?? record.id, '');
+				if (!slug) continue;
+				agents.push({
+					slug,
+					handler: stringValue(record.handler, 'report'),
+					projectAgentClassId: stringValue(agentClass.id, ''),
+					projectAgentClassSlug: stringValue(agentClass.slug, 'planning'),
+					planningAllocationPercent: Number.isFinite(classPlanningAllocationPercent) && classPlanningAllocationPercent > 0
+						? classPlanningAllocationPercent
+						: null,
+				});
+			}
+		}
+		const agentRank = (agent) => {
+			const slug = String(agent.slug ?? '');
+			if (slug.includes('docs-planner')) return 10;
+			if (slug.includes('codebase-cartographer')) return 20;
+			if (slug.includes('knowledge-generator')) return 30;
+			if (slug.includes('knowledge-optimizer')) return 40;
+			if (slug.includes('docs-reviewer')) return 50;
+			if (slug.includes('governance-steward')) return 60;
+			if (slug.includes('docs-engineer')) return 70;
+			if (slug.includes('releaser')) return 80;
+			if (slug.includes('workday-reporter')) return 90;
+			if (agent.handler === 'plan') return 100;
+			if (agent.handler === 'research') return 110;
+			if (agent.handler === 'review') return 120;
+			if (agent.handler === 'report') return 130;
+			if (agent.handler === 'act') return 140;
+			return 150;
+		};
+		const ordered = [...agents].sort((left, right) =>
+			agentRank(left) - agentRank(right)
+			|| String(left.slug ?? '').localeCompare(String(right.slug ?? '')),
+		);
+		const seen = new Set();
+		return ordered.filter((agent) => {
+			const key = agent.slug;
+			if (seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
+	}
+
+	workdayTestNextAgentCycles(projectId, agents, existingAssignments, limit) {
+		if (!agents.length || limit <= 0) return [];
+		const existingCycles = new Set();
+		const existingCountByAgent = new Map();
+		let highestCycle = 0;
+		for (const assignment of existingAssignments) {
+			const metadata = objectValue(assignment.metadata);
+			const assignmentProjectId = stringValue(assignment.projectId ?? assignment.project_id, '');
+			const agentSlug = stringValue(assignment.agentId ?? assignment.agent_id ?? metadata.agentSlug, '');
+			const cycle = Number(metadata.cycle ?? 1);
+			if (!assignmentProjectId || !agentSlug || !Number.isFinite(cycle) || cycle <= 0) continue;
+			const normalizedCycle = Math.floor(cycle);
+			existingCycles.add(`${assignmentProjectId}:${agentSlug}:${normalizedCycle}`);
+			existingCountByAgent.set(agentSlug, (existingCountByAgent.get(agentSlug) ?? 0) + 1);
+			highestCycle = Math.max(highestCycle, normalizedCycle);
+		}
+		const classes = new Map();
+		for (const agent of agents) {
+			const classSlug = stringValue(agent.projectAgentClassSlug ?? agent.projectAgentClassId, 'planning');
+			const group = classes.get(classSlug) ?? [];
+			group.push(agent);
+			classes.set(classSlug, group);
+		}
+		const defaultClassPercent = classes.size > 0 ? 100 / classes.size : 100;
+		const agentShares = new Map();
+		for (const [classSlug, classAgents] of classes.entries()) {
+			const configured = classAgents
+				.map((agent) => Number(agent.planningAllocationPercent ?? NaN))
+				.find((value) => Number.isFinite(value) && value > 0);
+			const classPercent = configured ?? defaultClassPercent;
+			const share = Math.max(0.01, classPercent / Math.max(1, classAgents.length));
+			for (const agent of classAgents) {
+				agentShares.set(agent.slug, share);
+			}
+		}
+		const selected = [];
+		const selectedCountByAgent = new Map();
+		while (selected.length < limit) {
+			const ranked = [...agents].sort((left, right) => {
+				const leftSlug = stringValue(left.slug, '');
+				const rightSlug = stringValue(right.slug, '');
+				const leftShare = agentShares.get(leftSlug) ?? 1;
+				const rightShare = agentShares.get(rightSlug) ?? 1;
+				const leftCount = (existingCountByAgent.get(leftSlug) ?? 0) + (selectedCountByAgent.get(leftSlug) ?? 0);
+				const rightCount = (existingCountByAgent.get(rightSlug) ?? 0) + (selectedCountByAgent.get(rightSlug) ?? 0);
+				const utilizationDelta = (leftCount / leftShare) - (rightCount / rightShare);
+				if (Math.abs(utilizationDelta) > 0.000001) return utilizationDelta;
+				return leftSlug.localeCompare(rightSlug);
+			});
+			const agent = ranked.find((candidate) => {
+				const slug = stringValue(candidate.slug, '');
+				const nextCycle = (existingCountByAgent.get(slug) ?? 0) + (selectedCountByAgent.get(slug) ?? 0) + 1;
+				return !existingCycles.has(`${projectId}:${slug}:${nextCycle}`);
+			});
+			if (!agent) break;
+			const slug = stringValue(agent.slug, '');
+			const cycle = (existingCountByAgent.get(slug) ?? 0) + (selectedCountByAgent.get(slug) ?? 0) + 1;
+			selected.push({ agent, cycle });
+			selectedCountByAgent.set(slug, (selectedCountByAgent.get(slug) ?? 0) + 1);
+			if (cycle > highestCycle + limit + agents.length + 1) break;
+		}
+		return selected;
+	}
+
+	async createWorkdayTestTreeDxWorkspace(project, run, input = {}) {
+		const library = await this.getProjectTreeDxLibrary(project.id);
+		const topology = objectValue(library?.topology);
+		const treeDx = objectValue(objectValue(topology.contentRepository).treeDx);
+		const baseUrl = normalizeBaseUrl(treeDx.baseUrl ?? treeDx.registryUrl ?? this.config.TREESEED_TREEDX_URL ?? this.config.treedxBaseUrl ?? process.env.TREESEED_TREEDX_URL ?? process.env.TREESEED_TREEDX_BASE_URL ?? 'http://127.0.0.1:4000');
+		const repositoryId = stringValue(input.repositoryId ?? library?.repositoryId, '');
+		if (!baseUrl || !repositoryId) throw new Error('TreeDX workspace creation requires a repository id and connected TreeDX base URL.');
+		const token = signTreeDxJwt(this.config, project.id, {
+			repositoryId,
+			workdayTestRunId: run.id,
+			capabilities: ['repos:read', 'repos:write', 'workspace:create', 'workspaces:create', 'files:read', 'files:write', 'git:commit'],
+		});
+		if (!token) throw new Error('TreeDX connected authentication is required for local and hosted workdays.');
+		const fetchImpl = this.config.fetchImpl ?? fetch;
+		const response = await fetchImpl(`${baseUrl}/api/v1/repos/${encodeURIComponent(repositoryId)}/workspaces`, {
+			method: 'POST',
+			headers: { accept: 'application/json', authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+			body: JSON.stringify({
+				baseRef: input.baseRef ?? 'refs/heads/main',
+				branchName: input.branchName,
+				mode: input.mode ?? 'writable',
+				allowedPaths: input.allowedPaths,
+				ttlSeconds: input.ttlSeconds,
+			}),
+		});
+		if (!response.ok) {
+			const text = await response.text().catch(() => '');
+			throw new Error(`TreeDX workspace creation failed (${response.status}): ${text.slice(0, 500)}`);
+		}
+		const envelope = await response.json().catch(() => null);
+		return envelope?.payload ?? envelope;
+	}
+
+	async scheduleWorkdayTestRun(run) {
+		await this.ensureInitialized();
+		const parameters = objectValue(run.parameters);
+		const providerId = stringValue(run.capacityProviderId ?? parameters.providerId, '');
+		if (!providerId) throw new Error('Workday requires a capacity provider.');
+		const requestedSlugs = this.workdayTestRequestedProjectSlugs(parameters);
+		const projects = (await this.listTeamProjects(run.teamId))
+			.filter((project) => requestedSlugs.includes(String(project.slug ?? project.id)))
+			.filter((project) => String(project.slug ?? project.id) !== 'karyon');
+		const startedAt = run.startedAt ?? isoNow();
+		const percent = projects.length > 0 ? Math.round((100 / projects.length) * 100) / 100 : 100;
+		const allocationSetId = `workday-${safeIdPart(run.id)}-allocation`.slice(0, 96);
+		const allocationSet = await this.createCapacityAllocationSet(run.teamId, {
+			id: allocationSetId,
+			version: run.id,
+			status: 'draft',
+			policy: { source: 'live_workday', runId: run.id, capacityProviderId: providerId, environment: run.environment ?? 'local', totalPercent: 100 },
+			slices: projects.map((project) => ({
+				projectId: project.id,
+				capacityProviderId: providerId,
+				environment: run.environment ?? 'local',
+				percent,
+				metadata: { source: 'live_workday', runId: run.id, slug: project.slug },
+			})),
+			metadata: { source: 'live_workday', runId: run.id },
+		});
+		const activeAllocationSet = allocationSet ? await this.activateCapacityAllocationSet(run.teamId, allocationSet.id) : null;
+		for (const project of projects) {
+			const contentRoot = this.workdayTestContentRoot(project);
+			const repositoryId = this.workdayTestRepositoryId(project, run);
+			await this.upsertProjectTreeDxLibrary(project.id, {
+				repositoryId,
+				contentPath: contentRoot,
+				contentRepositoryRef: 'refs/heads/main',
+				metadata: { source: 'live_workday', runId: run.id, slug: project.slug },
+			});
+			await this.upsertCapacityGrant(run.teamId, {
+				id: `${providerId}:${project.id}:workday:${run.id}`,
+				capacityProviderId: providerId,
+				laneId: `${providerId}:agent-capacity`,
+				grantScope: 'project',
+				teamId: run.teamId,
+				projectId: project.id,
+				environment: run.environment ?? 'local',
+				state: 'active',
+				priorityWeight: 100,
+				overflowPolicy: 'approval_required',
+				portfolioAllocationPercent: percent,
+				metadata: { source: 'live_workday', runId: run.id, allocationSetId: activeAllocationSet?.id ?? allocationSet?.id ?? null },
+			});
+			const workdayId = safeIdPart(`workday-${run.id}-${project.slug ?? project.id}`);
+			await this.createWorkdayCapacityEnvelope({
+				id: workdayId,
+				projectId: project.id,
+				allocationSetId: activeAllocationSet?.id ?? allocationSet?.id ?? null,
+				environment: run.environment ?? 'local',
+				status: 'active',
+				startedAt,
+				availableCredits: 10,
+				metadata: { source: 'live_workday', runId: run.id, slug: project.slug, deadlineAt: parameters.deadlineAt ?? null, durationSeconds: parameters.durationSeconds ?? null },
+			});
+			await this.createWorkdayTestEvent(run.teamId, run.id, {
+				eventType: 'workday.started',
+				status: 'recorded',
+				projectId: project.id,
+				workdayId,
+				title: `Started API-scheduled workday for ${project.slug ?? project.id}`,
+				context: { contentRoot, repositoryId, allocationSetId: activeAllocationSet?.id ?? allocationSet?.id ?? null },
+			}).catch(() => null);
+		}
+		await this.updateWorkdayTestRun(run.teamId, run.id, {
+			parameters: {
+				...parameters,
+				allocationSetId: activeAllocationSet?.id ?? allocationSet?.id ?? null,
+				scheduledProjectIds: projects.map((project) => project.id),
+				scheduledProjectSlugs: projects.map((project) => project.slug ?? project.id),
+			},
+		}).catch(() => null);
+			await this.createWorkdayTestEvent(run.teamId, run.id, {
+				eventType: 'assignment.initial_synthesis_queued',
+				status: 'recorded',
+				title: 'Queued API-owned initial assignment synthesis',
+				context: {
+					providerId,
+					architecture: 'non_blocking_api_synthesis_provider_polling',
+					note: 'The workday scheduling request returns immediately; assignment creation remains API-owned and is triggered by provider polling or this background task.',
+				},
+			}).catch(() => null);
+			const timer = setTimeout(() => {
+				const principal = { teamId: run.teamId, capacityProviderId: providerId };
+				const runInitialSynthesis = async () => {
+					try {
+						const now = isoNow();
+						const context = await this.resolveProviderEligibilityContext(principal, { now });
+						const existingKeys = new Set((await this.all(
+							`SELECT synthesis_key FROM provider_assignments WHERE team_id = ? AND capacity_provider_id = ? AND synthesis_key IS NOT NULL`,
+							[run.teamId, providerId],
+						)).map((row) => row.synthesis_key));
+						const created = await this.synthesizeWorkdayTestAssignments(principal, {
+							source: 'live_workday_schedule_background',
+							sessionId: context.session?.id ?? null,
+						}, context, existingKeys, now);
+						await this.createWorkdayTestEvent(run.teamId, run.id, {
+							eventType: 'assignment.initial_synthesis_completed',
+							status: created.length > 0 ? 'recorded' : 'warning',
+							title: created.length > 0
+								? `Synthesized ${created.length} initial planning assignment(s)`
+								: 'Initial assignment synthesis created no planning assignments',
+							context: {
+								createdAssignmentCount: created.length,
+								assignmentIds: created.map((assignment) => assignment.id),
+								sessionId: context.session?.id ?? null,
+								providerId,
+							},
+						}).catch(() => null);
+					} catch (error) {
+						await this.createWorkdayTestEvent(run.teamId, run.id, {
+							eventType: 'assignment.initial_synthesis_failed',
+							status: 'error',
+							title: 'Initial workday assignment synthesis failed',
+							context: {
+								error: error instanceof Error ? error.message : String(error),
+								stack: error instanceof Error ? error.stack : null,
+								providerId,
+							},
+						}).catch(() => null);
+					}
+				};
+				runInitialSynthesis().catch(() => null);
+			}, 0);
+			timer.unref?.();
+			return { projects, allocationSet: activeAllocationSet ?? allocationSet };
+		}
+
+	async synthesizeWorkdayTestAssignments(principal, input, context, existingKeys, now) {
+		const lockKey = `${principal.teamId}:${principal.capacityProviderId}:workday-synthesis`;
+		if (workdayTestSynthesisLocks.has(lockKey)) {
+			return [];
+		}
+		workdayTestSynthesisLocks.add(lockKey);
+		try {
+			return await this.synthesizeWorkdayTestAssignmentsUnlocked(principal, input, context, existingKeys, now);
+		} finally {
+			workdayTestSynthesisLocks.delete(lockKey);
+		}
+	}
+
+	async synthesizeWorkdayTestAssignmentsUnlocked(principal, input, context, existingKeys, now) {
+		const created = [];
+		const runs = (await this.all(
+			`SELECT * FROM workday_test_runs
+			 WHERE team_id = ? AND capacity_provider_id = ? AND status = 'running'
+			 ORDER BY started_at ASC, created_at ASC LIMIT 20`,
+			[principal.teamId, principal.capacityProviderId],
+		).catch(() => [])).map(serializeWorkdayTestRun).filter(Boolean);
+		for (const run of runs) {
+			const parameters = objectValue(run.parameters);
+			const deadlineMs = Date.parse(parameters.deadlineAt ?? '');
+			if (Number.isFinite(deadlineMs) && deadlineMs <= Date.parse(now)) {
+				await this.createWorkdayTestEvent(run.teamId, run.id, {
+					eventType: 'assignment.synthesis_skipped',
+					status: 'warning',
+					title: 'Skipped assignment synthesis because the workday deadline elapsed',
+					context: { now, deadlineAt: parameters.deadlineAt ?? null, providerId: principal.capacityProviderId },
+				}).catch(() => null);
+				continue;
+			}
+			const requestedSlugs = this.workdayTestRequestedProjectSlugs(parameters);
+			const projects = (await this.listTeamProjects(run.teamId))
+				.filter((project) => requestedSlugs.includes(String(project.slug ?? project.id)))
+				.filter((project) => String(project.slug ?? project.id) !== 'karyon');
+			await this.createWorkdayTestEvent(run.teamId, run.id, {
+				eventType: 'assignment.synthesis_started',
+				status: 'recorded',
+				title: 'API assignment synthesis considered active workday run',
+				context: {
+					now,
+					deadlineAt: parameters.deadlineAt ?? null,
+					providerId: principal.capacityProviderId,
+					requestedSlugs,
+					projectCount: projects.length,
+				},
+			}).catch(() => null);
+			const defaultMaxAssignments = Math.max(1, projects.length * 9 * 6);
+			const maxAssignments = Math.max(1, Number(parameters.maxAssignments ?? defaultMaxAssignments) || defaultMaxAssignments);
+			const defaultBatchSize = Math.max(1, projects.length * 9);
+			const maxActiveAssignments = Math.max(1, Number(parameters.maxActiveAssignments ?? parameters.assignmentBatchSize ?? parameters.maxAssignmentsPerSynthesis ?? defaultBatchSize) || defaultBatchSize);
+			const existingRunAssignmentRows = await this.all(
+				`SELECT * FROM provider_assignments
+				 WHERE team_id = ? AND capacity_provider_id = ?
+				   AND synthesized_from IN ('workday_test', 'live_workday')`,
+				[principal.teamId, principal.capacityProviderId],
+			).catch(() => []);
+			const existingRunAssignments = existingRunAssignmentRows
+				.map(serializeProviderAssignment)
+				.filter((assignment) => assignment?.metadata?.workdayTestRunId === run.id);
+			const existingRunAssignmentCount = existingRunAssignments.length;
+			const activeRunAssignmentCount = existingRunAssignments.filter((assignment) => !['completed', 'failed', 'expired', 'cancelled'].includes(String(assignment.status ?? '').toLowerCase())).length;
+			let remaining = Math.max(0, Math.min(maxAssignments - existingRunAssignmentCount, maxActiveAssignments - activeRunAssignmentCount));
+			if (remaining <= 0) {
+				await this.createWorkdayTestEvent(run.teamId, run.id, {
+					eventType: 'assignment.synthesis_skipped',
+					status: 'warning',
+					title: existingRunAssignmentCount >= maxAssignments
+						? 'Skipped assignment synthesis because maxAssignments was reached'
+						: 'Skipped assignment synthesis because the active assignment queue is full',
+					context: { maxAssignments, existingRunAssignmentCount, activeRunAssignmentCount, maxActiveAssignments },
+				}).catch(() => null);
+				continue;
+			}
+			for (const project of projects) {
+				if (remaining <= 0) break;
+				const workdayId = safeIdPart(`workday-${run.id}-${project.slug ?? project.id}`);
+				const workday = await this.getWorkdayCapacityEnvelope(workdayId);
+				if (!workday || workday.status !== 'active') {
+					await this.createWorkdayTestEvent(run.teamId, run.id, {
+						eventType: 'assignment.synthesis_skipped',
+						status: 'warning',
+						projectId: project.id,
+						workdayId,
+						title: `Skipped assignment synthesis because workday envelope is not active for ${project.slug ?? project.id}`,
+						context: { workdayFound: Boolean(workday), workdayStatus: workday?.status ?? null },
+					}).catch(() => null);
+					continue;
+				}
+				const agentClasses = await this.listProjectAgentClasses(project.id).catch(() => []);
+				const agents = this.workdayTestAgentsFromClasses(agentClasses);
+				await this.createWorkdayTestEvent(run.teamId, run.id, {
+					eventType: 'assignment.synthesis_project_considered',
+					status: 'recorded',
+					projectId: project.id,
+					workdayId,
+					title: `Considered assignment synthesis for ${project.slug ?? project.id}`,
+					context: {
+						agentClassCount: agentClasses.length,
+						agentCount: agents.length,
+						remaining,
+						maxAssignments,
+						activeRunAssignmentCount,
+						maxActiveAssignments,
+						existingRunAssignmentCount,
+					},
+				}).catch(() => null);
+				if (!agents.length) {
+					await this.createWorkdayTestEvent(run.teamId, run.id, {
+						eventType: 'assignment.synthesis_skipped',
+						status: 'warning',
+						projectId: project.id,
+						workdayId,
+						title: `No configured project agents for ${project.slug ?? project.id}`,
+					}).catch(() => null);
+					continue;
+				}
+				const projectExistingAssignments = existingRunAssignmentRows
+					.map(serializeProviderAssignment)
+					.filter((assignment) => assignment?.metadata?.workdayTestRunId === run.id && assignment.projectId === project.id);
+				const scheduledAgents = this.workdayTestNextAgentCycles(project.id, agents, projectExistingAssignments, remaining);
+					const contentRoot = this.workdayTestContentRoot(project);
+					const allowedContentPaths = [contentRoot, `${contentRoot}/**`];
+					const allowedContextReadPaths = ['**'];
+					const repositoryId = this.workdayTestRepositoryId(project, run);
+					for (const scheduled of scheduledAgents) {
+					if (remaining <= 0) break;
+					const agent = scheduled.agent;
+					const key = `${run.id}:${project.id}:${scheduled.cycle}:${agent.slug}`;
+					if (existingKeys.has(key)) continue;
+					const assignmentId = safeIdPart(`workday-${run.id}-${project.slug ?? project.id}-cycle-${scheduled.cycle}-${agent.slug}`);
+					const intent = await this.workdayTestResolveAssignmentIntent(run, project, agent);
+					const runtimeHandler = this.workdayTestRuntimeHandler(agent);
+					let workspace = null;
+					try {
+						workspace = await this.createWorkdayTestTreeDxWorkspace(project, run, {
+							repositoryId,
+							baseRef: 'refs/heads/main',
+							branchName: `refs/heads/${assignmentId}`,
+							mode: 'writable',
+							allowedPaths: allowedContextReadPaths,
+							ttlSeconds: Math.max(1800, Number(parameters.durationSeconds ?? 600) + 1800),
+						});
+					} catch (error) {
+						await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+							source: 'live_workday',
+							sourceId: run.id,
+							eligible: false,
+							reasons: ['treedx_workspace_create_failed'],
+							gates: { error: error instanceof Error ? error.message : String(error), repositoryId },
+						}).catch(() => null);
+						await this.createWorkdayTestEvent(run.teamId, run.id, {
+							eventType: 'assignment.synthesis_failed',
+							status: 'error',
+							projectId: project.id,
+							workdayId,
+							assignmentId,
+							title: `TreeDX workspace creation failed for ${agent.slug}`,
+							context: { error: error instanceof Error ? error.message : String(error), repositoryId, contentRoot },
+						}).catch(() => null);
+						continue;
+					}
+					const workspaceId = stringValue(workspace?.workspaceId ?? workspace?.id, '');
+					if (!workspaceId) continue;
+					const expiresAt = new Date(Math.max(Date.now() + 3600_000, Number.isFinite(deadlineMs) ? deadlineMs : 0)).toISOString();
+					const treedxProxyHandle = {
+						id: `tdx_${assignmentId}`,
+						teamId: run.teamId,
+						projectId: project.id,
+						assignmentId,
+						repositoryId,
+						workspaceId,
+						scopes: ['project:read', 'project:write', 'workspace:read', 'workspace:write', 'files:read', 'files:search', 'files:write', 'git:commit'],
+						allowedOperations: ['files:read', 'files:search', 'files:write', 'git:commit'],
+						allowedPaths: allowedContextReadPaths,
+						allowedReadPaths: allowedContextReadPaths,
+						allowedWritePaths: allowedContentPaths,
+						expiresAt,
+						metadata: { source: 'live_workday', purpose: run.scenarioId, runId: run.id, repositoryId, workspaceId, accessMode: 'workspace_write' },
+					};
+					const assignment = await this.createProviderAssignment(run.teamId, {
+						id: assignmentId,
+						projectId: project.id,
+						capacityProviderId: principal.capacityProviderId,
+						providerSessionId: input.sessionId ?? context.session?.id ?? null,
+						projectAgentClassId: agent.projectAgentClassId,
+						workDayId: workdayId,
+						mode: 'planning',
+						status: 'pending',
+						agentId: agent.slug,
+						handlerId: runtimeHandler,
+						capacityEnvelope: {
+							workDayId: workdayId,
+							projectId: project.id,
+							capacityProviderId: principal.capacityProviderId,
+							allocationSetId: parameters.allocationSetId ?? null,
+							environment: run.environment ?? 'local',
+							mode: 'planning',
+							reservedCredits: 1,
+							metadata: { source: 'live_workday', runId: run.id, allocationSetId: parameters.allocationSetId ?? null },
+						},
+						decisionInput: {
+							kind: 'live_workday_planning',
+							projectId: project.id,
+							agentId: agent.slug,
+							handlerId: runtimeHandler,
+							mode: 'planning',
+							input: {
+								objective: intent.objective,
+								agentSlug: agent.slug,
+								cycle: scheduled.cycle,
+								artifactKind: intent.artifactKind,
+								subjectModel: intent.subjectModel,
+								subjectId: intent.subjectId,
+								subjectPath: intent.subjectPath ?? null,
+								relatedArtifact: intent.relatedArtifact ?? null,
+								relatedArtifacts: intent.relatedArtifacts ?? [],
+								contentRoot,
+								dryRun: false,
+							},
+							metadata: { source: 'live_workday', runId: run.id, allocationSetId: parameters.allocationSetId ?? null },
+						},
+						allowedOutputs: { paths: allowedContentPaths, types: ['content_artifact_refs', intent.artifactKind] },
+						workspaceContext: { workspaceAccessMode: 'workspace_write', treedxProxyHandle },
+						treedxProxyHandle,
+						explanation: { source: 'live_workday', purpose: run.scenarioId, runId: run.id, agentSlug: agent.slug, cycle: scheduled.cycle },
+						synthesizedFrom: 'live_workday',
+						synthesisKey: key,
+						metadata: {
+							workdayRunId: run.id,
+							workdayTestRunId: run.id,
+							agentSlug: agent.slug,
+							cycle: scheduled.cycle,
+							contentRoot,
+							artifactKind: intent.artifactKind,
+							subjectModel: intent.subjectModel,
+							subjectId: intent.subjectId,
+							subjectPath: intent.subjectPath ?? null,
+							relatedArtifact: intent.relatedArtifact ?? null,
+							relatedArtifacts: intent.relatedArtifacts ?? [],
+							treeDxRepositoryId: repositoryId,
+							treeDxWorkspaceId: workspaceId,
+							mode: 'planning',
+							allowPlanningContentArtifacts: true,
+							allocationSetId: parameters.allocationSetId ?? null,
+							assignmentSource: 'api_live_workday_synthesis',
+						},
+					});
+					if (assignment) {
+						existingKeys.add(key);
+						created.push(assignment);
+						remaining -= 1;
+						await this.createWorkdayTestEvent(run.teamId, run.id, {
+							eventType: 'assignment.synthesized',
+							status: 'recorded',
+							projectId: project.id,
+							workdayId,
+							assignmentId: assignment.id,
+							title: `Synthesized planning assignment for ${agent.slug}`,
+							context: { agentSlug: agent.slug, cycle: scheduled.cycle, artifactKind: intent.artifactKind, repositoryId, workspaceId },
+						}).catch(() => null);
+					}
+				}
+			}
+		}
+		return created;
+	}
+
+	async recordWorkdayTestSynthesisException(principal, error, input = {}) {
+		await this.ensureInitialized();
+		const runs = (await this.all(
+			`SELECT * FROM workday_test_runs
+			 WHERE team_id = ? AND capacity_provider_id = ? AND status = 'running'
+			 ORDER BY started_at DESC, created_at DESC LIMIT 20`,
+			[principal.teamId, principal.capacityProviderId],
+		).catch(() => [])).map(serializeWorkdayTestRun).filter(Boolean);
+		if (!runs.length) return;
+		const message = error instanceof Error ? error.message : String(error);
+		const stack = error instanceof Error ? error.stack : null;
+		for (const run of runs) {
+			await this.createWorkdayTestEvent(run.teamId, run.id, {
+				eventType: 'assignment.synthesis_exception',
+				status: 'error',
+				title: 'Provider assignment synthesis failed',
+				context: {
+					error: message,
+					stack,
+					providerId: principal.capacityProviderId,
+					sessionId: input.sessionId ?? input.providerSessionId ?? null,
+					runnerId: input.runnerId ?? null,
+				},
+			}).catch(() => null);
+		}
+	}
+
+	queueProviderAssignmentSynthesis(principal, input = {}, reason = 'background_synthesis') {
+		const teamId = stringValue(principal?.teamId, '');
+		const providerId = stringValue(principal?.capacityProviderId, '');
+		if (!teamId || !providerId) return false;
+		const queueKey = `${teamId}:${providerId}:${reason}`;
+		if (workdayTestSynthesisQueueKeys.has(queueKey)) return false;
+		workdayTestSynthesisQueueKeys.add(queueKey);
+		const timer = setTimeout(() => {
+			const queuedInput = {
+				...objectValue(input),
+				source: input.source ?? reason,
+				queuedReason: reason,
+			};
+			this.synthesizeProviderAssignments({ teamId, capacityProviderId: providerId }, queuedInput)
+				.catch((error) => this.recordWorkdayTestSynthesisException(
+					{ teamId, capacityProviderId: providerId },
+					error,
+					queuedInput,
+				).catch(() => null))
+				.finally(() => {
+					workdayTestSynthesisQueueKeys.delete(queueKey);
+				});
+		}, 0);
+		timer.unref?.();
+		return true;
+	}
+
 	async synthesizeProviderAssignments(principal, input = {}) {
 		await this.ensureInitialized();
 		const now = isoNow();
@@ -8460,6 +9508,7 @@ export class MarketControlPlaneStore {
 		)).map((row) => row.synthesis_key));
 		const provider = await this.getCapacityProvider(principal.teamId, principal.capacityProviderId);
 		if (!provider) return created;
+		created.push(...await this.synthesizeWorkdayTestAssignments(principal, input, context, existingKeys, now));
 		const planningRows = await this.all(
 			`SELECT pir.*, pac.id AS class_id
 			 FROM planning_input_requests pir
@@ -10618,19 +11667,6 @@ export class MarketControlPlaneStore {
 			return { ok: false, code: 'blocked', message: 'Project still has active work or pending decisions.', blockers };
 		}
 
-		await this.run(
-			`DELETE FROM task_outputs WHERE task_id IN (
-				SELECT tasks.id FROM tasks INNER JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ?
-			)`,
-			[projectId],
-		);
-		await this.run(
-			`DELETE FROM task_events WHERE task_id IN (
-				SELECT tasks.id FROM tasks INNER JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ?
-			)`,
-			[projectId],
-		);
-		await this.run(`DELETE FROM tasks WHERE work_day_id IN (SELECT id FROM work_days WHERE project_id = ?)`, [projectId]);
 		await this.run(`DELETE FROM graph_runs WHERE work_day_id IN (SELECT id FROM work_days WHERE project_id = ?)`, [projectId]);
 		await this.run(`DELETE FROM reports WHERE work_day_id IN (SELECT id FROM work_days WHERE project_id = ?)`, [projectId]);
 
@@ -11777,6 +12813,88 @@ export class MarketControlPlaneStore {
 		const timestamp = isoNow();
 		const id = input.id ?? randomUUID();
 		const status = stringValue(input.status, input.startedAt ? 'running' : 'queued');
+		const parameters = objectValue(input.parameters);
+		const durationSeconds = Math.max(0, Number(parameters.durationSeconds ?? input.durationSeconds ?? 0));
+		const startedAt = input.startedAt ?? (status === 'running' ? timestamp : null);
+		const deadlineAt = startedAt && durationSeconds > 0
+			? new Date(Date.parse(startedAt) + durationSeconds * 1000).toISOString()
+			: null;
+		const nextParameters = {
+			...parameters,
+			seed: parameters.seed ?? input.seed ?? 'treeseed',
+			durationSeconds,
+			deadlineAt,
+		};
+		const providerId = input.capacityProviderId ?? input.providerId ?? null;
+		if (status === 'running' && stringValue(input.environment, 'local') === 'local') {
+			const staleRuns = await this.all(
+				`SELECT id FROM workday_test_runs
+				 WHERE team_id = ?
+				   AND (CAST(? AS text) IS NULL OR capacity_provider_id = CAST(? AS text))
+				   AND (
+				     status = 'running'
+				     OR EXISTS (
+				       SELECT 1 FROM provider_assignments stale_assignment
+				        WHERE stale_assignment.team_id = workday_test_runs.team_id
+				          AND stale_assignment.id LIKE ('workday-' || workday_test_runs.id || '-%')
+				          AND stale_assignment.status NOT IN ('completed', 'failed', 'returned', 'cancelled')
+				     )
+				   )`,
+				[teamId, providerId, providerId],
+			).catch(() => []);
+			const staleRunIds = staleRuns.map((row) => stringValue(row.id, '')).filter(Boolean);
+			await this.run(
+				`UPDATE workday_test_runs
+				 SET status = 'failed',
+				     summary_json = ?,
+				     metrics_json = ?,
+				     error_json = ?,
+				     completed_at = COALESCE(completed_at, ?),
+				     updated_at = ?
+				 WHERE team_id = ?
+				   AND status = 'running'
+				   AND (CAST(? AS text) IS NULL OR capacity_provider_id = CAST(? AS text))`,
+				[
+					JSON.stringify({ status: 'failed', reason: 'superseded_by_new_local_workday', supersededByRunId: id }),
+					JSON.stringify({ status: 'failed', score: 0 }),
+					JSON.stringify({
+						code: 'superseded_by_new_local_workday',
+						message: 'Closed stale running local workday before scheduling a new run for the same team/provider.',
+						supersededByRunId: id,
+					}),
+					timestamp,
+					timestamp,
+					teamId,
+					providerId,
+					providerId,
+				],
+			);
+			if (staleRunIds.length) {
+				await this.closeStaleWorkdayTestAssignments({
+					teamId,
+					providerId,
+					runIds: staleRunIds,
+					supersededByRunId: id,
+					timestamp,
+				}).catch(() => null);
+			}
+			await this.run(
+				`UPDATE capacity_grants
+				 SET state = 'expired',
+				     updated_at = ?
+				 WHERE team_id = ?
+				   AND state = 'active'
+				   AND metadata_json LIKE ?
+				   AND (CAST(? AS text) IS NULL OR capacity_provider_id = CAST(? AS text))`,
+				[
+					timestamp,
+					teamId,
+					`%"source":"live_workday"%`,
+					providerId,
+					providerId,
+				],
+			).catch(() => null);
+		}
 		await this.run(
 			`INSERT INTO workday_test_runs (
 				id, team_id, capacity_provider_id, scenario_id, status, environment, requested_by_id,
@@ -11786,25 +12904,103 @@ export class MarketControlPlaneStore {
 			[
 				id,
 				teamId,
-				input.capacityProviderId ?? input.providerId ?? null,
-				stringValue(input.scenarioId, input.scenario, 'portfolio-local'),
+				providerId,
+				stringValue(input.scenarioId ?? input.scenario, 'portfolio-local'),
 				status,
 				stringValue(input.environment, 'local'),
 				input.requestedById ?? null,
-				JSON.stringify(objectValue(input.parameters)),
+				JSON.stringify(nextParameters),
 				JSON.stringify(objectValue(input.summary)),
 				JSON.stringify(objectValue(input.metrics)),
 				JSON.stringify(objectValue(input.expected)),
 				JSON.stringify(objectValue(input.actual)),
 				JSON.stringify(objectValue(input.reportRefs ?? input.report_refs)),
 				JSON.stringify(objectValue(input.error)),
-				input.startedAt ?? (status === 'running' ? timestamp : null),
+				startedAt,
 				input.completedAt ?? null,
 				timestamp,
 				timestamp,
 			],
 		);
+		const run = await this.getWorkdayTestRun(teamId, id);
+		if (run && status === 'running') {
+			await this.scheduleWorkdayTestRun(run).catch((error) => this.createWorkdayTestEvent(teamId, id, {
+				eventType: 'workday.schedule_failed',
+				status: 'error',
+				title: 'Workday schedule failed',
+				context: { error: error instanceof Error ? error.message : String(error) },
+			}).catch(() => null));
+		}
 		return this.getWorkdayTestRun(teamId, id);
+	}
+
+	async closeStaleWorkdayTestAssignments(input = {}) {
+		const teamId = stringValue(input.teamId, '');
+		const providerId = input.providerId ?? null;
+		const runIds = arrayValue(input.runIds).map((entry) => stringValue(entry, '')).filter(Boolean);
+		if (!teamId || runIds.length === 0) return { closed: 0 };
+		const timestamp = stringValue(input.timestamp, isoNow());
+		const clauses = [
+			`team_id = ?`,
+			`status NOT IN ('completed', 'failed', 'returned', 'cancelled')`,
+			`(${runIds.map(() => `id LIKE ?`).join(' OR ')})`,
+		];
+		const values = [
+			teamId,
+			...runIds.map((runId) => `workday-${runId}-%`),
+		];
+		if (providerId) {
+			clauses.push(`capacity_provider_id = ?`);
+			values.push(providerId);
+		}
+		const rows = await this.all(
+			`SELECT * FROM provider_assignments WHERE ${clauses.join(' AND ')} ORDER BY created_at ASC`,
+			values,
+		);
+		const assignments = rows.map(serializeProviderAssignment).filter(Boolean);
+		for (const assignment of assignments) {
+			await this.settleProviderAssignmentLifecycle(
+				{ teamId, capacityProviderId: assignment.capacityProviderId },
+				assignment,
+				'fail',
+				{
+					leaseToken: assignment.leaseToken ?? null,
+					runnerId: assignment.runnerId ?? null,
+					reason: 'Closed stale workday assignment because a newer local workday superseded the run.',
+					code: 'superseded_by_new_local_workday',
+					source: 'live_workday_supersede_assignment_close',
+				},
+			).catch(() => null);
+		}
+		if (assignments.length) {
+			await this.run(
+				`UPDATE provider_assignments
+				 SET status = 'failed',
+				     lease_state = 'released',
+				     lease_token = NULL,
+				     lease_expires_at = NULL,
+				     lease_renewed_at = NULL,
+				     failed_at = COALESCE(failed_at, ?),
+				     lifecycle_reason = ?,
+				     lifecycle_code = ?,
+				     lifecycle_output_json = ?,
+				     updated_at = ?
+				 WHERE ${clauses.join(' AND ')}`,
+				[
+					timestamp,
+					'Closed stale workday assignment because a newer local workday superseded the run.',
+					'superseded_by_new_local_workday',
+					JSON.stringify({
+						status: 'failed',
+						reason: 'superseded_by_new_local_workday',
+						supersededByRunId: input.supersededByRunId ?? null,
+					}),
+					timestamp,
+					...values,
+				],
+			);
+		}
+		return { closed: assignments.length };
 	}
 
 	async updateWorkdayTestRun(teamId, runId, input = {}) {
@@ -11821,9 +13017,9 @@ export class MarketControlPlaneStore {
 			 WHERE id = ? AND team_id = ?`,
 			[
 				input.capacityProviderId ?? input.providerId ?? existing.capacityProviderId ?? null,
-				stringValue(input.scenarioId, input.scenario, existing.scenarioId),
+				stringValue(input.scenarioId ?? input.scenario, existing.scenarioId),
 				status,
-				stringValue(input.environment, existing.environment, 'local'),
+				stringValue(input.environment, existing.environment ?? 'local'),
 				JSON.stringify(objectValue(input.parameters ?? existing.parameters)),
 				JSON.stringify(objectValue(input.summary ?? existing.summary)),
 				JSON.stringify(objectValue(input.metrics ?? existing.metrics)),
@@ -11838,11 +13034,176 @@ export class MarketControlPlaneStore {
 				teamId,
 			],
 		);
+		if (['completed', 'failed', 'degraded'].includes(status)) {
+			await this.run(
+				`UPDATE capacity_grants
+				 SET state = 'expired', updated_at = ?
+				 WHERE team_id = ?
+				   AND state = 'active'
+				   AND metadata_json LIKE ?`,
+				[timestamp, teamId, `%"source":"live_workday"%\"runId\":\"${runId}\"%`],
+			).catch(() => null);
+		}
 		return this.getWorkdayTestRun(teamId, runId);
+	}
+
+	async expireStaleWorkdayTestRuns(teamId = null, now = isoNow()) {
+		await this.ensureInitialized();
+		const clauses = [`status = 'running'`];
+		const values = [];
+		if (teamId) {
+			clauses.push('team_id = ?');
+			values.push(teamId);
+		}
+		const rows = await this.all(
+			`SELECT * FROM workday_test_runs WHERE ${clauses.join(' AND ')} ORDER BY started_at ASC, created_at ASC LIMIT 200`,
+			values,
+		).catch(() => []);
+		const nowMs = Date.parse(now);
+		let expired = 0;
+		for (const row of rows) {
+			const run = serializeWorkdayTestRun(row);
+			if (!run?.id) continue;
+			const parameters = objectValue(run.parameters);
+			const configuredDeadlineAt = typeof parameters.deadlineAt === 'string' ? parameters.deadlineAt : '';
+			let deadlineAt = configuredDeadlineAt;
+			let deadlineSource = configuredDeadlineAt ? 'configured' : 'legacy_inferred';
+			let deadlineMs = Date.parse(deadlineAt);
+			if (!Number.isFinite(deadlineMs)) {
+				const startedMs = Date.parse(run.startedAt ?? row.started_at ?? row.created_at ?? '');
+				const durationSeconds = Number(parameters.durationSeconds ?? 0);
+				const waitSeconds = Number(parameters.waitSeconds ?? 0);
+				const inferredSeconds = durationSeconds > 0
+					? durationSeconds
+					: waitSeconds > 0
+						? waitSeconds
+						: 3600;
+				if (Number.isFinite(startedMs)) {
+					deadlineMs = startedMs + inferredSeconds * 1000;
+					deadlineAt = new Date(deadlineMs).toISOString();
+				}
+			}
+			const settlementGraceSeconds = Math.max(300, Number(parameters.settlementGraceSeconds ?? parameters.waitSeconds ?? 0) || 0);
+			const staleAtMs = deadlineMs + settlementGraceSeconds * 1000;
+			if (!Number.isFinite(deadlineMs) || staleAtMs > nowMs) continue;
+			await this.run(
+				`UPDATE workday_test_runs
+				 SET status = 'degraded',
+				     completed_at = COALESCE(completed_at, ?),
+				     error_json = ?,
+				     updated_at = ?
+				 WHERE id = ? AND team_id = ? AND status = 'running'`,
+				[
+					now,
+					JSON.stringify({
+						code: 'workday_deadline_elapsed',
+						message: 'Timed workday deadline elapsed before the run was explicitly settled.',
+						deadlineAt: deadlineAt || null,
+						deadlineSource,
+						settlementGraceSeconds,
+						expiredAt: now,
+					}),
+					now,
+					run.id,
+					run.teamId,
+				],
+			);
+			const projectRows = await this.all(
+				`SELECT DISTINCT work_day_id AS workday_id
+				 FROM provider_assignments
+				 WHERE team_id = ? AND synthesized_from IN ('workday_test', 'live_workday')
+				   AND work_day_id IS NOT NULL`,
+				[run.teamId],
+			).catch(() => []);
+			for (const projectRow of projectRows) {
+				const workdayId = stringValue(projectRow?.workday_id, '');
+				if (!workdayId || !workdayId.includes(`workday-${run.id}-`)) continue;
+				await this.updateWorkdayCapacityEnvelopeState(workdayId, 'completed').catch(() => null);
+			}
+			await this.run(
+				`UPDATE provider_assignments
+				 SET status = CASE WHEN status = 'completed' THEN status ELSE 'failed' END,
+				     lease_state = CASE WHEN status = 'completed' THEN lease_state ELSE 'released' END,
+				     lease_token = CASE WHEN status = 'completed' THEN lease_token ELSE NULL END,
+				     lease_expires_at = CASE WHEN status = 'completed' THEN lease_expires_at ELSE NULL END,
+				     lease_renewed_at = CASE WHEN status = 'completed' THEN lease_renewed_at ELSE NULL END,
+				     runner_id = CASE WHEN status = 'completed' THEN runner_id ELSE NULL END,
+				     failed_at = CASE WHEN status = 'completed' THEN failed_at ELSE COALESCE(failed_at, ?) END,
+				     lifecycle_reason = CASE WHEN status = 'completed' THEN lifecycle_reason ELSE ? END,
+				     lifecycle_code = CASE WHEN status = 'completed' THEN lifecycle_code ELSE ? END,
+				     lifecycle_output_json = CASE WHEN status = 'completed' THEN lifecycle_output_json ELSE ? END,
+				     updated_at = ?
+				 WHERE team_id = ? AND synthesized_from IN ('workday_test', 'live_workday')
+				   AND status IN ('pending', 'returned', 'leased')
+				   AND metadata_json LIKE ?`,
+				[
+					now,
+					'Workday deadline elapsed before this assignment reached a terminal state.',
+					'workday_deadline_elapsed',
+					JSON.stringify({ runId: run.id, deadlineAt: deadlineAt || null, deadlineSource, settlementGraceSeconds, expiredAt: now }),
+					now,
+					run.teamId,
+					`%"workdayRunId":"${run.id}"%`,
+				],
+			).catch(() => null);
+			await this.run(
+				`UPDATE capacity_grants
+				 SET state = 'expired', updated_at = ?
+				 WHERE team_id = ?
+				   AND state = 'active'
+				   AND metadata_json LIKE ?`,
+				[now, run.teamId, `%"source":"live_workday"%\"runId\":\"${run.id}\"%`],
+			).catch(() => null);
+			await this.createWorkdayTestEvent(run.teamId, run.id, {
+				eventType: 'workday.deadline_expired',
+				status: 'warning',
+				title: 'Timed workday deadline elapsed',
+				context: {
+					deadlineAt: deadlineAt || null,
+					deadlineSource,
+					settlementGraceSeconds,
+					expiredAt: now,
+				},
+			}).catch(() => null);
+			expired += 1;
+		}
+		return { expired };
+	}
+
+	async expireTerminalWorkdayTestGrants(teamId = null, now = isoNow()) {
+		await this.ensureInitialized();
+		const clauses = [`status IN ('completed', 'failed', 'degraded')`];
+		const values = [];
+		if (teamId) {
+			clauses.push('team_id = ?');
+			values.push(teamId);
+		}
+		const rows = await this.all(
+			`SELECT id, team_id FROM workday_test_runs WHERE ${clauses.join(' AND ')} ORDER BY updated_at DESC, created_at DESC LIMIT 500`,
+			values,
+		).catch(() => []);
+		let expired = 0;
+		for (const row of rows) {
+			const runId = stringValue(row?.id, '');
+			const runTeamId = stringValue(row?.team_id, teamId ?? '');
+			if (!runId || !runTeamId) continue;
+			const result = await this.run(
+				`UPDATE capacity_grants
+				 SET state = 'expired', updated_at = ?
+				 WHERE team_id = ?
+				   AND state = 'active'
+				   AND metadata_json LIKE ?`,
+				[now, runTeamId, `%"source":"live_workday"%\"runId\":\"${runId}\"%`],
+			).catch(() => null);
+			expired += Number(result?.changes ?? 0);
+		}
+		return { expired };
 	}
 
 	async getWorkdayTestRun(teamId, runId) {
 		await this.ensureInitialized();
+		await this.expireStaleWorkdayTestRuns(teamId).catch(() => null);
+		await this.expireTerminalWorkdayTestGrants(teamId).catch(() => null);
 		return serializeWorkdayTestRun(await this.first(
 			`SELECT * FROM workday_test_runs WHERE id = ? AND team_id = ? LIMIT 1`,
 			[runId, teamId],
@@ -11851,6 +13212,8 @@ export class MarketControlPlaneStore {
 
 	async listWorkdayTestRuns(teamId, filters = {}) {
 		await this.ensureInitialized();
+		await this.expireStaleWorkdayTestRuns(teamId).catch(() => null);
+		await this.expireTerminalWorkdayTestGrants(teamId).catch(() => null);
 		const clauses = ['team_id = ?'];
 		const values = [teamId];
 		if (filters.status) {
@@ -11977,380 +13340,6 @@ export class MarketControlPlaneStore {
 		return rows.map(serializeRuntimeWorkDay);
 	}
 
-	async createRuntimeTask(projectId, input) {
-		await this.ensureInitialized();
-		const workDay = await this.first(`SELECT * FROM work_days WHERE id = ? AND project_id = ? LIMIT 1`, [input.workDayId, projectId]);
-		if (!workDay) return null;
-		const timestamp = isoNow();
-		const id = input.id ?? randomUUID();
-		await this.run(
-			`INSERT OR IGNORE INTO tasks (
-				id, work_day_id, agent_id, type, state, priority, idempotency_key, payload_json, payload_hash,
-				attempt_count, max_attempts, claimed_by, lease_expires_at, available_at, last_error_code, last_error_message,
-				graph_version, parent_task_id, created_at, started_at, completed_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, NULL, ?, NULL, NULL, ?, ?, ?, NULL, NULL, ?)`,
-			[
-				id,
-				input.workDayId,
-				input.agentId,
-				input.type,
-				input.state ?? 'pending',
-				Number(input.priority ?? 0),
-				input.idempotencyKey,
-				JSON.stringify(input.payload ?? {}),
-				input.payloadHash ?? null,
-				Number(input.maxAttempts ?? 3),
-				input.availableAt ?? timestamp,
-				input.graphVersion ?? null,
-				input.parentTaskId ?? null,
-				timestamp,
-				timestamp,
-			],
-		);
-		return serializeRuntimeTask(await this.first(
-			`SELECT tasks.* FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND (tasks.id = ? OR tasks.idempotency_key = ?) LIMIT 1`,
-			[projectId, id, input.idempotencyKey],
-		));
-	}
-
-	async listRuntimeTasks(projectId, input = {}) {
-		await this.ensureInitialized();
-		const clauses = ['work_days.project_id = ?'];
-		const params = [projectId];
-		if (input.workDayId) {
-			clauses.push('tasks.work_day_id = ?');
-			params.push(input.workDayId);
-		}
-		if (input.agentId) {
-			clauses.push('tasks.agent_id = ?');
-			params.push(input.agentId);
-		}
-		if (input.state) {
-			const states = Array.isArray(input.state) ? input.state : String(input.state).split(',').filter(Boolean);
-			clauses.push(`tasks.state IN (${states.map(() => '?').join(', ')})`);
-			params.push(...states);
-		}
-		const limit = Math.max(1, Math.min(1000, Number(input.limit ?? 50)));
-		params.push(limit);
-		const rows = await this.all(
-			`SELECT tasks.* FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE ${clauses.join(' AND ')} ORDER BY tasks.priority DESC, tasks.available_at ASC LIMIT ?`,
-			params,
-		);
-		return rows.map(serializeRuntimeTask);
-	}
-
-	async claimRuntimeTask(projectId, taskId, input) {
-		await this.ensureInitialized();
-		const existing = await this.first(
-			`SELECT tasks.* FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? LIMIT 1`,
-			[projectId, taskId],
-		);
-		if (!existing) return null;
-		const timestamp = isoNow();
-		const leaseExpiresAt = new Date(Date.now() + Number(input.leaseSeconds ?? 300) * 1000).toISOString();
-		await this.run(
-			`UPDATE tasks SET state = 'claimed', claimed_by = ?, lease_expires_at = ?, attempt_count = attempt_count + 1, started_at = COALESCE(started_at, ?), updated_at = ? WHERE id = ?`,
-			[input.workerId, leaseExpiresAt, timestamp, timestamp, taskId],
-		);
-		return serializeRuntimeTask(await this.first(`SELECT * FROM tasks WHERE id = ? LIMIT 1`, [taskId]));
-	}
-
-	async recordRuntimeTaskProgress(projectId, taskId, input) {
-		await this.ensureInitialized();
-		const existing = await this.first(
-			`SELECT tasks.* FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? LIMIT 1`,
-			[projectId, taskId],
-		);
-		if (!existing) return null;
-		const payload = {
-			...parseJson(existing.payload_json, {}),
-			...(input.patch ?? {}),
-		};
-		await this.run(
-			`UPDATE tasks SET state = ?, claimed_by = COALESCE(?, claimed_by), payload_json = ?, updated_at = ? WHERE id = ?`,
-			[input.state ?? existing.state, input.workerId ?? null, JSON.stringify(payload), isoNow(), taskId],
-		);
-		if (input.appendEvent?.kind) {
-			await this.appendRuntimeTaskEvent(projectId, taskId, {
-				kind: input.appendEvent.kind,
-				data: input.appendEvent.data ?? {},
-				actor: input.actor,
-			});
-		}
-		return serializeRuntimeTask(await this.first(`SELECT * FROM tasks WHERE id = ? LIMIT 1`, [taskId]));
-	}
-
-	async completeRuntimeTask(projectId, taskId, input) {
-		await this.ensureInitialized();
-		const existing = await this.first(
-			`SELECT tasks.* FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? LIMIT 1`,
-			[projectId, taskId],
-		);
-		if (!existing) return null;
-		const timestamp = isoNow();
-		await this.run(
-			`UPDATE tasks SET state = 'completed', completed_at = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ?`,
-			[timestamp, timestamp, taskId],
-		);
-		if (input.output) {
-			await this.run(
-				`INSERT INTO task_outputs (id, task_id, output_json, output_ref, created_at) VALUES (?, ?, ?, ?, ?)`,
-				[randomUUID(), taskId, JSON.stringify(input.output), input.outputRef ?? null, timestamp],
-			);
-		}
-		if (input.summary) {
-			await this.appendRuntimeTaskEvent(projectId, taskId, {
-				kind: 'completed',
-				data: input.summary,
-				actor: input.actor,
-			});
-		}
-		return serializeRuntimeTask(await this.first(`SELECT * FROM tasks WHERE id = ? LIMIT 1`, [taskId]));
-	}
-
-	async storeRunnerTaskOutputArtifact(projectId, input) {
-		await this.ensureInitialized();
-		const project = await this.getProject(projectId);
-		if (!project) return null;
-		const timestamp = isoNow();
-		const contentType = typeof input.contentType === 'string' && input.contentType.trim()
-			? input.contentType.trim()
-			: 'application/json';
-		const buffer = input.contentBase64
-			? Buffer.from(String(input.contentBase64), 'base64')
-			: Buffer.from(typeof input.content === 'string' ? input.content : JSON.stringify(input.content ?? {}));
-		const sha256 = createHash('sha256').update(buffer).digest('hex');
-		if (input.sha256 && String(input.sha256) !== sha256) {
-			const error = new Error('Artifact body checksum does not match sha256.');
-			error.code = 'artifact_checksum_mismatch';
-			throw error;
-		}
-		const objectKey = safeStoragePathSegment(
-			input.objectKey
-			?? `agent-artifacts/${projectId}/${timestamp.slice(0, 10)}/${randomUUID()}.json`,
-		);
-		if (!objectKey) {
-			const error = new Error('objectKey is required.');
-			error.code = 'artifact_object_key_required';
-			throw error;
-		}
-		let storageMode = 'local_r2_emulation';
-		if (this.artifactBucket && typeof this.artifactBucket.put === 'function') {
-			await this.artifactBucket.put(objectKey, buffer, {
-				httpMetadata: { contentType },
-				customMetadata: { sha256, projectId, teamId: project.teamId },
-			});
-			storageMode = 'cloudflare_r2';
-		} else {
-			const fs = getNodeBuiltin('fs');
-			const path = getNodeBuiltin('path');
-			if (!fs || !path) {
-				const error = new Error('Artifact body storage is not available in this runtime.');
-				error.code = 'artifact_storage_unavailable';
-				throw error;
-			}
-			const root = artifactStorageRoot(this.config);
-			const filePath = path.resolve(root, projectId, objectKey);
-			const projectRoot = path.resolve(root, projectId);
-			if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
-				const error = new Error('Artifact objectKey escapes the project storage root.');
-				error.code = 'artifact_object_key_forbidden';
-				throw error;
-			}
-			await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-			await fs.promises.writeFile(filePath, buffer);
-		}
-		return {
-			artifactStorage: 'r2',
-			storageMode,
-			outputRef: `r2:${objectKey}`,
-			objectKey,
-			contentType,
-			sizeBytes: buffer.byteLength,
-			sha256,
-			teamId: project.teamId,
-			projectId,
-			createdAt: timestamp,
-		};
-	}
-
-	async resolveRuntimeTaskOutput(row, projectId) {
-		const serialized = serializeRuntimeTaskOutput(row);
-		if (!serialized?.outputRef) return serialized;
-		if (!String(serialized.outputRef).startsWith('r2:')) {
-			return serialized;
-		}
-		const objectKey = safeStoragePathSegment(String(serialized.outputRef).slice(3));
-		if (this.artifactBucket && typeof this.artifactBucket.get === 'function') {
-			try {
-				const object = await this.artifactBucket.get(objectKey);
-				if (!object) throw new Error(`Artifact object ${objectKey} was not found.`);
-				const content = typeof object.text === 'function'
-					? await object.text()
-					: typeof object.arrayBuffer === 'function'
-						? Buffer.from(await object.arrayBuffer()).toString('utf8')
-						: '';
-				const parsed = parseJson(content, null);
-				if (parsed && typeof parsed === 'object') {
-					return {
-						...serialized,
-						outputJson: JSON.stringify({
-							...parsed,
-							outputRef: serialized.outputRef,
-							outputMetadata: serialized.output,
-						}),
-						output: {
-							...parsed,
-							outputRef: serialized.outputRef,
-							outputMetadata: serialized.output,
-						},
-					};
-				}
-				return {
-					...serialized,
-					outputJson: JSON.stringify({ outputRef: serialized.outputRef, content }),
-					output: { outputRef: serialized.outputRef, content },
-				};
-			} catch (error) {
-				return {
-					...serialized,
-					outputJson: JSON.stringify({
-						outputRef: serialized.outputRef,
-						outputResolutionError: error instanceof Error ? error.message : String(error),
-					}),
-					output: {
-						outputRef: serialized.outputRef,
-						outputResolutionError: error instanceof Error ? error.message : String(error),
-					},
-				};
-			}
-		}
-		const fs = getNodeBuiltin('fs');
-		const path = getNodeBuiltin('path');
-		if (!fs || !path) {
-			return serialized;
-		}
-		const root = artifactStorageRoot(this.config);
-		const filePath = path.resolve(root, projectId, objectKey);
-		const projectRoot = path.resolve(root, projectId);
-		if (!filePath.startsWith(projectRoot + path.sep) && filePath !== projectRoot) {
-			return {
-				...serialized,
-				output: {
-					...serialized.output,
-					outputResolutionError: 'artifact_object_key_forbidden',
-				},
-			};
-		}
-		try {
-			const content = await fs.promises.readFile(filePath, 'utf8');
-			const parsed = parseJson(content, null);
-			if (parsed && typeof parsed === 'object') {
-				return {
-					...serialized,
-					outputJson: JSON.stringify({
-						...parsed,
-						outputRef: serialized.outputRef,
-						outputMetadata: serialized.output,
-					}),
-					output: {
-						...parsed,
-						outputRef: serialized.outputRef,
-						outputMetadata: serialized.output,
-					},
-				};
-			}
-			return {
-				...serialized,
-				outputJson: JSON.stringify({
-					...serialized.output,
-					outputRef: serialized.outputRef,
-					content,
-				}),
-				output: {
-					...serialized.output,
-					outputRef: serialized.outputRef,
-					content,
-				},
-			};
-		} catch (error) {
-			return {
-				...serialized,
-				outputJson: JSON.stringify({
-					...serialized.output,
-					outputRef: serialized.outputRef,
-					outputResolutionError: error instanceof Error ? error.message : String(error),
-				}),
-				output: {
-					...serialized.output,
-					outputRef: serialized.outputRef,
-					outputResolutionError: error instanceof Error ? error.message : String(error),
-				},
-			};
-		}
-	}
-
-	async failRuntimeTask(projectId, taskId, input) {
-		await this.ensureInitialized();
-		const existing = await this.first(
-			`SELECT tasks.* FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? LIMIT 1`,
-			[projectId, taskId],
-		);
-		if (!existing) return null;
-		await this.run(
-			`UPDATE tasks SET state = ?, available_at = ?, last_error_code = ?, last_error_message = ?, lease_expires_at = NULL, updated_at = ? WHERE id = ?`,
-			[
-				input.retryable ? 'pending' : 'failed',
-				input.nextVisibleAt ?? existing.available_at,
-				input.errorCode ?? null,
-				input.errorMessage,
-				isoNow(),
-				taskId,
-			],
-		);
-		await this.appendRuntimeTaskEvent(projectId, taskId, {
-			kind: input.retryable ? 'retry_scheduled' : 'failed',
-			data: { errorCode: input.errorCode ?? null, errorMessage: input.errorMessage },
-			actor: input.actor,
-		});
-		return serializeRuntimeTask(await this.first(`SELECT * FROM tasks WHERE id = ? LIMIT 1`, [taskId]));
-	}
-
-	async appendRuntimeTaskEvent(projectId, taskId, input) {
-		await this.ensureInitialized();
-		const existing = await this.first(
-			`SELECT tasks.id FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? LIMIT 1`,
-			[projectId, taskId],
-		);
-		if (!existing) return null;
-		const row = await this.first(`SELECT COALESCE(MAX(seq), 0) AS max_seq FROM task_events WHERE task_id = ?`, [taskId]);
-		const seq = Number(row?.max_seq ?? 0) + 1;
-		const id = randomUUID();
-		await this.run(
-			`INSERT INTO task_events (id, task_id, seq, kind, data_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-			[id, taskId, seq, input.kind, JSON.stringify({ ...(input.data ?? {}), actor: input.actor }), isoNow()],
-		);
-		return serializeRuntimeTaskEvent(await this.first(`SELECT * FROM task_events WHERE id = ? LIMIT 1`, [id]));
-	}
-
-	async listRuntimeTaskEvents(projectId, taskId) {
-		await this.ensureInitialized();
-		const rows = await this.all(
-			`SELECT task_events.* FROM task_events JOIN tasks ON tasks.id = task_events.task_id JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? ORDER BY task_events.seq ASC`,
-			[projectId, taskId],
-		);
-		return rows.map(serializeRuntimeTaskEvent);
-	}
-
-	async listRuntimeTaskOutputs(projectId, taskId) {
-		await this.ensureInitialized();
-		const rows = await this.all(
-			`SELECT task_outputs.* FROM task_outputs JOIN tasks ON tasks.id = task_outputs.task_id JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? ORDER BY task_outputs.created_at ASC`,
-			[projectId, taskId],
-		);
-		return Promise.all(rows.map((row) => this.resolveRuntimeTaskOutput(row, projectId)));
-	}
-
 	async createRuntimeReport(input) {
 		await this.ensureInitialized();
 		const workDay = await this.first(`SELECT * FROM work_days WHERE id = ? LIMIT 1`, [input.workDayId]);
@@ -12371,21 +13360,6 @@ export class MarketControlPlaneStore {
 			],
 		);
 		return serializeRuntimeReport(await this.first(`SELECT * FROM reports WHERE id = ? LIMIT 1`, [id]));
-	}
-
-	async getRuntimeManagerContext(projectId, taskId) {
-		await this.ensureInitialized();
-		const task = serializeRuntimeTask(await this.first(
-			`SELECT tasks.* FROM tasks JOIN work_days ON work_days.id = tasks.work_day_id WHERE work_days.project_id = ? AND tasks.id = ? LIMIT 1`,
-			[projectId, taskId],
-		));
-		const workDay = task ? serializeRuntimeWorkDay(await this.first(`SELECT * FROM work_days WHERE id = ? LIMIT 1`, [task.workDayId])) : null;
-		return {
-			task,
-			workDay,
-			agent: null,
-			graph: workDay?.graphVersion ? { graphVersion: workDay.graphVersion } : null,
-		};
 	}
 
 	async getProjectWorkPolicy(projectId, environment) {
@@ -13142,37 +14116,7 @@ export class MarketControlPlaneStore {
 	}
 
 	async collectControlPlaneGeneratedArtifacts(projectId) {
-		const tasks = await this.listRuntimeTasks(projectId, { limit: 1000 }).catch(() => []);
 		const items = [];
-		for (const task of tasks) {
-			const outputs = await this.listRuntimeTaskOutputs(projectId, task.id).catch(() => []);
-			for (const output of outputs) {
-				const parsedOutput = output?.output && typeof output.output === 'object'
-					? output.output
-					: parseJson(output?.outputJson, {});
-				const body = parsedOutput && typeof parsedOutput === 'object' ? parsedOutput : {};
-				const generated = Array.isArray(body.generatedArtifacts) ? body.generatedArtifacts : [];
-				for (const artifact of generated) {
-					items.push({
-						...artifact,
-						taskId: artifact.taskId ?? task.id,
-						workDayId: artifact.workDayId ?? task.workDayId ?? task.work_day_id ?? null,
-						taskState: task.state ?? null,
-						outputRef: artifact.outputRef ?? output.outputRef ?? body.outputRef ?? null,
-					});
-				}
-				if (body.artifactKind && generated.length === 0) {
-					items.push({
-						...body,
-						id: body.id ?? `${task.id}:${body.artifactKind}`,
-						taskId: task.id,
-						workDayId: task.workDayId ?? task.work_day_id ?? null,
-						taskState: task.state ?? null,
-						outputRef: output.outputRef ?? body.outputRef ?? null,
-					});
-				}
-			}
-		}
 		const jobs = await this.listRecentJobsForProject(projectId, 50).catch(() => []);
 		for (const job of jobs) {
 			const body = job?.output && typeof job.output === 'object' ? job.output : {};

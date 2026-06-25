@@ -1504,37 +1504,7 @@ function artifactDiffFallback(artifact) {
 }
 
 async function collectControlPlaneGeneratedArtifacts(store, projectId) {
-	const tasks = await store.listRuntimeTasks(projectId, { limit: 1000 }).catch(() => []);
 	const items = [];
-	for (const task of tasks) {
-		const outputs = await store.listRuntimeTaskOutputs(projectId, task.id).catch(() => []);
-		for (const output of outputs) {
-			const parsedOutput = output?.output && typeof output.output === 'object'
-				? output.output
-				: parseJson(output?.outputJson, {});
-			const body = parsedOutput && typeof parsedOutput === 'object' ? parsedOutput : {};
-			const generated = Array.isArray(body.generatedArtifacts) ? body.generatedArtifacts : [];
-			for (const artifact of generated) {
-				items.push({
-					...artifact,
-					taskId: artifact.taskId ?? task.id,
-					workDayId: artifact.workDayId ?? task.workDayId ?? task.work_day_id ?? null,
-					taskState: task.state ?? null,
-					outputRef: output.outputRef ?? body.outputRef ?? null,
-				});
-			}
-			if (body.artifactKind && generated.length === 0) {
-				items.push({
-					...body,
-					id: body.id ?? `${task.id}:${body.artifactKind}`,
-					taskId: task.id,
-					workDayId: task.workDayId ?? task.work_day_id ?? null,
-					taskState: task.state ?? null,
-					outputRef: output.outputRef ?? body.outputRef ?? null,
-				});
-			}
-		}
-	}
 	const jobs = await store.listRecentJobsForProject(projectId, 50).catch(() => []);
 	for (const job of jobs) {
 		const body = job?.output && typeof job.output === 'object' ? job.output : {};
@@ -3331,7 +3301,8 @@ function localAcceptanceAdminToken() {
 
 function localAcceptanceAuthEnabled(runtime) {
 	const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
-	return environment === 'local' || process.env.TREESEED_LOCAL_DEV_MODE === '1';
+	const baseUrl = String(runtime?.resolved?.config?.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? '').trim();
+	return environment === 'local' || process.env.TREESEED_LOCAL_DEV_MODE === '1' || isLoopbackUrl(baseUrl);
 }
 
 function decorateJob(baseUrl, job) {
@@ -4058,7 +4029,13 @@ function evaluateTreeDxProxyHandleAccessLocal(handle, request) {
 		return { ok: false, code: 'treedx_proxy_operation_denied', reason: 'TreeDX proxy handle does not allow this operation.', metadata: { operation, allowedOperations } };
 	}
 	const path = request.path ? String(request.path).replace(/^\/+/, '') : null;
-	const allowedPaths = Array.isArray(handle.allowedPaths) ? handle.allowedPaths.map(String).filter(Boolean) : [];
+	const writeOperation = operation === 'files:write' || operation === 'git:commit';
+	const readPaths = Array.isArray(handle.allowedReadPaths) ? handle.allowedReadPaths.map(String).filter(Boolean) : [];
+	const writePaths = Array.isArray(handle.allowedWritePaths) ? handle.allowedWritePaths.map(String).filter(Boolean) : [];
+	const fallbackPaths = Array.isArray(handle.allowedPaths) ? handle.allowedPaths.map(String).filter(Boolean) : [];
+	const allowedPaths = writeOperation
+		? (writePaths.length ? writePaths : fallbackPaths)
+		: (readPaths.length ? readPaths : fallbackPaths);
 	if (path && allowedPaths.length && !allowedPaths.some((pattern) => treeDxPathMatches(pattern, path))) {
 		return { ok: false, code: 'treedx_proxy_path_denied', reason: 'TreeDX proxy handle does not allow this path.', metadata: { path, allowedPaths } };
 	}
@@ -4208,6 +4185,19 @@ function treeDxTokenScope({ repoId = null, repoIds = null, capabilities = [], re
 	};
 }
 
+function treeDxRepoScopedContextBody(body, repoId) {
+	const sanitized = body && typeof body === 'object' && !Array.isArray(body) ? { ...body } : {};
+	delete sanitized.repoIds;
+	delete sanitized.refs;
+	if (sanitized.paths && !Array.isArray(sanitized.paths)) {
+		delete sanitized.paths;
+	}
+	return {
+		...sanitized,
+		repoId,
+	};
+}
+
 function treeDxScopeCacheKey(scope) {
 	return JSON.stringify({
 		repoIds: scope.repoIds ?? [],
@@ -4230,10 +4220,11 @@ function resolveTreeDxProxyBaseUrl({ runtime, library }) {
 
 async function resolveTreeDxProxyToken({ runtime, baseUrl, projectId, scope = treeDxTokenScope() }) {
 	const env = runtimeEnv(runtime);
-	const local = isLoopbackTreeDxBaseUrl(baseUrl);
+	const apiBaseUrl = env.TREESEED_API_BASE_URL ?? env.TREESEED_PUBLIC_API_BASE_URL ?? '';
+	const local = isLoopbackTreeDxBaseUrl(baseUrl) || isLoopbackTreeDxBaseUrl(apiBaseUrl) || env.TREESEED_ENVIRONMENT === 'local' || env.TREESEED_API_ENVIRONMENT === 'local';
 	const secret = env.TREESEED_TREEDX_JWT_HS256_SECRET
 		?? env.TREEDX_JWT_HS256_SECRET
-		?? null;
+		?? (local ? 'treeseed-local-treedx-jwt-secret' : null);
 	const issuer = env.TREESEED_TREEDX_JWT_ISSUER
 		?? env.TREEDX_JWT_ISSUER
 		?? (local ? 'https://api.treeseed.local/treedx' : null);
@@ -5234,29 +5225,27 @@ export function createApiApp(options = {}): Hono {
 						const team = await store.getTeam(requestedTeam).catch(() => null)
 							?? await store.getTeamBySlug(requestedTeam).catch(() => null)
 							?? await store.getTeamBySlug('treeseed').catch(() => null);
-						if (team) {
-							const principal = {
-								id: 'team-key:local-capacity-acceptance',
-								displayName: 'Local Capacity Acceptance',
-								roles: ['team_api_key'],
-								permissions: ['*:*:*'],
-								scopes: ['auth:me'],
-								metadata: {
-									teamId: team.id,
-									teamName: team.name,
-									teamDisplayName: team.displayName ?? team.name,
-									localAcceptance: true,
-								},
-							};
-							c.set('principal', principal);
-							c.set('credential', {
-								type: 'team_api_key',
-								id: 'local-capacity-acceptance',
-								label: 'Local Capacity Acceptance',
-							});
-							c.set('actorType', 'service');
-							c.set('permissionGrants', principal.permissions);
-						}
+						const principal = {
+							id: 'team-key:local-capacity-acceptance',
+							displayName: 'Local Capacity Acceptance',
+							roles: ['team_api_key', 'market_admin'],
+							permissions: ['*:*:*', 'seeds:apply:global', 'teams:manage:team'],
+							scopes: ['auth:me'],
+							metadata: {
+								teamId: team?.id ?? null,
+								teamName: team?.name ?? requestedTeam,
+								teamDisplayName: team?.displayName ?? team?.name ?? requestedTeam,
+								localAcceptance: true,
+							},
+						};
+						c.set('principal', principal);
+						c.set('credential', {
+							type: 'team_api_key',
+							id: 'local-capacity-acceptance',
+							label: 'Local Capacity Acceptance',
+						});
+						c.set('actorType', 'service');
+						c.set('permissionGrants', principal.permissions);
 					}
 				}
 				await next();
@@ -5534,7 +5523,7 @@ export function createApiApp(options = {}): Hono {
 					launchMode: 'self_hosted',
 					status: 'deployed',
 					id: `deployment-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
-					serviceRefs: { api: `acceptance-${namespace}-api`, manager: `acceptance-${namespace}-manager`, runner: `acceptance-${namespace}-runner` },
+					serviceRefs: { manager: `acceptance-${namespace}-manager`, runner: `acceptance-${namespace}-runner` },
 					envRefs: { TREESEED_CAPACITY_PROVIDER_API_KEY: { secretRef: 'acceptance-redacted' } },
 					result: { acceptance: true, namespace },
 					completedAt: new Date().toISOString(),
@@ -5545,16 +5534,6 @@ export function createApiApp(options = {}): Hono {
 					state: 'active',
 					summary: { acceptance: true, namespace },
 				}).catch(() => null);
-				const task = workday ? await store.createRuntimeTask(project.id, {
-					id: `task-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
-					workDayId: workday.id,
-					agentId: 'acceptance-agent',
-					type: 'dry_run',
-					state: 'pending',
-					priority: 1,
-					idempotencyKey: `acceptance-${namespace}`,
-					payload: { acceptance: true, dryRun: true },
-				}).catch(() => null) : null;
 				const operation = await store.createPlatformOperation({
 					id: `operation-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
 					namespace: 'market',
@@ -5638,7 +5617,7 @@ export function createApiApp(options = {}): Hono {
 					planningInputsStatus: 'requested',
 					metadata: { acceptance: true, namespace },
 				}).catch(() => null);
-				const workdayTestRunId = `workday-test-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+				const workdayTestRunId = `workday-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
 				const workdayTestRun = await store.getWorkdayTestRun(team.id, workdayTestRunId).catch(() => null)
 					?? await store.createWorkdayTestRun(team.id, {
 						id: workdayTestRunId,
@@ -5656,7 +5635,7 @@ export function createApiApp(options = {}): Hono {
 					eventType: 'acceptance.seeded',
 					status: 'recorded',
 					title: 'Acceptance seeded event',
-					message: 'Seeded acceptance workday-test event.',
+					message: 'Seeded acceptance workday event.',
 					parameters: { namespace },
 					metadata: { acceptance: true, namespace },
 				}).catch(() => null) : null;
@@ -5707,7 +5686,6 @@ export function createApiApp(options = {}): Hono {
 							provider: { id: provider.id, keyPrefix: providerKey?.key?.keyPrefix ?? null },
 							deployment: { id: deployment?.id ?? null },
 							workday: { id: workday?.id ?? `workday-${namespace}` },
-							task: { id: task?.id ?? `task-${namespace}` },
 							job: { id: operation?.id ?? `operation-${namespace}` },
 							platformOperation: { id: operation?.id ?? `operation-${namespace}` },
 							platformRunner: { id: platformRunner?.id ?? platformRunnerId },
@@ -8223,7 +8201,7 @@ export function createApiApp(options = {}): Hono {
 				return allocationSet ? c.json({ ok: true, payload: allocationSet }) : jsonError(c, 404, 'Unknown allocation set.');
 			});
 
-			app.get('/v1/teams/:teamId/workday-tests', async (c) => {
+			const listWorkdayRunsHandler = async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 				if (access.response) return access.response;
 				return c.json({
@@ -8233,9 +8211,9 @@ export function createApiApp(options = {}): Hono {
 						providerId: typeof c.req.query('providerId') === 'string' ? c.req.query('providerId') : null,
 					}),
 				});
-			});
+			};
 
-			app.post('/v1/teams/:teamId/workday-tests', async (c) => {
+			const createWorkdayRunHandler = async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
@@ -8244,40 +8222,47 @@ export function createApiApp(options = {}): Hono {
 					requestedById: access.principal.id,
 				});
 				return c.json({ ok: true, payload: run }, { status: 201 });
-			});
+			};
 
-			app.get('/v1/teams/:teamId/workday-tests/:runId', async (c) => {
+			const getWorkdayRunHandler = async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 				if (access.response) return access.response;
 				const run = await store.getWorkdayTestRun(c.req.param('teamId'), c.req.param('runId'));
-				if (!run) return jsonError(c, 404, 'Unknown workday test run.');
+				if (!run) return jsonError(c, 404, 'Unknown workday run.');
 				const events = await store.listWorkdayTestEvents(c.req.param('teamId'), run.id);
 				return c.json({ ok: true, payload: { run, events } });
-			});
+			};
 
-			app.patch('/v1/teams/:teamId/workday-tests/:runId', async (c) => {
+			const updateWorkdayRunHandler = async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
 				const run = await store.updateWorkdayTestRun(c.req.param('teamId'), c.req.param('runId'), body);
-				return run ? c.json({ ok: true, payload: run }) : jsonError(c, 404, 'Unknown workday test run.');
-			});
+				return run ? c.json({ ok: true, payload: run }) : jsonError(c, 404, 'Unknown workday run.');
+			};
 
-			app.get('/v1/teams/:teamId/workday-tests/:runId/events', async (c) => {
+			const listWorkdayEventsHandler = async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 				if (access.response) return access.response;
 				const run = await store.getWorkdayTestRun(c.req.param('teamId'), c.req.param('runId'));
-				if (!run) return jsonError(c, 404, 'Unknown workday test run.');
+				if (!run) return jsonError(c, 404, 'Unknown workday run.');
 				return c.json({ ok: true, payload: await store.listWorkdayTestEvents(c.req.param('teamId'), run.id) });
-			});
+			};
 
-			app.post('/v1/teams/:teamId/workday-tests/:runId/events', async (c) => {
+			const createWorkdayEventHandler = async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
 				const event = await store.createWorkdayTestEvent(c.req.param('teamId'), c.req.param('runId'), body);
-				return event ? c.json({ ok: true, payload: event }, { status: 201 }) : jsonError(c, 404, 'Unknown workday test run.');
-			});
+				return event ? c.json({ ok: true, payload: event }, { status: 201 }) : jsonError(c, 404, 'Unknown workday run.');
+			};
+
+			app.get('/v1/teams/:teamId/workday-runs', listWorkdayRunsHandler);
+			app.post('/v1/teams/:teamId/workday-runs', createWorkdayRunHandler);
+			app.get('/v1/teams/:teamId/workday-runs/:runId', getWorkdayRunHandler);
+			app.patch('/v1/teams/:teamId/workday-runs/:runId', updateWorkdayRunHandler);
+			app.get('/v1/teams/:teamId/workday-runs/:runId/events', listWorkdayEventsHandler);
+			app.post('/v1/teams/:teamId/workday-runs/:runId/events', createWorkdayEventHandler);
 
 			app.get('/v1/teams/:teamId/capacity/provider-sessions', async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
@@ -9524,8 +9509,8 @@ export function createApiApp(options = {}): Hono {
 						body,
 						tokenScope: treeDxTokenScope({
 							repoId,
-							capabilities: [TREE_DX_WORKSPACE_CREATE_CAPABILITY, 'files:read', 'files:write', 'git:read', 'git:diff', 'git:commit'],
-							paths: Array.isArray(body.allowedPaths) ? body.allowedPaths : ['**'],
+							capabilities: ['repos:write', TREE_DX_WORKSPACE_CREATE_CAPABILITY, 'files:read', 'files:write', 'git:read', 'git:diff', 'git:commit'],
+							paths: ['**'],
 						}),
 					});
 				});
@@ -9660,6 +9645,35 @@ export function createApiApp(options = {}): Hono {
 					});
 				});
 
+				app.post('/v1/dx/projects/:projectId/repos/:repoId/paths/list', async (c) => {
+					const projectId = c.req.param('projectId');
+					const repoId = c.req.param('repoId');
+					const library = await store.getProjectTreeDxLibrary(projectId);
+					const mismatch = assertDxRepoMatchesProject(c, library, repoId);
+					if (mismatch) return mismatch;
+					const body = await c.req.json().catch(() => ({}));
+					const pathScope = Array.isArray(body.paths) && body.paths.length > 0
+						? body.paths
+						: typeof body.path === 'string' && body.path.trim()
+							? body.path.trim()
+							: '**';
+					return proxyTreeDxJson({
+						c,
+						runtime,
+						store,
+						projectId,
+						permission: 'projects:read:team',
+						method: 'POST',
+						path: `/api/v1/repos/${encodeURIComponent(repoId)}/paths/list`,
+						body,
+						tokenScope: treeDxTokenScope({
+							repoId,
+							capabilities: ['files:read'],
+							paths: Array.isArray(pathScope) ? pathScope : treeDxPathScope(pathScope),
+						}),
+					});
+				});
+
 				app.post('/v1/dx/projects/:projectId/repos/:repoId/context/build', async (c) => {
 					const projectId = c.req.param('projectId');
 					const repoId = c.req.param('repoId');
@@ -9675,7 +9689,7 @@ export function createApiApp(options = {}): Hono {
 						permission: 'projects:read:team',
 						method: 'POST',
 						path: `/api/v1/repos/${encodeURIComponent(repoId)}/context/build`,
-						body,
+						body: treeDxRepoScopedContextBody(body, repoId),
 						tokenScope: treeDxTokenScope({
 							repoId,
 							capabilities: ['files:read', 'files:search', 'graph:query'],
@@ -12153,163 +12167,6 @@ export function createApiApp(options = {}): Hono {
 				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown workday.');
 			});
 
-			app.post('/v1/projects/:projectId/runner/tasks', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const body = await c.req.json().catch(() => ({}));
-				if (!body.workDayId || !body.agentId || !body.type || !body.idempotencyKey) {
-					return jsonError(c, 400, 'workDayId, agentId, type, and idempotencyKey are required.');
-				}
-				const payload = await store.createRuntimeTask(c.req.param('projectId'), {
-					id: typeof body.id === 'string' ? body.id : undefined,
-					workDayId: String(body.workDayId),
-					agentId: String(body.agentId),
-					type: String(body.type),
-					state: typeof body.state === 'string' ? body.state : undefined,
-					priority: Number.isFinite(Number(body.priority)) ? Number(body.priority) : 0,
-					idempotencyKey: String(body.idempotencyKey),
-					payload: body.payload && typeof body.payload === 'object' ? body.payload : {},
-					payloadHash: typeof body.payloadHash === 'string' ? body.payloadHash : null,
-					maxAttempts: Number.isFinite(Number(body.maxAttempts)) ? Number(body.maxAttempts) : undefined,
-					availableAt: typeof body.availableAt === 'string' ? body.availableAt : undefined,
-					graphVersion: typeof body.graphVersion === 'string' ? body.graphVersion : null,
-					parentTaskId: typeof body.parentTaskId === 'string' ? body.parentTaskId : null,
-				});
-				return payload ? c.json({ ok: true, payload }, { status: 201 }) : jsonError(c, 404, 'Unknown workday.');
-			});
-
-			app.get('/v1/projects/:projectId/runner/tasks', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const stateQuery = typeof c.req.query('state') === 'string' ? c.req.query('state') : null;
-				return c.json({
-					ok: true,
-					payload: await store.listRuntimeTasks(c.req.param('projectId'), {
-						workDayId: typeof c.req.query('workDayId') === 'string' ? c.req.query('workDayId') : null,
-						agentId: typeof c.req.query('agentId') === 'string' ? c.req.query('agentId') : null,
-						state: stateQuery ? stateQuery.split(',').filter(Boolean) : null,
-						limit: Number.isFinite(Number(c.req.query('limit'))) ? Number(c.req.query('limit')) : 50,
-					}),
-				});
-			});
-
-			app.post('/v1/projects/:projectId/runner/tasks/:taskId/claim', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const body = await c.req.json().catch(() => ({}));
-				if (!body.workerId) return jsonError(c, 400, 'workerId is required.');
-				const payload = await store.claimRuntimeTask(c.req.param('projectId'), c.req.param('taskId'), {
-					workerId: String(body.workerId),
-					leaseSeconds: Number.isFinite(Number(body.leaseSeconds)) ? Number(body.leaseSeconds) : 300,
-				});
-				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
-			});
-
-			app.post('/v1/projects/:projectId/runner/tasks/:taskId/progress', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const body = await c.req.json().catch(() => ({}));
-				const payload = await store.recordRuntimeTaskProgress(c.req.param('projectId'), c.req.param('taskId'), {
-					workerId: typeof body.workerId === 'string' ? body.workerId : null,
-					state: typeof body.state === 'string' ? body.state : undefined,
-					appendEvent: body.appendEvent && typeof body.appendEvent === 'object' ? body.appendEvent : null,
-					patch: body.patch && typeof body.patch === 'object' ? body.patch : null,
-					actor: typeof body.actor === 'string' ? body.actor : 'runner',
-				});
-				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
-			});
-
-			app.get('/v1/projects/:projectId/runner/tasks/:taskId/context', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				return c.json({
-					ok: true,
-					payload: await store.getRuntimeManagerContext(c.req.param('projectId'), c.req.param('taskId')),
-				});
-			});
-
-			app.post('/v1/projects/:projectId/runner/tasks/:taskId/events', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const body = await c.req.json().catch(() => ({}));
-				if (!body.kind) return jsonError(c, 400, 'kind is required.');
-				const payload = await store.appendRuntimeTaskEvent(c.req.param('projectId'), c.req.param('taskId'), {
-					kind: String(body.kind),
-					data: body.data && typeof body.data === 'object' ? body.data : {},
-					actor: typeof body.actor === 'string' ? body.actor : 'runner',
-				});
-				return payload ? c.json({ ok: true, payload }, { status: 201 }) : jsonError(c, 404, 'Unknown task.');
-			});
-
-			app.get('/v1/projects/:projectId/runner/tasks/:taskId/events', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				return c.json({
-					ok: true,
-					payload: await store.listRuntimeTaskEvents(c.req.param('projectId'), c.req.param('taskId')),
-				});
-			});
-
-			app.get('/v1/projects/:projectId/runner/tasks/:taskId/outputs', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				return c.json({
-					ok: true,
-					payload: await store.listRuntimeTaskOutputs(c.req.param('projectId'), c.req.param('taskId')),
-				});
-			});
-
-			app.post('/v1/projects/:projectId/runner/artifacts', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const body = await c.req.json().catch(() => ({}));
-				if (!body.content && !body.contentBase64) {
-					return jsonError(c, 400, 'content or contentBase64 is required.');
-				}
-				try {
-					const payload = await store.storeRunnerTaskOutputArtifact(c.req.param('projectId'), {
-						objectKey: typeof body.objectKey === 'string' ? body.objectKey : null,
-						content: body.content ?? null,
-						contentBase64: typeof body.contentBase64 === 'string' ? body.contentBase64 : null,
-						contentType: typeof body.contentType === 'string' ? body.contentType : 'application/json',
-						sha256: typeof body.sha256 === 'string' ? body.sha256 : null,
-					});
-					return payload ? c.json({ ok: true, payload }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
-				} catch (error) {
-					return jsonError(c, error?.code === 'artifact_checksum_mismatch' ? 409 : 400, error instanceof Error ? error.message : String(error), {
-						code: error?.code ?? 'artifact_storage_failed',
-					});
-				}
-			});
-
-			app.post('/v1/projects/:projectId/runner/tasks/:taskId/complete', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const body = await c.req.json().catch(() => ({}));
-				const payload = await store.completeRuntimeTask(c.req.param('projectId'), c.req.param('taskId'), {
-					output: body.output && typeof body.output === 'object' ? body.output : null,
-					outputRef: typeof body.outputRef === 'string' ? body.outputRef : null,
-					summary: body.summary && typeof body.summary === 'object' ? body.summary : null,
-					actor: typeof body.actor === 'string' ? body.actor : 'runner',
-				});
-				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
-			});
-
-			app.post('/v1/projects/:projectId/runner/tasks/:taskId/fail', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				const body = await c.req.json().catch(() => ({}));
-				if (!body.errorMessage) return jsonError(c, 400, 'errorMessage is required.');
-				const payload = await store.failRuntimeTask(c.req.param('projectId'), c.req.param('taskId'), {
-					errorCode: typeof body.errorCode === 'string' ? body.errorCode : null,
-					errorMessage: String(body.errorMessage),
-					retryable: body.retryable === true,
-					nextVisibleAt: typeof body.nextVisibleAt === 'string' ? body.nextVisibleAt : null,
-					actor: typeof body.actor === 'string' ? body.actor : 'runner',
-				});
-				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
-			});
-
 			app.post('/v1/projects/:projectId/runner/manager-leases/claim', async (c) => {
 				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
 				if (runnerAccess.response) return runnerAccess.response;
@@ -12577,6 +12434,55 @@ export function createApiApp(options = {}): Hono {
 						mode: typeof c.req.query('mode') === 'string' ? c.req.query('mode') : null,
 						assignmentId: typeof c.req.query('assignmentId') === 'string' ? c.req.query('assignmentId') : null,
 					}),
+				});
+			});
+
+			app.get('/v1/projects/:projectId/assignments/:assignmentId/timeline', async (c) => {
+				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+				if (access.response) return access.response;
+				const projectId = c.req.param('projectId');
+				const assignmentId = c.req.param('assignmentId');
+				const assignment = await store.getProviderAssignment(access.details.project.teamId, assignmentId);
+				if (!assignment || assignment.projectId !== projectId) return jsonError(c, 404, 'Unknown assignment.');
+				const modeRuns = await store.listAgentModeRuns(projectId, { assignmentId });
+				const items = [
+					{
+						type: 'assignment_created',
+						id: `${assignment.id}:created`,
+						assignmentId: assignment.id,
+						status: assignment.status,
+						createdAt: assignment.createdAt ?? assignment.created_at ?? null,
+						payload: {
+							assignment,
+						},
+					},
+					...modeRuns.map((run, index) => ({
+						type: run.outputs?.status === 'message_recorded'
+							? 'assistant_message'
+							: run.outputs?.status === 'tool_call'
+								? 'tool_call'
+								: run.outputs?.status === 'tool_result'
+									? 'tool_result'
+									: run.status === 'succeeded'
+										? 'completed'
+										: run.status === 'failed'
+											? 'failed'
+											: 'checkpoint',
+						id: run.id,
+						assignmentId,
+						modeRunId: run.id,
+						index,
+						status: run.status,
+						createdAt: run.startedAt ?? run.completedAt ?? run.failedAt ?? run.createdAt ?? null,
+						payload: run,
+					})),
+				].sort((left, right) => String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')) || String(left.id).localeCompare(String(right.id)));
+				return c.json({
+					ok: true,
+					payload: {
+						assignment,
+						items,
+					},
 				});
 			});
 
@@ -13469,71 +13375,6 @@ export function createApiApp(options = {}): Hono {
 					metadata: { compatibilityRoute: true },
 				});
 				return c.json({ ok: true, payload }, 202);
-			});
-
-			app.get('/v1/projects/:projectId/tasks', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-				if (access.response) return access.response;
-				const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, '/v1/tasks');
-				if (delegated) return c.json({ ok: true, payload: delegated });
-				const stateQuery = typeof c.req.query('state') === 'string' ? c.req.query('state') : null;
-				const payload = await store.listRuntimeTasks(access.details.project.id, {
-					workDayId: typeof c.req.query('workDayId') === 'string' ? c.req.query('workDayId') : null,
-					agentId: typeof c.req.query('agentId') === 'string' ? c.req.query('agentId') : null,
-					state: stateQuery ? stateQuery.split(',').filter(Boolean) : null,
-					limit: Number.isFinite(Number(c.req.query('limit'))) ? Number(c.req.query('limit')) : 100,
-				});
-				return c.json({ ok: true, payload });
-			});
-
-			app.get('/v1/projects/:projectId/tasks/:taskId', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-				if (access.response) return access.response;
-				const taskId = c.req.param('taskId');
-				const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, `/v1/tasks/${encodeURIComponent(taskId)}`);
-				if (delegated) return c.json({ ok: true, payload: delegated });
-				const task = (await store.listRuntimeTasks(access.details.project.id, { limit: 1000 })).find((item) => item.id === taskId);
-				return task ? c.json({ ok: true, payload: task }) : jsonError(c, 404, 'Unknown task.');
-			});
-
-			app.get('/v1/projects/:projectId/tasks/:taskId/events', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-				if (access.response) return access.response;
-				const taskId = c.req.param('taskId');
-				const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, `/v1/tasks/${encodeURIComponent(taskId)}/events`);
-				if (delegated) return c.json({ ok: true, payload: delegated });
-				return c.json({ ok: true, payload: await store.listRuntimeTaskEvents(access.details.project.id, taskId) });
-			});
-
-			app.post('/v1/projects/:projectId/tasks/:taskId/retry', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
-				if (access.response) return access.response;
-				const taskId = c.req.param('taskId');
-				const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, `/v1/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST', body: await readJsonOrFormBody(c) });
-				if (delegated) return c.json({ ok: true, payload: delegated });
-				const payload = await store.failRuntimeTask(access.details.project.id, taskId, {
-					errorCode: 'manual_retry_requested',
-					errorMessage: 'Retry requested from Project task compatibility route.',
-					retryable: true,
-					nextVisibleAt: new Date().toISOString(),
-					actor: access.principal.id,
-				});
-				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
-			});
-
-			app.post('/v1/projects/:projectId/tasks/:taskId/cancel', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
-				if (access.response) return access.response;
-				const taskId = c.req.param('taskId');
-				const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, `/v1/tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST', body: await readJsonOrFormBody(c) });
-				if (delegated) return c.json({ ok: true, payload: delegated });
-				const payload = await store.failRuntimeTask(access.details.project.id, taskId, {
-					errorCode: 'manual_cancel_requested',
-					errorMessage: 'Cancellation requested from Project task compatibility route.',
-					retryable: false,
-					actor: access.principal.id,
-				});
-				return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
 			});
 
 			app.post('/v1/projects/:projectId/runner/workdays', async (c) => {

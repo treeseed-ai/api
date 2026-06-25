@@ -81,25 +81,6 @@ services:
         railwayEnvironment: staging
       prod:
         railwayEnvironment: prod
-  capacityProviderApi:
-    enabled: true
-    provider: railway
-    rootDir: .
-    railway:
-      projectName: treeseed-agent-capacity-provider
-      serviceName: treeseed-agent-api
-      imageRefEnv: TREESEED_AGENT_API_IMAGE_REF
-      healthcheckPath: /healthz
-      healthcheckTimeoutSeconds: 120
-      runtimeMode: service
-    environments:
-      local:
-        baseUrl: http://127.0.0.1:3100
-        railwayEnvironment: local
-      staging:
-        railwayEnvironment: staging
-      prod:
-        railwayEnvironment: prod
   capacityProviderManager:
     enabled: true
     provider: railway

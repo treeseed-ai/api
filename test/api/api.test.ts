@@ -371,7 +371,7 @@ describe('market api', () => {
 		}));
 	});
 
-	it('allows local acceptance admin token to manage workday test runs in local mode', async () => {
+	it('allows local acceptance admin token to manage workday runs in local mode', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		try {
@@ -382,7 +382,7 @@ describe('market api', () => {
 				'content-type': 'application/json',
 				authorization: 'Bearer tsk_local_treeseed_acceptance_admin',
 			};
-			const created = await app.request('/v1/teams/treeseed/workday-tests', {
+			const created = await app.request('/v1/teams/treeseed/workday-runs', {
 				method: 'POST',
 				headers,
 				body: JSON.stringify({
@@ -399,7 +399,7 @@ describe('market api', () => {
 				requestedById: 'team-key:local-capacity-acceptance',
 			});
 
-			const event = await app.request('/v1/teams/treeseed/workday-tests/run-local-acceptance/events', {
+			const event = await app.request('/v1/teams/treeseed/workday-runs/run-local-acceptance/events', {
 				method: 'POST',
 				headers,
 				body: JSON.stringify({
@@ -409,21 +409,21 @@ describe('market api', () => {
 			});
 			expect(event.status).toBe(201);
 
-			const listed = await json(await app.request('/v1/teams/treeseed/workday-tests', { headers }));
+			const listed = await json(await app.request('/v1/teams/treeseed/workday-runs', { headers }));
 			expect(listed.payload.map((run: Record<string, unknown>) => run.id)).toContain('run-local-acceptance');
 		} finally {
 			db.close();
 		}
 	});
 
-	it('rejects unauthenticated workday test mutation without local acceptance auth', async () => {
+	it('rejects unauthenticated workday run mutation without local acceptance auth', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		try {
 			await store.ensureInitialized();
 			await store.createTeam({ id: 'treeseed', slug: 'treeseed', name: 'TreeSeed' });
 			const app = createTestApp({ db, store, config: { environment: 'staging' } });
-			const response = await app.request('/v1/teams/treeseed/workday-tests', {
+			const response = await app.request('/v1/teams/treeseed/workday-runs', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ id: 'run-hosted-denied', status: 'running' }),

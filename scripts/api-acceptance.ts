@@ -653,24 +653,24 @@ function sdkArgsForMethod(method) {
 		pauseWorkday: ['missing-workday'],
 		completeWorkday: ['missing-workday'],
 		workdaySummary: ['missing-workday'],
-		workdayTestRuns: ['${fixtures.team.id}'],
-		createWorkdayTestRun: ['${fixtures.team.id}', {
+		workdayRuns: ['${fixtures.team.id}'],
+		createWorkdayRun: ['${fixtures.team.id}', {
 			scenarioId: 'acceptance',
 			status: 'queued',
 			environment: 'local',
 			parameters: { acceptance: true, runNonce: '${runNonce}' },
 		}],
-		workdayTestRun: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}'],
-		updateWorkdayTestRun: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}', {
+		workdayRun: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}'],
+		updateWorkdayRun: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}', {
 			status: 'running',
 			summary: { acceptance: true, runNonce: '${runNonce}' },
 		}],
-		workdayTestEvents: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}'],
-		createWorkdayTestEvent: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}', {
+		workdayEvents: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}'],
+		createWorkdayEvent: ['${fixtures.team.id}', '${fixtures.workdayTestRun.id}', {
 			eventType: 'acceptance',
 			status: 'recorded',
 			title: 'Acceptance event',
-			message: 'Acceptance workday-test event.',
+			message: 'Acceptance workday event.',
 			parameters: { runNonce: '${runNonce}' },
 		}],
 		teamTreeDx: ['${fixtures.team.id}'],

@@ -7,6 +7,7 @@ function localApiConfig(projectRoot, env = process.env) {
 	return {
 		repoRoot: projectRoot,
 		projectId: localEnv.TREESEED_PROJECT_ID ?? 'treeseed-market',
+		environment: localEnv.TREESEED_API_ENVIRONMENT ?? localEnv.TREESEED_ENVIRONMENT ?? 'local',
 		baseUrl: String(localEnv.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/u, ''),
 		issuer: String(localEnv.TREESEED_API_ISSUER ?? localEnv.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/u, ''),
 		authSecret: localEnv.TREESEED_AUTH_SECRET ?? localEnv.TREESEED_API_AUTH_SECRET ?? localEnv.TREESEED_BETTER_AUTH_SECRET ?? 'treeseed-local-seed-auth-secret',

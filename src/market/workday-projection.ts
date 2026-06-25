@@ -100,9 +100,10 @@ async function loadProjectWorkdayBundle(store: any, principal: any, project: any
 	}
 
 	const workday = normalizeWorkday(project, source, runtime, summary);
-	const [projectSummary, tasks, approvals, capacityOperations, capacitySummary, ledgerEntries, routingDecisions] = await Promise.all([
+	const [projectSummary, assignments, modeRuns, approvals, capacityOperations, capacitySummary, ledgerEntries, routingDecisions] = await Promise.all([
 		typeof store.getProjectSummary === 'function' ? store.getProjectSummary(projectId, principal).catch(() => null) : null,
-		typeof store.listRuntimeTasks === 'function' ? store.listRuntimeTasks(projectId, { workDayId: workday.id, limit: 1000 }).catch(() => []) : [],
+		typeof store.listProviderAssignments === 'function' ? store.listProviderAssignments(project?.teamId, { projectId }).catch(() => []) : [],
+		typeof store.listAgentModeRuns === 'function' ? store.listAgentModeRuns(projectId, {}).catch(() => []) : [],
 		typeof store.listApprovalRequestsForProject === 'function' ? store.listApprovalRequestsForProject(projectId, 200).catch(() => []) : [],
 		typeof store.getProjectCapacityOperations === 'function' ? store.getProjectCapacityOperations(projectId, workday.environment).catch(() => null) : null,
 		typeof store.getProjectCapacitySummary === 'function' ? store.getProjectCapacitySummary(projectId, workday.environment).catch(() => null) : null,
@@ -110,17 +111,12 @@ async function loadProjectWorkdayBundle(store: any, principal: any, project: any
 		typeof store.listCapacityRoutingDecisionsForProject === 'function' ? store.listCapacityRoutingDecisionsForProject(projectId, 200).catch(() => []) : [],
 	]);
 
-	const taskDetails = await Promise.all(safeArray(tasks).map(async (task: any) => {
-		const [events, outputs] = await Promise.all([
-			typeof store.listRuntimeTaskEvents === 'function' ? store.listRuntimeTaskEvents(projectId, task.id).catch(() => []) : [],
-			typeof store.listRuntimeTaskOutputs === 'function' ? store.listRuntimeTaskOutputs(projectId, task.id).catch(() => []) : [],
-		]);
-		return {
-			task,
-			events: safeArray(events),
-			outputs: safeArray(outputs),
-		};
-	}));
+	const assignmentDetails = safeArray(assignments)
+		.filter((assignment: any) => !workdayRef(assignment) || workdayRef(assignment) === workday.id)
+		.map((assignment: any) => ({
+			assignment,
+			modeRuns: safeArray(modeRuns).filter((run: any) => compact(run?.providerAssignmentId ?? run?.provider_assignment_id) === compact(assignment?.id)),
+		}));
 
 	return {
 		project,
@@ -129,7 +125,7 @@ async function loadProjectWorkdayBundle(store: any, principal: any, project: any
 		runtime,
 		agents,
 		projectSummary,
-		taskDetails,
+		assignmentDetails,
 		approvals: safeArray(approvals).filter((approval: any) => !workdayRef(approval) || workdayRef(approval) === workday.id),
 		capacityOperations,
 		capacitySummary: capacityOperations?.summary ?? capacitySummary,
@@ -141,13 +137,13 @@ async function loadProjectWorkdayBundle(store: any, principal: any, project: any
 }
 
 function projectWorkdayProjection(bundle: any): WorkdayProjection {
-	const taskIds: Set<string> = new Set(bundle.taskDetails.map((entry: any) => compact(entry.task?.id)).filter(Boolean));
+	const assignmentIds: Set<string> = new Set(bundle.assignmentDetails.map((entry: any) => compact(entry.assignment?.id)).filter(Boolean));
 	const approvals = safeArray(bundle.approvals);
-	const artifacts = collectArtifacts(bundle, taskIds);
+	const artifacts = collectArtifacts(bundle, assignmentIds);
 	const governance = approvals.map((approval: any) => governanceEvent(approval));
 	const timeline = [
 		objectiveEvent(bundle.workday),
-		...bundle.taskDetails.flatMap((entry: any) => taskTimelineEvents(entry)),
+		...bundle.assignmentDetails.flatMap((entry: any) => assignmentTimelineEvents(entry)),
 		...governance,
 		...artifacts.map((artifact: OperationalArtifact) => artifactTimelineEvent(artifact)),
 	].sort(compareTimelineAsc);
@@ -177,69 +173,66 @@ function projectWorkdayProjection(bundle: any): WorkdayProjection {
 
 function agentActivityProjection(bundle: any): any[] {
 	const byAgent = new Map<string, any>();
-	for (const entry of safeArray(bundle.taskDetails)) {
-		const task = entry.task ?? {};
-		const agentId = compact(task.agentId ?? task.agent_id, 'unassigned');
+	for (const entry of safeArray(bundle.assignmentDetails)) {
+		const assignment = entry.assignment ?? {};
+		const agentId = compact(assignment.agentId ?? assignment.agent_id ?? assignment.projectAgentClassId ?? assignment.project_agent_class_id, 'unassigned');
 		const record = byAgent.get(agentId) ?? {
 			id: agentId,
 			name: titleFromKind(agentId, agentId === 'unassigned' ? 'Unassigned' : agentId),
-			taskCount: 0,
+			assignmentCount: 0,
 			completedCount: 0,
 			failedCount: 0,
-			tasks: [],
-			events: [],
-			outputs: [],
+			assignments: [],
+			modeRuns: [],
 		};
-		record.taskCount += 1;
-		if (String(task.state ?? '').toLowerCase() === 'completed') record.completedCount += 1;
-		if (['failed', 'blocked', 'rejected'].includes(String(task.state ?? '').toLowerCase())) record.failedCount += 1;
-		record.tasks.push({
-			id: compact(task.id, 'task'),
-			type: compact(task.type, 'task'),
-			state: compact(task.state, 'recorded'),
-			createdAt: latestDate(task.createdAt, task.created_at),
-			updatedAt: latestDate(task.updatedAt, task.updated_at, task.completedAt, task.completed_at),
+		record.assignmentCount += 1;
+		if (String(assignment.status ?? '').toLowerCase() === 'completed') record.completedCount += 1;
+		if (['failed', 'blocked', 'rejected', 'cancelled'].includes(String(assignment.status ?? '').toLowerCase())) record.failedCount += 1;
+		record.assignments.push({
+			id: compact(assignment.id, 'assignment'),
+			type: compact(assignment.mode, 'assignment'),
+			state: compact(assignment.status, 'recorded'),
+			createdAt: latestDate(assignment.createdAt, assignment.created_at),
+			updatedAt: latestDate(assignment.updatedAt, assignment.updated_at, assignment.completedAt, assignment.completed_at),
 		});
-		record.events.push(...safeArray(entry.events).map((event: any) => ({
-			id: compact(event.id, `${task.id}-event`),
-			kind: compact(event.kind, 'event'),
-			createdAt: latestDate(event.createdAt, event.created_at),
-		})));
-		record.outputs.push(...safeArray(entry.outputs).map((output: any) => ({
-			id: compact(output.id ?? output.outputRef ?? output.output_ref, `${task.id}-output`),
-			ref: compact(output.outputRef ?? output.output_ref, ''),
-			createdAt: latestDate(output.createdAt, output.created_at),
+		record.modeRuns.push(...safeArray(entry.modeRuns).map((run: any) => ({
+			id: compact(run.id, `${assignment.id}-mode-run`),
+			mode: compact(run.mode, compact(assignment.mode, 'planning')),
+			state: compact(run.status, 'recorded'),
+			createdAt: latestDate(run.createdAt, run.created_at),
+			updatedAt: latestDate(run.completedAt, run.failedAt, run.updatedAt, run.updated_at),
 		})));
 		byAgent.set(agentId, record);
 	}
 	return [...byAgent.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function collectArtifacts(bundle: any, taskIds: Set<string>): OperationalArtifact[] {
+function collectArtifacts(bundle: any, assignmentIds: Set<string>): OperationalArtifact[] {
 	const workday = bundle.workday;
 	const fromAgents = [
 		...safeArray(bundle.agents?.generatedArtifacts),
 		...safeArray(bundle.agents?.knowledgeDrafts).map((entry: any) => entry?.knowledgeDraft ?? entry),
 		...safeArray(bundle.agents?.runtimeReports),
 	]
-		.filter((artifact: any) => artifactBelongsToWorkday(artifact, workday.id, taskIds))
+		.filter((artifact: any) => artifactBelongsToWorkday(artifact, workday.id, assignmentIds))
 		.map((artifact: any) => normalizeArtifact(bundle, artifact, 'Operational artifact'));
 
-	const fromOutputs = bundle.taskDetails.flatMap((entry: any) => safeArray(entry.outputs).flatMap((output: any) => {
-		const body = outputBody(output);
-		const generated = safeArray(body?.generatedArtifacts);
+	const fromModeRuns = bundle.assignmentDetails.flatMap((entry: any) => safeArray(entry.modeRuns).flatMap((run: any) => {
+		const body = objectValue(run?.outputs) ?? parseJson(run?.outputsJson, {});
+		const generated = safeArray(body?.generatedArtifacts ?? body?.artifacts);
 		const outputArtifacts = generated.length > 0 ? generated : body?.artifactKind ? [body] : [];
 		return outputArtifacts.map((artifact: any) => normalizeArtifact(bundle, {
 			...artifact,
-			taskId: artifact?.taskId ?? entry.task?.id,
-			workDayId: artifact?.workDayId ?? entry.task?.workDayId ?? workday.id,
-			outputRef: output?.outputRef ?? artifact?.outputRef ?? body?.outputRef ?? null,
-			createdAt: output?.createdAt ?? artifact?.createdAt ?? null,
-		}, 'Task output'));
+			assignmentId: artifact?.assignmentId ?? entry.assignment?.id,
+			modeRunId: artifact?.modeRunId ?? run?.id,
+			workDayId: artifact?.workDayId ?? entry.assignment?.workDayId ?? workday.id,
+			outputRef: artifact?.outputRef ?? body?.outputRef ?? null,
+			createdAt: run?.completedAt ?? run?.createdAt ?? artifact?.createdAt ?? null,
+		}, 'Mode run output'));
 	}));
 
 	const byId = new Map<string, OperationalArtifact>();
-	for (const artifact of [...fromAgents, ...fromOutputs]) {
+	for (const artifact of [...fromAgents, ...fromModeRuns]) {
 		byId.set(artifact.id, {
 			...(byId.get(artifact.id) ?? {}),
 			...artifact,
@@ -262,34 +255,34 @@ function normalizeArtifact(bundle: any, artifact: any, producedBy: string): Oper
 	});
 }
 
-function taskTimelineEvents(entry: any): OperationalTimelineEvent[] {
-	const task = entry.task;
-	const phase = phaseForTask(task);
-	const events = safeArray(entry.events);
-	if (events.length === 0) {
+function assignmentTimelineEvents(entry: any): OperationalTimelineEvent[] {
+	const assignment = entry.assignment;
+	const phase = phaseForAssignment(assignment);
+	const runs = safeArray(entry.modeRuns);
+	if (runs.length === 0) {
 		return [{
-			id: `task-${task.id}`,
-			title: titleFromKind(task?.type),
-			description: `Execution state: ${describeState(task?.state, 'recorded')}.`,
+			id: `assignment-${assignment.id}`,
+			title: titleFromKind(assignment?.mode, 'Assignment'),
+			description: `Assignment state: ${describeState(assignment?.status, 'recorded')}.`,
 			category: categoryForPhase(phase),
 			phase,
-			state: compact(task?.state, 'recorded'),
-			tone: toneForState(task?.state),
-			timestamp: latestDate(task?.startedAt, task?.createdAt, task?.updatedAt),
-			meta: titleFromKind(task?.type),
+			state: compact(assignment?.status, 'recorded'),
+			tone: toneForState(assignment?.status),
+			timestamp: latestDate(assignment?.leaseClaimedAt, assignment?.createdAt, assignment?.updatedAt),
+			meta: titleFromKind(assignment?.mode, 'Assignment'),
 		}];
 	}
-	return events.map((event: any) => ({
-		id: `task-event-${compact(event?.id, `${task.id}-${event?.seq ?? 'event'}`)}`,
-		title: titleFromKind(event?.kind, titleFromKind(task?.type)),
-		description: `${titleFromKind(task?.type)} moved through ${describeState(event?.kind, 'execution')}.`,
-		category: categoryForPhase(phaseForEvent(event?.kind, task?.type)),
-		phase: phaseForEvent(event?.kind, task?.type),
-		state: compact(task?.state, 'recorded'),
-		tone: toneForState(task?.state),
-		timestamp: latestDate(event?.createdAt, task?.updatedAt),
-		meta: titleFromKind(task?.type),
-		artifactRefs: outputRefs(entry.outputs),
+	return runs.map((run: any) => ({
+		id: `mode-run-${compact(run?.id, `${assignment.id}-run`)}`,
+		title: titleFromKind(run?.handlerId ?? run?.handler_id, titleFromKind(run?.mode ?? assignment?.mode, 'Mode run')),
+		description: `${titleFromKind(run?.mode ?? assignment?.mode)} execution ${describeState(run?.status, 'recorded')}.`,
+		category: categoryForPhase(phaseForEvent(run?.handlerId ?? run?.mode, assignment?.mode)),
+		phase: phaseForEvent(run?.handlerId ?? run?.mode, assignment?.mode),
+		state: compact(run?.status ?? assignment?.status, 'recorded'),
+		tone: toneForState(run?.status ?? assignment?.status),
+		timestamp: latestDate(run?.startedAt, run?.completedAt, run?.failedAt, run?.createdAt, assignment?.updatedAt),
+		meta: titleFromKind(run?.executionProviderId ?? assignment?.executionProviderId ?? assignment?.mode, 'Execution'),
+		artifactRefs: modeRunArtifactRefs(run),
 	}));
 }
 
@@ -454,21 +447,21 @@ function normalizeWorkday(project: any, source: any, runtime: any, summaryEntry:
 	};
 }
 
-function artifactBelongsToWorkday(artifact: any, workdayId: string, taskIds: Set<string>) {
+function artifactBelongsToWorkday(artifact: any, workdayId: string, assignmentIds: Set<string>) {
 	const relatedWorkday = workdayRef(artifact);
 	if (relatedWorkday) return relatedWorkday === workdayId;
-	const taskId = compact(artifact?.taskId, compact(artifact?.task_id, ''));
-	if (taskId) return taskIds.has(taskId);
+	const assignmentId = compact(artifact?.assignmentId, compact(artifact?.assignment_id, ''));
+	if (assignmentId) return assignmentIds.has(assignmentId);
 	return false;
 }
 
-function outputBody(output: any) {
-	if (output?.output && typeof output.output === 'object') return output.output;
-	return parseJson(output?.outputJson, {});
-}
-
-function outputRefs(outputs: any[]) {
-	return uniqueStrings(safeArray(outputs).map((output: any) => output?.outputRef));
+function modeRunArtifactRefs(run: any) {
+	const outputs = objectValue(run?.outputs) ?? parseJson(run?.outputsJson, {});
+	return uniqueStrings([
+		...safeArray(outputs?.artifactRefs),
+		...safeArray(outputs?.artifacts).map((artifact: any) => compact(artifact?.id, '')),
+		...safeArray(outputs?.generatedArtifacts).map((artifact: any) => compact(artifact?.id, '')),
+	]);
 }
 
 function riskClassification(approvals: any[]) {
@@ -489,8 +482,8 @@ function phaseForEvent(kind: unknown, taskType: unknown): OperationalPhaseKey {
 	return 'implementation';
 }
 
-function phaseForTask(task: any): OperationalPhaseKey {
-	return phaseForEvent(task?.type, task?.type);
+function phaseForAssignment(assignment: any): OperationalPhaseKey {
+	return phaseForEvent(assignment?.handlerId ?? assignment?.mode, assignment?.mode);
 }
 
 function categoryForPhase(phase: OperationalPhaseKey): OperationalTimelineEvent['category'] {

@@ -1802,7 +1802,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "get.v1.teams.teamId.workday-tests": {
+    "get.v1.teams.teamId.workday-runs": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -1814,7 +1814,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "get.v1.teams.teamId.workday-tests.runId": {
+    "get.v1.teams.teamId.workday-runs.runId": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -1826,7 +1826,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "get.v1.teams.teamId.workday-tests.runId.events": {
+    "get.v1.teams.teamId.workday-runs.runId.events": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -2126,7 +2126,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "patch.v1.teams.teamId.workday-tests.runId": {
+    "patch.v1.teams.teamId.workday-runs.runId": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -4478,7 +4478,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "post.v1.teams.teamId.workday-tests": {
+    "post.v1.teams.teamId.workday-runs": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
@@ -4490,7 +4490,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "post.v1.teams.teamId.workday-tests.runId.events": {
+    "post.v1.teams.teamId.workday-runs.runId.events": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,
