@@ -289,7 +289,7 @@ describe('local seed apply', () => {
 				expect.objectContaining({
 					scope: 'daily',
 					nativeUnit: 'wall_minute',
-					limitAmount: 600,
+					limitAmount: 10,
 					reserveBufferPercent: 20,
 					resetCadence: 'daily',
 				}),

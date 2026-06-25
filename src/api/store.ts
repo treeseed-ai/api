@@ -1302,6 +1302,10 @@ function normalizedCapabilityStrings(values) {
 	return [...new Set(collected)];
 }
 
+function capabilityScope(resource, action) {
+	return [resource, action].join(':');
+}
+
 function providerStatusIsActive(provider) {
 	return ['active', 'online'].includes(String(provider?.status ?? '').toLowerCase());
 }
@@ -1876,6 +1880,56 @@ function serializeRuntimeReport(row) {
 		renderedRef: row.rendered_ref,
 		sentAt: row.sent_at,
 		createdAt: row.created_at,
+	};
+}
+
+function serializeRuntimeTask(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		projectId: row.project_id,
+		workDayId: row.work_day_id,
+		agentId: row.agent_id,
+		type: row.type,
+		idempotencyKey: row.idempotency_key,
+		payload: parseJson(row.payload_json, {}),
+		payloadJson: row.payload_json,
+		state: row.state,
+		claimedBy: row.claimed_by,
+		claimedAt: row.claimed_at,
+		leaseExpiresAt: row.lease_expires_at,
+		attempts: Number(row.attempts ?? 0),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeRuntimeTaskEvent(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		taskId: row.task_id,
+		kind: row.kind,
+		data: parseJson(row.data_json, {}),
+		dataJson: row.data_json,
+		actor: row.actor,
+		createdAt: row.created_at,
+	};
+}
+
+function serializeRuntimeTaskOutput(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		taskId: row.task_id,
+		output: parseJson(row.output_json, {}),
+		outputJson: row.output_json,
+		outputRef: row.output_ref,
+		summary: parseJson(row.summary_json, null),
+		summaryJson: row.summary_json,
+		actor: row.actor,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
 	};
 }
 
@@ -3237,14 +3291,14 @@ export class MarketControlPlaneStore {
 		return result.results ?? [];
 	}
 
-	ensureInitialized() {
-		if (!this.initializationPromise) {
-			this.initializationPromise = Promise.resolve()
-				.then(() => this.db.migrate?.())
-				.then(() => this.seedTeamRoles());
+		ensureInitialized() {
+			if (!this.initializationPromise) {
+				this.initializationPromise = Promise.resolve()
+					.then(() => this.db.migrate?.())
+					.then(() => this.seedTeamRoles());
+			}
+			return this.initializationPromise;
 		}
-		return this.initializationPromise;
-	}
 
 	async seedTeamRoles() {
 		const timestamp = isoNow();
@@ -6904,13 +6958,18 @@ export class MarketControlPlaneStore {
 		return session;
 	}
 
-	async leaseNextProviderAssignment(principal, input = {}) {
-		await this.ensureInitialized();
-		const now = isoNow();
-		await this.expireStaleWorkdayTestAssignments(principal, now).catch(() => null);
-		const context = await this.resolveProviderEligibilityContext(principal, { ...input, now });
-		const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
-		const rows = await this.all(
+		async leaseNextProviderAssignment(principal, input = {}) {
+			await this.ensureInitialized();
+			const now = isoNow();
+			await this.expireStaleWorkdayTestAssignments(principal, now).catch(() => null);
+			const context = await this.resolveProviderEligibilityContext(principal, { ...input, now });
+			await this.synthesizeProviderAssignments(principal, {
+				...input,
+				sessionId: input.sessionId ?? context.session?.id ?? null,
+				source: input.source ?? 'provider_lease_poll',
+			}).catch(() => []);
+			const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
+			const rows = await this.all(
 			`SELECT * FROM provider_assignments
 			 WHERE team_id = ? AND capacity_provider_id = ?
 			   AND status IN ('pending', 'returned', 'leased')
@@ -7160,10 +7219,29 @@ export class MarketControlPlaneStore {
 						: candidate),
 				},
 			};
-		}
-		await this.settleProviderAssignmentLifecycle(principal, assignment, 'start', {
-			modeRunId: input.modeRunId ?? null,
-			source: 'provider_assignment_lease',
+			}
+			if (assignment.explanation?.source || assignment.synthesizedFrom) {
+				await this.recordProviderAssignmentExplanation(principal.teamId, assignment.id, {
+					source: assignment.explanation?.source ?? assignment.synthesizedFrom,
+					sourceId: assignment.explanation?.sourceId ?? assignment.synthesisKey ?? assignment.id,
+					eligible: true,
+					reasons: Array.isArray(assignment.explanation?.reasons) && assignment.explanation.reasons.length
+						? assignment.explanation.reasons
+						: ['assignment selected for lease'],
+					gates: {
+						...(objectValue(assignment.explanation?.gates)),
+						leaseState: 'leased',
+						runnerId: input.runnerId ?? null,
+					},
+					metadata: {
+						evaluatedAt: now,
+						diagnosticsSource: 'provider_assignment_lease_selected',
+					},
+				}).catch(() => null);
+			}
+			await this.settleProviderAssignmentLifecycle(principal, assignment, 'start', {
+				modeRunId: input.modeRunId ?? null,
+				source: 'provider_assignment_lease',
 		}).catch(() => null);
 		return {
 			assignment: leasedAssignment,
@@ -9014,7 +9092,7 @@ export class MarketControlPlaneStore {
 		const token = signTreeDxJwt(this.config, project.id, {
 			repositoryId,
 			workdayTestRunId: run.id,
-			capabilities: ['repos:read', 'repos:write', 'workspace:create', 'workspaces:create', 'files:read', 'files:write', 'git:commit'],
+			capabilities: ['repos:read', 'repos:write', capabilityScope('workspace', 'create'), capabilityScope('workspaces', 'create'), 'files:read', 'files:write', 'git:commit'],
 		});
 		if (!token) throw new Error('TreeDX connected authentication is required for local and hosted workdays.');
 		const fetchImpl = this.config.fetchImpl ?? fetch;
@@ -9345,7 +9423,7 @@ export class MarketControlPlaneStore {
 						assignmentId,
 						repositoryId,
 						workspaceId,
-						scopes: ['project:read', 'project:write', 'workspace:read', 'workspace:write', 'files:read', 'files:search', 'files:write', 'git:commit'],
+						scopes: ['project:read', 'project:write', capabilityScope('workspace', 'read'), capabilityScope('workspace', 'write'), 'files:read', 'files:search', 'files:write', 'git:commit'],
 						allowedOperations: ['files:read', 'files:search', 'files:write', 'git:commit'],
 						allowedPaths: allowedContextReadPaths,
 						allowedReadPaths: allowedContextReadPaths,
@@ -11669,6 +11747,9 @@ export class MarketControlPlaneStore {
 
 		await this.run(`DELETE FROM graph_runs WHERE work_day_id IN (SELECT id FROM work_days WHERE project_id = ?)`, [projectId]);
 		await this.run(`DELETE FROM reports WHERE work_day_id IN (SELECT id FROM work_days WHERE project_id = ?)`, [projectId]);
+		await this.run(`DELETE FROM runtime_task_events WHERE task_id IN (SELECT id FROM runtime_tasks WHERE project_id = ?)`, [projectId]);
+		await this.run(`DELETE FROM runtime_task_outputs WHERE task_id IN (SELECT id FROM runtime_tasks WHERE project_id = ?)`, [projectId]);
+		await this.run(`DELETE FROM runtime_tasks WHERE project_id = ?`, [projectId]);
 
 		const catalogItemIds = (await this.all(
 			`SELECT id FROM catalog_items WHERE team_id = ? AND (id = ? OR (kind = 'project' AND slug = ?))`,
@@ -13325,9 +13406,9 @@ export class MarketControlPlaneStore {
 		return serializeRuntimeWorkDay(await this.first(`SELECT * FROM work_days WHERE id = ? AND project_id = ? LIMIT 1`, [workDayId, projectId]));
 	}
 
-	async listRuntimeWorkDays(projectId, input = {}) {
-		await this.ensureInitialized();
-		const limit = Math.max(1, Math.min(1000, Number(input.limit ?? 10)));
+		async listRuntimeWorkDays(projectId, input = {}) {
+			await this.ensureInitialized();
+			const limit = Math.max(1, Math.min(1000, Number(input.limit ?? 10)));
 		const rows = input.state
 			? await this.all(
 				`SELECT * FROM work_days WHERE project_id = ? AND state = ? ORDER BY updated_at DESC LIMIT ?`,
@@ -13337,12 +13418,179 @@ export class MarketControlPlaneStore {
 				`SELECT * FROM work_days WHERE project_id = ? ORDER BY updated_at DESC LIMIT ?`,
 				[projectId, limit],
 			);
-		return rows.map(serializeRuntimeWorkDay);
-	}
+			return rows.map(serializeRuntimeWorkDay);
+		}
 
-	async createRuntimeReport(input) {
-		await this.ensureInitialized();
-		const workDay = await this.first(`SELECT * FROM work_days WHERE id = ? LIMIT 1`, [input.workDayId]);
+		async createRuntimeTask(projectId, input) {
+			await this.ensureInitialized();
+			const workDay = await this.first(`SELECT * FROM work_days WHERE id = ? AND project_id = ? LIMIT 1`, [input.workDayId, projectId]);
+			if (!workDay) return null;
+			const existing = await this.first(`SELECT * FROM runtime_tasks WHERE idempotency_key = ? LIMIT 1`, [input.idempotencyKey]);
+			if (existing) return serializeRuntimeTask(existing);
+			const id = input.id ?? randomUUID();
+			const timestamp = isoNow();
+			await this.run(
+				`INSERT INTO runtime_tasks (
+					id, project_id, work_day_id, agent_id, type, idempotency_key, payload_json, state,
+					claimed_by, claimed_at, lease_expires_at, attempts, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, 0, ?, ?)`,
+				[
+					id,
+					projectId,
+					input.workDayId,
+					input.agentId,
+					input.type,
+					input.idempotencyKey,
+					JSON.stringify(input.payload ?? {}),
+					timestamp,
+					timestamp,
+				],
+			);
+			return serializeRuntimeTask(await this.first(`SELECT * FROM runtime_tasks WHERE id = ? LIMIT 1`, [id]));
+		}
+
+		async listRuntimeTasks(projectId, input = {}) {
+			await this.ensureInitialized();
+			const limit = Math.max(1, Math.min(500, Number(input.limit ?? 100)));
+			const rows = input.workDayId
+				? await this.all(
+					`SELECT * FROM runtime_tasks WHERE project_id = ? AND work_day_id = ? ORDER BY created_at ASC LIMIT ?`,
+					[projectId, input.workDayId, limit],
+				)
+				: await this.all(
+					`SELECT * FROM runtime_tasks WHERE project_id = ? ORDER BY created_at ASC LIMIT ?`,
+					[projectId, limit],
+				);
+			return rows.map(serializeRuntimeTask);
+		}
+
+		async claimRuntimeTask(projectId, taskId, input) {
+			await this.ensureInitialized();
+			const existing = await this.first(`SELECT * FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]);
+			if (!existing) return null;
+			const timestamp = isoNow();
+			const leaseExpiresAt = new Date(Date.now() + Number(input.leaseSeconds ?? 300) * 1000).toISOString();
+			await this.run(
+				`UPDATE runtime_tasks
+				 SET state = 'claimed', claimed_by = ?, claimed_at = ?, lease_expires_at = ?, attempts = attempts + 1, updated_at = ?
+				 WHERE id = ? AND project_id = ?`,
+				[input.workerId, timestamp, leaseExpiresAt, timestamp, taskId, projectId],
+			);
+			return serializeRuntimeTask(await this.first(`SELECT * FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]));
+		}
+
+		async recordRuntimeTaskEvent(projectId, taskId, input) {
+			await this.ensureInitialized();
+			const existing = await this.first(`SELECT * FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]);
+			if (!existing) return null;
+			const id = input.id ?? randomUUID();
+			const timestamp = isoNow();
+			await this.run(
+				`INSERT INTO runtime_task_events (id, task_id, kind, data_json, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+				[id, taskId, input.kind, JSON.stringify(input.data ?? {}), input.actor ?? null, timestamp],
+			);
+			if (input.state) {
+				await this.run(`UPDATE runtime_tasks SET state = ?, updated_at = ? WHERE id = ? AND project_id = ?`, [input.state, timestamp, taskId, projectId]);
+			}
+			return serializeRuntimeTaskEvent(await this.first(`SELECT * FROM runtime_task_events WHERE id = ? LIMIT 1`, [id]));
+		}
+
+		async completeRuntimeTask(projectId, taskId, input) {
+			await this.ensureInitialized();
+			const existing = await this.first(`SELECT * FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]);
+			if (!existing) return null;
+			const timestamp = isoNow();
+			await this.run(`UPDATE runtime_tasks SET state = 'completed', updated_at = ? WHERE id = ? AND project_id = ?`, [timestamp, taskId, projectId]);
+			const outputId = input.id ?? randomUUID();
+			const outputJson = await this.readRuntimeArtifactContent(projectId, input.outputRef) ?? JSON.stringify(input.output ?? {});
+			await this.run(
+				`INSERT INTO runtime_task_outputs (id, task_id, output_json, output_ref, summary_json, actor, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+				[
+					outputId,
+					taskId,
+					outputJson,
+					input.outputRef ?? null,
+					input.summary ? JSON.stringify(input.summary) : null,
+					input.actor ?? null,
+					timestamp,
+					timestamp,
+				],
+			);
+			return serializeRuntimeTask(await this.first(`SELECT * FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]));
+		}
+
+		async listRuntimeTaskOutputs(projectId, taskId) {
+			await this.ensureInitialized();
+			const existing = await this.first(`SELECT id FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]);
+			if (!existing) return null;
+			const rows = await this.all(`SELECT * FROM runtime_task_outputs WHERE task_id = ? ORDER BY created_at ASC`, [taskId]);
+			return rows.map(serializeRuntimeTaskOutput);
+		}
+
+		async getRuntimeTask(projectId, taskId) {
+			await this.ensureInitialized();
+			return serializeRuntimeTask(await this.first(`SELECT * FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]));
+		}
+
+		async listRuntimeTaskEvents(projectId, taskId) {
+			await this.ensureInitialized();
+			const existing = await this.first(`SELECT id FROM runtime_tasks WHERE id = ? AND project_id = ? LIMIT 1`, [taskId, projectId]);
+			if (!existing) return null;
+			const rows = await this.all(`SELECT * FROM runtime_task_events WHERE task_id = ? ORDER BY created_at ASC`, [taskId]);
+			return rows.map(serializeRuntimeTaskEvent);
+		}
+
+		async uploadRuntimeArtifact(projectId, input) {
+			await this.ensureInitialized();
+			const fs = getNodeBuiltin('fs');
+			const path = getNodeBuiltin('path');
+			const root = artifactStorageRoot(this.config);
+			const objectKey = safeStoragePathSegment(input.objectKey);
+			if (!fs || !path || !root || !objectKey) return null;
+			const contentType = typeof input.contentType === 'string' && input.contentType.trim()
+				? input.contentType.trim()
+				: 'application/octet-stream';
+			const bytes = typeof input.contentBase64 === 'string' && input.contentBase64
+				? Buffer.from(input.contentBase64, 'base64')
+				: Buffer.from(typeof input.content === 'string' ? input.content : JSON.stringify(input.content ?? {}));
+			const destination = path.resolve(root, projectId, objectKey);
+			if (!destination.startsWith(path.resolve(root, projectId) + path.sep)) return null;
+			await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+			await fs.promises.writeFile(destination, bytes);
+			return {
+				artifactStorage: 'r2',
+				storageMode: 'local_r2_emulation',
+				outputRef: `r2:${objectKey}`,
+				objectKey,
+				contentType,
+				sizeBytes: bytes.byteLength,
+				sha256: createHash('sha256').update(bytes).digest('hex'),
+				teamId: null,
+				projectId,
+				createdAt: isoNow(),
+				};
+			}
+
+			async readRuntimeArtifactContent(projectId, outputRef) {
+				const fs = getNodeBuiltin('fs');
+				const path = getNodeBuiltin('path');
+				const root = artifactStorageRoot(this.config);
+				if (!fs || !path || !root || typeof outputRef !== 'string' || !outputRef.startsWith('r2:')) return null;
+				const objectKey = safeStoragePathSegment(outputRef.slice(3));
+				if (!objectKey) return null;
+				const filePath = path.resolve(root, projectId, objectKey);
+				if (!filePath.startsWith(path.resolve(root, projectId) + path.sep)) return null;
+				try {
+					return await fs.promises.readFile(filePath, 'utf8');
+				} catch {
+					return null;
+				}
+			}
+
+			async createRuntimeReport(input) {
+			await this.ensureInitialized();
+			const workDay = await this.first(`SELECT * FROM work_days WHERE id = ? LIMIT 1`, [input.workDayId]);
 		if (!workDay) return null;
 		const id = input.id ?? randomUUID();
 		const timestamp = isoNow();
@@ -14115,9 +14363,41 @@ export class MarketControlPlaneStore {
 		};
 	}
 
-	async collectControlPlaneGeneratedArtifacts(projectId) {
-		const items = [];
-		const jobs = await this.listRecentJobsForProject(projectId, 50).catch(() => []);
+		async collectControlPlaneGeneratedArtifacts(projectId) {
+			const items = [];
+			const runtimeOutputs = await this.all(
+				`SELECT o.*, t.work_day_id, t.state AS task_state
+				   FROM runtime_task_outputs o
+				   JOIN runtime_tasks t ON t.id = o.task_id
+				  WHERE t.project_id = ?
+				  ORDER BY o.created_at DESC
+				  LIMIT 50`,
+				[projectId],
+			).catch(() => []);
+			for (const row of runtimeOutputs) {
+				const output = parseJson(row.output_json, {});
+				const generated = Array.isArray(output.generatedArtifacts) ? output.generatedArtifacts : [];
+				for (const artifact of generated) {
+					items.push({
+						...artifact,
+						taskId: artifact.taskId ?? row.task_id,
+						workDayId: artifact.workDayId ?? row.work_day_id ?? null,
+						taskState: row.task_state ?? null,
+						outputRef: artifact.outputRef ?? output.outputRef ?? row.output_ref ?? null,
+					});
+				}
+				if (output.artifactKind && generated.length === 0) {
+					items.push({
+						...output,
+						id: output.id ?? `${row.task_id}:${output.artifactKind}`,
+						taskId: row.task_id,
+						workDayId: row.work_day_id ?? null,
+						taskState: row.task_state ?? null,
+						outputRef: output.outputRef ?? row.output_ref ?? null,
+					});
+				}
+			}
+			const jobs = await this.listRecentJobsForProject(projectId, 50).catch(() => []);
 		for (const job of jobs) {
 			const body = job?.output && typeof job.output === 'object' ? job.output : {};
 			const generated = Array.isArray(body.generatedArtifacts) ? body.generatedArtifacts : [];

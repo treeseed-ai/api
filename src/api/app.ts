@@ -1504,6 +1504,10 @@ function artifactDiffFallback(artifact) {
 }
 
 async function collectControlPlaneGeneratedArtifacts(store, projectId) {
+	const persisted = typeof store.collectControlPlaneGeneratedArtifacts === 'function'
+		? await store.collectControlPlaneGeneratedArtifacts(projectId).catch(() => [])
+		: [];
+	if (persisted.length > 0) return persisted;
 	const items = [];
 	const jobs = await store.listRecentJobsForProject(projectId, 50).catch(() => []);
 	for (const job of jobs) {
@@ -3845,6 +3849,192 @@ async function requireProjectAccess(c, store, projectId, permission = null) {
 	};
 }
 
+function safePrivateKnowledgeSlug(value) {
+	const slug = String(value ?? '').trim().replace(/^\/+|\/+$/gu, '');
+	return slug && !slug.includes('..') ? slug : 'index';
+}
+
+function privateKnowledgeAuditPayload(body, extra = {}) {
+	return {
+		slug: safePrivateKnowledgeSlug(body?.slug),
+		route: typeof body?.route === 'string' && body.route.startsWith('/app/projects/') ? body.route : null,
+		summary: extra.summary ?? null,
+		status: extra.status ?? null,
+	};
+}
+
+async function recordPrivateKnowledgeAudit(store, input = {}) {
+	if (typeof store.recordAuditEvent !== 'function') return null;
+	return store.recordAuditEvent({
+		eventType: input.eventType,
+		actorType: input.actorType ?? 'user',
+		actorId: input.actorId ?? null,
+		targetType: 'project',
+		targetId: input.projectId,
+		data: privateKnowledgeAuditPayload(input.body, {
+			status: input.status,
+			summary: input.summary,
+		}),
+	});
+}
+
+const FEEDBACK_TYPES = new Set(['bug', 'feature_suggestion', 'question', 'content_issue', 'ux_issue']);
+const FEEDBACK_SCREENSHOT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const MAX_FEEDBACK_MESSAGE_LENGTH = 4000;
+const MAX_FEEDBACK_SCREENSHOT_BYTES = 2 * 1024 * 1024;
+
+function cleanFeedbackString(value, maxLength = 500) {
+	return typeof value === 'string' && value.trim() ? value.trim().slice(0, maxLength) : '';
+}
+
+function safeFeedbackContext(context = {}) {
+	const shell = ['auth', 'public', 'product'].includes(context.shell) ? context.shell : 'public';
+	const surface = ['public', 'personal', 'team', 'project', 'market', 'seller', 'admin'].includes(context.context) ? context.context : 'public';
+	const privateScoped = Boolean(context.teamId || context.projectId || surface === 'team' || surface === 'project' || surface === 'admin');
+	return {
+		url: cleanFeedbackString(context.url, 1200),
+		canonicalPath: cleanFeedbackString(context.canonicalPath, 600),
+		title: cleanFeedbackString(context.title, 300),
+		capabilityId: cleanFeedbackString(context.capabilityId, 160),
+		shell,
+		context: surface,
+		teamId: cleanFeedbackString(context.teamId, 160) || null,
+		projectId: cleanFeedbackString(context.projectId, 160) || null,
+		resourceType: cleanFeedbackString(context.resourceType, 120) || null,
+		resourceId: cleanFeedbackString(context.resourceId, 240) || null,
+		userId: cleanFeedbackString(context.userId, 160) || null,
+		environment: ['local', 'staging', 'production'].includes(context.environment) ? context.environment : null,
+		routePattern: cleanFeedbackString(context.routePattern, 300) || null,
+		policy: cleanFeedbackString(context.policy, 80) || null,
+		privateScoped,
+	};
+}
+
+function safeFeedbackClient(client = {}) {
+	const viewport = client.viewport && typeof client.viewport === 'object' ? client.viewport : {};
+	return {
+		url: cleanFeedbackString(client.url, 1200),
+		userAgent: cleanFeedbackString(client.userAgent, 500),
+		viewport: {
+			width: Math.max(0, Math.min(10000, Number(viewport.width) || 0)),
+			height: Math.max(0, Math.min(10000, Number(viewport.height) || 0)),
+			devicePixelRatio: Math.max(0, Math.min(8, Number(viewport.devicePixelRatio) || 1)),
+		},
+		locale: cleanFeedbackString(client.locale, 80) || null,
+		timeZone: cleanFeedbackString(client.timeZone, 120) || null,
+		appearance: cleanFeedbackString(client.appearance, 120) || null,
+		reducedMotion: client.reducedMotion === true,
+	};
+}
+
+function safeFeedbackScreenshot(screenshot, privateScoped) {
+	if (!screenshot || typeof screenshot !== 'object') return null;
+	const type = cleanFeedbackString(screenshot.type, 80);
+	const size = Number(screenshot.size) || 0;
+	if (!FEEDBACK_SCREENSHOT_TYPES.has(type)) {
+		return { ok: false, error: 'Unsupported screenshot type.' };
+	}
+	if (size <= 0 || size > MAX_FEEDBACK_SCREENSHOT_BYTES) {
+		return { ok: false, error: 'Screenshot is too large.' };
+	}
+	const storagePolicy = privateScoped || screenshot.storagePolicy === 'private' ? 'private' : 'public';
+	return {
+		ok: true,
+		value: {
+			name: cleanFeedbackString(screenshot.name, 180) || 'feedback-screenshot.png',
+			type,
+			size,
+			redacted: screenshot.redacted === true,
+			storagePolicy,
+			stored: true,
+		},
+	};
+}
+
+async function validateFeedbackAccess(c, store, context) {
+	const principal = c.get('principal') ?? null;
+	if (!context.privateScoped) return { principal, teamId: null, projectId: null };
+	if (!principal) return { response: jsonError(c, 401, 'Authentication required for private feedback.') };
+	if (context.projectId) {
+		const details = await store.getProjectDetails(context.projectId);
+		if (!details?.project) return { response: jsonError(c, 404, 'Feedback context not found.') };
+		const teamContext = await store.resolvePrincipalTeamContext(details.project.teamId, principal);
+		const allowed = Boolean(teamContext) && (!isTeamApiPrincipal(principal) || principalHasPermission(principal, 'projects:read:team'));
+		if (!allowed) return { response: jsonError(c, 403, 'Permission denied.') };
+		return { principal, teamId: details.project.teamId, projectId: details.project.id };
+	}
+	if (context.teamId) {
+		const teamContext = await store.resolvePrincipalTeamContext(context.teamId, principal);
+		const allowed = Boolean(teamContext) && (!isTeamApiPrincipal(principal) || principalHasPermission(principal, 'projects:read:team'));
+		if (!allowed) return { response: jsonError(c, 403, 'Permission denied.') };
+		return { principal, teamId: context.teamId, projectId: null };
+	}
+	return { response: jsonError(c, 400, 'Private feedback requires a team or project context.') };
+}
+
+async function recordFeedbackSubmission(c, store, body) {
+	const type = cleanFeedbackString(body.type, 80);
+	if (!FEEDBACK_TYPES.has(type)) return { response: jsonError(c, 400, 'Unsupported feedback type.') };
+	const message = cleanFeedbackString(body.message, MAX_FEEDBACK_MESSAGE_LENGTH);
+	if (!message) return { response: jsonError(c, 400, 'Feedback details are required.') };
+	const context = safeFeedbackContext(body.context);
+	if (context.privateScoped && body.context?.allowAnonymous === true) {
+		return { response: jsonError(c, 400, 'Private feedback cannot be anonymous.') };
+	}
+	const access = await validateFeedbackAccess(c, store, context);
+	if (access.response) return access;
+	const screenshot = safeFeedbackScreenshot(body.screenshot, context.privateScoped);
+	if (screenshot?.ok === false) return { response: jsonError(c, 400, screenshot.error) };
+	const id = randomUUID();
+	const payload = {
+		id,
+		type,
+		message,
+		contactEmail: cleanFeedbackString(body.contactEmail, 320) || null,
+		context: {
+			...context,
+			teamId: access.teamId,
+			projectId: access.projectId ?? context.projectId,
+			userId: access.principal?.id ?? null,
+		},
+		client: safeFeedbackClient(body.client),
+		screenshot: screenshot?.value ?? null,
+	};
+	await store.recordAuditEvent({
+		eventType: 'feedback.submitted',
+		actorType: access.principal ? (c.get('actorType') === 'service' ? 'service' : 'user') : 'anonymous',
+		actorId: access.principal?.id ?? null,
+		targetType: payload.context.projectId ? 'project' : payload.context.teamId ? 'team' : 'market',
+		targetId: payload.context.projectId ?? payload.context.teamId ?? 'public-feedback',
+		data: payload,
+	});
+	if (payload.context.teamId) {
+		await store.upsertTeamInboxItem(payload.context.teamId, {
+			id: `feedback:${id}`,
+			projectId: payload.context.projectId,
+			kind: 'feedback',
+			state: 'new',
+			title: `${payload.context.title || 'Product'} feedback`,
+			summary: `${type.replace(/_/gu, ' ')} feedback received.`,
+			href: payload.context.canonicalPath || '/app/',
+			itemKey: id,
+			metadata: {
+				feedbackId: id,
+				type,
+				shell: payload.context.shell,
+				context: payload.context.context,
+				hasScreenshot: Boolean(payload.screenshot),
+				screenshotStoragePolicy: payload.screenshot?.storagePolicy ?? null,
+			},
+		});
+	}
+	return {
+		id,
+		privateScoped: context.privateScoped,
+		hasScreenshot: Boolean(payload.screenshot),
+	};
+}
+
 function normalizeSeedEnvironments(value) {
 	if (Array.isArray(value)) {
 		return value.map((entry) => String(entry ?? '').trim()).filter(Boolean).join(',');
@@ -4220,17 +4410,15 @@ function resolveTreeDxProxyBaseUrl({ runtime, library }) {
 
 async function resolveTreeDxProxyToken({ runtime, baseUrl, projectId, scope = treeDxTokenScope() }) {
 	const env = runtimeEnv(runtime);
-	const apiBaseUrl = env.TREESEED_API_BASE_URL ?? env.TREESEED_PUBLIC_API_BASE_URL ?? '';
-	const local = isLoopbackTreeDxBaseUrl(baseUrl) || isLoopbackTreeDxBaseUrl(apiBaseUrl) || env.TREESEED_ENVIRONMENT === 'local' || env.TREESEED_API_ENVIRONMENT === 'local';
 	const secret = env.TREESEED_TREEDX_JWT_HS256_SECRET
 		?? env.TREEDX_JWT_HS256_SECRET
-		?? (local ? 'treeseed-local-treedx-jwt-secret' : null);
+		?? null;
 	const issuer = env.TREESEED_TREEDX_JWT_ISSUER
 		?? env.TREEDX_JWT_ISSUER
-		?? (local ? 'https://api.treeseed.local/treedx' : null);
+		?? (secret ? 'https://api.treeseed.local/treedx' : null);
 	const audience = env.TREESEED_TREEDX_JWT_AUDIENCE
 		?? env.TREEDX_JWT_AUDIENCE
-		?? (local ? 'treedx-local' : null);
+		?? (secret ? 'treedx-local' : null);
 	if (!secret || !issuer || !audience) {
 		return null;
 	}
@@ -4344,15 +4532,23 @@ async function proxyTreeDxJson({ c, runtime, store, projectId, permission, metho
 	if (!token) {
 		return jsonError(c, 503, 'TreeDX proxy token is not configured for this project.', { projectId });
 	}
-	const response = await fetch(`${baseUrl}${path}`, {
-		method,
-		headers: {
-			accept: 'application/json',
-			authorization: `Bearer ${token}`,
-			...(body === undefined ? {} : { 'content-type': 'application/json' }),
-		},
-		body: body === undefined ? undefined : JSON.stringify(body),
-	});
+	let response;
+	try {
+		response = await fetch(`${baseUrl}${path}`, {
+			method,
+			headers: {
+				accept: 'application/json',
+				authorization: `Bearer ${token}`,
+				...(body === undefined ? {} : { 'content-type': 'application/json' }),
+			},
+			body: body === undefined ? undefined : JSON.stringify(body),
+		});
+	} catch (error) {
+		return jsonError(c, 503, 'TreeDX runtime is unavailable for this project.', {
+			projectId,
+			details: error instanceof Error ? error.message : String(error),
+		});
+	}
 	const payload = await response.json().catch(() => null);
 	if (!response.ok) {
 		return jsonError(c, response.status, `TreeDX ${method} ${path} failed.`, {
@@ -5255,6 +5451,21 @@ export function createApiApp(options = {}): Hono {
 				ok: true,
 				payload: centralMarketProfile(runtime.resolved.config.baseUrl),
 			}));
+
+			app.post('/v1/feedback', async (c) => {
+				c.header('cache-control', 'no-store');
+				const body = await c.req.json().catch(() => ({}));
+				const result = await recordFeedbackSubmission(c, store, body);
+				if (result.response) return result.response;
+				return c.json({
+					ok: true,
+					payload: {
+						id: result.id,
+						privateScoped: result.privateScoped,
+						hasScreenshot: result.hasScreenshot,
+					},
+				}, { status: 202 });
+			});
 
 			app.post('/v1/acceptance/seed', async (c) => {
 				const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
@@ -10154,6 +10365,67 @@ export function createApiApp(options = {}): Hono {
 				});
 			});
 
+			app.post('/v1/projects/:projectId/private-knowledge/access', async (c) => {
+				const projectId = c.req.param('projectId');
+				const body = await c.req.json().catch(() => ({}));
+				const principal = c.get('principal');
+				if (!principal) {
+					return jsonError(c, 401, 'Authentication required.');
+				}
+				const details = await store.getProjectDetails(projectId);
+				if (!details?.project) {
+					await recordPrivateKnowledgeAudit(store, {
+						eventType: 'private_knowledge.not_found',
+						actorId: principal.id,
+						projectId,
+						body,
+						status: 'not_found',
+						summary: 'Private knowledge project was not found.',
+					});
+					return jsonError(c, 404, 'Private knowledge page not found.');
+				}
+				const teamContext = await store.resolvePrincipalTeamContext(details.project.teamId, principal);
+				const allowed = Boolean(teamContext) && (!isTeamApiPrincipal(principal) || principalHasPermission(principal, 'projects:read:team'));
+				if (!allowed) {
+					await recordPrivateKnowledgeAudit(store, {
+						eventType: 'private_knowledge.denied',
+						actorId: principal.id,
+						projectId: details.project.id,
+						body,
+						status: 'denied',
+						summary: 'Private knowledge access was denied.',
+					});
+					return jsonError(c, 403, 'Permission denied.');
+				}
+				const outcome = typeof body.outcome === 'string' ? body.outcome : 'validate';
+				if (outcome === 'read' || outcome === 'not_found') {
+					await recordPrivateKnowledgeAudit(store, {
+						eventType: outcome === 'read' ? 'private_knowledge.read' : 'private_knowledge.not_found',
+						actorId: principal.id,
+						projectId: details.project.id,
+						body,
+						status: outcome,
+						summary: outcome === 'read' ? 'Private knowledge page was read.' : 'Private knowledge page was not found.',
+					});
+				}
+				return c.json({
+					ok: true,
+					payload: {
+						project: {
+							id: details.project.id,
+							teamId: details.project.teamId,
+							name: details.project.name ?? details.project.slug ?? details.project.id,
+							slug: details.project.slug ?? details.project.id,
+						},
+						team: {
+							teamId: details.project.teamId,
+							roles: teamContext.roles,
+						},
+						slug: safePrivateKnowledgeSlug(body.slug),
+					},
+				});
+			});
+
 			app.get('/v1/projects/:projectId/summary', async (c) => {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
 				if (access.response) return access.response;
@@ -10433,7 +10705,19 @@ export function createApiApp(options = {}): Hono {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
 				if (access.response) return access.response;
 				const payload = await store.requestProjectRuntime(access.details.project.id, access.principal, '/v1/agent-artifacts');
-				const fallbackItems = payload ? [] : await collectControlPlaneGeneratedArtifacts(store, access.details.project.id);
+				const payloadItems = Array.isArray(payload?.items) ? payload.items : [];
+				const fallbackItems = payloadItems.length ? [] : await collectControlPlaneGeneratedArtifacts(store, access.details.project.id);
+				if (payload && fallbackItems.length) {
+					return c.json({
+						ok: true,
+						payload: {
+							...payload,
+							projectId: payload.projectId ?? access.details.project.id,
+							items: fallbackItems,
+							warnings: Array.isArray(payload.warnings) ? payload.warnings : [],
+						},
+					});
+				}
 				return c.json({
 					ok: true,
 					payload: payload ?? {
@@ -12144,21 +12428,113 @@ export function createApiApp(options = {}): Hono {
 				}, { status: 201 });
 			});
 
-			app.get('/v1/projects/:projectId/runner/workdays/runtime', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
-				return c.json({
+				app.get('/v1/projects/:projectId/runner/workdays/runtime', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					return c.json({
 					ok: true,
 					payload: await store.listRuntimeWorkDays(c.req.param('projectId'), {
 						state: typeof c.req.query('state') === 'string' ? c.req.query('state') : null,
 						limit: Number.isFinite(Number(c.req.query('limit'))) ? Number(c.req.query('limit')) : 10,
 					}),
+					});
 				});
-			});
 
-			app.post('/v1/projects/:projectId/runner/workdays/:workDayId/close', async (c) => {
-				const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
-				if (runnerAccess.response) return runnerAccess.response;
+				app.get('/v1/projects/:projectId/runner/tasks', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					return c.json({
+						ok: true,
+						payload: await store.listRuntimeTasks(c.req.param('projectId'), {
+							workDayId: typeof c.req.query('workDayId') === 'string' ? c.req.query('workDayId') : null,
+							limit: Number.isFinite(Number(c.req.query('limit'))) ? Number(c.req.query('limit')) : 100,
+						}),
+					});
+				});
+
+				app.post('/v1/projects/:projectId/runner/tasks', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					const body = await c.req.json().catch(() => ({}));
+					if (!body.workDayId || !body.agentId || !body.type || !body.idempotencyKey) {
+						return jsonError(c, 400, 'workDayId, agentId, type, and idempotencyKey are required.');
+					}
+					const payload = await store.createRuntimeTask(c.req.param('projectId'), {
+						id: typeof body.id === 'string' ? body.id : undefined,
+						workDayId: String(body.workDayId),
+						agentId: String(body.agentId),
+						type: String(body.type),
+						idempotencyKey: String(body.idempotencyKey),
+						payload: body.payload && typeof body.payload === 'object' ? body.payload : {},
+						actor: typeof body.actor === 'string' ? body.actor : null,
+					});
+					return payload ? c.json({ ok: true, payload }, { status: 201 }) : jsonError(c, 404, 'Unknown workday.');
+				});
+
+				app.post('/v1/projects/:projectId/runner/tasks/:taskId/claim', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					const body = await c.req.json().catch(() => ({}));
+					if (!body.workerId) return jsonError(c, 400, 'workerId is required.');
+					const payload = await store.claimRuntimeTask(c.req.param('projectId'), c.req.param('taskId'), {
+						workerId: String(body.workerId),
+						leaseSeconds: Number.isFinite(Number(body.leaseSeconds)) ? Number(body.leaseSeconds) : 300,
+						actor: typeof body.actor === 'string' ? body.actor : null,
+					});
+					return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
+				});
+
+				app.post('/v1/projects/:projectId/runner/tasks/:taskId/events', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					const body = await c.req.json().catch(() => ({}));
+					if (!body.kind) return jsonError(c, 400, 'kind is required.');
+					const payload = await store.recordRuntimeTaskEvent(c.req.param('projectId'), c.req.param('taskId'), {
+						kind: String(body.kind),
+						data: body.data && typeof body.data === 'object' ? body.data : {},
+						state: typeof body.state === 'string' ? body.state : null,
+						actor: typeof body.actor === 'string' ? body.actor : null,
+					});
+					return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
+				});
+
+				app.post('/v1/projects/:projectId/runner/tasks/:taskId/complete', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					const body = await c.req.json().catch(() => ({}));
+					const payload = await store.completeRuntimeTask(c.req.param('projectId'), c.req.param('taskId'), {
+						output: body.output && typeof body.output === 'object' ? body.output : {},
+						outputRef: typeof body.outputRef === 'string' ? body.outputRef : null,
+						summary: body.summary && typeof body.summary === 'object' ? body.summary : null,
+						actor: typeof body.actor === 'string' ? body.actor : null,
+					});
+					return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
+				});
+
+				app.post('/v1/projects/:projectId/runner/artifacts', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					const body = await c.req.json().catch(() => ({}));
+					if (!body.objectKey) return jsonError(c, 400, 'objectKey is required.');
+					const payload = await store.uploadRuntimeArtifact(c.req.param('projectId'), {
+						objectKey: String(body.objectKey),
+						content: typeof body.content === 'string' || (body.content && typeof body.content === 'object') ? body.content : null,
+						contentBase64: typeof body.contentBase64 === 'string' ? body.contentBase64 : null,
+						contentType: typeof body.contentType === 'string' ? body.contentType : null,
+					});
+					return payload ? c.json({ ok: true, payload }, { status: 201 }) : jsonError(c, 400, 'Invalid artifact upload.');
+				});
+
+				app.get('/v1/projects/:projectId/runner/tasks/:taskId/outputs', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
+					const payload = await store.listRuntimeTaskOutputs(c.req.param('projectId'), c.req.param('taskId'));
+					return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
+				});
+
+				app.post('/v1/projects/:projectId/runner/workdays/:workDayId/close', async (c) => {
+					const runnerAccess = await requireProjectRunner(c, store, c.req.param('projectId'));
+					if (runnerAccess.response) return runnerAccess.response;
 				const body = await c.req.json().catch(() => ({}));
 				const payload = await store.closeRuntimeWorkDay(c.req.param('projectId'), c.req.param('workDayId'), {
 					state: typeof body.state === 'string' ? body.state : 'completed',
@@ -13328,9 +13704,9 @@ export function createApiApp(options = {}): Hono {
 				});
 			});
 
-			app.get('/v1/projects/:projectId/workdays/:workDayId', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-				if (access.response) return access.response;
+				app.get('/v1/projects/:projectId/workdays/:workDayId', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+					if (access.response) return access.response;
 				const workDayId = c.req.param('workDayId');
 				const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, `/v1/workdays/${encodeURIComponent(workDayId)}`);
 				if (delegated) return c.json({ ok: true, payload: delegated });
@@ -13340,12 +13716,46 @@ export function createApiApp(options = {}): Hono {
 				const summary = summaries.find((item) => item.workDayId === workDayId || item.id === workDayId);
 				return summary
 					? c.json({ ok: true, payload: summary })
-					: jsonError(c, 404, 'Unknown workday.');
-			});
+						: jsonError(c, 404, 'Unknown workday.');
+				});
 
-			app.post('/v1/projects/:projectId/workdays/start', async (c) => {
-				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
-				if (access.response) return access.response;
+				app.get('/v1/projects/:projectId/tasks', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+					if (access.response) return access.response;
+					const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, '/v1/tasks');
+					if (delegated) return c.json({ ok: true, payload: delegated });
+					return c.json({
+						ok: true,
+						payload: await store.listRuntimeTasks(access.details.project.id, {
+							workDayId: typeof c.req.query('workDayId') === 'string' ? c.req.query('workDayId') : null,
+							limit: Number.isFinite(Number(c.req.query('limit'))) ? Number(c.req.query('limit')) : 100,
+						}),
+					});
+				});
+
+				app.get('/v1/projects/:projectId/tasks/:taskId', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+					if (access.response) return access.response;
+					const taskId = c.req.param('taskId');
+					const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, `/v1/tasks/${encodeURIComponent(taskId)}`);
+					if (delegated) return c.json({ ok: true, payload: delegated });
+					const payload = await store.getRuntimeTask(access.details.project.id, taskId);
+					return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
+				});
+
+				app.get('/v1/projects/:projectId/tasks/:taskId/events', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
+					if (access.response) return access.response;
+					const taskId = c.req.param('taskId');
+					const delegated = await store.requestProjectRuntime(access.details.project.id, access.principal, `/v1/tasks/${encodeURIComponent(taskId)}/events`);
+					if (delegated) return c.json({ ok: true, payload: delegated });
+					const payload = await store.listRuntimeTaskEvents(access.details.project.id, taskId);
+					return payload ? c.json({ ok: true, payload }) : jsonError(c, 404, 'Unknown task.');
+				});
+
+				app.post('/v1/projects/:projectId/workdays/start', async (c) => {
+					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
+					if (access.response) return access.response;
 				const body = await readJsonOrFormBody(c);
 				const environment = typeof body.environment === 'string' && body.environment.trim() ? body.environment.trim() : 'local';
 				const payload = await store.createWorkdayRequest(c.req.param('projectId'), {

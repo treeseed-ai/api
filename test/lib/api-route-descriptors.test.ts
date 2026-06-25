@@ -25,7 +25,7 @@ describe('API route descriptors', () => {
 	it('describes every active v1 route declared by the API', () => {
 		const extracted = extractActiveApiRoutes();
 		expect(API_ROUTE_DESCRIPTORS.map((route) => route.id)).toEqual(extracted.map((route) => route.id));
-		expect(API_ROUTE_DESCRIPTORS).toHaveLength(390);
+		expect(API_ROUTE_DESCRIPTORS).toHaveLength(388);
 		expect(API_ROUTE_DESCRIPTORS.find((route) => route.id === 'get.v1.users.by-username.username.profile')).toMatchObject({
 			authClass: 'user',
 			ownerDomain: 'market',

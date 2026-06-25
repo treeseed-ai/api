@@ -155,6 +155,7 @@ export const SDK_METHOD_ROUTE_MAP = {
 	updateProjectRepositoryTopology: 'put.v1.projects.projectId.repository-topology',
 	treeDxBuildContext: 'post.v1.dx.projects.projectId.repos.repoId.context.build',
 	treeDxReadRepositoryFiles: 'post.v1.dx.projects.projectId.repos.repoId.files.read',
+	createTreeDxWorkspace: 'post.v1.dx.projects.projectId.repos.repoId.workspaces',
 	planSeed: 'post.v1.seeds.name.plan',
 	applySeed: 'post.v1.seeds.name.apply',
 	listSeedRuns: 'get.v1.seeds.runs',
@@ -223,6 +224,7 @@ function authClass(path) {
 	if (path.startsWith('/v1/provider/')) return 'provider-key';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
+	if (path === '/v1/feedback') return 'public';
 	if (path === '/v1/markets/current' || path.startsWith('/v1/auth/web/sign-') || path.includes('/username/check') || path.includes('/password-reset/') || path.includes('/auth/device/')) {
 		return 'public';
 	}
@@ -268,6 +270,7 @@ function successActorsFor(path, method) {
 	if (path.startsWith('/v1/platform/operations/:operationId')) return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path === '/v1/platform/operations' && method !== 'get') return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path.startsWith('/v1/platform/operations')) return PLATFORM_ADMIN_ACTORS;
+	if (path === '/v1/feedback') return ACCEPTANCE_ACTORS;
 	if (path === '/v1/markets/current' || path.includes('/username/check') || path.includes('/confirm-email') || path.includes('/password-reset/request') || path.includes('/password-reset/complete') || path.includes('/auth/device/')) {
 		return ACCEPTANCE_ACTORS;
 	}
@@ -307,6 +310,7 @@ function bodyFactoryFor(path, method) {
 	if (path === '/v1/internal/github/app/webhook') return 'empty';
 	if (isTreeDxCredentialBridgePath(path)) return 'treedxCredentialBridge';
 	if (path.includes('/auth/device/start')) return 'deviceStart';
+	if (path === '/v1/feedback') return 'feedback';
 	if (path.includes('/auth/device/poll')) return 'devicePoll';
 	if (path.includes('/auth/device/approve')) return 'deviceApprove';
 	if (path.includes('/auth/web/sign-up')) return 'webSignUp';
