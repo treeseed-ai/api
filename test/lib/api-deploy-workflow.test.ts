@@ -16,6 +16,10 @@ describe('API deploy workflow', () => {
 		const deploy = workflow('.github/workflows/deploy.yml');
 		expect(deploy.name).toBe('TreeSeed API Deploy');
 		expect(deploy.jobs).toHaveProperty('verify');
+		expect(deploy.jobs['publish-dev-images'].outputs).toMatchObject({
+			api_immutable: '${{ steps.tags.outputs.api_immutable }}',
+			runner_immutable: '${{ steps.tags.outputs.runner_immutable }}',
+		});
 		expect(deploy.jobs).toHaveProperty('deploy-api');
 		expect(deploy.jobs).toHaveProperty('live-verify');
 		expect(pkg.devDependencies?.['@treeseed/cli']).toMatch(/^github:treeseed-ai\/cli#/u);
@@ -29,6 +33,8 @@ describe('API deploy workflow', () => {
 		expect(deployRun).toContain('--app api --json');
 		expect(deployRun).toContain('trsd hosting apply');
 		expect(deployRun).toContain('--app api --execute --json');
+		expect(deployRun).toContain('needs.publish-dev-images.outputs.api_immutable');
+		expect(deployRun).toContain('needs.publish-dev-images.outputs.runner_immutable');
 		expect(deployRun).toContain('TREESEED_RAILWAY_API_TOKEN');
 		expect(deployRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');
 		expect(deployRun).toContain('TREESEED_CLOUDFLARE_ACCOUNT_ID');

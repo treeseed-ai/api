@@ -46,6 +46,7 @@ import { createGitHubActionsSecretEnclave } from './github-actions-secret-enclav
 import { createTreeDxCredentialBridge } from './treedx-credential-bridge.ts';
 import { createMarketPostgresDatabase } from './market-postgres.js';
 import { installProjectDeploymentRoutes } from './project-deployment-routes.js';
+import { createStripeConnectService, resolveStripeEnvironment, stripeAccountToConnectedAccountPatch } from './stripe-connect.js';
 import { applySeedWithStore, exportSeedWithStore, planSeedWithStore } from '../market/seeds/apply.js';
 import { buildGovernanceApprovalProjection, buildGovernanceProjection } from '../market/governance-projection.js';
 import { buildInfrastructureProjection } from '../market/infrastructure-projection.js';
@@ -62,7 +63,7 @@ import { decryptHostConfig } from '../crypto/host-crypto.ts';
 import { getSiteAuthConfig } from '../auth/config.ts';
 import { accountDeletionConfirmationMatches } from '../auth/account.ts';
 import { validateUsername as validatePublicUsername } from '../auth/profile-validation.ts';
-import { authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason } from '../auth/email.ts';
+import { authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, sendAuthEmail } from '../auth/email.ts';
 import { sendEmailConfirmation } from '../auth/email-confirmation.ts';
 import { sendWelcomeEmail } from '../auth/welcome-email.ts';
 import { createCipheriv, createDecipheriv, createHash, createHmac, createPublicKey, createVerify, pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -682,6 +683,39 @@ function confirmationUrlFor(context, token, returnTo) {
 	target.searchParams.set('token', token);
 	target.searchParams.set('returnTo', sanitizedReturnTo(returnTo));
 	return target.toString();
+}
+
+function teamInviteAcceptUrlFor(context, token) {
+	const authConfig = getSiteAuthConfig(context);
+	return new URL(`/team-invites/${encodeURIComponent(token)}/accept`, `${authConfig.siteBaseUrl.replace(/\/+$/u, '')}/`).toString();
+}
+
+async function sendTeamInviteEmail(context, input) {
+	const teamName = String(input.team?.displayName ?? input.team?.name ?? 'TreeSeed').trim() || 'TreeSeed';
+	const role = String(input.invite?.roleKey ?? input.invite?.role ?? 'member').replace(/_/gu, ' ');
+	const acceptUrl = teamInviteAcceptUrlFor(context, input.token);
+	const text = [
+		`You were invited to join ${teamName} on TreeSeed as ${role}.`,
+		'',
+		'Accept this team invite:',
+		acceptUrl,
+		'',
+		'If you do not recognize this invite, you can ignore this email.',
+	].join('\n');
+	const html = [
+		'<div style="font-family:Inter,Arial,sans-serif;line-height:1.5;color:#17211b">',
+		`<h1 style="font-size:24px">Join ${teamName} on TreeSeed</h1>`,
+		`<p>You were invited as <strong>${role}</strong>.</p>`,
+		`<p><a href="${acceptUrl}" style="display:inline-block;background:#2f6f4e;color:white;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:700">Accept invite</a></p>`,
+		`<p style="word-break:break-all;color:#526052">${acceptUrl}</p>`,
+		'</div>',
+	].join('');
+	await sendAuthEmail(context, {
+		to: input.invite.email,
+		subject: `You're invited to join ${teamName}`,
+		text,
+		html,
+	});
 }
 
 async function createMarketEmailConfirmation(store, context, input) {
@@ -4722,6 +4756,1569 @@ function resolveAgentTaskSignature(value) {
 	};
 }
 
+function commerceErrorResponse(c, error) {
+	const status = Number(error?.status ?? 500);
+	if (![400, 401, 403, 404, 409, 502].includes(status)) throw error;
+	return jsonError(c, status, error instanceof Error ? error.message : String(error), error?.details ?? {});
+}
+
+function stripeConfiguredError() {
+	const error = new Error('Stripe Connect is not configured for this market.');
+	error.status = 409;
+	return error;
+}
+
+function stripeVendorApprovalError() {
+	const error = new Error('Commerce vendor approval is required before Stripe onboarding.');
+	error.status = 409;
+	return error;
+}
+
+function stripeAccountMissingError() {
+	const error = new Error('Stripe connected account is not linked for this vendor.');
+	error.status = 409;
+	return error;
+}
+
+function stripeCommerceUrl(config, teamId, marker) {
+	const base = normalizeBaseUrl(config.siteUrl ?? config.baseUrl ?? 'http://localhost:4321') || 'http://localhost:4321';
+	const url = new URL(`/app/teams/${encodeURIComponent(teamId)}/commerce`, `${base}/`);
+	url.searchParams.set('stripe', marker);
+	return url.toString();
+}
+
+async function requireCommerceVendorForStripe(store, teamId) {
+	const vendor = await store.getCommerceVendorForTeam(teamId);
+	if (!vendor) {
+		const error = new Error(`Commerce vendor for team "${teamId}" was not found.`);
+		error.status = 404;
+		throw error;
+	}
+	if (vendor.status !== 'approved') throw stripeVendorApprovalError();
+	return vendor;
+}
+
+async function refreshCommerceStripeAccount({ store, stripeConnectService, account, actorType = 'system', actorId = null }) {
+	if (!account) return null;
+	const configured = await stripeConnectService.isConfigured();
+	if (!configured) return account;
+	const stripeAccount = await stripeConnectService.retrieveAccount(account.stripeAccountId);
+	if (!stripeAccount) return account;
+	return store.recordCommerceStripeAccountStatus(account.id, {
+		...stripeAccountToConnectedAccountPatch(stripeAccount, account.environment),
+		actorType,
+		actorId,
+	});
+}
+
+const STRIPE_PRODUCT_MIRROR_OFFER_MODES = new Set([
+	'one_time',
+	'one_time_current_version',
+	'subscription',
+	'subscription_updates',
+	'professional_hosting',
+	'scoped_contract',
+]);
+const STRIPE_PRICE_MIRROR_OFFER_MODES = new Set([
+	'one_time',
+	'one_time_current_version',
+	'subscription',
+	'subscription_updates',
+	'professional_hosting',
+]);
+
+function stripeMetadataValue(value) {
+	if (value === null || value === undefined) return '';
+	if (typeof value === 'string') return value.slice(0, 500);
+	return String(value).slice(0, 500);
+}
+
+function buildCommerceStripeMetadata({ environment, vendor, product, ownership, offer, price = null }) {
+	return Object.fromEntries(Object.entries({
+		treeseed_environment: environment,
+		treeseed_vendor_id: vendor?.id,
+		treeseed_seller_team_id: product?.sellerTeamId ?? offer?.sellerTeamId,
+		treeseed_product_id: product?.id ?? offer?.productId,
+		treeseed_product_version_id: offer?.productVersionId,
+		treeseed_offer_id: offer?.id,
+		treeseed_price_id: price?.id,
+		treeseed_price_version: price?.priceVersion,
+		treeseed_ownership_model: product?.ownershipModel,
+		treeseed_ownership_record_id: product?.ownershipRecordId ?? ownership?.id,
+		treeseed_object_authority: 'treeseed',
+		treeseed_sync_phase: 'phase_4',
+	}).map(([key, value]) => [key, stripeMetadataValue(value)]));
+}
+
+function commerceStripeProductParams({ product, offer, metadata }) {
+	return {
+		name: optionalTrimmedString(offer?.title) ?? product.title,
+		description: optionalTrimmedString(offer?.termsSummary)
+			?? optionalTrimmedString(product.summary)
+			?? optionalTrimmedString(product.description)
+			?? undefined,
+		active: product.status === 'approved' && offer.status === 'approved',
+		metadata,
+	};
+}
+
+function commerceStripeLookupKey(environment, price) {
+	return `treeseed_${environment}_${price.id}_v${price.priceVersion}`;
+}
+
+function commerceStripePriceParams({ offer, price, stripeProductId, metadata, environment }) {
+	const params = {
+		product: stripeProductId,
+		unit_amount: price.amount,
+		currency: price.currency,
+		lookup_key: price.stripeLookupKey ?? commerceStripeLookupKey(environment, price),
+		metadata,
+	};
+	if (price.taxBehavior && price.taxBehavior !== 'unspecified') {
+		params.tax_behavior = price.taxBehavior;
+	}
+	if (['subscription', 'subscription_updates', 'professional_hosting'].includes(offer.mode)) {
+		params.recurring = { interval: price.billingInterval };
+	}
+	return params;
+}
+
+function stripePriceTermsDrift(stripePrice, price, offer) {
+	const recurringInterval = stripePrice?.recurring?.interval ?? 'one_time';
+	const expectedInterval = ['subscription', 'subscription_updates', 'professional_hosting'].includes(offer.mode)
+		? price.billingInterval
+		: 'one_time';
+	return Number(stripePrice?.unit_amount ?? -1) !== price.amount
+		|| String(stripePrice?.currency ?? '').toLowerCase() !== price.currency
+		|| recurringInterval !== expectedInterval;
+}
+
+async function commerceStripeSyncContext({ store, stripeConnectService, offer, environment }) {
+	const product = await store.getCommerceProduct(offer.productId);
+	const vendor = product ? await store.getCommerceVendor(product.vendorId) : null;
+	const ownershipRecords = product ? await store.listCommerceOwnershipRecords(product.id).catch(() => []) : [];
+	const ownership = ownershipRecords.find((record) => record.id === product?.ownershipRecordId) ?? ownershipRecords[0] ?? null;
+	const account = vendor ? await store.getCommerceVendorStripeAccount(vendor.id, environment) : null;
+	return { product, vendor, ownership, account };
+}
+
+async function syncCommerceOfferStripeProduct({
+	store,
+	stripeConnectService,
+	offer,
+	actorType = 'system',
+	actorId = null,
+	reconcile = false,
+	throwOnBlocked = false,
+}) {
+	const environment = stripeConnectService.environment ?? 'test';
+	if (!STRIPE_PRODUCT_MIRROR_OFFER_MODES.has(offer.mode)) {
+		return { offer, skipped: true, reason: 'Offer mode does not require a Stripe Product mirror.' };
+	}
+	const context = await commerceStripeSyncContext({ store, stripeConnectService, offer, environment });
+	const block = async (reason) => {
+		const updated = await store.markCommerceOfferStripeSyncBlocked(offer.id, {
+			reason,
+			actorType,
+			actorId,
+			evidence: { environment, vendorId: context.vendor?.id ?? null },
+		});
+		if (throwOnBlocked) {
+			const error = new Error(reason);
+			error.status = 409;
+			throw error;
+		}
+		return { offer: updated, blocked: true, reason };
+	};
+	if (!context.product || !context.vendor) return block('Commerce product or vendor was not found for Stripe Product sync.');
+	if (context.vendor.status !== 'approved') return block('Commerce vendor approval is required before Stripe Product sync.');
+	if (!await stripeConnectService.isConfigured()) return block('Stripe Connect is not configured for this market.');
+	if (!context.account) return block('Stripe connected account is not linked for this vendor.');
+	if (context.account.accountStatus !== 'enabled') return block('Stripe connected account must be enabled before Product sync.');
+	const metadata = buildCommerceStripeMetadata({ environment, ...context, offer });
+	const params = commerceStripeProductParams({ product: context.product, offer, metadata });
+	try {
+		const stripeProduct = offer.stripeProductId
+			? await stripeConnectService.updateProductMirror({
+				connectedAccountId: context.account.stripeAccountId,
+				stripeProductId: offer.stripeProductId,
+				params,
+			})
+			: await stripeConnectService.createProductMirror({
+				connectedAccountId: context.account.stripeAccountId,
+				params,
+			});
+		if (!stripeProduct?.id) return block('Stripe Product sync did not return a Product ID.');
+		const updated = await store.updateCommerceOfferStripeProductSync(offer.id, {
+			stripeProductId: stripeProduct.id,
+			stripeProductStatus: 'synced',
+			stripeProductMetadata: metadata,
+			actorType,
+			actorId,
+			action: reconcile ? 'commerce_offer.stripe_product.reconciled' : 'commerce_offer.stripe_product.synced',
+			evidence: {
+				environment,
+				stripeAccountId: context.account.stripeAccountId,
+				stripeProductId: stripeProduct.id,
+			},
+		});
+		return {
+			offer: updated,
+			product: context.product,
+			vendor: context.vendor,
+			connectedAccount: context.account,
+			stripeProductId: stripeProduct.id,
+			status: 'synced',
+			reconciled: reconcile,
+		};
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error ?? 'Stripe Product sync failed.');
+		await store.updateCommerceOfferStripeProductSync(offer.id, {
+			stripeProductStatus: 'failed',
+			stripeProductSyncError: reason,
+			actorType,
+			actorId,
+			action: 'commerce_offer.stripe_product.failed',
+			reason,
+			evidence: { environment, stripeAccountId: context.account.stripeAccountId },
+		});
+		if (throwOnBlocked) throw error;
+		return { offer: await store.getCommerceOffer(offer.id), failed: true, reason };
+	}
+}
+
+async function syncCommercePriceStripePrice({
+	store,
+	stripeConnectService,
+	price,
+	actorType = 'system',
+	actorId = null,
+	reconcile = false,
+	throwOnBlocked = false,
+}) {
+	const offer = await store.getCommerceOffer(price.offerId);
+	const environment = stripeConnectService.environment ?? 'test';
+	const block = async (reason) => {
+		const updated = await store.markCommercePriceStripeSyncBlocked(price.id, {
+			reason,
+			actorType,
+			actorId,
+			evidence: { environment, offerId: offer?.id ?? null },
+		});
+		if (throwOnBlocked) {
+			const error = new Error(reason);
+			error.status = 409;
+			throw error;
+		}
+		return { price: updated, blocked: true, reason };
+	};
+	if (!offer) return block('Commerce offer was not found for Stripe Price sync.');
+	if (!STRIPE_PRICE_MIRROR_OFFER_MODES.has(offer.mode)) {
+		if (offer.mode === 'scoped_contract') return block('Scoped contract Stripe Price sync is deferred until scoped service checkout.');
+		return { price, skipped: true, reason: 'Offer mode does not require a Stripe Price mirror.' };
+	}
+	if (price.billingInterval === 'custom') return block('Custom billing intervals are not supported by Phase 4 Stripe Price sync.');
+	if (['subscription', 'subscription_updates', 'professional_hosting'].includes(offer.mode) && !['month', 'year'].includes(price.billingInterval)) {
+		return block('Recurring Stripe Price sync requires month or year billing intervals.');
+	}
+	if (['one_time', 'one_time_current_version'].includes(offer.mode) && price.billingInterval !== 'one_time') {
+		return block('One-time Stripe Price sync requires one_time billing interval.');
+	}
+	const productSync = await syncCommerceOfferStripeProduct({
+		store,
+		stripeConnectService,
+		offer,
+		actorType,
+		actorId,
+		reconcile,
+		throwOnBlocked,
+	});
+	const syncedOffer = productSync.offer ?? offer;
+	if (!syncedOffer?.stripeProductId || syncedOffer.stripeProductStatus !== 'synced') {
+		return block(productSync.reason ?? 'Stripe Product must be synced before Stripe Price sync.');
+	}
+	const context = await commerceStripeSyncContext({ store, stripeConnectService, offer: syncedOffer, environment });
+	if (!context.account || context.account.accountStatus !== 'enabled') return block('Stripe connected account must be enabled before Price sync.');
+	const metadata = buildCommerceStripeMetadata({ environment, ...context, offer: syncedOffer, price });
+	const lookupKey = price.stripeLookupKey ?? commerceStripeLookupKey(environment, price);
+	const params = commerceStripePriceParams({
+		offer: syncedOffer,
+		price: { ...price, stripeLookupKey: lookupKey },
+		stripeProductId: syncedOffer.stripeProductId,
+		metadata,
+		environment,
+	});
+	try {
+		let stripePrice = null;
+		if (price.stripePriceId) {
+			stripePrice = await stripeConnectService.retrievePriceMirror({
+				connectedAccountId: context.account.stripeAccountId,
+				stripePriceId: price.stripePriceId,
+			});
+			if (stripePriceTermsDrift(stripePrice, price, syncedOffer)) {
+				const updated = await store.updateCommercePriceStripeSync(price.id, {
+					stripeProductId: syncedOffer.stripeProductId,
+					stripePriceId: price.stripePriceId,
+					stripeLookupKey: lookupKey,
+					stripeSyncStatus: 'drifted',
+					stripeSyncError: 'Stripe Price immutable terms differ from TreeSeed price terms.',
+					stripeMetadata: metadata,
+					actorType,
+					actorId,
+					action: 'commerce_price.stripe_price.drifted',
+					reason: 'Stripe Price immutable terms differ from TreeSeed price terms.',
+					evidence: { environment, stripeAccountId: context.account.stripeAccountId, stripePriceId: price.stripePriceId },
+				});
+				return { offer: syncedOffer, price: updated, connectedAccount: context.account, stripeProductId: syncedOffer.stripeProductId, stripePriceId: price.stripePriceId, stripeLookupKey: lookupKey, status: 'drifted', reconciled: reconcile };
+			}
+			stripePrice = await stripeConnectService.updatePriceMirror({
+				connectedAccountId: context.account.stripeAccountId,
+				stripePriceId: price.stripePriceId,
+				params: { metadata, lookup_key: lookupKey, active: price.status === 'active' },
+			});
+		} else {
+			stripePrice = await stripeConnectService.createPriceMirror({
+				connectedAccountId: context.account.stripeAccountId,
+				params,
+			});
+		}
+		if (!stripePrice?.id) return block('Stripe Price sync did not return a Price ID.');
+		const updated = await store.updateCommercePriceStripeSync(price.id, {
+			stripeProductId: syncedOffer.stripeProductId,
+			stripePriceId: stripePrice.id,
+			stripeLookupKey: lookupKey,
+			stripeSyncStatus: 'synced',
+			stripeMetadata: metadata,
+			actorType,
+			actorId,
+			action: reconcile ? 'commerce_price.stripe_price.reconciled' : 'commerce_price.stripe_price.synced',
+			evidence: {
+				environment,
+				stripeAccountId: context.account.stripeAccountId,
+				stripeProductId: syncedOffer.stripeProductId,
+				stripePriceId: stripePrice.id,
+			},
+		});
+		return {
+			offer: syncedOffer,
+			price: updated,
+			connectedAccount: context.account,
+			stripeProductId: syncedOffer.stripeProductId,
+			stripePriceId: stripePrice.id,
+			stripeLookupKey: lookupKey,
+			status: 'synced',
+			reconciled: reconcile,
+		};
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error ?? 'Stripe Price sync failed.');
+		await store.updateCommercePriceStripeSync(price.id, {
+			stripeSyncStatus: 'failed',
+			stripeSyncError: reason,
+			actorType,
+			actorId,
+			action: 'commerce_price.stripe_price.failed',
+			reason,
+			evidence: { environment, stripeAccountId: context.account.stripeAccountId },
+		});
+		if (throwOnBlocked) throw error;
+		return { offer: syncedOffer, price: await store.getCommercePrice(price.id), failed: true, reason };
+	}
+}
+
+const CHECKOUT_OFFER_MODES = new Set(['free', 'one_time', 'one_time_current_version', 'subscription', 'subscription_updates']);
+const CHECKOUT_COMMERCIAL_OFFER_MODES = new Set(['one_time', 'one_time_current_version', 'subscription', 'subscription_updates']);
+const CHECKOUT_SUBSCRIPTION_OFFER_MODES = new Set(['subscription', 'subscription_updates']);
+
+function resolveStripePublishableKey(config = {}) {
+	return optionalTrimmedString(config.stripePublishableKey)
+		?? optionalTrimmedString(process.env.TREESEED_STRIPE_PUBLISHABLE_KEY)
+		?? optionalTrimmedString(process.env.STRIPE_PUBLISHABLE_KEY);
+}
+
+function resolveStripeWebhookSecret(config = {}) {
+	return optionalTrimmedString(config.stripeWebhookSecret)
+		?? optionalTrimmedString(process.env.TREESEED_STRIPE_WEBHOOK_SECRET)
+		?? optionalTrimmedString(process.env.STRIPE_WEBHOOK_SECRET);
+}
+
+function commerceCheckoutError(message, status = 409, details = {}) {
+	const error = new Error(message);
+	error.status = status;
+	error.details = details;
+	return error;
+}
+
+function normalizeCheckoutQuantity(value) {
+	const quantity = Number(value ?? 1);
+	return Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
+}
+
+function stripeClientSecret(value) {
+	return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function paymentGroupStatusFromPaymentIntent(paymentIntent) {
+	if (paymentIntent?.status === 'succeeded') return 'succeeded';
+	if (paymentIntent?.status === 'processing') return 'processing';
+	if (paymentIntent?.status === 'requires_action') return 'requires_action';
+	if (paymentIntent?.status === 'canceled') return 'canceled';
+	if (paymentIntent?.status === 'requires_payment_method') return 'requires_confirmation';
+	return 'requires_confirmation';
+}
+
+function orderStatusFromPaymentGroup(status) {
+	if (status === 'succeeded') return 'paid';
+	if (status === 'requires_action') return 'requires_action';
+	if (status === 'processing') return 'processing';
+	if (status === 'failed') return 'failed';
+	if (status === 'canceled') return 'canceled';
+	return 'pending_payment';
+}
+
+function subscriptionStatusFromStripe(subscription) {
+	const value = optionalTrimmedString(subscription?.status);
+	return ['incomplete', 'trialing', 'active', 'past_due', 'canceled', 'unpaid', 'paused'].includes(value)
+		? value
+		: 'incomplete';
+}
+
+function entitlementRenewalStateFromSubscription(status) {
+	if (status === 'active' || status === 'trialing') return 'active';
+	if (status === 'past_due') return 'past_due';
+	if (status === 'canceled') return 'canceled';
+	if (status === 'unpaid') return 'unpaid';
+	return 'pending';
+}
+
+function stripeTimestampToIso(value) {
+	if (!Number.isFinite(Number(value))) return null;
+	return new Date(Number(value) * 1000).toISOString();
+}
+
+function subscriptionClientSecret(subscription) {
+	return stripeClientSecret(subscription?.latest_invoice?.payment_intent?.client_secret)
+		?? stripeClientSecret(subscription?.latest_invoice?.payment_intent?.clientSecret);
+}
+
+function publicPaymentGroups(groups) {
+	return groups.map((group) => {
+		if (!group) return group;
+		const { clientSecretLast4: _clientSecretLast4, ...publicGroup } = group;
+		return publicGroup;
+	});
+}
+
+function buildCommerceCheckoutMetadata({ product, offer, price, vendor, ownership, environment }) {
+	return {
+		treeseed_environment: environment,
+		treeseed_vendor_id: vendor.id,
+		treeseed_seller_team_id: product.sellerTeamId,
+		treeseed_product_id: product.id,
+		treeseed_product_version_id: offer.productVersionId ?? product.currentVersionId ?? null,
+		treeseed_offer_id: offer.id,
+		treeseed_price_id: price?.id ?? null,
+		treeseed_price_version: price?.priceVersion ?? null,
+		treeseed_ownership_model: product.ownershipModel,
+		treeseed_ownership_record_id: ownership?.id ?? product.ownershipRecordId ?? null,
+		treeseed_object_authority: 'treeseed',
+		treeseed_checkout_phase: 'phase_5',
+	};
+}
+
+async function resolveCommerceCheckoutItem({ store, stripeConnectService, item }) {
+	const offerId = optionalTrimmedString(item?.offerId);
+	if (!offerId) throw commerceCheckoutError('offerId is required for checkout items.', 400);
+	const offer = await store.getCommerceOffer(offerId);
+	if (!offer) throw commerceCheckoutError(`Unknown commerce offer "${offerId}".`, 404);
+	if (!CHECKOUT_OFFER_MODES.has(offer.mode)) {
+		throw commerceCheckoutError(`Offer mode "${offer.mode}" is not supported by Phase 5 checkout.`, 409, { offerId, mode: offer.mode });
+	}
+	if (offer.status !== 'approved') throw commerceCheckoutError('Checkout requires an approved offer.', 409, { offerId, status: offer.status });
+	const product = await store.getCommerceProduct(offer.productId);
+	if (!product || product.status !== 'approved') {
+		throw commerceCheckoutError('Checkout requires an approved product.', 409, { offerId, productId: offer.productId });
+	}
+	const vendor = await store.getCommerceVendor(offer.vendorId);
+	if (!vendor || vendor.status !== 'approved' || vendor.salesEnabled !== true) {
+		throw commerceCheckoutError('Checkout requires an approved sales-enabled vendor.', 409, { vendorId: offer.vendorId });
+	}
+	const priceId = optionalTrimmedString(item?.priceId) ?? offer.activePriceId;
+	const price = priceId ? await store.getCommercePrice(priceId) : null;
+	if (CHECKOUT_COMMERCIAL_OFFER_MODES.has(offer.mode)) {
+		if (!price || price.offerId !== offer.id || price.status !== 'active') {
+			throw commerceCheckoutError('Commercial checkout requires an active TreeSeed price for the offer.', 409, { offerId, priceId });
+		}
+		if (price.stripeSyncStatus !== 'synced' || !price.stripePriceId) {
+			throw commerceCheckoutError('Commercial checkout requires a synced Stripe Price mirror.', 409, { offerId, priceId: price.id, stripeSyncStatus: price.stripeSyncStatus });
+		}
+	} else if (price && price.offerId !== offer.id) {
+		throw commerceCheckoutError('Checkout price must belong to the selected offer.', 400, { offerId, priceId: price.id });
+	}
+	const environment = stripeConnectService.environment ?? 'test';
+	const account = CHECKOUT_COMMERCIAL_OFFER_MODES.has(offer.mode)
+		? await store.getCommerceVendorStripeAccount(vendor.id, environment)
+		: null;
+	if (CHECKOUT_COMMERCIAL_OFFER_MODES.has(offer.mode) && (!account || account.accountStatus !== 'enabled')) {
+		throw commerceCheckoutError('Commercial checkout requires an enabled Stripe connected account.', 409, { vendorId: vendor.id });
+	}
+	const ownershipRecords = await store.listCommerceOwnershipRecords(product.id).catch(() => []);
+	const ownership = ownershipRecords.find((record) => record.id === product.ownershipRecordId) ?? ownershipRecords[0] ?? null;
+	const stewards = await store.listCommerceStewardshipAssignments(product.id).catch(() => []);
+	const ownershipSnapshot = {
+		capturedAt: new Date().toISOString(),
+		productId: product.id,
+		ownershipModel: product.ownershipModel,
+		ownershipRecord: ownership,
+		stewards: stewards.filter((assignment) => assignment.visibleToBuyers !== false),
+		sellerTeamId: product.sellerTeamId,
+		vendorId: vendor.id,
+	};
+	const quantity = normalizeCheckoutQuantity(item?.quantity);
+	const unitAmount = Number(price?.amount ?? 0);
+	return {
+		offer,
+		product,
+		vendor,
+		price,
+		account,
+		ownership,
+		ownershipSnapshot,
+		quantity,
+		unitAmount,
+		totalAmount: unitAmount * quantity,
+		currency: (price?.currency ?? 'usd').toLowerCase(),
+		productVersionId: offer.mode === 'one_time_current_version'
+			? (offer.productVersionId ?? product.currentVersionId ?? null)
+			: (offer.productVersionId ?? product.currentVersionId ?? null),
+		metadata: buildCommerceCheckoutMetadata({ product, offer, price, vendor, ownership, environment }),
+	};
+}
+
+function checkoutGroupKind(mode) {
+	if (mode === 'free') return 'free';
+	if (CHECKOUT_SUBSCRIPTION_OFFER_MODES.has(mode)) return 'subscription';
+	return 'one_time';
+}
+
+function checkoutGroupKey(item) {
+	const kind = checkoutGroupKind(item.offer.mode);
+	if (kind === 'subscription') return `${kind}:${item.vendor.id}:${item.currency}:${item.price?.billingInterval ?? 'month'}`;
+	return `${kind}:${item.vendor.id}:${item.currency}`;
+}
+
+function checkoutGroupStatus(groups) {
+	const completed = groups.filter((group) => group.status === 'succeeded').length;
+	if (completed === groups.length) return { status: 'completed', completed };
+	if (completed > 0) return { status: 'partially_confirmed', completed };
+	return { status: 'requires_confirmation', completed };
+}
+
+async function grantCommerceEntitlementsForOrder({ store, order, subscription = null, status = 'active', renewalState = 'none' }) {
+	const orderItems = await store.listCommerceOrderItems(order.id);
+	const entitlements = [];
+	for (const item of orderItems) {
+		const entitlement = await store.upsertCommerceEntitlementForOrderItem(item.id, {
+			buyerTeamId: order.buyerTeamId,
+			buyerUserId: order.buyerUserId,
+			sellerTeamId: item.sellerTeamId,
+			productId: item.productId,
+			productVersionId: item.productVersionId,
+			offerId: item.offerId,
+			orderId: order.id,
+			subscriptionId: subscription?.id ?? null,
+			status,
+			accessScope: item.accessScope,
+			renewalState,
+			fulfillmentArtifactRefs: item.metadata?.artifactRefs ?? [],
+			catalogItemId: item.metadata?.catalogItemId ?? null,
+			ownershipSnapshot: item.ownershipSnapshot,
+			metadata: {
+				mode: item.mode,
+				priceId: item.priceId,
+				preservePurchasedArtifacts: item.mode === 'subscription_updates',
+			},
+		});
+		await store.updateCommerceOrderItemStatus(item.id, {
+			status: status === 'active' ? 'paid' : 'pending',
+			entitlementId: entitlement.id,
+		});
+		entitlements.push(entitlement);
+	}
+	return entitlements;
+}
+
+async function requireSellerTeamAccess(c, store, teamId, permission = 'projects:read:team') {
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	if (principalIsSeedAdmin(auth.principal)) return auth;
+	const access = await requireTeamAccess(c, store, teamId, permission);
+	return access;
+}
+
+async function requireVendorOrderManager(c, store, order) {
+	if (!order?.sellerTeamId) return { response: jsonError(c, 404, 'Commerce order does not have a seller team.') };
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	if (principalIsSeedAdmin(auth.principal)) return auth;
+	const access = await requireTeamAccess(c, store, order.sellerTeamId, 'teams:manage:team');
+	return access;
+}
+
+async function requireServiceBuyerAccess(c, store, request) {
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	if (principalIsSeedAdmin(auth.principal)) return auth;
+	if (request?.buyerTeamId) {
+		const access = await requireTeamAccess(c, store, request.buyerTeamId, 'projects:read:team');
+		if (!access.response) return access;
+	}
+	if (request?.buyerUserId && request.buyerUserId === auth.principal.id) return auth;
+	return { response: jsonError(c, 403, 'Permission denied.', { requestId: request?.id ?? null }) };
+}
+
+async function requireServiceSellerAccess(c, store, request, permission = 'teams:manage:team') {
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	if (principalIsSeedAdmin(auth.principal)) return auth;
+	if (!request?.sellerTeamId) return { response: jsonError(c, 404, 'Commerce service request does not have a seller team.') };
+	return requireTeamAccess(c, store, request.sellerTeamId, permission);
+}
+
+async function requireServiceParticipantAccess(c, store, request, sellerPermission = 'projects:read:team') {
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	if (principalIsSeedAdmin(auth.principal)) return auth;
+	if (request?.sellerTeamId) {
+		const seller = await requireTeamAccess(c, store, request.sellerTeamId, sellerPermission);
+		if (!seller.response) return seller;
+	}
+	if (request?.buyerTeamId) {
+		const buyer = await requireTeamAccess(c, store, request.buyerTeamId, 'projects:read:team');
+		if (!buyer.response) return buyer;
+	}
+	if (request?.buyerUserId && request.buyerUserId === auth.principal.id) return auth;
+	return { response: jsonError(c, 403, 'Permission denied.', { requestId: request?.id ?? null }) };
+}
+
+function redactCommerceServiceRequestForBuyer(request) {
+	if (!request) return null;
+	const { vendorPrivateNotes: _vendorPrivateNotes, ...publicRequest } = request;
+	return publicRequest;
+}
+
+async function requireCommerceCapacityListingAccess(c, store, listingId, permission = 'projects:read:team') {
+	const listing = await store.getCommerceCapacityListing(listingId);
+	if (!listing) return { response: jsonError(c, 404, `Unknown commerce capacity listing "${listingId}".`) };
+	const auth = await ensurePrincipal(c);
+	if (auth.response) {
+		if (!permission && listing.status === 'approved' && listing.accessLevel === 'public_summary') {
+			return { principal: null, listing: await store.getCommerceCapacityListing(listingId, { publicSafe: true }) };
+		}
+		if (!permission) {
+			return { response: jsonError(c, 404, `Unknown commerce capacity listing "${listingId}".`) };
+		}
+		return auth;
+	}
+	if (principalIsSeedAdmin(auth.principal)) return { principal: auth.principal, listing };
+	const access = await requireTeamAccess(c, store, listing.sellerTeamId, permission);
+	if (!access.response) return { principal: auth.principal, listing };
+	if (!permission && listing.status === 'approved' && listing.accessLevel === 'public_summary') {
+		return { principal: auth.principal, listing: await store.getCommerceCapacityListing(listingId, { publicSafe: true }) };
+	}
+	return access;
+}
+
+async function requireCommerceCapacityInquiryAccess(c, store, inquiryId, permission = 'projects:read:team') {
+	const inquiry = await store.getCommerceCapacityListingInquiry(inquiryId);
+	if (!inquiry) return { response: jsonError(c, 404, `Unknown commerce capacity inquiry "${inquiryId}".`) };
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	if (principalIsSeedAdmin(auth.principal)) return { principal: auth.principal, inquiry };
+	const sellerAccess = await requireTeamAccess(c, store, inquiry.sellerTeamId, permission);
+	if (!sellerAccess.response) return { principal: auth.principal, inquiry };
+	if (inquiry.buyerTeamId) {
+		const buyerAccess = await requireTeamAccess(c, store, inquiry.buyerTeamId, 'projects:read:team');
+		if (!buyerAccess.response) return { principal: auth.principal, inquiry: { ...inquiry, governanceEvidence: {}, metadata: {} } };
+	}
+	if (inquiry.buyerUserId && inquiry.buyerUserId === auth.principal.id) {
+		return { principal: auth.principal, inquiry: { ...inquiry, governanceEvidence: {}, metadata: {} } };
+	}
+	return sellerAccess;
+}
+
+function remainingRefundableAmount(order, orderItem = null) {
+	const target = orderItem ?? order;
+	return Math.max(0, Number(target.totalAmount ?? 0) - Number(target.refundedAmount ?? 0));
+}
+
+function stripeRefundStatus(value) {
+	if (value === 'succeeded' || value === 'failed' || value === 'canceled') return value;
+	return 'processing';
+}
+
+async function applyCommerceRefundState({ store, order, orderItem = null, amount, fullRefund }) {
+	const nextOrderRefunded = Number(order.refundedAmount ?? 0) + Number(amount ?? 0);
+	const orderFullyRefunded = nextOrderRefunded >= Number(order.totalAmount ?? 0);
+	const updatedOrder = await store.markCommerceOrderRefundState(order.id, {
+		status: orderFullyRefunded ? 'refunded' : 'partially_refunded',
+		refundedAmount: nextOrderRefunded,
+		refundStatus: orderFullyRefunded ? 'full' : 'partial',
+		metadata: order.metadata,
+	});
+	const updatedItems = [];
+	if (orderItem) {
+		const nextItemRefunded = Number(orderItem.refundedAmount ?? 0) + Number(amount ?? 0);
+		const itemFullyRefunded = nextItemRefunded >= Number(orderItem.totalAmount ?? 0);
+		updatedItems.push(await store.markCommerceOrderItemRefundState(orderItem.id, {
+			status: itemFullyRefunded ? 'refunded' : orderItem.status,
+			refundedAmount: nextItemRefunded,
+			refundStatus: itemFullyRefunded ? 'full' : 'partial',
+			metadata: orderItem.metadata,
+		}));
+		if (itemFullyRefunded && orderItem.entitlementId) {
+			await store.revokeCommerceEntitlement(orderItem.entitlementId, {
+				action: 'commerce_entitlement.revoked',
+				renewalState: 'canceled',
+			});
+		}
+	} else if (fullRefund) {
+		for (const item of await store.listCommerceOrderItems(order.id)) {
+			updatedItems.push(await store.markCommerceOrderItemRefundState(item.id, {
+				status: 'refunded',
+				refundedAmount: item.totalAmount,
+				refundStatus: 'full',
+				metadata: item.metadata,
+			}));
+			if (item.entitlementId) {
+				await store.revokeCommerceEntitlement(item.entitlementId, {
+					action: 'commerce_entitlement.revoked',
+					renewalState: 'canceled',
+				});
+			}
+		}
+	}
+	return { order: updatedOrder, items: updatedItems };
+}
+
+async function resolveOrderItemForRefund(store, order, orderItemId) {
+	if (!orderItemId) return null;
+	const items = await store.listCommerceOrderItems(order.id);
+	const item = items.find((entry) => entry.id === orderItemId);
+	if (!item) {
+		const error = new Error('Refund order item does not belong to this order.');
+		error.status = 404;
+		throw error;
+	}
+	return item;
+}
+
+async function resolveFulfillmentArtifact({ store, orderItem, body }) {
+	const product = await store.getCommerceProduct(orderItem.productId);
+	const version = orderItem.productVersionId ? await store.getCommerceProductVersionById(orderItem.productVersionId) : null;
+	const catalogArtifactVersionId = optionalTrimmedString(body.catalogArtifactVersionId) ?? version?.catalogArtifactVersionId ?? null;
+	const artifact = catalogArtifactVersionId ? await store.getCatalogArtifactVersionById(catalogArtifactVersionId) : null;
+	const catalogItemId = product?.catalogItemId ?? artifact?.itemId ?? null;
+	const artifactRefs = Array.isArray(body.artifactRefs) ? body.artifactRefs.filter((entry) => entry && typeof entry === 'object') : [];
+	if (artifact) {
+		artifactRefs.push({
+			catalogArtifactVersionId: artifact.id,
+			itemId: artifact.itemId,
+			version: artifact.version,
+			contentKey: artifact.contentKey,
+		});
+	}
+	const deliveryRefs = artifact
+		? [{
+			type: 'catalog_artifact_download',
+			catalogItemId: artifact.itemId,
+			version: artifact.version,
+			path: `/v1/catalog/${encodeURIComponent(artifact.itemId)}/artifacts/${encodeURIComponent(artifact.version)}/download`,
+		}]
+		: artifactRefs;
+	return { product, version, artifact, catalogItemId, artifactRefs, deliveryRefs };
+}
+
+async function createCommerceCheckoutRun({ store, stripeConnectService, principal, input = {} }) {
+	const buyerTeamId = optionalTrimmedString(input.buyerTeamId) ?? null;
+	const buyerUserId = principal?.id ?? null;
+	let cart = null;
+	let rawItems = Array.isArray(input.items) ? input.items : [];
+	if (input.cartId) {
+		cart = await store.getCommerceCart(optionalTrimmedString(input.cartId));
+		if (!cart) throw commerceCheckoutError(`Unknown commerce cart "${input.cartId}".`, 404);
+		rawItems = (await store.listCommerceCartItems(cart.id)).filter((item) => item.status === 'active');
+	}
+	if (!rawItems.length) throw commerceCheckoutError('Checkout requires at least one item.', 400);
+	if (!cart) {
+		cart = await store.createCommerceCart(principal, { buyerTeamId, buyerUserId });
+		for (const item of rawItems) {
+			await store.addCommerceCartItem(cart.id, {
+				offerId: item.offerId,
+				priceId: item.priceId,
+				quantity: item.quantity,
+				actorId: buyerUserId,
+			});
+		}
+		rawItems = (await store.listCommerceCartItems(cart.id)).filter((item) => item.status === 'active');
+	}
+	const resolvedItems = [];
+	for (const item of rawItems) {
+		resolvedItems.push(await resolveCommerceCheckoutItem({ store, stripeConnectService, item }));
+	}
+	const groupMap = new Map();
+	for (const item of resolvedItems) {
+		const key = checkoutGroupKey(item);
+		if (!groupMap.has(key)) {
+			groupMap.set(key, {
+				key,
+				kind: checkoutGroupKind(item.offer.mode),
+				vendor: item.vendor,
+				account: item.account,
+				currency: item.currency,
+				billingInterval: CHECKOUT_SUBSCRIPTION_OFFER_MODES.has(item.offer.mode) ? item.price?.billingInterval ?? 'month' : null,
+				items: [],
+			});
+		}
+		groupMap.get(key).items.push(item);
+	}
+	const checkout = await store.createCommerceCheckout({
+		cartId: cart.id,
+		buyerTeamId: cart.buyerTeamId ?? buyerTeamId,
+		buyerUserId: cart.buyerUserId ?? buyerUserId,
+		status: 'requires_confirmation',
+		groupCount: groupMap.size,
+		actorId: buyerUserId,
+		metadata: { checkoutMode: 'stripe_elements_grouped_vendor' },
+	});
+	const orders = [];
+	const paymentGroups = [];
+	const entitlements = [];
+	for (const group of groupMap.values()) {
+		const subtotal = group.items.reduce((sum, item) => sum + item.totalAmount, 0);
+		const order = await store.createCommerceOrder({
+			checkoutId: checkout.id,
+			cartId: cart.id,
+			buyerTeamId: cart.buyerTeamId ?? buyerTeamId,
+			buyerUserId: cart.buyerUserId ?? buyerUserId,
+			vendorId: group.vendor.id,
+			sellerTeamId: group.vendor.teamId,
+			status: group.kind === 'free' ? 'paid' : 'pending_payment',
+			currency: group.currency,
+			subtotalAmount: subtotal,
+			totalAmount: subtotal,
+			stripeConnectedAccountId: group.account?.stripeAccountId ?? null,
+			ownershipSnapshot: {
+				capturedAt: new Date().toISOString(),
+				items: group.items.map((item) => item.ownershipSnapshot),
+			},
+			actorId: buyerUserId,
+			metadata: { checkoutId: checkout.id, groupKind: group.kind },
+		});
+		for (const item of group.items) {
+			await store.createCommerceOrderItem(order.id, {
+				vendorId: item.vendor.id,
+				sellerTeamId: item.product.sellerTeamId,
+				productId: item.product.id,
+				productVersionId: item.productVersionId,
+				offerId: item.offer.id,
+				priceId: item.price?.id ?? null,
+				mode: item.offer.mode,
+				quantity: item.quantity,
+				unitAmount: item.unitAmount,
+				totalAmount: item.totalAmount,
+				currency: item.currency,
+				status: group.kind === 'free' ? 'paid' : 'pending',
+				ownershipSnapshot: item.ownershipSnapshot,
+				accessScope: item.offer.accessScope ?? {},
+				supportScope: item.offer.supportScope ?? {},
+				metadata: {
+					catalogItemId: item.product.catalogItemId,
+					artifactRefs: item.productVersionId ? [{ productVersionId: item.productVersionId }] : [],
+					priceVersion: item.price?.priceVersion ?? null,
+				},
+			});
+		}
+		let paymentGroup = null;
+		if (group.kind === 'free') {
+			paymentGroup = await store.createCommercePaymentGroup({
+				checkoutId: checkout.id,
+				orderId: order.id,
+				vendorId: group.vendor.id,
+				sellerTeamId: group.vendor.teamId,
+				groupKind: 'free',
+				status: 'succeeded',
+				currency: group.currency,
+				subtotalAmount: 0,
+				totalAmount: 0,
+				actorId: buyerUserId,
+			});
+			entitlements.push(...await grantCommerceEntitlementsForOrder({ store, order, status: 'active', renewalState: 'none' }));
+		} else if (group.kind === 'one_time') {
+			if (!await stripeConnectService.isConfigured()) throw stripeConfiguredError();
+			const paymentIntent = await stripeConnectService.createPaymentIntent({
+				connectedAccountId: group.account.stripeAccountId,
+				params: {
+					amount: subtotal,
+					currency: group.currency,
+					automatic_payment_methods: { enabled: true },
+					metadata: {
+						treeseed_checkout_id: checkout.id,
+						treeseed_order_id: order.id,
+						treeseed_vendor_id: group.vendor.id,
+						treeseed_seller_team_id: group.vendor.teamId,
+						treeseed_object_authority: 'treeseed',
+						treeseed_checkout_phase: 'phase_5',
+					},
+				},
+			});
+			await store.updateCommerceOrderStatus(order.id, {
+				status: orderStatusFromPaymentGroup(paymentGroupStatusFromPaymentIntent(paymentIntent)),
+				stripePaymentIntentId: paymentIntent?.id ?? null,
+				stripeConnectedAccountId: group.account.stripeAccountId,
+			});
+			paymentGroup = await store.createCommercePaymentGroup({
+				checkoutId: checkout.id,
+				orderId: order.id,
+				vendorId: group.vendor.id,
+				sellerTeamId: group.vendor.teamId,
+				connectedAccountId: group.account.stripeAccountId,
+				groupKind: 'one_time',
+				status: paymentGroupStatusFromPaymentIntent(paymentIntent),
+				currency: group.currency,
+				subtotalAmount: subtotal,
+				totalAmount: subtotal,
+				stripePaymentIntentId: paymentIntent?.id ?? null,
+				clientSecret: stripeClientSecret(paymentIntent?.client_secret),
+				actorId: buyerUserId,
+			});
+		} else {
+			if (!await stripeConnectService.isConfigured()) throw stripeConfiguredError();
+			const customer = await ensureCommerceStripeCustomer({
+				store,
+				stripeConnectService,
+				group,
+				buyerTeamId: cart.buyerTeamId ?? buyerTeamId,
+				buyerUserId: cart.buyerUserId ?? buyerUserId,
+			});
+			const subscription = await stripeConnectService.createSubscription({
+				connectedAccountId: group.account.stripeAccountId,
+				params: {
+					customer: customer.stripeCustomerId,
+					items: group.items.map((item) => ({ price: item.price.stripePriceId, quantity: item.quantity })),
+					payment_behavior: 'default_incomplete',
+					payment_settings: { save_default_payment_method: 'on_subscription' },
+					expand: ['latest_invoice.payment_intent'],
+					metadata: {
+						treeseed_checkout_id: checkout.id,
+						treeseed_order_id: order.id,
+						treeseed_vendor_id: group.vendor.id,
+						treeseed_seller_team_id: group.vendor.teamId,
+						treeseed_object_authority: 'treeseed',
+						treeseed_checkout_phase: 'phase_5',
+					},
+				},
+			});
+			const firstItem = group.items[0];
+			const localSubscription = await store.createCommerceSubscription({
+				orderId: order.id,
+				vendorId: group.vendor.id,
+				sellerTeamId: group.vendor.teamId,
+				buyerTeamId: cart.buyerTeamId ?? buyerTeamId,
+				buyerUserId: cart.buyerUserId ?? buyerUserId,
+				offerId: firstItem.offer.id,
+				priceId: firstItem.price.id,
+				status: subscriptionStatusFromStripe(subscription),
+				renewalState: entitlementRenewalStateFromSubscription(subscriptionStatusFromStripe(subscription)),
+				stripeSubscriptionId: subscription.id,
+				stripeCustomerId: customer.stripeCustomerId,
+				stripeConnectedAccountId: group.account.stripeAccountId,
+				currentPeriodStart: stripeTimestampToIso(subscription.current_period_start),
+				currentPeriodEnd: stripeTimestampToIso(subscription.current_period_end),
+				cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
+				canceledAt: stripeTimestampToIso(subscription.canceled_at),
+				actorId: buyerUserId,
+			});
+			await store.updateCommerceOrderStatus(order.id, {
+				status: ['active', 'trialing'].includes(localSubscription.status) ? 'paid' : 'pending_payment',
+				stripeSubscriptionId: subscription.id,
+				stripeCustomerId: customer.stripeCustomerId,
+				stripeConnectedAccountId: group.account.stripeAccountId,
+			});
+			paymentGroup = await store.createCommercePaymentGroup({
+				checkoutId: checkout.id,
+				orderId: order.id,
+				vendorId: group.vendor.id,
+				sellerTeamId: group.vendor.teamId,
+				connectedAccountId: group.account.stripeAccountId,
+				groupKind: 'subscription',
+				billingInterval: group.billingInterval,
+				status: ['active', 'trialing'].includes(localSubscription.status) ? 'succeeded' : 'requires_confirmation',
+				currency: group.currency,
+				subtotalAmount: subtotal,
+				totalAmount: subtotal,
+				stripeSubscriptionId: subscription.id,
+				stripeCustomerId: customer.stripeCustomerId,
+				clientSecret: subscriptionClientSecret(subscription),
+				actorId: buyerUserId,
+			});
+			if (['active', 'trialing'].includes(localSubscription.status)) {
+				entitlements.push(...await grantCommerceEntitlementsForOrder({
+					store,
+					order: await store.getCommerceOrder(order.id),
+					subscription: localSubscription,
+					status: 'active',
+					renewalState: localSubscription.renewalState,
+				}));
+			}
+		}
+		orders.push(await store.getCommerceOrder(order.id));
+		paymentGroups.push(paymentGroup);
+	}
+	await store.markCommerceCartConverted(cart.id, checkout.id);
+	const status = checkoutGroupStatus(paymentGroups);
+	const finalCheckout = await store.updateCommerceCheckoutStatus(checkout.id, {
+		status: status.status,
+		completedGroupCount: status.completed,
+	});
+	return {
+		checkout: finalCheckout,
+		orders,
+		paymentGroups: publicPaymentGroups(paymentGroups),
+		entitlements,
+	};
+}
+
+async function createCommerceCheckoutRunForServiceContract({ store, stripeConnectService, principal, contractId, input = {} }) {
+	const contract = await store.getCommerceServiceContract(contractId);
+	if (!contract) throw commerceCheckoutError(`Unknown commerce service contract "${contractId}".`, 404);
+	if (contract.status !== 'pending_checkout') {
+		throw commerceCheckoutError('Scoped service contract checkout requires a pending checkout contract.', 409, { contractId, status: contract.status });
+	}
+	const request = await store.getCommerceServiceRequest(contract.requestId);
+	const quote = await store.getCommerceServiceQuote(contract.quoteId);
+	if (!request || !quote || quote.status !== 'accepted') {
+		throw commerceCheckoutError('Scoped service checkout requires an accepted quote.', 409, { contractId, quoteId: contract.quoteId });
+	}
+	const offer = await store.getCommerceOffer(contract.offerId);
+	const product = await store.getCommerceProduct(contract.productId);
+	const vendor = await store.getCommerceVendor(contract.vendorId);
+	if (!offer || offer.status !== 'approved' || offer.mode !== 'scoped_contract') {
+		throw commerceCheckoutError('Scoped service checkout requires an approved scoped contract offer.', 409, { offerId: contract.offerId });
+	}
+	if (!product || product.status !== 'approved' || product.kind !== 'scoped_service') {
+		throw commerceCheckoutError('Scoped service checkout requires an approved scoped service product.', 409, { productId: contract.productId });
+	}
+	if (!vendor || vendor.status !== 'approved' || vendor.serviceSalesEnabled !== true) {
+		throw commerceCheckoutError('Scoped service checkout requires an approved service-enabled vendor.', 409, { vendorId: contract.vendorId });
+	}
+	const environment = stripeConnectService.environment ?? 'test';
+	const account = await store.getCommerceVendorStripeAccount(vendor.id, environment);
+	if (!account || account.accountStatus !== 'enabled') {
+		throw commerceCheckoutError('Scoped service checkout requires an enabled Stripe connected account.', 409, { vendorId: vendor.id });
+	}
+	if (!await stripeConnectService.isConfigured()) throw stripeConfiguredError();
+	const buyerTeamId = request.buyerTeamId ?? input.buyerTeamId ?? null;
+	const buyerUserId = request.buyerUserId ?? principal?.id ?? null;
+	const cart = await store.createCommerceCart(principal, {
+		buyerTeamId,
+		buyerUserId,
+		currency: quote.currency,
+		metadata: { serviceRequestId: request.id, serviceContractId: contract.id },
+	});
+	const checkout = await store.createCommerceCheckout({
+		cartId: cart.id,
+		buyerTeamId,
+		buyerUserId,
+		status: 'requires_confirmation',
+		groupCount: 1,
+		actorId: principal?.id ?? null,
+		metadata: { checkoutMode: 'stripe_elements_grouped_vendor', serviceRequestId: request.id, serviceContractId: contract.id },
+	});
+	const order = await store.createCommerceOrder({
+		checkoutId: checkout.id,
+		cartId: cart.id,
+		buyerTeamId,
+		buyerUserId,
+		vendorId: vendor.id,
+		sellerTeamId: vendor.teamId,
+		status: 'pending_payment',
+		currency: quote.currency,
+		subtotalAmount: quote.amount,
+		totalAmount: quote.amount,
+		stripeConnectedAccountId: account.stripeAccountId,
+		ownershipSnapshot: contract.ownershipSnapshot ?? request.ownershipSnapshot ?? {},
+		actorId: principal?.id ?? null,
+		metadata: {
+			checkoutId: checkout.id,
+			groupKind: 'one_time',
+			serviceRequestId: request.id,
+			serviceQuoteId: quote.id,
+			serviceContractId: contract.id,
+		},
+	});
+	const orderItem = await store.createCommerceOrderItem(order.id, {
+		vendorId: vendor.id,
+		sellerTeamId: vendor.teamId,
+		productId: product.id,
+		productVersionId: offer.productVersionId ?? product.currentVersionId ?? null,
+		offerId: offer.id,
+		priceId: null,
+		mode: 'scoped_contract',
+		quantity: 1,
+		unitAmount: quote.amount,
+		totalAmount: quote.amount,
+		currency: quote.currency,
+		status: 'pending',
+		ownershipSnapshot: contract.ownershipSnapshot ?? request.ownershipSnapshot ?? {},
+		accessScope: {
+			...(offer.accessScope ?? {}),
+			serviceRequestId: request.id,
+			serviceQuoteId: quote.id,
+			serviceContractId: contract.id,
+			scopeSummary: quote.scopeSummary,
+			accessRequirements: quote.accessRequirements,
+		},
+		supportScope: offer.supportScope ?? {},
+		metadata: {
+			catalogItemId: product.catalogItemId,
+			serviceRequestId: request.id,
+			serviceQuoteId: quote.id,
+			serviceContractId: contract.id,
+			quoteVersion: quote.quoteVersion,
+		},
+	});
+	const paymentIntent = await stripeConnectService.createPaymentIntent({
+		connectedAccountId: account.stripeAccountId,
+		params: {
+			amount: quote.amount,
+			currency: quote.currency,
+			automatic_payment_methods: { enabled: true },
+			metadata: {
+				treeseed_checkout_id: checkout.id,
+				treeseed_order_id: order.id,
+				treeseed_order_item_id: orderItem.id,
+				treeseed_vendor_id: vendor.id,
+				treeseed_seller_team_id: vendor.teamId,
+				treeseed_product_id: product.id,
+				treeseed_offer_id: offer.id,
+				treeseed_service_request_id: request.id,
+				treeseed_service_quote_id: quote.id,
+				treeseed_service_contract_id: contract.id,
+				treeseed_object_authority: 'treeseed',
+				treeseed_checkout_phase: 'phase_8_scoped_service',
+			},
+		},
+	});
+	const paymentGroup = await store.createCommercePaymentGroup({
+		checkoutId: checkout.id,
+		orderId: order.id,
+		vendorId: vendor.id,
+		sellerTeamId: vendor.teamId,
+		connectedAccountId: account.stripeAccountId,
+		groupKind: 'one_time',
+		status: paymentGroupStatusFromPaymentIntent(paymentIntent),
+		currency: quote.currency,
+		subtotalAmount: quote.amount,
+		totalAmount: quote.amount,
+		stripePaymentIntentId: paymentIntent?.id ?? null,
+		clientSecret: stripeClientSecret(paymentIntent?.client_secret),
+		metadata: { serviceRequestId: request.id, serviceQuoteId: quote.id, serviceContractId: contract.id },
+		actorId: principal?.id ?? null,
+	});
+	await store.updateCommerceOrderStatus(order.id, {
+		status: orderStatusFromPaymentGroup(paymentGroup.status),
+		stripePaymentIntentId: paymentIntent?.id ?? null,
+		stripeConnectedAccountId: account.stripeAccountId,
+	});
+	await store.attachCommerceServiceOrder(contract.id, {
+		orderId: order.id,
+		orderItemId: orderItem.id,
+		paymentGroupId: paymentGroup.id,
+		actorType: 'user',
+		actorId: principal?.id ?? null,
+	});
+	await store.markCommerceCartConverted(cart.id, checkout.id);
+	return {
+		checkout: await store.getCommerceCheckout(checkout.id),
+		orders: [await store.getCommerceOrder(order.id)],
+		paymentGroups: publicPaymentGroups([paymentGroup]),
+		entitlements: [],
+	};
+}
+
+async function ensureCommerceStripeCustomer({ store, stripeConnectService, group, buyerTeamId, buyerUserId }) {
+	const environment = stripeConnectService.environment ?? 'test';
+	const existing = await store.getCommerceBuyerStripeCustomer({
+		vendorId: group.vendor.id,
+		environment,
+		buyerTeamId,
+		buyerUserId,
+	});
+	if (existing) return existing;
+	const customer = await stripeConnectService.createCustomer({
+		connectedAccountId: group.account.stripeAccountId,
+		params: {
+			metadata: {
+				treeseed_vendor_id: group.vendor.id,
+				treeseed_buyer_team_id: buyerTeamId ?? '',
+				treeseed_buyer_user_id: buyerUserId ?? '',
+				treeseed_environment: environment,
+			},
+		},
+	});
+	return store.upsertCommerceBuyerStripeCustomer({
+		buyerTeamId,
+		buyerUserId,
+		vendorId: group.vendor.id,
+		connectedAccountId: group.account.stripeAccountId,
+		environment,
+		stripeCustomerId: customer.id,
+		metadata: { provider: 'stripe' },
+	});
+}
+
+async function refreshCommercePaymentGroupState({ store, stripeConnectService, group }) {
+	if (!group) throw commerceCheckoutError('Unknown commerce payment group.', 404);
+	const order = await store.getCommerceOrder(group.orderId);
+	if (!order) throw commerceCheckoutError('Unknown commerce order for payment group.', 404);
+	if (group.groupKind === 'free') {
+		return {
+			group,
+			order,
+			entitlements: await grantCommerceEntitlementsForOrder({ store, order, status: 'active', renewalState: 'none' }),
+		};
+	}
+	if (!group.connectedAccountId) throw commerceCheckoutError('Payment group is missing a Stripe connected account.', 409);
+	if (group.stripePaymentIntentId) {
+		const paymentIntent = await stripeConnectService.retrievePaymentIntent({
+			connectedAccountId: group.connectedAccountId,
+			paymentIntentId: group.stripePaymentIntentId,
+		});
+		const status = paymentGroupStatusFromPaymentIntent(paymentIntent);
+		const updatedGroup = await store.updateCommercePaymentGroup(group.id, { status });
+		const updatedOrder = await store.updateCommerceOrderStatus(order.id, { status: orderStatusFromPaymentGroup(status) });
+		let entitlements = [];
+		if (status === 'succeeded') {
+			entitlements = await grantCommerceEntitlementsForOrder({ store, order: updatedOrder, status: 'active', renewalState: 'none' });
+		}
+		return {
+			group: updatedGroup,
+			order: updatedOrder,
+			entitlements,
+			clientSecret: ['requires_confirmation', 'requires_action', 'processing', 'pending'].includes(status)
+				? stripeClientSecret(paymentIntent?.client_secret ?? paymentIntent?.clientSecret)
+				: null,
+		};
+	}
+	if (group.stripeSubscriptionId) {
+		const subscription = await stripeConnectService.retrieveSubscription({
+			connectedAccountId: group.connectedAccountId,
+			subscriptionId: group.stripeSubscriptionId,
+		});
+		const localSubscription = await syncCommerceSubscriptionFromStripe({
+			store,
+			order,
+			group,
+			subscription,
+			connectedAccountId: group.connectedAccountId,
+		});
+		const status = ['active', 'trialing'].includes(localSubscription.status) ? 'succeeded' : 'requires_confirmation';
+		const updatedGroup = await store.updateCommercePaymentGroup(group.id, { status });
+		const updatedOrder = await store.updateCommerceOrderStatus(order.id, {
+			status: status === 'succeeded' ? 'paid' : 'pending_payment',
+			stripeSubscriptionId: group.stripeSubscriptionId,
+		});
+		let entitlements = [];
+		if (status === 'succeeded') {
+			entitlements = await grantCommerceEntitlementsForOrder({
+				store,
+				order: updatedOrder,
+				subscription: localSubscription,
+				status: 'active',
+				renewalState: localSubscription.renewalState,
+			});
+		}
+		return {
+			group: updatedGroup,
+			order: updatedOrder,
+			subscription: localSubscription,
+			entitlements,
+			clientSecret: status === 'requires_confirmation' ? subscriptionClientSecret(subscription) : null,
+		};
+	}
+	return { group, order, entitlements: [], clientSecret: null };
+}
+
+async function updateCheckoutCompletionFromGroup(store, group) {
+	if (!group?.checkoutId) return null;
+	const checkout = await store.getCommerceCheckout(group.checkoutId);
+	if (!checkout) return null;
+	const groups = await Promise.all((await store.listCommerceCheckoutOrders(checkout.id)).map(async (order) => {
+		const orderGroups = await store.all?.(`SELECT * FROM commerce_payment_groups WHERE order_id = ?`, [order.id]).catch(() => []);
+		return orderGroups.map((row) => ({
+			status: row.status,
+		}));
+	}));
+	const flattened = groups.flat();
+	if (!flattened.length) return checkout;
+	const status = checkoutGroupStatus(flattened);
+	return store.updateCommerceCheckoutStatus(checkout.id, {
+		status: status.status,
+		completedGroupCount: status.completed,
+	});
+}
+
+async function syncCommerceSubscriptionFromStripe({ store, order, group, subscription, connectedAccountId }) {
+	const status = subscriptionStatusFromStripe(subscription);
+	const existing = await store.getCommerceSubscriptionByStripeId(subscription.id, connectedAccountId);
+	const firstItem = (await store.listCommerceOrderItems(order.id))[0] ?? null;
+	const input = {
+		orderId: order.id,
+		vendorId: order.vendorId,
+		sellerTeamId: order.sellerTeamId,
+		buyerTeamId: order.buyerTeamId,
+		buyerUserId: order.buyerUserId,
+		offerId: firstItem?.offerId ?? null,
+		priceId: firstItem?.priceId ?? null,
+		status,
+		renewalState: entitlementRenewalStateFromSubscription(status),
+		stripeSubscriptionId: subscription.id,
+		stripeCustomerId: subscription.customer ?? group?.stripeCustomerId ?? order.stripeCustomerId ?? null,
+		stripeConnectedAccountId: connectedAccountId,
+		currentPeriodStart: stripeTimestampToIso(subscription.current_period_start),
+		currentPeriodEnd: stripeTimestampToIso(subscription.current_period_end),
+		cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
+		canceledAt: stripeTimestampToIso(subscription.canceled_at),
+		metadata: { stripeStatus: status },
+	};
+	if (existing) return store.updateCommerceSubscriptionFromStripe(existing.id, input);
+	return store.createCommerceSubscription(input);
+}
+
+async function handleCommercePaymentIntentWebhook({ store, event, object, connectedAccountId }) {
+	const group = await store.getCommercePaymentGroupByStripePaymentIntent(object.id, connectedAccountId);
+	if (!group) return { ignored: true, reason: 'No payment group found for PaymentIntent.' };
+	const order = await store.getCommerceOrder(group.orderId);
+	if (!order) return { ignored: true, reason: 'No order found for PaymentIntent payment group.' };
+	let groupStatus = paymentGroupStatusFromPaymentIntent(object);
+	if (event.type === 'payment_intent.payment_failed') groupStatus = 'failed';
+	if (event.type === 'payment_intent.canceled') groupStatus = 'canceled';
+	const updatedGroup = await store.updateCommercePaymentGroup(group.id, { status: groupStatus });
+	const orderStatus = orderStatusFromPaymentGroup(groupStatus);
+	const updatedOrder = await store.updateCommerceOrderStatus(order.id, { status: orderStatus });
+	if (groupStatus === 'succeeded') {
+		const entitlements = await grantCommerceEntitlementsForOrder({ store, order: updatedOrder, status: 'active', renewalState: 'none' });
+		const serviceContractId = object?.metadata?.treeseed_service_contract_id ?? group.metadata?.serviceContractId ?? order.metadata?.serviceContractId ?? null;
+		if (serviceContractId) {
+			const entitlement = entitlements[0] ?? null;
+			await store.activateCommerceServiceContract(serviceContractId, {
+				orderId: order.id,
+				entitlementId: entitlement?.id ?? null,
+				actorType: 'system',
+				evidence: {
+					stripePaymentIntentId: object.id,
+					connectedAccountId,
+				},
+			});
+		}
+	} else if (['failed', 'canceled'].includes(groupStatus)) {
+		const serviceContractId = object?.metadata?.treeseed_service_contract_id ?? group.metadata?.serviceContractId ?? order.metadata?.serviceContractId ?? null;
+		if (serviceContractId) {
+			const contract = await store.getCommerceServiceContract(serviceContractId);
+			if (contract) {
+				await store.recordCommerceServiceGovernance({
+					requestId: contract.requestId,
+					quoteId: contract.quoteId,
+					contractId: contract.id,
+					eventType: groupStatus === 'failed' ? 'manual_update' : 'canceled',
+					action: groupStatus === 'failed' ? 'commerce_service.checkout_failed' : 'commerce_service.checkout_canceled',
+					objectType: 'commerce_service_contract',
+					objectId: contract.id,
+					actorType: 'system',
+					priorState: contract.status,
+					nextState: contract.status,
+					evidence: {
+						stripePaymentIntentId: object.id,
+						connectedAccountId,
+						groupStatus,
+					},
+					relatedOrderId: order.id,
+					relatedOfferId: contract.offerId,
+					relatedProductId: contract.productId,
+					relatedTeamId: contract.sellerTeamId,
+				});
+			}
+		}
+	}
+	await updateCheckoutCompletionFromGroup(store, updatedGroup);
+	return { relatedOrderId: order.id };
+}
+
+async function handleCommerceSubscriptionWebhook({ store, event, object, connectedAccountId }) {
+	const group = await store.getCommercePaymentGroupByStripeSubscription(object.id, connectedAccountId);
+	const existingSubscription = await store.getCommerceSubscriptionByStripeId(object.id, connectedAccountId);
+	const order = group ? await store.getCommerceOrder(group.orderId) : (existingSubscription ? await store.getCommerceOrder(existingSubscription.orderId) : null);
+	if (!order) return { ignored: true, reason: 'No order found for Stripe subscription.' };
+	const subscription = await syncCommerceSubscriptionFromStripe({ store, order, group, subscription: object, connectedAccountId });
+	const status = subscription.status;
+	const renewalState = subscription.renewalState;
+	if (['active', 'trialing'].includes(status)) {
+		await store.updateCommerceOrderStatus(order.id, { status: 'paid', stripeSubscriptionId: object.id });
+		await grantCommerceEntitlementsForOrder({ store, order, subscription, status: 'active', renewalState });
+		if (group) await store.updateCommercePaymentGroup(group.id, { status: 'succeeded' });
+	} else if (['past_due', 'unpaid'].includes(status)) {
+		await store.updateCommerceOrderStatus(order.id, { status: 'requires_action', stripeSubscriptionId: object.id });
+		await store.updateEntitlementsForSubscription(subscription.id, { status: 'past_due', renewalState });
+		if (group) await store.updateCommercePaymentGroup(group.id, { status: 'requires_action' });
+	} else if (event.type === 'customer.subscription.deleted' || status === 'canceled') {
+		await store.updateEntitlementsForSubscription(subscription.id, {
+			status: 'canceled',
+			renewalState: 'canceled',
+			metadata: { preservePurchasedArtifacts: true },
+		});
+		if (group) await store.updateCommercePaymentGroup(group.id, { status: 'canceled' });
+	}
+	if (group) await updateCheckoutCompletionFromGroup(store, group);
+	return { relatedOrderId: order.id, relatedSubscriptionId: subscription.id };
+}
+
+async function handleCommerceInvoiceWebhook({ store, stripeConnectService, event, object, connectedAccountId }) {
+	const stripeSubscriptionId = optionalTrimmedString(object.subscription);
+	if (!stripeSubscriptionId) return { ignored: true, reason: 'Invoice is not linked to a subscription.' };
+	let subscriptionObject = null;
+	if (await stripeConnectService.isConfigured()) {
+		subscriptionObject = await stripeConnectService.retrieveSubscription({ connectedAccountId, subscriptionId: stripeSubscriptionId });
+	}
+	const subscription = await store.getCommerceSubscriptionByStripeId(stripeSubscriptionId, connectedAccountId);
+	if (!subscription) return { ignored: true, reason: 'No local subscription found for invoice.' };
+	if (subscriptionObject) {
+		const order = await store.getCommerceOrder(subscription.orderId);
+		const synced = await syncCommerceSubscriptionFromStripe({ store, order, group: null, subscription: subscriptionObject, connectedAccountId });
+		if (event.type === 'invoice.payment_succeeded') {
+			await store.updateEntitlementsForSubscription(synced.id, { status: 'active', renewalState: 'active' });
+		}
+		if (event.type === 'invoice.payment_failed') {
+			await store.updateEntitlementsForSubscription(synced.id, { status: 'past_due', renewalState: 'past_due' });
+		}
+		return { relatedOrderId: synced.orderId, relatedSubscriptionId: synced.id };
+	}
+	await store.updateEntitlementsForSubscription(subscription.id, {
+		status: event.type === 'invoice.payment_succeeded' ? 'active' : 'past_due',
+		renewalState: event.type === 'invoice.payment_succeeded' ? 'active' : 'past_due',
+	});
+	return { relatedOrderId: subscription.orderId, relatedSubscriptionId: subscription.id };
+}
+
+async function processCommerceStripeWebhook({ store, stripeConnectService, event }) {
+	const object = event?.data?.object ?? {};
+	const connectedAccountId = optionalTrimmedString(event?.account) ?? optionalTrimmedString(event?.context) ?? null;
+	if (['payment_intent.succeeded', 'payment_intent.payment_failed', 'payment_intent.canceled'].includes(event.type)) {
+		return handleCommercePaymentIntentWebhook({ store, event, object, connectedAccountId });
+	}
+	if (['customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type)) {
+		return handleCommerceSubscriptionWebhook({ store, event, object, connectedAccountId });
+	}
+	if (['invoice.payment_succeeded', 'invoice.payment_failed'].includes(event.type)) {
+		return handleCommerceInvoiceWebhook({ store, stripeConnectService, event, object, connectedAccountId });
+	}
+	return { ignored: true, reason: `Unhandled Stripe event type "${event.type}".` };
+}
+
+async function requireCommerceProductAccess(c, store, productId, permission = null) {
+	const product = await store.getCommerceProduct(productId);
+	if (!product) {
+		return {
+			response: jsonError(c, 404, `Unknown commerce product "${productId}".`),
+		};
+	}
+	if (!permission && product.visibility === 'public' && product.status === 'approved') {
+		return {
+			principal: c.get('principal') ?? null,
+			product,
+		};
+	}
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	if (permission) {
+		const access = await requireTeamAccess(c, store, product.sellerTeamId, permission);
+		if (access.response) return access;
+		return {
+			principal: access.principal,
+			product,
+		};
+	}
+	const teamIds = await store.teamIdsForPrincipal(auth.principal).catch(() => []);
+	if (product.visibility === 'public' && product.status === 'approved') {
+		return {
+			principal: auth.principal,
+			product,
+		};
+	}
+	if (principalIsSeedAdmin(auth.principal) || teamIds.includes(product.sellerTeamId)) {
+		return {
+			principal: auth.principal,
+			product,
+		};
+	}
+	return {
+		response: jsonError(c, 404, `Unknown commerce product "${productId}".`),
+	};
+}
+
+async function principalCanManageCommerceProduct(store, principal, product) {
+	if (!principal) return false;
+	if (principalIsSeedAdmin(principal)) return true;
+	const teamIds = await store.teamIdsForPrincipal(principal).catch(() => []);
+	return teamIds.includes(product.sellerTeamId);
+}
+
+function redactCommerceOwnershipWorkflow(workflow) {
+	if (!workflow) return null;
+	return {
+		productId: workflow.productId,
+		currentOwnershipRecord: workflow.currentOwnershipRecord?.buyerVisible ? workflow.currentOwnershipRecord : null,
+		buyerVisibleOwnershipRecords: workflow.buyerVisibleOwnershipRecords ?? [],
+		stewardshipAssignments: (workflow.stewardshipAssignments ?? []).filter((assignment) => assignment.visibleToBuyers),
+		contributions: (workflow.contributions ?? []).filter((contribution) => ['public', 'buyer'].includes(contribution.attributionVisibility)),
+		governancePolicies: (workflow.governancePolicies ?? []).map((policy) => ({
+			id: policy.id,
+			productId: policy.productId,
+			teamId: policy.teamId,
+			policyKind: policy.policyKind,
+			title: policy.title,
+			buyerVisibleSummary: policy.buyerVisibleSummary,
+			status: policy.status,
+			createdAt: policy.createdAt,
+			updatedAt: policy.updatedAt,
+		})),
+		pendingTransfers: [],
+		successionEvents: [],
+	};
+}
+
+async function requireCommerceOfferAccess(c, store, offerId, permission = null) {
+	const auth = await ensurePrincipal(c);
+	if (auth.response) return auth;
+	const offer = await store.getCommerceOffer(offerId);
+	if (!offer) {
+		return {
+			response: jsonError(c, 404, `Unknown commerce offer "${offerId}".`),
+		};
+	}
+	if (permission) {
+		const access = await requireTeamAccess(c, store, offer.sellerTeamId, permission);
+		if (access.response) return access;
+		return {
+			principal: access.principal,
+			offer,
+		};
+	}
+	return {
+		principal: auth.principal,
+		offer,
+	};
+}
+
 async function requireCatalogItemAccess(c, store, itemId, permission = null) {
 	const auth = await ensurePrincipal(c);
 	if (auth.response) {
@@ -5349,6 +6946,10 @@ export function createApiApp(options = {}): Hono {
 			...(options.runtimeProviders ?? {}),
 		};
 	const logRequests = shouldLogApiRequests(config, options);
+	const stripeConnectService = options.stripeConnectService ?? createStripeConnectService({
+		config,
+		environment: resolveStripeEnvironment(config),
+	});
 
 	return createTreeseedApiApp({
 		...options,
@@ -6257,11 +7858,16 @@ export function createApiApp(options = {}): Hono {
 				const password = String(body.password ?? '');
 				const displayName = String(body.displayName ?? body.name ?? email).trim();
 				const returnTo = sanitizedReturnTo(body.returnTo);
+				const inviteToken = String(body.inviteToken ?? '').trim();
 				const appearance = normalizeAppearancePreference(body.appearance && typeof body.appearance === 'object' ? body.appearance : body);
 				const usernameValidation = validatePublicUsername(username);
 				if (!email || !email.includes('@')) return jsonError(c, 400, 'A valid email is required.');
 				if (!usernameValidation.ok) return jsonError(c, 400, usernameValidation.message);
 				if (!validateMarketPassword(password)) return jsonError(c, 400, 'Password must be at least 12 characters.');
+				const inviteProof = inviteToken ? await store.getPendingTeamInviteByToken(inviteToken) : null;
+				if (inviteToken && (!inviteProof?.ok || String(inviteProof.invite?.email ?? '').trim().toLowerCase() !== email)) {
+					return jsonError(c, 400, 'Team invite does not match this registration email.', { code: 'invite_email_mismatch' });
+				}
 				const existingEmailCredential = await store.first(
 					`SELECT user_id FROM market_auth_credentials WHERE email = ? LIMIT 1`,
 					[email],
@@ -6285,7 +7891,7 @@ export function createApiApp(options = {}): Hono {
 					provider: 'credential',
 					providerSubject: email,
 					email,
-					emailVerified: false,
+					emailVerified: Boolean(inviteProof?.ok),
 					username,
 					displayName,
 					profile: {
@@ -6304,16 +7910,29 @@ export function createApiApp(options = {}): Hono {
 				const now = new Date().toISOString();
 				await store.run(
 					`INSERT INTO market_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
-					 VALUES (?, ?, ?, ?, 'pending_email_confirmation', ?, ?)`,
-					[synced.principal.id, email, username, hashMarketPassword(password), now, now],
+					 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+					[synced.principal.id, email, username, hashMarketPassword(password), inviteProof?.ok ? 'active' : 'pending_email_confirmation', now, now],
 				);
 				const emailAddressId = randomUUID();
 				await store.run(
 					`INSERT INTO user_email_addresses (
 						id, user_id, email, normalized_email, status, is_primary, verification_requested_at, verified_at, created_at, updated_at
-					) VALUES (?, ?, ?, ?, 'pending', 1, NULL, NULL, ?, ?)`,
-					[emailAddressId, synced.principal.id, email, email, now, now],
+					) VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, ?)`,
+					[emailAddressId, synced.principal.id, email, email, inviteProof?.ok ? 'verified' : 'pending', inviteProof?.ok ? now : null, now, now],
 				);
+				if (inviteProof?.ok) {
+					const personalTeam = await store.ensurePersonalResearchTeamForUser(synced.principal.id);
+					if (!personalTeam.ok) {
+						return jsonError(c, personalTeam.code === 'namespace_conflict' ? 409 : 400, personalTeam.message, { code: personalTeam.code });
+					}
+					await setPrimaryEmailAddress(store, synced.principal.id, emailAddressId);
+					const inviteAcceptance = await store.acceptTeamInvite(inviteToken, synced.principal.id);
+					if (!inviteAcceptance.ok) {
+						return jsonError(c, inviteAcceptance.code === 'email_mismatch' ? 400 : 409, inviteAcceptance.message, { code: inviteAcceptance.code });
+					}
+					const session = await createMarketWebSession(runtimeMarketAuthProvider, synced.principal.id, webSessionData(c, 'team_invite_registration'), { store, authSecret: runtime.resolved.config.authSecret });
+					return c.json({ ok: true, payload: webAuthPayload(session) });
+				}
 				let confirmation;
 				try {
 					confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c), {
@@ -6335,6 +7954,12 @@ export function createApiApp(options = {}): Hono {
 						...(shouldExposeNonProductionAuthDiagnostics(c, runtime) ? { detail: authEmailDeliveryFailureDetail(error) } : {}),
 					});
 				}
+				await store.ensureCommonsParticipantForPrincipal(synced.principal, {
+					displayName,
+					metadata: { registrationSource: 'web_sign_up' },
+				}).catch((error) => {
+					console.warn('[commons] Participant enrollment after sign-up failed:', error instanceof Error ? error.message : String(error));
+				});
 				return c.json({
 					ok: true,
 					payload: {
@@ -7190,6 +8815,28 @@ export function createApiApp(options = {}): Hono {
 				return c.json(result, result.ok ? 200 : 400);
 			});
 
+			app.get('/v1/team-invites/:token', async (c) => {
+				const result = await store.getTeamInviteByToken(c.req.param('token'));
+				if (!result.ok) return c.json(result, 404);
+				return c.json({
+					ok: true,
+					payload: {
+						invite: {
+							id: result.invite.id,
+							email: result.invite.email,
+							roleKey: result.invite.roleKey,
+							status: result.invite.status,
+							expiresAt: result.invite.expiresAt,
+						},
+						team: result.team ? {
+							id: result.team.id,
+							name: result.team.name,
+							displayName: result.team.displayName,
+						} : null,
+					},
+				});
+			});
+
 			app.get('/v1/teams/:teamId/home', async (c) => {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 				if (access.response) return access.response;
@@ -7315,6 +8962,24 @@ export function createApiApp(options = {}): Hono {
 					roleKey: body.roleKey ?? body.role,
 					invitedByUserId: access.principal.id,
 				});
+				if (result.ok && result.invite && result.token) {
+					try {
+						const team = await store.getTeam(c.req.param('teamId'));
+						await sendTeamInviteEmail(marketAuthContext(c), {
+							invite: result.invite,
+							team,
+							token: result.token,
+						});
+					} catch (error) {
+						console.warn('[team-invite] Email delivery failed:', error instanceof Error ? error.message : String(error));
+						const reason = authEmailDeliveryFailureReason(error);
+						return jsonError(c, 503, 'Team invite email could not be sent. Please try again shortly.', {
+							code: 'team_invite_delivery_failed',
+							reason,
+							...(shouldExposeNonProductionAuthDiagnostics(c, runtime) ? { detail: authEmailDeliveryFailureDetail(error) } : {}),
+						});
+					}
+				}
 				return c.json(result, result.ok ? 200 : 400);
 			});
 
@@ -12270,6 +13935,297 @@ export function createApiApp(options = {}): Hono {
 				return c.json({ ok: true, payload: decided });
 			});
 
+			async function requireCommonsSteward(c) {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth;
+				if (principalIsSeedAdmin(auth.principal)) return auth;
+				const team = await store.ensureCommonsTreeSeedTeam();
+				const access = await requireTeamAccess(c, store, team.id, 'teams:manage:team');
+				return access.response ? access : auth;
+			}
+
+			function commonsErrorResponse(c, error) {
+				const status = Number(error?.status ?? 400);
+				return jsonError(c, Number.isInteger(status) && status >= 400 ? status : 400, error instanceof Error ? error.message : String(error));
+			}
+
+			app.get('/v1/commons/summary', async (c) => {
+				return c.json({ ok: true, payload: await store.commonsSummary(c.get('principal') ?? null) });
+			});
+
+			app.get('/v1/commons/participants/me', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				try {
+					return c.json({ ok: true, payload: await store.ensureCommonsParticipantForPrincipal(auth.principal) });
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commons/participants', async (c) => {
+				const steward = await requireCommonsSteward(c);
+				if (steward.response) return steward.response;
+				return c.json({ ok: true, payload: await store.listCommonsParticipants({
+					status: optionalTrimmedString(c.req.query('status')),
+					limit: c.req.query('limit'),
+				}) });
+			});
+
+			app.post('/v1/commons/participants/backfill', async (c) => {
+				const steward = await requireCommonsSteward(c);
+				if (steward.response) return steward.response;
+				const users = await store.all(`SELECT * FROM users ORDER BY created_at ASC`);
+				const participants = [];
+				for (const user of users) {
+					participants.push(await store.ensureCommonsParticipantForPrincipal({
+						id: user.id,
+						displayName: user.display_name,
+						email: user.email,
+						roles: [],
+						permissions: [],
+						metadata: parseJsonObject(user.metadata_json, {}),
+					}, { metadata: { registrationSource: 'backfill' } }));
+				}
+				return c.json({ ok: true, payload: { participants, count: participants.length } });
+			});
+
+			app.get('/v1/commons/questions', async (c) => {
+				return c.json({ ok: true, payload: await store.listCommonsQuestions({
+					status: optionalTrimmedString(c.req.query('status')),
+					limit: c.req.query('limit'),
+				}) });
+			});
+
+			app.post('/v1/commons/questions', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.createCommonsQuestion(auth.principal, {
+						title: optionalTrimmedString(body.title),
+						body: optionalTrimmedString(body.body),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+					}) });
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commons/questions/:questionId', async (c) => {
+				const question = await store.getCommonsQuestion(c.req.param('questionId'));
+				return question ? c.json({ ok: true, payload: question }) : jsonError(c, 404, 'Unknown Commons question.');
+			});
+
+			app.post('/v1/commons/questions/:questionId/answer', async (c) => {
+				const steward = await requireCommonsSteward(c);
+				if (steward.response) return steward.response;
+				const body = await c.req.json().catch(() => ({}));
+				const question = await store.answerCommonsQuestion(c.req.param('questionId'), {
+					answer: optionalTrimmedString(body.answer ?? body.message),
+					actorType: 'user',
+					actorId: steward.principal.id ?? null,
+				});
+				return question ? c.json({ ok: true, payload: question }) : jsonError(c, 404, 'Unknown Commons question.');
+			});
+
+			app.post('/v1/commons/questions/:questionId/convert-to-proposal', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const question = await store.getCommonsQuestion(c.req.param('questionId'));
+				if (!question) return jsonError(c, 404, 'Unknown Commons question.');
+				if (question.userId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) return jsonError(c, 403, 'Permission denied.');
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const proposal = await store.createCommonsProposal(auth.principal, {
+						status: 'submitted',
+						title: optionalTrimmedString(body.title) ?? question.title,
+						summary: optionalTrimmedString(body.summary) ?? question.body.slice(0, 240),
+						body: optionalTrimmedString(body.body) ?? question.body,
+						scope: optionalTrimmedString(body.scope, 'treeseed_commons'),
+						decisionType: optionalTrimmedString(body.decisionType, 'advisory'),
+						metadata: { convertedFromQuestionId: question.id },
+					});
+					await store.run(`UPDATE commons_questions SET status = 'converted_to_proposal', converted_proposal_id = ?, updated_at = ? WHERE id = ?`, [proposal.id, new Date().toISOString(), question.id]);
+					await store.recordCommonsGovernanceEvent({
+						eventType: 'question.converted_to_proposal',
+						actorType: 'user',
+						actorId: auth.principal.id,
+						participantId: proposal.participantId,
+						questionId: question.id,
+						proposalId: proposal.id,
+						priorState: question.status,
+						nextState: 'converted_to_proposal',
+					});
+					return c.json({ ok: true, payload: proposal });
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commons/proposals', async (c) => {
+				return c.json({ ok: true, payload: await store.listCommonsProposals({
+					status: optionalTrimmedString(c.req.query('status')),
+					scope: optionalTrimmedString(c.req.query('scope')),
+					limit: c.req.query('limit'),
+				}) });
+			});
+
+			app.post('/v1/commons/proposals', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.createCommonsProposal(auth.principal, {
+						title: optionalTrimmedString(body.title),
+						summary: optionalTrimmedString(body.summary),
+						body: optionalTrimmedString(body.body),
+						scope: optionalTrimmedString(body.scope, 'treeseed_commons'),
+						decisionType: optionalTrimmedString(body.decisionType, 'advisory'),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+					}) });
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commons/proposals/:proposalId', async (c) => {
+				const proposal = await store.getCommonsProposal(c.req.param('proposalId'));
+				if (!proposal) return jsonError(c, 404, 'Unknown Commons proposal.');
+				return c.json({ ok: true, payload: {
+					...proposal,
+					backings: await store.listCommonsProposalBackings(proposal.id),
+					votes: await store.listCommonsProposalVotes(proposal.id),
+					events: await store.listCommonsGovernanceEvents({ proposalId: proposal.id, limit: 50 }),
+				} });
+			});
+
+			app.post('/v1/commons/proposals/:proposalId/submit', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const proposal = await store.getCommonsProposal(c.req.param('proposalId'));
+				if (!proposal) return jsonError(c, 404, 'Unknown Commons proposal.');
+				if (proposal.userId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) return jsonError(c, 403, 'Permission denied.');
+				return c.json({ ok: true, payload: await store.submitCommonsProposal(proposal.id, { actorType: 'user', actorId: auth.principal.id }) });
+			});
+
+			app.post('/v1/commons/proposals/:proposalId/back', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const proposal = await store.backCommonsProposal(auth.principal, c.req.param('proposalId'), { reason: optionalTrimmedString(body.reason) });
+					return proposal ? c.json({ ok: true, payload: proposal }) : jsonError(c, 404, 'Unknown Commons proposal.');
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commons/proposals/:proposalId/vote', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const proposal = await store.voteCommonsProposal(auth.principal, c.req.param('proposalId'), {
+						vote: optionalTrimmedString(body.vote),
+						reason: optionalTrimmedString(body.reason),
+					});
+					return proposal ? c.json({ ok: true, payload: proposal }) : jsonError(c, 404, 'Unknown Commons proposal.');
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
+			async function stewardTransitionCommonsProposal(c, nextState) {
+				const steward = await requireCommonsSteward(c);
+				if (steward.response) return steward.response;
+				const body = await c.req.json().catch(() => ({}));
+				const proposal = await store.transitionCommonsProposal(c.req.param('proposalId'), nextState, {
+					actorType: 'user',
+					actorId: steward.principal.id ?? null,
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					votingEndsAt: optionalTrimmedString(body.votingEndsAt),
+				});
+				return proposal ? c.json({ ok: true, payload: proposal }) : jsonError(c, 404, 'Unknown Commons proposal.');
+			}
+
+			app.post('/v1/commons/proposals/:proposalId/review', async (c) => stewardTransitionCommonsProposal(c, 'under_review'));
+			app.post('/v1/commons/proposals/:proposalId/start-voting', async (c) => stewardTransitionCommonsProposal(c, 'voting'));
+			app.post('/v1/commons/proposals/:proposalId/archive', async (c) => stewardTransitionCommonsProposal(c, 'archived'));
+
+			app.post('/v1/commons/proposals/:proposalId/evaluate', async (c) => {
+				const steward = await requireCommonsSteward(c);
+				if (steward.response) return steward.response;
+				const proposal = await store.getCommonsProposal(c.req.param('proposalId'));
+				if (!proposal) return jsonError(c, 404, 'Unknown Commons proposal.');
+				const target = proposal.backingCount >= 3 ? 'qualified' : proposal.status;
+				return c.json({ ok: true, payload: target === proposal.status ? proposal : await store.transitionCommonsProposal(proposal.id, target, {
+					actorType: 'user',
+					actorId: steward.principal.id ?? null,
+					reason: 'Steward evaluated proposal backing threshold.',
+				}) });
+			});
+
+			app.post('/v1/commons/proposals/:proposalId/steward-decision', async (c) => {
+				const steward = await requireCommonsSteward(c);
+				if (steward.response) return steward.response;
+				const body = await c.req.json().catch(() => ({}));
+				const result = await store.stewardDecisionForCommonsProposal(c.req.param('proposalId'), {
+					status: optionalTrimmedString(body.status),
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					capacityBudget: optionalTrimmedString(body.capacityBudget),
+					scheduledFor: optionalTrimmedString(body.scheduledFor),
+					actorType: 'user',
+					actorId: steward.principal.id ?? null,
+				});
+				return result ? c.json({ ok: true, payload: result }) : jsonError(c, 404, 'Unknown Commons proposal.');
+			});
+
+			app.get('/v1/commons/proposals/:proposalId/events', async (c) => {
+				const proposal = await store.getCommonsProposal(c.req.param('proposalId'));
+				if (!proposal) return jsonError(c, 404, 'Unknown Commons proposal.');
+				return c.json({ ok: true, payload: await store.listCommonsGovernanceEvents({ proposalId: proposal.id, limit: c.req.query('limit') }) });
+			});
+
+			app.get('/v1/commons/decisions', async (c) => {
+				return c.json({ ok: true, payload: await store.listCommonsDecisions({ limit: c.req.query('limit') }) });
+			});
+
+			app.get('/v1/commons/events', async (c) => {
+				return c.json({ ok: true, payload: await store.listCommonsGovernanceEvents({ limit: c.req.query('limit') }) });
+			});
+
+			app.get('/v1/commons/delegations', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				return c.json({ ok: true, payload: await store.listCommonsDelegations(auth.principal) });
+			});
+
+			app.post('/v1/commons/delegations', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.createCommonsDelegation(auth.principal, body) });
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commons/delegations/:delegationId/revoke', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const delegation = await store.revokeCommonsDelegation(auth.principal, c.req.param('delegationId'), { reason: optionalTrimmedString(body.reason) });
+					return delegation ? c.json({ ok: true, payload: delegation }) : jsonError(c, 404, 'Unknown Commons delegation.');
+				} catch (error) {
+					return commonsErrorResponse(c, error);
+				}
+			});
+
 			app.get('/v1/jobs/:jobId/events', async (c) => {
 				const auth = await ensurePrincipal(c);
 				if (auth.response) return auth.response;
@@ -14039,6 +15995,1986 @@ export function createApiApp(options = {}): Hono {
 						message: String(body.message),
 					})),
 				});
+			});
+
+			app.get('/v1/commerce/vendors/:teamId', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.getCommerceVendorForTeam(c.req.param('teamId')) });
+			});
+
+			app.post('/v1/commerce/vendors/:teamId/request', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({
+						ok: true,
+						payload: await store.requestCommerceVendor(c.req.param('teamId'), {
+							id: optionalTrimmedString(body.id),
+							displayName: optionalTrimmedString(body.displayName),
+							slug: optionalTrimmedString(body.slug),
+							professionalEntitlementId: optionalTrimmedString(body.professionalEntitlementId),
+							metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+							reason: optionalTrimmedString(body.reason),
+							evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+							actorType: 'user',
+							actorId: access.principal.id ?? null,
+						}),
+					});
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/vendors/:vendorId/approve', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				if (!principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { permission: 'commerce:approve:global' });
+				}
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const vendor = await store.approveCommerceVendor(c.req.param('vendorId'), {
+						trustLevel: optionalTrimmedString(body.trustLevel),
+						salesEnabled: body.salesEnabled !== false,
+						serviceSalesEnabled: body.serviceSalesEnabled === true,
+						capacityListingsEnabled: body.capacityListingsEnabled === true,
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'operator',
+						actorId: auth.principal.id ?? null,
+					});
+					if (!vendor) return jsonError(c, 404, `Unknown commerce vendor "${c.req.param('vendorId')}".`);
+					return c.json({ ok: true, payload: vendor });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/vendors/:teamId/stripe/onboarding', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					if (!await stripeConnectService.isConfigured()) throw stripeConfiguredError();
+					const vendor = await requireCommerceVendorForStripe(store, c.req.param('teamId'));
+					const environment = stripeConnectService.environment ?? resolveStripeEnvironment(runtime.resolved.config);
+					let account = await store.getCommerceVendorStripeAccount(vendor.id, environment);
+					if (!account) {
+						const team = await store.getTeam(vendor.teamId).catch(() => null);
+						const stripeAccount = await stripeConnectService.createExpressAccount({ vendor, team });
+						if (!stripeAccount?.id) throw stripeConfiguredError();
+						account = await store.createCommerceVendorStripeAccount(vendor.id, {
+							...stripeAccountToConnectedAccountPatch(stripeAccount, environment),
+							actorType: 'user',
+							actorId: access.principal.id ?? null,
+							evidence: { environment, provider: 'stripe_connect_express' },
+						});
+					}
+					const returnUrl = optionalTrimmedString(body.returnUrl)
+						?? stripeCommerceUrl(runtime.resolved.config, vendor.teamId, 'returned');
+					const refreshUrl = optionalTrimmedString(body.refreshUrl)
+						?? stripeCommerceUrl(runtime.resolved.config, vendor.teamId, 'refresh');
+					const link = await stripeConnectService.createOnboardingLink({
+						stripeAccountId: account.stripeAccountId,
+						returnUrl,
+						refreshUrl,
+					});
+					if (!link?.url) throw stripeConfiguredError();
+					account = await store.markCommerceStripeOnboardingStarted(account.id, {
+						actorType: 'user',
+						actorId: access.principal.id ?? null,
+						evidence: { environment },
+					});
+					return c.json({ ok: true, payload: { account, onboardingUrl: link.url } });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/stripe/status', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				try {
+					const vendor = await store.getCommerceVendorForTeam(c.req.param('teamId'));
+					if (!vendor) return c.json({ ok: true, payload: null });
+					const environment = stripeConnectService.environment ?? resolveStripeEnvironment(runtime.resolved.config);
+					let account = await store.getCommerceVendorStripeAccount(vendor.id, environment);
+					if (account && c.req.query('refresh') === '1') {
+						account = await refreshCommerceStripeAccount({
+							store,
+							stripeConnectService,
+							account,
+							actorType: 'user',
+							actorId: access.principal.id ?? null,
+						});
+					}
+					return c.json({ ok: true, payload: account });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/vendors/:teamId/stripe/return', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				try {
+					const vendor = await requireCommerceVendorForStripe(store, c.req.param('teamId'));
+					const environment = stripeConnectService.environment ?? resolveStripeEnvironment(runtime.resolved.config);
+					let account = await store.getCommerceVendorStripeAccount(vendor.id, environment);
+					if (!account) throw stripeAccountMissingError();
+					account = await store.markCommerceStripeOnboardingReturned(account.id, {
+						actorType: 'user',
+						actorId: access.principal.id ?? null,
+						evidence: { environment },
+					});
+					account = await refreshCommerceStripeAccount({
+						store,
+						stripeConnectService,
+						account,
+						actorType: 'user',
+						actorId: access.principal.id ?? null,
+					});
+					return c.json({ ok: true, payload: account });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/vendors/:teamId/stripe/login-link', async (c) => {
+				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				try {
+					if (!await stripeConnectService.isConfigured()) throw stripeConfiguredError();
+					const vendor = await requireCommerceVendorForStripe(store, c.req.param('teamId'));
+					const environment = stripeConnectService.environment ?? resolveStripeEnvironment(runtime.resolved.config);
+					const account = await store.getCommerceVendorStripeAccount(vendor.id, environment);
+					if (!account) throw stripeAccountMissingError();
+					const link = await stripeConnectService.createLoginLink(account.stripeAccountId);
+					if (!link?.url) throw stripeConfiguredError();
+					await store.recordCommerceGovernanceEvent({
+						actorType: 'user',
+						actorId: access.principal.id ?? null,
+						action: 'commerce_vendor.stripe_login_link.created',
+						objectType: 'commerce_vendor',
+						objectId: vendor.id,
+						priorState: account.accountStatus,
+						nextState: account.accountStatus,
+						evidence: { environment },
+						relatedTeamId: vendor.teamId,
+					});
+					return c.json({ ok: true, payload: { account, loginUrl: link.url } });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/stripe/config', async (c) => {
+				const publishableKey = resolveStripePublishableKey(runtime.resolved.config);
+				try {
+					if (!publishableKey || !await stripeConnectService.isConfigured()) {
+						return jsonError(c, 409, 'Stripe checkout is not configured for this market.');
+					}
+					return c.json({
+						ok: true,
+						payload: {
+							publishableKey,
+							environment: stripeConnectService.environment ?? resolveStripeEnvironment(runtime.resolved.config),
+						},
+					});
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/cart', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const buyerTeamId = optionalTrimmedString(body.buyerTeamId);
+				if (buyerTeamId) {
+					const access = await requireTeamAccess(c, store, buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				try {
+					return c.json({ ok: true, payload: await store.createCommerceCart(auth.principal, {
+						buyerTeamId,
+						buyerUserId: auth.principal.id ?? null,
+						currency: optionalTrimmedString(body.currency),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/cart/:cartId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const cart = await store.getCommerceCart(c.req.param('cartId'));
+				if (!cart) return jsonError(c, 404, `Unknown commerce cart "${c.req.param('cartId')}".`);
+				if (cart.buyerTeamId) {
+					const access = await requireTeamAccess(c, store, cart.buyerTeamId, 'projects:read:team');
+					if (access.response && !principalIsSeedAdmin(auth.principal)) return access.response;
+				} else if (cart.buyerUserId && cart.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { cartId: cart.id });
+				}
+				return c.json({ ok: true, payload: { cart, items: await store.listCommerceCartItems(cart.id) } });
+			});
+
+			app.post('/v1/commerce/cart/:cartId/items', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const cart = await store.getCommerceCart(c.req.param('cartId'));
+				if (!cart) return jsonError(c, 404, `Unknown commerce cart "${c.req.param('cartId')}".`);
+				if (cart.buyerTeamId) {
+					const access = await requireTeamAccess(c, store, cart.buyerTeamId, 'projects:read:team');
+					if (access.response && !principalIsSeedAdmin(auth.principal)) return access.response;
+				} else if (cart.buyerUserId && cart.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { cartId: cart.id });
+				}
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.addCommerceCartItem(cart.id, {
+						offerId: optionalTrimmedString(body.offerId),
+						priceId: optionalTrimmedString(body.priceId),
+						quantity: normalizeCheckoutQuantity(body.quantity),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+						actorType: 'user',
+						actorId: auth.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.delete('/v1/commerce/cart/:cartId/items/:itemId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const cart = await store.getCommerceCart(c.req.param('cartId'));
+				if (!cart) return jsonError(c, 404, `Unknown commerce cart "${c.req.param('cartId')}".`);
+				if (cart.buyerUserId && cart.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { cartId: cart.id });
+				}
+				return c.json({ ok: true, payload: await store.removeCommerceCartItem(c.req.param('itemId')) });
+			});
+
+			app.post('/v1/commerce/checkout', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				if (body.buyerTeamId) {
+					const access = await requireTeamAccess(c, store, body.buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				try {
+					const payload = await createCommerceCheckoutRun({
+						store,
+						stripeConnectService,
+						principal: auth.principal,
+						input: body,
+					});
+					return c.json({ ok: true, payload });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/checkouts/:checkoutId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const checkout = await store.getCommerceCheckout(c.req.param('checkoutId'));
+				if (!checkout) return jsonError(c, 404, `Unknown commerce checkout "${c.req.param('checkoutId')}".`);
+				if (checkout.buyerTeamId) {
+					const access = await requireTeamAccess(c, store, checkout.buyerTeamId, 'projects:read:team');
+					if (access.response && !principalIsSeedAdmin(auth.principal)) return access.response;
+				} else if (checkout.buyerUserId && checkout.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { checkoutId: checkout.id });
+				}
+				const orders = await store.listCommerceCheckoutOrders(checkout.id);
+				const paymentGroups = [];
+				const entitlements = [];
+				for (const order of orders) {
+					const groups = await store.all?.(`SELECT * FROM commerce_payment_groups WHERE order_id = ?`, [order.id]).catch(() => []);
+					paymentGroups.push(...groups.map((row) => {
+						const group = {
+							id: row.id,
+							checkoutId: row.checkout_id,
+							orderId: row.order_id,
+							vendorId: row.vendor_id,
+							sellerTeamId: row.seller_team_id,
+							connectedAccountId: row.connected_account_id,
+							groupKind: row.group_kind,
+							billingInterval: row.billing_interval,
+							status: row.status,
+							currency: row.currency,
+							subtotalAmount: Number(row.subtotal_amount ?? 0),
+							totalAmount: Number(row.total_amount ?? 0),
+							stripePaymentIntentId: row.stripe_payment_intent_id,
+							stripeSubscriptionId: row.stripe_subscription_id,
+							stripeCustomerId: row.stripe_customer_id,
+							clientSecret: null,
+							metadata: row.metadata_json ? JSON.parse(row.metadata_json) : {},
+							createdAt: row.created_at,
+							updatedAt: row.updated_at,
+						};
+						return group;
+					}));
+					entitlements.push(...await store.listCommerceEntitlements(auth.principal, { orderId: order.id }));
+				}
+				return c.json({ ok: true, payload: { checkout, orders, paymentGroups, entitlements } });
+			});
+
+			app.post('/v1/commerce/payment-groups/:groupId/refresh', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				try {
+					const group = await store.getCommercePaymentGroup(c.req.param('groupId'));
+					if (!group) return jsonError(c, 404, `Unknown commerce payment group "${c.req.param('groupId')}".`);
+					const order = await store.getCommerceOrder(group.orderId);
+					if (!order) return jsonError(c, 404, `Unknown commerce order "${group.orderId}".`);
+					if (order.buyerTeamId) {
+						const access = await requireTeamAccess(c, store, order.buyerTeamId, 'projects:read:team');
+						if (access.response && !principalIsSeedAdmin(auth.principal)) return access.response;
+					} else if (order.buyerUserId && order.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+						return jsonError(c, 403, 'Permission denied.', { orderId: order.id });
+					}
+					const payload = await refreshCommercePaymentGroupState({ store, stripeConnectService, group });
+					await updateCheckoutCompletionFromGroup(store, payload.group);
+					const publicGroup = publicPaymentGroups([payload.group])[0];
+					return c.json({
+						ok: true,
+						payload: {
+							...payload,
+							group: publicGroup,
+							paymentGroup: publicGroup,
+							clientSecret: payload.clientSecret ?? null,
+						},
+					});
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/services/requests', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const buyerTeamId = optionalTrimmedString(body.buyerTeamId);
+				if (buyerTeamId) {
+					const access = await requireTeamAccess(c, store, buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				try {
+					const request = await store.createCommerceServiceRequest(auth.principal, {
+						buyerTeamId,
+						offerId: optionalTrimmedString(body.offerId),
+						requestedScope: optionalTrimmedString(body.requestedScope),
+						accessNeeds: body.accessNeeds && typeof body.accessNeeds === 'object' ? body.accessNeeds : {},
+						relatedProjectId: optionalTrimmedString(body.relatedProjectId),
+						relatedWorkdayId: optionalTrimmedString(body.relatedWorkdayId),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+						actorType: 'user',
+						actorId: auth.principal.id ?? null,
+					});
+					return c.json({ ok: true, payload: request }, { status: 201 });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/services/requests', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const sellerTeamId = optionalTrimmedString(c.req.query('sellerTeamId'));
+				const buyerTeamId = optionalTrimmedString(c.req.query('buyerTeamId'));
+				const filters = {
+					sellerTeamId,
+					buyerTeamId,
+					status: optionalTrimmedString(c.req.query('status')),
+					offerId: optionalTrimmedString(c.req.query('offerId')),
+					relatedProjectId: optionalTrimmedString(c.req.query('relatedProjectId')),
+					relatedWorkdayId: optionalTrimmedString(c.req.query('relatedWorkdayId')),
+				};
+				if (sellerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, sellerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				} else if (buyerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				} else if (!principalIsSeedAdmin(auth.principal)) {
+					filters.buyerUserId = auth.principal.id;
+				}
+				const requests = await store.listCommerceServiceRequests(auth.principal, filters);
+				return c.json({ ok: true, payload: sellerTeamId ? requests : requests.map(redactCommerceServiceRequestForBuyer) });
+			});
+
+			app.get('/v1/commerce/services/requests/:requestId', async (c) => {
+				const request = await store.getCommerceServiceRequest(c.req.param('requestId'));
+				if (!request) return jsonError(c, 404, `Unknown commerce service request "${c.req.param('requestId')}".`);
+				const access = await requireServiceParticipantAccess(c, store, request, 'projects:read:team');
+				if (access.response) return access.response;
+				const sellerAccess = principalIsSeedAdmin(access.principal)
+					? { response: null }
+					: await requireTeamAccess(c, store, request.sellerTeamId, 'projects:read:team');
+				const sellerVisible = principalIsSeedAdmin(access.principal) || !sellerAccess.response;
+				const quotes = await store.listCommerceServiceQuotes(request.id);
+				const contract = request.contractId ? await store.getCommerceServiceContract(request.contractId) : null;
+				const events = await store.listCommerceServiceEvents({ requestId: request.id });
+				return c.json({
+					ok: true,
+					payload: {
+						request: sellerVisible ? request : redactCommerceServiceRequestForBuyer(request),
+						quotes,
+						contract,
+						events: sellerVisible ? events : events.map((event) => ({ ...event, evidence: {} })),
+					},
+				});
+			});
+
+			app.post('/v1/commerce/services/requests/:requestId/cancel', async (c) => {
+				const request = await store.getCommerceServiceRequest(c.req.param('requestId'));
+				if (!request) return jsonError(c, 404, `Unknown commerce service request "${c.req.param('requestId')}".`);
+				const access = await requireServiceParticipantAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				if (['active', 'fulfilled'].includes(request.status)) return jsonError(c, 409, 'Active or fulfilled service requests cannot be canceled through request cancellation.');
+				const body = await c.req.json().catch(() => ({}));
+				const updated = await store.transitionCommerceServiceRequest(request.id, 'canceled', {
+					eventType: 'canceled',
+					action: 'commerce_service.canceled',
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				});
+				return c.json({ ok: true, payload: updated });
+			});
+
+			app.post('/v1/commerce/services/requests/:requestId/scoping', async (c) => {
+				const request = await store.getCommerceServiceRequest(c.req.param('requestId'));
+				if (!request) return jsonError(c, 404, `Unknown commerce service request "${c.req.param('requestId')}".`);
+				const access = await requireServiceSellerAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const updated = await store.updateCommerceServiceRequest(request.id, {
+					status: 'scoping',
+					approvedScope: optionalTrimmedString(body.approvedScope) ?? request.approvedScope,
+					vendorPrivateNotes: optionalTrimmedString(body.vendorPrivateNotes) ?? request.vendorPrivateNotes,
+					eventType: 'scoping_started',
+					action: 'commerce_service.scoping_started',
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				});
+				return c.json({ ok: true, payload: updated });
+			});
+
+			app.patch('/v1/commerce/services/requests/:requestId', async (c) => {
+				const request = await store.getCommerceServiceRequest(c.req.param('requestId'));
+				if (!request) return jsonError(c, 404, `Unknown commerce service request "${c.req.param('requestId')}".`);
+				const access = await requireServiceSellerAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const updated = await store.updateCommerceServiceRequest(request.id, {
+					approvedScope: body.approvedScope === undefined ? request.approvedScope : optionalTrimmedString(body.approvedScope),
+					accessNeeds: body.accessNeeds && typeof body.accessNeeds === 'object' ? body.accessNeeds : request.accessNeeds,
+					buyerVisibleSummary: body.buyerVisibleSummary === undefined ? request.buyerVisibleSummary : optionalTrimmedString(body.buyerVisibleSummary),
+					vendorPrivateNotes: body.vendorPrivateNotes === undefined ? request.vendorPrivateNotes : optionalTrimmedString(body.vendorPrivateNotes),
+					relatedProjectId: body.relatedProjectId === undefined ? request.relatedProjectId : optionalTrimmedString(body.relatedProjectId),
+					relatedWorkdayId: body.relatedWorkdayId === undefined ? request.relatedWorkdayId : optionalTrimmedString(body.relatedWorkdayId),
+					eventType: 'scope_updated',
+					action: 'commerce_service.scope_updated',
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				});
+				return c.json({ ok: true, payload: updated });
+			});
+
+			app.post('/v1/commerce/services/requests/:requestId/quotes', async (c) => {
+				const request = await store.getCommerceServiceRequest(c.req.param('requestId'));
+				if (!request) return jsonError(c, 404, `Unknown commerce service request "${c.req.param('requestId')}".`);
+				const access = await requireServiceSellerAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const quote = await store.createCommerceServiceQuote(request.id, {
+						title: optionalTrimmedString(body.title),
+						scopeSummary: optionalTrimmedString(body.scopeSummary),
+						deliverables: Array.isArray(body.deliverables) ? body.deliverables : [],
+						assumptions: Array.isArray(body.assumptions) ? body.assumptions : [],
+						accessRequirements: body.accessRequirements && typeof body.accessRequirements === 'object' ? body.accessRequirements : {},
+						governanceRequirements: body.governanceRequirements && typeof body.governanceRequirements === 'object' ? body.governanceRequirements : {},
+						amount: body.amount,
+						currency: optionalTrimmedString(body.currency),
+						expiresAt: optionalTrimmedString(body.expiresAt),
+						status: body.submit === true ? 'submitted' : 'draft',
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					});
+					return c.json({ ok: true, payload: quote }, { status: 201 });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/services/requests/:requestId/quotes', async (c) => {
+				const request = await store.getCommerceServiceRequest(c.req.param('requestId'));
+				if (!request) return jsonError(c, 404, `Unknown commerce service request "${c.req.param('requestId')}".`);
+				const access = await requireServiceParticipantAccess(c, store, request, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceServiceQuotes(request.id) });
+			});
+
+			app.post('/v1/commerce/services/quotes/:quoteId/submit', async (c) => {
+				const quote = await store.getCommerceServiceQuote(c.req.param('quoteId'));
+				if (!quote) return jsonError(c, 404, `Unknown commerce service quote "${c.req.param('quoteId')}".`);
+				const request = await store.getCommerceServiceRequest(quote.requestId);
+				const access = await requireServiceSellerAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				try {
+					return c.json({ ok: true, payload: await store.submitCommerceServiceQuote(quote.id, {
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/services/quotes/:quoteId/buyer-approve', async (c) => {
+				const quote = await store.getCommerceServiceQuote(c.req.param('quoteId'));
+				if (!quote) return jsonError(c, 404, `Unknown commerce service quote "${c.req.param('quoteId')}".`);
+				const request = await store.getCommerceServiceRequest(quote.requestId);
+				const access = await requireServiceBuyerAccess(c, store, request);
+				if (access.response) return access.response;
+				try {
+					return c.json({ ok: true, payload: await store.approveCommerceServiceQuoteByBuyer(quote.id, {
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/services/quotes/:quoteId/vendor-approve', async (c) => {
+				const quote = await store.getCommerceServiceQuote(c.req.param('quoteId'));
+				if (!quote) return jsonError(c, 404, `Unknown commerce service quote "${c.req.param('quoteId')}".`);
+				const request = await store.getCommerceServiceRequest(quote.requestId);
+				const access = await requireServiceSellerAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				try {
+					return c.json({ ok: true, payload: {
+						quote: await store.approveCommerceServiceQuoteByVendor(quote.id, {
+							actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+							actorId: access.principal.id ?? null,
+						}),
+						contract: await store.getCommerceServiceContractForRequest(request.id),
+					} });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/services/quotes/:quoteId/reject', async (c) => {
+				const quote = await store.getCommerceServiceQuote(c.req.param('quoteId'));
+				if (!quote) return jsonError(c, 404, `Unknown commerce service quote "${c.req.param('quoteId')}".`);
+				const request = await store.getCommerceServiceRequest(quote.requestId);
+				const access = await requireServiceParticipantAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.rejectCommerceServiceQuote(quote.id, {
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/services/contracts/:contractId', async (c) => {
+				const contract = await store.getCommerceServiceContract(c.req.param('contractId'));
+				if (!contract) return jsonError(c, 404, `Unknown commerce service contract "${c.req.param('contractId')}".`);
+				const request = await store.getCommerceServiceRequest(contract.requestId);
+				const access = await requireServiceParticipantAccess(c, store, request, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: contract });
+			});
+
+			app.post('/v1/commerce/services/contracts/:contractId/checkout', async (c) => {
+				const contract = await store.getCommerceServiceContract(c.req.param('contractId'));
+				if (!contract) return jsonError(c, 404, `Unknown commerce service contract "${c.req.param('contractId')}".`);
+				const request = await store.getCommerceServiceRequest(contract.requestId);
+				const access = await requireServiceBuyerAccess(c, store, request);
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await createCommerceCheckoutRunForServiceContract({
+						store,
+						stripeConnectService,
+						principal: access.principal,
+						contractId: contract.id,
+						input: body,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/services/contracts/:contractId/link-work', async (c) => {
+				const contract = await store.getCommerceServiceContract(c.req.param('contractId'));
+				if (!contract) return jsonError(c, 404, `Unknown commerce service contract "${c.req.param('contractId')}".`);
+				const request = await store.getCommerceServiceRequest(contract.requestId);
+				const access = await requireServiceSellerAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.linkCommerceServiceContractWork(contract.id, {
+					relatedProjectId: optionalTrimmedString(body.relatedProjectId),
+					relatedWorkdayId: optionalTrimmedString(body.relatedWorkdayId),
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : contract.metadata,
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/services/contracts/:contractId/fulfill', async (c) => {
+				const contract = await store.getCommerceServiceContract(c.req.param('contractId'));
+				if (!contract) return jsonError(c, 404, `Unknown commerce service contract "${c.req.param('contractId')}".`);
+				if (contract.status !== 'active') return jsonError(c, 409, 'Only active scoped service contracts can be fulfilled.');
+				const request = await store.getCommerceServiceRequest(contract.requestId);
+				const access = await requireServiceSellerAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const event = await store.createCommerceFulfillmentEvent({
+					orderId: contract.orderId,
+					orderItemId: contract.orderItemId,
+					entitlementId: contract.entitlementId,
+					vendorId: contract.vendorId,
+					sellerTeamId: contract.sellerTeamId,
+					productId: contract.productId,
+					productVersionId: null,
+					catalogItemId: null,
+					eventType: Array.isArray(body.deliveryRefs) && body.deliveryRefs.length ? 'artifact_delivered' : 'manual_status',
+					status: 'delivered',
+					artifactRefs: Array.isArray(body.artifactRefs) ? body.artifactRefs : [],
+					deliveryRefs: Array.isArray(body.deliveryRefs) ? body.deliveryRefs : [],
+					message: optionalTrimmedString(body.summary),
+					metadata: { serviceRequestId: contract.requestId, serviceContractId: contract.id, ...(body.metadata && typeof body.metadata === 'object' ? body.metadata : {}) },
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? 'system',
+				});
+				const updated = await store.fulfillCommerceServiceContract(contract.id, {
+					summary: optionalTrimmedString(body.summary),
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : contract.metadata,
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				});
+				if (contract.orderItemId) await store.updateCommerceOrderItemStatus(contract.orderItemId, { status: 'fulfilled' });
+				if (contract.entitlementId) {
+					const entitlement = await store.getCommerceEntitlement(contract.entitlementId);
+					if (entitlement) {
+						await store.updateCommerceEntitlementFulfillment(entitlement.id, {
+							fulfillmentArtifactRefs: [
+								...(entitlement.fulfillmentArtifactRefs ?? []),
+								...(Array.isArray(body.deliveryRefs) ? body.deliveryRefs.map((entry) => entry.path ?? entry.url ?? JSON.stringify(entry)) : []),
+							],
+							metadata: entitlement.metadata,
+						});
+					}
+				}
+				return c.json({ ok: true, payload: { contract: updated, event } });
+			});
+
+			app.post('/v1/commerce/services/contracts/:contractId/cancel', async (c) => {
+				const contract = await store.getCommerceServiceContract(c.req.param('contractId'));
+				if (!contract) return jsonError(c, 404, `Unknown commerce service contract "${c.req.param('contractId')}".`);
+				const request = await store.getCommerceServiceRequest(contract.requestId);
+				const access = await requireServiceParticipantAccess(c, store, request, 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.cancelCommerceServiceContract(contract.id, {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.get('/v1/commerce/services/events', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const requestId = optionalTrimmedString(c.req.query('requestId'));
+				if (!requestId && !principalIsSeedAdmin(auth.principal)) return jsonError(c, 400, 'requestId is required.');
+				if (requestId) {
+					const request = await store.getCommerceServiceRequest(requestId);
+					if (!request) return jsonError(c, 404, `Unknown commerce service request "${requestId}".`);
+					const access = await requireServiceParticipantAccess(c, store, request, 'projects:read:team');
+					if (access.response) return access.response;
+					const sellerAccess = principalIsSeedAdmin(access.principal)
+						? { response: null }
+						: await requireTeamAccess(c, store, request.sellerTeamId, 'projects:read:team');
+					const events = await store.listCommerceServiceEvents({ requestId });
+					return c.json({ ok: true, payload: sellerAccess.response ? events.map((event) => ({ ...event, evidence: {} })) : events });
+				}
+				return c.json({ ok: true, payload: await store.listCommerceServiceEvents({
+					eventType: optionalTrimmedString(c.req.query('eventType')),
+				}) });
+			});
+
+			app.get('/v1/commerce/orders', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const filters = {
+					buyerTeamId: optionalTrimmedString(c.req.query('buyerTeamId')),
+					vendorId: optionalTrimmedString(c.req.query('vendorId')),
+					status: optionalTrimmedString(c.req.query('status')),
+					checkoutId: optionalTrimmedString(c.req.query('checkoutId')),
+				};
+				if (filters.buyerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, filters.buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				if (!filters.buyerTeamId && !filters.vendorId && !principalIsSeedAdmin(auth.principal)) {
+					filters.buyerUserId = auth.principal.id;
+				}
+				return c.json({ ok: true, payload: await store.listCommerceOrders(auth.principal, filters) });
+			});
+
+			app.get('/v1/commerce/orders/:orderId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const order = await store.getCommerceOrder(c.req.param('orderId'));
+				if (!order) return jsonError(c, 404, `Unknown commerce order "${c.req.param('orderId')}".`);
+				if (order.buyerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, order.buyerTeamId, 'projects:read:team');
+					if (access.response && order.buyerUserId !== auth.principal.id) return access.response;
+				} else if (order.buyerUserId && order.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { orderId: order.id });
+				}
+				return c.json({ ok: true, payload: { order, items: await store.listCommerceOrderItems(order.id) } });
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/sales/summary', async (c) => {
+				const access = await requireSellerTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.getCommerceVendorSalesSummary(c.req.param('teamId'), {}) });
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/monitoring', async (c) => {
+				const access = await requireSellerTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.getCommerceVendorCommerceMonitor(c.req.param('teamId'), {}) });
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/sales/orders', async (c) => {
+				const access = await requireSellerTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceVendorSalesOrders(c.req.param('teamId'), {
+					status: optionalTrimmedString(c.req.query('status')),
+				}) });
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/sales/subscriptions', async (c) => {
+				const access = await requireSellerTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceVendorSalesSubscriptions(c.req.param('teamId'), {}) });
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/sales/entitlements', async (c) => {
+				const access = await requireSellerTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceVendorSalesEntitlements(c.req.param('teamId'), {
+					status: optionalTrimmedString(c.req.query('status')),
+				}) });
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/sales/refunds', async (c) => {
+				const access = await requireSellerTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceRefunds(access.principal, {
+					sellerTeamId: c.req.param('teamId'),
+					status: optionalTrimmedString(c.req.query('status')),
+				}) });
+			});
+
+			app.get('/v1/commerce/vendors/:teamId/sales/fulfillment-events', async (c) => {
+				const access = await requireSellerTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceFulfillmentEvents({
+					sellerTeamId: c.req.param('teamId'),
+					status: optionalTrimmedString(c.req.query('status')),
+				}) });
+			});
+
+			app.get('/v1/commerce/orders/:orderId/refunds', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const order = await store.getCommerceOrder(c.req.param('orderId'));
+				if (!order) return jsonError(c, 404, `Unknown commerce order "${c.req.param('orderId')}".`);
+				if (order.sellerTeamId) {
+					const sellerAccess = await requireSellerTeamAccess(c, store, order.sellerTeamId, 'projects:read:team');
+					if (!sellerAccess.response || principalIsSeedAdmin(auth.principal)) {
+						return c.json({ ok: true, payload: await store.listCommerceRefunds(auth.principal, { orderId: order.id }) });
+					}
+				}
+				if (order.buyerTeamId) {
+					const access = await requireTeamAccess(c, store, order.buyerTeamId, 'projects:read:team');
+					if (access.response && order.buyerUserId !== auth.principal.id) return access.response;
+				} else if (order.buyerUserId && order.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { orderId: order.id });
+				}
+				return c.json({ ok: true, payload: await store.listCommerceRefunds(auth.principal, { orderId: order.id }) });
+			});
+
+			app.post('/v1/commerce/orders/:orderId/refunds', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const order = await store.getCommerceOrder(c.req.param('orderId'));
+				if (!order) return jsonError(c, 404, `Unknown commerce order "${c.req.param('orderId')}".`);
+				const access = await requireVendorOrderManager(c, store, order);
+				if (access.response) return access.response;
+				const vendor = order.sellerTeamId ? await store.getCommerceVendorForTeam(order.sellerTeamId) : null;
+				if (!vendor || vendor.status !== 'approved') return jsonError(c, 409, 'Approved vendor status is required before refunds.');
+				const body = await c.req.json().catch(() => ({}));
+				const idempotencyKey = optionalTrimmedString(body.idempotencyKey) ?? null;
+				if (idempotencyKey) {
+					const existingRefund = await store.getCommerceRefundByIdempotencyKey(idempotencyKey);
+					if (existingRefund) return c.json({ ok: true, payload: existingRefund });
+				}
+				if (!['paid', 'partially_refunded'].includes(order.status)) return jsonError(c, 409, 'Only paid commerce orders can be refunded.');
+				if (!order.stripePaymentIntentId || !order.stripeConnectedAccountId) return jsonError(c, 409, 'Only PaymentIntent-backed one-time orders can be refunded in Phase 6.');
+				if (order.stripeSubscriptionId) return jsonError(c, 409, 'Subscription invoice refunds are deferred until invoice payment mapping is modeled.');
+				try {
+					const orderItem = await resolveOrderItemForRefund(store, order, optionalTrimmedString(body.orderItemId));
+					const remaining = remainingRefundableAmount(order, orderItem);
+					const amount = body.amount === undefined || body.amount === null ? remaining : Number(body.amount);
+					if (!Number.isFinite(amount) || amount <= 0) return jsonError(c, 400, 'Refund amount must be positive.');
+					if (amount > remaining) return jsonError(c, 409, 'Refund amount exceeds remaining refundable amount.');
+					const finalIdempotencyKey = idempotencyKey ?? `commerce-refund-${order.id}-${orderItem?.id ?? 'order'}-${amount}-${randomUUID()}`;
+					let refund = await store.createCommerceRefund({
+						orderId: order.id,
+						orderItemId: orderItem?.id ?? null,
+						vendorId: order.vendorId,
+						sellerTeamId: order.sellerTeamId,
+						buyerTeamId: order.buyerTeamId,
+						buyerUserId: order.buyerUserId,
+						amount,
+						currency: order.currency,
+						status: 'processing',
+						reason: optionalTrimmedString(body.reason),
+						stripePaymentIntentId: order.stripePaymentIntentId,
+						stripeConnectedAccountId: order.stripeConnectedAccountId,
+						idempotencyKey: finalIdempotencyKey,
+						requestedByType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+						requestedById: auth.principal.id ?? 'system',
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+						actorType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+						actorId: auth.principal.id ?? null,
+					});
+					const stripeRefund = await stripeConnectService.createRefund({
+						connectedAccountId: order.stripeConnectedAccountId,
+						idempotencyKey: finalIdempotencyKey,
+						params: {
+							payment_intent: order.stripePaymentIntentId,
+							amount,
+							metadata: {
+								treeseed_refund_id: refund.id,
+								treeseed_order_id: order.id,
+								treeseed_order_item_id: orderItem?.id ?? '',
+								treeseed_vendor_id: order.vendorId ?? '',
+								treeseed_seller_team_id: order.sellerTeamId ?? '',
+							},
+						},
+					});
+					if (!stripeRefund) return jsonError(c, 409, 'Stripe is not configured for refunds.');
+					refund = await store.updateCommerceRefundFromStripe(refund.id, {
+						status: stripeRefundStatus(stripeRefund.status),
+						stripeRefundId: stripeRefund.id,
+						metadata: { ...refund.metadata, stripeStatus: stripeRefund.status },
+						actorType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+						actorId: auth.principal.id ?? null,
+					});
+					if (refund.status === 'succeeded') {
+						await applyCommerceRefundState({
+							store,
+							order,
+							orderItem,
+							amount,
+							fullRefund: amount >= remainingRefundableAmount(order, null),
+						});
+					}
+					return c.json({ ok: true, payload: { refund, order: await store.getCommerceOrder(order.id), items: await store.listCommerceOrderItems(order.id) } });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/order-items/:orderItemId/fulfillment/artifact', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const orderItem = await store.first?.(`SELECT * FROM commerce_order_items WHERE id = ? LIMIT 1`, [c.req.param('orderItemId')]).then((row) => row ? {
+					id: row.id,
+					orderId: row.order_id,
+					vendorId: row.vendor_id,
+					sellerTeamId: row.seller_team_id,
+					productId: row.product_id,
+					productVersionId: row.product_version_id,
+					entitlementId: row.entitlement_id,
+					status: row.status,
+					metadata: row.metadata_json ? JSON.parse(row.metadata_json) : {},
+				} : null);
+				if (!orderItem) return jsonError(c, 404, `Unknown commerce order item "${c.req.param('orderItemId')}".`);
+				const access = await requireTeamAccess(c, store, orderItem.sellerTeamId, 'teams:manage:team');
+				if (access.response && !principalIsSeedAdmin(auth.principal)) return access.response;
+				if (orderItem.status !== 'paid' && orderItem.status !== 'fulfilled') return jsonError(c, 409, 'Only paid commerce order items can be fulfilled.');
+				if (!orderItem.entitlementId) return jsonError(c, 409, 'An active entitlement is required before fulfillment.');
+				const entitlement = await store.getCommerceEntitlement(orderItem.entitlementId);
+				if (!entitlement || entitlement.status !== 'active') return jsonError(c, 409, 'An active entitlement is required before fulfillment.');
+				const body = await c.req.json().catch(() => ({}));
+				const resolved = await resolveFulfillmentArtifact({ store, orderItem, body });
+				const event = await store.createCommerceFulfillmentEvent({
+					orderId: orderItem.orderId,
+					orderItemId: orderItem.id,
+					entitlementId: entitlement.id,
+					vendorId: orderItem.vendorId,
+					sellerTeamId: orderItem.sellerTeamId,
+					productId: orderItem.productId,
+					productVersionId: orderItem.productVersionId,
+					catalogItemId: resolved.catalogItemId,
+					catalogArtifactVersionId: resolved.artifact?.id ?? optionalTrimmedString(body.catalogArtifactVersionId),
+					eventType: 'artifact_delivered',
+					status: 'delivered',
+					artifactRefs: resolved.artifactRefs,
+					deliveryRefs: resolved.deliveryRefs,
+					message: optionalTrimmedString(body.message),
+					actorType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+					actorId: auth.principal.id ?? 'system',
+				});
+				await store.markCommerceOrderItemFulfilled(orderItem.id, { metadata: orderItem.metadata });
+				const refs = [...(entitlement.fulfillmentArtifactRefs ?? []), ...resolved.deliveryRefs.map((entry) => entry.path ?? entry.url ?? JSON.stringify(entry))];
+				const updatedEntitlement = await store.updateCommerceEntitlementFulfillment(entitlement.id, {
+					fulfillmentArtifactRefs: refs,
+					metadata: entitlement.metadata,
+				});
+				return c.json({ ok: true, payload: { event, entitlement: updatedEntitlement } });
+			});
+
+			app.post('/v1/commerce/entitlements/:entitlementId/revoke', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const entitlement = await store.getCommerceEntitlement(c.req.param('entitlementId'));
+				if (!entitlement) return jsonError(c, 404, `Unknown commerce entitlement "${c.req.param('entitlementId')}".`);
+				const access = await requireTeamAccess(c, store, entitlement.sellerTeamId, 'teams:manage:team');
+				if (access.response && !principalIsSeedAdmin(auth.principal)) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const updated = await store.revokeCommerceEntitlement(entitlement.id, {
+					reason: optionalTrimmedString(body.reason),
+					renewalState: 'canceled',
+					actorType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+					actorId: auth.principal.id ?? null,
+				});
+				if (entitlement.orderItemId) {
+					await store.updateCommerceOrderItemStatus(entitlement.orderItemId, { status: 'revoked' });
+				}
+				return c.json({ ok: true, payload: updated });
+			});
+
+			app.get('/v1/commerce/entitlements', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const filters = {
+					buyerTeamId: optionalTrimmedString(c.req.query('buyerTeamId')),
+					productId: optionalTrimmedString(c.req.query('productId')),
+					offerId: optionalTrimmedString(c.req.query('offerId')),
+					status: optionalTrimmedString(c.req.query('status')),
+				};
+				if (filters.buyerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, filters.buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				if (!filters.buyerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					filters.buyerUserId = auth.principal.id;
+				}
+				return c.json({ ok: true, payload: await store.listCommerceEntitlements(auth.principal, filters) });
+			});
+
+			app.get('/v1/commerce/entitlements/:entitlementId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const entitlement = await store.getCommerceEntitlement(c.req.param('entitlementId'));
+				if (!entitlement) return jsonError(c, 404, `Unknown commerce entitlement "${c.req.param('entitlementId')}".`);
+				if (entitlement.buyerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, entitlement.buyerTeamId, 'projects:read:team');
+					if (access.response && entitlement.buyerUserId !== auth.principal.id) return access.response;
+				} else if (entitlement.buyerUserId && entitlement.buyerUserId !== auth.principal.id && !principalIsSeedAdmin(auth.principal)) {
+					return jsonError(c, 403, 'Permission denied.', { entitlementId: entitlement.id });
+				}
+				return c.json({ ok: true, payload: entitlement });
+			});
+
+			app.post('/v1/commerce/webhooks/stripe', async (c) => {
+				const webhookSecret = resolveStripeWebhookSecret(runtime.resolved.config);
+				if (!webhookSecret) return jsonError(c, 409, 'Stripe webhook verification is not configured for this market.');
+				const signature = c.req.header('stripe-signature');
+				if (!signature) return jsonError(c, 400, 'Stripe-Signature header is required.');
+				const payload = await c.req.text();
+				try {
+					const event = await stripeConnectService.constructWebhookEvent({ payload, signature, webhookSecret });
+					const environment = stripeConnectService.environment ?? resolveStripeEnvironment(runtime.resolved.config);
+					const object = event?.data?.object ?? {};
+					const webhook = await store.recordCommerceWebhookEvent({
+						provider: 'stripe',
+						environment,
+						eventId: event.id,
+						eventType: event.type,
+						connectedAccountId: optionalTrimmedString(event.account) ?? optionalTrimmedString(event.context) ?? null,
+						status: 'received',
+						objectType: object.object ?? null,
+						objectId: object.id ?? null,
+						payloadHash: createHash('sha256').update(payload).digest('hex'),
+					});
+					if (webhook.status === 'processed' || webhook.status === 'ignored') {
+						return c.json({ ok: true, payload: webhook });
+					}
+					const claimed = await store.claimCommerceWebhookEvent(webhook.id);
+					if (!claimed || claimed.status === 'processed') return c.json({ ok: true, payload: claimed ?? webhook });
+					const result = await processCommerceStripeWebhook({ store, stripeConnectService, event });
+					const updated = result.ignored
+						? await store.markCommerceWebhookEventIgnored(webhook.id, {
+							processingError: result.reason,
+							relatedOrderId: result.relatedOrderId,
+							relatedSubscriptionId: result.relatedSubscriptionId,
+						})
+						: await store.markCommerceWebhookEventProcessed(webhook.id, {
+							relatedOrderId: result.relatedOrderId,
+							relatedSubscriptionId: result.relatedSubscriptionId,
+						});
+					return c.json({ ok: true, payload: updated });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/products', async (c) => {
+				return c.json({
+					ok: true,
+					payload: await store.listCommerceProducts(c.get('principal'), {
+						teamId: optionalTrimmedString(c.req.query('teamId')),
+						vendorId: optionalTrimmedString(c.req.query('vendorId')),
+						kind: optionalTrimmedString(c.req.query('kind')),
+						status: optionalTrimmedString(c.req.query('status')),
+						slug: optionalTrimmedString(c.req.query('slug')),
+					}),
+				});
+			});
+
+			app.post('/v1/commerce/products', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const sellerTeamId = optionalTrimmedString(body.sellerTeamId);
+				if (!sellerTeamId) return jsonError(c, 400, 'sellerTeamId is required.');
+				const access = await requireTeamAccess(c, store, sellerTeamId, 'teams:manage:team');
+				if (access.response) return access.response;
+				try {
+					return c.json({
+						ok: true,
+						payload: await store.createCommerceProductDraft(sellerTeamId, {
+							id: optionalTrimmedString(body.id),
+							kind: optionalTrimmedString(body.kind),
+							slug: optionalTrimmedString(body.slug),
+							title: optionalTrimmedString(body.title),
+							summary: optionalTrimmedString(body.summary),
+							description: optionalTrimmedString(body.description),
+							visibility: optionalTrimmedString(body.visibility),
+							ownershipModel: optionalTrimmedString(body.ownershipModel),
+							ownership: body.ownership && typeof body.ownership === 'object' ? body.ownership : undefined,
+							supportPolicy: optionalTrimmedString(body.supportPolicy),
+							license: optionalTrimmedString(body.license),
+							metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+						}),
+					});
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/products/:productId', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: access.product });
+			});
+
+			app.patch('/v1/commerce/products/:productId', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({
+						ok: true,
+						payload: await store.updateCommerceProduct(access.product.id, {
+							kind: optionalTrimmedString(body.kind),
+							slug: optionalTrimmedString(body.slug),
+							title: optionalTrimmedString(body.title),
+							summary: body.summary === undefined ? undefined : optionalTrimmedString(body.summary),
+							description: body.description === undefined ? undefined : optionalTrimmedString(body.description),
+							visibility: optionalTrimmedString(body.visibility),
+							ownershipModel: optionalTrimmedString(body.ownershipModel),
+							supportPolicy: body.supportPolicy === undefined ? undefined : optionalTrimmedString(body.supportPolicy),
+							license: body.license === undefined ? undefined : optionalTrimmedString(body.license),
+							metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+						}),
+					});
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/products/:productId/submit', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.submitCommerceProduct(access.product.id, {
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/products/:productId/approve', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				if (!principalIsSeedAdmin(auth.principal)) return jsonError(c, 403, 'Permission denied.', { permission: 'commerce:approve:global' });
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const product = await store.approveCommerceProduct(c.req.param('productId'), {
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'operator',
+						actorId: auth.principal.id ?? null,
+					});
+					if (!product) return jsonError(c, 404, `Unknown commerce product "${c.req.param('productId')}".`);
+					return c.json({ ok: true, payload: product });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/products/:productId/ownership', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				const ownership = await store.createCommerceOwnershipRecord(access.product.id, body);
+				await store.setCurrentCommerceOwnershipRecord(access.product.id, ownership.id);
+				return c.json({ ok: true, payload: ownership });
+			});
+
+			app.get('/v1/commerce/products/:productId/ownership', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceOwnershipRecords(access.product.id) });
+			});
+
+			app.patch('/v1/commerce/products/:productId/ownership/:ownershipRecordId', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateCommerceOwnershipRecord(c.req.param('ownershipRecordId'), {
+					publicSummary: body.publicSummary === undefined ? undefined : optionalTrimmedString(body.publicSummary),
+					buyerVisible: body.buyerVisible,
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/stewards', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.createCommerceStewardshipAssignment(access.product.id, body) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/products/:productId/stewards', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceStewardshipAssignments(access.product.id) });
+			});
+
+			app.patch('/v1/commerce/products/:productId/stewards/:assignmentId', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateCommerceStewardshipAssignment(c.req.param('assignmentId'), {
+					displayName: body.displayName === undefined ? undefined : optionalTrimmedString(body.displayName),
+					responsibilities: body.responsibilities,
+					visibleToBuyers: body.visibleToBuyers,
+					endsAt: body.endsAt === undefined ? undefined : optionalTrimmedString(body.endsAt),
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/stewards/:assignmentId/end', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.endCommerceStewardshipAssignment(c.req.param('assignmentId'), {
+					endsAt: optionalTrimmedString(body.endsAt),
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/contributions', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.createCommerceContribution(access.product.id, body) });
+			});
+
+			app.get('/v1/commerce/products/:productId/contributions', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceContributions(access.product.id) });
+			});
+
+			app.patch('/v1/commerce/products/:productId/contributions/:contributionId', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateCommerceContribution(c.req.param('contributionId'), {
+					summary: body.summary === undefined ? undefined : optionalTrimmedString(body.summary),
+					attributionVisibility: optionalTrimmedString(body.attributionVisibility),
+					benefitWeight: body.benefitWeight,
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/governance-policy', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.createCommerceGovernancePolicy({
+					...body,
+					productId: access.product.id,
+					teamId: access.product.sellerTeamId,
+				}) });
+			});
+
+			app.get('/v1/commerce/products/:productId/governance-policy', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceGovernancePolicies({ productId: access.product.id }) });
+			});
+
+			app.patch('/v1/commerce/products/:productId/governance-policy/:policyId', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.updateCommerceGovernancePolicy(c.req.param('policyId'), {
+					title: body.title === undefined ? undefined : optionalTrimmedString(body.title),
+					approvalRules: body.approvalRules,
+					quorumRules: body.quorumRules,
+					buyerVisibleSummary: body.buyerVisibleSummary === undefined ? undefined : optionalTrimmedString(body.buyerVisibleSummary),
+					status: optionalTrimmedString(body.status),
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/ownership-transfer', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.createCommerceOwnershipTransfer(access.product.id, {
+					...body,
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+					requestedByType: 'user',
+					requestedById: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/ownership-transfer/:transferId/submit', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.submitCommerceOwnershipTransfer(c.req.param('transferId'), {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/ownership-transfer/:transferId/approve', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.approveCommerceOwnershipTransfer(c.req.param('transferId'), {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/ownership-transfer/:transferId/reject', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.rejectCommerceOwnershipTransfer(c.req.param('transferId'), {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/ownership-transfer/:transferId/cancel', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.cancelCommerceOwnershipTransfer(c.req.param('transferId'), {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/succession-events', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.createCommerceSuccessionEvent(access.product.id, {
+					...body,
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+					createdByType: 'user',
+					createdById: access.principal.id ?? null,
+				}) });
+			});
+
+			app.get('/v1/commerce/products/:productId/succession-events', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				const canManage = await principalCanManageCommerceProduct(store, access.principal, access.product);
+				const events = await store.listCommerceSuccessionEvents(access.product.id);
+				return c.json({ ok: true, payload: canManage ? events : [] });
+			});
+
+			app.get('/v1/commerce/products/:productId/ownership-workflow', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				const workflow = await store.getCommerceOwnershipWorkflowSummary(access.product.id);
+				const canManage = await principalCanManageCommerceProduct(store, access.principal, access.product);
+				return c.json({ ok: true, payload: canManage ? workflow : redactCommerceOwnershipWorkflow(workflow) });
+			});
+
+			app.get('/v1/commerce/marketplace', async (c) => {
+				return c.json({
+					ok: true,
+					payload: await store.listCommerceMarketplaceProducts(c.get('principal'), {
+						kind: optionalTrimmedString(c.req.query('kind')),
+					}),
+				});
+			});
+
+			app.get('/v1/commerce/marketplace/products/:productId', async (c) => {
+				const product = await store.getCommerceMarketplaceProduct(c.req.param('productId'), c.get('principal'));
+				if (!product) return jsonError(c, 404, `Unknown marketplace product "${c.req.param('productId')}".`);
+				return c.json({ ok: true, payload: product });
+			});
+
+			app.get('/v1/commerce/capacity-listings', async (c) => {
+				return c.json({
+					ok: true,
+					payload: await store.listCommerceCapacityListings(c.get('principal'), {
+						productId: optionalTrimmedString(c.req.query('productId')),
+						vendorId: optionalTrimmedString(c.req.query('vendorId')),
+						sellerTeamId: optionalTrimmedString(c.req.query('sellerTeamId')),
+						status: optionalTrimmedString(c.req.query('status')),
+						accessLevel: optionalTrimmedString(c.req.query('accessLevel')),
+					}),
+				});
+			});
+
+			app.get('/v1/commerce/capacity-listings/:listingId', async (c) => {
+				const access = await requireCommerceCapacityListingAccess(c, store, c.req.param('listingId'), null);
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: access.listing });
+			});
+
+			app.post('/v1/commerce/products/:productId/capacity-listing', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const listing = await store.createCommerceCapacityListing(access.product.id, {
+						capacityProviderId: optionalTrimmedString(body.capacityProviderId),
+						capacityProviderLaneId: optionalTrimmedString(body.capacityProviderLaneId),
+						accessLevel: optionalTrimmedString(body.accessLevel),
+						runtimeIsolationLevel: optionalTrimmedString(body.runtimeIsolationLevel),
+						humanInvolvementLevel: optionalTrimmedString(body.humanInvolvementLevel),
+						aiInvolvementLevel: optionalTrimmedString(body.aiInvolvementLevel),
+						dataAccessLevel: optionalTrimmedString(body.dataAccessLevel),
+						secretAccessLevel: optionalTrimmedString(body.secretAccessLevel),
+						supportedServiceTypes: Array.isArray(body.supportedServiceTypes) ? body.supportedServiceTypes : [],
+						supportedRegions: Array.isArray(body.supportedRegions) ? body.supportedRegions : [],
+						runtimeRequirements: body.runtimeRequirements && typeof body.runtimeRequirements === 'object' ? body.runtimeRequirements : {},
+						dataHandlingSummary: optionalTrimmedString(body.dataHandlingSummary),
+						buyerVisibleRiskSummary: optionalTrimmedString(body.buyerVisibleRiskSummary),
+						governanceRequirements: body.governanceRequirements && typeof body.governanceRequirements === 'object' ? body.governanceRequirements : {},
+						supportPolicy: optionalTrimmedString(body.supportPolicy),
+						availabilitySummary: optionalTrimmedString(body.availabilitySummary),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+						marketAdmin: principalIsSeedAdmin(access.principal),
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					});
+					return c.json({ ok: true, payload: listing }, { status: 201 });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/products/:productId/capacity-listing', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				const canManage = await principalCanManageCommerceProduct(store, access.principal, access.product);
+				const listing = await store.getCommerceCapacityListingForProduct(access.product.id, { publicSafe: !canManage });
+				if (!listing) return jsonError(c, 404, `Unknown commerce capacity listing for product "${access.product.id}".`);
+				if (!canManage && (listing.status !== 'approved' || listing.accessLevel !== 'public_summary')) return jsonError(c, 403, 'Permission denied.', { productId: access.product.id });
+				return c.json({ ok: true, payload: listing });
+			});
+
+			app.patch('/v1/commerce/capacity-listings/:listingId', async (c) => {
+				const access = await requireCommerceCapacityListingAccess(c, store, c.req.param('listingId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.updateCommerceCapacityListing(access.listing.id, {
+						capacityProviderId: body.capacityProviderId === undefined ? undefined : optionalTrimmedString(body.capacityProviderId),
+						capacityProviderLaneId: body.capacityProviderLaneId === undefined ? undefined : optionalTrimmedString(body.capacityProviderLaneId),
+						accessLevel: optionalTrimmedString(body.accessLevel),
+						runtimeIsolationLevel: optionalTrimmedString(body.runtimeIsolationLevel),
+						humanInvolvementLevel: optionalTrimmedString(body.humanInvolvementLevel),
+						aiInvolvementLevel: optionalTrimmedString(body.aiInvolvementLevel),
+						dataAccessLevel: optionalTrimmedString(body.dataAccessLevel),
+						secretAccessLevel: optionalTrimmedString(body.secretAccessLevel),
+						supportedServiceTypes: body.supportedServiceTypes,
+						supportedRegions: body.supportedRegions,
+						runtimeRequirements: body.runtimeRequirements,
+						dataHandlingSummary: body.dataHandlingSummary === undefined ? undefined : optionalTrimmedString(body.dataHandlingSummary),
+						buyerVisibleRiskSummary: body.buyerVisibleRiskSummary === undefined ? undefined : optionalTrimmedString(body.buyerVisibleRiskSummary),
+						governanceRequirements: body.governanceRequirements,
+						supportPolicy: body.supportPolicy === undefined ? undefined : optionalTrimmedString(body.supportPolicy),
+						availabilitySummary: body.availabilitySummary === undefined ? undefined : optionalTrimmedString(body.availabilitySummary),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+						marketAdmin: principalIsSeedAdmin(access.principal),
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/capacity-listings/:listingId/submit', async (c) => {
+				const access = await requireCommerceCapacityListingAccess(c, store, c.req.param('listingId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.submitCommerceCapacityListing(access.listing.id, {
+						marketAdmin: principalIsSeedAdmin(access.principal),
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/capacity-listings/:listingId/approve', async (c) => {
+				const access = await requireCommerceCapacityListingAccess(c, store, c.req.param('listingId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				if (!principalIsSeedAdmin(access.principal)) return jsonError(c, 403, 'Permission denied.', { permission: 'commerce:capacity:approve' });
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.approveCommerceCapacityListing(access.listing.id, {
+						marketAdmin: true,
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'operator',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/capacity-listings/:listingId/reject', async (c) => {
+				const access = await requireCommerceCapacityListingAccess(c, store, c.req.param('listingId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				if (!principalIsSeedAdmin(access.principal)) return jsonError(c, 403, 'Permission denied.', { permission: 'commerce:capacity:approve' });
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.rejectCommerceCapacityListing(access.listing.id, {
+						marketAdmin: true,
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'operator',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/capacity-listings/:listingId/suspend', async (c) => {
+				const access = await requireCommerceCapacityListingAccess(c, store, c.req.param('listingId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				if (!principalIsSeedAdmin(access.principal)) return jsonError(c, 403, 'Permission denied.', { permission: 'commerce:capacity:approve' });
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.suspendCommerceCapacityListing(access.listing.id, {
+						marketAdmin: true,
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'operator',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/capacity-listings/:listingId/archive', async (c) => {
+				const access = await requireCommerceCapacityListingAccess(c, store, c.req.param('listingId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.archiveCommerceCapacityListing(access.listing.id, {
+						marketAdmin: principalIsSeedAdmin(access.principal),
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/capacity-listings/:listingId/inquiries', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				const buyerTeamId = optionalTrimmedString(body.buyerTeamId);
+				if (buyerTeamId) {
+					const access = await requireTeamAccess(c, store, buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				try {
+					return c.json({ ok: true, payload: await store.createCommerceCapacityListingInquiry(auth.principal, c.req.param('listingId'), {
+						buyerTeamId,
+						requestedServiceType: optionalTrimmedString(body.requestedServiceType),
+						requestedScope: optionalTrimmedString(body.requestedScope),
+						dataAccessRequested: body.dataAccessRequested && typeof body.dataAccessRequested === 'object' ? body.dataAccessRequested : {},
+						secretAccessRequested: body.secretAccessRequested && typeof body.secretAccessRequested === 'object' ? body.secretAccessRequested : {},
+						relatedProjectId: optionalTrimmedString(body.relatedProjectId),
+						relatedWorkdayId: optionalTrimmedString(body.relatedWorkdayId),
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+						actorType: 'user',
+						actorId: auth.principal.id ?? null,
+					}) }, { status: 201 });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/capacity-listing-inquiries', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const sellerTeamId = optionalTrimmedString(c.req.query('sellerTeamId'));
+				const buyerTeamId = optionalTrimmedString(c.req.query('buyerTeamId'));
+				if (sellerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, sellerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				if (buyerTeamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, buyerTeamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				return c.json({ ok: true, payload: await store.listCommerceCapacityListingInquiries(auth.principal, {
+					listingId: optionalTrimmedString(c.req.query('listingId')),
+					productId: optionalTrimmedString(c.req.query('productId')),
+					vendorId: optionalTrimmedString(c.req.query('vendorId')),
+					sellerTeamId,
+					buyerTeamId,
+					buyerUserId: optionalTrimmedString(c.req.query('buyerUserId')) ?? (!sellerTeamId && !buyerTeamId && !principalIsSeedAdmin(auth.principal) ? auth.principal.id : null),
+					status: optionalTrimmedString(c.req.query('status')),
+				}) });
+			});
+
+			app.get('/v1/commerce/capacity-listing-inquiries/:inquiryId', async (c) => {
+				const access = await requireCommerceCapacityInquiryAccess(c, store, c.req.param('inquiryId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: access.inquiry });
+			});
+
+			app.post('/v1/commerce/capacity-listing-inquiries/:inquiryId/review', async (c) => {
+				const access = await requireCommerceCapacityInquiryAccess(c, store, c.req.param('inquiryId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const sellerAccess = principalIsSeedAdmin(access.principal) ? { response: null } : await requireTeamAccess(c, store, access.inquiry.sellerTeamId, 'teams:manage:team');
+				if (sellerAccess.response) return sellerAccess.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.markCommerceCapacityInquiryReviewing(access.inquiry.id, {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/capacity-listing-inquiries/:inquiryId/approve-for-scoping', async (c) => {
+				const access = await requireCommerceCapacityInquiryAccess(c, store, c.req.param('inquiryId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const sellerAccess = principalIsSeedAdmin(access.principal) ? { response: null } : await requireTeamAccess(c, store, access.inquiry.sellerTeamId, 'teams:manage:team');
+				if (sellerAccess.response) return sellerAccess.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.approveCommerceCapacityInquiryForScoping(access.inquiry.id, {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/capacity-listing-inquiries/:inquiryId/decline', async (c) => {
+				const access = await requireCommerceCapacityInquiryAccess(c, store, c.req.param('inquiryId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const sellerAccess = principalIsSeedAdmin(access.principal) ? { response: null } : await requireTeamAccess(c, store, access.inquiry.sellerTeamId, 'teams:manage:team');
+				if (sellerAccess.response) return sellerAccess.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.declineCommerceCapacityInquiry(access.inquiry.id, {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+					actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/capacity-listing-inquiries/:inquiryId/cancel', async (c) => {
+				const access = await requireCommerceCapacityInquiryAccess(c, store, c.req.param('inquiryId'), 'projects:read:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.cancelCommerceCapacityInquiry(access.inquiry.id, {
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/products/:productId/versions', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.createCommerceProductVersion(access.product.id, body) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/products/:productId/versions', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommerceProductVersions(access.product.id) });
+			});
+
+			app.post('/v1/commerce/products/:productId/versions/:versionId/submit', async (c) => {
+				const access = await requireCommerceProductAccess(c, store, c.req.param('productId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.submitCommerceProductVersion(c.req.param('versionId'), {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/products/:productId/versions/:versionId/approve', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				if (!principalIsSeedAdmin(auth.principal)) return jsonError(c, 403, 'Permission denied.', { permission: 'commerce:approve:global' });
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.approveCommerceProductVersion(c.req.param('versionId'), {
+						publishedAt: optionalTrimmedString(body.publishedAt),
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'operator',
+						actorId: auth.principal.id ?? null,
+					}) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/offers', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const productId = optionalTrimmedString(body.productId);
+				if (!productId) return jsonError(c, 400, 'productId is required.');
+				const access = await requireCommerceProductAccess(c, store, productId, 'teams:manage:team');
+				if (access.response) return access.response;
+				try {
+					return c.json({ ok: true, payload: await store.createCommerceOffer(body) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/offers', async (c) => {
+				return c.json({ ok: true, payload: await store.listCommerceOffers({
+					productId: optionalTrimmedString(c.req.query('productId')),
+					vendorId: optionalTrimmedString(c.req.query('vendorId')),
+					sellerTeamId: optionalTrimmedString(c.req.query('sellerTeamId')),
+					status: optionalTrimmedString(c.req.query('status')),
+					mode: optionalTrimmedString(c.req.query('mode')),
+				}) });
+			});
+
+			app.get('/v1/commerce/offers/:offerId', async (c) => {
+				const access = await requireCommerceOfferAccess(c, store, c.req.param('offerId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: access.offer });
+			});
+
+			app.patch('/v1/commerce/offers/:offerId', async (c) => {
+				const access = await requireCommerceOfferAccess(c, store, c.req.param('offerId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.updateCommerceOffer(access.offer.id, body) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/offers/:offerId/submit', async (c) => {
+				const access = await requireCommerceOfferAccess(c, store, c.req.param('offerId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				return c.json({ ok: true, payload: await store.submitCommerceOffer(access.offer.id, {
+					reason: optionalTrimmedString(body.reason),
+					evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+					actorType: 'user',
+					actorId: access.principal.id ?? null,
+				}) });
+			});
+
+			app.post('/v1/commerce/offers/:offerId/approve', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				if (!principalIsSeedAdmin(auth.principal)) return jsonError(c, 403, 'Permission denied.', { permission: 'commerce:approve:global' });
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const offer = await store.approveCommerceOffer(c.req.param('offerId'), {
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: 'operator',
+						actorId: auth.principal.id ?? null,
+					});
+					if (!offer) return jsonError(c, 404, `Unknown commerce offer "${c.req.param('offerId')}".`);
+					const syncResult = await syncCommerceOfferStripeProduct({
+						store,
+						stripeConnectService,
+						offer,
+						actorType: 'operator',
+						actorId: auth.principal.id ?? null,
+					});
+					const syncedOffer = syncResult.offer ?? offer;
+					if (syncedOffer.activePriceId) {
+						const activePrice = await store.getCommercePrice(syncedOffer.activePriceId);
+						if (activePrice) {
+							await syncCommercePriceStripePrice({
+								store,
+								stripeConnectService,
+								price: activePrice,
+								actorType: 'operator',
+								actorId: auth.principal.id ?? null,
+							});
+						}
+					}
+					return c.json({ ok: true, payload: await store.getCommerceOffer(offer.id) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/offers/:offerId/stripe/status', async (c) => {
+				const access = await requireCommerceOfferAccess(c, store, c.req.param('offerId'), 'projects:read:team');
+				if (access.response) return access.response;
+				const prices = await store.listCommercePrices(access.offer.id);
+				return c.json({
+					ok: true,
+					payload: {
+						offer: access.offer,
+						prices,
+					},
+				});
+			});
+
+			app.post('/v1/commerce/offers/:offerId/stripe/reconcile', async (c) => {
+				const access = await requireCommerceOfferAccess(c, store, c.req.param('offerId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				try {
+					const result = await syncCommerceOfferStripeProduct({
+						store,
+						stripeConnectService,
+						offer: access.offer,
+						actorType: principalIsSeedAdmin(access.principal) ? 'operator' : 'user',
+						actorId: access.principal.id ?? null,
+						reconcile: true,
+						throwOnBlocked: true,
+					});
+					return c.json({ ok: true, payload: result });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/offers/:offerId/prices', async (c) => {
+				const access = await requireCommerceOfferAccess(c, store, c.req.param('offerId'), 'teams:manage:team');
+				if (access.response) return access.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					return c.json({ ok: true, payload: await store.createCommercePrice(access.offer.id, body) });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/offers/:offerId/prices', async (c) => {
+				const access = await requireCommerceOfferAccess(c, store, c.req.param('offerId'));
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: await store.listCommercePrices(access.offer.id) });
+			});
+
+			app.post('/v1/commerce/prices/:priceId/activate', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await c.req.json().catch(() => ({}));
+				try {
+					const existing = await store.getCommercePrice(c.req.param('priceId'));
+					if (!existing) return jsonError(c, 404, `Unknown commerce price "${c.req.param('priceId')}".`);
+					const offer = await store.getCommerceOffer(existing.offerId);
+					const access = await requireTeamAccess(c, store, offer.sellerTeamId, 'teams:manage:team');
+					if (access.response) return access.response;
+					const price = await store.activateCommercePrice(c.req.param('priceId'), {
+						reason: optionalTrimmedString(body.reason),
+						evidence: body.evidence && typeof body.evidence === 'object' ? body.evidence : {},
+						actorType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+						actorId: auth.principal.id ?? null,
+					});
+					const refreshedOffer = await store.getCommerceOffer(existing.offerId);
+					if (refreshedOffer?.status === 'approved') {
+						const syncResult = await syncCommercePriceStripePrice({
+							store,
+							stripeConnectService,
+							price,
+							actorType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+							actorId: auth.principal.id ?? null,
+						});
+						return c.json({ ok: true, payload: syncResult.price ?? price });
+					}
+					return c.json({ ok: true, payload: price });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.post('/v1/commerce/prices/:priceId/stripe/reconcile', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				try {
+					const price = await store.getCommercePrice(c.req.param('priceId'));
+					if (!price) return jsonError(c, 404, `Unknown commerce price "${c.req.param('priceId')}".`);
+					const offer = await store.getCommerceOffer(price.offerId);
+					const access = await requireTeamAccess(c, store, offer.sellerTeamId, 'teams:manage:team');
+					if (access.response) return access.response;
+					const result = await syncCommercePriceStripePrice({
+						store,
+						stripeConnectService,
+						price,
+						actorType: principalIsSeedAdmin(auth.principal) ? 'operator' : 'user',
+						actorId: auth.principal.id ?? null,
+						reconcile: true,
+						throwOnBlocked: true,
+					});
+					return c.json({ ok: true, payload: result });
+				} catch (error) {
+					return commerceErrorResponse(c, error);
+				}
+			});
+
+			app.get('/v1/commerce/governance-events', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const teamId = optionalTrimmedString(c.req.query('teamId'));
+				if (teamId && !principalIsSeedAdmin(auth.principal)) {
+					const access = await requireTeamAccess(c, store, teamId, 'projects:read:team');
+					if (access.response) return access.response;
+				}
+				return c.json({ ok: true, payload: await store.listCommerceGovernanceEvents({
+					objectType: optionalTrimmedString(c.req.query('objectType')),
+					objectId: optionalTrimmedString(c.req.query('objectId')),
+					productId: optionalTrimmedString(c.req.query('productId')),
+					offerId: optionalTrimmedString(c.req.query('offerId')),
+					teamId,
+				}) });
 			});
 
 			app.get('/v1/catalog', async (c) => {

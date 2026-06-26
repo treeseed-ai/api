@@ -97,6 +97,7 @@
     "libsodium-wrappers-sumo": "^0.7.16",
     "octokit": "^5.0.5",
     "pg": "^8.21.0",
+    "stripe": "^22.3.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

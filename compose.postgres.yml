@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: treeseed_api
       POSTGRES_USER: treeseed
-      POSTGRES_PASSWORD: ${TREESEED_LOCAL_POSTGRES_PASSWORD:?TREESEED_LOCAL_POSTGRES_PASSWORD must be injected by trsd for local Docker Compose.}
+      POSTGRES_PASSWORD: ${TREESEED_LOCAL_POSTGRES_PASSWORD:-treeseed-local-dev}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U treeseed -d treeseed_api"]
       interval: 5s

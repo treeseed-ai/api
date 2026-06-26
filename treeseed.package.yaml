@@ -54,3 +54,30 @@ projectArchitecture:
   contentPublishTarget:
     kind: cloudflare_r2
     prefix: packages/api
+localDev:
+  services:
+    api:
+      script: dev:api
+      hostEnv: HOST
+      portEnv: PORT
+      defaultPort: 3000
+      healthPath: /healthz
+    operationsRunner:
+      script: dev:runner
+  database:
+    kind: postgres
+    managed: true
+    host: 127.0.0.1
+    defaultPort: 54329
+    portEnv: TREESEED_MARKET_LOCAL_POSTGRES_PORT
+    urlEnv: TREESEED_DATABASE_URL
+    compatibilityUrlEnv: TREESEED_MARKET_DATABASE_URL
+    containerName: treeseed-api-postgres
+    volumeName: treeseed-api-postgres-volume
+    user: treeseed
+    password: treeseed-local-dev
+    database: treeseed_api
+  migrations:
+    command: node
+    args:
+      - scripts/migrate-db.ts

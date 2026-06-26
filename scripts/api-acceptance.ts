@@ -8,7 +8,8 @@ import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '
 
 function parseArgs(argv) {
 	const args = {
-		environment: 'staging',
+		environment: process.env.TREESEED_ACCEPTANCE_ENVIRONMENT || process.env.TREESEED_ENVIRONMENT || 'local',
+		baseUrl: process.env.TREESEED_API_BASE_URL || 'http://127.0.0.1:3000',
 		spec: 'test/acceptance/api.base.yaml',
 		reportJson: '',
 		reportJunit: '',
@@ -127,21 +128,34 @@ function acceptanceRequestTimeoutMs() {
 
 async function fetchWithTimeout(url, init = {}, label = String(url)) {
 	const timeoutMs = acceptanceRequestTimeoutMs();
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(new Error(`Acceptance request timed out after ${timeoutMs}ms: ${label}`)), timeoutMs);
-	try {
-		return await fetch(url, {
-			...init,
-			signal: init.signal ?? controller.signal,
-		});
-	} catch (error) {
-		if (controller.signal.aborted) {
-			throw new Error(`Acceptance request timed out after ${timeoutMs}ms: ${label}`);
+	const maxAttempts = init.signal ? 1 : 2;
+	let lastError = null;
+	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(new Error(`Acceptance request timed out after ${timeoutMs}ms: ${label}`)), timeoutMs);
+		try {
+			return await fetch(url, {
+				...init,
+				signal: init.signal ?? controller.signal,
+			});
+		} catch (error) {
+			if (controller.signal.aborted) {
+				throw new Error(`Acceptance request timed out after ${timeoutMs}ms: ${label}`);
+			}
+			lastError = error;
+			const code = error?.cause?.code;
+			const retryable = code === 'UND_ERR_SOCKET' || code === 'ECONNRESET';
+			if (!retryable || attempt >= maxAttempts) break;
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		} finally {
+			clearTimeout(timeout);
 		}
-		throw error;
-	} finally {
-		clearTimeout(timeout);
 	}
+	const cause = lastError?.cause;
+	const details = cause?.code || cause?.message
+		? ` (${[cause?.code, cause?.message].filter(Boolean).join(': ')})`
+		: '';
+	throw new Error(`Acceptance request failed for ${label}: ${lastError?.message ?? String(lastError)}${details}`);
 }
 
 function getPath(value, path) {
@@ -258,6 +272,10 @@ function fixtureValue(name) {
 		hostId: 'acceptance-hostId',
 		environmentId: '${fixtures.environment.id}',
 		requestId: '${fixtures.approvalRequest.id}',
+		vendorId: 'acceptance-vendorId',
+		productId: 'acceptance-productId',
+		offerId: 'acceptance-offerId',
+		priceId: 'acceptance-priceId',
 		taskId: '${fixtures.task.id}',
 		jobId: '${fixtures.job.id}',
 		executionProviderId: '${fixtures.provider.id}:codex-subscription:acceptance-native-capacity',
@@ -384,6 +402,238 @@ function bodyForFactory(factory, descriptor, actor) {
 		hostingAudit: { environment: '${environment}' },
 		seedExport: { includeSecrets: false },
 		teamCreate: { slug: `${stamp}-${actor}-team`, name: `Acceptance ${actor} Team` },
+		commonsQuestion: {
+			title: `Acceptance ${actor} Commons Question`,
+			body: 'How should TreeSeed prioritize cooperative governance improvements?',
+		},
+		commonsQuestionAnswer: {
+			answer: 'Acceptance steward answer.',
+		},
+		commonsProposal: {
+			title: `Acceptance ${actor} Commons Proposal`,
+			summary: 'Acceptance proposal summary.',
+			body: 'Acceptance proposal body with evidence and expected outcomes.',
+			scope: 'treeseed_commons',
+			decisionType: 'advisory',
+		},
+		commonsBacking: { reason: 'Acceptance backing.' },
+		commonsVote: { vote: 'support', reason: 'Acceptance vote.' },
+		commonsDecision: { reason: 'Acceptance Commons decision.', evidence: { acceptance: true } },
+		commonsStewardDecision: {
+			status: 'accepted',
+			reason: 'Acceptance steward decision.',
+			evidence: { acceptance: true },
+			capacityBudget: 'acceptance',
+		},
+		commonsDelegation: {
+			toParticipantId: '${fixtures.commonsParticipant.id}',
+			scope: 'treeseed_commons',
+			reason: 'Acceptance delegation.',
+		},
+		commerceVendorRequest: { displayName: `Acceptance ${actor} Vendor`, slug: `${stamp}-${actor}-vendor`, reason: 'Acceptance vendor capability request.' },
+		commerceVendorApproval: { trustLevel: 'verified_seller', salesEnabled: true, reason: 'Acceptance vendor approval.' },
+		commerceStripeOnboarding: {
+			returnUrl: 'https://market.example.com/app/teams/${fixtures.team.id}/commerce?stripe=returned',
+			refreshUrl: 'https://market.example.com/app/teams/${fixtures.team.id}/commerce?stripe=refresh',
+		},
+		commerceProductDraft: {
+			sellerTeamId: '${fixtures.team.id}',
+			kind: 'template',
+			slug: `${stamp}-${actor}-commerce-product`,
+			title: `Acceptance ${actor} Product`,
+			summary: 'Acceptance commerce product.',
+			visibility: 'public',
+			ownershipModel: 'cooperative_owned',
+			ownership: {
+				model: 'cooperative_owned',
+				canonicalOwnerType: 'cooperative',
+				canonicalOwnerId: `acceptance-${stamp}-cooperative`,
+				publicSummary: 'Acceptance cooperative owner.',
+			},
+		},
+		commerceOwnership: {
+			model: 'cooperative_owned',
+			canonicalOwnerType: 'cooperative',
+			canonicalOwnerId: `acceptance-${stamp}-cooperative`,
+			publicSummary: 'Acceptance cooperative ownership.',
+		},
+		commerceSteward: {
+			role: 'governance_steward',
+			assigneeType: 'team',
+			assigneeId: '${fixtures.team.id}',
+			responsibilities: ['acceptance governance'],
+		},
+		commerceContribution: {
+			contributorType: 'team',
+			contributorId: '${fixtures.team.id}',
+			role: 'acceptance_contributor',
+			summary: 'Acceptance contribution.',
+			benefitWeight: 0.5,
+		},
+		commerceGovernancePolicy: {
+			policyKind: 'cooperative',
+			title: 'Acceptance Commerce Governance Policy',
+			approvalRules: { acceptance: true },
+			quorumRules: { acceptance: true },
+			buyerVisibleSummary: 'Acceptance governance summary.',
+			status: 'active',
+		},
+		commerceOwnershipTransfer: {
+			fromOwnershipRecordId: 'acceptance-from-ownership',
+			toOwnershipRecordId: 'acceptance-to-ownership',
+			reason: 'Acceptance ownership transfer.',
+			approvalEvidence: { acceptance: true },
+		},
+		commerceOwnershipUpdate: {
+			publicSummary: 'Updated acceptance cooperative ownership.',
+			buyerVisible: true,
+			reason: 'Acceptance ownership update.',
+		},
+		commerceStewardUpdate: {
+			displayName: 'Acceptance Governance Steward',
+			responsibilities: ['updated acceptance governance'],
+			visibleToBuyers: true,
+			reason: 'Acceptance stewardship update.',
+		},
+		commerceStewardEnd: {
+			reason: 'Acceptance stewardship ended.',
+		},
+		commerceContributionUpdate: {
+			summary: 'Updated acceptance contribution.',
+			attributionVisibility: 'buyer',
+			benefitWeight: 0.75,
+			reason: 'Acceptance contribution update.',
+		},
+		commerceGovernancePolicyUpdate: {
+			title: 'Updated Acceptance Commerce Governance Policy',
+			approvalRules: { updated: true },
+			quorumRules: { updated: true },
+			buyerVisibleSummary: 'Updated acceptance governance summary.',
+			status: 'active',
+			reason: 'Acceptance governance policy update.',
+		},
+		commerceOwnershipTransferDecision: {
+			reason: 'Acceptance ownership transfer decision.',
+			evidence: { acceptance: true },
+		},
+		commerceSuccessionEvent: {
+			successorType: 'team',
+			successorId: '${fixtures.team.id}',
+			eventType: 'successor_named',
+			reason: 'Acceptance succession event.',
+		},
+		commerceProductVersion: {
+			version: `0.0.0-${stamp}`,
+			artifactKey: `acceptance/${stamp}/artifact.tar`,
+			manifestKey: `acceptance/${stamp}/manifest.json`,
+			integrity: 'sha256:acceptance',
+		},
+		commerceOffer: {
+			productId: 'acceptance-productId',
+			mode: 'subscription_updates',
+			title: `Acceptance ${actor} Offer`,
+			termsSummary: 'Acceptance offer terms.',
+		},
+		commercePrice: {
+			amount: 100,
+			currency: 'usd',
+			billingInterval: 'month',
+		},
+		commerceCart: { buyerTeamId: '${fixtures.team.id}', metadata: { acceptance: true } },
+		commerceCartItem: { offerId: '${fixtures.commerceOffer.id}', priceId: '${fixtures.commercePrice.id}', quantity: 1 },
+		commerceCheckout: {
+			buyerTeamId: '${fixtures.team.id}',
+			items: [{ offerId: '${fixtures.commerceOffer.id}', priceId: '${fixtures.commercePrice.id}', quantity: 1 }],
+		},
+		commerceRefund: {
+			amount: 100,
+			reason: 'Acceptance refund.',
+			idempotencyKey: `acceptance-refund-${stamp}-${actor}`,
+		},
+		commerceFulfillment: {
+			message: 'Acceptance artifact fulfillment.',
+			artifactRefs: [{ acceptance: true }],
+		},
+		commerceServiceRequest: {
+			buyerTeamId: '${fixtures.team.id}',
+			offerId: '${fixtures.commerceOffer.id}',
+			requestedScope: 'Acceptance scoped service request.',
+			accessNeeds: { acceptance: true },
+		},
+		commerceServiceRequestUpdate: {
+			approvedScope: 'Updated acceptance scoped service.',
+			buyerVisibleSummary: 'Acceptance buyer-visible service summary.',
+			vendorPrivateNotes: 'Acceptance private seller notes.',
+		},
+		commerceServiceDecision: {
+			reason: 'Acceptance scoped service decision.',
+			evidence: { acceptance: true },
+		},
+		commerceServiceQuote: {
+			title: 'Acceptance scoped service quote',
+			scopeSummary: 'Acceptance quote scope.',
+			deliverables: [{ title: 'Acceptance deliverable' }],
+			assumptions: [{ title: 'Acceptance assumption' }],
+			accessRequirements: { projectAccess: 'explicit_approval_required' },
+			governanceRequirements: { approval: true },
+			amount: 100,
+			currency: 'usd',
+		},
+		commerceServiceContractCheckout: {
+			buyerTeamId: '${fixtures.team.id}',
+		},
+		commerceServiceWorkLink: {
+			relatedProjectId: '${fixtures.project.id}',
+			relatedWorkdayId: 'acceptance-workday',
+		},
+		commerceServiceFulfillment: {
+			summary: 'Acceptance service fulfillment.',
+			deliveryRefs: [{ type: 'manual', path: '/acceptance/service-delivery' }],
+		},
+		commerceCapacityListing: {
+			accessLevel: 'public_summary',
+			runtimeIsolationLevel: 'external_only',
+			humanInvolvementLevel: 'operator_assisted',
+			aiInvolvementLevel: 'assistive',
+			dataAccessLevel: 'buyer_provided',
+			secretAccessLevel: 'buyer_managed',
+			supportedServiceTypes: ['acceptance_capacity'],
+			supportedRegions: ['us'],
+			runtimeRequirements: { acceptance: true },
+			dataHandlingSummary: 'Acceptance capacity data handling.',
+			buyerVisibleRiskSummary: 'Acceptance capacity risk summary.',
+			governanceRequirements: { approval: true },
+			supportPolicy: 'Acceptance support policy.',
+			availabilitySummary: 'Acceptance availability.',
+		},
+		commerceCapacityListingUpdate: {
+			accessLevel: 'public_summary',
+			runtimeIsolationLevel: 'project_scoped',
+			humanInvolvementLevel: 'review_only',
+			aiInvolvementLevel: 'assistive',
+			dataAccessLevel: 'project_scoped',
+			secretAccessLevel: 'buyer_managed',
+			supportedServiceTypes: ['acceptance_capacity_updated'],
+			buyerVisibleRiskSummary: 'Updated acceptance capacity risk summary.',
+			reason: 'Acceptance capacity listing update.',
+		},
+		commerceCapacityListingDecision: {
+			reason: 'Acceptance capacity listing decision.',
+			evidence: { acceptance: true },
+		},
+		commerceCapacityInquiry: {
+			buyerTeamId: '${fixtures.team.id}',
+			requestedServiceType: 'acceptance_capacity',
+			requestedScope: 'Acceptance capacity inquiry.',
+			dataAccessRequested: { classification: 'acceptance' },
+			secretAccessRequested: { required: false },
+			relatedProjectId: '${fixtures.project.id}',
+		},
+		commerceCapacityInquiryDecision: {
+			reason: 'Acceptance capacity inquiry decision.',
+			evidence: { acceptance: true },
+		},
+		commerceTransition: { reason: 'Acceptance commerce transition.', evidence: { acceptance: true } },
 		localContentWrite: { slug: `${stamp}-${actor}-record`, title: `Acceptance ${actor}`, body: 'Acceptance content.' },
 		localContentRelated: { parent: { collection: 'decisions', slug: 'acceptance-parent' }, child: { slug: `${stamp}-${actor}-related`, title: 'Acceptance Related' } },
 		decisionFromProposals: { proposalIds: [], title: `Acceptance ${actor} Decision`, summary: 'Acceptance decision.' },
@@ -828,18 +1078,17 @@ async function requestAcceptanceJson({ variables, actors, actorId, method = 'GET
 	return { response, body: envelope };
 }
 
-function runMockedDeploymentRunner({ variables, actors, flow, args }) {
+function runMockedDeploymentRunner({ variables, actors, flow, args, operationId = null }) {
 	const runnerActor = actors[flow.runnerActor ?? 'platformRunner'] ?? {};
-	const runnerSecret = runnerActor.token ?? process.env.TREESEED_PLATFORM_RUNNER_SECRET;
-	if (!runnerSecret) {
-		throw new Error('Mocked deployment acceptance requires TREESEED_PLATFORM_RUNNER_SECRET or a seeded platformRunner actor.');
-	}
+	const runnerSecret = runnerActor.token ?? process.env.TREESEED_PLATFORM_RUNNER_SECRET ?? 'treeseed-platform-runner-dev-secret';
+	const databaseUrl = process.env.TREESEED_DATABASE_URL ?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api';
 	const market = flow.market ?? args.environment ?? 'local';
 	const runnerArgs = [
 		'./dist/operations-runner/entrypoint.js',
 		'once',
 		'--operation',
 		'project:web_deployment',
+		...(operationId ? ['--operation-id', operationId] : []),
 		'--mock-external',
 		'--mock-result',
 		flow.mockResult ?? 'success',
@@ -850,6 +1099,7 @@ function runMockedDeploymentRunner({ variables, actors, flow, args }) {
 		env: {
 			...process.env,
 			TREESEED_API_BASE_URL: variables.baseUrl,
+			TREESEED_DATABASE_URL: databaseUrl,
 			TREESEED_URL: variables.baseUrl,
 			TREESEED_MANAGER_ID: market,
 			TREESEED_PLATFORM_RUNNER_API_TRANSPORT: 'http',
@@ -899,8 +1149,9 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 		},
 	});
 	failures.push(...assertNoForbiddenDeploymentOutput(deploy.body, 'queued deployment'));
-	runMockedDeploymentRunner({ variables, actors, flow, args });
 	const deploymentId = deploy.body?.payload?.deployment?.id ?? deploy.body?.deployment?.id;
+	const deploymentOperationId = deploy.body?.payload?.deployment?.platformOperationId ?? deploy.body?.deployment?.platformOperationId;
+	runMockedDeploymentRunner({ variables, actors, flow, args, operationId: deploymentOperationId });
 	const deploymentDetail = await requestAcceptanceJson({
 		variables,
 		actors,
@@ -926,8 +1177,9 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 		},
 	});
 	failures.push(...assertNoForbiddenDeploymentOutput(monitor.body, 'queued monitor'));
-	runMockedDeploymentRunner({ variables, actors, flow, args });
 	const monitorDeploymentId = monitor.body?.payload?.deployment?.id ?? monitor.body?.deployment?.id;
+	const monitorOperationId = monitor.body?.payload?.deployment?.platformOperationId ?? monitor.body?.deployment?.platformOperationId;
+	runMockedDeploymentRunner({ variables, actors, flow, args, operationId: monitorOperationId });
 	const monitorDetail = await requestAcceptanceJson({
 		variables,
 		actors,
@@ -994,9 +1246,9 @@ async function actorForCase(caseSpec, actor, variables) {
 
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
-	if (args.help || (!args.baseUrl && !args.expandJson)) {
+	if (args.help) {
 		console.log('Usage: npm run test:acceptance -- --environment staging|prod --base-url https://api.example.com [--spec path] [--report-json path] [--report-junit path] [--expand-json path]');
-		process.exit(args.help ? 0 : 2);
+		process.exit(0);
 	}
 	const spec = loadSpec(args.spec);
 	const expectedStatuses = loadExpectedStatuses(spec.expectedStatuses);

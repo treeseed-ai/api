@@ -123,6 +123,9 @@ jobs:
     environment: staging
     permissions:
       contents: read
+    outputs:
+      api_immutable: ${{ steps.tags.outputs.api_immutable }}
+      runner_immutable: ${{ steps.tags.outputs.runner_immutable }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -213,9 +216,11 @@ jobs:
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
       TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || 'treeseed/treedx:dev-staging' }}
-      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || 'treeseed/api:latest' }}
-      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || 'treeseed/op-runner:latest' }}
+      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || needs.publish-dev-images.outputs.api_immutable || vars.TREESEED_API_IMAGE_REF || 'treeseed/api:latest' }}
+      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || needs.publish-dev-images.outputs.runner_immutable || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || 'treeseed/op-runner:latest' }}
       TREESEED_RAILWAY_DEPLOY_TRANSPORT: ${{ vars.TREESEED_RAILWAY_DEPLOY_TRANSPORT || 'api' }}
+      TREESEED_KEY_AGENT_TRANSPORT: inline
+      TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -227,6 +232,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci --workspaces=false
+      - name: Prepare Treeseed secret session
+        run: npx trsd secrets:unlock --from-env --create-if-missing --json
       - name: Plan API reconciliation
         run: npx trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
@@ -259,9 +266,11 @@ jobs:
       TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE }}
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
-      TREESEED_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && (vars.TREESEED_API_BASE_URL || 'https://api.treeseed.ai') || (vars.TREESEED_STAGING_API_BASE_URL || 'https://api-treeseed-staging.treeseed.ai') }}
+      TREESEED_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && (vars.TREESEED_API_BASE_URL || 'https://api.treeseed.ai') || (vars.TREESEED_STAGING_API_BASE_URL || 'https://api-treeseed-market-staging-ca844c56.treeseed.ai') }}
       TREESEED_ACCEPTANCE_SERVICE_ID: ${{ vars.TREESEED_API_WEB_SERVICE_ID || vars.TREESEED_WEB_SERVICE_ID || 'web' }}
       TREESEED_ACCEPTANCE_SERVICE_SECRET: ${{ secrets.TREESEED_API_WEB_SERVICE_SECRET || secrets.TREESEED_WEB_SERVICE_SECRET }}
+      TREESEED_KEY_AGENT_TRANSPORT: inline
+      TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -273,6 +282,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci --workspaces=false
+      - name: Prepare Treeseed secret session
+        run: npx trsd secrets:unlock --from-env --create-if-missing --json
       - name: Verify API hosting live
         run: npx trsd hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
       - name: Run operations runner smoke
