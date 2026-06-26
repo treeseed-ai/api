@@ -291,7 +291,7 @@ jobs:
       - name: Run live API acceptance
         run: |
           mkdir -p reports
-          tsx ./scripts/api-acceptance.ts \
+          npx --yes tsx ./scripts/api-acceptance.ts \
             --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" \
             --base-url "${TREESEED_API_BASE_URL}" \
             --report-json reports/api-acceptance.json \
