@@ -34,10 +34,8 @@ const runTreeseedHostingAuditMock = vi.hoisted(() => vi.fn(async (input: Record<
 const executeKnowledgeHubProviderLaunchMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@treeseed/sdk', async (importOriginal) => {
-	const governance = await import('../../../sdk/src/governance.ts');
 	return {
 	...(await importOriginal<typeof import('@treeseed/sdk')>()),
-	...governance,
 	COMMERCE_PRODUCT_KINDS: [
 		'template',
 		'knowledge_pack',
