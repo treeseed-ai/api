@@ -14,6 +14,7 @@ import {
 	summarizeCapacityRuntimeDiagnostics,
 	validateProviderAssignmentCapabilityHandles,
 } from '@treeseed/sdk/agent-capacity';
+import { governanceVotingProvider } from '@treeseed/sdk';
 import {
 	containsTreeseedPlaintextSecretMaterial,
 	validateTreeseedClientEncryptedEscrowMetadata,
@@ -78,6 +79,24 @@ function objectValue(value, fallback = {}) {
 
 function arrayValue(value) {
 	return Array.isArray(value) ? value : [];
+}
+
+function governanceContentHash(input = {}) {
+	const payload = {
+		title: String(input.title ?? '').trim(),
+		summary: String(input.summary ?? '').trim(),
+		body: String(input.body ?? '').trim(),
+		proposalType: String(input.proposalType ?? input.proposal_type ?? '').trim(),
+		relatedObjectives: arrayValue(input.relatedObjectives ?? input.related_objectives).map(String).sort(),
+		relatedQuestions: arrayValue(input.relatedQuestions ?? input.related_questions).map(String).sort(),
+		relatedNotes: arrayValue(input.relatedNotes ?? input.related_notes).map(String).sort(),
+		relatedBooks: arrayValue(input.relatedBooks ?? input.related_books).map(String).sort(),
+	};
+	return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+function governanceSlug(value, fallback = 'proposal') {
+	return safeIdPart(value, fallback).replace(/_+/gu, '-');
 }
 
 function treeDxConnectedAuthConfig(config = {}) {
@@ -2184,6 +2203,157 @@ function serializeCommonsGovernanceEvent(row) {
 		proposalId: row.proposal_id,
 		questionId: row.question_id,
 		decisionId: row.decision_id,
+		priorState: row.prior_state,
+		nextState: row.next_state,
+		message: row.message,
+		evidence: parseJson(row.evidence_json, {}),
+		createdAt: row.created_at,
+	};
+}
+
+function serializeGovernancePolicy(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id ?? null,
+		scope: row.scope ?? 'team',
+		providerId: row.provider_id,
+		providerVersion: row.provider_version,
+		config: parseJson(row.config_json, {}),
+		active: Number(row.active ?? 1) === 1,
+		createdBy: row.created_by ?? null,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		supersededAt: row.superseded_at ?? null,
+	};
+}
+
+function serializeGovernanceProposal(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		scope: row.scope,
+		status: row.status,
+		title: row.title,
+		summary: row.summary,
+		body: row.body,
+		proposalType: row.proposal_type,
+		contentProposalSlug: row.content_proposal_slug,
+		contentDecisionSlug: row.content_decision_slug,
+		activeVersion: Number(row.active_version ?? 1),
+		activeContentHash: row.active_content_hash,
+		governanceProviderId: row.governance_provider_id,
+		governanceProviderVersion: row.governance_provider_version,
+		governancePolicyId: row.governance_policy_id,
+		decisionId: row.decision_id,
+		votingStartsAt: row.voting_starts_at,
+		votingEndsAt: row.voting_ends_at,
+		closedAt: row.closed_at,
+		closedReason: row.closed_reason,
+		createdByType: row.created_by_type,
+		createdById: row.created_by_id,
+		metadata: parseJson(row.metadata_json, {}),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeGovernanceElectorateSnapshot(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		proposalId: row.proposal_id,
+		proposalVersion: Number(row.proposal_version ?? 1),
+		providerId: row.provider_id,
+		providerVersion: row.provider_version,
+		ruleSnapshot: parseJson(row.rule_snapshot_json, {}),
+		chambers: parseJson(row.chambers_json, []),
+		eligibleVoters: parseJson(row.eligible_voters_json, []),
+		delegations: parseJson(row.delegations_json, []),
+		eligibleWeightTotal: Number(row.eligible_weight_total ?? 0),
+		activeWeightTotal: Number(row.active_weight_total ?? 0),
+		createdAt: row.created_at,
+	};
+}
+
+function serializeGovernanceVote(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		proposalId: row.proposal_id,
+		proposalVersion: Number(row.proposal_version ?? 1),
+		userId: row.user_id,
+		vote: row.vote,
+		reason: row.reason,
+		chamberVotes: parseJson(row.chamber_votes_json, {}),
+		effectiveWeights: parseJson(row.effective_weights_json, {}),
+		delegatedFrom: parseJson(row.delegated_from_json, []),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeGovernanceDelegation(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		scope: row.scope,
+		fromUserId: row.from_user_id,
+		toUserId: row.to_user_id,
+		chambers: parseJson(row.chambers_json, []),
+		status: row.status,
+		reason: row.reason,
+		createdAt: row.created_at,
+		revokedAt: row.revoked_at,
+		expiresAt: row.expires_at,
+		metadata: parseJson(row.metadata_json, {}),
+	};
+}
+
+function serializeGovernanceDecision(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		proposalId: row.proposal_id,
+		proposalVersion: Number(row.proposal_version ?? 1),
+		proposalContentHash: row.proposal_content_hash,
+		status: row.status,
+		title: row.title,
+		summary: row.summary,
+		contentDecisionSlug: row.content_decision_slug,
+		governanceProviderId: row.governance_provider_id,
+		governanceRule: parseJson(row.governance_rule_json, {}),
+		electorateSnapshotId: row.electorate_snapshot_id,
+		voteResult: parseJson(row.vote_result_json, {}),
+		voterReasons: parseJson(row.voter_reasons_json, []),
+		proposalSnapshot: parseJson(row.proposal_snapshot_json, {}),
+		decisionRecord: parseJson(row.decision_record_json, {}),
+		createdByType: row.created_by_type,
+		createdById: row.created_by_id,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+		supersededAt: row.superseded_at,
+	};
+}
+
+function serializeGovernanceEvent(row) {
+	if (!row) return null;
+	return {
+		id: row.id,
+		eventType: row.event_type,
+		actorType: row.actor_type,
+		actorId: row.actor_id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		proposalId: row.proposal_id,
+		decisionId: row.decision_id,
+		proposalVersion: row.proposal_version == null ? null : Number(row.proposal_version),
 		priorState: row.prior_state,
 		nextState: row.next_state,
 		message: row.message,
@@ -11888,6 +12058,812 @@ export class MarketControlPlaneStore {
 			[projectId, Math.max(1, Math.min(200, Number(limit) || 50))],
 		);
 		return rows.map(serializeTaskUsageActual);
+	}
+
+	async recordGovernanceEvent(input = {}) {
+		await this.ensureInitialized();
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO governance_events (
+				id, event_type, actor_type, actor_id, team_id, project_id, proposal_id, decision_id,
+				proposal_version, prior_state, next_state, message, evidence_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				stringValue(input.eventType, 'governance.updated'),
+				stringValue(input.actorType, 'system'),
+				input.actorId ?? null,
+				input.teamId,
+				input.projectId ?? null,
+				input.proposalId ?? null,
+				input.decisionId ?? null,
+				input.proposalVersion ?? null,
+				input.priorState ?? null,
+				input.nextState ?? null,
+				input.message ?? null,
+				JSON.stringify(input.evidence ?? {}),
+				timestamp,
+			],
+		);
+		return serializeGovernanceEvent(await this.first(`SELECT * FROM governance_events WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async getTeamGovernancePolicy(teamId, scope = 'team') {
+		await this.ensureInitialized();
+		const row = await this.first(
+			`SELECT * FROM team_governance_policies
+			 WHERE team_id = ? AND scope = ? AND active = 1
+			 ORDER BY updated_at DESC LIMIT 1`,
+			[teamId, scope],
+		);
+		if (row) return serializeGovernancePolicy(row);
+		return this.ensureDefaultTeamGovernancePolicy(teamId, scope);
+	}
+
+	async ensureDefaultTeamGovernancePolicy(teamId, scope = 'team') {
+		await this.ensureInitialized();
+		const existing = await this.first(
+			`SELECT * FROM team_governance_policies
+			 WHERE team_id = ? AND scope = ? AND active = 1
+			 ORDER BY updated_at DESC LIMIT 1`,
+			[teamId, scope],
+		);
+		if (existing) return serializeGovernancePolicy(existing);
+		const timestamp = isoNow();
+		const providerId = teamId === TREESEED_COMMONS_TEAM_SLUG || scope === 'commons' ? 'treeseed_bicameral_v1' : 'admin_approval_v1';
+		const provider = governanceVotingProvider(providerId);
+		const id = `governance-policy:${teamId}:${scope}`;
+		await this.run(
+			`INSERT INTO team_governance_policies (
+				id, team_id, scope, provider_id, provider_version, config_json, active, created_by, created_at, updated_at, superseded_at
+			) VALUES (?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, NULL)`,
+			[id, teamId, scope, provider.id, provider.version, JSON.stringify({}), timestamp, timestamp],
+		);
+		return serializeGovernancePolicy(await this.first(`SELECT * FROM team_governance_policies WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async setTeamGovernancePolicy(teamId, input = {}) {
+		await this.ensureInitialized();
+		const scope = optionalStringValue(input.scope, 'team');
+		const provider = governanceVotingProvider(optionalStringValue(input.providerId, 'admin_approval_v1'));
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE team_governance_policies SET active = 0, superseded_at = ?, updated_at = ?
+			 WHERE team_id = ? AND scope = ? AND active = 1`,
+			[timestamp, timestamp, teamId, scope],
+		);
+		const id = input.id ?? `governance-policy:${teamId}:${scope}:${Date.parse(timestamp)}`;
+		await this.run(
+			`INSERT INTO team_governance_policies (
+				id, team_id, scope, provider_id, provider_version, config_json, active, created_by, created_at, updated_at, superseded_at
+			) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NULL)`,
+			[id, teamId, scope, provider.id, provider.version, JSON.stringify(objectValue(input.config, {})), input.createdBy ?? null, timestamp, timestamp],
+		);
+		return serializeGovernancePolicy(await this.first(`SELECT * FROM team_governance_policies WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async getProjectGovernancePolicy(projectId) {
+		await this.ensureInitialized();
+		const row = await this.first(
+			`SELECT * FROM project_governance_policies
+			 WHERE project_id = ? AND active = 1
+			 ORDER BY updated_at DESC LIMIT 1`,
+			[projectId],
+		);
+		if (row) return serializeGovernancePolicy(row);
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		return this.getTeamGovernancePolicy(project.teamId, 'project_default');
+	}
+
+	async setProjectGovernancePolicy(projectId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(projectId);
+		if (!project) return null;
+		const provider = governanceVotingProvider(optionalStringValue(input.providerId, 'admin_approval_v1'));
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE project_governance_policies SET active = 0, superseded_at = ?, updated_at = ?
+			 WHERE project_id = ? AND active = 1`,
+			[timestamp, timestamp, projectId],
+		);
+		const id = input.id ?? `governance-policy:${projectId}:${Date.parse(timestamp)}`;
+		await this.run(
+			`INSERT INTO project_governance_policies (
+				id, team_id, project_id, provider_id, provider_version, config_json, active, created_by, created_at, updated_at, superseded_at
+			) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NULL)`,
+			[id, project.teamId, project.id, provider.id, provider.version, JSON.stringify(objectValue(input.config, {})), input.createdBy ?? null, timestamp, timestamp],
+		);
+		return serializeGovernancePolicy(await this.first(`SELECT * FROM project_governance_policies WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async resolveGovernancePolicy(input = {}) {
+		if (input.projectId) {
+			const projectPolicy = await this.getProjectGovernancePolicy(input.projectId);
+			if (projectPolicy) return projectPolicy;
+		}
+		return this.getTeamGovernancePolicy(input.teamId, input.scope === 'commons' ? 'commons' : 'team');
+	}
+
+	async createGovernanceProposal(principal, input = {}) {
+		await this.ensureInitialized();
+		const title = stringValue(input.title);
+		const summary = stringValue(input.summary);
+		const body = stringValue(input.body);
+		if (!title || !summary || !body) {
+			const error = new Error('Proposal title, summary, and body are required.');
+			error.status = 400;
+			throw error;
+		}
+		const project = input.projectId ? await this.getProject(input.projectId) : null;
+		const teamId = input.teamId ?? project?.teamId ?? TREESEED_COMMONS_TEAM_SLUG;
+		const scope = optionalStringValue(input.scope, project ? 'project' : 'commons');
+		const policy = await this.resolveGovernancePolicy({ teamId, projectId: project?.id ?? null, scope });
+		const provider = governanceVotingProvider(policy?.providerId);
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		const proposalType = optionalStringValue(input.proposalType ?? input.decisionType, 'implementation');
+		const contentHash = governanceContentHash({ title, summary, body, proposalType });
+		const contentProposalSlug = optionalStringValue(input.contentProposalSlug) ?? governanceSlug(title, 'proposal');
+		await this.run(
+			`INSERT INTO governance_proposals (
+				id, team_id, project_id, scope, status, title, summary, body, proposal_type,
+				content_proposal_slug, content_decision_slug, active_version, active_content_hash,
+				governance_provider_id, governance_provider_version, governance_policy_id, decision_id,
+				voting_starts_at, voting_ends_at, closed_at, closed_reason, created_by_type, created_by_id,
+				metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				teamId,
+				project?.id ?? input.projectId ?? null,
+				scope,
+				input.status === 'open' || input.status === 'submitted' ? 'open' : 'draft',
+				title,
+				summary,
+				body,
+				proposalType,
+				contentProposalSlug,
+				contentHash,
+				provider.id,
+				provider.version,
+				policy?.id ?? null,
+				input.createdByType ?? 'user',
+				input.createdById ?? principal?.id ?? null,
+				JSON.stringify(input.metadata ?? {}),
+				timestamp,
+				timestamp,
+			],
+		);
+		await this.run(
+			`INSERT INTO governance_proposal_versions (
+				id, proposal_id, version, title, summary, body, content_hash, change_reason,
+				created_by_type, created_by_id, created_at
+			) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[randomUUID(), id, title, summary, body, contentHash, 'Initial proposal version.', input.createdByType ?? 'user', input.createdById ?? principal?.id ?? null, timestamp],
+		);
+		await this.recordGovernanceEvent({
+			eventType: 'proposal.created',
+			actorType: input.createdByType ?? 'user',
+			actorId: input.createdById ?? principal?.id ?? null,
+			teamId,
+			projectId: project?.id ?? input.projectId ?? null,
+			proposalId: id,
+			proposalVersion: 1,
+			nextState: input.status === 'open' || input.status === 'submitted' ? 'open' : 'draft',
+			evidence: { providerId: provider.id, policyId: policy?.id ?? null },
+		});
+		return this.getGovernanceProposal(id);
+	}
+
+	async getGovernanceProposal(proposalId) {
+		await this.ensureInitialized();
+		return serializeGovernanceProposal(await this.first(`SELECT * FROM governance_proposals WHERE id = ? LIMIT 1`, [proposalId]));
+	}
+
+	async listGovernanceProposals(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
+		const clauses = [];
+		const params = [];
+		for (const [key, column] of [['teamId', 'team_id'], ['projectId', 'project_id'], ['scope', 'scope'], ['status', 'status']]) {
+			if (filters[key]) {
+				clauses.push(`${column} = ?`);
+				params.push(filters[key]);
+			}
+		}
+		params.push(limit);
+		const rows = await this.all(
+			`SELECT * FROM governance_proposals ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+			 ORDER BY updated_at DESC LIMIT ?`,
+			params,
+		);
+		return rows.map(serializeGovernanceProposal);
+	}
+
+	async updateGovernanceProposalDraft(principal, proposalId, input = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getGovernanceProposal(proposalId);
+		if (!existing) return null;
+		if (['accepted', 'rejected', 'withdrawn', 'superseded', 'no_decision_quorum_failed'].includes(existing.status)) {
+			const error = new Error('Closed proposals cannot be edited. Create a revised proposal instead.');
+			error.status = 409;
+			throw error;
+		}
+		const title = optionalStringValue(input.title, existing.title);
+		const summary = optionalStringValue(input.summary, existing.summary);
+		const body = optionalStringValue(input.body, existing.body);
+		const proposalType = optionalStringValue(input.proposalType, existing.proposalType);
+		const nextHash = governanceContentHash({ title, summary, body, proposalType });
+		const materialChange = nextHash !== existing.activeContentHash;
+		const timestamp = isoNow();
+		const nextVersion = existing.status === 'voting' && materialChange ? existing.activeVersion + 1 : existing.activeVersion;
+		const nextStatus = existing.status === 'voting' && materialChange ? 'open' : existing.status;
+		if (nextVersion !== existing.activeVersion) {
+			await this.run(
+				`INSERT INTO governance_proposal_versions (
+					id, proposal_id, version, title, summary, body, content_hash, change_reason,
+					created_by_type, created_by_id, created_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, ?)`,
+				[randomUUID(), proposalId, nextVersion, title, summary, body, nextHash, optionalStringValue(input.changeReason, 'Material edit reset voting.'), principal?.id ?? null, timestamp],
+			);
+		}
+		await this.run(
+			`UPDATE governance_proposals
+			 SET title = ?, summary = ?, body = ?, proposal_type = ?, status = ?, active_version = ?,
+				 active_content_hash = ?, voting_starts_at = CASE WHEN ? = 1 THEN NULL ELSE voting_starts_at END,
+				 voting_ends_at = CASE WHEN ? = 1 THEN NULL ELSE voting_ends_at END, updated_at = ?
+			 WHERE id = ?`,
+			[title, summary, body, proposalType, nextStatus, nextVersion, nextHash, nextVersion !== existing.activeVersion ? 1 : 0, nextVersion !== existing.activeVersion ? 1 : 0, timestamp, proposalId],
+		);
+		await this.recordGovernanceEvent({
+			eventType: nextVersion !== existing.activeVersion ? 'proposal.version_reset_voting' : 'proposal.updated',
+			actorType: 'user',
+			actorId: principal?.id ?? null,
+			teamId: existing.teamId,
+			projectId: existing.projectId,
+			proposalId,
+			proposalVersion: nextVersion,
+			priorState: existing.status,
+			nextState: nextStatus,
+			evidence: { priorHash: existing.activeContentHash, nextHash },
+		});
+		return this.getGovernanceProposal(proposalId);
+	}
+
+	async openGovernanceProposal(principal, proposalId, input = {}) {
+		return this.transitionGovernanceProposal(proposalId, 'open', {
+			actorType: 'user',
+			actorId: principal?.id ?? null,
+			reason: optionalStringValue(input.reason),
+		});
+	}
+
+	async transitionGovernanceProposal(proposalId, nextState, input = {}) {
+		await this.ensureInitialized();
+		const existing = await this.getGovernanceProposal(proposalId);
+		if (!existing) return null;
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE governance_proposals SET status = ?, updated_at = ?, closed_at = ?, closed_reason = ? WHERE id = ?`,
+			[
+				nextState,
+				timestamp,
+				['accepted', 'rejected', 'withdrawn', 'superseded', 'no_decision_quorum_failed'].includes(nextState) ? timestamp : existing.closedAt,
+				input.reason ?? existing.closedReason ?? null,
+				proposalId,
+			],
+		);
+		await this.recordGovernanceEvent({
+			eventType: `proposal.${String(nextState).replace(/_/gu, '-')}`,
+			actorType: input.actorType ?? 'system',
+			actorId: input.actorId ?? null,
+			teamId: existing.teamId,
+			projectId: existing.projectId,
+			proposalId,
+			proposalVersion: existing.activeVersion,
+			priorState: existing.status,
+			nextState,
+			message: input.reason ?? null,
+			evidence: input.evidence ?? {},
+		});
+		return this.getGovernanceProposal(proposalId);
+	}
+
+	async governanceEligibleVoters(teamId, providerId = 'admin_approval_v1') {
+		const members = await this.listTeamMembers(teamId);
+		return members
+			.filter((member) => member.status === 'active')
+			.map((member) => {
+				const roles = new Set(member.roles ?? []);
+				const stakeWeight = roles.has('team_owner') ? 3 : roles.has('project_lead') ? 2 : roles.has('market_steward') ? 2 : 1;
+				return {
+					userId: member.userId,
+					teamMemberId: member.id,
+					activeForQuorum: true,
+					chambers: [
+						{ chamberId: 'member_chamber', eligible: true, weight: 1, source: 'team_membership', evidence: { roles: member.roles ?? [] } },
+						{ chamberId: 'stake_chamber', eligible: providerId === 'treeseed_bicameral_v1', weight: stakeWeight, source: 'team_role_weight', evidence: { roles: member.roles ?? [] } },
+						{ chamberId: 'admin_chamber', eligible: roles.has('team_owner') || roles.has('project_lead') || roles.has('market_steward'), weight: 1, source: 'team_manager_role', evidence: { roles: member.roles ?? [] } },
+					],
+				};
+			});
+	}
+
+	async activeGovernanceDelegationSnapshots(teamId, scope = 'team') {
+		const rows = await this.all(
+			`SELECT * FROM governance_delegations
+			 WHERE team_id = ? AND status = 'active' AND (scope = ? OR scope = 'team')
+			 ORDER BY created_at ASC`,
+			[teamId, scope],
+		);
+		return rows.map(serializeGovernanceDelegation).map((delegation) => ({
+			id: delegation.id,
+			fromUserId: delegation.fromUserId,
+			toUserId: delegation.toUserId,
+			scope: delegation.scope,
+			chambers: delegation.chambers,
+			status: delegation.status,
+			reason: delegation.reason,
+			createdAt: delegation.createdAt,
+		}));
+	}
+
+	async snapshotGovernanceElectorate(proposalId) {
+		await this.ensureInitialized();
+		const proposal = await this.getGovernanceProposal(proposalId);
+		if (!proposal) return null;
+		const provider = governanceVotingProvider(proposal.governanceProviderId);
+		const policy = proposal.projectId ? await this.getProjectGovernancePolicy(proposal.projectId) : await this.getTeamGovernancePolicy(proposal.teamId, proposal.scope === 'commons' ? 'commons' : 'team');
+		const eligibleVoters = await this.governanceEligibleVoters(proposal.teamId, provider.id);
+		const delegations = await this.activeGovernanceDelegationSnapshots(proposal.teamId, proposal.scope);
+		const snapshot = await provider.snapshotElectorate({
+			teamId: proposal.teamId,
+			projectId: proposal.projectId,
+			scope: proposal.scope,
+			proposalType: proposal.proposalType,
+			providerConfig: policy?.config ?? {},
+			eligibleVoters,
+			delegations,
+			createdAt: isoNow(),
+		});
+		const id = randomUUID();
+		await this.run(
+			`INSERT INTO governance_electorate_snapshots (
+				id, proposal_id, proposal_version, provider_id, provider_version, rule_snapshot_json, chambers_json,
+				eligible_voters_json, delegations_json, eligible_weight_total, active_weight_total, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			[
+				id,
+				proposal.id,
+				proposal.activeVersion,
+				snapshot.providerId,
+				snapshot.providerVersion,
+				JSON.stringify(snapshot.ruleSnapshot),
+				JSON.stringify(snapshot.chambers),
+				JSON.stringify(snapshot.eligibleVoters),
+				JSON.stringify(snapshot.delegations),
+				snapshot.chambers.reduce((total, chamber) => total + Number(chamber.eligibleWeightTotal ?? 0), 0),
+				snapshot.chambers.reduce((total, chamber) => total + Number(chamber.activeWeightTotal ?? 0), 0),
+				snapshot.createdAt,
+			],
+		);
+		await this.recordGovernanceEvent({
+			eventType: 'governance.electorate_snapshotted',
+			actorType: 'system',
+			teamId: proposal.teamId,
+			projectId: proposal.projectId,
+			proposalId: proposal.id,
+			proposalVersion: proposal.activeVersion,
+			evidence: { snapshotId: id, providerId: provider.id },
+		});
+		return serializeGovernanceElectorateSnapshot(await this.first(`SELECT * FROM governance_electorate_snapshots WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async startGovernanceProposalVoting(principal, proposalId, input = {}) {
+		await this.ensureInitialized();
+		const proposal = await this.getGovernanceProposal(proposalId);
+		if (!proposal) return null;
+		if (!['draft', 'open'].includes(proposal.status)) {
+			const error = new Error('Proposal is not open for voting.');
+			error.status = 409;
+			throw error;
+		}
+		const snapshot = await this.snapshotGovernanceElectorate(proposalId);
+		const timestamp = isoNow();
+		const votingEndsAt = optionalStringValue(input.votingEndsAt) ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+		await this.run(
+			`UPDATE governance_proposals SET status = 'voting', voting_starts_at = ?, voting_ends_at = ?, updated_at = ? WHERE id = ?`,
+			[timestamp, votingEndsAt, timestamp, proposalId],
+		);
+		await this.recordGovernanceEvent({
+			eventType: 'proposal.voting_started',
+			actorType: 'user',
+			actorId: principal?.id ?? null,
+			teamId: proposal.teamId,
+			projectId: proposal.projectId,
+			proposalId,
+			proposalVersion: proposal.activeVersion,
+			priorState: proposal.status,
+			nextState: 'voting',
+			message: optionalStringValue(input.reason),
+			evidence: { electorateSnapshotId: snapshot?.id ?? null },
+		});
+		return this.getGovernanceProposal(proposalId);
+	}
+
+	async latestGovernanceElectorateSnapshot(proposalId, version) {
+		await this.ensureInitialized();
+		return serializeGovernanceElectorateSnapshot(await this.first(
+			`SELECT * FROM governance_electorate_snapshots
+			 WHERE proposal_id = ? AND proposal_version = ?
+			 ORDER BY created_at DESC LIMIT 1`,
+			[proposalId, version],
+		));
+	}
+
+	async listGovernanceProposalVotes(proposalId, options = {}) {
+		await this.ensureInitialized();
+		const version = options.proposalVersion ?? (await this.getGovernanceProposal(proposalId))?.activeVersion;
+		const rows = await this.all(
+			`SELECT * FROM governance_proposal_votes WHERE proposal_id = ? AND proposal_version = ? ORDER BY updated_at ASC`,
+			[proposalId, version],
+		);
+		return rows.map(serializeGovernanceVote);
+	}
+
+	async effectiveGovernanceVotes(proposal) {
+		const directVotes = await this.listGovernanceProposalVotes(proposal.id, { proposalVersion: proposal.activeVersion });
+		const byUser = new Map(directVotes.map((vote) => [vote.userId, vote]));
+		const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion);
+		for (const delegation of snapshot?.delegations ?? []) {
+			const delegateVote = byUser.get(delegation.toUserId);
+			if (!delegateVote || byUser.has(delegation.fromUserId)) continue;
+			byUser.set(delegation.fromUserId, {
+				...delegateVote,
+				id: `delegated:${delegateVote.id}:${delegation.fromUserId}`,
+				userId: delegation.fromUserId,
+				delegatedFrom: [delegation.toUserId],
+			});
+		}
+		return [...byUser.values()];
+	}
+
+	async voteGovernanceProposal(principal, proposalId, input = {}) {
+		await this.ensureInitialized();
+		const proposal = await this.getGovernanceProposal(proposalId);
+		if (!proposal) return null;
+		if (proposal.status !== 'voting') {
+			const error = new Error('Proposal is not open for voting.');
+			error.status = 409;
+			throw error;
+		}
+		const vote = requireEnumValue(input.vote, new Set(['support', 'object', 'abstain']), 'Governance vote');
+		const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion);
+		const eligible = snapshot?.eligibleVoters?.some((voter) => voter.userId === principal?.id);
+		if (!eligible && !principalIsAdmin(principal)) {
+			const error = new Error('User is not eligible to vote on this proposal.');
+			error.status = 403;
+			throw error;
+		}
+		const timestamp = isoNow();
+		const existing = await this.first(
+			`SELECT * FROM governance_proposal_votes WHERE proposal_id = ? AND proposal_version = ? AND user_id = ? LIMIT 1`,
+			[proposal.id, proposal.activeVersion, principal.id],
+		);
+		const provider = governanceVotingProvider(proposal.governanceProviderId);
+		const normalized = provider.normalizeVote({
+			proposalId: proposal.id,
+			proposalVersion: proposal.activeVersion,
+			userId: principal.id,
+			vote,
+			reason: optionalStringValue(input.reason),
+			chamberOverrides: objectValue(input.chamberOverrides, {}),
+		});
+		if (existing?.id) {
+			await this.run(
+				`UPDATE governance_proposal_votes
+				 SET vote = ?, reason = ?, chamber_votes_json = ?, updated_at = ?
+				 WHERE id = ?`,
+				[normalized.vote, normalized.reason, JSON.stringify(normalized.chamberVotes), timestamp, existing.id],
+			);
+		} else {
+			await this.run(
+				`INSERT INTO governance_proposal_votes (
+					id, proposal_id, proposal_version, user_id, vote, reason, chamber_votes_json,
+					effective_weights_json, delegated_from_json, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', '[]', ?, ?)`,
+				[randomUUID(), proposal.id, proposal.activeVersion, principal.id, normalized.vote, normalized.reason, JSON.stringify(normalized.chamberVotes), timestamp, timestamp],
+			);
+		}
+		await this.run(
+			`INSERT INTO governance_vote_events (
+				id, proposal_id, proposal_version, user_id, prior_vote, next_vote, reason, effective_weights_json, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+			[randomUUID(), proposal.id, proposal.activeVersion, principal.id, existing?.vote ?? null, normalized.vote, normalized.reason, timestamp],
+		);
+		await this.recordGovernanceEvent({
+			eventType: 'proposal.voted',
+			actorType: 'user',
+			actorId: principal.id,
+			teamId: proposal.teamId,
+			projectId: proposal.projectId,
+			proposalId: proposal.id,
+			proposalVersion: proposal.activeVersion,
+			nextState: normalized.vote,
+			message: normalized.reason,
+			evidence: { priorVote: existing?.vote ?? null },
+		});
+		return this.evaluateGovernanceProposal(proposal.id);
+	}
+
+	async evaluateGovernanceProposal(proposalId, input = {}) {
+		await this.ensureInitialized();
+		const proposal = await this.getGovernanceProposal(proposalId);
+		if (!proposal) return null;
+		if (!['voting', 'open', 'draft'].includes(proposal.status)) return proposal;
+		const snapshot = await this.latestGovernanceElectorateSnapshot(proposal.id, proposal.activeVersion) ?? await this.snapshotGovernanceElectorate(proposal.id);
+		const provider = governanceVotingProvider(proposal.governanceProviderId);
+		const votes = (await this.effectiveGovernanceVotes(proposal)).map((vote) => ({
+			userId: vote.userId,
+			vote: vote.vote,
+			reason: vote.reason,
+			chamberVotes: vote.chamberVotes,
+			effectiveWeights: vote.effectiveWeights,
+			delegatedFrom: vote.delegatedFrom,
+		}));
+		const outcome = provider.evaluate({
+			now: input.now ?? isoNow(),
+			votingEndsAt: proposal.votingEndsAt,
+			electorate: {
+				providerId: snapshot.providerId,
+				providerVersion: snapshot.providerVersion,
+				ruleSnapshot: snapshot.ruleSnapshot,
+				chambers: snapshot.chambers,
+				eligibleVoters: snapshot.eligibleVoters,
+				delegations: snapshot.delegations,
+				createdAt: snapshot.createdAt,
+			},
+			votes,
+			adminDecision: input.adminDecision ?? null,
+		});
+		if (outcome.status === 'voting') return { ...proposal, outcome, votes };
+		await this.transitionGovernanceProposal(proposal.id, outcome.status, {
+			actorType: input.actorType ?? 'system',
+			actorId: input.actorId ?? null,
+			reason: outcome.reasonCode,
+			evidence: outcome.voteResult,
+		});
+		if (outcome.status === 'accepted') {
+			await this.createGovernanceDecisionFromProposal(proposal.id, {
+				outcome,
+				electorateSnapshotId: snapshot.id,
+				actorType: input.actorType ?? 'system',
+				actorId: input.actorId ?? null,
+			});
+		}
+		return { ...(await this.getGovernanceProposal(proposal.id)), outcome, votes };
+	}
+
+	async adminDecideGovernanceProposal(principal, proposalId, input = {}) {
+		const decision = input.status === 'rejected' || input.status === 'request_changes' ? input.status : 'approved';
+		return this.evaluateGovernanceProposal(proposalId, {
+			adminDecision: decision,
+			actorType: 'user',
+			actorId: principal?.id ?? null,
+		});
+	}
+
+	async withdrawGovernanceProposal(principal, proposalId, input = {}) {
+		return this.transitionGovernanceProposal(proposalId, 'withdrawn', {
+			actorType: 'user',
+			actorId: principal?.id ?? null,
+			reason: optionalStringValue(input.reason, 'Proposal withdrawn.'),
+			evidence: objectValue(input.evidence, {}),
+		});
+	}
+
+	async supersedeGovernanceProposal(principal, proposalId, input = {}) {
+		return this.transitionGovernanceProposal(proposalId, 'superseded', {
+			actorType: 'user',
+			actorId: principal?.id ?? null,
+			reason: optionalStringValue(input.reason, 'Proposal superseded.'),
+			evidence: {
+				...objectValue(input.evidence, {}),
+				successorProposalId: optionalStringValue(input.successorProposalId) ?? null,
+			},
+		});
+	}
+
+	async createGovernanceDecisionFromProposal(proposalId, input = {}) {
+		await this.ensureInitialized();
+		const proposal = await this.getGovernanceProposal(proposalId);
+		if (!proposal) return null;
+		const existing = await this.first(`SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1`, [proposalId]);
+		if (existing?.id) return serializeGovernanceDecision(existing);
+		const timestamp = isoNow();
+		const id = randomUUID();
+		const votes = await this.effectiveGovernanceVotes(proposal);
+		const voterReasons = votes.filter((vote) => vote.reason).map((vote) => ({ userId: vote.userId, vote: vote.vote, reason: vote.reason }));
+		const proposalSnapshot = {
+			title: proposal.title,
+			summary: proposal.summary,
+			body: proposal.body,
+			proposalType: proposal.proposalType,
+			contentHash: proposal.activeContentHash,
+			version: proposal.activeVersion,
+		};
+		await this.run(
+			`INSERT INTO governance_decisions (
+				id, team_id, project_id, proposal_id, proposal_version, proposal_content_hash, status,
+				title, summary, content_decision_slug, governance_provider_id, governance_rule_json,
+				electorate_snapshot_id, vote_result_json, voter_reasons_json, proposal_snapshot_json,
+				decision_record_json, created_by_type, created_by_id, created_at, updated_at, superseded_at
+			) VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, NULL)`,
+			[
+				id,
+				proposal.teamId,
+				proposal.projectId,
+				proposal.id,
+				proposal.activeVersion,
+				proposal.activeContentHash,
+				proposal.title,
+				proposal.summary,
+				proposal.contentDecisionSlug,
+				proposal.governanceProviderId,
+				JSON.stringify(input.outcome?.voteResult?.chambers ? { providerId: proposal.governanceProviderId } : {}),
+				input.electorateSnapshotId ?? null,
+				JSON.stringify(input.outcome?.voteResult ?? {}),
+				JSON.stringify(voterReasons),
+				JSON.stringify(proposalSnapshot),
+				input.actorType ?? 'system',
+				input.actorId ?? null,
+				timestamp,
+				timestamp,
+			],
+		);
+		await this.run(`UPDATE governance_proposals SET decision_id = ?, updated_at = ? WHERE id = ?`, [id, timestamp, proposal.id]);
+		await this.recordGovernanceEvent({
+			eventType: 'decision.created',
+			actorType: input.actorType ?? 'system',
+			actorId: input.actorId ?? null,
+			teamId: proposal.teamId,
+			projectId: proposal.projectId,
+			proposalId: proposal.id,
+			decisionId: id,
+			proposalVersion: proposal.activeVersion,
+			nextState: 'accepted',
+			evidence: { proposalContentHash: proposal.activeContentHash },
+		});
+		return this.getGovernanceDecision(id);
+	}
+
+	async getGovernanceDecision(decisionId) {
+		await this.ensureInitialized();
+		return serializeGovernanceDecision(await this.first(`SELECT * FROM governance_decisions WHERE id = ? LIMIT 1`, [decisionId]));
+	}
+
+	async listGovernanceDecisions(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
+		const clauses = [];
+		const params = [];
+		for (const [key, column] of [['teamId', 'team_id'], ['projectId', 'project_id'], ['proposalId', 'proposal_id'], ['status', 'status']]) {
+			if (filters[key]) {
+				clauses.push(`${column} = ?`);
+				params.push(filters[key]);
+			}
+		}
+		params.push(limit);
+		const rows = await this.all(
+			`SELECT * FROM governance_decisions ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+			 ORDER BY updated_at DESC LIMIT ?`,
+			params,
+		);
+		return rows.map(serializeGovernanceDecision);
+	}
+
+	async listGovernanceEvents(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(300, Number(filters.limit) || 100));
+		const clauses = [];
+		const params = [];
+		for (const [key, column] of [['teamId', 'team_id'], ['projectId', 'project_id'], ['proposalId', 'proposal_id'], ['decisionId', 'decision_id'], ['eventType', 'event_type']]) {
+			if (filters[key]) {
+				clauses.push(`${column} = ?`);
+				params.push(filters[key]);
+			}
+		}
+		params.push(limit);
+		const rows = await this.all(
+			`SELECT * FROM governance_events ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+			 ORDER BY created_at DESC LIMIT ?`,
+			params,
+		);
+		return rows.map(serializeGovernanceEvent);
+	}
+
+	async createGovernanceDelegation(principal, input = {}) {
+		await this.ensureInitialized();
+		const teamId = stringValue(input.teamId);
+		const toUserId = stringValue(input.toUserId);
+		if (!teamId || !principal?.id || !toUserId || toUserId === principal.id) {
+			const error = new Error('A team and different delegate user are required.');
+			error.status = 400;
+			throw error;
+		}
+		const timestamp = isoNow();
+		const id = input.id ?? randomUUID();
+		await this.run(
+			`INSERT INTO governance_delegations (
+				id, team_id, scope, from_user_id, to_user_id, chambers_json, status, reason,
+				created_at, revoked_at, expires_at, metadata_json
+			) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, NULL, ?, ?)`,
+			[
+				id,
+				teamId,
+				optionalStringValue(input.scope, 'team'),
+				principal.id,
+				toUserId,
+				JSON.stringify(arrayValue(input.chambers).length ? arrayValue(input.chambers) : ['member_chamber', 'stake_chamber']),
+				optionalStringValue(input.reason),
+				timestamp,
+				input.expiresAt ?? null,
+				JSON.stringify(input.metadata ?? {}),
+			],
+		);
+		await this.recordGovernanceEvent({
+			eventType: 'delegation.created',
+			actorType: 'user',
+			actorId: principal.id,
+			teamId,
+			message: optionalStringValue(input.reason),
+			evidence: { toUserId },
+		});
+		return serializeGovernanceDelegation(await this.first(`SELECT * FROM governance_delegations WHERE id = ? LIMIT 1`, [id]));
+	}
+
+	async listGovernanceDelegations(filters = {}) {
+		await this.ensureInitialized();
+		const limit = Math.max(1, Math.min(300, Number(filters.limit) || 100));
+		const clauses = [];
+		const params = [];
+		for (const [key, column] of [['teamId', 'team_id'], ['scope', 'scope'], ['status', 'status'], ['fromUserId', 'from_user_id'], ['toUserId', 'to_user_id']]) {
+			if (filters[key]) {
+				clauses.push(`${column} = ?`);
+				params.push(filters[key]);
+			}
+		}
+		params.push(limit);
+		const rows = await this.all(
+			`SELECT * FROM governance_delegations ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+			 ORDER BY created_at DESC LIMIT ?`,
+			params,
+		);
+		return rows.map(serializeGovernanceDelegation);
+	}
+
+	async revokeGovernanceDelegation(principal, delegationId, input = {}) {
+		await this.ensureInitialized();
+		const existing = serializeGovernanceDelegation(await this.first(`SELECT * FROM governance_delegations WHERE id = ? LIMIT 1`, [delegationId]));
+		if (!existing) return null;
+		if (existing.fromUserId !== principal?.id && !principalIsAdmin(principal)) {
+			const error = new Error('Permission denied.');
+			error.status = 403;
+			throw error;
+		}
+		const timestamp = isoNow();
+		await this.run(`UPDATE governance_delegations SET status = 'revoked', revoked_at = ? WHERE id = ?`, [timestamp, delegationId]);
+		await this.recordGovernanceEvent({
+			eventType: 'delegation.revoked',
+			actorType: 'user',
+			actorId: principal?.id ?? null,
+			teamId: existing.teamId,
+			message: optionalStringValue(input.reason),
+			evidence: { delegationId },
+		});
+		return serializeGovernanceDelegation(await this.first(`SELECT * FROM governance_delegations WHERE id = ? LIMIT 1`, [delegationId]));
 	}
 
 	async createApprovalRequest(input) {
