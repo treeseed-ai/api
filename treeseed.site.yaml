@@ -91,6 +91,12 @@ services:
       projectName: treeseed-agent-capacity-provider
       serviceName: treeseed-agent-manager
       imageRefEnv: TREESEED_AGENT_MANAGER_IMAGE_REF
+      sourceMode: git
+      sourceRepo: treeseed-ai/agent
+      sourceBranch: staging
+      sourceRootDirectory: .
+      buildCommand: npm run build
+      startCommand: node ./dist/provider/entrypoint.js manager
       runtimeMode: service
     environments:
       local:
@@ -107,6 +113,12 @@ services:
       projectName: treeseed-agent-capacity-provider
       serviceName: treeseed-agent-runner-01
       imageRefEnv: TREESEED_AGENT_RUNNER_IMAGE_REF
+      sourceMode: git
+      sourceRepo: treeseed-ai/agent
+      sourceBranch: staging
+      sourceRootDirectory: .
+      buildCommand: npm run build
+      startCommand: node ./dist/provider/entrypoint.js runner
       runtimeMode: service
       volumeMountPath: /data
       runnerPool:

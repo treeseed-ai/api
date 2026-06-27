@@ -4,6 +4,9 @@ kind: node-typescript
 type: hosted-service
 repository: treeseed-ai/api
 publishTarget: docker
+deploymentSource:
+  staging: git
+  prod: image
 workflowTemplateVersion: "1"
 githubEnvironments:
   - staging
@@ -33,7 +36,6 @@ releaseGate:
   workflow: release-gate.yml
 dockerImages:
   releaseWorkflow: publish.yml
-  developmentWorkflow: dev-image.yml
   architectures:
     - amd64
     - arm64
@@ -41,9 +43,6 @@ dockerImages:
     release:
       - "<version>"
       - latest
-    staging:
-      - "dev-staging-<short-sha>"
-      - dev-staging
 projectArchitecture:
   topology: single_repository_site
   rootPath: .

@@ -109,96 +109,13 @@ jobs:
       - name: Verify API package
         run: npm run verify:direct
 
-  publish-dev-images:
-    needs:
-      - classify
-      - verify
-    if: |
-      needs.classify.outputs.scope == 'staging' &&
-      (
-        needs.classify.outputs.workflow_action == 'deploy_api' ||
-        needs.classify.outputs.api_changed == 'true'
-      )
-    runs-on: ubuntu-latest
-    environment: staging
-    permissions:
-      contents: read
-    outputs:
-      api_immutable: ${{ steps.tags.outputs.api_immutable }}
-      runner_immutable: ${{ steps.tags.outputs.runner_immutable }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ vars.TREESEED_DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME || secrets.TREESEED_DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.TREESEED_DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
-
-      - name: Derive image tags
-        id: tags
-        shell: bash
-        run: |
-          set -euo pipefail
-          branch_slug="$(printf '%s' "${GITHUB_REF_NAME}" \
-            | tr '[:upper:]' '[:lower:]' \
-            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
-            | cut -c1-40)"
-          if [[ -z "${branch_slug}" ]]; then
-            branch_slug="branch"
-          fi
-          short_sha="${GITHUB_SHA:0:12}"
-          echo "api_immutable=treeseed/api:dev-${branch_slug}-${short_sha}" >> "${GITHUB_OUTPUT}"
-          echo "api_moving=treeseed/api:dev-${branch_slug}" >> "${GITHUB_OUTPUT}"
-          echo "runner_immutable=treeseed/op-runner:dev-${branch_slug}-${short_sha}" >> "${GITHUB_OUTPUT}"
-          echo "runner_moving=treeseed/op-runner:dev-${branch_slug}" >> "${GITHUB_OUTPUT}"
-
-      - name: Publish API development image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          target: api
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ steps.tags.outputs.api_immutable }}
-            ${{ steps.tags.outputs.api_moving }}
-          sbom: true
-          provenance: mode=max
-          cache-from: type=gha,scope=treeseed-api-dev
-          cache-to: type=gha,mode=max,scope=treeseed-api-dev
-
-      - name: Publish operations runner development image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          target: operations-runner
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ steps.tags.outputs.runner_immutable }}
-            ${{ steps.tags.outputs.runner_moving }}
-          sbom: true
-          provenance: mode=max
-          cache-from: type=gha,scope=treeseed-op-runner-dev
-          cache-to: type=gha,mode=max,scope=treeseed-op-runner-dev
-
   deploy-api:
     needs:
       - classify
       - verify
-      - publish-dev-images
     if: |
       always() &&
       needs.verify.result == 'success' &&
-      (needs.publish-dev-images.result == 'success' || needs.publish-dev-images.result == 'skipped') &&
       (
         needs.classify.outputs.workflow_action == 'deploy_api' ||
         needs.classify.outputs.api_changed == 'true' ||
@@ -215,9 +132,9 @@ jobs:
       TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE || vars.RAILWAY_WORKSPACE }}
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID || vars.RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
-      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || 'treeseed/treedx:dev-staging' }}
-      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || needs.publish-dev-images.outputs.api_immutable || vars.TREESEED_API_IMAGE_REF || 'treeseed/api:latest' }}
-      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || needs.publish-dev-images.outputs.runner_immutable || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || 'treeseed/op-runner:latest' }}
+      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/treedx:{0}', github.ref_name) || vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '' }}
+      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || '' }}
+      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || '' }}
       TREESEED_RAILWAY_DEPLOY_TRANSPORT: ${{ vars.TREESEED_RAILWAY_DEPLOY_TRANSPORT || 'api' }}
       TREESEED_KEY_AGENT_TRANSPORT: inline
       TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
