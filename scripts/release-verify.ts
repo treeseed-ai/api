@@ -17,6 +17,11 @@ const forbiddenPatterns = [
 	/['"`](?:\.\.\/)+(?:sdk|core|agent|cli)\/src\/[^'"`\n]*['"`]/,
 ];
 
+function isAllowedIsolatedTarballSpecifier(value: string) {
+	return process.env.TREESEED_VERIFY_PACKAGE_ISOLATED === '1'
+		&& /^file:treeseed-release-tarballs\/[^/]+\.tgz$/u.test(value);
+}
+
 function run(command: string, args: string[], env: Record<string, string> = {}) {
 	const result = spawnSync(command, args, {
 		cwd: packageRoot,
@@ -65,7 +70,7 @@ function assertNoLocalDependencySpecs() {
 	const packageJson = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
 	for (const sectionName of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
 		for (const [name, spec] of Object.entries(packageJson[sectionName] ?? {})) {
-			if (spec.startsWith('workspace:') || spec.startsWith('file:')) {
+			if (spec.startsWith('workspace:') || (spec.startsWith('file:') && !isAllowedIsolatedTarballSpecifier(spec))) {
 				throw new Error(`package.json ${sectionName}.${name} must not use ${spec}.`);
 			}
 		}
@@ -80,7 +85,7 @@ function assertNoLocalDependencySpecs() {
 		if (key.startsWith('../') || key.includes('/../')) throw new Error(`package-lock.json contains local package entry: ${key}`);
 		if (value.link) throw new Error(`package-lock.json contains linked dependency entry: ${key}`);
 		const resolved = value.resolved ?? '';
-		if (resolved.startsWith('../') || resolved.startsWith('./') || resolved.startsWith('file:') || resolved.startsWith('workspace:')) {
+		if (resolved.startsWith('../') || resolved.startsWith('./') || (resolved.startsWith('file:') && !isAllowedIsolatedTarballSpecifier(resolved)) || resolved.startsWith('workspace:')) {
 			throw new Error(`package-lock.json contains local resolution for ${key}: ${resolved}`);
 		}
 	}
