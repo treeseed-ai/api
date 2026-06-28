@@ -43,6 +43,7 @@ services:
       serviceName: treeseed-api
       rootDir: .
       imageRefEnv: TREESEED_API_IMAGE_REF
+      sourceMode: image
       buildCommand: npm run build
       startCommand: npm run start:api
       healthcheckPath: /healthz
@@ -65,6 +66,7 @@ services:
       serviceName: treeseed-api-operations-runner-01
       rootDir: .
       imageRefEnv: TREESEED_OPERATIONS_RUNNER_IMAGE_REF
+      sourceMode: image
       buildCommand: npm run build
       startCommand: npm run start:runner
       healthcheckPath: /healthz
