@@ -98,7 +98,6 @@ services:
       sourceBranch: staging
       sourceRootDirectory: .
       buildCommand: npm run build
-      startCommand: node ./dist/provider/entrypoint.js manager
       runtimeMode: service
     environments:
       local:
@@ -120,7 +119,6 @@ services:
       sourceBranch: staging
       sourceRootDirectory: .
       buildCommand: npm run build
-      startCommand: node ./dist/provider/entrypoint.js runner
       runtimeMode: service
       volumeMountPath: /data
       runnerPool:

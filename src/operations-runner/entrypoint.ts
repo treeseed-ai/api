@@ -455,18 +455,18 @@ export function createExecutorsForOptions(options = {}) {
 					projectId: ensuredProject.project.id,
 					environmentId: ensuredEnvironment.environment.id,
 					serviceId: ensuredService.service.id,
-				}).catch(() => ({}));
-				const variables = {
-					TREEDX_DATA_DIR: volumeMountPath,
-					...(names.scope === 'public_federation' ? { TREEDX_FEDERATION_MODE: 'connected_library' } : {}),
-					PORT: '4000',
-					PHX_SERVER: 'true',
-					PHX_HOST: `${names.serviceName}.railway.app`,
-					TREESEED_TREEDX_SCOPE: names.scope,
-				};
-				if (!currentVariables.SECRET_KEY_BASE) {
-					variables.SECRET_KEY_BASE = treeDxSecretBase();
-				}
+					}).catch(() => ({}));
+					const variables = {
+						TREESEED_TREEDX_DATA_DIR: volumeMountPath,
+						...(names.scope === 'public_federation' ? { TREESEED_TREEDX_FEDERATION_MODE: 'connected_library' } : {}),
+						PORT: '4000',
+						PHX_SERVER: 'true',
+						PHX_HOST: `${names.serviceName}.railway.app`,
+						TREESEED_TREEDX_SCOPE: names.scope,
+					};
+					if (!currentVariables.TREESEED_TREEDX_SECRET_KEY_BASE && !currentVariables.SECRET_KEY_BASE) {
+						variables.TREESEED_TREEDX_SECRET_KEY_BASE = treeDxSecretBase();
+					}
 				await railway.upsertVariables({
 					projectId: ensuredProject.project.id,
 					environmentId: ensuredEnvironment.environment.id,
@@ -541,12 +541,12 @@ export function createExecutorsForOptions(options = {}) {
 				imageRef,
 				volumeMountPath,
 				railway: railwayRefs,
-				env: {
-					TREEDX_DATA_DIR: '/data',
-					PORT: '4000',
-					PHX_SERVER: 'true',
-					SECRET_KEY_BASE: 'railway:SECRET_KEY_BASE',
-				},
+					env: {
+						TREESEED_TREEDX_DATA_DIR: '/data',
+						PORT: '4000',
+						PHX_SERVER: 'true',
+						TREESEED_TREEDX_SECRET_KEY_BASE: 'railway:TREESEED_TREEDX_SECRET_KEY_BASE',
+					},
 				dryRun: payload.dryRun === true,
 			};
 			await options.deploymentStore.upsertTeamTreeDx(teamId, {
@@ -568,9 +568,9 @@ export function createExecutorsForOptions(options = {}) {
 					serviceName: names.serviceName,
 					dataDirEnv: '/data',
 					deploymentScope: names.scope,
-					railwaySecretRefs: {
-						SECRET_KEY_BASE: 'service-variable',
-					},
+						railwaySecretRefs: {
+							TREESEED_TREEDX_SECRET_KEY_BASE: 'service-variable',
+						},
 					dryRun: payload.dryRun === true,
 				},
 			});
