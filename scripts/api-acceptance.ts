@@ -1083,6 +1083,8 @@ function runMockedDeploymentRunner({ variables, actors, flow, args, operationId 
 	const runnerSecret = runnerActor.token ?? process.env.TREESEED_PLATFORM_RUNNER_SECRET ?? 'treeseed-platform-runner-dev-secret';
 	const databaseUrl = process.env.TREESEED_DATABASE_URL ?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api';
 	const market = flow.market ?? args.environment ?? 'local';
+	const runnerDataDir = variables.fixtures?.platformRunner?.metadata?.dataDir
+		?? resolve(process.cwd(), '.treeseed/acceptance-runners', String(market || 'local'));
 	const runnerArgs = [
 		'./dist/operations-runner/entrypoint.js',
 		'once',
@@ -1102,10 +1104,11 @@ function runMockedDeploymentRunner({ variables, actors, flow, args, operationId 
 			TREESEED_DATABASE_URL: databaseUrl,
 			TREESEED_URL: variables.baseUrl,
 			TREESEED_MANAGER_ID: market,
-			TREESEED_PLATFORM_RUNNER_API_TRANSPORT: 'http',
-			TREESEED_PLATFORM_RUNNER_SECRET: runnerSecret,
-			TREESEED_PLATFORM_RUNNER_ID: variables.fixtures?.platformRunner?.id ?? `treeseed-ops-${market}-1`,
-		},
+				TREESEED_PLATFORM_RUNNER_API_TRANSPORT: 'http',
+				TREESEED_PLATFORM_RUNNER_DATA_DIR: runnerDataDir,
+				TREESEED_PLATFORM_RUNNER_SECRET: runnerSecret,
+				TREESEED_PLATFORM_RUNNER_ID: variables.fixtures?.platformRunner?.id ?? `treeseed-ops-${market}-1`,
+			},
 	});
 	if (result.status !== 0) {
 		throw new Error(`Mocked deployment runner failed with ${result.status}.\n${result.stdout}\n${result.stderr}`);
