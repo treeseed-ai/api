@@ -935,7 +935,7 @@ function credentialSessionSecretForRunner(runtime) {
 	const runtimeConfig = runtime?.resolved?.config ?? {};
 	const environment = String(runtimeConfig.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
 	const localDatabase = isLoopbackUrl(runtimeConfig.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? '');
-	const localBaseUrl = isLoopbackUrl(runtimeConfig.baseUrl ?? runtimeConfig.marketUrl ?? process.env.TREESEED_API_BASE_URL ?? process.env.TREESEED_SITE_URL ?? process.env.BETTER_AUTH_URL ?? '');
+	const localBaseUrl = isLoopbackUrl(runtimeConfig.baseUrl ?? runtimeConfig.marketUrl ?? process.env.TREESEED_API_BASE_URL ?? process.env.TREESEED_SITE_URL ?? process.env.TREESEED_BETTER_AUTH_URL ?? '');
 	if (
 		process.env.NODE_ENV === 'test'
 		|| process.env.TREESEED_LOCAL_DEV_MODE

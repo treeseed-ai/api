@@ -115,7 +115,6 @@ function treeDxConnectedAuthConfig(config = {}) {
 	const secret = config.TREESEED_TREEDX_JWT_HS256_SECRET
 		?? config.treedxJwtHs256Secret
 		?? process.env.TREESEED_TREEDX_JWT_HS256_SECRET
-		?? process.env.TREEDX_JWT_HS256_SECRET
 		?? (localMode ? 'treeseed-local-treedx-jwt-secret' : null)
 		?? null;
 	const issuer = config.TREESEED_TREEDX_JWT_ISSUER

@@ -1495,7 +1495,7 @@ function resolveAuthApprovalBaseUrl(config) {
 		}
 		return configured;
 	}
-	const environment = normalizeBaseUrl(process.env.TREESEED_SITE_URL ?? process.env.BETTER_AUTH_URL ?? '');
+	const environment = normalizeBaseUrl(process.env.TREESEED_SITE_URL ?? process.env.TREESEED_BETTER_AUTH_URL ?? '');
 	if (remoteApi && environment && isLoopbackUrl(environment)) {
 		throw new Error(`Refusing loopback device approval URL "${environment}" for remote API "${baseUrl}".`);
 	}
@@ -1647,7 +1647,7 @@ function credentialSessionSecret(runtime) {
 	const runtimeConfig = runtime?.resolved?.config ?? {};
 	const environment = String(runtimeConfig.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
 	const localDatabase = isLoopbackUrl(runtimeConfig.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? '');
-	const localBaseUrl = isLoopbackUrl(runtimeConfig.baseUrl ?? process.env.TREESEED_SITE_URL ?? process.env.BETTER_AUTH_URL ?? '');
+	const localBaseUrl = isLoopbackUrl(runtimeConfig.baseUrl ?? process.env.TREESEED_SITE_URL ?? process.env.TREESEED_BETTER_AUTH_URL ?? '');
 	if (
 		process.env.NODE_ENV === 'test'
 		|| process.env.TREESEED_LOCAL_DEV_MODE
@@ -4445,7 +4445,6 @@ function resolveTreeDxProxyBaseUrl({ runtime, library }) {
 async function resolveTreeDxProxyToken({ runtime, baseUrl, projectId, scope = treeDxTokenScope() }) {
 	const env = runtimeEnv(runtime);
 	const secret = env.TREESEED_TREEDX_JWT_HS256_SECRET
-		?? env.TREEDX_JWT_HS256_SECRET
 		?? null;
 	const issuer = env.TREESEED_TREEDX_JWT_ISSUER
 		?? env.TREEDX_JWT_ISSUER

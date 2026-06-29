@@ -113,9 +113,9 @@ export function getSiteAuthConfig(context?: Pick<APIContext, 'locals'> & Partial
 	const authMode = parseEnumEnv('TREESEED_AUTH_MODE', AUTH_MODES, 'internal-first', env);
 	const internalSignup = parseEnumEnv('TREESEED_AUTH_INTERNAL_SIGNUP', INTERNAL_SIGNUP_MODES, 'open', env);
 	const requestOrigin = context?.url?.origin ?? '';
-	const configuredSiteBaseUrl = envValue('TREESEED_SITE_URL', env) || envValue('BETTER_AUTH_URL', env) || requestOrigin || 'http://127.0.0.1:4321';
+	const configuredSiteBaseUrl = envValue('TREESEED_SITE_URL', env) || envValue('TREESEED_BETTER_AUTH_URL', env) || requestOrigin || 'http://127.0.0.1:4321';
 	const siteBaseUrl = normalizeSiteBaseUrl(configuredSiteBaseUrl);
-	const betterAuthBaseUrl = normalizeBetterAuthBaseUrl(envValue('BETTER_AUTH_URL', env) || siteBaseUrl);
+	const betterAuthBaseUrl = normalizeBetterAuthBaseUrl(envValue('TREESEED_BETTER_AUTH_URL', env) || siteBaseUrl);
 	const localAuthEmail = isLocalUrl(siteBaseUrl) || isLocalUrl(betterAuthBaseUrl);
 	const localMailpitHost = envValue('TREESEED_MAILPIT_SMTP_HOST', env) || DEFAULT_LOCAL_SMTP_HOST;
 	const localMailpitPort = parseIntEnv('TREESEED_MAILPIT_SMTP_PORT', DEFAULT_LOCAL_SMTP_PORT, env);

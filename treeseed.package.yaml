@@ -5,7 +5,7 @@ type: hosted-service
 repository: treeseed-ai/api
 publishTarget: docker
 deploymentSource:
-  staging: image
+  staging: git
   prod: image
 workflowTemplateVersion: "1"
 githubEnvironments:

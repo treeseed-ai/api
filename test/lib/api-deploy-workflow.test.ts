@@ -21,30 +21,19 @@ describe('API deploy workflow', () => {
 		const deploy = workflow('.github/workflows/deploy.yml');
 		expect(deploy.name).toBe('TreeSeed API Deploy');
 		expect(deploy.jobs).toHaveProperty('verify');
-		expect(deploy.jobs).toHaveProperty('build-staging-images');
+		expect(deploy.jobs).not.toHaveProperty('build-staging-images');
 		expect(deploy.jobs).toHaveProperty('deploy-api');
 		expect(deploy.jobs).toHaveProperty('live-verify');
 		expectTreeSeedCliDependency(pkg.devDependencies?.['@treeseed/cli']);
 
-		const imageBuild = JSON.stringify(deploy.jobs['build-staging-images']);
-		expect(imageBuild).toContain('docker/setup-buildx-action');
-		expect(imageBuild).toContain('docker/login-action');
-		expect(imageBuild).toContain('tag=\\"staging-${GITHUB_SHA}\\"');
-		expect(imageBuild).toContain('api_image_ref=treeseed/api:${tag}');
-		expect(imageBuild).toContain('runner_image_ref=treeseed/op-runner:${tag}');
-		expect(imageBuild).toContain('"target":"api"');
-		expect(imageBuild).toContain('"target":"operations-runner"');
-		expect(imageBuild).toContain('treeseed/api:staging');
-		expect(imageBuild).toContain('treeseed/op-runner:staging');
-
 		const deployRun = JSON.stringify(deploy.jobs['deploy-api']);
-		expect(deploy.jobs['deploy-api'].needs).toContain('build-staging-images');
+		expect(deploy.jobs['deploy-api'].needs).not.toContain('build-staging-images');
 		expect(deployRun).toContain('npm ci --workspaces=false');
 		expect(deployRun).not.toContain('npm install --no-save @treeseed/cli');
 		expect(deployRun).toContain('TREESEED_API_IMAGE_REF');
-		expect(deployRun).toContain('needs.build-staging-images.outputs.api_image_ref');
 		expect(deployRun).toContain('TREESEED_OPERATIONS_RUNNER_IMAGE_REF');
-		expect(deployRun).toContain('needs.build-staging-images.outputs.runner_image_ref');
+		expect(deployRun).not.toContain('treeseed/api:staging');
+		expect(deployRun).not.toContain('treeseed/op-runner:staging');
 		expect(deployRun).toContain('trsd hosting plan');
 		expect(deployRun).toContain('--environment');
 		expect(deployRun).toContain('TREESEED_WORKFLOW_ENVIRONMENT');

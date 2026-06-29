@@ -113,11 +113,9 @@ jobs:
     needs:
       - classify
       - verify
-      - build-staging-images
     if: |
       always() &&
       needs.verify.result == 'success' &&
-      (needs.build-staging-images.result == 'success' || needs.build-staging-images.result == 'skipped') &&
       (
         needs.classify.outputs.workflow_action == 'deploy_api' ||
         needs.classify.outputs.api_changed == 'true' ||
@@ -135,8 +133,8 @@ jobs:
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID || vars.RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
       TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/treedx:{0}', github.ref_name) || vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '' }}
-      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || needs.build-staging-images.outputs.api_image_ref || vars.TREESEED_API_IMAGE_REF || 'treeseed/api:staging' }}
-      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || needs.build-staging-images.outputs.runner_image_ref || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || 'treeseed/op-runner:staging' }}
+      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || '') || '' }}
+      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || '') || '' }}
       TREESEED_RAILWAY_DEPLOY_TRANSPORT: ${{ vars.TREESEED_RAILWAY_DEPLOY_TRANSPORT || 'api' }}
       TREESEED_KEY_AGENT_TRANSPORT: inline
       TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
@@ -157,59 +155,6 @@ jobs:
         run: npx trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
         run: npx trsd hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --execute --json
-
-  build-staging-images:
-    needs:
-      - classify
-      - verify
-    if: |
-      needs.verify.result == 'success' &&
-      needs.classify.outputs.scope == 'staging' &&
-      (
-        needs.classify.outputs.workflow_action == 'deploy_api' ||
-        needs.classify.outputs.api_changed == 'true'
-      )
-    runs-on: ubuntu-24.04
-    environment: staging
-    permissions:
-      contents: read
-    outputs:
-      api_image_ref: ${{ steps.refs.outputs.api_image_ref }}
-      runner_image_ref: ${{ steps.refs.outputs.runner_image_ref }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ vars.TREESEED_DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME || secrets.TREESEED_DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.TREESEED_DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
-      - id: refs
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="staging-${GITHUB_SHA}"
-          echo "api_image_ref=treeseed/api:${tag}" >> "${GITHUB_OUTPUT}"
-          echo "runner_image_ref=treeseed/op-runner:${tag}" >> "${GITHUB_OUTPUT}"
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: api
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ steps.refs.outputs.api_image_ref }}
-            treeseed/api:staging
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: operations-runner
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ steps.refs.outputs.runner_image_ref }}
-            treeseed/op-runner:staging
 
   live-verify:
     needs:
