@@ -7358,13 +7358,14 @@ export function createApiApp(options = {}): Hono {
 					requestedById: 'acceptance',
 				}).catch(() => null);
 				const platformRunnerId = `treeseed-ops-${namespace}-1`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+				const platformRunnerDataDir = resolve(process.cwd(), '.treeseed/acceptance-runners', namespace);
 				const platformRunner = await store.upsertMarketOperationRunner({
 					runnerId: platformRunnerId,
 					name: `Acceptance ${namespace} Runner`,
 					environment: runtime.resolved.config.environment ?? 'local',
 					capabilities: ['market:noop', 'project:web_deployment'],
 					maxConcurrentJobs: 1,
-					metadata: { acceptance: true, namespace, dataDir: '/data' },
+					metadata: { acceptance: true, namespace, dataDir: platformRunnerDataDir },
 				}).catch(() => null);
 				const catalogItem = await store.upsertCatalogItem(team.id, {
 					id: `catalog-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
