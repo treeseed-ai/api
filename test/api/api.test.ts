@@ -11429,8 +11429,8 @@ describe('TreeDX market integration', () => {
 			listVariables: vi.fn(async () => ({})),
 			upsertVariables: vi.fn(async ({ variables }: any) => {
 				calls.push(`variables:${Object.keys(variables).sort().join(',')}`);
-				if (typeof variables.SECRET_KEY_BASE === 'string') {
-					railwaySecretValues.push(variables.SECRET_KEY_BASE);
+				if (typeof variables.TREESEED_TREEDX_SECRET_KEY_BASE === 'string') {
+					railwaySecretValues.push(variables.TREESEED_TREEDX_SECRET_KEY_BASE);
 				}
 				return { variables, changed: true };
 			}),
@@ -11484,7 +11484,8 @@ describe('TreeDX market integration', () => {
 			'project:treeseed-api',
 			'environment:staging',
 			'service:public-treedx-node-01:treeseed/treedx:0.1.0',
-			'variables:PHX_HOST,PHX_SERVER,PORT,SECRET_KEY_BASE,TREEDX_DATA_DIR,TREEDX_FEDERATION_MODE,TREESEED_TREEDX_SCOPE',
+			'variables:PHX_HOST,PHX_SERVER,PORT,TREESEED_TREEDX_DATA_DIR,TREESEED_TREEDX_FEDERATION_MODE,TREESEED_TREEDX_SCOPE,TREESEED_TREEDX_SECRET_KEY_BASE',
+			'instance-config',
 			'volume:/data',
 			'domain',
 			'deploy',
