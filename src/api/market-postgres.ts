@@ -156,11 +156,18 @@ async function tableExists(pool, tableName) {
 
 async function hasAdoptableBaselineSchema(pool) {
 	const baselineTables = [
+		'agent_capacity_plans',
 		'better_auth_user',
+		'capacity_ledger_entries',
+		'capacity_providers',
+		'capacity_reservations',
 		'market_operation_runners',
 		'platform_operations',
+		'provider_assignments',
 		'projects',
+		'task_usage_actuals',
 		'teams',
+		'treedx_project_proxy_audit',
 		'web_sessions',
 	];
 	for (const tableName of baselineTables) {
