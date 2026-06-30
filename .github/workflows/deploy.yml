@@ -183,7 +183,7 @@ jobs:
       TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE }}
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
-      TREESEED_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && (vars.TREESEED_API_BASE_URL || 'https://api.treeseed.ai') || (vars.TREESEED_STAGING_API_BASE_URL || 'https://api-treeseed-market-staging-ca844c56.treeseed.ai') }}
+      TREESEED_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev' }}
       TREESEED_ACCEPTANCE_SERVICE_ID: ${{ vars.TREESEED_API_WEB_SERVICE_ID || vars.TREESEED_WEB_SERVICE_ID || 'web' }}
       TREESEED_ACCEPTANCE_SERVICE_SECRET: ${{ secrets.TREESEED_API_WEB_SERVICE_SECRET || secrets.TREESEED_WEB_SERVICE_SECRET }}
       TREESEED_KEY_AGENT_TRANSPORT: inline

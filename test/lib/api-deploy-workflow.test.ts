@@ -56,5 +56,9 @@ describe('API deploy workflow', () => {
 		expect(liveRun).toContain('reports/api-acceptance.xml');
 		expect(liveRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');
 		expect(liveRun).toContain('TREESEED_CLOUDFLARE_ACCOUNT_ID');
+		expect(liveRun).toContain('https://api.preview.treeseed.dev');
+		expect(liveRun).toContain('https://api.treeseed.dev');
+		expect(liveRun).not.toContain('api-treeseed-market-staging-ca844c56.treeseed.ai');
+		expect(liveRun).not.toContain('https://api.treeseed.ai');
 	});
 });
