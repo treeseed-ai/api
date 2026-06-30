@@ -155,7 +155,7 @@ async function tableExists(pool, tableName) {
 }
 
 async function hasAdoptableBaselineSchema(pool) {
-	const baselineAnchorTables = [
+	const baselineTables = [
 		'better_auth_user',
 		'market_operation_runners',
 		'platform_operations',
@@ -163,10 +163,10 @@ async function hasAdoptableBaselineSchema(pool) {
 		'teams',
 		'web_sessions',
 	];
-	for (const tableName of baselineAnchorTables) {
-		if (await tableExists(pool, tableName)) return true;
+	for (const tableName of baselineTables) {
+		if (!(await tableExists(pool, tableName))) return false;
 	}
-	return false;
+	return true;
 }
 
 function resolveMarketMigrationRoot() {
