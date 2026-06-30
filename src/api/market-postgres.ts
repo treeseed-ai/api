@@ -146,6 +146,29 @@ function splitSqlList(sql) {
 	return splitSqlStatements(sql);
 }
 
+async function tableExists(pool, tableName) {
+	const existing = await pool.query(
+		`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
+		[tableName],
+	);
+	return existing.rows.length > 0;
+}
+
+async function hasAdoptableBaselineSchema(pool) {
+	const baselineTables = [
+		'better_auth_user',
+		'market_operation_runners',
+		'platform_operations',
+		'projects',
+		'teams',
+		'web_sessions',
+	];
+	for (const tableName of baselineTables) {
+		if (!(await tableExists(pool, tableName))) return false;
+	}
+	return true;
+}
+
 function resolveMarketMigrationRoot() {
 	const candidates = [
 		resolve(process.cwd(), 'packages/sdk/drizzle/market'),
@@ -268,14 +291,26 @@ export class MarketPostgresDatabase {
 		if (files.length === 0) {
 			throw new Error(`No Market Drizzle migration SQL files found in ${migrationRoot}.`);
 		}
-		await this.pool.query(`CREATE TABLE IF NOT EXISTS treeseed_market_schema_migrations (
-			name text PRIMARY KEY,
-			applied_at text NOT NULL
-		)`);
+		if (!(await tableExists(this.pool, 'treeseed_market_schema_migrations'))) {
+			await this.pool.query(`CREATE TABLE IF NOT EXISTS treeseed_market_schema_migrations (
+				name text PRIMARY KEY,
+				applied_at text NOT NULL
+			)`);
+		}
 		const applied = await this.pool.query(`SELECT name FROM treeseed_market_schema_migrations`);
 		const appliedNames = new Set(applied.rows.map((row) => row.name));
 		for (const file of files) {
 			if (appliedNames.has(file)) continue;
+			if (file === '0000_market_control_plane.sql' && await hasAdoptableBaselineSchema(this.pool)) {
+				await this.pool.query(
+					`INSERT INTO treeseed_market_schema_migrations (name, applied_at)
+					 VALUES ($1, $2)
+					 ON CONFLICT (name) DO NOTHING`,
+					[file, new Date().toISOString()],
+				);
+				appliedNames.add(file);
+				continue;
+			}
 			const sql = readFileSync(join(migrationRoot, file), 'utf8');
 			await this.pool.query('BEGIN');
 			try {
@@ -283,11 +318,7 @@ export class MarketPostgresDatabase {
 					const createIfNotExists = String(statement).match(/^\s*CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(/iu);
 					if (createIfNotExists) {
 						const tableName = createIfNotExists[1];
-						const existing = await this.pool.query(
-							`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
-							[tableName],
-						);
-						if (existing.rows.length > 0) continue;
+						if (await tableExists(this.pool, tableName)) continue;
 					}
 					await this.pool.query(translateMarketSqlToPostgres(statement));
 				}
