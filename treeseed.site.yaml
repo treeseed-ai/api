@@ -44,7 +44,7 @@ services:
       rootDir: .
       imageRefEnv: TREESEED_API_IMAGE_REF
       sourceMode: git
-      buildCommand: npm run build
+      dockerfilePath: /Dockerfile.api
       startCommand: npm run start:api
       healthcheckPath: /healthz
       healthcheckTimeoutSeconds: 120
@@ -67,7 +67,7 @@ services:
       rootDir: .
       imageRefEnv: TREESEED_OPERATIONS_RUNNER_IMAGE_REF
       sourceMode: git
-      buildCommand: npm run build
+      dockerfilePath: /Dockerfile.operations-runner
       startCommand: npm run start:runner
       healthcheckPath: /healthz
       healthcheckTimeoutSeconds: 120
@@ -80,53 +80,6 @@ services:
     environments:
       local:
         baseUrl: http://127.0.0.1:3001
-        railwayEnvironment: local
-      staging:
-        railwayEnvironment: staging
-      prod:
-        railwayEnvironment: prod
-  capacityProviderManager:
-    enabled: true
-    provider: railway
-    rootDir: .
-    railway:
-      projectName: treeseed-agent-capacity-provider
-      serviceName: treeseed-agent-manager
-      imageRefEnv: TREESEED_AGENT_MANAGER_IMAGE_REF
-      sourceMode: git
-      sourceRepo: treeseed-ai/agent
-      sourceBranch: staging
-      sourceRootDirectory: .
-      buildCommand: npm run build
-      runtimeMode: service
-    environments:
-      local:
-        railwayEnvironment: local
-      staging:
-        railwayEnvironment: staging
-      prod:
-        railwayEnvironment: prod
-  capacityProviderRunner:
-    enabled: true
-    provider: railway
-    rootDir: .
-    railway:
-      projectName: treeseed-agent-capacity-provider
-      serviceName: treeseed-agent-runner-01
-      imageRefEnv: TREESEED_AGENT_RUNNER_IMAGE_REF
-      sourceMode: git
-      sourceRepo: treeseed-ai/agent
-      sourceBranch: staging
-      sourceRootDirectory: .
-      buildCommand: npm run build
-      runtimeMode: service
-      volumeMountPath: /data
-      runnerPool:
-        bootstrapCount: 1
-        maxRunners: 4
-        volumeMountPath: /data
-    environments:
-      local:
         railwayEnvironment: local
       staging:
         railwayEnvironment: staging
