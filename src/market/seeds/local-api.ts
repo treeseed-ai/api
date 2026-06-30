@@ -12,7 +12,7 @@ function localApiConfig(projectRoot, env = process.env) {
 		issuer: String(localEnv.TREESEED_API_ISSUER ?? localEnv.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/+$/u, ''),
 		authSecret: localEnv.TREESEED_AUTH_SECRET ?? localEnv.TREESEED_API_AUTH_SECRET ?? localEnv.TREESEED_BETTER_AUTH_SECRET ?? 'treeseed-local-seed-auth-secret',
 		webAssertionSecret: localEnv.TREESEED_WEB_ASSERTION_SECRET ?? localEnv.TREESEED_API_WEB_ASSERTION_SECRET ?? 'treeseed-local-seed-assertion-secret',
-		webServiceId: localEnv.TREESEED_WEB_SERVICE_ID ?? localEnv.TREESEED_API_SERVICE_ID ?? 'web',
+		webServiceId: localEnv.TREESEED_WEB_SERVICE_ID ?? localEnv.TREESEED_API_WEB_SERVICE_ID ?? localEnv.TREESEED_API_SERVICE_ID ?? 'web',
 		webServiceSecret: localEnv.TREESEED_WEB_SERVICE_SECRET ?? localEnv.TREESEED_API_WEB_SERVICE_SECRET ?? localEnv.TREESEED_API_SERVICE_SECRET ?? 'treeseed-local-seed-service-secret',
 		projectApiKey: localEnv.TREESEED_PROJECT_API_KEY,
 		providers: {
