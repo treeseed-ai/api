@@ -155,7 +155,7 @@ async function tableExists(pool, tableName) {
 }
 
 async function hasAdoptableBaselineSchema(pool) {
-	const baselineTables = [
+	const baselineAnchorTables = [
 		'better_auth_user',
 		'market_operation_runners',
 		'platform_operations',
@@ -163,10 +163,10 @@ async function hasAdoptableBaselineSchema(pool) {
 		'teams',
 		'web_sessions',
 	];
-	for (const tableName of baselineTables) {
-		if (!(await tableExists(pool, tableName))) return false;
+	for (const tableName of baselineAnchorTables) {
+		if (await tableExists(pool, tableName)) return true;
 	}
-	return true;
+	return false;
 }
 
 function resolveMarketMigrationRoot() {
@@ -315,12 +315,16 @@ export class MarketPostgresDatabase {
 			await this.pool.query('BEGIN');
 			try {
 				for (const statement of splitSqlList(sql)) {
-					const createIfNotExists = String(statement).match(/^\s*CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+["`]?([a-zA-Z0-9_]+)["`]?\s*\(/iu);
-					if (createIfNotExists) {
-						const tableName = createIfNotExists[1];
+					const createTable = String(statement).match(/^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-zA-Z0-9_]+)["`]?\s*\(/iu);
+					if (createTable) {
+						const tableName = createTable[1];
 						if (await tableExists(this.pool, tableName)) continue;
 					}
-					await this.pool.query(translateMarketSqlToPostgres(statement));
+					const createIndex = String(statement).match(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS\b)/iu);
+					const statementToApply = createIndex
+						? String(statement).replace(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+/iu, (_match, unique = '') => `CREATE ${unique}INDEX IF NOT EXISTS `)
+						: statement;
+					await this.pool.query(translateMarketSqlToPostgres(statementToApply));
 				}
 				await this.pool.query(
 					`INSERT INTO treeseed_market_schema_migrations (name, applied_at)
