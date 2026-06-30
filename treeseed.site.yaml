@@ -1,6 +1,6 @@
 name: TreeSeed API
 slug: treeseed-api
-siteUrl: https://api.treeseed.ai
+siteUrl: https://api.treeseed.dev
 contactEmail: hello@treeseed.email
 hosting:
   kind: treeseed_control_plane
@@ -20,9 +20,9 @@ surfaces:
     localBaseUrl: http://127.0.0.1:3000
     environments:
       staging:
-        domain: api-treeseed-market-staging-ca844c56.treeseed.ai
+        domain: api.preview.treeseed.dev
       prod:
-        domain: api.treeseed.ai
+        domain: api.treeseed.dev
 services:
   treeseedDatabase:
     enabled: true

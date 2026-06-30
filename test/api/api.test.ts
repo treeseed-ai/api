@@ -8719,8 +8719,8 @@ describe('market api', () => {
 	it('uses the configured production web approval URL for the central API', async () => {
 		const app = createTestApp({
 			config: {
-				baseUrl: 'https://api.treeseed.ai',
-				siteUrl: 'https://treeseed.ai',
+				baseUrl: 'https://api.treeseed.dev',
+				siteUrl: 'https://treeseed.dev',
 			},
 		});
 		const started = await json(await app.request('/v1/auth/device/start', {
@@ -8729,22 +8729,22 @@ describe('market api', () => {
 			body: JSON.stringify({ clientName: 'treeseed-cli', scopes: ['auth:me', 'market'] }),
 		}));
 
-		expect(started.verificationUri).toBe('https://treeseed.ai/auth/device/approve');
-		expect(started.verificationUriComplete).toBe(`https://treeseed.ai/auth/device/approve?user_code=${encodeURIComponent(started.userCode)}`);
+		expect(started.verificationUri).toBe('https://treeseed.dev/auth/device/approve');
+		expect(started.verificationUriComplete).toBe(`https://treeseed.dev/auth/device/approve?user_code=${encodeURIComponent(started.userCode)}`);
 	});
 
 	it('redirects legacy v1 browser approval links to the web approval page', async () => {
 		const app = createTestApp({
 			config: {
-				baseUrl: 'https://api.treeseed.ai',
-				siteUrl: 'https://treeseed.ai',
+				baseUrl: 'https://api.treeseed.dev',
+				siteUrl: 'https://treeseed.dev',
 			},
 		});
 
 		const response = await app.request('/v1/auth/device/approve?user_code=ABCD-EFGH');
 
 		expect(response.status).toBe(302);
-		expect(response.headers.get('location')).toBe('https://treeseed.ai/auth/device/approve?user_code=ABCD-EFGH');
+		expect(response.headers.get('location')).toBe('https://treeseed.dev/auth/device/approve?user_code=ABCD-EFGH');
 	});
 
 	it('signs editorial preview links for team-scoped overlays', async () => {
@@ -12004,7 +12004,7 @@ describe('TreeDX market integration', () => {
 		expect(treedx.payload.instance).toMatchObject({
 			kind: 'managed_private',
 			publicRead: false,
-			registryUrl: 'https://api.treeseed.ai/treedx',
+			registryUrl: 'https://api.treeseed.dev/treedx',
 			metadata: expect.objectContaining({
 				automaticPrivateTeamTreeDx: true,
 				centralPublicRegistry: expect.objectContaining({
@@ -12019,7 +12019,7 @@ describe('TreeDX market integration', () => {
 				name: 'TreeSeed public registry mirror',
 				direction: 'pull',
 				targetKind: 'treedx',
-				targetUrl: 'https://api.treeseed.ai/treedx',
+				targetUrl: 'https://api.treeseed.dev/treedx',
 				metadata: expect.objectContaining({
 					centralPublicRegistry: true,
 					privateDataEgress: 'deny_by_default',

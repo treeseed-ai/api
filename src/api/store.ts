@@ -861,7 +861,7 @@ function centralTreeDxRegistryUrl(config = {}) {
 		?? process.env.TREESEED_CENTRAL_TREEDX_REGISTRY_URL
 		?? config.publicTreeDxRegistryUrl
 		?? config.treedxRegistryUrl
-		?? 'https://api.treeseed.ai/treedx',
+		?? 'https://api.treeseed.dev/treedx',
 	);
 }
 

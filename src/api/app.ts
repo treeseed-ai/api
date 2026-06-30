@@ -986,7 +986,7 @@ const TREE_DX_WORKSPACE_CREATE_CAPABILITY = ['workspace', 'create'].join(':');
 function withCapacityProviderRuntimeIdentity(env, { marketUrl, providerId, teamId }) {
 	return {
 		...env,
-		TREESEED_MANAGEMENT_API_URL: env.TREESEED_MANAGEMENT_API_URL ?? marketUrl ?? 'https://api.treeseed.ai',
+		TREESEED_MANAGEMENT_API_URL: env.TREESEED_MANAGEMENT_API_URL ?? marketUrl ?? 'https://api.treeseed.dev',
 		TREESEED_CAPACITY_PROVIDER_ID: env.TREESEED_CAPACITY_PROVIDER_ID ?? providerId,
 		TREESEED_CAPACITY_PROVIDER_TEAM_ID: env.TREESEED_CAPACITY_PROVIDER_TEAM_ID ?? teamId,
 	};
@@ -1501,8 +1501,8 @@ function resolveAuthApprovalBaseUrl(config) {
 	}
 	const candidate = environment || baseUrl;
 	const normalized = normalizeBaseUrl(candidate);
-	if (normalized === 'https://api.treeseed.ai') {
-		return 'https://treeseed.ai';
+	if (normalized === 'https://api.treeseed.dev') {
+		return 'https://treeseed.dev';
 	}
 	return normalized || baseUrl;
 }
