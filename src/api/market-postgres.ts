@@ -306,6 +306,9 @@ export class MarketPostgresDatabase {
 		}
 		const applied = await this.pool.query(`SELECT name FROM treeseed_market_schema_migrations`);
 		const appliedNames = new Set(applied.rows.map((row) => row.name));
+		if (appliedNames.has('0000_market_control_plane.sql') && !(await hasAdoptableBaselineSchema(this.pool))) {
+			appliedNames.delete('0000_market_control_plane.sql');
+		}
 		for (const file of files) {
 			if (appliedNames.has(file)) continue;
 			if (file === '0000_market_control_plane.sql' && await hasAdoptableBaselineSchema(this.pool)) {
