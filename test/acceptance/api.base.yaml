@@ -23,6 +23,9 @@ seed:
     teamViewer:
       siteRoles: [viewer]
       teamRole: reviewer
+    teamManagedMember:
+      siteRoles: [member]
+      teamRole: reviewer
     nonMember:
       siteRoles: [viewer]
     providerOperator:
@@ -35,6 +38,7 @@ actors:
   teamOwner: {}
   teamOperator: {}
   teamViewer: {}
+  teamManagedMember: {}
   nonMember: {}
   providerOperator: {}
   providerKey:
@@ -527,7 +531,7 @@ cases:
   - id: teams.member-role.team-owner
     actor: teamOwner
     method: PATCH
-    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}
     body:
       roleKey: contributor
     expect:
@@ -538,7 +542,7 @@ cases:
   - id: teams.member-remove.team-owner
     actor: teamOwner
     method: DELETE
-    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}
     expect:
       status: 200
       envelope:

@@ -100,10 +100,10 @@ describe('API acceptance framework', () => {
 		const explicitCases = (spec.cases ?? []) as Array<{ id?: string; path?: string; body?: Record<string, unknown> }>;
 		expect(explicitCases.find((entry) => entry.id === 'teams.profile.by-name')?.path).toBe('${apiVersionPath}/teams/by-name/${fixtures.team.slug}/profile');
 		expect(explicitCases.find((entry) => entry.id === 'teams.member-role.team-owner')).toMatchObject({
-			path: '${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}',
+			path: '${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}',
 			body: { roleKey: 'contributor' },
 		});
-		expect(explicitCases.find((entry) => entry.id === 'teams.member-remove.team-owner')?.path).toBe('${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}');
+		expect(explicitCases.find((entry) => entry.id === 'teams.member-remove.team-owner')?.path).toBe('${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}');
 	});
 
 	it('writes an expanded case report for review without requiring live credentials', async () => {
