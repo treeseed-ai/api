@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.6.0] - 2026-07-01
+
+### Added
+
+- feat(api): replay stale API Postgres baseline markers (e1ea5e7df366)
+- feat(api): require full API Postgres baseline before adoption (b0d7eac9decc)
+- feat(api): replay partial API Postgres baselines idempotently (eef047d3b98e)
+- feat(api): make API Postgres baseline recovery idempotent (2a310b73ea42)
+- feat(api): adopt existing API Postgres baseline migrations (d7de42bf3621)
+- feat(api): switch hosted domains to treeseed.dev (b13575f19038)
+
+### Fixed
+
+- build(build): fix image release root directory verification (58509cdde5f5)
+- build(build): fix Railway runtime config verification (afd3e5277388)
+- build(build): fix release guarantee API verifiers (17d71701542a)
+- build(build): fix staging release guarantee auth (16e15f6210f8)
+- build(build): fix production release gates (81789c19adfb)
+- ci(ci): promotion proof after CI and acceptance fixes (1f727c516533)
+- ci(build): promotion proof after CI and acceptance fixes (0706bfec4d47)
+- build(build): fix SDK proof regressions after guarantee framework (9596772a70be)
+- build(build): fix guarantees CLI help metadata (bd9fd43b8d26)
+- test(tests): fix API acceptance team member isolation after guarantee (3b2acabb0a0d)
+- build(build): fix proof tests for clean hosted runners (4a77d550d15c)
+- build(build): fix promotion release gate assertions (12ce0c1d8a4a)
+- build(build): fix TreeDX release gate Beam setup (7cd8a0ee863f)
+- ci(build): fix scoped project domains for staging Pages (80b3bcfe4121)
+- build(build): fix Railway deploy live verification settle window (d3ae125b1451)
+- build(build): fix Agent capacity provider Docker build shape test (8c0ab432638a)
+- ci(build): fix staging hosted service credential and Railway source (76c7d65d64d0)
+- build(build): fix Railway IaC-only reconciliation and TreeDX env names (7ee1e5a9df1f)
+- ci(ci): fix Railway staging Dockerfile builds and persistent volumes (00ff508c2945)
+- test(tests): fix staging Railway source builds and volumes (299c7d61dcbb)
+- 19 additional changes omitted from this summary.
+
+### Tests
+
+- build(config): checkpoint user and team guarantees passing locally (fac369f71a4c)
+- ci(build): pin hosted workflow API domains to treeseed.dev (dc677e85626c)
+- test(tests): allow API release graph CLI tarball dependency (d44624968b5a)
+- test(tests): use image-backed Railway API staging services (6a7b1b2792d1)
+- build(tests): implement proposal governance decision pipeline (4bb8616e0fdb)
+- ci(build): checkpoint before verify action and local dev stack (53b0e5cf5e7b)
+
+### Dependencies
+
+- build(build): allow first production API domain validation (9bbdaff3fc30)
+- build(build): merge package main history back to staging (74c77399371d)
+- build(build): replace legacy strict tail with proof ledger (032b9fac94fd)
+- build(build): implement incremental release proof (a6a3af58b25b)
+- build(build): use configured API domains for hosted reconciliation (b485778d3cc9)
+- build(build): include domain units in promotion hosted reconciliation (5ae49e9f569e)
+- build(build): harden Railway IaC reconciliation and domain verification (e4d0f898b68c)
+- build(deps): repair managed worktree cleanup after docker verification (9672f7e1a730)
+- build(build): finish staging workflow hardening checkpoint (bbe921aadae8)
+- build(build): exclude build artifacts from stage proof workspace (8fac34dc4b85)
+- build(build): update stage command help text (9d93c8763fc6)
+- build(build): rework stage promotion workflow (779b206c9db3)
+- ci(build): use image-backed Railway API staging services (5e22db2997e8)
+- build(build): skip opaque railway sync provider errors after retries (95ccf1cc100f)
+- build(build): tolerate railway deploy trigger processing errors (dc0c76a2055a)
+- build(build): retry transient railway hosted sync failures (9902a0a600d9)
+- build(build): tolerate railway existing service source update limits (7e32f7657287)
+- build(build): repair railway existing service deployment recovery (6b6608698d0d)
+- build(docs): implement model-aware agent content tools (47884fc3f32c)
+- build(build): remove legacy Mailpit dev hooks (4e44be484ffb)
+- 9 additional changes omitted from this summary.
+
 ## [0.5.0] - 2026-06-12
 
 ### Added
