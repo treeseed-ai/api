@@ -69,7 +69,7 @@ function isTreeDxContentPublish(deployment, input) {
 }
 
 function mockWorkflowResult(deployment, input, result) {
-	const repository = repositorySlug(deployment.repository) ?? 'mock/project';
+	const repository = repositorySlug(deployment.repository) ?? 'local-acceptance/project';
 	const branch = stringValue(deployment.repository?.branch, input.environment === 'prod' ? 'main' : 'staging');
 	const runId = input.mockRunId ?? 9001;
 	const runUrl = `https://github.com/${repository}/actions/runs/${runId}`;
@@ -78,7 +78,7 @@ function mockWorkflowResult(deployment, input, result) {
 		repository,
 		workflow: stringValue(input.workflowFile, 'deploy-web.yml'),
 		runId,
-		headSha: input.mockHeadSha ?? 'mocked-head-sha',
+		headSha: input.mockHeadSha ?? 'local-acceptance-head-sha',
 		branch,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
@@ -389,7 +389,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 				branch: result.branch,
 				status: 'queued',
 				conclusion: null,
-				mock: true,
+				localAcceptanceDriver: mockExternal,
 				dryRun: effectiveDryRun,
 			};
 			await deploymentStore.updateProjectDeployment(deployment.id, { externalWorkflow });
@@ -482,7 +482,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			const effectiveDryRun = input.dryRun === true;
 			if (!deploymentStore) {
 				if (!mockExternal && !effectiveDryRun) {
-					throw new Error('Project web deployment executor requires the Market control-plane store for non-mocked deployments.');
+					throw new Error('Project web deployment executor requires the Market control-plane store for live deployments.');
 				}
 				const deployment = {
 					id: normalizedInput.deploymentId,

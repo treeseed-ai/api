@@ -2663,10 +2663,10 @@ async function runProjectLaunchApiBootstrap({
 					railway: { services: [], deployments: [], schedules: [] },
 					projectApiBaseUrl: `https://${bootstrappedIntent.hub?.slug ?? 'project'}-api.example.test`,
 					projectSiteUrl: `https://${bootstrappedIntent.hub?.slug ?? 'project'}.pages.dev`,
-					projectMetadata: { mocked: true },
+					projectMetadata: { localAcceptanceDriver: true },
 					phases: [
-						{ phase: 'repo_provision', status: 'completed', detail: 'Mocked repository provisioning completed.' },
-						{ phase: 'runtime_connection', status: 'completed', detail: 'Mocked runtime connection completed.' },
+						{ phase: 'repo_provision', status: 'completed', detail: 'Local acceptance repository provisioning completed.' },
+						{ phase: 'runtime_connection', status: 'completed', detail: 'Local acceptance runtime connection completed.' },
 					],
 				},
 			}
@@ -2796,7 +2796,7 @@ async function runProjectDeletionApiDestroy({
 				continue;
 			}
 			if (mockExternal) {
-				repositoryOperations.push(projectDeletionOperation('github', 'repository', `${repository.owner}/${repository.name}`, 'deleted', { mocked: true }));
+				repositoryOperations.push(projectDeletionOperation('github', 'repository', `${repository.owner}/${repository.name}`, 'deleted', { localAcceptanceDriver: true }));
 				continue;
 			}
 			if (!githubToken) throw new Error('GitHub token is required to delete project repositories.');
@@ -2826,21 +2826,21 @@ async function runProjectDeletionApiDestroy({
 		let cloudflareOperations = [];
 		if (mockExternal) {
 			cloudflareOperations = [
-				...names.pagesProjects.map((name) => projectDeletionOperation('cloudflare', 'pages-project', name, 'deleted', { mocked: true })),
-				...names.workers.map((name) => projectDeletionOperation('cloudflare', 'worker', name, 'deleted', { mocked: true })),
+				...names.pagesProjects.map((name) => projectDeletionOperation('cloudflare', 'pages-project', name, 'deleted', { localAcceptanceDriver: true })),
+				...names.workers.map((name) => projectDeletionOperation('cloudflare', 'worker', name, 'deleted', { localAcceptanceDriver: true })),
 				...(names.turnstileWidgets ?? []).map((widget) => projectDeletionOperation('cloudflare', 'turnstile-widget', widget.name ?? widget.sitekey, 'deleted', {
-					mocked: true,
+					localAcceptanceDriver: true,
 					sitekey: widget.sitekey ?? null,
 				})),
 				...(names.kvNamespaces ?? []).map((namespace) => projectDeletionOperation('cloudflare', 'kv-namespace', namespace.name ?? namespace.id, 'deleted', {
-					mocked: true,
+					localAcceptanceDriver: true,
 					id: namespace.id ?? null,
 					binding: namespace.binding ?? null,
 				})),
-				...names.buckets.map((name) => projectDeletionOperation('cloudflare', 'r2-bucket', name, 'deleted', { mocked: true })),
-				...names.databases.map((name) => projectDeletionOperation('cloudflare', 'd1-database', name, 'deleted', { mocked: true })),
-				...names.queues.map((name) => projectDeletionOperation('cloudflare', 'queue', name, 'deleted', { mocked: true })),
-				...names.domains.map((name) => projectDeletionOperation('cloudflare', 'dns-record', name, 'deleted', { mocked: true })),
+				...names.buckets.map((name) => projectDeletionOperation('cloudflare', 'r2-bucket', name, 'deleted', { localAcceptanceDriver: true })),
+				...names.databases.map((name) => projectDeletionOperation('cloudflare', 'd1-database', name, 'deleted', { localAcceptanceDriver: true })),
+				...names.queues.map((name) => projectDeletionOperation('cloudflare', 'queue', name, 'deleted', { localAcceptanceDriver: true })),
+				...names.domains.map((name) => projectDeletionOperation('cloudflare', 'dns-record', name, 'deleted', { localAcceptanceDriver: true })),
 			];
 		} else if (webHost) {
 			const cloudflareToken = overlay.CLOUDFLARE_API_TOKEN;
@@ -6913,6 +6913,9 @@ export function createApiExtension(options = {}) {
 
 export function createApiApp(options = {}): Hono {
 	const config = defaultConfig(options.config ?? {});
+	if (options.mockExternal === true && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test' && process.env.TREESEED_ACCEPTANCE_IN_PROCESS !== '1') {
+		throw new Error('mockExternal API mode is only allowed in tests and local acceptance runs.');
+	}
 	const apiDatabaseUrl = config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? null;
 	if (!options.db && !apiDatabaseUrl) {
 		throw new Error('TREESEED_DATABASE_URL is required for the Treeseed PostgreSQL control-plane database.');

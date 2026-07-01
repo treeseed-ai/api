@@ -90,7 +90,7 @@
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#273820182962d9060a3145f1cdab99cf6c4a6c2f",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#a492fbc34366d7e54f3f25d47c59c0f9866169d5",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.8.2",
     "libsodium-wrappers": "^0.7.16",
@@ -101,7 +101,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@treeseed/cli": "github:treeseed-ai/cli#2bdaf80cc7ac6a6c118908d09b02250031521c7c",
+    "@treeseed/cli": "github:treeseed-ai/cli#03347521d14ebc6b3b57a5116679ecc65730293c",
     "@types/node": "^24.6.0",
     "esbuild": "^0.28.0",
     "pg-mem": "^3.0.14",

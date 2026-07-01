@@ -316,9 +316,9 @@ function expandRoleMatrices(spec, caseId = '') {
 
 function expandDeploymentFlows(spec, caseId = '') {
 	return (Array.isArray(spec.deploymentFlows) ? spec.deploymentFlows : [])
-		.filter((flow) => matchesCaseFilter(caseId, flow.id ?? 'deployment-flow.mocked-local'))
+		.filter((flow) => matchesCaseFilter(caseId, flow.id ?? 'deployment-flow.local-acceptance'))
 		.map((flow) => ({
-			id: flow.id ?? 'deployment-flow.mocked-local',
+			id: flow.id ?? 'deployment-flow.local-acceptance',
 			actor: flow.actor ?? 'teamOwner',
 			method: 'FLOW',
 			path: '/v1/projects/${fixtures.project.id}/deployments/web',
@@ -1154,7 +1154,7 @@ async function requestAcceptanceJson({ variables, actors, actorId, method = 'GET
 	return { response, body: envelope };
 }
 
-function runMockedDeploymentRunner({ variables, actors, flow, args, operationId = null }) {
+function runLocalAcceptanceDeploymentRunner({ variables, actors, flow, args, operationId = null }) {
 	const runnerActor = actors[flow.runnerActor ?? 'platformRunner'] ?? {};
 	const runnerSecret = runnerActor.token ?? process.env.TREESEED_PLATFORM_RUNNER_SECRET ?? 'treeseed-platform-runner-dev-secret';
 	const databaseUrl = process.env.TREESEED_DATABASE_URL ?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api';
@@ -1177,6 +1177,7 @@ function runMockedDeploymentRunner({ variables, actors, flow, args, operationId 
 		env: {
 			...process.env,
 			TREESEED_API_BASE_URL: variables.baseUrl,
+			TREESEED_ACCEPTANCE_EXTERNAL_DRIVER: '1',
 			TREESEED_DATABASE_URL: databaseUrl,
 			TREESEED_URL: variables.baseUrl,
 			TREESEED_MANAGER_ID: market,
@@ -1187,7 +1188,7 @@ function runMockedDeploymentRunner({ variables, actors, flow, args, operationId 
 			},
 	});
 	if (result.status !== 0) {
-		throw new Error(`Mocked deployment runner failed with ${result.status}.\n${result.stdout}\n${result.stderr}`);
+		throw new Error(`Local acceptance deployment runner failed with ${result.status}.\n${result.stdout}\n${result.stderr}`);
 	}
 	return {
 		status: result.status,
@@ -1230,7 +1231,7 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 	failures.push(...assertNoForbiddenDeploymentOutput(deploy.body, 'queued deployment'));
 	const deploymentId = deploy.body?.payload?.deployment?.id ?? deploy.body?.deployment?.id;
 	const deploymentOperationId = deploy.body?.payload?.deployment?.platformOperationId ?? deploy.body?.deployment?.platformOperationId;
-	runMockedDeploymentRunner({ variables, actors, flow, args, operationId: deploymentOperationId });
+	runLocalAcceptanceDeploymentRunner({ variables, actors, flow, args, operationId: deploymentOperationId });
 	const deploymentDetail = await requestAcceptanceJson({
 		variables,
 		actors,
@@ -1239,7 +1240,7 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 	});
 	const completedDeployment = deploymentDetail.body?.payload?.deployment ?? deploymentDetail.body?.payload ?? deploymentDetail.body?.deployment;
 	if (completedDeployment?.status !== 'succeeded') {
-		throw new Error(`Mocked deployment did not succeed: ${JSON.stringify(deploymentDetail.body)}`);
+		throw new Error(`Local acceptance deployment did not succeed: ${JSON.stringify(deploymentDetail.body)}`);
 	}
 	failures.push(...assertNoForbiddenDeploymentOutput(deploymentDetail.body, 'completed deployment'));
 	const monitor = await requestAcceptanceJson({
@@ -1258,7 +1259,7 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 	failures.push(...assertNoForbiddenDeploymentOutput(monitor.body, 'queued monitor'));
 	const monitorDeploymentId = monitor.body?.payload?.deployment?.id ?? monitor.body?.deployment?.id;
 	const monitorOperationId = monitor.body?.payload?.deployment?.platformOperationId ?? monitor.body?.deployment?.platformOperationId;
-	runMockedDeploymentRunner({ variables, actors, flow, args, operationId: monitorOperationId });
+	runLocalAcceptanceDeploymentRunner({ variables, actors, flow, args, operationId: monitorOperationId });
 	const monitorDetail = await requestAcceptanceJson({
 		variables,
 		actors,
@@ -1268,7 +1269,7 @@ async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
 	const completedMonitor = monitorDetail.body?.payload?.deployment ?? monitorDetail.body?.payload ?? monitorDetail.body?.deployment;
 	const monitorPayload = completedMonitor?.monitor;
 	if (!monitorPayload?.status) {
-		throw new Error(`Mocked monitor result was not persisted: ${JSON.stringify(monitorDetail.body)}`);
+		throw new Error(`Local acceptance monitor result was not persisted: ${JSON.stringify(monitorDetail.body)}`);
 	}
 	failures.push(...assertNoForbiddenDeploymentOutput(monitorDetail.body, 'completed monitor'));
 	const finalState = await requestAcceptanceJson({

@@ -57,6 +57,10 @@ function parseOperationKey(value) {
 }
 
 function parseRunnerOptions() {
+	const mockExternal = hasArg('--mock-external');
+	if (mockExternal && process.env.TREESEED_ACCEPTANCE_EXTERNAL_DRIVER !== '1' && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
+		throw new Error('--mock-external is only allowed for the local acceptance external driver.');
+	}
 	return {
 		once: hasArg('--once'),
 		watch: hasArg('--watch'),
@@ -65,7 +69,7 @@ function parseRunnerOptions() {
 		pollIntervalMs: readNumberArg('--poll-interval-ms', 5000),
 		maxJobs: readNumberArg('--max-jobs', 1),
 		dryRun: hasArg('--dry-run'),
-		mockExternal: hasArg('--mock-external'),
+		mockExternal,
 		mockResult: readArg('--mock-result', 'success') === 'failure' ? 'failure' : 'success',
 	};
 }
@@ -1059,7 +1063,7 @@ async function runManagedLaunchJobs(config, store, _version, options = {}) {
 			const result = options.mockExternal === true
 				? {
 					mode: 'inline',
-					payload: mockedManagedLaunchResult(prepared.intent),
+					payload: localAcceptanceManagedLaunchResult(prepared.intent),
 				}
 				: await new TreeseedOperationsSdk().execute({
 					operationName: prepared.resume ? 'hub.resume_launch' : 'hub.execute_launch',
@@ -1107,7 +1111,7 @@ async function runManagedLaunchJobs(config, store, _version, options = {}) {
 	return { ok: failed === 0, processed, failed, errors };
 }
 
-function mockedManagedLaunchResult(intent) {
+function localAcceptanceManagedLaunchResult(intent) {
 	const hub = objectValue(intent.hub);
 	const repository = objectValue(intent.repository);
 	const slug = String(hub.slug ?? hub.id ?? 'project');
@@ -1151,10 +1155,10 @@ function mockedManagedLaunchResult(intent) {
 		railway: { services: [], deployments: [], schedules: [] },
 		projectApiBaseUrl: `https://${slug}-api.example.test`,
 		projectSiteUrl: `https://${slug}.pages.dev`,
-		projectMetadata: { mocked: true },
+		projectMetadata: { localAcceptanceDriver: true },
 		phases: [
-			{ phase: 'repo_provision', status: 'completed', detail: 'Mocked repository provisioning completed.' },
-			{ phase: 'runtime_connection', status: 'completed', detail: 'Mocked runtime connection completed.' },
+			{ phase: 'repo_provision', status: 'completed', detail: 'Local acceptance repository provisioning completed.' },
+			{ phase: 'runtime_connection', status: 'completed', detail: 'Local acceptance runtime connection completed.' },
 		],
 	};
 }

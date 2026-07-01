@@ -213,7 +213,7 @@ sdkMethodMatrices:
       envelope: { ok: true }
 
 deploymentFlows:
-  - id: deployment-flow.mocked-web-deployment
+  - id: deployment-flow.local-acceptance-web-deployment
     actor: teamOwner
     runnerActor: platformRunner
     market: local
@@ -242,7 +242,7 @@ coverage:
     - sdk.teams.team-owner
     - sdk.me.teamOwner
     - sdk.rotateCapacityProviderApiKey.teamOwner
-    - deployment-flow.mocked-web-deployment
+    - deployment-flow.local-acceptance-web-deployment
 
 cases:
   - id: health.ready

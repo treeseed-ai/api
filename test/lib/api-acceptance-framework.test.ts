@@ -72,12 +72,12 @@ describe('API acceptance framework', () => {
 		expect([...sdkMethods].sort()).toEqual(Object.keys(SDK_METHOD_ROUTE_MAP).sort());
 	});
 
-	it('includes the mocked web deployment acceptance flow in expansion', () => {
+	it('includes the local acceptance web deployment flow in expansion', () => {
 		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const flows = expandDeploymentFlows(spec);
 		expect(flows).toHaveLength(1);
 		expect(flows[0]).toMatchObject({
-			id: 'deployment-flow.mocked-web-deployment',
+			id: 'deployment-flow.local-acceptance-web-deployment',
 			actor: 'teamOwner',
 			deploymentFlow: true,
 			method: 'FLOW',
@@ -119,7 +119,7 @@ describe('API acceptance framework', () => {
 		expect(result.status).toBe(0);
 		const expanded = JSON.parse(readFileSync(output, 'utf8'));
 		expect(expanded.caseCount).toBeGreaterThan(2700);
-		expect(expanded.cases.some((entry: any) => entry.id === 'deployment-flow.mocked-web-deployment' && entry.deploymentFlow === true)).toBe(true);
+		expect(expanded.cases.some((entry: any) => entry.id === 'deployment-flow.local-acceptance-web-deployment' && entry.deploymentFlow === true)).toBe(true);
 		expect(expanded.cases.filter((entry: any) => entry.expect?.statusAny !== undefined).map((entry: any) => entry.id)).toEqual([
 			'sdk.auditProjectHosts.teamOwner',
 			'sdk.resyncProjectHost.teamOwner',
