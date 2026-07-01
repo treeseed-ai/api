@@ -690,6 +690,13 @@ function teamInviteAcceptUrlFor(context, token) {
 	return new URL(`/team-invites/${encodeURIComponent(token)}/accept`, `${authConfig.siteBaseUrl.replace(/\/+$/u, '')}/`).toString();
 }
 
+function passwordResetUrlFor(context, token) {
+	const authConfig = getSiteAuthConfig(context);
+	const target = new URL('/auth/reset-password', `${authConfig.siteBaseUrl.replace(/\/+$/u, '')}/`);
+	target.searchParams.set('token', token);
+	return target.toString();
+}
+
 async function sendTeamInviteEmail(context, input) {
 	const teamName = String(input.team?.displayName ?? input.team?.name ?? 'TreeSeed').trim() || 'TreeSeed';
 	const role = String(input.invite?.roleKey ?? input.invite?.role ?? 'member').replace(/_/gu, ' ');
@@ -7162,6 +7169,16 @@ export function createApiApp(options = {}): Hono {
 					`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? LIMIT 1`,
 					[team.id, owner?.userId],
 				).catch(() => null);
+				const membershipFixtures = {};
+				for (const actorId of Object.keys(actors)) {
+					const actor = actors[actorId];
+					if (!actor?.userId) continue;
+					const membership = await store.first(
+						`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? LIMIT 1`,
+						[team.id, actor.userId],
+					).catch(() => null);
+					if (membership?.id) membershipFixtures[actorId] = { id: membership.id, roleKey: membership.role_key ?? membership.role ?? null };
+				}
 				const projectSlug = `${namespace}-project`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 48).replace(/^-+|-+$/gu, '') || 'acceptance-project';
 				const acceptanceProjectArchitecture = {
 					topology: 'single_repository_site',
@@ -7494,6 +7511,7 @@ export function createApiApp(options = {}): Hono {
 								project: { id: project.id, slug: project.slug ?? projectSlug },
 								treeDx: { id: treeDx?.instance?.id ?? null, mirrorCount: treeDx?.mirrors?.length ?? 0 },
 							membership: { id: ownerMembership?.id ?? null },
+							memberships: membershipFixtures,
 							session: { id: actors.teamOwner?.sessionId ?? actors.siteAdmin?.sessionId ?? null },
 							provider: { id: provider.id, keyPrefix: providerKey?.key?.keyPrefix ?? null },
 							deployment: { id: deployment?.id ?? null },
@@ -8435,6 +8453,34 @@ export function createApiApp(options = {}): Hono {
 							new Date().toISOString(),
 						],
 					);
+					const resetUrl = passwordResetUrlFor(marketAuthContext(c), resetToken);
+					try {
+						await sendAuthEmail(marketAuthContext(c), {
+							to: email,
+							subject: 'Reset your TreeSeed password',
+							text: [
+								'Reset your TreeSeed password:',
+								resetUrl,
+								'',
+								'If you did not request a password reset, you can ignore this email.',
+							].join('\n'),
+							html: [
+								'<div style="font-family:Inter,Arial,sans-serif;line-height:1.5;color:#17211b">',
+								'<h1 style="font-size:24px">Reset your TreeSeed password</h1>',
+								'<p>Use this secure link to reset your password.</p>',
+								`<p><a href="${resetUrl}" style="display:inline-block;background:#2f6f4e;color:white;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:700">Reset password</a></p>`,
+								`<p style="word-break:break-all;color:#526052">${resetUrl}</p>`,
+								'<p>If you did not request a password reset, you can ignore this email.</p>',
+								'</div>',
+							].join(''),
+						});
+					} catch (error) {
+						console.warn('[market-auth] Password reset email failed:', error instanceof Error ? error.message : String(error));
+						return jsonError(c, 503, 'Password reset email could not be sent. Please try again shortly.', {
+							code: 'password_reset_delivery_failed',
+							...(process.env.NODE_ENV === 'test' ? { detail: error instanceof Error ? error.message : String(error) } : {}),
+						});
+					}
 				}
 				return c.json({
 					ok: true,

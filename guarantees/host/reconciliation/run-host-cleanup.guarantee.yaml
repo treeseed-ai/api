@@ -1,0 +1,75 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.host.reconciliation.run-host-cleanup.079
+journeyIndex: 79
+type: host
+subtype: reconciliation
+journey: Run Host Cleanup
+ownerPackage: "@treeseed/api"
+summary: Destroy isolated or stale Treeseed-owned resources through reconciliation cleanup flows with live verification after deletion.
+status: planned
+dependencies:
+  journeys:
+    - 76
+  guarantees:
+    - guarantee.host.reconciliation.review-host-drift.076
+actors:
+  allowed:
+    - host_operator
+    - team_owner
+    - platform_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+    - desktop_firefox
+    - tablet_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Journey dependencies must be satisfied: 76"
+scene:
+  required: true
+  manifest: ./scenes/run-host-cleanup.scene.yaml
+  mode:
+    acceptance: true
+    demo: true
+    training: true
+  entryRoute: /app/hosts/run-host-cleanup
+  componentContract: destructive-confirmation guarantee harness
+  expectedEvidence:
+    - playwright_trace
+    - scene_video
+    - screenshot_on_failure
+    - console_log
+    - network_log
+api:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.run-host-cleanup.api
+content:
+  required: false
+  verifierRefs:
+    - todo.host.reconciliation.run-host-cleanup.content
+audit:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.run-host-cleanup.audit
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - todo.host.reconciliation.run-host-cleanup.negative
+evidence:
+  required:
+    - playwright_trace
+    - scene_video
+    - api_verification_log
+    - audit_event_id
+notes:
+  - Destroy isolated or stale Treeseed-owned resources through reconciliation cleanup flows with live verification after deletion.

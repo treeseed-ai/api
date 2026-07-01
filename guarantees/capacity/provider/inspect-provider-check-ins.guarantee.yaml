@@ -1,0 +1,75 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.capacity.provider.inspect-provider-check-ins.081
+journeyIndex: 81
+type: capacity
+subtype: provider
+journey: Inspect Provider Check-Ins
+ownerPackage: "@treeseed/api"
+summary: Show provider manager heartbeat capabilities runner count availability windows and diagnostics from API control-plane records.
+status: planned
+dependencies:
+  journeys:
+    - 80
+  guarantees:
+    - guarantee.capacity.provider.register-capacity-provider.080
+actors:
+  allowed:
+    - capacity_operator
+    - team_owner
+    - platform_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+    - desktop_firefox
+    - tablet_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Journey dependencies must be satisfied: 80"
+scene:
+  required: true
+  manifest: ./scenes/inspect-provider-check-ins.scene.yaml
+  mode:
+    acceptance: true
+    demo: true
+    training: true
+  entryRoute: /app/capacity/inspect-provider-check-ins
+  componentContract: dashboard/read-model guarantee harness
+  expectedEvidence:
+    - playwright_trace
+    - scene_video
+    - screenshot_on_failure
+    - console_log
+    - network_log
+api:
+  required: true
+  verifierRefs:
+    - todo.capacity.provider.inspect-provider-check-ins.api
+content:
+  required: false
+  verifierRefs:
+    - todo.capacity.provider.inspect-provider-check-ins.content
+audit:
+  required: true
+  verifierRefs:
+    - todo.capacity.provider.inspect-provider-check-ins.audit
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - todo.capacity.provider.inspect-provider-check-ins.negative
+evidence:
+  required:
+    - playwright_trace
+    - scene_video
+    - api_verification_log
+    - audit_event_id
+notes:
+  - Show provider manager heartbeat capabilities runner count availability windows and diagnostics from API control-plane records.

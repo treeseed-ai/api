@@ -268,6 +268,9 @@ cases:
           equals: true
         - path: payload.email
           equals: acceptance-signup-${runNonce}@treeseed.ai
+      mailpit:
+        to: acceptance-signup-${runNonce}@treeseed.ai
+        timeoutMs: 10000
 
   - id: auth.me.requires-user
     actor: anonymous
@@ -378,6 +381,21 @@ cases:
       envelope:
         ok: true
 
+  - id: auth.password-reset.request.mailpit
+    actor: anonymous
+    method: POST
+    path: ${apiVersionPath}/auth/web/password-reset/request
+    body:
+      email: ${actors.teamOwner.email}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      mailpit:
+        to: ${actors.teamOwner.email}
+        subjectIncludes: Reset your TreeSeed password
+        timeoutMs: 10000
+
   - id: auth.account-blockers.team-viewer
     actor: teamViewer
     method: GET
@@ -436,6 +454,109 @@ cases:
     actor: nonMember
     method: GET
     path: ${apiVersionPath}/teams
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: auth.profile.update.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/auth/web/profile
+    body:
+      name: Acceptance Profile
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: auth.email.add.team-owner
+    actor: teamOwner
+    method: POST
+    path: ${apiVersionPath}/auth/web/emails
+    body:
+      email: acceptance-extra-${runNonce}@treeseed.ai
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      mailpit:
+        to: acceptance-extra-${runNonce}@treeseed.ai
+        timeoutMs: 10000
+
+  - id: teams.create.team-owner
+    actor: teamOwner
+    method: POST
+    path: ${apiVersionPath}/teams
+    body:
+      name: acceptance-created-${runNonce}
+      displayName: Acceptance Created ${runNonce}
+      profileSummary: Acceptance-created team for guarantees.
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.update.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/teams/${fixtures.team.id}
+    body:
+      displayName: Acceptance Updated Team
+      profileSummary: Acceptance updated profile.
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.invite.team-owner
+    actor: teamOwner
+    method: POST
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/invites
+    body:
+      email: acceptance-invite-${runNonce}@treeseed.ai
+      roleKey: reviewer
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      mailpit:
+        to: acceptance-invite-${runNonce}@treeseed.ai
+        timeoutMs: 10000
+
+  - id: teams.member-role.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}
+    body:
+      roleKey: contributor
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.member-remove.team-owner
+    actor: teamOwner
+    method: DELETE
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.deletion-blockers.team-owner
+    actor: teamOwner
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/deletion-blockers
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.profile.by-name
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/teams/by-name/${fixtures.team.slug}/profile
     expect:
       status: 200
       envelope:

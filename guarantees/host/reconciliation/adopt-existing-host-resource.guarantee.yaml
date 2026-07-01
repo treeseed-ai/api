@@ -1,0 +1,75 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.host.reconciliation.adopt-existing-host-resource.077
+journeyIndex: 77
+type: host
+subtype: reconciliation
+journey: Adopt Existing Host Resource
+ownerPackage: "@treeseed/api"
+summary: Attach an existing provider resource to Treeseed desired state with lineage and ownership instead of ignoring or manually mutating it.
+status: planned
+dependencies:
+  journeys:
+    - 76
+  guarantees:
+    - guarantee.host.reconciliation.review-host-drift.076
+actors:
+  allowed:
+    - host_operator
+    - team_owner
+    - platform_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+    - desktop_firefox
+    - tablet_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Journey dependencies must be satisfied: 76"
+scene:
+  required: true
+  manifest: ./scenes/adopt-existing-host-resource.scene.yaml
+  mode:
+    acceptance: true
+    demo: true
+    training: true
+  entryRoute: /app/hosts/adopt-existing-host-resource
+  componentContract: record-modal-form guarantee harness
+  expectedEvidence:
+    - playwright_trace
+    - scene_video
+    - screenshot_on_failure
+    - console_log
+    - network_log
+api:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.adopt-existing-host-resource.api
+content:
+  required: false
+  verifierRefs:
+    - todo.host.reconciliation.adopt-existing-host-resource.content
+audit:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.adopt-existing-host-resource.audit
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - todo.host.reconciliation.adopt-existing-host-resource.negative
+evidence:
+  required:
+    - playwright_trace
+    - scene_video
+    - api_verification_log
+    - audit_event_id
+notes:
+  - Attach an existing provider resource to Treeseed desired state with lineage and ownership instead of ignoring or manually mutating it.

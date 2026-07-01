@@ -85,6 +85,27 @@ describe('API acceptance framework', () => {
 		expect(JSON.stringify(flows)).not.toMatch(/capacityProviderId|runnerToken|TREESEED_PLATFORM_RUNNER_SECRET/u);
 	});
 
+	it('filters generated cases by explicit case id before expansion', () => {
+		const spec = loadSpec('test/acceptance/api.base.yaml');
+		expect(expandRoleMatrices(spec, 'site-role-matrix.me.teamOwner').map((entry) => entry.id)).toEqual(['site-role-matrix.me.teamOwner']);
+		expect(expandDeploymentFlows(spec, 'site-role-matrix.me.teamOwner')).toEqual([]);
+		expect(expandDescriptorMatrices(spec, undefined, 'descriptor-executable-role-matrix.get.v1.me.teamOwner').map((entry) => entry.id)).toEqual([
+			'descriptor-executable-role-matrix.get.v1.me.teamOwner',
+		]);
+		expect(expandSdkMethodMatrices(spec, undefined, 'sdk.me.teamOwner').map((entry) => entry.id)).toEqual(['sdk.me.teamOwner']);
+	});
+
+	it('defines team guarantee verifier cases against stable seeded fixture fields', () => {
+		const spec = loadSpec('test/acceptance/api.base.yaml');
+		const explicitCases = (spec.cases ?? []) as Array<{ id?: string; path?: string; body?: Record<string, unknown> }>;
+		expect(explicitCases.find((entry) => entry.id === 'teams.profile.by-name')?.path).toBe('${apiVersionPath}/teams/by-name/${fixtures.team.slug}/profile');
+		expect(explicitCases.find((entry) => entry.id === 'teams.member-role.team-owner')).toMatchObject({
+			path: '${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}',
+			body: { roleKey: 'contributor' },
+		});
+		expect(explicitCases.find((entry) => entry.id === 'teams.member-remove.team-owner')?.path).toBe('${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamViewer.id}');
+	});
+
 	it('writes an expanded case report for review without requiring live credentials', async () => {
 		const { mkdtempSync, readFileSync } = await import('node:fs');
 		const { tmpdir } = await import('node:os');

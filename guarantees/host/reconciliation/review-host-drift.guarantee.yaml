@@ -1,0 +1,75 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.host.reconciliation.review-host-drift.076
+journeyIndex: 76
+type: host
+subtype: reconciliation
+journey: Review Host Drift
+ownerPackage: "@treeseed/api"
+summary: Show missing stale duplicate misnamed detached or undeclared Treeseed-owned resources and require an explicit plan action for each drift item.
+status: planned
+dependencies:
+  journeys:
+    - 75
+  guarantees:
+    - guarantee.host.reconciliation.verify-host-live-state.075
+actors:
+  allowed:
+    - host_operator
+    - team_owner
+    - platform_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+    - desktop_firefox
+    - tablet_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Journey dependencies must be satisfied: 75"
+scene:
+  required: true
+  manifest: ./scenes/review-host-drift.scene.yaml
+  mode:
+    acceptance: true
+    demo: true
+    training: true
+  entryRoute: /app/hosts/review-host-drift
+  componentContract: dashboard/read-model guarantee harness
+  expectedEvidence:
+    - playwright_trace
+    - scene_video
+    - screenshot_on_failure
+    - console_log
+    - network_log
+api:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.review-host-drift.api
+content:
+  required: false
+  verifierRefs:
+    - todo.host.reconciliation.review-host-drift.content
+audit:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.review-host-drift.audit
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - todo.host.reconciliation.review-host-drift.negative
+evidence:
+  required:
+    - playwright_trace
+    - scene_video
+    - api_verification_log
+    - audit_event_id
+notes:
+  - Show missing stale duplicate misnamed detached or undeclared Treeseed-owned resources and require an explicit plan action for each drift item.

@@ -1,0 +1,73 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.project.treedx.configure-treedx-routing.088
+journeyIndex: 88
+type: project
+subtype: treedx
+journey: Configure TreeDX Routing
+ownerPackage: "@treeseed/api"
+summary: Configure project-scoped TreeDX proxy handles and authorization; agents and operations must use TreeDX rather than direct local content access.
+status: planned
+dependencies:
+  journeys:
+    - 32
+  guarantees:
+    - guarantee.project.project.create-project.032
+actors:
+  allowed:
+    - project_manager
+    - project_contributor
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+    - mobile_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Journey dependencies must be satisfied: 32"
+scene:
+  required: true
+  manifest: ./scenes/configure-treedx-routing.scene.yaml
+  mode:
+    acceptance: true
+    demo: true
+    training: true
+  entryRoute: /app/projects/:projectId/treedx/configure-treedx-routing
+  componentContract: full-page-form guarantee harness
+  expectedEvidence:
+    - playwright_trace
+    - scene_video
+    - screenshot_on_failure
+    - console_log
+    - network_log
+api:
+  required: true
+  verifierRefs:
+    - todo.project.treedx.configure-treedx-routing.api
+content:
+  required: false
+  verifierRefs:
+    - todo.project.treedx.configure-treedx-routing.content
+audit:
+  required: true
+  verifierRefs:
+    - todo.project.treedx.configure-treedx-routing.audit
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - todo.project.treedx.configure-treedx-routing.negative
+evidence:
+  required:
+    - playwright_trace
+    - scene_video
+    - api_verification_log
+    - audit_event_id
+notes:
+  - Configure project-scoped TreeDX proxy handles and authorization; agents and operations must use TreeDX rather than direct local content access.

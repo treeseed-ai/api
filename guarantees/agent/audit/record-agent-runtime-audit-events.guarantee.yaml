@@ -1,0 +1,61 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.audit.record-agent-runtime-audit-events.179
+journeyIndex: 179
+type: agent
+subtype: audit
+journey: Record Agent Runtime Audit Events
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Verify API control-plane behavior for Record Agent Runtime Audit Events."
+status: planned
+dependencies:
+  journeys:
+    - 60
+  guarantees:
+    - guarantee.project.agent.monitor-agent.060
+actors:
+  allowed:
+    - project_manager
+    - capacity_operator
+    - team_owner
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+  optional:
+    - mobile_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Guarantee starts as planned until all verifier refs execute in integrated environments."
+scene:
+  required: false
+api:
+  required: true
+  verifierRefs:
+    - api.agent.audit.runtime-events-recorded
+content:
+  required: false
+  verifierRefs: []
+audit:
+  required: true
+  verifierRefs:
+    - api.agent.audit.runtime-events-recorded
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - api.agent.audit.runtime-events-recorded
+evidence:
+  required:
+    - guarantee_report
+    - verifier_evidence
+notes:
+  - "API companion guarantee for Record Agent Runtime Audit Events."
+

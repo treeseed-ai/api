@@ -1,0 +1,49 @@
+schemaVersion: treeseed.guarantee-verifiers/v1
+ownerPackage: "@treeseed/api"
+verifiers:
+  api.agent.provider-availability-session.persisted:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.provider-availability-session.persisted
+  api.agent.provider-assignment.created:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.provider-assignment.created
+  api.agent.assignment-lease.transitioned:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.assignment-lease.transitioned
+  api.agent.mode-run.persisted:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.mode-run.persisted
+  api.agent.usage-actual.persisted:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.usage-actual.persisted
+  api.agent.capacity-ledger.settled-once:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.capacity-ledger.settled-once
+  api.agent.treedx.assignment-scoped-authorized:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.treedx.assignment-scoped-authorized
+  api.agent.treedx.cross-project-denied:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.treedx.cross-project-denied
+  api.agent.audit.runtime-events-recorded:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.audit.runtime-events-recorded
+

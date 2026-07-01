@@ -1,0 +1,75 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.host.reconciliation.retain-host-resource.078
+journeyIndex: 78
+type: host
+subtype: reconciliation
+journey: Retain Host Resource
+ownerPackage: "@treeseed/api"
+summary: Mark an undeclared or removed resource as intentionally retained with a reason so exact-state reconciliation does not silently ignore it.
+status: planned
+dependencies:
+  journeys:
+    - 76
+  guarantees:
+    - guarantee.host.reconciliation.review-host-drift.076
+actors:
+  allowed:
+    - host_operator
+    - team_owner
+    - platform_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+    - desktop_firefox
+    - tablet_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Journey dependencies must be satisfied: 76"
+scene:
+  required: true
+  manifest: ./scenes/retain-host-resource.scene.yaml
+  mode:
+    acceptance: true
+    demo: true
+    training: true
+  entryRoute: /app/hosts/retain-host-resource
+  componentContract: record-modal-form guarantee harness
+  expectedEvidence:
+    - playwright_trace
+    - scene_video
+    - screenshot_on_failure
+    - console_log
+    - network_log
+api:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.retain-host-resource.api
+content:
+  required: false
+  verifierRefs:
+    - todo.host.reconciliation.retain-host-resource.content
+audit:
+  required: true
+  verifierRefs:
+    - todo.host.reconciliation.retain-host-resource.audit
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - todo.host.reconciliation.retain-host-resource.negative
+evidence:
+  required:
+    - playwright_trace
+    - scene_video
+    - api_verification_log
+    - audit_event_id
+notes:
+  - Mark an undeclared or removed resource as intentionally retained with a reason so exact-state reconciliation does not silently ignore it.

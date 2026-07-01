@@ -14,6 +14,7 @@ function parseArgs(argv) {
 		reportJson: '',
 		reportJunit: '',
 		expandJson: '',
+		caseId: '',
 	};
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index];
@@ -23,9 +24,14 @@ function parseArgs(argv) {
 		else if (arg === '--report-json') args.reportJson = argv[++index];
 		else if (arg === '--report-junit') args.reportJunit = argv[++index];
 		else if (arg === '--expand-json') args.expandJson = argv[++index];
+		else if (arg === '--case') args.caseId = argv[++index];
 		else if (arg === '--help' || arg === '-h') args.help = true;
 	}
 	return args;
+}
+
+function matchesCaseFilter(caseId, candidateId) {
+	return !caseId || candidateId === caseId;
 }
 
 function loadExpectedStatuses(path = 'test/acceptance/api.expected-statuses.json') {
@@ -97,8 +103,13 @@ async function loadMarketClient() {
 }
 
 function serviceHeaders(spec) {
-	const serviceId = process.env[spec.seed?.serviceIdEnv ?? 'TREESEED_ACCEPTANCE_SERVICE_ID'];
-	const serviceSecret = process.env[spec.seed?.serviceSecretEnv ?? 'TREESEED_ACCEPTANCE_SERVICE_SECRET'];
+	const environment = process.env.TREESEED_ACCEPTANCE_ENVIRONMENT || process.env.TREESEED_ENVIRONMENT || 'local';
+	const serviceId = process.env[spec.seed?.serviceIdEnv ?? 'TREESEED_ACCEPTANCE_SERVICE_ID']
+		?? (environment === 'local' ? process.env.TREESEED_API_WEB_SERVICE_ID ?? process.env.TREESEED_WEB_SERVICE_ID ?? 'web' : undefined);
+	const serviceSecret = process.env[spec.seed?.serviceSecretEnv ?? 'TREESEED_ACCEPTANCE_SERVICE_SECRET']
+		?? (environment === 'local'
+			? process.env.TREESEED_API_WEB_SERVICE_SECRET ?? process.env.TREESEED_WEB_SERVICE_SECRET ?? 'treeseed-web-service-dev-secret'
+			: undefined);
 	if (!serviceId || !serviceSecret) {
 		throw new Error('Acceptance seeding requires TREESEED_ACCEPTANCE_SERVICE_ID and TREESEED_ACCEPTANCE_SERVICE_SECRET.');
 	}
@@ -166,6 +177,63 @@ function getPath(value, path) {
 	}, value);
 }
 
+function mailpitMessages(value) {
+	if (!value || typeof value !== 'object') return [];
+	const record = value;
+	const messages = record.messages ?? record.Messages;
+	return Array.isArray(messages) ? messages : [];
+}
+
+function mailpitMessageSubject(value) {
+	if (!value || typeof value !== 'object') return '';
+	const record = value;
+	return String(record.Subject ?? record.subject ?? '');
+}
+
+function mailpitMessageRecipients(value) {
+	if (!value || typeof value !== 'object') return [];
+	const record = value;
+	const recipients = record.To ?? record.to ?? record.Recipients ?? record.recipients;
+	if (!Array.isArray(recipients)) return [];
+	return recipients.map((recipient) => {
+		if (typeof recipient === 'string') return recipient;
+		if (!recipient || typeof recipient !== 'object') return '';
+		const entry = recipient;
+		return String(entry.Address ?? entry.address ?? entry.Email ?? entry.email ?? '');
+	}).filter(Boolean);
+}
+
+async function assertMailpitExpectation(expectation) {
+	if (!expectation) return [];
+	const url = String(expectation.url ?? process.env.TREESEED_MAILPIT_URL ?? 'http://127.0.0.1:8025').replace(/\/+$/u, '');
+	const to = String(expectation.to ?? '').toLowerCase();
+	const subjectIncludes = expectation.subjectIncludes ? String(expectation.subjectIncludes).toLowerCase() : '';
+	const timeoutMs = Number(expectation.timeoutMs ?? 5000);
+	const started = Date.now();
+	let lastError = '';
+	while (Date.now() - started <= timeoutMs) {
+		try {
+			const response = await fetchWithTimeout(`${url}/api/v1/messages`, {}, 'GET Mailpit messages');
+			if (!response.ok) {
+				lastError = `Mailpit returned HTTP ${response.status}`;
+			} else {
+				const list = await response.json();
+				const found = mailpitMessages(list).some((message) => {
+					const recipients = mailpitMessageRecipients(message).map((entry) => entry.toLowerCase());
+					const subject = mailpitMessageSubject(message).toLowerCase();
+					return (!to || recipients.includes(to)) && (!subjectIncludes || subject.includes(subjectIncludes));
+				});
+				if (found) return [];
+				lastError = `No Mailpit message found${to ? ` for ${to}` : ''}.`;
+			}
+		} catch (error) {
+			lastError = error instanceof Error ? error.message : String(error);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 250));
+	}
+	return [`Mailpit expectation failed: ${lastError}`];
+}
+
 function assertCase(caseSpec, response, body) {
 	const failures = [];
 	const expectedStatus = Number(caseSpec.expect?.status ?? caseSpec.expect?.statusAny?.[0] ?? 200);
@@ -211,7 +279,7 @@ function assertNoForbiddenDeploymentOutput(value, label = 'deployment output') {
 	return failures;
 }
 
-function expandRoleMatrices(spec) {
+function expandRoleMatrices(spec, caseId = '') {
 	const matrices = Array.isArray(spec.roleMatrices) ? spec.roleMatrices : [];
 	const expanded = [];
 	for (const matrix of matrices) {
@@ -219,6 +287,8 @@ function expandRoleMatrices(spec) {
 		const endpoints = Array.isArray(matrix.endpoints) ? matrix.endpoints : [];
 		for (const endpoint of endpoints) {
 			for (const actor of actors) {
+				const id = `${matrix.id}.${endpoint.id}.${actor}`;
+				if (!matchesCaseFilter(caseId, id)) continue;
 				const actorOverride = endpoint.expectByActor?.[actor] ?? {};
 				const expected = {
 					...(matrix.expect ?? {}),
@@ -226,7 +296,7 @@ function expandRoleMatrices(spec) {
 					...actorOverride,
 				};
 				expanded.push({
-					id: `${matrix.id}.${endpoint.id}.${actor}`,
+					id,
 					actor,
 					method: endpoint.method ?? 'GET',
 					path: endpoint.path,
@@ -244,17 +314,19 @@ function expandRoleMatrices(spec) {
 	return expanded;
 }
 
-function expandDeploymentFlows(spec) {
-	return (Array.isArray(spec.deploymentFlows) ? spec.deploymentFlows : []).map((flow) => ({
-		id: flow.id ?? 'deployment-flow.mocked-local',
-		actor: flow.actor ?? 'teamOwner',
-		method: 'FLOW',
-		path: '/v1/projects/${fixtures.project.id}/deployments/web',
-		deploymentFlow: true,
-		flow,
-		expect: flow.expect ?? { status: 200, envelope: { ok: true } },
-		environments: flow.environments,
-	}));
+function expandDeploymentFlows(spec, caseId = '') {
+	return (Array.isArray(spec.deploymentFlows) ? spec.deploymentFlows : [])
+		.filter((flow) => matchesCaseFilter(caseId, flow.id ?? 'deployment-flow.mocked-local'))
+		.map((flow) => ({
+			id: flow.id ?? 'deployment-flow.mocked-local',
+			actor: flow.actor ?? 'teamOwner',
+			method: 'FLOW',
+			path: '/v1/projects/${fixtures.project.id}/deployments/web',
+			deploymentFlow: true,
+			flow,
+			expect: flow.expect ?? { status: 200, envelope: { ok: true } },
+			environments: flow.environments,
+		}));
 }
 
 function fixtureValue(name) {
@@ -677,7 +749,7 @@ function expectedForDescriptor(descriptor, actor, expectedStatuses = {}) {
 	};
 }
 
-function expandDescriptorMatrices(spec, expectedStatuses = loadExpectedStatuses(spec.expectedStatuses)) {
+function expandDescriptorMatrices(spec, expectedStatuses = loadExpectedStatuses(spec.expectedStatuses), caseId = '') {
 	const matrices = Array.isArray(spec.descriptorMatrices) ? spec.descriptorMatrices : [];
 	const expanded = [];
 	for (const matrix of matrices) {
@@ -694,6 +766,8 @@ function expandDescriptorMatrices(spec, expectedStatuses = loadExpectedStatuses(
 			if (matrix.excludeProviderIngress !== false && descriptor.providerIngress) continue;
 			if (matrix.excludeInternalRunner !== false && descriptor.internalRunner) continue;
 			for (const actor of actors) {
+				const id = `${matrix.id}.${descriptor.id}.${actor}`;
+				if (!matchesCaseFilter(caseId, id)) continue;
 				const expected = {
 					...(matrix.expect ?? {}),
 					...expectedForDescriptor(descriptor, actor, expectedStatuses),
@@ -701,7 +775,7 @@ function expandDescriptorMatrices(spec, expectedStatuses = loadExpectedStatuses(
 				};
 				const body = bodyForFactory(descriptor.acceptance?.bodyFactory, descriptor, actor);
 				expanded.push({
-					id: `${matrix.id}.${descriptor.id}.${actor}`,
+					id,
 					actor,
 					method: descriptor.method,
 					path: descriptorPath(descriptor),
@@ -1002,7 +1076,7 @@ function actorForSdkMethod(method, descriptor) {
 	return 'teamOwner';
 }
 
-function expandSdkMethodMatrices(spec, expectedStatuses = loadExpectedStatuses(spec.expectedStatuses)) {
+function expandSdkMethodMatrices(spec, expectedStatuses = loadExpectedStatuses(spec.expectedStatuses), caseId = '') {
 	if (spec.coverage?.requireAllSdkMethods !== true && !spec.sdkMethodMatrices) return [];
 	const explicit = Array.isArray(spec.sdkMethodMatrices) ? spec.sdkMethodMatrices : [];
 	const expanded = [];
@@ -1011,9 +1085,11 @@ function expandSdkMethodMatrices(spec, expectedStatuses = loadExpectedStatuses(s
 		const descriptor = API_ROUTE_DESCRIPTORS.find((entry) => entry.id === descriptorId);
 		const matrixOverride = explicit.find((entry) => entry.method === method || entry.sdkMethod === method) ?? {};
 		const actor = matrixOverride.actor ?? actorForSdkMethod(method, descriptor);
+		const id = matrixOverride.id ?? `sdk.${method}.${actor}`;
+		if (!matchesCaseFilter(caseId, id)) continue;
 		const expected = matrixOverride.expect ?? expectedForDescriptor(descriptor ?? { acceptance: { successActors: [actor] } }, actor, expectedStatuses);
 		expanded.push({
-			id: matrixOverride.id ?? `sdk.${method}.${actor}`,
+			id,
 			actor,
 			sdkMethod: method,
 			sdkArgs: matrixOverride.sdkArgs ?? sdkArgsForMethod(method),
@@ -1297,9 +1373,27 @@ async function main() {
 			username: actor.username,
 		}]));
 	}
-	const allCases = [...(spec.cases ?? []), ...expandDeploymentFlows(spec), ...expandRoleMatrices(spec), ...expandDescriptorMatrices(spec, expectedStatuses), ...expandSdkMethodMatrices(spec, expectedStatuses)];
-	assertCoverage(spec, allCases);
-	const cases = allCases.filter((entry) => !entry.environments || entry.environments.includes(args.environment));
+	const explicitCases = Array.isArray(spec.cases) ? spec.cases.filter((entry) => matchesCaseFilter(args.caseId, entry.id)) : [];
+	const allCases = [
+		...explicitCases,
+		...expandDeploymentFlows(spec, args.caseId),
+		...expandRoleMatrices(spec, args.caseId),
+		...expandDescriptorMatrices(spec, expectedStatuses, args.caseId),
+		...expandSdkMethodMatrices(spec, expectedStatuses, args.caseId),
+	];
+	if (!args.caseId) assertCoverage(spec, allCases);
+	const cases = allCases
+		.filter((entry) => !entry.environments || entry.environments.includes(args.environment))
+		.filter((entry) => matchesCaseFilter(args.caseId, entry.id));
+	if (args.caseId && cases.length === 0) {
+		const message = `Acceptance case not found for environment ${args.environment}: ${args.caseId}`;
+		if (args.reportJson) {
+			mkdirSync(dirname(args.reportJson), { recursive: true });
+			writeFileSync(args.reportJson, `${JSON.stringify({ ok: false, environment: args.environment, caseId: args.caseId, error: message, results: [] }, null, 2)}\n`);
+		}
+		console.error(message);
+		process.exit(1);
+	}
 	if (args.expandJson) {
 		mkdirSync(dirname(args.expandJson), { recursive: true });
 		writeFileSync(args.expandJson, `${JSON.stringify({
@@ -1408,6 +1502,7 @@ async function main() {
 						body = await response.json().catch(() => null);
 					}
 					failures = assertCase(caseSpec, response, body);
+					failures.push(...await assertMailpitExpectation(caseSpec.expect?.mailpit));
 				}
 		} catch (error) {
 			failures = [error?.message ?? String(error)];

@@ -1,0 +1,77 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.workday.decision.approve-acting-decision.085
+journeyIndex: 85
+type: workday
+subtype: decision
+journey: Approve Acting Decision
+ownerPackage: "@treeseed/api"
+summary: Record accepted decision and readiness provenance before acting mode can run; acting must not execute from unapproved planning output.
+status: planned
+dependencies:
+  journeys:
+    - 48
+    - 50
+  guarantees:
+    - guarantee.project.proposal.create-proposal.048
+    - guarantee.project.proposal.vote-on-proposal.050
+actors:
+  allowed:
+    - project_manager
+    - agent_operator
+    - capacity_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required:
+    - desktop_chromium
+    - desktop_firefox
+    - tablet_chromium
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Journey dependencies must be satisfied: 48, 50"
+scene:
+  required: true
+  manifest: ./scenes/approve-acting-decision.scene.yaml
+  mode:
+    acceptance: true
+    demo: true
+    training: true
+  entryRoute: /app/projects/:projectId/workdays/approve-acting-decision
+  componentContract: record-action guarantee harness
+  expectedEvidence:
+    - playwright_trace
+    - scene_video
+    - screenshot_on_failure
+    - console_log
+    - network_log
+api:
+  required: true
+  verifierRefs:
+    - todo.workday.decision.approve-acting-decision.api
+content:
+  required: true
+  verifierRefs:
+    - todo.workday.decision.approve-acting-decision.content
+audit:
+  required: true
+  verifierRefs:
+    - todo.workday.decision.approve-acting-decision.audit
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs:
+      - todo.workday.decision.approve-acting-decision.negative
+evidence:
+  required:
+    - playwright_trace
+    - scene_video
+    - api_verification_log
+    - audit_event_id
+notes:
+  - Record accepted decision and readiness provenance before acting mode can run; acting must not execute from unapproved planning output.
