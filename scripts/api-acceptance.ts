@@ -203,8 +203,9 @@ function mailpitMessageRecipients(value) {
 	}).filter(Boolean);
 }
 
-async function assertMailpitExpectation(expectation) {
+async function assertMailpitExpectation(expectation, environment = 'local') {
 	if (!expectation) return [];
+	if (environment !== 'local') return [];
 	const url = String(expectation.url ?? process.env.TREESEED_MAILPIT_URL ?? 'http://127.0.0.1:8025').replace(/\/+$/u, '');
 	const to = String(expectation.to ?? '').toLowerCase();
 	const subjectIncludes = expectation.subjectIncludes ? String(expectation.subjectIncludes).toLowerCase() : '';
@@ -1503,7 +1504,7 @@ async function main() {
 						body = await response.json().catch(() => null);
 					}
 					failures = assertCase(caseSpec, response, body);
-					failures.push(...await assertMailpitExpectation(caseSpec.expect?.mailpit));
+					failures.push(...await assertMailpitExpectation(caseSpec.expect?.mailpit, args.environment));
 				}
 		} catch (error) {
 			failures = [error?.message ?? String(error)];
