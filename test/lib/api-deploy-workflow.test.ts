@@ -10,9 +10,12 @@ function packageJson() {
 	return JSON.parse(readFileSync('package.json', 'utf8')) as any;
 }
 
-function expectTreeSeedCliDependency(spec: unknown) {
+function expectProductionTreeSeedCliDependency(spec: unknown) {
 	expect(typeof spec).toBe('string');
-	expect(spec).toMatch(/^(github:treeseed-ai\/cli#|file:treeseed-release-tarballs\/treeseed-cli-.*\.tgz$)/u);
+	expect(spec).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u);
+	expect(spec).not.toContain('github:');
+	expect(spec).not.toContain('file:');
+	expect(spec).not.toContain('workspace:');
 }
 
 describe('API deploy workflow', () => {
@@ -24,7 +27,7 @@ describe('API deploy workflow', () => {
 		expect(deploy.jobs).not.toHaveProperty('build-staging-images');
 		expect(deploy.jobs).toHaveProperty('deploy-api');
 		expect(deploy.jobs).toHaveProperty('live-verify');
-		expectTreeSeedCliDependency(pkg.devDependencies?.['@treeseed/cli']);
+		expectProductionTreeSeedCliDependency(pkg.devDependencies?.['@treeseed/cli']);
 
 		const deployRun = JSON.stringify(deploy.jobs['deploy-api']);
 		expect(deploy.jobs['deploy-api'].needs).not.toContain('build-staging-images');
