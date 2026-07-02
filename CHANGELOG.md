@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.6] - 2026-07-02
+
+### Fixed
+
+- fix(release): retry transient acceptance requests (e032f484aef5)
+
 ## [0.6.5] - 2026-07-02
 
 ### Fixed
