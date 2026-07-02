@@ -6,7 +6,7 @@ subtype: treedx
 journey: Verify TreeDX Access
 ownerPackage: "@treeseed/api"
 summary: Run a read/write authorization check against the project TreeDX route before workdays or content operations depend on it.
-status: planned
+status: active
 dependencies:
   journeys:
     - 88
@@ -49,20 +49,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.project.treedx.verify-treedx-access.api
+    - api.project.treedx.verify-treedx-access.api
 content:
   required: false
   verifierRefs:
-    - todo.project.treedx.verify-treedx-access.content
+    - api.project.treedx.verify-treedx-access.content
 audit:
   required: true
   verifierRefs:
-    - todo.project.treedx.verify-treedx-access.audit
+    - api.project.treedx.verify-treedx-access.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.project.treedx.verify-treedx-access.negative
+      - api.project.treedx.verify-treedx-access.negative
 evidence:
   required:
     - playwright_trace

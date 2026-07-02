@@ -6,7 +6,7 @@ subtype: provider
 journey: Register Capacity Provider
 ownerPackage: "@treeseed/api"
 summary: Create provider identity capabilities constraints and team eligibility before key rotation approval or deployment.
-status: planned
+status: active
 dependencies:
   journeys:
     - 4
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.capacity.provider.register-capacity-provider.api
+    - api.capacity.provider.register-capacity-provider.api
 content:
   required: false
   verifierRefs:
-    - todo.capacity.provider.register-capacity-provider.content
+    - api.capacity.provider.register-capacity-provider.content
 audit:
   required: true
   verifierRefs:
-    - todo.capacity.provider.register-capacity-provider.audit
+    - api.capacity.provider.register-capacity-provider.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.capacity.provider.register-capacity-provider.negative
+      - api.capacity.provider.register-capacity-provider.negative
 evidence:
   required:
     - playwright_trace

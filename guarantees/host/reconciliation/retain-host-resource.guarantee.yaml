@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Retain Host Resource
 ownerPackage: "@treeseed/api"
 summary: Mark an undeclared or removed resource as intentionally retained with a reason so exact-state reconciliation does not silently ignore it.
-status: planned
+status: active
 dependencies:
   journeys:
     - 76
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.retain-host-resource.api
+    - api.host.reconciliation.retain-host-resource.api
 content:
   required: false
   verifierRefs:
-    - todo.host.reconciliation.retain-host-resource.content
+    - api.host.reconciliation.retain-host-resource.content
 audit:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.retain-host-resource.audit
+    - api.host.reconciliation.retain-host-resource.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.host.reconciliation.retain-host-resource.negative
+      - api.host.reconciliation.retain-host-resource.negative
 evidence:
   required:
     - playwright_trace

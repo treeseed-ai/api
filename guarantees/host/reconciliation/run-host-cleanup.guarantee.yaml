@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Run Host Cleanup
 ownerPackage: "@treeseed/api"
 summary: Destroy isolated or stale Treeseed-owned resources through reconciliation cleanup flows with live verification after deletion.
-status: planned
+status: active
 dependencies:
   journeys:
     - 76
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.run-host-cleanup.api
+    - api.host.reconciliation.run-host-cleanup.api
 content:
   required: false
   verifierRefs:
-    - todo.host.reconciliation.run-host-cleanup.content
+    - api.host.reconciliation.run-host-cleanup.content
 audit:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.run-host-cleanup.audit
+    - api.host.reconciliation.run-host-cleanup.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.host.reconciliation.run-host-cleanup.negative
+      - api.host.reconciliation.run-host-cleanup.negative
 evidence:
   required:
     - playwright_trace

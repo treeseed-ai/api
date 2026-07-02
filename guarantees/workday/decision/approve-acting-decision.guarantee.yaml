@@ -6,7 +6,7 @@ subtype: decision
 journey: Approve Acting Decision
 ownerPackage: "@treeseed/api"
 summary: Record accepted decision and readiness provenance before acting mode can run; acting must not execute from unapproved planning output.
-status: planned
+status: active
 dependencies:
   journeys:
     - 48
@@ -53,20 +53,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.workday.decision.approve-acting-decision.api
+    - api.workday.decision.approve-acting-decision.api
 content:
   required: true
   verifierRefs:
-    - todo.workday.decision.approve-acting-decision.content
+    - api.workday.decision.approve-acting-decision.content
 audit:
   required: true
   verifierRefs:
-    - todo.workday.decision.approve-acting-decision.audit
+    - api.workday.decision.approve-acting-decision.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.workday.decision.approve-acting-decision.negative
+      - api.workday.decision.approve-acting-decision.negative
 evidence:
   required:
     - playwright_trace

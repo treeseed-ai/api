@@ -106,6 +106,43 @@ describe('API acceptance framework', () => {
 		expect(explicitCases.find((entry) => entry.id === 'teams.member-remove.team-owner')?.path).toBe('${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}');
 	});
 
+	it('maps every active API guarantee verifier ref to an acceptance case', async () => {
+		const { readdirSync, readFileSync, statSync } = await import('node:fs');
+		const { join } = await import('node:path');
+		const spec = loadSpec('test/acceptance/api.base.yaml');
+		const caseIds = new Set(((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean));
+		const verifierText = readFileSync('guarantees/verifiers/api.verifiers.yaml', 'utf8');
+		const verifierCaseIds = new Map<string, string>();
+		for (const block of verifierText.split(/\n(?=  api\.)/u)) {
+			const ref = block.match(/^\s*(api\.[^:]+):/u)?.[1];
+			const caseId = block.match(/caseId:\s*([^\s]+)/u)?.[1];
+			if (ref && caseId) verifierCaseIds.set(ref, caseId);
+		}
+		const files: string[] = [];
+		const walk = (directory: string) => {
+			for (const entry of readdirSync(directory)) {
+				const path = join(directory, entry);
+				if (statSync(path).isDirectory()) walk(path);
+				else if (path.endsWith('.guarantee.yaml')) files.push(path);
+			}
+		};
+		walk('guarantees');
+		const activeGuarantees = files
+			.map((file) => ({ file, text: readFileSync(file, 'utf8') }))
+			.filter((entry) => /status:\s*active/u.test(entry.text));
+		expect(activeGuarantees).toHaveLength(25);
+		const refs = new Set<string>();
+		for (const entry of activeGuarantees) {
+			for (const match of entry.text.matchAll(/-\s+(api\.[A-Za-z0-9_.-]+)/gu)) refs.add(match[1]);
+		}
+		expect(refs.size).toBeGreaterThanOrEqual(25);
+		for (const ref of refs) {
+			const caseId = verifierCaseIds.get(ref);
+			expect(caseId, `${ref} is missing from api.verifiers.yaml`).toBeTruthy();
+			expect(caseIds.has(caseId!), `${ref} references missing acceptance case ${caseId}`).toBe(true);
+		}
+	});
+
 	it('writes an expanded case report for review without requiring live credentials', async () => {
 		const { mkdtempSync, readFileSync } = await import('node:fs');
 		const { tmpdir } = await import('node:os');

@@ -1,36 +1,36 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
-  api.agent.provider-availability-session.persisted:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/api-acceptance.ts
-    caseId: agent.provider-availability-session.persisted
-  api.agent.provider-assignment.created:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/api-acceptance.ts
-    caseId: agent.provider-assignment.created
   api.agent.assignment-lease.transitioned:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
     caseId: agent.assignment-lease.transitioned
-  api.agent.mode-run.persisted:
+  api.agent.audit.runtime-events-recorded:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
-    caseId: agent.mode-run.persisted
-  api.agent.usage-actual.persisted:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/api-acceptance.ts
-    caseId: agent.usage-actual.persisted
+    caseId: agent.audit.runtime-events-recorded
   api.agent.capacity-ledger.settled-once:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
     caseId: agent.capacity-ledger.settled-once
+  api.agent.mode-run.persisted:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.mode-run.persisted
+  api.agent.provider-assignment.created:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.provider-assignment.created
+  api.agent.provider-availability-session.persisted:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.provider-availability-session.persisted
   api.agent.treedx.assignment-scoped-authorized:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
@@ -41,9 +41,328 @@ verifiers:
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
     caseId: agent.treedx.cross-project-denied
-  api.agent.audit.runtime-events-recorded:
+  api.agent.usage-actual.persisted:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
-    caseId: agent.audit.runtime-events-recorded
-
+    caseId: agent.usage-actual.persisted
+  api.capacity.assignment.inspect-assignment-leases.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.inspect-assignment-leases
+  api.capacity.assignment.inspect-assignment-leases.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.inspect-assignment-leases
+  api.capacity.assignment.inspect-assignment-leases.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.inspect-assignment-leases
+  api.capacity.assignment.inspect-assignment-leases.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.inspect-assignment-leases
+  api.capacity.assignment.recover-failed-assignment.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.recover-failed-assignment
+  api.capacity.assignment.recover-failed-assignment.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.recover-failed-assignment
+  api.capacity.assignment.recover-failed-assignment.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.recover-failed-assignment
+  api.capacity.assignment.recover-failed-assignment.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.assignment.recover-failed-assignment
+  api.capacity.provider.inspect-provider-check-ins.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.inspect-provider-check-ins
+  api.capacity.provider.inspect-provider-check-ins.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.inspect-provider-check-ins
+  api.capacity.provider.inspect-provider-check-ins.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.inspect-provider-check-ins
+  api.capacity.provider.inspect-provider-check-ins.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.inspect-provider-check-ins
+  api.capacity.provider.register-capacity-provider.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.register-capacity-provider
+  api.capacity.provider.register-capacity-provider.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.register-capacity-provider
+  api.capacity.provider.register-capacity-provider.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.register-capacity-provider
+  api.capacity.provider.register-capacity-provider.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.register-capacity-provider
+  api.capacity.usage.review-capacity-usage.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.usage.review-capacity-usage
+  api.capacity.usage.review-capacity-usage.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.usage.review-capacity-usage
+  api.capacity.usage.review-capacity-usage.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.usage.review-capacity-usage
+  api.capacity.usage.review-capacity-usage.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.usage.review-capacity-usage
+  api.host.reconciliation.adopt-existing-host-resource.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.adopt-existing-host-resource
+  api.host.reconciliation.adopt-existing-host-resource.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.adopt-existing-host-resource
+  api.host.reconciliation.adopt-existing-host-resource.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.adopt-existing-host-resource
+  api.host.reconciliation.adopt-existing-host-resource.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.adopt-existing-host-resource
+  api.host.reconciliation.preview-host-plan.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.preview-host-plan
+  api.host.reconciliation.preview-host-plan.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.preview-host-plan
+  api.host.reconciliation.preview-host-plan.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.preview-host-plan
+  api.host.reconciliation.preview-host-plan.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.preview-host-plan
+  api.host.reconciliation.retain-host-resource.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.retain-host-resource
+  api.host.reconciliation.retain-host-resource.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.retain-host-resource
+  api.host.reconciliation.retain-host-resource.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.retain-host-resource
+  api.host.reconciliation.retain-host-resource.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.retain-host-resource
+  api.host.reconciliation.review-host-drift.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.review-host-drift
+  api.host.reconciliation.review-host-drift.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.review-host-drift
+  api.host.reconciliation.review-host-drift.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.review-host-drift
+  api.host.reconciliation.review-host-drift.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.review-host-drift
+  api.host.reconciliation.run-host-cleanup.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.run-host-cleanup
+  api.host.reconciliation.run-host-cleanup.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.run-host-cleanup
+  api.host.reconciliation.run-host-cleanup.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.run-host-cleanup
+  api.host.reconciliation.run-host-cleanup.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.run-host-cleanup
+  api.host.reconciliation.verify-host-live-state.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.verify-host-live-state
+  api.host.reconciliation.verify-host-live-state.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.verify-host-live-state
+  api.host.reconciliation.verify-host-live-state.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.verify-host-live-state
+  api.host.reconciliation.verify-host-live-state.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.verify-host-live-state
+  api.project.treedx.configure-treedx-routing.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.configure-treedx-routing
+  api.project.treedx.configure-treedx-routing.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.configure-treedx-routing
+  api.project.treedx.configure-treedx-routing.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.configure-treedx-routing
+  api.project.treedx.configure-treedx-routing.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.configure-treedx-routing
+  api.project.treedx.verify-treedx-access.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.verify-treedx-access
+  api.project.treedx.verify-treedx-access.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.verify-treedx-access
+  api.project.treedx.verify-treedx-access.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.verify-treedx-access
+  api.project.treedx.verify-treedx-access.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.verify-treedx-access
+  api.workday.artifacts.review-workday-artifacts.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.artifacts.review-workday-artifacts
+  api.workday.artifacts.review-workday-artifacts.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.artifacts.review-workday-artifacts
+  api.workday.artifacts.review-workday-artifacts.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.artifacts.review-workday-artifacts
+  api.workday.artifacts.review-workday-artifacts.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.artifacts.review-workday-artifacts
+  api.workday.decision.approve-acting-decision.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.decision.approve-acting-decision
+  api.workday.decision.approve-acting-decision.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.decision.approve-acting-decision
+  api.workday.decision.approve-acting-decision.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.decision.approve-acting-decision
+  api.workday.decision.approve-acting-decision.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.decision.approve-acting-decision
+  api.workday.diagnostics.inspect-mode-run-trace.api:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.diagnostics.inspect-mode-run-trace
+  api.workday.diagnostics.inspect-mode-run-trace.audit:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.diagnostics.inspect-mode-run-trace
+  api.workday.diagnostics.inspect-mode-run-trace.content:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.diagnostics.inspect-mode-run-trace
+  api.workday.diagnostics.inspect-mode-run-trace.negative:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: workday.diagnostics.inspect-mode-run-trace

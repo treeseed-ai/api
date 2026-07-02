@@ -6,7 +6,7 @@ subtype: assignment
 journey: Recover Failed Assignment
 ownerPackage: "@treeseed/api"
 summary: Return expire or retry a failed assignment with traceable reason while preserving API lease and settlement integrity.
-status: planned
+status: active
 dependencies:
   journeys:
     - 82
@@ -53,20 +53,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.capacity.assignment.recover-failed-assignment.api
+    - api.capacity.assignment.recover-failed-assignment.api
 content:
   required: false
   verifierRefs:
-    - todo.capacity.assignment.recover-failed-assignment.content
+    - api.capacity.assignment.recover-failed-assignment.content
 audit:
   required: true
   verifierRefs:
-    - todo.capacity.assignment.recover-failed-assignment.audit
+    - api.capacity.assignment.recover-failed-assignment.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.capacity.assignment.recover-failed-assignment.negative
+      - api.capacity.assignment.recover-failed-assignment.negative
 evidence:
   required:
     - playwright_trace

@@ -6,7 +6,7 @@ subtype: assignment
 journey: Inspect Assignment Leases
 ownerPackage: "@treeseed/api"
 summary: Review active renewed completed returned and failed assignment leases so scheduling behavior is auditable.
-status: planned
+status: active
 dependencies:
   journeys:
     - 27
@@ -55,20 +55,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.capacity.assignment.inspect-assignment-leases.api
+    - api.capacity.assignment.inspect-assignment-leases.api
 content:
   required: false
   verifierRefs:
-    - todo.capacity.assignment.inspect-assignment-leases.content
+    - api.capacity.assignment.inspect-assignment-leases.content
 audit:
   required: true
   verifierRefs:
-    - todo.capacity.assignment.inspect-assignment-leases.audit
+    - api.capacity.assignment.inspect-assignment-leases.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.capacity.assignment.inspect-assignment-leases.negative
+      - api.capacity.assignment.inspect-assignment-leases.negative
 evidence:
   required:
     - playwright_trace

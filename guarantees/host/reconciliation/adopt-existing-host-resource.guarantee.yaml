@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Adopt Existing Host Resource
 ownerPackage: "@treeseed/api"
 summary: Attach an existing provider resource to Treeseed desired state with lineage and ownership instead of ignoring or manually mutating it.
-status: planned
+status: active
 dependencies:
   journeys:
     - 76
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.adopt-existing-host-resource.api
+    - api.host.reconciliation.adopt-existing-host-resource.api
 content:
   required: false
   verifierRefs:
-    - todo.host.reconciliation.adopt-existing-host-resource.content
+    - api.host.reconciliation.adopt-existing-host-resource.content
 audit:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.adopt-existing-host-resource.audit
+    - api.host.reconciliation.adopt-existing-host-resource.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.host.reconciliation.adopt-existing-host-resource.negative
+      - api.host.reconciliation.adopt-existing-host-resource.negative
 evidence:
   required:
     - playwright_trace

@@ -6,7 +6,7 @@ subtype: usage
 journey: Review Capacity Usage
 ownerPackage: "@treeseed/api"
 summary: Show usage actuals token counts durations budgets and ledger settlement records for providers projects agents and workdays.
-status: planned
+status: active
 dependencies:
   journeys:
     - 29
@@ -53,20 +53,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.capacity.usage.review-capacity-usage.api
+    - api.capacity.usage.review-capacity-usage.api
 content:
   required: false
   verifierRefs:
-    - todo.capacity.usage.review-capacity-usage.content
+    - api.capacity.usage.review-capacity-usage.content
 audit:
   required: true
   verifierRefs:
-    - todo.capacity.usage.review-capacity-usage.audit
+    - api.capacity.usage.review-capacity-usage.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.capacity.usage.review-capacity-usage.negative
+      - api.capacity.usage.review-capacity-usage.negative
 evidence:
   required:
     - playwright_trace

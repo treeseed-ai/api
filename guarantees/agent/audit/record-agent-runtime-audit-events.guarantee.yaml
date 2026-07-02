@@ -7,7 +7,7 @@ journey: Record Agent Runtime Audit Events
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Verify API control-plane behavior for Record Agent Runtime Audit Events."
-status: planned
+status: active
 dependencies:
   journeys:
     - 60
@@ -33,8 +33,7 @@ preconditions:
   fixtures:
     - integrated_treeseed_project
   notes:
-    - "Guarantee starts as planned until all verifier refs execute in integrated environments."
-scene:
+    scene:
   required: false
 api:
   required: true

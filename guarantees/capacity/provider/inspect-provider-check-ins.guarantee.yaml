@@ -6,7 +6,7 @@ subtype: provider
 journey: Inspect Provider Check-Ins
 ownerPackage: "@treeseed/api"
 summary: Show provider manager heartbeat capabilities runner count availability windows and diagnostics from API control-plane records.
-status: planned
+status: active
 dependencies:
   journeys:
     - 80
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.capacity.provider.inspect-provider-check-ins.api
+    - api.capacity.provider.inspect-provider-check-ins.api
 content:
   required: false
   verifierRefs:
-    - todo.capacity.provider.inspect-provider-check-ins.content
+    - api.capacity.provider.inspect-provider-check-ins.content
 audit:
   required: true
   verifierRefs:
-    - todo.capacity.provider.inspect-provider-check-ins.audit
+    - api.capacity.provider.inspect-provider-check-ins.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.capacity.provider.inspect-provider-check-ins.negative
+      - api.capacity.provider.inspect-provider-check-ins.negative
 evidence:
   required:
     - playwright_trace

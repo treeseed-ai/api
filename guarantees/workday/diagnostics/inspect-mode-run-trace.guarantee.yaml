@@ -6,7 +6,7 @@ subtype: diagnostics
 journey: Inspect Mode Run Trace
 ownerPackage: "@treeseed/api"
 summary: Show agent mode class handler assignment provider runner execution provider inputs outputs token counts durations errors and diagnostics for forensic traceability.
-status: planned
+status: active
 dependencies:
   journeys:
     - 63
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.workday.diagnostics.inspect-mode-run-trace.api
+    - api.workday.diagnostics.inspect-mode-run-trace.api
 content:
   required: false
   verifierRefs:
-    - todo.workday.diagnostics.inspect-mode-run-trace.content
+    - api.workday.diagnostics.inspect-mode-run-trace.content
 audit:
   required: true
   verifierRefs:
-    - todo.workday.diagnostics.inspect-mode-run-trace.audit
+    - api.workday.diagnostics.inspect-mode-run-trace.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.workday.diagnostics.inspect-mode-run-trace.negative
+      - api.workday.diagnostics.inspect-mode-run-trace.negative
 evidence:
   required:
     - playwright_trace

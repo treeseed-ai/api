@@ -6,7 +6,7 @@ subtype: treedx
 journey: Configure TreeDX Routing
 ownerPackage: "@treeseed/api"
 summary: Configure project-scoped TreeDX proxy handles and authorization; agents and operations must use TreeDX rather than direct local content access.
-status: planned
+status: active
 dependencies:
   journeys:
     - 32
@@ -49,20 +49,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.project.treedx.configure-treedx-routing.api
+    - api.project.treedx.configure-treedx-routing.api
 content:
   required: false
   verifierRefs:
-    - todo.project.treedx.configure-treedx-routing.content
+    - api.project.treedx.configure-treedx-routing.content
 audit:
   required: true
   verifierRefs:
-    - todo.project.treedx.configure-treedx-routing.audit
+    - api.project.treedx.configure-treedx-routing.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.project.treedx.configure-treedx-routing.negative
+      - api.project.treedx.configure-treedx-routing.negative
 evidence:
   required:
     - playwright_trace

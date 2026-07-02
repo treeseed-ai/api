@@ -36,6 +36,9 @@ devices:
       isMobile: false
       hasTouch: false
 setup:
+  auth:
+    required: true
+    role: owner
   dev:
     required: true
     command: trsd dev start --web-runtime local --json

@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Verify Host Live State
 ownerPackage: "@treeseed/api"
 summary: Refresh provider state and verify postconditions after reconciliation; ok true is valid only after live observation passes.
-status: planned
+status: active
 dependencies:
   journeys:
     - 23
@@ -53,20 +53,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.verify-host-live-state.api
+    - api.host.reconciliation.verify-host-live-state.api
 content:
   required: false
   verifierRefs:
-    - todo.host.reconciliation.verify-host-live-state.content
+    - api.host.reconciliation.verify-host-live-state.content
 audit:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.verify-host-live-state.audit
+    - api.host.reconciliation.verify-host-live-state.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.host.reconciliation.verify-host-live-state.negative
+      - api.host.reconciliation.verify-host-live-state.negative
 evidence:
   required:
     - playwright_trace

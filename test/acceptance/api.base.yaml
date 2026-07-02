@@ -252,6 +252,206 @@ cases:
     expect:
       status: 200
 
+  - id: agent.provider-availability-session.persisted
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/provider-sessions
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.provider-assignment.created
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.assignment-lease.transitioned
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.mode-run.persisted
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-mode-runs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.usage-actual.persisted
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity-runtime-diagnostics
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.capacity-ledger.settled-once
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.treedx.assignment-scoped-authorized
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-library
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.treedx.cross-project-denied
+    actor: nonMember
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-library
+    expect:
+      status: 403
+      envelope: { ok: false }
+
+  - id: agent.audit.runtime-events-recorded
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-proxy-audit
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.provider.register-capacity-provider
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity-providers
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.provider.inspect-provider-check-ins
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/provider-sessions
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.assignment.inspect-assignment-leases
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.assignment.recover-failed-assignment
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.usage.review-capacity-usage
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity-runtime-diagnostics
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.preview-host-plan
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.verify-host-live-state
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.review-host-drift
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.adopt-existing-host-resource
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.retain-host-resource
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.run-host-cleanup
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: project.treedx.configure-treedx-routing
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/treedx
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: project.treedx.verify-treedx-access
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-library
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: workday.decision.approve-acting-decision
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/workday-policy
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: workday.artifacts.review-workday-artifacts
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/workdays
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: workday.diagnostics.inspect-mode-run-trace
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-mode-runs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
   - id: auth.web.sign-up.sends-confirmation-email
     actor: anonymous
     method: POST

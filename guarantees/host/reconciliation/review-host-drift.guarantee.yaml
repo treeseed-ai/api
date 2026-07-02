@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Review Host Drift
 ownerPackage: "@treeseed/api"
 summary: Show missing stale duplicate misnamed detached or undeclared Treeseed-owned resources and require an explicit plan action for each drift item.
-status: planned
+status: active
 dependencies:
   journeys:
     - 75
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.review-host-drift.api
+    - api.host.reconciliation.review-host-drift.api
 content:
   required: false
   verifierRefs:
-    - todo.host.reconciliation.review-host-drift.content
+    - api.host.reconciliation.review-host-drift.content
 audit:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.review-host-drift.audit
+    - api.host.reconciliation.review-host-drift.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.host.reconciliation.review-host-drift.negative
+      - api.host.reconciliation.review-host-drift.negative
 evidence:
   required:
     - playwright_trace

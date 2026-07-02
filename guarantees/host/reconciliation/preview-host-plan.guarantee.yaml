@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Preview Host Plan
 ownerPackage: "@treeseed/api"
 summary: Compile desired hosting state and show create update delete adopt retain actions before any provider mutation; required because hosting changes must route through trsd reconciliation.
-status: planned
+status: active
 dependencies:
   journeys:
     - 23
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.preview-host-plan.api
+    - api.host.reconciliation.preview-host-plan.api
 content:
   required: false
   verifierRefs:
-    - todo.host.reconciliation.preview-host-plan.content
+    - api.host.reconciliation.preview-host-plan.content
 audit:
   required: true
   verifierRefs:
-    - todo.host.reconciliation.preview-host-plan.audit
+    - api.host.reconciliation.preview-host-plan.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.host.reconciliation.preview-host-plan.negative
+      - api.host.reconciliation.preview-host-plan.negative
 evidence:
   required:
     - playwright_trace

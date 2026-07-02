@@ -6,7 +6,7 @@ subtype: artifacts
 journey: Review Workday Artifacts
 ownerPackage: "@treeseed/api"
 summary: Inspect generated questions proposals notes knowledge pages summaries and reports with links to agent execution and TreeDX content refs.
-status: planned
+status: active
 dependencies:
   journeys:
     - 63
@@ -51,20 +51,20 @@ scene:
 api:
   required: true
   verifierRefs:
-    - todo.workday.artifacts.review-workday-artifacts.api
+    - api.workday.artifacts.review-workday-artifacts.api
 content:
   required: false
   verifierRefs:
-    - todo.workday.artifacts.review-workday-artifacts.content
+    - api.workday.artifacts.review-workday-artifacts.content
 audit:
   required: true
   verifierRefs:
-    - todo.workday.artifacts.review-workday-artifacts.audit
+    - api.workday.artifacts.review-workday-artifacts.audit
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
-      - todo.workday.artifacts.review-workday-artifacts.negative
+      - api.workday.artifacts.review-workday-artifacts.negative
 evidence:
   required:
     - playwright_trace
