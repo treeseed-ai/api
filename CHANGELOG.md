@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.10] - 2026-07-02
+
+### Changed
+
+- Isolate local API acceptance credentials (7c4d2dff8540)
+
+### Fixed
+
+- Fix production CLI dependency release assertion (d68a2a41e610)
+
 ## [0.6.9] - 2026-07-02
 
 ### Changed
