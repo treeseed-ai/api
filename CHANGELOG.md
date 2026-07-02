@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.9] - 2026-07-02
+
+### Changed
+
+- Activate API acceptance guarantees (c62b0223063a)
+
+### Fixed
+
+- fix(release): advance staging sdk lock recovery ref (9ce14b5353cc)
+- fix(release): advance staging sdk and cli refs (b5554fda47a9)
+- fix(release): advance staging sdk verification ref (bc704569162b)
+- fix(release): advance staging sdk reference (b5f9e01a3ceb)
+- fix(release): restore staging dependency refs (1788db673fed)
+
 ## [0.6.8] - 2026-07-02
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "@treeseed/api",
-  "version": "0.6.8",
+  "version": "0.6.9",
   "description": "TreeSeed Treeseed backend API and operations runner.",
   "license": "COMMERCIAL",
   "repository": {
@@ -90,7 +90,7 @@
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#7e0115daadb6df39b3e8b069ab6d971bd8332659",
+    "@treeseed/sdk": "0.12.13",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.8.2",
     "libsodium-wrappers": "^0.7.16",
@@ -101,7 +101,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@treeseed/cli": "github:treeseed-ai/cli#092772500ad174a1ac660dc1aaa2bd07f58a7f48",
+    "@treeseed/cli": "0.12.10",
     "@types/node": "^24.6.0",
     "esbuild": "^0.28.0",
     "pg-mem": "^3.0.14",
