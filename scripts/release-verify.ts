@@ -206,8 +206,8 @@ async function runAcceptanceIfConfigured() {
 	const server = await startLocalAcceptanceApi();
 	try {
 		await runAsync('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', server.baseUrl], {
-			TREESEED_ACCEPTANCE_SERVICE_ID: process.env.TREESEED_ACCEPTANCE_SERVICE_ID ?? 'web',
-			TREESEED_ACCEPTANCE_SERVICE_SECRET: process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET ?? 'web-test-secret',
+			TREESEED_ACCEPTANCE_SERVICE_ID: 'web',
+			TREESEED_ACCEPTANCE_SERVICE_SECRET: 'web-test-secret',
 			TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS: '1',
 			TREESEED_ACCEPTANCE_REQUEST_TIMEOUT_MS: process.env.TREESEED_ACCEPTANCE_REQUEST_TIMEOUT_MS ?? '120000',
 			TREESEED_ACCEPTANCE_IN_PROCESS: '1',
