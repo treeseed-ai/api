@@ -101,7 +101,7 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@treeseed/cli": "0.12.17",
+    "@treeseed/cli": "github:treeseed-ai/cli#e61778a99d6bb7eec7228727ccc5706b7d335920",
     "@types/node": "^24.6.0",
     "esbuild": "^0.28.0",
     "pg-mem": "^3.0.14",
