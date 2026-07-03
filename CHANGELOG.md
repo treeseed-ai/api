@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.20] - 2026-07-03
+
+### Infrastructure
+
+- Pass release environment config to API deploy (834edf95b7b9)
+
 ## [0.6.19] - 2026-07-03
 
 ### Changed
