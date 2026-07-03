@@ -7096,6 +7096,7 @@ export function createApiApp(options = {}): Hono {
 						providerOperator: { siteRoles: ['member'] },
 					};
 				const actors = {};
+				try {
 				for (const [actorId, actorInput] of Object.entries(actorInputs)) {
 					const safeActorId = String(actorId).replace(/[^a-z0-9-]+/giu, '-').replace(/^-+|-+$/gu, '').toLowerCase() || 'actor';
 					const email = normalizeEmail(actorInput.email) || `treeseed+${namespace}-${safeActorId}@treeseed.ai`;
@@ -7541,6 +7542,22 @@ export function createApiApp(options = {}): Hono {
 						},
 					},
 				});
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					console.error('Acceptance seed failed', {
+						message,
+						name: error instanceof Error ? error.name : typeof error,
+						stack: error instanceof Error ? error.stack?.split('\n').slice(0, 6).join('\n') : undefined,
+					});
+					return c.json({
+						ok: false,
+						error: 'Acceptance seed failed.',
+						details: {
+							message,
+							name: error instanceof Error ? error.name : typeof error,
+						},
+					}, { status: 500 });
+				}
 			});
 
 			app.get('/v1/platform/operations', async (c) => {

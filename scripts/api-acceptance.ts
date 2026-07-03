@@ -182,6 +182,22 @@ function isRetryableResponse(response) {
 	return [408, 425, 429, 500, 502, 503, 504].includes(response.status);
 }
 
+function sanitizeDiagnosticValue(value) {
+	if (typeof value === 'string') {
+		return value.replace(/([A-Za-z0-9_-]*(?:secret|token|password|credential|api[_-]?key|private[_-]?key)[A-Za-z0-9_-]*["']?\s*[:=]\s*["']?)[^"',\s}]+/giu, '$1[redacted]');
+	}
+	if (Array.isArray(value)) return value.map((entry) => sanitizeDiagnosticValue(entry));
+	if (value && typeof value === 'object') {
+		return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+			key,
+			/(?:secret|token|password|credential|api[_-]?key|private[_-]?key|ciphertext)/iu.test(key)
+				? '[redacted]'
+				: sanitizeDiagnosticValue(entry),
+		]));
+	}
+	return value;
+}
+
 async function fetchWithTimeout(url, init = {}, label = String(url)) {
 	const timeoutMs = acceptanceRequestTimeoutMs();
 	const maxAttempts = init.signal ? 1 : acceptanceRequestAttempts();
@@ -1410,7 +1426,12 @@ async function main() {
 		}, `POST ${seedPath}`);
 		const seedEnvelope = await seedResponse.json().catch(() => null);
 		if (!seedResponse.ok || seedEnvelope?.ok === false) {
-			throw new Error(seedEnvelope?.error ?? `Acceptance seed failed with status ${seedResponse.status}.`);
+			const details = seedEnvelope == null
+				? 'no JSON response body'
+				: JSON.stringify(sanitizeDiagnosticValue(seedEnvelope));
+			throw new Error(seedEnvelope?.error
+				? `Acceptance seed failed with status ${seedResponse.status}: ${seedEnvelope.error}; body=${details}`
+				: `Acceptance seed failed with status ${seedResponse.status}; body=${details}`);
 		}
 		variables.fixtures = seedEnvelope.payload?.fixtures ?? {};
 		variables.seed = {
