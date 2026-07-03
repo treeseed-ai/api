@@ -133,11 +133,16 @@ function optionalAcceptanceServiceHeaders() {
 	};
 }
 
-function addOptionalAcceptanceServiceHeaders(headers) {
+function addOptionalAcceptanceServiceHeaders(headers, options = {}) {
+	if (options.environment === 'local' || options.enabled === false) return headers;
 	for (const [key, value] of Object.entries(optionalAcceptanceServiceHeaders())) {
 		headers.set(key, value);
 	}
 	return headers;
+}
+
+function usesHostedAcceptanceEmailBypass(caseSpec, environment) {
+	return environment !== 'local' && Boolean(caseSpec?.expect?.mailpit);
 }
 
 function acceptanceRequestTimeoutMs() {
@@ -1510,13 +1515,14 @@ async function main() {
 						continue;
 					}
 					headers.set('accept', 'application/json');
-					addOptionalAcceptanceServiceHeaders(headers);
+					const emailBypass = usesHostedAcceptanceEmailBypass(caseSpec, args.environment);
+					addOptionalAcceptanceServiceHeaders(headers, { environment: args.environment, enabled: emailBypass });
 					if (caseSpec.body !== undefined) headers.set('content-type', 'application/json');
 					if (caseSpec.sdkMethod) {
 						const { MarketClient } = await loadMarketClient();
 						const sdkFetch = (url, init = {}) => {
 							const sdkHeaders = new Headers(init.headers ?? {});
-							addOptionalAcceptanceServiceHeaders(sdkHeaders);
+							addOptionalAcceptanceServiceHeaders(sdkHeaders, { environment: args.environment, enabled: emailBypass });
 							return fetchWithTimeout(url, { ...init, headers: sdkHeaders }, `${caseSpec.sdkMethod} ${url}`);
 						};
 						const client = new MarketClient({

@@ -48,13 +48,17 @@ describe('API acceptance framework', () => {
 		});
 	});
 
-	it('adds service-authenticated email bypass headers to hosted acceptance requests', () => {
+	it('adds service-authenticated email bypass headers only for hosted email bypass requests', () => {
 		const previousId = process.env.TREESEED_ACCEPTANCE_SERVICE_ID;
 		const previousSecret = process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET;
 		process.env.TREESEED_ACCEPTANCE_SERVICE_ID = 'web';
 		process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET = 'acceptance-secret';
 		try {
-			const headers = addOptionalAcceptanceServiceHeaders(new Headers());
+			const localHeaders = addOptionalAcceptanceServiceHeaders(new Headers(), { environment: 'local', enabled: true });
+			expect(localHeaders.get('x-treeseed-service-id')).toBeNull();
+			const disabledHeaders = addOptionalAcceptanceServiceHeaders(new Headers(), { environment: 'staging', enabled: false });
+			expect(disabledHeaders.get('x-treeseed-service-id')).toBeNull();
+			const headers = addOptionalAcceptanceServiceHeaders(new Headers(), { environment: 'staging', enabled: true });
 			expect(headers.get('x-treeseed-service-id')).toBe('web');
 			expect(headers.get('x-treeseed-service-secret')).toBe('acceptance-secret');
 			expect(headers.get('x-treeseed-acceptance-email-bypass')).toBe('1');
