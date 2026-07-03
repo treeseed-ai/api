@@ -8458,25 +8458,27 @@ export function createApiApp(options = {}): Hono {
 					);
 					const resetUrl = passwordResetUrlFor(marketAuthContext(c), resetToken);
 					try {
-						await sendAuthEmail(marketAuthContext(c), {
-							to: email,
-							subject: 'Reset your TreeSeed password',
-							text: [
-								'Reset your TreeSeed password:',
-								resetUrl,
-								'',
-								'If you did not request a password reset, you can ignore this email.',
-							].join('\n'),
-							html: [
-								'<div style="font-family:Inter,Arial,sans-serif;line-height:1.5;color:#17211b">',
-								'<h1 style="font-size:24px">Reset your TreeSeed password</h1>',
-								'<p>Use this secure link to reset your password.</p>',
-								`<p><a href="${resetUrl}" style="display:inline-block;background:#2f6f4e;color:white;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:700">Reset password</a></p>`,
-								`<p style="word-break:break-all;color:#526052">${resetUrl}</p>`,
-								'<p>If you did not request a password reset, you can ignore this email.</p>',
-								'</div>',
-							].join(''),
-						});
+						if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
+							await sendAuthEmail(marketAuthContext(c), {
+								to: email,
+								subject: 'Reset your TreeSeed password',
+								text: [
+									'Reset your TreeSeed password:',
+									resetUrl,
+									'',
+									'If you did not request a password reset, you can ignore this email.',
+								].join('\n'),
+								html: [
+									'<div style="font-family:Inter,Arial,sans-serif;line-height:1.5;color:#17211b">',
+									'<h1 style="font-size:24px">Reset your TreeSeed password</h1>',
+									'<p>Use this secure link to reset your password.</p>',
+									`<p><a href="${resetUrl}" style="display:inline-block;background:#2f6f4e;color:white;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:700">Reset password</a></p>`,
+									`<p style="word-break:break-all;color:#526052">${resetUrl}</p>`,
+									'<p>If you did not request a password reset, you can ignore this email.</p>',
+									'</div>',
+								].join(''),
+							});
+						}
 					} catch (error) {
 						console.warn('[market-auth] Password reset email failed:', error instanceof Error ? error.message : String(error));
 						return jsonError(c, 503, 'Password reset email could not be sent. Please try again shortly.', {
@@ -9013,12 +9015,14 @@ export function createApiApp(options = {}): Hono {
 				});
 				if (result.ok && result.invite && result.token) {
 					try {
-						const team = await store.getTeam(c.req.param('teamId'));
-						await sendTeamInviteEmail(marketAuthContext(c), {
-							invite: result.invite,
-							team,
-							token: result.token,
-						});
+						if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
+							const team = await store.getTeam(c.req.param('teamId'));
+							await sendTeamInviteEmail(marketAuthContext(c), {
+								invite: result.invite,
+								team,
+								token: result.token,
+							});
+						}
 					} catch (error) {
 						console.warn('[team-invite] Email delivery failed:', error instanceof Error ? error.message : String(error));
 						const reason = authEmailDeliveryFailureReason(error);

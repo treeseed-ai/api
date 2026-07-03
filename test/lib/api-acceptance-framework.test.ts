@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	addOptionalAcceptanceServiceHeaders,
 	assertCoverage,
 	bodyForFactory,
 	expandDeploymentFlows,
@@ -45,6 +46,24 @@ describe('API acceptance framework', () => {
 				envelope: { ok: true },
 			},
 		});
+	});
+
+	it('adds service-authenticated email bypass headers to hosted acceptance requests', () => {
+		const previousId = process.env.TREESEED_ACCEPTANCE_SERVICE_ID;
+		const previousSecret = process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET;
+		process.env.TREESEED_ACCEPTANCE_SERVICE_ID = 'web';
+		process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET = 'acceptance-secret';
+		try {
+			const headers = addOptionalAcceptanceServiceHeaders(new Headers());
+			expect(headers.get('x-treeseed-service-id')).toBe('web');
+			expect(headers.get('x-treeseed-service-secret')).toBe('acceptance-secret');
+			expect(headers.get('x-treeseed-acceptance-email-bypass')).toBe('1');
+		} finally {
+			if (previousId === undefined) delete process.env.TREESEED_ACCEPTANCE_SERVICE_ID;
+			else process.env.TREESEED_ACCEPTANCE_SERVICE_ID = previousId;
+			if (previousSecret === undefined) delete process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET;
+			else process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET = previousSecret;
+		}
 	});
 
 	it('generates safe request bodies for non-GET route descriptors', () => {

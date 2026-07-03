@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -130,6 +131,13 @@ function optionalAcceptanceServiceHeaders() {
 		'x-treeseed-service-secret': serviceSecret,
 		'x-treeseed-acceptance-email-bypass': '1',
 	};
+}
+
+function addOptionalAcceptanceServiceHeaders(headers) {
+	for (const [key, value] of Object.entries(optionalAcceptanceServiceHeaders())) {
+		headers.set(key, value);
+	}
+	return headers;
 }
 
 function acceptanceRequestTimeoutMs() {
@@ -1370,7 +1378,12 @@ async function main() {
 	const variables = {
 		environment: args.environment,
 		baseUrl: args.baseUrl?.replace(/\/+$/u, '') ?? '',
-		runNonce: Date.now().toString(36),
+		runNonce: [
+			Date.now().toString(36),
+			process.env.GITHUB_RUN_ID ?? '',
+			process.env.GITHUB_RUN_ATTEMPT ?? '',
+			randomBytes(4).toString('hex'),
+		].filter(Boolean).join('-').toLowerCase().replace(/[^a-z0-9-]+/gu, '-'),
 		...(spec.variables ?? {}),
 	};
 	const actors = Object.fromEntries(Object.entries(spec.actors ?? {}).map(([id, actor]) => [id, { id, ...actor }]));
@@ -1497,14 +1510,13 @@ async function main() {
 						continue;
 					}
 					headers.set('accept', 'application/json');
+					addOptionalAcceptanceServiceHeaders(headers);
 					if (caseSpec.body !== undefined) headers.set('content-type', 'application/json');
 					if (caseSpec.sdkMethod) {
 						const { MarketClient } = await loadMarketClient();
 						const sdkFetch = (url, init = {}) => {
 							const sdkHeaders = new Headers(init.headers ?? {});
-							for (const [key, value] of Object.entries(optionalAcceptanceServiceHeaders())) {
-								sdkHeaders.set(key, value);
-							}
+							addOptionalAcceptanceServiceHeaders(sdkHeaders);
 							return fetchWithTimeout(url, { ...init, headers: sdkHeaders }, `${caseSpec.sdkMethod} ${url}`);
 						};
 						const client = new MarketClient({
@@ -1583,6 +1595,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
 }
 
 export {
+	addOptionalAcceptanceServiceHeaders,
 	assertCoverage,
 	bodyForFactory,
 	deepMerge,
