@@ -8,6 +8,7 @@ import {
 	expandRoleMatrices,
 	expandSdkMethodMatrices,
 	loadSpec,
+	usesHostedAcceptanceEmailBypass,
 } from '../../scripts/api-acceptance.ts';
 import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../src/api/route-descriptors.js';
 
@@ -68,6 +69,14 @@ describe('API acceptance framework', () => {
 			if (previousSecret === undefined) delete process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET;
 			else process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET = previousSecret;
 		}
+	});
+
+	it('enables hosted email bypass for generated SDK email methods only outside local runs', () => {
+		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'webSignUp' }, 'staging')).toBe(true);
+		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'requestWebPasswordReset' }, 'prod')).toBe(true);
+		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'addWebEmail' }, 'staging')).toBe(true);
+		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'me' }, 'staging')).toBe(false);
+		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'webSignUp' }, 'local')).toBe(false);
 	});
 
 	it('generates safe request bodies for non-GET route descriptors', () => {

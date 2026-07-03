@@ -142,7 +142,13 @@ function addOptionalAcceptanceServiceHeaders(headers, options = {}) {
 }
 
 function usesHostedAcceptanceEmailBypass(caseSpec, environment) {
-	return environment !== 'local' && Boolean(caseSpec?.expect?.mailpit);
+	if (environment === 'local') return false;
+	if (caseSpec?.expect?.mailpit) return true;
+	return [
+		'webSignUp',
+		'addWebEmail',
+		'requestWebPasswordReset',
+	].includes(caseSpec?.sdkMethod);
 }
 
 function acceptanceRequestTimeoutMs() {
@@ -1609,4 +1615,5 @@ export {
 	expandSdkMethodMatrices,
 	loadSpec,
 	sdkArgsForMethod,
+	usesHostedAcceptanceEmailBypass,
 };
