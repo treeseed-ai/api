@@ -151,7 +151,7 @@ jobs:
       TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE }}
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
-      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ needs.classify.outputs.release_tag == 'true' && format('treeseed/treedx:{0}', github.ref_name) || vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '' }}
+      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '' }}
       TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || '') || '' }}
       TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || '') || '' }}
       TREESEED_RAILWAY_DEPLOY_TRANSPORT: ${{ vars.TREESEED_RAILWAY_DEPLOY_TRANSPORT || 'api' }}
@@ -170,6 +170,67 @@ jobs:
         run: npm ci --workspaces=false
       - name: Prepare Treeseed secret session
         run: npx trsd secrets:unlock --from-env --create-if-missing --json
+      - name: Resolve production image refs
+        if: needs.classify.outputs.scope == 'prod'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${TREESEED_API_IMAGE_REF:-}" || -z "${TREESEED_OPERATIONS_RUNNER_IMAGE_REF:-}" ]]; then
+            echo "Production API deploy requires TREESEED_API_IMAGE_REF and TREESEED_OPERATIONS_RUNNER_IMAGE_REF." >&2
+            exit 1
+          fi
+          if [[ -z "${TREESEED_PUBLIC_TREEDX_IMAGE_REF:-}" ]]; then
+            tag="$(
+              node <<'NODE'
+          const url = 'https://registry.hub.docker.com/v2/repositories/treeseed/treedx/tags?page_size=100';
+          const response = await fetch(url, { headers: { accept: 'application/json' } });
+          if (!response.ok) throw new Error(`Docker Hub tag lookup failed: ${response.status}`);
+          const payload = await response.json();
+          const versions = (payload.results ?? [])
+            .map((entry) => String(entry.name ?? '').trim())
+            .filter((name) => /^\d+\.\d+\.\d+$/.test(name))
+            .sort((a, b) => {
+              const left = a.split('.').map(Number);
+              const right = b.split('.').map(Number);
+              for (let index = 0; index < 3; index += 1) {
+                if (left[index] !== right[index]) return left[index] - right[index];
+              }
+              return 0;
+            });
+          const latest = versions.at(-1);
+          if (!latest) throw new Error('No semantic treeseed/treedx Docker tags were found.');
+          console.log(latest);
+          NODE
+            )"
+            echo "TREESEED_PUBLIC_TREEDX_IMAGE_REF=treeseed/treedx:${tag}" >> "${GITHUB_ENV}"
+            echo "Resolved TREESEED_PUBLIC_TREEDX_IMAGE_REF=treeseed/treedx:${tag}"
+          fi
+      - name: Wait for production image manifests
+        if: needs.classify.outputs.scope == 'prod'
+        shell: bash
+        run: |
+          set -euo pipefail
+          images=(
+            "${TREESEED_API_IMAGE_REF}"
+            "${TREESEED_OPERATIONS_RUNNER_IMAGE_REF}"
+            "${TREESEED_PUBLIC_TREEDX_IMAGE_REF}"
+          )
+          for image in "${images[@]}"; do
+            if [[ -z "${image}" || "${image}" != *:* || "${image}" == *:latest ]]; then
+              echo "Production image ref must be an immutable semantic tag, got '${image}'." >&2
+              exit 1
+            fi
+            echo "Waiting for Docker Hub manifest: ${image}"
+            for attempt in {1..60}; do
+              if docker manifest inspect "${image}" >/dev/null 2>&1; then
+                echo "Docker Hub manifest is available: ${image}"
+                continue 2
+              fi
+              sleep 10
+            done
+            echo "Docker Hub manifest did not become available: ${image}" >&2
+            exit 1
+          done
       - name: Plan API reconciliation
         run: npx trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
