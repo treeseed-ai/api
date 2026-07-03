@@ -170,7 +170,7 @@ jobs:
       TREESEED_HOSTED_HUBS_GITHUB_TOKEN: ${{ secrets.TREESEED_HOSTED_HUBS_GITHUB_TOKEN }}
       TREESEED_WEB_SERVICE_ID: ${{ vars.TREESEED_WEB_SERVICE_ID || vars.TREESEED_API_WEB_SERVICE_ID || 'web' }}
       TREESEED_WEB_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET }}
-      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '' }}
+      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '') || '' }}
       TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || '') || '' }}
       TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || '') || '' }}
       TREESEED_RAILWAY_DEPLOY_TRANSPORT: ${{ vars.TREESEED_RAILWAY_DEPLOY_TRANSPORT || 'api' }}
@@ -199,30 +199,8 @@ jobs:
             exit 1
           fi
           if [[ -z "${TREESEED_PUBLIC_TREEDX_IMAGE_REF:-}" ]]; then
-            tag="$(
-              node <<'NODE'
-          const url = 'https://registry.hub.docker.com/v2/repositories/treeseed/treedx/tags?page_size=100';
-          const response = await fetch(url, { headers: { accept: 'application/json' } });
-          if (!response.ok) throw new Error(`Docker Hub tag lookup failed: ${response.status}`);
-          const payload = await response.json();
-          const versions = (payload.results ?? [])
-            .map((entry) => String(entry.name ?? '').trim())
-            .filter((name) => /^\d+\.\d+\.\d+$/.test(name))
-            .sort((a, b) => {
-              const left = a.split('.').map(Number);
-              const right = b.split('.').map(Number);
-              for (let index = 0; index < 3; index += 1) {
-                if (left[index] !== right[index]) return left[index] - right[index];
-              }
-              return 0;
-            });
-          const latest = versions.at(-1);
-          if (!latest) throw new Error('No semantic treeseed/treedx Docker tags were found.');
-          console.log(latest);
-          NODE
-            )"
-            echo "TREESEED_PUBLIC_TREEDX_IMAGE_REF=treeseed/treedx:${tag}" >> "${GITHUB_ENV}"
-            echo "Resolved TREESEED_PUBLIC_TREEDX_IMAGE_REF=treeseed/treedx:${tag}"
+            echo "Production API deploy requires TREESEED_PUBLIC_TREEDX_IMAGE_REF from the release graph." >&2
+            exit 1
           fi
       - name: Wait for production image manifests
         if: needs.classify.outputs.scope == 'prod'
@@ -301,7 +279,7 @@ jobs:
       TREESEED_HOSTED_HUBS_GITHUB_TOKEN: ${{ secrets.TREESEED_HOSTED_HUBS_GITHUB_TOKEN }}
       TREESEED_WEB_SERVICE_ID: ${{ vars.TREESEED_WEB_SERVICE_ID || vars.TREESEED_API_WEB_SERVICE_ID || 'web' }}
       TREESEED_WEB_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET }}
-      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '' }}
+      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '') || '' }}
       TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || '') || '' }}
       TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || '') || '' }}
       TREESEED_KEY_AGENT_TRANSPORT: inline

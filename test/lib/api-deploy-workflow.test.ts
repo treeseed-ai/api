@@ -36,6 +36,10 @@ describe('API deploy workflow', () => {
 		expect(deployRun).not.toContain('npm install --no-save @treeseed/cli');
 		expect(deployRun).toContain('TREESEED_API_IMAGE_REF');
 		expect(deployRun).toContain('TREESEED_OPERATIONS_RUNNER_IMAGE_REF');
+		expect(deployRun).toContain("\"TREESEED_PUBLIC_TREEDX_IMAGE_REF\":\"${{ needs.classify.outputs.scope == 'prod'");
+		expect(deployRun).toContain('Production API deploy requires TREESEED_PUBLIC_TREEDX_IMAGE_REF from the release graph.');
+		expect(deployRun).not.toContain('registry.hub.docker.com/v2/repositories/treeseed/treedx/tags');
+		expect(deployRun).not.toContain('Resolved TREESEED_PUBLIC_TREEDX_IMAGE_REF');
 		expect(deployRun).not.toContain('treeseed/api:staging');
 		expect(deployRun).not.toContain('treeseed/op-runner:staging');
 		expect(deployRun).toContain('trsd hosting plan');
@@ -51,6 +55,7 @@ describe('API deploy workflow', () => {
 		expect(deployRun).toContain('TREESEED_WEB_SERVICE_SECRET');
 
 		const liveRun = JSON.stringify(deploy.jobs['live-verify']);
+		expect(liveRun).toContain("\"TREESEED_PUBLIC_TREEDX_IMAGE_REF\":\"${{ needs.classify.outputs.scope == 'prod'");
 		expect(liveRun).toContain('npm ci --workspaces=false');
 		expect(liveRun).not.toContain('npm install --no-save @treeseed/cli');
 		expect(liveRun).toContain('trsd hosting verify');
