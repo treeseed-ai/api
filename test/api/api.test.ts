@@ -642,6 +642,21 @@ describe('market api', () => {
 		expect(seeded.payload.fixtures.catalogArtifact.version).toBe('1.0.0');
 		expect(seeded.payload.fixtures.seedRun.id).toEqual(expect.any(String));
 		expect(seeded.payload.fixtures.passwordReset.token).toEqual(expect.any(String));
+		await store.run(`DELETE FROM user_identities WHERE provider = ? AND provider_subject = ?`, [
+			'acceptance',
+			'acceptance-local-mr4vfvtg-28658395780-1-0a9242de:siteAdmin',
+		]);
+		const reseeded = await json(await app.request('/v1/acceptance/seed', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-treeseed-service-id': 'web',
+				'x-treeseed-service-secret': 'web-test-secret',
+			},
+			body: JSON.stringify({ namespace: 'acceptance-local-mr4vfvtg-28658395780-1-0a9242de' }),
+		}));
+		expect(reseeded.ok).toBe(true);
+		expect(reseeded.payload.actors.siteAdmin.userId).toBe(seeded.payload.actors.siteAdmin.userId);
 		const details = await store.getProjectDetails(seeded.payload.fixtures.project.id);
 		expect(details).not.toBeNull();
 		expect(details!.project.metadata).toMatchObject({
