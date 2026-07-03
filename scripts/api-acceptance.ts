@@ -1385,8 +1385,6 @@ async function main() {
 		baseUrl: args.baseUrl?.replace(/\/+$/u, '') ?? '',
 		runNonce: [
 			Date.now().toString(36),
-			process.env.GITHUB_RUN_ID ?? '',
-			process.env.GITHUB_RUN_ATTEMPT ?? '',
 			randomBytes(4).toString('hex'),
 		].filter(Boolean).join('-').toLowerCase().replace(/[^a-z0-9-]+/gu, '-'),
 		...(spec.variables ?? {}),
