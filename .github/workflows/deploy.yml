@@ -264,8 +264,6 @@ jobs:
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
       TREESEED_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev' }}
-      TREESEED_ACCEPTANCE_SERVICE_ID: ${{ vars.TREESEED_WEB_SERVICE_ID || vars.TREESEED_API_WEB_SERVICE_ID || 'web' }}
-      TREESEED_ACCEPTANCE_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET }}
       TREESEED_KEY_AGENT_TRANSPORT: inline
       TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
@@ -281,6 +279,30 @@ jobs:
         run: npm ci --workspaces=false
       - name: Prepare Treeseed secret session
         run: npx trsd secrets:unlock --from-env --create-if-missing --json
+      - name: Resolve live API service credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          variables_json="$(npx trsd railway --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" -- variable list --service treeseed-api --json)"
+          VARIABLES_JSON="${variables_json}" node <<'NODE'
+          const { appendFileSync } = require('node:fs');
+          const payload = JSON.parse(process.env.VARIABLES_JSON || '{}');
+          const variables = Array.isArray(payload)
+            ? Object.fromEntries(payload
+                .map((entry) => [entry?.name ?? entry?.key, entry?.value])
+                .filter(([key, value]) => typeof key === 'string' && typeof value === 'string' && value.length > 0))
+            : Object.fromEntries(Object.entries(payload).filter((entry) => typeof entry[1] === 'string' && entry[1].length > 0));
+          const serviceId = variables.TREESEED_WEB_SERVICE_ID || variables.TREESEED_API_WEB_SERVICE_ID || 'web';
+          const serviceSecret = variables.TREESEED_WEB_SERVICE_SECRET || variables.TREESEED_API_WEB_SERVICE_SECRET;
+          if (!serviceSecret) {
+            console.error('Live API service credential is missing from treeseed-api Railway variables.');
+            process.exit(1);
+          }
+          const delimiter = `TRESEED_SERVICE_SECRET_${Date.now()}`;
+          process.stdout.write(`::add-mask::${serviceSecret}\n`);
+          appendFileSync(process.env.GITHUB_ENV, `TREESEED_ACCEPTANCE_SERVICE_ID=${serviceId}\n`);
+          appendFileSync(process.env.GITHUB_ENV, `TREESEED_ACCEPTANCE_SERVICE_SECRET<<${delimiter}\n${serviceSecret}\n${delimiter}\n`);
+          NODE
       - name: Verify API hosting live
         run: npx trsd hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
       - name: Run operations runner smoke

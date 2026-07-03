@@ -53,6 +53,9 @@ describe('API deploy workflow', () => {
 		expect(liveRun).not.toContain('npm install --no-save @treeseed/cli');
 		expect(liveRun).toContain('trsd hosting verify');
 		expect(liveRun).toContain('--app api --live --json');
+		expect(liveRun).toContain('Resolve live API service credentials');
+		expect(liveRun).toContain('trsd railway --environment');
+		expect(liveRun).toContain('variable list --service treeseed-api --json');
 		expect(liveRun).toContain('trsd operations smoke');
 		expect(liveRun).toContain('--service operationsRunner --json');
 		expect(liveRun).toContain('tsx ./scripts/api-acceptance.ts');
@@ -60,7 +63,9 @@ describe('API deploy workflow', () => {
 		expect(liveRun).toContain('reports/api-acceptance.xml');
 		expect(liveRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');
 		expect(liveRun).toContain('TREESEED_CLOUDFLARE_ACCOUNT_ID');
-		expect(liveRun).toContain('secrets.TREESEED_WEB_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET');
+		expect(liveRun).not.toContain('TREESEED_ACCEPTANCE_SERVICE_SECRET: ${{ secrets.');
+		expect(liveRun).not.toContain('TREESEED_ACCEPTANCE_SERVICE_ID: ${{ vars.');
+		expect(liveRun).toContain('TREESEED_ACCEPTANCE_SERVICE_SECRET<<');
 		expect(liveRun).not.toContain('secrets.TREESEED_ACCEPTANCE_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET');
 		expect(liveRun).not.toContain('secrets.TREESEED_ACCEPTANCE_SERVICE_SECRET || secrets.TREESEED_WEB_SERVICE_SECRET');
 		expect(liveRun).toContain('https://api.preview.treeseed.dev');
