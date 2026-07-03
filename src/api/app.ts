@@ -7099,7 +7099,12 @@ export function createApiApp(options = {}): Hono {
 				for (const [actorId, actorInput] of Object.entries(actorInputs)) {
 					const safeActorId = String(actorId).replace(/[^a-z0-9-]+/giu, '-').replace(/^-+|-+$/gu, '').toLowerCase() || 'actor';
 					const email = normalizeEmail(actorInput.email) || `treeseed+${namespace}-${safeActorId}@treeseed.ai`;
-					const username = normalizeUsername(actorInput.username) || `${namespace}-${safeActorId}`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 39).replace(/^-+|-+$/gu, '') || safeActorId;
+					const safeNamespace = namespace.replace(/[^a-z0-9-]+/giu, '-').replace(/^-+|-+$/gu, '').toLowerCase() || 'acceptance';
+					const actorSuffix = safeActorId.slice(-16) || 'actor';
+					const namespaceLimit = Math.max(1, 39 - actorSuffix.length - 1);
+					const username = normalizeUsername(actorInput.username)
+						|| `${safeNamespace.slice(0, namespaceLimit).replace(/-+$/gu, '')}-${actorSuffix}`.replace(/^-+|-+$/gu, '')
+						|| actorSuffix;
 					const displayName = optionalTrimmedString(actorInput.displayName) ?? `Acceptance ${actorId}`;
 					const synced = await runtimeMarketAuthProvider.syncUserIdentity({
 						provider: 'acceptance',
@@ -7143,7 +7148,7 @@ export function createApiApp(options = {}): Hono {
 				}
 				let team = null;
 				let project = null;
-				const teamSlug = `${namespace}-team`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 48).replace(/^-+|-+$/gu, '') || 'acceptance-team';
+				const teamSlug = `${namespace}-team`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 39).replace(/^-+|-+$/gu, '') || 'acceptance-team';
 				const existingTeam = await store.first(`SELECT * FROM teams WHERE slug = ? LIMIT 1`, [teamSlug]).catch(() => null);
 				const owner = actors.teamOwner ?? actors.siteAdmin ?? Object.values(actors)[0];
 					team = existingTeam ?? await store.createTeam({
@@ -7182,7 +7187,7 @@ export function createApiApp(options = {}): Hono {
 					).catch(() => null);
 					if (membership?.id) membershipFixtures[actorId] = { id: membership.id, roleKey: membership.role_key ?? membership.role ?? null };
 				}
-				const projectSlug = `${namespace}-project`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 48).replace(/^-+|-+$/gu, '') || 'acceptance-project';
+				const projectSlug = `${namespace}-project`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 39).replace(/^-+|-+$/gu, '') || 'acceptance-project';
 				const acceptanceProjectArchitecture = {
 					topology: 'single_repository_site',
 					rootPath: '.',

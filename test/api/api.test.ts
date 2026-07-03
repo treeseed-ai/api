@@ -623,11 +623,15 @@ describe('market api', () => {
 				'x-treeseed-service-id': 'web',
 				'x-treeseed-service-secret': 'web-test-secret',
 			},
-			body: JSON.stringify({ namespace: 'acceptance-test' }),
+			body: JSON.stringify({ namespace: 'acceptance-local-mr4vfvtg-28658395780-1-0a9242de' }),
 		}));
 		expect(seeded.ok).toBe(true);
 		expect(seeded.payload.actors.siteAdmin.accessToken).toEqual(expect.any(String));
 		expect(seeded.payload.actors.providerKey.accessToken).toEqual(expect.any(String));
+		const usernames = Object.values(seeded.payload.actors).map((actor: any) => actor.username).filter(Boolean);
+		expect(new Set(usernames).size).toBe(usernames.length);
+		expect(seeded.payload.actors.siteAdmin.username).toContain('siteadmin');
+		expect(seeded.payload.actors.marketSteward.username).toContain('marketsteward');
 		expect(seeded.payload.fixtures.team.id).toEqual(expect.any(String));
 		expect(seeded.payload.fixtures.project.id).toEqual(expect.any(String));
 		expect(seeded.payload.fixtures.provider.id).toEqual(expect.any(String));
