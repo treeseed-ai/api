@@ -151,6 +151,8 @@ jobs:
       TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE }}
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
+      TREESEED_WEB_SERVICE_ID: ${{ vars.TREESEED_WEB_SERVICE_ID || vars.TREESEED_API_WEB_SERVICE_ID || 'web' }}
+      TREESEED_WEB_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET }}
       TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '' }}
       TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || '') || '' }}
       TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || '') || '' }}
@@ -264,6 +266,8 @@ jobs:
       TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
       TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
       TREESEED_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev' }}
+      TREESEED_WEB_SERVICE_ID: ${{ vars.TREESEED_WEB_SERVICE_ID || vars.TREESEED_API_WEB_SERVICE_ID || 'web' }}
+      TREESEED_WEB_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET }}
       TREESEED_KEY_AGENT_TRANSPORT: inline
       TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
     steps:
@@ -287,7 +291,8 @@ jobs:
           import { appendFileSync } from 'node:fs';
           const { resolveTreeseedMachineEnvironmentValues } = await import('@treeseed/sdk/workflow-support');
           const scope = process.env.TREESEED_WORKFLOW_ENVIRONMENT === 'prod' ? 'prod' : 'staging';
-          const variables = resolveTreeseedMachineEnvironmentValues(process.cwd(), scope);
+          const configured = resolveTreeseedMachineEnvironmentValues(process.cwd(), scope);
+          const variables = { ...configured, ...process.env };
           const serviceId = variables.TREESEED_WEB_SERVICE_ID || variables.TREESEED_API_WEB_SERVICE_ID || 'web';
           const serviceSecret = variables.TREESEED_WEB_SERVICE_SECRET || variables.TREESEED_API_WEB_SERVICE_SECRET;
           if (!serviceSecret) {
