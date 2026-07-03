@@ -283,19 +283,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          variables_json="$(npx trsd railway --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" -- variable list --service treeseed-api --json)"
-          VARIABLES_JSON="${variables_json}" node <<'NODE'
-          const { appendFileSync } = require('node:fs');
-          const payload = JSON.parse(process.env.VARIABLES_JSON || '{}');
-          const variables = Array.isArray(payload)
-            ? Object.fromEntries(payload
-                .map((entry) => [entry?.name ?? entry?.key, entry?.value])
-                .filter(([key, value]) => typeof key === 'string' && typeof value === 'string' && value.length > 0))
-            : Object.fromEntries(Object.entries(payload).filter((entry) => typeof entry[1] === 'string' && entry[1].length > 0));
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const { resolveTreeseedMachineEnvironmentValues } = await import('@treeseed/sdk/workflow-support');
+          const scope = process.env.TREESEED_WORKFLOW_ENVIRONMENT === 'prod' ? 'prod' : 'staging';
+          const variables = resolveTreeseedMachineEnvironmentValues(process.cwd(), scope);
           const serviceId = variables.TREESEED_WEB_SERVICE_ID || variables.TREESEED_API_WEB_SERVICE_ID || 'web';
           const serviceSecret = variables.TREESEED_WEB_SERVICE_SECRET || variables.TREESEED_API_WEB_SERVICE_SECRET;
           if (!serviceSecret) {
-            console.error('Live API service credential is missing from treeseed-api Railway variables.');
+            console.error(`Live API service credential is missing from Treeseed ${scope} machine config.`);
             process.exit(1);
           }
           const delimiter = `TRESEED_SERVICE_SECRET_${Date.now()}`;

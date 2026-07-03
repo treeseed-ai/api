@@ -54,8 +54,9 @@ describe('API deploy workflow', () => {
 		expect(liveRun).toContain('trsd hosting verify');
 		expect(liveRun).toContain('--app api --live --json');
 		expect(liveRun).toContain('Resolve live API service credentials');
-		expect(liveRun).toContain('trsd railway --environment');
-		expect(liveRun).toContain('variable list --service treeseed-api --json');
+		expect(liveRun).toContain('@treeseed/sdk/workflow-support');
+		expect(liveRun).toContain('resolveTreeseedMachineEnvironmentValues');
+		expect(liveRun).not.toContain('variable list --service treeseed-api --json');
 		expect(liveRun).toContain('trsd operations smoke');
 		expect(liveRun).toContain('--service operationsRunner --json');
 		expect(liveRun).toContain('tsx ./scripts/api-acceptance.ts');
