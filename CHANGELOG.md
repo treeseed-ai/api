@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.18] - 2026-07-03
+
+### Fixed
+
+- fix: retry npm install in release images (667ab4a832e1)
+
 ## [0.6.17] - 2026-07-03
 
 ### Fixed
