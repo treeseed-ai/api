@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.21] - 2026-07-03
+
+### Changed
+
+- Release metadata and deployment history updated.
+
 ## [0.6.20] - 2026-07-03
 
 ### Infrastructure
