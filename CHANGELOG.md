@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.6.17] - 2026-07-03
+
+### Fixed
+
+- fix: use https git refs for hosted api builds (dffbbd3d0750)
+- fix: retry hosted acceptance seed users (587c766457b3)
+- fix: report hosted acceptance seed failures (0f16d0724e17)
+- fix: bypass hosted sdk acceptance email delivery (0198fcf40dfc)
+- fix: keep acceptance nonce within API limits (9dfb7dffdfc8)
+- fix: scope hosted acceptance email bypass (5798abe30066)
+- fix: stabilize hosted acceptance seeding (2816befd1c4c)
+- fix: bypass hosted acceptance email delivery (a86b6b30a1b9)
+- fix: propagate api live service credential to deploy (998ab9333428)
+- fix: resolve live api smoke credentials from config (4626bd4f7582)
+- fix: prefer api acceptance service credential (7d07e6fbcf64)
+- chore: use latest cli live verifier fix (726c655a9aaf)
+- chore: use latest cli staging reconciler fix (228f4089af6f)
+- chore: use cli staging reconciler fix (5d6c1de60b87)
+- chore: use sdk staging reconciler fix (efd9a2fd9bee)
+- fix: wait for production images before API deploy (08e6ef7cc3d5)
+
+### Infrastructure
+
+- ci: load live API credentials for smoke verification (85227095aa9e)
+- ci: align API live verifier service credential (4ee5868129df)
+
+### Tests
+
+- test: allow pinned staging cli dependency (889cbb09c5d2)
+
 ## [0.6.16] - 2026-07-03
 
 ### Changed
