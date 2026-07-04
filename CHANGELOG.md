@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.23] - 2026-07-04
+
+### Fixed
+
+- fix: run api hosting apply without execute flag (3da759d3a3b1)
+- fix: run api hosting apply without execute flag (acc2f1e9500a)
+
 ## [0.6.22] - 2026-07-04
 
 ### Changed
