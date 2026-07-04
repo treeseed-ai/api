@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.27] - 2026-07-04
+
+### Fixed
+
+- fix: target live api acceptance url (629672241e71)
+
 ## [0.6.26] - 2026-07-04
 
 ### Changed
