@@ -231,7 +231,7 @@ jobs:
       - name: Plan API reconciliation
         run: npx trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
-        run: npx trsd hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --execute --json
+        run: npx trsd hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
 
   live-verify:
     needs:

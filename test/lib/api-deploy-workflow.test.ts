@@ -47,7 +47,8 @@ describe('API deploy workflow', () => {
 		expect(deployRun).toContain('TREESEED_WORKFLOW_ENVIRONMENT');
 		expect(deployRun).toContain('--app api --json');
 		expect(deployRun).toContain('trsd hosting apply');
-		expect(deployRun).toContain('--app api --execute --json');
+		expect(deployRun).toContain('--app api --json');
+		expect(deployRun).not.toContain('--app api --execute --json');
 		expect(deployRun).toContain('TREESEED_RAILWAY_API_TOKEN');
 		expect(deployRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');
 		expect(deployRun).toContain('TREESEED_CLOUDFLARE_ACCOUNT_ID');

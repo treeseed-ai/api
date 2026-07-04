@@ -83,7 +83,7 @@ Reconciliation must flow through `trsd`; direct provider mutation is diagnostic 
 npx trsd operations smoke --environment local --service operationsRunner --json
 npx trsd ready staging --json
 npx trsd hosting plan --environment staging --app api --json
-npx trsd hosting apply --environment staging --app api --execute --json
+npx trsd hosting apply --environment staging --app api --json
 npx trsd hosting verify --environment staging --app api --live --json
 npx trsd operations smoke --environment staging --service operationsRunner --json
 ```
