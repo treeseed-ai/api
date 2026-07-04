@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.22] - 2026-07-04
+
+### Changed
+
+- refactor: replace dry-run API paths with plan mode (129f539f88db)
+- Require explicit production TreeDX image refs (343ae5997fdb)
+
 ## [0.6.21] - 2026-07-03
 
 ### Changed
