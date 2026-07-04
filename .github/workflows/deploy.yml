@@ -154,6 +154,7 @@ jobs:
       TREESEED_HOSTING_KIND: ${{ vars.TREESEED_HOSTING_KIND }}
       TREESEED_HOSTING_REGISTRATION: ${{ vars.TREESEED_HOSTING_REGISTRATION }}
       TREESEED_CENTRAL_MARKET_API_BASE_URL: ${{ vars.TREESEED_CENTRAL_MARKET_API_BASE_URL }}
+      TREESEED_LIVE_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev' }}
       TREESEED_API_BASE_URL: ${{ vars.TREESEED_API_BASE_URL || (needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev') }}
       TREESEED_CATALOG_MARKET_API_BASE_URLS: ${{ vars.TREESEED_CATALOG_MARKET_API_BASE_URLS }}
       TREESEED_SMTP_HOST: ${{ vars.TREESEED_SMTP_HOST }}
@@ -263,6 +264,7 @@ jobs:
       TREESEED_HOSTING_KIND: ${{ vars.TREESEED_HOSTING_KIND }}
       TREESEED_HOSTING_REGISTRATION: ${{ vars.TREESEED_HOSTING_REGISTRATION }}
       TREESEED_CENTRAL_MARKET_API_BASE_URL: ${{ vars.TREESEED_CENTRAL_MARKET_API_BASE_URL }}
+      TREESEED_LIVE_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev' }}
       TREESEED_API_BASE_URL: ${{ vars.TREESEED_API_BASE_URL || (needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev') }}
       TREESEED_CATALOG_MARKET_API_BASE_URLS: ${{ vars.TREESEED_CATALOG_MARKET_API_BASE_URLS }}
       TREESEED_SMTP_HOST: ${{ vars.TREESEED_SMTP_HOST }}
@@ -327,7 +329,7 @@ jobs:
           mkdir -p reports
           npx --yes tsx ./scripts/api-acceptance.ts \
             --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" \
-            --base-url "${TREESEED_API_BASE_URL}" \
+            --base-url "${TREESEED_LIVE_API_BASE_URL}" \
             --report-json reports/api-acceptance.json \
             --report-junit reports/api-acceptance.xml
       - uses: actions/upload-artifact@v4

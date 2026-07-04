@@ -69,6 +69,10 @@ describe('API deploy workflow', () => {
 		expect(liveRun).toContain('trsd operations smoke');
 		expect(liveRun).toContain('--service operationsRunner --json');
 		expect(liveRun).toContain('tsx ./scripts/api-acceptance.ts');
+		expect(liveRun).toContain('TREESEED_LIVE_API_BASE_URL');
+		expect(liveRun).toContain('--base-url');
+		expect(liveRun).toContain('${TREESEED_LIVE_API_BASE_URL}');
+		expect(liveRun).not.toContain('${TREESEED_API_BASE_URL}');
 		expect(liveRun).toContain('reports/api-acceptance.json');
 		expect(liveRun).toContain('reports/api-acceptance.xml');
 		expect(liveRun).toContain('TREESEED_CLOUDFLARE_API_TOKEN');
