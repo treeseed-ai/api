@@ -347,7 +347,7 @@ export function createGitHubActionsSecretEnclave(options: {
 				GH_TOKEN: input.token,
 			},
 			units: [input.unit],
-			dryRun: false,
+			planOnly: false,
 		});
 	}
 

@@ -10,7 +10,7 @@ import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '
 function parseArgs(argv) {
 	const args = {
 		environment: process.env.TREESEED_ACCEPTANCE_ENVIRONMENT || process.env.TREESEED_ENVIRONMENT || 'local',
-		baseUrl: process.env.TREESEED_API_BASE_URL || 'http://127.0.0.1:3000',
+		baseUrl: process.env.TREESEED_API_BASE_URL || '',
 		spec: 'test/acceptance/api.base.yaml',
 		reportJson: '',
 		reportJunit: '',
@@ -29,6 +29,35 @@ function parseArgs(argv) {
 		else if (arg === '--help' || arg === '-h') args.help = true;
 	}
 	return args;
+}
+
+function isLoopbackAcceptanceUrl(value) {
+	try {
+		const url = new URL(value);
+		return ['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'].includes(url.hostname);
+	} catch {
+		return false;
+	}
+}
+
+function assertAcceptanceTarget(args) {
+	const environment = String(args.environment || 'local');
+	args.baseUrl = String(args.baseUrl || '').replace(/\/+$/u, '');
+	if (!args.baseUrl && environment === 'local') {
+		args.baseUrl = 'http://127.0.0.1:3000';
+	}
+	if (!args.baseUrl) {
+		throw new Error(`API acceptance for ${environment} requires --base-url or TREESEED_API_BASE_URL.`);
+	}
+	if (environment !== 'local' && isLoopbackAcceptanceUrl(args.baseUrl)) {
+		throw new Error(`API acceptance for ${environment} must target a live hosted API URL, not ${args.baseUrl}.`);
+	}
+	if (environment === 'staging' && !/^https:\/\/api\.preview\.treeseed\.dev(?:\/|$)/u.test(args.baseUrl)) {
+		throw new Error(`Staging API acceptance must target https://api.preview.treeseed.dev, not ${args.baseUrl}.`);
+	}
+	if (environment === 'prod' && !/^https:\/\/api\.treeseed\.dev(?:\/|$)/u.test(args.baseUrl)) {
+		throw new Error(`Production API acceptance must target https://api.treeseed.dev, not ${args.baseUrl}.`);
+	}
 }
 
 function matchesCaseFilter(caseId, candidateId) {
@@ -508,7 +537,7 @@ function bodyForFactory(factory, descriptor, actor) {
 		providerRegister: {
 			providerId: '${fixtures.provider.id}',
 			runtime: { name: '@treeseed/agent', version: 'acceptance' },
-			capabilities: [{ id: 'acceptance-dry-run', kind: 'agent' }],
+			capabilities: [{ id: 'acceptance-plan', kind: 'agent' }],
 			budgets: { dailyCredits: 1 },
 			health: { ok: true, status: 'acceptance' },
 		},
@@ -518,7 +547,7 @@ function bodyForFactory(factory, descriptor, actor) {
 		providerTaskEvent: { providerId: '${fixtures.provider.id}', event: { kind: 'acceptance.event', data: {} } },
 		providerTaskComplete: { providerId: '${fixtures.provider.id}', result: { ok: true }, usage: { credits: 0 } },
 		providerTaskFail: { providerId: '${fixtures.provider.id}', error: { code: 'acceptance', message: 'Acceptance failure fixture.' } },
-		providerUsage: { providerId: '${fixtures.provider.id}', records: [{ id: `usage-${stamp}`, credits: 0, unit: 'dry_run' }] },
+		providerUsage: { providerId: '${fixtures.provider.id}', records: [{ id: `usage-${stamp}`, credits: 0, unit: 'plan' }] },
 		providerReport: { providerId: '${fixtures.provider.id}', report: { id: `report-${stamp}`, status: 'ok', summary: 'Acceptance report.' } },
 		projectCreate: { slug: `${stamp}-${actor}-project`, name: `Acceptance ${actor} Project`, description: 'Acceptance fixture project.' },
 		projectLaunch: { name: `Acceptance ${actor} Launch`, slug: `${stamp}-${actor}-launch`, sourceKind: 'acceptance_unsupported' },
@@ -783,7 +812,7 @@ function bodyForFactory(factory, descriptor, actor) {
 		runnerProjectBody: { enabled: true },
 		workPolicy: { environment: 'local', enabled: true, dailyCreditBudget: 1 },
 		priorityOverride: { priority: 1, reason: 'Acceptance fixture.' },
-		agentTask: { agentId: 'acceptance-agent', type: 'dry_run', payload: { dryRun: true } },
+		agentTask: { agentId: 'acceptance-agent', type: 'plan', payload: { planOnly: true } },
 		projectDeployment: { environment: 'staging', status: 'planned' },
 		projectResource: { kind: 'repository', name: 'acceptance' },
 		projectEnvironment: { environment: 'staging', provider: 'railway' },
@@ -795,7 +824,7 @@ function bodyForFactory(factory, descriptor, actor) {
 		capability: { capability: 'acceptance', enabled: true },
 		projectUpdate: { name: `Acceptance ${actor} Project` },
 		jobOperation: { action: 'cancel' },
-		seedPlan: { environment: '${environment}', dryRun: true },
+		seedPlan: { environment: '${environment}', planOnly: true },
 	};
 	return byFactory[factory] ?? { acceptance: true, descriptorId: descriptor.id, actor };
 }
@@ -1126,11 +1155,11 @@ function sdkArgsForMethod(method) {
 		}],
 		treeDxBuildContext: ['missing-project', 'acceptance-${runNonce}-repository', { query: 'acceptance', limit: 3 }],
 		treeDxReadRepositoryFiles: ['missing-project', 'acceptance-${runNonce}-repository', { paths: ['README.md'] }],
-		planSeed: ['acceptance', { environment: '${environment}', dryRun: true }],
-		applySeed: ['acceptance', { environment: '${environment}', dryRun: true }],
+		planSeed: ['acceptance', { environment: '${environment}', planOnly: true }],
+		applySeed: ['acceptance', { environment: '${environment}', planOnly: true }],
 		listSeedRuns: [25],
 		exportSeed: ['${fixtures.team.id}', { includeSecrets: false }],
-		enqueueAgentTask: ['${fixtures.project.id}', { agentId: 'acceptance-agent', type: 'dry_run', taskSignature: 'proposal.draft', estimatedCreditsP50: 1, estimatedCreditsP90: 1, idempotencyKey: 'acceptance-${runNonce}-agent-task', payload: { dryRun: true, runNonce: '${runNonce}' } }],
+		enqueueAgentTask: ['${fixtures.project.id}', { agentId: 'acceptance-agent', type: 'plan', taskSignature: 'proposal.draft', estimatedCreditsP50: 1, estimatedCreditsP90: 1, idempotencyKey: 'acceptance-${runNonce}-agent-task', payload: { planOnly: true, runNonce: '${runNonce}' } }],
 		catalog: ['template'],
 		artifactDownload: ['${fixtures.catalogItem.id}', '${fixtures.catalogArtifact.version}'],
 	};
@@ -1400,11 +1429,12 @@ async function main() {
 		console.log('Usage: npm run test:acceptance -- --environment staging|prod --base-url https://api.example.com [--spec path] [--report-json path] [--report-junit path] [--expand-json path]');
 		process.exit(0);
 	}
+	assertAcceptanceTarget(args);
 	const spec = loadSpec(args.spec);
 	const expectedStatuses = loadExpectedStatuses(spec.expectedStatuses);
 	const variables = {
 		environment: args.environment,
-		baseUrl: args.baseUrl?.replace(/\/+$/u, '') ?? '',
+		baseUrl: args.baseUrl,
 		runNonce: [
 			Date.now().toString(36),
 			randomBytes(4).toString('hex'),
@@ -1627,6 +1657,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
 
 export {
 	addOptionalAcceptanceServiceHeaders,
+	assertAcceptanceTarget,
 	assertCoverage,
 	bodyForFactory,
 	deepMerge,

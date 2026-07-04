@@ -226,7 +226,7 @@ export function installProjectDeploymentRoutes(app, { store, requireProjectAcces
 				source: normalizeDeploymentSource(body.source),
 				reason: typeof body.reason === 'string' ? body.reason : null,
 				previewId: typeof body.previewId === 'string' ? body.previewId : null,
-				dryRun: body.dryRun === true,
+				planOnly: body.planOnly === true,
 			},
 		});
 		const operationInput = {
@@ -243,7 +243,7 @@ export function installProjectDeploymentRoutes(app, { store, requireProjectAcces
 			workflowFile: 'deploy-web.yml',
 			dispatchStrategy: 'runner_direct_github_dispatch',
 			previewId: typeof body.previewId === 'string' ? body.previewId : null,
-			dryRun: body.dryRun === true,
+			planOnly: body.planOnly === true,
 		};
 		const operation = await store.createPlatformOperation({
 			namespace: 'project',

@@ -117,7 +117,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 	const deploymentStore = options.deploymentStore ?? options.store ?? null;
 	const mockExternal = options.mockExternal === true;
 	const mockResult = options.mockResult === 'failure' ? 'failure' : 'success';
-	const dryRun = options.dryRun === true;
+	const planOnly = options.planOnly === true;
 	const githubClient = options.githubClient;
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
 	const timeouts = {
@@ -294,7 +294,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			payload: {
 				libraryId: binding.libraryId ?? null,
 				repositoryId: binding.repositoryId ?? null,
-				dryRun: effectiveDryRun,
+				planOnly: effectiveDryRun,
 			},
 		});
 		const artifact = {
@@ -302,9 +302,9 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			mode: 'treedx_to_r2',
 			libraryId: binding.libraryId ?? null,
 			repositoryId: binding.repositoryId ?? null,
-			snapshotId: effectiveDryRun || mockExternal ? `dry-run-${deployment.id}` : `planned-${deployment.id}`,
+			snapshotId: effectiveDryRun || mockExternal ? `plan-${deployment.id}` : `planned-${deployment.id}`,
 			r2: {
-				status: effectiveDryRun || mockExternal ? 'dry_run' : 'planned',
+				status: effectiveDryRun || mockExternal ? 'plan' : 'planned',
 				withoutGitHubActions: true,
 				bucket: r2BucketName || null,
 				manifestKey: r2ManifestKey || null,
@@ -352,7 +352,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			githubClient: mockExternal ? null : githubClient,
 			fetchImpl: fetchImpl ?? null,
 			mockExternal,
-			dryRun: input.dryRun === true,
+			planOnly: input.planOnly === true,
 		});
 		await checkpoint(deployment, context, 'monitor_completed', { monitor }, {
 			kind: 'deployment.monitor.completed',
@@ -374,7 +374,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 				workflow: preflight.workflowFile,
 				branch: preflight.branch,
 				mockExternal,
-				dryRun: effectiveDryRun,
+				planOnly: effectiveDryRun,
 			},
 		});
 		if (mockExternal || effectiveDryRun) {
@@ -390,7 +390,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 				status: 'queued',
 				conclusion: null,
 				localAcceptanceDriver: mockExternal,
-				dryRun: effectiveDryRun,
+				planOnly: effectiveDryRun,
 			};
 			await deploymentStore.updateProjectDeployment(deployment.id, { externalWorkflow });
 			deployment = await loadDeployment(deployment.id);
@@ -477,9 +477,9 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 		namespace: 'project',
 		operation: 'web_deployment',
 		async run(rawInput, context) {
-			const input = { ...objectValue(rawInput), dryRun: dryRun || rawInput?.dryRun === true };
+			const input = { ...objectValue(rawInput), planOnly: planOnly || rawInput?.planOnly === true };
 			const normalizedInput = validateInput(input);
-			const effectiveDryRun = input.dryRun === true;
+			const effectiveDryRun = input.planOnly === true;
 			if (!deploymentStore) {
 				if (!mockExternal && !effectiveDryRun) {
 					throw new Error('Project web deployment executor requires the Market control-plane store for live deployments.');
@@ -506,7 +506,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 					status: terminalStatus === 'failed' ? 'failed' : 'passed',
 					checks: [],
 					mockExternal,
-					dryRun: effectiveDryRun,
+					planOnly: effectiveDryRun,
 				};
 				const summary = normalizedInput.action === 'monitor'
 					? `monitor for ${normalizedInput.environment} completed with ${monitor.status}.`
@@ -525,7 +525,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 						status: terminalStatus,
 						message: summary,
 						mockExternal,
-						dryRun: effectiveDryRun,
+						planOnly: effectiveDryRun,
 					},
 				});
 				if (terminalStatus === 'failed') {
@@ -563,7 +563,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 					workflowFile: preflight.workflowFile,
 					branch: preflight.branch,
 					mockExternal,
-					dryRun: effectiveDryRun,
+					planOnly: effectiveDryRun,
 				}, {
 					kind: 'deployment.preflight.completed',
 					message: 'Deployment preflight checks completed.',
@@ -594,7 +594,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 							status: workflowResult.status,
 							conclusion: workflowResult.conclusion,
 							mock: mockExternal,
-							dryRun: effectiveDryRun,
+							planOnly: effectiveDryRun,
 						};
 					deployment = await loadDeployment(deployment.id);
 					await throwIfDeploymentCancelled(deployment, context, externalWorkflow);

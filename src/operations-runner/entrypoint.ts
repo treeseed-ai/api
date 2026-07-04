@@ -68,7 +68,7 @@ function parseRunnerOptions() {
 		operationKey: parseOperationKey(readArg('--operation')),
 		pollIntervalMs: readNumberArg('--poll-interval-ms', 5000),
 		maxJobs: readNumberArg('--max-jobs', 1),
-		dryRun: hasArg('--dry-run'),
+		planOnly: hasArg('--plan'),
 		mockExternal,
 		mockResult: readArg('--mock-result', 'success') === 'failure' ? 'failure' : 'success',
 	};
@@ -433,14 +433,14 @@ export function createExecutorsForOptions(options = {}) {
 				volumeMountPath,
 				result: {
 					operationId: context.operation.id,
-					phase: payload.dryRun === true ? 'railway_service_planned' : 'railway_service_provisioning',
+					phase: payload.planOnly === true ? 'railway_service_planned' : 'railway_service_provisioning',
 					scope: names.scope,
 				},
 			});
 			let railwayRefs = {};
 			let baseUrl = typeof payload.baseUrl === 'string' && payload.baseUrl.trim() ? payload.baseUrl.trim() : null;
 			let externalDeploymentId = null;
-			if (payload.dryRun !== true) {
+			if (payload.planOnly !== true) {
 				const ensuredProject = await railway.ensureProject({
 					projectName: names.projectName,
 					defaultEnvironmentName: names.environmentName,
@@ -551,7 +551,7 @@ export function createExecutorsForOptions(options = {}) {
 						PHX_SERVER: 'true',
 						TREESEED_TREEDX_SECRET_KEY_BASE: 'railway:TREESEED_TREEDX_SECRET_KEY_BASE',
 					},
-				dryRun: payload.dryRun === true,
+				planOnly: payload.planOnly === true,
 			};
 			await options.deploymentStore.upsertTeamTreeDx(teamId, {
 				id: instanceId,
@@ -575,7 +575,7 @@ export function createExecutorsForOptions(options = {}) {
 						railwaySecretRefs: {
 							TREESEED_TREEDX_SECRET_KEY_BASE: 'service-variable',
 						},
-					dryRun: payload.dryRun === true,
+					planOnly: payload.planOnly === true,
 				},
 			});
 			const deployment = await options.deploymentStore.updateTreeDxDeployment(deploymentId, {
@@ -589,7 +589,7 @@ export function createExecutorsForOptions(options = {}) {
 					mode: publicRead ? 'public_federation' : 'managed_private',
 					provider: 'railway',
 					scope: names.scope,
-					health: payload.dryRun === true ? 'dry_run_planned' : 'deployment_started',
+					health: payload.planOnly === true ? 'plan_planned' : 'deployment_started',
 					externalDeploymentId,
 				},
 				clearError: true,
@@ -634,7 +634,7 @@ export function createExecutorsForOptions(options = {}) {
 			deploymentStore: options.deploymentStore,
 			mockExternal: options.mockExternal,
 			mockResult: options.mockResult,
-			dryRun: options.dryRun,
+			planOnly: options.planOnly,
 			pollSeconds: Math.max(0, Math.round(Number(options.pollIntervalMs ?? 5000) / 1000)),
 		}),
 	].filter((executor) => !options.operationKey || `${executor.namespace}:${executor.operation}` === options.operationKey);
@@ -656,7 +656,7 @@ export async function registerAndHeartbeat(client, config, version, options = {}
 				activeJobCount: 0,
 				maxConcurrentJobs: Math.max(1, Number(options.maxJobs ?? 1) || 1),
 			},
-			dryRun: options.dryRun === true,
+			planOnly: options.planOnly === true,
 			mockExternal: options.mockExternal === true,
 		},
 	};

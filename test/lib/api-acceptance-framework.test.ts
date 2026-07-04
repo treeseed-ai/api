@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	addOptionalAcceptanceServiceHeaders,
+	assertAcceptanceTarget,
 	assertCoverage,
 	bodyForFactory,
 	expandDeploymentFlows,
@@ -13,6 +14,13 @@ import {
 import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../src/api/route-descriptors.js';
 
 describe('API acceptance framework', () => {
+	it('refuses hosted acceptance runs against local dev URLs', () => {
+		expect(() => assertAcceptanceTarget({ environment: 'staging', baseUrl: 'http://127.0.0.1:3000' })).toThrow('must target a live hosted API URL');
+		expect(() => assertAcceptanceTarget({ environment: 'prod', baseUrl: 'https://api.preview.treeseed.dev' })).toThrow('Production API acceptance must target https://api.treeseed.dev');
+		expect(() => assertAcceptanceTarget({ environment: 'staging', baseUrl: 'https://api.preview.treeseed.dev/' })).not.toThrow();
+		expect(() => assertAcceptanceTarget({ environment: 'prod', baseUrl: 'https://api.treeseed.dev/' })).not.toThrow();
+	});
+
 	it('expands every active route into coverage actor cases', () => {
 		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const descriptorCases = expandDescriptorMatrices(spec);

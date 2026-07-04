@@ -3029,7 +3029,7 @@ describe('market api', () => {
 						items: [{
 							id: 'grant-stage-docs',
 							operations: ['stage'],
-							modes: ['dry_run'],
+							modes: ['plan'],
 							allowedPaths: ['src/content/knowledge/**'],
 						}],
 						warnings: [],
@@ -3061,12 +3061,12 @@ describe('market api', () => {
 					},
 				}), { status: 200, headers: { 'content-type': 'application/json' } });
 			}
-			if (url === 'https://project.example.com/v1/operations/stage/dry-run') {
+			if (url === 'https://project.example.com/v1/operations/stage/plan') {
 				return new Response(JSON.stringify({
 					ok: true,
 					payload: {
 						projectId: 'hosted-project',
-						dryRun: true,
+						planOnly: true,
 						decision: { allowed: true },
 						result: { status: 'completed' },
 					},
@@ -3146,16 +3146,16 @@ describe('market api', () => {
 			stagingMerges: [expect.objectContaining({ mergedToStaging: true })],
 		});
 
-		const operationDryRun = await json(await app.request(`/v1/projects/${project.id}/operations/stage/dry-run`, {
+		const operationDryRun = await json(await app.request(`/v1/projects/${project.id}/operations/stage/plan`, {
 			method: 'POST',
 			headers: {
 				...headers,
 				'content-type': 'application/json',
 			},
-			body: JSON.stringify({ request: { mode: 'dry_run' } }),
+			body: JSON.stringify({ request: { mode: 'plan' } }),
 		}));
 		expect(operationDryRun.payload).toMatchObject({
-			dryRun: true,
+			planOnly: true,
 			result: { status: 'completed' },
 		});
 
@@ -3260,13 +3260,13 @@ describe('market api', () => {
 			warnings: ['Project runtime is not connected or unavailable.'],
 		});
 
-		const fallbackDryRun = await app.request(`/v1/projects/${disconnectedProject.id}/operations/stage/dry-run`, {
+		const fallbackDryRun = await app.request(`/v1/projects/${disconnectedProject.id}/operations/stage/plan`, {
 			method: 'POST',
 			headers: {
 				...headers,
 				'content-type': 'application/json',
 			},
-			body: JSON.stringify({ request: { mode: 'dry_run' } }),
+			body: JSON.stringify({ request: { mode: 'plan' } }),
 		});
 		expect(fallbackDryRun.status).toBe(409);
 

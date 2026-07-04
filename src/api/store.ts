@@ -10800,7 +10800,7 @@ export class MarketControlPlaneStore {
 								relatedArtifact: intent.relatedArtifact ?? null,
 								relatedArtifacts: intent.relatedArtifacts ?? [],
 								contentRoot,
-								dryRun: false,
+								planOnly: false,
 							},
 							metadata: { source: 'live_workday', runId: run.id, allocationSetId: parameters.allocationSetId ?? null },
 						},

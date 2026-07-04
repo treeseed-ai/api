@@ -4992,7 +4992,7 @@
       "providerKey": 401,
       "platformRunner": 401
     },
-    "post.v1.projects.projectId.operations.operation.dry-run": {
+    "post.v1.projects.projectId.operations.operation.plan": {
       "anonymous": 401,
       "siteAdmin": 409,
       "marketSteward": 409,

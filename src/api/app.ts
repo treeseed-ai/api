@@ -3823,7 +3823,7 @@ async function enqueueTreeDxProvisionOperation(store, teamId, payload, body = {}
 			volumeMountPath: payload.instance?.volumeMountPath ?? '/data',
 			dataDirEnv: '/data',
 			publicRead: payload.instance?.publicRead === true,
-			dryRun: body.dryRun === true,
+			planOnly: body.planOnly === true,
 		},
 		requestedByType: requestedBy.type ?? 'user',
 		requestedById: requestedBy.id ?? 'unknown',
@@ -12830,14 +12830,14 @@ export function createApiApp(options = {}): Hono {
 				});
 			});
 
-			app.post('/v1/projects/:projectId/operations/:operation/dry-run', async (c) => {
+			app.post('/v1/projects/:projectId/operations/:operation/plan', async (c) => {
 				const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 				if (access.response) return access.response;
 				const body = await readJsonOrFormBody(c);
 				const payload = await store.requestProjectRuntime(
 					access.details.project.id,
 					access.principal,
-					`/v1/operations/${encodeURIComponent(c.req.param('operation'))}/dry-run`,
+					`/v1/operations/${encodeURIComponent(c.req.param('operation'))}/plan`,
 					{
 						method: 'POST',
 						body,
@@ -12848,7 +12848,7 @@ export function createApiApp(options = {}): Hono {
 						payload: {
 							projectId: access.details.project.id,
 							operation: c.req.param('operation'),
-							dryRun: true,
+							planOnly: true,
 							warnings: ['Project runtime is not connected or unavailable.'],
 						},
 					});
@@ -13339,7 +13339,7 @@ export function createApiApp(options = {}): Hono {
 								agentSlug: typeof body.agentSlug === 'string' ? body.agentSlug : 'treeseed-docs-planner',
 								type: 'provider.live_codex',
 								messageType: 'provider.live_codex',
-								executionMode: body.executionMode === 'dry-run' ? 'dry-run' : 'live',
+								executionMode: body.executionMode === 'plan' ? 'plan' : 'live',
 								prompt: typeof body.prompt === 'string' && body.prompt.trim()
 									? body.prompt.trim()
 									: 'Run a concise TreeSeed demo work cycle. Produce a short decision summary and a publishable artifact description.',
