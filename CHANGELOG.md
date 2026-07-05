@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.36] - 2026-07-05
+
+### Fixed
+
+- ci(build): fix Docker Hub attestation verification (0c2e3932fca7)
+
+### Infrastructure
+
+- ci(ci): harden container image release security (32078179e79a)
+
+### Dependencies
+
+- build(build): add final production release guarantee gate (58ffbe2a833b)
+
 ## [0.6.34] - 2026-07-05
 
 ### Fixed
