@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.39] - 2026-07-06
+
+### Fixed
+
+- build(build): sync release package locks after TreeDX security fix (b284fcb20c95)
+
+### Dependencies
+
+- build(build): sync starter and fixture submodule promotion with stage (d58598913eb4)
+
 ## [0.6.37] - 2026-07-06
 
 ### Fixed
