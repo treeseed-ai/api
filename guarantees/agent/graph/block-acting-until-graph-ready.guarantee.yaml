@@ -1,0 +1,31 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.graph.block-acting-until-graph-ready.311
+journeyIndex: 311
+type: agent
+subtype: graph
+journey: Block Acting Until Graph Ready
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Acting assignments are not leased until active graph dependencies and deliverables are ready."
+status: active
+actors:
+  allowed: [project_manager, capacity_operator, team_owner]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.agent.graph.block-acting-until-graph-ready]
+content:
+  required: false
+  verifierRefs: []
+audit:
+  required: true
+  verifierRefs: [api.agent.graph.block-acting-until-graph-ready]
+negativeCases:
+  - id: dependency-not-ready
+    actor: capacity_operator
+    verifierRefs: [api.agent.graph.block-acting-until-graph-ready]
+evidence:
+  required: [guarantee_report, verifier_evidence]

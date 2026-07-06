@@ -57,6 +57,16 @@ describe('API acceptance framework', () => {
 		});
 	});
 
+	it('keeps generated seed namespaces short enough for all acceptance actors', () => {
+		const spec = loadSpec('test/acceptance/api.base.yaml');
+		const longestEnvironment = 'staging';
+		const longestRunNonce = `${'a'.repeat(8)}-${'b'.repeat(8)}`;
+		const namespace = String(spec.seed.namespace)
+			.replace('${environment}', longestEnvironment)
+			.replace('${runNonce}', longestRunNonce);
+		expect(namespace.length).toBeLessThanOrEqual(32);
+	});
+
 	it('adds service-authenticated email bypass headers only for hosted email bypass requests', () => {
 		const previousId = process.env.TREESEED_ACCEPTANCE_SERVICE_ID;
 		const previousSecret = process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET;
@@ -150,7 +160,13 @@ describe('API acceptance framework', () => {
 		const { readdirSync, readFileSync, statSync } = await import('node:fs');
 		const { join } = await import('node:path');
 		const spec = loadSpec('test/acceptance/api.base.yaml');
-		const caseIds = new Set(((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean));
+		const caseIds = new Set([
+			...((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean),
+			...expandDeploymentFlows(spec).map((entry) => entry.id).filter(Boolean),
+			...expandRoleMatrices(spec).map((entry) => entry.id).filter(Boolean),
+			...expandDescriptorMatrices(spec).map((entry) => entry.id).filter(Boolean),
+			...expandSdkMethodMatrices(spec).map((entry) => entry.id).filter(Boolean),
+		]);
 		const verifierText = readFileSync('guarantees/verifiers/api.verifiers.yaml', 'utf8');
 		const verifierCaseIds = new Map<string, string>();
 		for (const block of verifierText.split(/\n(?=  api\.)/u)) {
@@ -170,10 +186,15 @@ describe('API acceptance framework', () => {
 		const activeGuarantees = files
 			.map((file) => ({ file, text: readFileSync(file, 'utf8') }))
 			.filter((entry) => /status:\s*active/u.test(entry.text));
-		expect(activeGuarantees).toHaveLength(25);
+		expect(activeGuarantees.length).toBeGreaterThanOrEqual(30);
 		const refs = new Set<string>();
 		for (const entry of activeGuarantees) {
-			for (const match of entry.text.matchAll(/-\s+(api\.[A-Za-z0-9_.-]+)/gu)) refs.add(match[1]);
+			for (const match of entry.text.matchAll(/verifierRefs:\s*\[([^\]]+)\]/gu)) {
+				for (const ref of match[1].split(',').map((value) => value.trim()).filter(Boolean)) refs.add(ref);
+			}
+			for (const match of entry.text.matchAll(/verifierRefs:\s*\n((?:\s+-\s+api\.[A-Za-z0-9_.-]+\n?)+)/gu)) {
+				for (const refMatch of match[1].matchAll(/-\s+(api\.[A-Za-z0-9_.-]+)/gu)) refs.add(refMatch[1]);
+			}
 		}
 		expect(refs.size).toBeGreaterThanOrEqual(25);
 		for (const ref of refs) {

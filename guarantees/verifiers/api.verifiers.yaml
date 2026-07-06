@@ -1,6 +1,81 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.endpoints.health-and-markets:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: descriptor-executable-role-matrix.get.v1.markets.current.anonymous
+  api.endpoints.auth-and-sessions:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: auth.web.sign-up.sends-confirmation-email
+  api.endpoints.teams-and-members:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: team-role-matrix.team-members.teamOwner
+  api.endpoints.projects-and-workstreams:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: team-role-matrix.project-summary.teamOwner
+  api.endpoints.governance-and-decisions:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: descriptor-executable-role-matrix.get.v1.projects.projectId.proposals.teamOwner
+  api.endpoints.platform-operations-and-runners:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: platform.operations.site-admin
+  api.endpoints.capacity-and-provider-control-plane:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: capacity.provider.register-capacity-provider
+  api.endpoints.agent-graphs-and-workdays:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.graph.compile-decision-assignment-graph
+  api.endpoints.treedx-and-content-proxy:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: project.treedx.verify-treedx-access
+  api.endpoints.dx-repository-workspaces:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: descriptor-executable-role-matrix.post.v1.dx.projects.projectId.repos.repoId.context.build.teamOwner
+  api.endpoints.hosting-and-secrets:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: host.reconciliation.preview-host-plan
+  api.endpoints.commerce-marketplace:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: descriptor-executable-role-matrix.get.v1.commerce.marketplace.anonymous
+  api.endpoints.catalog-templates-and-knowledge-packs:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: catalog-list-envelope
+  api.endpoints.ui-projection-endpoints:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: descriptor-executable-role-matrix.get.v1.ui.knowledge.teamOwner
+  api.endpoints.internal-webhooks-and-federation:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: descriptor-executable-role-matrix.post.v1.feedback.anonymous
   api.agent.assignment-lease.transitioned:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
@@ -46,6 +121,31 @@ verifiers:
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
     caseId: agent.usage-actual.persisted
+  api.agent.graph.compile-decision-assignment-graph:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.graph.compile-decision-assignment-graph
+  api.agent.graph.block-acting-until-graph-ready:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.graph.block-acting-until-graph-ready
+  api.agent.graph.release-downstream-after-deliverable-approval:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.graph.release-downstream-after-deliverable-approval
+  api.agent.graph.reserve-planning-capacity:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.graph.reserve-planning-capacity
+  api.agent.graph.enforce-mode-split-capacity:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/api-acceptance.ts
+    caseId: agent.graph.enforce-mode-split-capacity
   api.capacity.assignment.inspect-assignment-leases.api:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"

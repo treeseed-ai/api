@@ -45,6 +45,7 @@ services:
       imageRefEnv: TREESEED_API_IMAGE_REF
       sourceMode: git
       dockerfilePath: /Dockerfile.api
+      buildCommand: npm run build
       startCommand: npm run start:api
       healthcheckPath: /healthz
       healthcheckTimeoutSeconds: 120
@@ -68,6 +69,7 @@ services:
       imageRefEnv: TREESEED_OPERATIONS_RUNNER_IMAGE_REF
       sourceMode: git
       dockerfilePath: /Dockerfile.operations-runner
+      buildCommand: npm run build
       startCommand: npm run start:runner
       healthcheckPath: /healthz
       healthcheckTimeoutSeconds: 120

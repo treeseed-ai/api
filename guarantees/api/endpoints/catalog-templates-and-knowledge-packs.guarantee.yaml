@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.catalog-templates-and-knowledge-packs.412
+journeyIndex: 412
+type: api
+subtype: endpoints
+journey: Catalog Template And Knowledge Pack Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Catalog, template, seed, artifact, and knowledge-pack endpoints are descriptor-covered and remain public where intended."
+status: active
+actors:
+  allowed: [anonymous_user, authenticated_user, team_owner]
+  forbidden: [unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.catalog-templates-and-knowledge-packs]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.catalog-templates-and-knowledge-packs]
+negativeCases:
+  - id: descriptor-denied-actors-covered
+    verifierRefs: [api.endpoints.catalog-templates-and-knowledge-packs]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

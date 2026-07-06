@@ -1,0 +1,31 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.graph.compile-decision-assignment-graph.310
+journeyIndex: 310
+type: agent
+subtype: graph
+journey: Compile Decision Assignment Graph
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Accepted structured estimates compile into deterministic versioned decision assignment graphs."
+status: active
+actors:
+  allowed: [project_manager, capacity_operator, team_owner]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
+content:
+  required: false
+  verifierRefs: []
+audit:
+  required: true
+  verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
+evidence:
+  required: [guarantee_report, verifier_evidence]

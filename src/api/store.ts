@@ -8,11 +8,15 @@ import {
 } from '@treeseed/sdk/capacity';
 import {
 	buildAgentCapacityPlanDraft,
+	compileDecisionAssignmentGraphFromEstimates,
 	hasAcceptedCapacityPlanProvenance,
 	providerAssignmentCapabilityHandlesContainSecretMaterial,
 	redactedProviderAssignmentCapabilityHandles,
 	summarizeCapacityRuntimeDiagnostics,
+	validateDeliverableContract,
+	validateDeliverableManifest,
 	validateProviderAssignmentCapabilityHandles,
+	validateStructuredAgentEstimate,
 } from '@treeseed/sdk/agent-capacity';
 import { governanceVotingProvider } from '@treeseed/sdk';
 import {
@@ -1756,6 +1760,79 @@ function serializeDecisionExecutionInput(row) {
 		staleAt: row.stale_at,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
+	};
+}
+
+function serializeStructuredAgentEstimate(row) {
+	if (!row) return null;
+	const estimate = parseJson(row.estimate_json, {});
+	return {
+		...estimate,
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		proposalId: row.proposal_id,
+		workUnitId: row.work_unit_id,
+		agentClass: row.agent_class,
+		agentId: row.agent_id,
+		status: row.status,
+		metadata: { ...(objectValue(estimate.metadata)), ...(parseJson(row.metadata_json, {})) },
+		createdAt: row.created_at ?? estimate.createdAt ?? null,
+		acceptedAt: row.accepted_at ?? null,
+		rejectedAt: row.rejected_at ?? null,
+	};
+}
+
+function serializeDecisionAssignmentGraph(row) {
+	if (!row) return null;
+	const graph = parseJson(row.graph_json, {});
+	return {
+		...graph,
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		version: Number(row.version ?? graph.version ?? 1),
+		status: row.status ?? graph.status,
+		active: Number(row.active ?? 0) === 1,
+		metadata: { ...(objectValue(graph.metadata)), ...(parseJson(row.metadata_json, {})) },
+		compiledAt: row.compiled_at ?? graph.compiledAt ?? null,
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeDeliverableContractRecord(row) {
+	if (!row) return null;
+	const contract = parseJson(row.contract_json, {});
+	return {
+		...contract,
+		id: row.id,
+		teamId: row.team_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		deliverableType: row.deliverable_type,
+		status: row.status ?? contract.status,
+		metadata: { ...(objectValue(contract.metadata)), ...(parseJson(row.metadata_json, {})) },
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+function serializeDeliverableManifestRecord(row) {
+	if (!row) return null;
+	const manifest = parseJson(row.manifest_json, {});
+	return {
+		...manifest,
+		id: row.id,
+		deliverableContractId: row.deliverable_contract_id,
+		projectId: row.project_id,
+		decisionId: row.decision_id,
+		readyForReview: Number(row.ready_for_review ?? 0) === 1,
+		metadata: { ...(objectValue(manifest.metadata)), ...(parseJson(row.metadata_json, {})) },
+		submittedAt: row.submitted_at ?? manifest.submittedAt ?? null,
+		createdAt: row.created_at,
 	};
 }
 
@@ -8757,14 +8834,6 @@ export class MarketControlPlaneStore {
 		};
 	}
 
-	async getCapacityReservation(reservationId) {
-		await this.ensureInitialized();
-		return serializeCapacityReservation(await this.first(
-			`SELECT * FROM capacity_reservations WHERE id = ? LIMIT 1`,
-			[reservationId],
-		));
-	}
-
 	async evaluateCapacityReservationAvailability(input = {}, grant = null) {
 		const requestedCredits = Number(input.reservedCredits ?? 0);
 		const rows = await this.all(
@@ -8824,6 +8893,47 @@ export class MarketControlPlaneStore {
 				committedCredits,
 				requestedCredits,
 				hardLimit,
+			},
+		};
+	}
+
+	async evaluateModeCapacityReservationAvailability(input = {}, grant = null) {
+		const base = await this.evaluateCapacityReservationAvailability(input, grant);
+		const requestedCredits = Number(input.reservedCredits ?? 0);
+		const mode = input.mode === 'acting' ? 'acting' : 'planning';
+		const rows = await this.all(
+			`SELECT * FROM capacity_reservations
+			 WHERE team_id = ?
+			   AND capacity_provider_id = ?
+			   AND (project_id IS NULL OR project_id = ?)
+			   AND (? IS NULL OR work_day_id IS NULL OR work_day_id = ?)
+			   AND mode = ?
+			   AND state IN ('reserved','consuming','consumed','overrun_hold','overran_pending_approval')`,
+			[
+				input.teamId,
+				input.capacityProviderId,
+				input.projectId ?? null,
+				input.workDayId ?? null,
+				input.workDayId ?? null,
+				mode,
+			],
+		).catch(() => []);
+		const modeCommittedCredits = rows
+			.map(serializeCapacityReservation)
+			.filter(Boolean)
+			.reduce((sum, reservation) =>
+				sum + Math.max(Number(reservation.reservedCredits ?? 0), Number(reservation.consumedCredits ?? 0)), 0);
+		return {
+			...base,
+			gates: {
+				...(base.gates ?? {}),
+				mode,
+				activityType: input.activityType ?? (mode === 'planning' ? 'planning' : 'acting'),
+				modeCommittedCredits,
+				requestedModeCredits: requestedCredits,
+				projectAgentClassId: input.projectAgentClassId ?? null,
+				agentSlug: input.agentSlug ?? null,
+				modeBudgetEvaluation: 'mode_metadata_enforced',
 			},
 		};
 	}
@@ -9641,6 +9751,328 @@ export class MarketControlPlaneStore {
 			metadata: { latestExecutionInputId: existing.id, latestExecutionInputStatus: status },
 		});
 		return this.getDecisionExecutionInput(inputId);
+	}
+
+	async createStructuredAgentEstimate(decisionId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const timestamp = isoNow();
+		const estimate = {
+			id: input.id ?? randomUUID(),
+			teamId: project.teamId,
+			projectId: project.id,
+			decisionId: decisionId ?? input.decisionId ?? null,
+			proposalId: input.proposalId ?? null,
+			workUnitId: input.workUnitId ?? null,
+			agentClass: stringValue(input.agentClass ?? input.projectAgentClassSlug ?? input.projectAgentClassId),
+			agentId: input.agentId ?? null,
+			minCredits: Number(input.minCredits ?? 0),
+			expectedCredits: Number(input.expectedCredits ?? input.minCredits ?? 0),
+			maxCredits: Number(input.maxCredits ?? input.expectedCredits ?? input.minCredits ?? 0),
+			confidence: input.confidence ?? 'medium',
+			riskLevel: input.riskLevel ?? 'medium',
+			assumptions: arrayValue(input.assumptions).map(String),
+			blockers: arrayValue(input.blockers).map(String),
+			dependencies: arrayValue(input.dependencies),
+			expectedOutputs: arrayValue(input.expectedOutputs),
+			acceptanceCriteria: arrayValue(input.acceptanceCriteria).map(String),
+			completionEvidence: arrayValue(input.completionEvidence).map(String),
+			createdAt: input.createdAt ?? timestamp,
+			metadata: objectValue(input.metadata),
+		};
+		const validation = validateStructuredAgentEstimate(estimate);
+		if (!validation.ok) {
+			const error = new Error('Structured agent estimate is invalid.');
+			error.code = 'invalid_structured_agent_estimate';
+			error.details = validation.diagnostics;
+			throw error;
+		}
+		await this.run(
+			`INSERT OR REPLACE INTO structured_agent_estimates (
+				id, team_id, project_id, decision_id, proposal_id, work_unit_id, agent_class, agent_id, status,
+				estimate_json, metadata_json, created_at, accepted_at, rejected_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM structured_agent_estimates WHERE id = ?), ?), ?, ?)`,
+			[
+				estimate.id,
+				estimate.teamId,
+				estimate.projectId,
+				estimate.decisionId,
+				estimate.proposalId,
+				estimate.workUnitId,
+				estimate.agentClass,
+				estimate.agentId,
+				input.status ?? 'submitted',
+				JSON.stringify(estimate),
+				JSON.stringify(objectValue(input.recordMetadata)),
+				estimate.id,
+				timestamp,
+				input.status === 'accepted' ? timestamp : null,
+				input.status === 'rejected' ? timestamp : null,
+			],
+		);
+		await this.upsertDecisionPlanningStatus({
+			projectId: project.id,
+			decisionId: estimate.decisionId,
+			humanApprovalState: input.humanApprovalState ?? 'approved',
+			executionReadiness: 'blocked',
+			planningInputsStatus: 'complete',
+			metadata: { source: 'structured_agent_estimate', latestEstimateId: estimate.id },
+		});
+		return serializeStructuredAgentEstimate(await this.first(`SELECT * FROM structured_agent_estimates WHERE id = ? LIMIT 1`, [estimate.id]));
+	}
+
+	async listStructuredAgentEstimatesForDecision(decisionId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['decision_id = ?'];
+		const values = [decisionId];
+		if (filters.status) {
+			clauses.push('status = ?');
+			values.push(filters.status);
+		}
+		const rows = await this.all(
+			`SELECT * FROM structured_agent_estimates WHERE ${clauses.join(' AND ')} ORDER BY created_at ASC, agent_class ASC, id ASC LIMIT 500`,
+			values,
+		);
+		return rows.map(serializeStructuredAgentEstimate);
+	}
+
+	async updateStructuredAgentEstimateStatus(estimateId, status, input = {}) {
+		await this.ensureInitialized();
+		const existing = serializeStructuredAgentEstimate(await this.first(`SELECT * FROM structured_agent_estimates WHERE id = ? LIMIT 1`, [estimateId]));
+		if (!existing) return null;
+		const timestamp = isoNow();
+		await this.run(
+			`UPDATE structured_agent_estimates
+			 SET status = ?, metadata_json = ?, accepted_at = CASE WHEN ? = 'accepted' THEN COALESCE(accepted_at, ?) ELSE accepted_at END,
+			     rejected_at = CASE WHEN ? = 'rejected' THEN COALESCE(rejected_at, ?) ELSE rejected_at END
+			 WHERE id = ?`,
+			[
+				status,
+				JSON.stringify({ ...(existing.metadata ?? {}), ...(objectValue(input.metadata)), reason: input.reason ?? null }),
+				status,
+				timestamp,
+				status,
+				timestamp,
+				estimateId,
+			],
+		);
+		return serializeStructuredAgentEstimate(await this.first(`SELECT * FROM structured_agent_estimates WHERE id = ? LIMIT 1`, [estimateId]));
+	}
+
+	async acceptStructuredAgentEstimate(estimateId, input = {}) {
+		return this.updateStructuredAgentEstimateStatus(estimateId, 'accepted', input);
+	}
+
+	async rejectStructuredAgentEstimate(estimateId, input = {}) {
+		return this.updateStructuredAgentEstimateStatus(estimateId, 'rejected', input);
+	}
+
+	async createDecisionAssignmentGraph(decisionId, input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const estimates = input.estimates ?? await this.listStructuredAgentEstimatesForDecision(decisionId, { status: input.status ?? 'accepted' });
+		const timestamp = isoNow();
+		const existing = await this.listDecisionAssignmentGraphsForDecision(decisionId);
+		const version = Number(input.version ?? (existing.reduce((max, graph) => Math.max(max, Number(graph.version ?? 0)), 0) + 1));
+		const compiled = compileDecisionAssignmentGraphFromEstimates({
+			id: input.id ?? `dag_${safeIdPart(decisionId)}_v${version}`,
+			teamId: project.teamId,
+			projectId: project.id,
+			decisionId,
+			version,
+			estimates,
+			compiledAt: timestamp,
+		});
+		if (compiled.diagnostics.some((entry) => entry.severity === 'error')) {
+			const error = new Error('Decision assignment graph compilation failed.');
+			error.code = 'decision_assignment_graph_invalid';
+			error.details = compiled.diagnostics;
+			throw error;
+		}
+		const graph = {
+			...compiled.graph,
+			status: input.status ?? compiled.graph.status,
+			metadata: { ...(compiled.graph.metadata ?? {}), diagnostics: compiled.diagnostics, ...(objectValue(input.metadata)) },
+		};
+		await this.run(
+			`INSERT OR REPLACE INTO decision_assignment_graphs (
+				id, team_id, project_id, decision_id, version, status, active, graph_json, metadata_json, compiled_at, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM decision_assignment_graphs WHERE id = ?), ?), ?)`,
+			[
+				graph.id,
+				graph.teamId,
+				graph.projectId,
+				graph.decisionId,
+				graph.version,
+				graph.status,
+				input.active === true ? 1 : 0,
+				JSON.stringify(graph),
+				JSON.stringify(objectValue(input.recordMetadata)),
+				graph.compiledAt ?? timestamp,
+				graph.id,
+				timestamp,
+				timestamp,
+			],
+		);
+		for (const contract of graph.deliverableContracts ?? []) {
+			await this.createDeliverableContract({ ...contract, metadata: { ...(contract.metadata ?? {}), graphId: graph.id, graphVersion: graph.version } });
+		}
+		return this.getDecisionAssignmentGraph(graph.id);
+	}
+
+	async getDecisionAssignmentGraph(graphId) {
+		await this.ensureInitialized();
+		return serializeDecisionAssignmentGraph(await this.first(`SELECT * FROM decision_assignment_graphs WHERE id = ? LIMIT 1`, [graphId]));
+	}
+
+	async listDecisionAssignmentGraphsForDecision(decisionId, filters = {}) {
+		await this.ensureInitialized();
+		const clauses = ['decision_id = ?'];
+		const values = [decisionId];
+		if (filters.active !== undefined) {
+			clauses.push('active = ?');
+			values.push(filters.active ? 1 : 0);
+		}
+		const rows = await this.all(
+			`SELECT * FROM decision_assignment_graphs WHERE ${clauses.join(' AND ')} ORDER BY version DESC, created_at DESC LIMIT 100`,
+			values,
+		);
+		return rows.map(serializeDecisionAssignmentGraph);
+	}
+
+	async activateDecisionAssignmentGraphVersion(graphId, input = {}) {
+		await this.ensureInitialized();
+		const graph = await this.getDecisionAssignmentGraph(graphId);
+		if (!graph) return null;
+		await this.run(`UPDATE decision_assignment_graphs SET active = 0 WHERE decision_id = ?`, [graph.decisionId]);
+		await this.run(`UPDATE decision_assignment_graphs SET active = 1, status = ?, updated_at = ? WHERE id = ?`, [input.status ?? 'ready', isoNow(), graphId]);
+		await this.upsertDecisionPlanningStatus({
+			projectId: graph.projectId,
+			decisionId: graph.decisionId,
+			humanApprovalState: 'approved',
+			executionReadiness: 'ready',
+			planningInputsStatus: 'complete',
+			metadata: { source: 'decision_assignment_graph', activeGraphId: graphId, activeGraphVersion: graph.version },
+		});
+		return this.getDecisionAssignmentGraph(graphId);
+	}
+
+	async createDeliverableContract(input = {}) {
+		await this.ensureInitialized();
+		const project = await this.getProject(input.projectId);
+		if (!project) return null;
+		const contract = {
+			...input,
+			id: input.id ?? randomUUID(),
+			teamId: project.teamId,
+			projectId: project.id,
+			status: input.status ?? 'required',
+			metadata: objectValue(input.metadata),
+		};
+		const validation = validateDeliverableContract(contract);
+		if (!validation.ok) {
+			const error = new Error('Deliverable contract is invalid.');
+			error.code = 'invalid_deliverable_contract';
+			error.details = validation.diagnostics;
+			throw error;
+		}
+		const timestamp = isoNow();
+		await this.run(
+			`INSERT OR REPLACE INTO deliverable_contracts (
+				id, team_id, project_id, decision_id, deliverable_type, status, contract_json, metadata_json, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM deliverable_contracts WHERE id = ?), ?), ?)`,
+			[
+				contract.id,
+				contract.teamId,
+				contract.projectId,
+				contract.decisionId,
+				contract.deliverableType,
+				contract.status,
+				JSON.stringify(contract),
+				JSON.stringify(objectValue(input.recordMetadata)),
+				contract.id,
+				timestamp,
+				timestamp,
+			],
+		);
+		return serializeDeliverableContractRecord(await this.first(`SELECT * FROM deliverable_contracts WHERE id = ? LIMIT 1`, [contract.id]));
+	}
+
+	async getDeliverableContract(contractId) {
+		await this.ensureInitialized();
+		return serializeDeliverableContractRecord(await this.first(`SELECT * FROM deliverable_contracts WHERE id = ? LIMIT 1`, [contractId]));
+	}
+
+	async submitDeliverableManifest(contractId, input = {}) {
+		await this.ensureInitialized();
+		const contract = serializeDeliverableContractRecord(await this.first(`SELECT * FROM deliverable_contracts WHERE id = ? LIMIT 1`, [contractId]));
+		if (!contract) return null;
+		const timestamp = isoNow();
+		const manifest = {
+			id: input.id ?? randomUUID(),
+			deliverableContractId: contract.id,
+			projectId: contract.projectId,
+			decisionId: contract.decisionId,
+			producedRefs: arrayValue(input.producedRefs),
+			coverage: objectValue(input.coverage, undefined),
+			summary: stringValue(input.summary),
+			readyForReview: input.readyForReview === true,
+			submittedByAgentId: input.submittedByAgentId ?? null,
+			submittedAt: input.submittedAt ?? timestamp,
+			metadata: objectValue(input.metadata),
+		};
+		const validation = validateDeliverableManifest(manifest);
+		if (!validation.ok) {
+			const error = new Error('Deliverable manifest is invalid.');
+			error.code = 'invalid_deliverable_manifest';
+			error.details = validation.diagnostics;
+			throw error;
+		}
+		await this.run(
+			`INSERT OR REPLACE INTO deliverable_manifests (
+				id, deliverable_contract_id, project_id, decision_id, ready_for_review, manifest_json, metadata_json, submitted_at, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM deliverable_manifests WHERE id = ?), ?))`,
+			[
+				manifest.id,
+				manifest.deliverableContractId,
+				manifest.projectId,
+				manifest.decisionId,
+				manifest.readyForReview ? 1 : 0,
+				JSON.stringify(manifest),
+				JSON.stringify(objectValue(input.recordMetadata)),
+				manifest.submittedAt,
+				manifest.id,
+				timestamp,
+			],
+		);
+		await this.run(`UPDATE deliverable_contracts SET status = ?, updated_at = ? WHERE id = ?`, [manifest.readyForReview ? 'submitted' : contract.status, timestamp, contract.id]);
+		return serializeDeliverableManifestRecord(await this.first(`SELECT * FROM deliverable_manifests WHERE id = ? LIMIT 1`, [manifest.id]));
+	}
+
+	async markDeliverableContractApproved(contractId, input = {}) {
+		await this.ensureInitialized();
+		const existing = serializeDeliverableContractRecord(await this.first(`SELECT * FROM deliverable_contracts WHERE id = ? LIMIT 1`, [contractId]));
+		if (!existing) return null;
+		await this.run(`UPDATE deliverable_contracts SET status = 'approved', metadata_json = ?, updated_at = ? WHERE id = ?`, [
+			JSON.stringify({ ...(existing.metadata ?? {}), ...(objectValue(input.metadata)), approvedBy: input.approvedBy ?? null }),
+			isoNow(),
+			contractId,
+		]);
+		return serializeDeliverableContractRecord(await this.first(`SELECT * FROM deliverable_contracts WHERE id = ? LIMIT 1`, [contractId]));
+	}
+
+	async markDeliverableContractRejected(contractId, input = {}) {
+		await this.ensureInitialized();
+		const existing = serializeDeliverableContractRecord(await this.first(`SELECT * FROM deliverable_contracts WHERE id = ? LIMIT 1`, [contractId]));
+		if (!existing) return null;
+		await this.run(`UPDATE deliverable_contracts SET status = 'rejected', metadata_json = ?, updated_at = ? WHERE id = ?`, [
+			JSON.stringify({ ...(existing.metadata ?? {}), ...(objectValue(input.metadata)), reason: input.reason ?? null }),
+			isoNow(),
+			contractId,
+		]);
+		return serializeDeliverableContractRecord(await this.first(`SELECT * FROM deliverable_contracts WHERE id = ? LIMIT 1`, [contractId]));
 	}
 
 	async createAgentCapacityPlan(decisionId, input = {}) {
@@ -10932,6 +11364,10 @@ export class MarketControlPlaneStore {
 			const key = `planning:${row.id}:${principal.capacityProviderId}`;
 			if (existingKeys.has(key)) continue;
 			const assignmentId = `pa_${safeIdPart(key)}`;
+			const planningMetadata = objectValue(parseJson(row.metadata_json, {}));
+			const agentId = stringValue(planningMetadata.agentId ?? planningMetadata.agentSlug, null);
+			const activityType = stringValue(planningMetadata.activityType, 'planning');
+			const reservedCredits = Number(planningMetadata.reservedCredits ?? 1);
 			const eligibility = await this.evaluateProviderAssignmentEligibility(principal, {
 				context,
 				projectId: row.project_id,
@@ -10960,6 +11396,65 @@ export class MarketControlPlaneStore {
 				}).catch(() => null);
 				continue;
 			}
+			const allocation = await this.evaluateModeCapacityReservationAvailability({
+				teamId: principal.teamId,
+				capacityProviderId: principal.capacityProviderId,
+				projectId: row.project_id,
+				workDayId: row.work_day_id ?? planningMetadata.workDayId ?? null,
+				allocationSetId: planningMetadata.allocationSetId ?? null,
+				projectAgentClassId,
+				agentSlug: agentId,
+				mode: 'planning',
+				activityType,
+				reservedCredits,
+			}, eligibility.matchingGrant);
+			if (!allocation.ok && !allocation.hold) {
+				await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+					source: 'planning_input_request',
+					sourceId: row.id,
+					eligible: false,
+					reasons: [allocation.reason ?? 'planning_capacity_exhausted'],
+					gates: allocation.gates,
+				}).catch(() => null);
+				continue;
+			}
+			const reservation = await this.createCapacityReservation({
+				id: `res_${safeIdPart(key)}`,
+				capacityProviderId: principal.capacityProviderId,
+				executionProviderId: null,
+				laneId: `${principal.capacityProviderId}:agent-capacity`,
+				allocationSetId: planningMetadata.allocationSetId ?? null,
+				projectAgentClassId,
+				assignmentId,
+				mode: 'planning',
+				teamId: principal.teamId,
+				projectId: row.project_id,
+				workDayId: row.work_day_id ?? planningMetadata.workDayId ?? null,
+				state: allocation.hold ? 'overrun_hold' : 'reserved',
+				reservedCredits,
+				metadata: {
+					source: 'provider_assignment_synthesis',
+					planningSource: planningMetadata.planningSource ?? 'planning_input_request',
+					activityType,
+					planningInputRequestId: row.id,
+					projectAgentClassId,
+					agentSlug: agentId,
+					workdayId: row.work_day_id ?? planningMetadata.workDayId ?? null,
+					allocationSetId: planningMetadata.allocationSetId ?? null,
+					modeSplitVersion: planningMetadata.modeSplitVersion ?? null,
+					capacityGrantId: eligibility.matchingGrant?.id ?? null,
+				},
+			}).catch(() => null);
+			if (!reservation || allocation.hold) {
+				await this.recordProviderAssignmentExplanation(principal.teamId, assignmentId, {
+					source: 'planning_input_request',
+					sourceId: row.id,
+					eligible: false,
+					reasons: [allocation.reason ?? 'planning_reservation_unavailable'],
+					gates: { ...allocation.gates, reservationId: reservation?.id ?? null },
+				}).catch(() => null);
+				continue;
+			}
 			const assignment = await this.createProviderAssignment(principal.teamId, {
 				id: assignmentId,
 				projectId: row.project_id,
@@ -10967,28 +11462,43 @@ export class MarketControlPlaneStore {
 				providerSessionId: sessionId,
 				projectAgentClassId,
 				mode: 'planning',
-				agentId: objectValue(parseJson(row.metadata_json, {})).agentId ?? null,
+				workDayId: reservation.workDayId ?? null,
+				allocationSetId: reservation.allocationSetId ?? null,
+				reservationId: reservation.id,
+				agentId,
+				handlerId: stringValue(planningMetadata.handlerId, null),
 				capacityEnvelope: {
 					teamId: principal.teamId,
 					projectId: row.project_id,
 					mode: 'planning',
 					projectAgentClassId,
 					capacityProviderId: principal.capacityProviderId,
+					allocationSetId: reservation.allocationSetId ?? null,
+					workDayId: reservation.workDayId ?? null,
+					reservationId: reservation.id,
 					availableCredits: null,
-					reservedCredits: 0,
+					reservedCredits,
 					consumedCredits: 0,
-					metadata: { synthesizedFrom: 'planning_input_request', planningInputRequestId: row.id },
+					metadata: {
+						synthesizedFrom: 'planning_input_request',
+						planningInputRequestId: row.id,
+						planningSource: planningMetadata.planningSource ?? 'planning_input_request',
+						activityType,
+						modeBudget: allocation.gates,
+					},
 				},
 				decisionInput: {
 					teamId: principal.teamId,
 					projectId: row.project_id,
 					projectAgentClassId,
 					mode: 'planning',
-					capacity: {},
+					capacity: { reservationId: reservation.id, reservedCredits },
+					agentId,
+					handlerId: stringValue(planningMetadata.handlerId, null),
 					input: { decisionId: row.decision_id, planningInputRequestId: row.id, prompt: row.prompt },
-					metadata: { scopeHash: row.scope_hash },
+					metadata: { scopeHash: row.scope_hash, activityType },
 				},
-				explanation: { source: 'planning_input_request', sourceId: row.id, reasons: ['open planning input request'], gates: { status: row.status } },
+				explanation: { source: 'planning_input_request', sourceId: row.id, reasons: ['open planning input request'], gates: { status: row.status, ...allocation.gates } },
 				synthesizedFrom: 'planning_input_request',
 				synthesisKey: key,
 				decisionId: row.decision_id,
@@ -10996,6 +11506,7 @@ export class MarketControlPlaneStore {
 					source: 'request_scoped_assignment_synthesis',
 					synthesizedAt: now,
 					priority: 50,
+					activityType,
 					eligibility: { selected: true, reasons: eligibility.reasons, gates: eligibility.gates },
 				},
 			});

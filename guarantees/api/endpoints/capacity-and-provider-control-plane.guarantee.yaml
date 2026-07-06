@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.capacity-and-provider-control-plane.406
+journeyIndex: 406
+type: api
+subtype: endpoints
+journey: Capacity And Provider Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Capacity provider, grant, reservation, session, assignment, and usage endpoints are descriptor-covered and workflow-verified."
+status: active
+actors:
+  allowed: [capacity_operator, provider_key, team_owner]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release, security]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.capacity-and-provider-control-plane]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.capacity-and-provider-control-plane]
+negativeCases:
+  - id: provider-key-cannot-read-platform-operations
+    verifierRefs: [api.endpoints.capacity-and-provider-control-plane]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

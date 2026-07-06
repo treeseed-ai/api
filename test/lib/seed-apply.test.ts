@@ -110,7 +110,7 @@ describe('local seed apply', () => {
 			} as any);
 
 			expect(applied.plan.summary).toMatchObject({
-				create: 39,
+				create: 37,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -145,7 +145,7 @@ describe('local seed apply', () => {
 			});
 
 			expect(first.plan.summary).toMatchObject({
-				create: 39,
+				create: 37,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -377,7 +377,6 @@ describe('local seed apply', () => {
 			const products = await store.listTeamProducts(team!.id, { type: 'user', id: 'user-1', permissions: ['teams:manage:team'] } as any);
 			expect(products.map((product: any) => product.slug).sort()).toEqual(expect.arrayContaining([
 				'engineering',
-				'information-hub',
 				'research',
 				'treeseed-market',
 			]));
@@ -439,7 +438,7 @@ describe('local seed apply', () => {
 			expect(second.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 39,
+				unchanged: 37,
 				skip: 2,
 			});
 			const secondResult = second.result as any;
@@ -474,7 +473,7 @@ describe('local seed apply', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 39,
+				unchanged: 37,
 				skip: 2,
 			});
 			expect((repaired.result as any).repairs).toEqual([
@@ -583,7 +582,7 @@ describe('local seed apply', () => {
 			expect(seedPage.selectedSeed).toBe('treeseed');
 			expect(seedPage.selectedEnvironments).toBe('local');
 			expect(seedPage.plan.summary).toMatchObject({
-				create: 38,
+				create: 36,
 				update: 1,
 				unchanged: 0,
 				skip: 2,

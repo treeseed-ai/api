@@ -635,6 +635,14 @@ describe('market api', () => {
 		expect(seeded.payload.fixtures.team.id).toEqual(expect.any(String));
 		expect(seeded.payload.fixtures.project.id).toEqual(expect.any(String));
 		expect(seeded.payload.fixtures.provider.id).toEqual(expect.any(String));
+		expect(seeded.payload.fixtures.executionProviders.mock).toMatchObject({
+			id: expect.any(String),
+			status: 'active',
+		});
+		expect(seeded.payload.fixtures.executionProviders.codex).toMatchObject({
+			id: expect.any(String),
+			status: expect.stringMatching(/^(active|needs_configuration)$/u),
+		});
 		expect(seeded.payload.fixtures.platformOperation.id).toEqual(expect.any(String));
 		expect(seeded.payload.fixtures.platformRunner.id).toEqual(expect.any(String));
 		expect(seeded.payload.fixtures.host.id).toEqual(expect.any(String));
@@ -2961,7 +2969,7 @@ describe('market api', () => {
 					ok: true,
 					payload: {
 						projectId: 'hosted-project',
-						agents: [{ agentSlug: 'treeseed-docs-planner', handler: 'planner', status: 'idle' }],
+						agents: [{ agentSlug: 'architect', handler: 'writer', status: 'idle' }],
 					},
 				}), { status: 200, headers: { 'content-type': 'application/json' } });
 			}
@@ -3210,7 +3218,7 @@ describe('market api', () => {
 		const agents = await json(await app.request(`/v1/projects/${project.id}/agents`, { headers }));
 		expect(agents.payload).toMatchObject({
 			projectId: 'hosted-project',
-			agents: [expect.objectContaining({ agentSlug: 'treeseed-docs-planner' })],
+			agents: [expect.objectContaining({ agentSlug: 'architect' })],
 			generatedArtifacts: [expect.objectContaining({ id: 'knowledge:runtime', totalScore: 29 })],
 			researchNotes: [expect.objectContaining({ taskId: 'task-research' })],
 			knowledgeDrafts: [expect.objectContaining({ taskId: 'task-draft' })],
@@ -3233,8 +3241,8 @@ describe('market api', () => {
 			}),
 		});
 
-		const agentDetail = await json(await app.request(`/v1/projects/${project.id}/agents/treeseed-docs-planner`, { headers }));
-		expect(agentDetail.payload.agent).toMatchObject({ agentSlug: 'treeseed-docs-planner', handler: 'planner' });
+		const agentDetail = await json(await app.request(`/v1/projects/${project.id}/agents/architect`, { headers }));
+		expect(agentDetail.payload.agent).toMatchObject({ agentSlug: 'architect', handler: 'writer' });
 
 		const disconnectedProjectResponse = await json(await app.request(`/v1/teams/${project.teamId}/projects`, {
 			method: 'POST',

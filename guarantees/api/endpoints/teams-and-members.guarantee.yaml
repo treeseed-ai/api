@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.teams-and-members.402
+journeyIndex: 402
+type: api
+subtype: endpoints
+journey: Team And Member Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Team, member, invite, and profile endpoints enforce role-specific access through descriptor-backed acceptance."
+status: active
+actors:
+  allowed: [team_owner, team_member, platform_admin]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.teams-and-members]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.teams-and-members]
+negativeCases:
+  - id: non-member-team-access-denied
+    verifierRefs: [api.endpoints.teams-and-members]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

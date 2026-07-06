@@ -677,24 +677,6 @@ resources:
         repository: research
         gitUrl: https://github.com/treeseed-templates/research.git
 
-    - key: product:treeseed/information-hub-template
-      team: team:treeseed
-      kind: template
-      slug: information-hub
-      title: Information Hub Workflow Import
-      summary: First-party starter for public knowledge hubs, docs, and durable publishing workflows.
-      visibility: public
-      listingEnabled: true
-      offerMode: free
-      manifestKey: src/content/templates/information-hub.mdx
-      artifactKey: catalog/treeseed-information-hub/1.0.0/template
-      searchText: TreeSeed information hub workflow import template docs knowledge publishing
-      metadata:
-        provider: github
-        owner: treeseed-templates
-        repository: information-hub
-        gitUrl: https://github.com/treeseed-templates/information-hub.git
-
   catalogArtifacts:
     - key: catalog-artifact:treeseed/market-template/1.0.0
       product: product:treeseed/market-template
@@ -730,18 +712,6 @@ resources:
         owner: treeseed-templates
         repository: research
         gitUrl: https://github.com/treeseed-templates/research.git
-
-    - key: catalog-artifact:treeseed/information-hub-template/1.0.0
-      product: product:treeseed/information-hub-template
-      version: 1.0.0
-      kind: template
-      contentKey: catalog/treeseed-information-hub/1.0.0/template
-      manifestKey: src/content/templates/information-hub.mdx
-      metadata:
-        provider: github
-        owner: treeseed-templates
-        repository: information-hub
-        gitUrl: https://github.com/treeseed-templates/information-hub.git
 
   agentPools: []
 

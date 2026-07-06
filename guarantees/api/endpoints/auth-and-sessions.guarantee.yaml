@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.auth-and-sessions.401
+journeyIndex: 401
+type: api
+subtype: endpoints
+journey: Auth And Session Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Authentication and session endpoints are covered by descriptor matrices and live auth workflow acceptance."
+status: active
+actors:
+  allowed: [anonymous_user, authenticated_user]
+  forbidden: [unauthorized_user]
+gates: [core, release, security]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.auth-and-sessions]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.auth-and-sessions]
+negativeCases:
+  - id: unauthenticated-private-auth-route-denied
+    verifierRefs: [api.endpoints.auth-and-sessions]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

@@ -1110,7 +1110,7 @@ const LOCAL_CONTENT_DEFAULTS = {
 		extension: 'mdx',
 		fields: {
 			name: '',
-			handler: 'planner',
+			handler: 'writer',
 			enabled: true,
 			operator: 'TreeSeed platform',
 			runtimeStatus: 'active',
@@ -7356,6 +7356,29 @@ export function createApiApp(options = {}): Hono {
 				const providerKey = await store.rotateCapacityProviderApiKey(team.id, provider.id, {
 					createdById: owner?.userId,
 				});
+				const codexAuthDetected = Boolean(process.env.TREESEED_CODEX_AUTH_FILE?.trim())
+					|| Boolean(process.env.CODEX_AUTH_FILE?.trim())
+					|| Boolean(process.env.HOME && existsSync(`${process.env.HOME}/.codex/auth.json`));
+				const codexExecutionProvider = await store.upsertExecutionProvider(team.id, provider.id, {
+					id: `${provider.id}:codex`,
+					kind: 'codex_subscription',
+					name: 'Acceptance Codex',
+					status: codexAuthDetected ? 'active' : 'needs_configuration',
+					nativeUnit: 'credit',
+					quotaVisibility: 'known',
+					maxConcurrentWorkers: 1,
+					metadata: { acceptance: true, namespace, live: true, activityOperations: ['planning', 'estimating', 'acting', 'reviewing', 'reporting', 'release'] },
+				}).catch(() => null);
+				const mockExecutionProvider = await store.upsertExecutionProvider(team.id, provider.id, {
+					id: `${provider.id}:mock`,
+					kind: 'deterministic_mock',
+					name: 'Acceptance Mock',
+					status: 'active',
+					nativeUnit: 'mock_credit',
+					quotaVisibility: 'known',
+					maxConcurrentWorkers: 16,
+					metadata: { acceptance: true, namespace, live: false, alwaysAvailable: true, activityOperations: ['planning', 'estimating', 'acting', 'reviewing', 'reporting', 'release'] },
+				}).catch(() => null);
 				const deployment = await store.createCapacityProviderDeployment(team.id, provider.id, {
 					launchMode: 'self_hosted',
 					status: 'deployed',
@@ -7523,6 +7546,10 @@ export function createApiApp(options = {}): Hono {
 							memberships: membershipFixtures,
 							session: { id: actors.teamOwner?.sessionId ?? actors.siteAdmin?.sessionId ?? null },
 							provider: { id: provider.id, keyPrefix: providerKey?.key?.keyPrefix ?? null },
+							executionProviders: {
+								codex: { id: codexExecutionProvider?.id ?? `${provider.id}:codex`, status: codexExecutionProvider?.status ?? null },
+								mock: { id: mockExecutionProvider?.id ?? `${provider.id}:mock`, status: mockExecutionProvider?.status ?? null },
+							},
 							deployment: { id: deployment?.id ?? null },
 							workday: { id: workday?.id ?? `workday-${namespace}` },
 							job: { id: operation?.id ?? `operation-${namespace}` },
@@ -13336,7 +13363,7 @@ export function createApiApp(options = {}): Hono {
 							input: {
 								projectId: c.req.param('projectId'),
 								workDayId: workDay.id,
-								agentSlug: typeof body.agentSlug === 'string' ? body.agentSlug : 'treeseed-docs-planner',
+								agentSlug: typeof body.agentSlug === 'string' ? body.agentSlug : 'architect',
 								type: 'provider.live_codex',
 								messageType: 'provider.live_codex',
 								executionMode: body.executionMode === 'plan' ? 'plan' : 'live',
@@ -15289,6 +15316,113 @@ export function createApiApp(options = {}): Hono {
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
 				return c.json({ ok: true, payload: await store.updateDecisionExecutionInputStatus(existing.id, 'revision_requested', body) });
+			});
+
+			app.post('/v1/decisions/:decisionId/estimates', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
+				if (!projectId) return jsonError(c, 400, 'projectId is required.');
+				const access = await requireProjectAccess(c, store, projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				try {
+					const estimate = await store.createStructuredAgentEstimate(c.req.param('decisionId'), body);
+					return estimate ? c.json({ ok: true, payload: estimate }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error), { code: error?.code, details: error?.details });
+				}
+			});
+
+			app.get('/v1/decisions/:decisionId/estimates', async (c) => {
+				const estimates = await store.listStructuredAgentEstimatesForDecision(c.req.param('decisionId'), {
+					status: typeof c.req.query('status') === 'string' ? c.req.query('status') : null,
+				});
+				const firstEstimate = estimates[0] ?? null;
+				if (!firstEstimate) {
+					const status = await store.getDecisionPlanningStatus(c.req.param('decisionId'));
+					if (!status) return jsonError(c, 404, 'Unknown decision planning status.');
+					const access = await requireProjectAccess(c, store, status.projectId, 'projects:read:team');
+					if (access.response) return access.response;
+					return c.json({ ok: true, payload: [] });
+				}
+				const access = await requireProjectAccess(c, store, firstEstimate.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: estimates });
+			});
+
+			app.post('/v1/decisions/:decisionId/assignment-graphs/compile', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const projectId = typeof body.projectId === 'string' ? body.projectId : null;
+				if (!projectId) return jsonError(c, 400, 'projectId is required.');
+				const access = await requireProjectAccess(c, store, projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				try {
+					const graph = await store.createDecisionAssignmentGraph(c.req.param('decisionId'), body);
+					const activated = body.activate === false || !graph ? graph : await store.activateDecisionAssignmentGraphVersion(graph.id, { status: body.activeStatus ?? 'ready' });
+					return graph ? c.json({ ok: true, payload: activated ?? graph }, { status: 201 }) : jsonError(c, 404, 'Unknown project.');
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error), { code: error?.code, details: error?.details });
+				}
+			});
+
+			app.get('/v1/decisions/:decisionId/assignment-graphs', async (c) => {
+				const graphs = await store.listDecisionAssignmentGraphsForDecision(c.req.param('decisionId'), {
+					active: c.req.query('active') === undefined ? undefined : c.req.query('active') === 'true',
+				});
+				const firstGraph = graphs[0] ?? null;
+				if (!firstGraph) {
+					const status = await store.getDecisionPlanningStatus(c.req.param('decisionId'));
+					if (!status) return jsonError(c, 404, 'Unknown decision planning status.');
+					const access = await requireProjectAccess(c, store, status.projectId, 'projects:read:team');
+					if (access.response) return access.response;
+					return c.json({ ok: true, payload: [] });
+				}
+				const access = await requireProjectAccess(c, store, firstGraph.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: graphs });
+			});
+
+			app.get('/v1/decision-assignment-graphs/:graphId', async (c) => {
+				const graph = await store.getDecisionAssignmentGraph(c.req.param('graphId'));
+				if (!graph) return jsonError(c, 404, 'Unknown decision assignment graph.');
+				const access = await requireProjectAccess(c, store, graph.projectId, 'projects:read:team');
+				if (access.response) return access.response;
+				return c.json({ ok: true, payload: graph });
+			});
+
+			app.post('/v1/deliverable-contracts/:contractId/manifests', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const contract = await store.getDeliverableContract(c.req.param('contractId'));
+				if (!contract) return jsonError(c, 404, 'Unknown deliverable contract.');
+				const access = await requireProjectAccess(c, store, contract.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				try {
+					const manifest = await store.submitDeliverableManifest(c.req.param('contractId'), body);
+					return c.json({ ok: true, payload: manifest }, { status: 201 });
+				} catch (error) {
+					return jsonError(c, 400, error instanceof Error ? error.message : String(error), { code: error?.code, details: error?.details });
+				}
+			});
+
+			app.post('/v1/deliverable-contracts/:contractId/approve', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const existing = await store.getDeliverableContract(c.req.param('contractId'));
+				if (!existing) return jsonError(c, 404, 'Unknown deliverable contract.');
+				const access = await requireProjectAccess(c, store, existing.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const contract = await store.markDeliverableContractApproved(c.req.param('contractId'), body);
+				if (!contract) return jsonError(c, 404, 'Unknown deliverable contract.');
+				return c.json({ ok: true, payload: contract });
+			});
+
+			app.post('/v1/deliverable-contracts/:contractId/reject', async (c) => {
+				const body = await c.req.json().catch(() => ({}));
+				const existing = await store.getDeliverableContract(c.req.param('contractId'));
+				if (!existing) return jsonError(c, 404, 'Unknown deliverable contract.');
+				const access = await requireProjectAccess(c, store, existing.projectId, 'projects:manage:team');
+				if (access.response) return access.response;
+				const contract = await store.markDeliverableContractRejected(c.req.param('contractId'), body);
+				if (!contract) return jsonError(c, 404, 'Unknown deliverable contract.');
+				return c.json({ ok: true, payload: contract });
 			});
 
 			app.get('/v1/decisions/:decisionId/capacity-plans', async (c) => {

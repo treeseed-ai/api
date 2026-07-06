@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.ui-projection-endpoints.413
+journeyIndex: 413
+type: api
+subtype: endpoints
+journey: UI Projection Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "UI projection endpoints used by Admin and Market surfaces are descriptor-covered and remain API-authoritative."
+status: active
+actors:
+  allowed: [authenticated_user, team_member, project_member]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.ui-projection-endpoints]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.ui-projection-endpoints]
+negativeCases:
+  - id: anonymous-private-ui-projection-denied
+    verifierRefs: [api.endpoints.ui-projection-endpoints]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

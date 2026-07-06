@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.commerce-marketplace.411
+journeyIndex: 411
+type: api
+subtype: endpoints
+journey: Commerce Marketplace Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Commerce, marketplace, checkout, product, service, listing, entitlement, and vendor endpoints are descriptor-covered."
+status: active
+actors:
+  allowed: [buyer, vendor, platform_admin]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.commerce-marketplace]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.commerce-marketplace]
+negativeCases:
+  - id: unauthorized-commerce-mutation-denied
+    verifierRefs: [api.endpoints.commerce-marketplace]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

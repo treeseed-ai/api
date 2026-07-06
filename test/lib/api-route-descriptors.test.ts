@@ -1,8 +1,9 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import {
+	API_ENDPOINT_GUARANTEE_FAMILIES,
 	API_ROUTE_DESCRIPTORS,
 	SDK_METHOD_ROUTE_MAP,
 	extractActiveApiRoutes,
@@ -25,7 +26,7 @@ describe('API route descriptors', () => {
 	it('describes every active v1 route declared by the API', () => {
 		const extracted = extractActiveApiRoutes();
 		expect(API_ROUTE_DESCRIPTORS.map((route) => route.id)).toEqual(extracted.map((route) => route.id));
-		expect(API_ROUTE_DESCRIPTORS).toHaveLength(550);
+		expect(API_ROUTE_DESCRIPTORS).toHaveLength(558);
 		expect(API_ROUTE_DESCRIPTORS.find((route) => route.id === 'get.v1.users.by-username.username.profile')).toMatchObject({
 			authClass: 'user',
 			ownerDomain: 'market',
@@ -54,6 +55,51 @@ describe('API route descriptors', () => {
 				expect(descriptor.acceptance).toHaveProperty('bodyFactory');
 			}
 		}
+	});
+
+	it('attaches endpoint guarantee family metadata to every active route', () => {
+		const families = new Set(API_ENDPOINT_GUARANTEE_FAMILIES);
+		for (const descriptor of API_ROUTE_DESCRIPTORS) {
+			expect(descriptor.guarantee, descriptor.id).toMatchObject({
+				familyId: expect.any(String),
+				verifierRef: expect.stringMatching(/^api\.endpoints\./u),
+				coverage: expect.stringMatching(/^(descriptor-matrix|workflow|descriptor-and-workflow)$/u),
+			});
+			expect(families.has(descriptor.guarantee.familyId), descriptor.id).toBe(true);
+			expect(descriptor.guarantee.verifierRef).toBe(`api.endpoints.${descriptor.guarantee.familyId}`);
+		}
+		expect(new Set(API_ROUTE_DESCRIPTORS.map((route) => route.guarantee.familyId))).toEqual(families);
+	});
+
+	it('backs every endpoint guarantee family with an active guarantee and verifier ref', () => {
+		for (const familyId of API_ENDPOINT_GUARANTEE_FAMILIES) {
+			const guaranteePath = resolve(process.cwd(), 'guarantees/api/endpoints', `${familyId}.guarantee.yaml`);
+			expect(existsSync(guaranteePath), familyId).toBe(true);
+			const text = readFileSync(guaranteePath, 'utf8');
+			expect(text).toContain('status: active');
+			expect(text).toContain(`api.endpoints.${familyId}`);
+		}
+		const verifierText = readFileSync('guarantees/verifiers/api.verifiers.yaml', 'utf8');
+		for (const familyId of API_ENDPOINT_GUARANTEE_FAMILIES) {
+			expect(verifierText, familyId).toContain(`api.endpoints.${familyId}:`);
+		}
+	});
+
+	it('generates a route descriptor endpoint guarantee coverage report', () => {
+		const report = {
+			routeCount: API_ROUTE_DESCRIPTORS.length,
+			descriptorCount: API_ROUTE_DESCRIPTORS.length,
+			coveredByGuarantee: API_ROUTE_DESCRIPTORS.filter((descriptor) => descriptor.guarantee?.familyId).length,
+			missingRoutes: API_ROUTE_DESCRIPTORS.filter((descriptor) => !descriptor.guarantee?.familyId).map((descriptor) => descriptor.id),
+			families: Object.fromEntries(API_ENDPOINT_GUARANTEE_FAMILIES.map((familyId) => [
+				familyId,
+				API_ROUTE_DESCRIPTORS.filter((descriptor) => descriptor.guarantee.familyId === familyId).map((descriptor) => descriptor.id),
+			])),
+		};
+		expect(report.missingRoutes).toEqual([]);
+		expect(report.coveredByGuarantee).toBe(report.routeCount);
+		mkdirSync(resolve(process.cwd(), 'reports'), { recursive: true });
+		writeFileSync(resolve(process.cwd(), 'reports/api-endpoint-guarantee-coverage.json'), `${JSON.stringify(report, null, 2)}\n`);
 	});
 
 	it('maps every public MarketClient method to an active descriptor-backed endpoint', () => {

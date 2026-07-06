@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.health-and-markets.400
+journeyIndex: 400
+type: api
+subtype: endpoints
+journey: Health And Market Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Health, identity, and market discovery endpoints are descriptor-covered with exact acceptance statuses."
+status: active
+actors:
+  allowed: [anonymous_user, authenticated_user]
+  forbidden: [unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.health-and-markets]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.health-and-markets]
+negativeCases:
+  - id: descriptor-denied-actors-covered
+    verifierRefs: [api.endpoints.health-and-markets]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

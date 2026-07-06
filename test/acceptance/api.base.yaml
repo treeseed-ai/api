@@ -8,7 +8,7 @@ variables:
 seed:
   enabled: true
   path: /v1/acceptance/seed
-  namespace: acceptance-${environment}-${runNonce}
+  namespace: acc-${environment}-${runNonce}
   actors:
     siteAdmin:
       siteRoles: [platform_admin]
@@ -296,6 +296,75 @@ cases:
     actor: siteAdmin
     method: GET
     path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.compile-decision-assignment-graph
+    actor: siteAdmin
+    method: POST
+    path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs/compile
+    body:
+      projectId: ${fixtures.project.id}
+      activate: true
+      estimates:
+        - id: acceptance-estimate-${runNonce}
+          teamId: ${fixtures.team.id}
+          projectId: ${fixtures.project.id}
+          decisionId: ${fixtures.decision.id}
+          agentClass: engineer
+          minCredits: 1
+          expectedCredits: 1
+          maxCredits: 2
+          confidence: medium
+          riskLevel: low
+          assumptions: []
+          blockers: []
+          dependencies:
+            - id: architecture-spec
+              type: artifact
+              requiredBefore: start
+              deliverableType: architecture_spec
+              agentClass: architect
+          expectedOutputs:
+            - outputType: implementation_report
+              required: true
+          acceptanceCriteria:
+            - Acceptance graph compiles.
+          completionEvidence:
+            - Graph response is persisted.
+    expect:
+      status: 201
+      envelope: { ok: true }
+
+  - id: agent.graph.block-acting-until-graph-ready
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.release-downstream-after-deliverable-approval
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.reserve-planning-capacity
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.enforce-mode-split-capacity
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity-runtime-diagnostics
     expect:
       status: 200
       envelope: { ok: true }

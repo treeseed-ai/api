@@ -948,6 +948,30 @@
       "providerKey": 200,
       "platformRunner": 200
     },
+    "get.v1.decision-assignment-graphs.graphId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "get.v1.decisions.decisionId.assignment-graphs": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "get.v1.decisions.decisionId.capacity-plans": {
       "anonymous": 404,
       "siteAdmin": 200,
@@ -959,6 +983,18 @@
       "providerOperator": 404,
       "providerKey": 404,
       "platformRunner": 404
+    },
+    "get.v1.decisions.decisionId.estimates": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 401,
+      "platformRunner": 401
     },
     "get.v1.decisions.decisionId.execution-inputs": {
       "anonymous": 404,
@@ -4272,6 +4308,18 @@
       "providerKey": 404,
       "platformRunner": 404
     },
+    "post.v1.decisions.decisionId.assignment-graphs.compile": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 400,
+      "providerOperator": 400,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
     "post.v1.decisions.decisionId.capacity-plans": {
       "anonymous": 401,
       "siteAdmin": 400,
@@ -4281,6 +4329,18 @@
       "teamViewer": 400,
       "nonMember": 403,
       "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.decisions.decisionId.estimates": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 400,
+      "teamOperator": 400,
+      "teamViewer": 400,
+      "nonMember": 400,
+      "providerOperator": 400,
       "providerKey": 401,
       "platformRunner": 401
     },
@@ -4305,6 +4365,42 @@
       "teamViewer": 201,
       "nonMember": 403,
       "providerOperator": 403,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.deliverable-contracts.contractId.approve": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.deliverable-contracts.contractId.manifests": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerKey": 401,
+      "platformRunner": 401
+    },
+    "post.v1.deliverable-contracts.contractId.reject": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
       "providerKey": 401,
       "platformRunner": 401
     },

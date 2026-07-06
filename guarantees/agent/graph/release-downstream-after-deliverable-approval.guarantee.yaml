@@ -1,0 +1,31 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.graph.release-downstream-after-deliverable-approval.312
+journeyIndex: 312
+type: agent
+subtype: graph
+journey: Release Downstream After Deliverable Approval
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Approved deliverable manifests satisfy graph dependencies and release downstream assignment nodes."
+status: active
+actors:
+  allowed: [project_manager, capacity_operator, team_owner]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.agent.graph.release-downstream-after-deliverable-approval]
+content:
+  required: false
+  verifierRefs: []
+audit:
+  required: true
+  verifierRefs: [api.agent.graph.release-downstream-after-deliverable-approval]
+negativeCases:
+  - id: unauthorized-actor-denied
+    actor: anonymous_user
+    verifierRefs: [api.agent.graph.release-downstream-after-deliverable-approval]
+evidence:
+  required: [guarantee_report, verifier_evidence]

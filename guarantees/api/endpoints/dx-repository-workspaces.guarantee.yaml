@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.dx-repository-workspaces.409
+journeyIndex: 409
+type: api
+subtype: endpoints
+journey: DX Repository Workspace Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Repository workspace, file, search, commit, and context-building endpoints are descriptor-covered under project authorization."
+status: active
+actors:
+  allowed: [project_member, project_manager]
+  forbidden: [anonymous_user, non_member]
+gates: [core, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.dx-repository-workspaces]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.dx-repository-workspaces]
+negativeCases:
+  - id: non-member-dx-workspace-denied
+    verifierRefs: [api.endpoints.dx-repository-workspaces]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+

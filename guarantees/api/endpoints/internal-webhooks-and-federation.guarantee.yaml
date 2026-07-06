@@ -1,0 +1,28 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.internal-webhooks-and-federation.414
+journeyIndex: 414
+type: api
+subtype: endpoints
+journey: Internal Webhook And Federation Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Internal webhook, acceptance, federation, feedback, and credential bridge endpoints keep explicit service/public trust boundaries."
+status: active
+actors:
+  allowed: [service_actor, anonymous_user, platform_admin]
+  forbidden: [unauthorized_user]
+gates: [core, release, security]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.internal-webhooks-and-federation]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.internal-webhooks-and-federation]
+negativeCases:
+  - id: descriptor-denied-actors-covered
+    verifierRefs: [api.endpoints.internal-webhooks-and-federation]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+
