@@ -190,9 +190,31 @@ jobs:
         run: |
           npm ci --ignore-scripts --workspaces=false || (echo "dependency install failed; retrying" && npm ci --ignore-scripts --workspaces=false)
           npm rebuild @treeseed/sdk @treeseed/cli --workspaces=false
-          ./node_modules/.bin/trsd --help >/dev/null
+      - name: Resolve Treeseed CLI binary
+        run: |
+          cli_bin="$(node --input-type=module <<'NODE'
+          import { existsSync, readFileSync } from 'node:fs';
+          import { dirname, resolve } from 'node:path';
+          const packageJsonPath = resolve(process.cwd(), 'node_modules/@treeseed/cli/package.json');
+          const packageRoot = dirname(packageJsonPath);
+          const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+          const bin = pkg.bin?.trsd ?? pkg.bin?.treeseed;
+          if (typeof bin !== 'string' || !bin || bin.includes('/src/')) {
+            console.error('The packaged @treeseed/cli trsd bin must point at a built package file.');
+            process.exit(1);
+          }
+          const cliBin = resolve(packageRoot, bin);
+          if (!existsSync(cliBin)) {
+            console.error(`The packaged @treeseed/cli trsd bin target does not exist: ${cliBin}`);
+            process.exit(1);
+          }
+          process.stdout.write(cliBin);
+          NODE
+          )"
+          echo "TREESEED_CLI_BIN=${cli_bin}" >> "${GITHUB_ENV}"
+          node "${cli_bin}" --help >/dev/null
       - name: Prepare Treeseed secret session
-        run: ./node_modules/.bin/trsd secrets:unlock --from-env --create-if-missing --json
+        run: node "${TREESEED_CLI_BIN}" secrets:unlock --from-env --create-if-missing --json
       - name: Resolve production image refs
         if: needs.classify.outputs.scope == 'prod'
         shell: bash
@@ -233,9 +255,9 @@ jobs:
             exit 1
           done
       - name: Plan API reconciliation
-        run: ./node_modules/.bin/trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
+        run: node "${TREESEED_CLI_BIN}" hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
-        run: ./node_modules/.bin/trsd hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
+        run: node "${TREESEED_CLI_BIN}" hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
 
   live-verify:
     needs:
@@ -302,9 +324,31 @@ jobs:
         run: |
           npm ci --ignore-scripts --workspaces=false || (echo "dependency install failed; retrying" && npm ci --ignore-scripts --workspaces=false)
           npm rebuild @treeseed/sdk @treeseed/cli --workspaces=false
-          ./node_modules/.bin/trsd --help >/dev/null
+      - name: Resolve Treeseed CLI binary
+        run: |
+          cli_bin="$(node --input-type=module <<'NODE'
+          import { existsSync, readFileSync } from 'node:fs';
+          import { dirname, resolve } from 'node:path';
+          const packageJsonPath = resolve(process.cwd(), 'node_modules/@treeseed/cli/package.json');
+          const packageRoot = dirname(packageJsonPath);
+          const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+          const bin = pkg.bin?.trsd ?? pkg.bin?.treeseed;
+          if (typeof bin !== 'string' || !bin || bin.includes('/src/')) {
+            console.error('The packaged @treeseed/cli trsd bin must point at a built package file.');
+            process.exit(1);
+          }
+          const cliBin = resolve(packageRoot, bin);
+          if (!existsSync(cliBin)) {
+            console.error(`The packaged @treeseed/cli trsd bin target does not exist: ${cliBin}`);
+            process.exit(1);
+          }
+          process.stdout.write(cliBin);
+          NODE
+          )"
+          echo "TREESEED_CLI_BIN=${cli_bin}" >> "${GITHUB_ENV}"
+          node "${cli_bin}" --help >/dev/null
       - name: Prepare Treeseed secret session
-        run: ./node_modules/.bin/trsd secrets:unlock --from-env --create-if-missing --json
+        run: node "${TREESEED_CLI_BIN}" secrets:unlock --from-env --create-if-missing --json
       - name: Resolve live API service credentials
         shell: bash
         run: |
@@ -327,9 +371,9 @@ jobs:
           appendFileSync(process.env.GITHUB_ENV, `TREESEED_ACCEPTANCE_SERVICE_SECRET<<${delimiter}\n${serviceSecret}\n${delimiter}\n`);
           NODE
       - name: Verify API hosting live
-        run: ./node_modules/.bin/trsd hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
+        run: node "${TREESEED_CLI_BIN}" hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
       - name: Run operations runner smoke
-        run: ./node_modules/.bin/trsd operations smoke --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --service operationsRunner --json
+        run: node "${TREESEED_CLI_BIN}" operations smoke --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --service operationsRunner --json
       - name: Run live API acceptance
         run: |
           mkdir -p reports
