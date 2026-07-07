@@ -37,7 +37,8 @@ describe('API deploy workflow', () => {
 
 		const deployRun = JSON.stringify(deploy.jobs['deploy-api']);
 		expect(deploy.jobs['deploy-api'].needs).not.toContain('build-staging-images');
-		expect(deployRun).toContain('npm ci --workspaces=false');
+		expect(deployRun).toContain('npm ci --ignore-scripts --workspaces=false');
+		expect(deployRun).toContain('dependency install failed; retrying');
 		expect(deployRun).not.toContain('npm install --no-save @treeseed/cli');
 		expect(deployRun).toContain('TREESEED_API_IMAGE_REF');
 		expect(deployRun).toContain('TREESEED_OPERATIONS_RUNNER_IMAGE_REF');
@@ -62,7 +63,8 @@ describe('API deploy workflow', () => {
 
 		const liveRun = JSON.stringify(deploy.jobs['live-verify']);
 		expect(liveRun).toContain("\"TREESEED_PUBLIC_TREEDX_IMAGE_REF\":\"${{ needs.classify.outputs.scope == 'prod'");
-		expect(liveRun).toContain('npm ci --workspaces=false');
+		expect(liveRun).toContain('npm ci --ignore-scripts --workspaces=false');
+		expect(liveRun).toContain('dependency install failed; retrying');
 		expect(liveRun).not.toContain('npm install --no-save @treeseed/cli');
 		expect(liveRun).toContain('trsd hosting verify');
 		expect(liveRun).toContain('--app api --live --json');
