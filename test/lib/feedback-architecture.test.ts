@@ -5,7 +5,7 @@ function source(path: string) {
 	return readFileSync(path, 'utf8');
 }
 
-describe('Phase 5 feedback API contract', () => {
+describe('feedback API architecture contract', () => {
 	it('declares a narrow feedback endpoint with validation, audit, and triage behavior', () => {
 		const app = source('src/api/app.ts');
 		const routeStart = app.indexOf("app.post('/v1/feedback'");

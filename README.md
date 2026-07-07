@@ -158,7 +158,7 @@ treeseed-api-db-migrate
 
 - `@treeseed/admin` renders admin UI and talks to API through HTTP/proxy/client facades.
 - `@treeseed/ui` owns reusable visual components used by admin/market.
-- root `@treeseed/market` hosts the web tenant, buyer marketplace, checkout, service, capacity, and Commons participant pages.
+- root `@treeseed/market` hosts the web tenant, authenticated operational marketplace, checkout, service, capacity, Commons participant pages, and public marketing/profile/knowledge pages.
 - `@treeseed/sdk` owns shared contracts, reconciliation, config, and workflow primitives used by API.
 - `@treeseed/cli` exposes operator commands that call SDK/API surfaces.
 - `@treeseed/agent` owns capacity-provider runtime, provider manager/runner behavior, and AgentKernel execution; API owns backend control-plane routes, provider sessions, assignment leases, mode-run records, and usage settlement for that runtime.
@@ -168,7 +168,7 @@ treeseed-api-db-migrate
 
 - web/admin routes or Astro pages
 - reusable UI primitives
-- root market content, public messaging, Astro buyer pages, or reusable UI components
+- root market content, public messaging, authenticated operational buyer Astro pages, public marketing/profile/knowledge pages, or reusable UI components
 - CLI command UX
 - capacity provider manager/runner/worker implementation or AgentKernel execution
 - TreeDX internals
