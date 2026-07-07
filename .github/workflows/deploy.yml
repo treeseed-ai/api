@@ -187,9 +187,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install dependencies
-        run: npm ci --ignore-scripts --workspaces=false || (echo "dependency install failed; retrying" && npm ci --ignore-scripts --workspaces=false)
+        run: npm ci --workspaces=false || (echo "dependency install failed; retrying" && npm ci --workspaces=false)
       - name: Prepare Treeseed secret session
-        run: npx trsd secrets:unlock --from-env --create-if-missing --json
+        run: npx --no-install trsd secrets:unlock --from-env --create-if-missing --json
       - name: Resolve production image refs
         if: needs.classify.outputs.scope == 'prod'
         shell: bash
@@ -230,9 +230,9 @@ jobs:
             exit 1
           done
       - name: Plan API reconciliation
-        run: npx trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
+        run: npx --no-install trsd hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
-        run: npx trsd hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
+        run: npx --no-install trsd hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
 
   live-verify:
     needs:
@@ -296,9 +296,9 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install dependencies
-        run: npm ci --ignore-scripts --workspaces=false || (echo "dependency install failed; retrying" && npm ci --ignore-scripts --workspaces=false)
+        run: npm ci --workspaces=false || (echo "dependency install failed; retrying" && npm ci --workspaces=false)
       - name: Prepare Treeseed secret session
-        run: npx trsd secrets:unlock --from-env --create-if-missing --json
+        run: npx --no-install trsd secrets:unlock --from-env --create-if-missing --json
       - name: Resolve live API service credentials
         shell: bash
         run: |
@@ -321,9 +321,9 @@ jobs:
           appendFileSync(process.env.GITHUB_ENV, `TREESEED_ACCEPTANCE_SERVICE_SECRET<<${delimiter}\n${serviceSecret}\n${delimiter}\n`);
           NODE
       - name: Verify API hosting live
-        run: npx trsd hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
+        run: npx --no-install trsd hosting verify --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --live --json
       - name: Run operations runner smoke
-        run: npx trsd operations smoke --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --service operationsRunner --json
+        run: npx --no-install trsd operations smoke --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --service operationsRunner --json
       - name: Run live API acceptance
         run: |
           mkdir -p reports
