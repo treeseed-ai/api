@@ -23,6 +23,11 @@ describe('API deploy workflow', () => {
 	it('owns API reconciliation, live verification, runner smoke, and acceptance', () => {
 		const pkg = packageJson();
 		const deploy = workflow('.github/workflows/deploy.yml');
+		const manifest = workflow('treeseed.package.yaml');
+		expect(manifest.deploymentSource).toEqual({
+			staging: 'git',
+			prod: 'image',
+		});
 		expect(deploy.name).toBe('TreeSeed API Deploy');
 		expect(deploy.jobs).toHaveProperty('verify');
 		expect(deploy.jobs).not.toHaveProperty('build-staging-images');
