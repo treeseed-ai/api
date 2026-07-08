@@ -68,6 +68,7 @@ describe('API deploy workflow', () => {
 		});
 		expect(deploy.name).toBe('TreeSeed API Deploy');
 		expect(deploy.on.push.branches).toContain('staging');
+		expect(deploy.concurrency?.group).toContain('treeseed-api-deploy-v2-');
 		expect(deploy.concurrency?.['cancel-in-progress']).toBe(true);
 		expect(JSON.stringify(releaseGate.on)).not.toContain('push');
 		expect(JSON.stringify(verify.on)).not.toContain('push');

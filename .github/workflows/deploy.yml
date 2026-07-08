@@ -27,7 +27,7 @@ on:
           - acceptance
 
 concurrency:
-  group: treeseed-api-deploy-${{ github.ref }}-${{ inputs.environment || 'auto' }}
+  group: treeseed-api-deploy-v2-${{ github.ref }}-${{ inputs.environment || 'auto' }}
   cancel-in-progress: true
 
 jobs:
