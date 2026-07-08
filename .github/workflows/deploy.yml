@@ -150,7 +150,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: |
-          npm ci --workspaces=false || (echo "dependency install failed; retrying" && npm ci --workspaces=false)
+          set -euo pipefail
+          npm ci --workspaces=false --foreground-scripts --no-audit --no-fund
       - name: Wait for Mailpit
         run: |
           for attempt in {1..30}; do
