@@ -67,7 +67,7 @@ describe('API deploy workflow', () => {
 		expect(deploy.on.push.branches).toContain('staging');
 		expect(JSON.stringify(releaseGate.on)).not.toContain('push');
 		expect(JSON.stringify(verify.on)).not.toContain('push');
-		expect(deploy.jobs).toHaveProperty('verify');
+		expect(deploy.jobs).not.toHaveProperty('verify');
 		expect(deploy.jobs).not.toHaveProperty('build-staging-images');
 		expect(deploy.jobs).toHaveProperty('deploy-api');
 		expect(deploy.jobs).not.toHaveProperty('live-verify');
@@ -75,9 +75,13 @@ describe('API deploy workflow', () => {
 
 		const deployRun = JSON.stringify(deploy.jobs['deploy-api']);
 		expect(deploy.jobs['deploy-api'].needs).not.toContain('build-staging-images');
-		expect(deploy.jobs['deploy-api'].needs).toEqual(['classify', 'verify']);
+		expect(deploy.jobs['deploy-api'].needs).toBe('classify');
 		expect(deployRun).toContain('npm ci --workspaces=false');
 		expect(deployRun).toContain('dependency install failed; retrying');
+		expect(deployRun).toContain('axllent/mailpit:v1.21');
+		expect(deployRun).toContain('Wait for Mailpit');
+		expect(deployRun).toContain('Verify API package');
+		expect(deployRun).toContain('npm run verify:direct');
 		expect(deployRun).not.toContain('npm ci --ignore-scripts --workspaces=false');
 		expect(deployRun).not.toContain('npm rebuild @treeseed/sdk @treeseed/cli --workspaces=false');
 		expect(deployRun).toContain('Resolve Treeseed CLI binary');
