@@ -68,6 +68,7 @@ describe('API deploy workflow', () => {
 		});
 		expect(deploy.name).toBe('TreeSeed API Deploy');
 		expect(deploy.on.push.branches).toContain('staging');
+		expect(deploy.concurrency?.['cancel-in-progress']).toBe(true);
 		expect(JSON.stringify(releaseGate.on)).not.toContain('push');
 		expect(JSON.stringify(verify.on)).not.toContain('push');
 		expect(deploy.jobs).not.toHaveProperty('verify');
@@ -129,6 +130,7 @@ describe('API deploy workflow', () => {
 		expect(deployRun).toContain('node \\"${TREESEED_CLI_BIN}\\" operations smoke');
 		expect(deployRun).toContain('--service operationsRunner --json');
 		expect(deployRun).toContain('tsx ./scripts/api-acceptance.ts');
+		expect(deployRun).toContain('"timeout-minutes":15');
 		expect(deployRun).toContain('TREESEED_LIVE_API_BASE_URL');
 		expect(deployRun).toContain('--base-url');
 		expect(deployRun).toContain('${TREESEED_LIVE_API_BASE_URL}');

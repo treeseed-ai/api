@@ -28,7 +28,7 @@ on:
 
 concurrency:
   group: treeseed-api-deploy-${{ github.ref }}-${{ inputs.environment || 'auto' }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   classify:
@@ -278,6 +278,7 @@ jobs:
       - name: Run operations runner smoke
         run: node "${TREESEED_CLI_BIN}" operations smoke --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --service operationsRunner --json
       - name: Run live API acceptance
+        timeout-minutes: 15
         run: |
           mkdir -p reports
           npx --yes tsx ./scripts/api-acceptance.ts \
