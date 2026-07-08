@@ -188,8 +188,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: |
-          npm ci --ignore-scripts --workspaces=false || (echo "dependency install failed; retrying" && npm ci --ignore-scripts --workspaces=false)
-          npm rebuild @treeseed/sdk @treeseed/cli --workspaces=false
+          npm ci --workspaces=false || (echo "dependency install failed; retrying" && npm ci --workspaces=false)
       - name: Resolve Treeseed CLI binary
         run: |
           cli_bin="$(node --input-type=module <<'NODE'
@@ -322,8 +321,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: |
-          npm ci --ignore-scripts --workspaces=false || (echo "dependency install failed; retrying" && npm ci --ignore-scripts --workspaces=false)
-          npm rebuild @treeseed/sdk @treeseed/cli --workspaces=false
+          npm ci --workspaces=false || (echo "dependency install failed; retrying" && npm ci --workspaces=false)
       - name: Resolve Treeseed CLI binary
         run: |
           cli_bin="$(node --input-type=module <<'NODE'
