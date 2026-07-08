@@ -137,6 +137,8 @@ jobs:
       needs.verify.result == 'success' &&
       (
         needs.classify.outputs.workflow_action == 'deploy_api' ||
+        needs.classify.outputs.workflow_action == 'verify_live' ||
+        needs.classify.outputs.workflow_action == 'acceptance' ||
         needs.classify.outputs.api_changed == 'true' ||
         needs.classify.outputs.release_tag == 'true'
       )
@@ -215,7 +217,13 @@ jobs:
       - name: Prepare Treeseed secret session
         run: node "${TREESEED_CLI_BIN}" secrets:unlock --from-env --create-if-missing --json
       - name: Resolve production image refs
-        if: needs.classify.outputs.scope == 'prod'
+        if: |
+          needs.classify.outputs.scope == 'prod' &&
+          (
+            needs.classify.outputs.workflow_action == 'deploy_api' ||
+            needs.classify.outputs.api_changed == 'true' ||
+            needs.classify.outputs.release_tag == 'true'
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -228,7 +236,13 @@ jobs:
             exit 1
           fi
       - name: Wait for production image manifests
-        if: needs.classify.outputs.scope == 'prod'
+        if: |
+          needs.classify.outputs.scope == 'prod' &&
+          (
+            needs.classify.outputs.workflow_action == 'deploy_api' ||
+            needs.classify.outputs.api_changed == 'true' ||
+            needs.classify.outputs.release_tag == 'true'
+          )
         shell: bash
         run: |
           set -euo pipefail
@@ -254,99 +268,17 @@ jobs:
             exit 1
           done
       - name: Plan API reconciliation
+        if: |
+          needs.classify.outputs.workflow_action == 'deploy_api' ||
+          needs.classify.outputs.api_changed == 'true' ||
+          needs.classify.outputs.release_tag == 'true'
         run: node "${TREESEED_CLI_BIN}" hosting plan --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
       - name: Reconcile API app
+        if: |
+          needs.classify.outputs.workflow_action == 'deploy_api' ||
+          needs.classify.outputs.api_changed == 'true' ||
+          needs.classify.outputs.release_tag == 'true'
         run: node "${TREESEED_CLI_BIN}" hosting apply --environment "${TREESEED_WORKFLOW_ENVIRONMENT}" --app api --json
-
-  live-verify:
-    needs:
-      - classify
-      - verify
-      - deploy-api
-    if: |
-      always() &&
-      needs.verify.result == 'success' &&
-      (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped') &&
-      (
-        needs.classify.outputs.workflow_action == 'deploy_api' ||
-        needs.classify.outputs.workflow_action == 'verify_live' ||
-        needs.classify.outputs.workflow_action == 'acceptance' ||
-        needs.classify.outputs.api_changed == 'true' ||
-        needs.classify.outputs.release_tag == 'true'
-      )
-    runs-on: ubuntu-latest
-    environment: ${{ needs.classify.outputs.scope == 'prod' && 'production' || 'staging' }}
-    permissions:
-      contents: read
-    env:
-      TREESEED_CLOUDFLARE_API_TOKEN: ${{ secrets.TREESEED_CLOUDFLARE_API_TOKEN }}
-      TREESEED_CLOUDFLARE_ACCOUNT_ID: ${{ vars.TREESEED_CLOUDFLARE_ACCOUNT_ID }}
-      TREESEED_RAILWAY_API_TOKEN: ${{ secrets.TREESEED_RAILWAY_API_TOKEN }}
-      TREESEED_RAILWAY_WORKSPACE: ${{ vars.TREESEED_RAILWAY_WORKSPACE }}
-      TREESEED_RAILWAY_PROJECT_ID: ${{ vars.TREESEED_RAILWAY_PROJECT_ID }}
-      TREESEED_WORKFLOW_ENVIRONMENT: ${{ needs.classify.outputs.scope }}
-      TREESEED_HOSTING_KIND: ${{ vars.TREESEED_HOSTING_KIND }}
-      TREESEED_HOSTING_REGISTRATION: ${{ vars.TREESEED_HOSTING_REGISTRATION }}
-      TREESEED_CENTRAL_MARKET_API_BASE_URL: ${{ vars.TREESEED_CENTRAL_MARKET_API_BASE_URL }}
-      TREESEED_LIVE_API_BASE_URL: ${{ needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev' }}
-      TREESEED_API_BASE_URL: ${{ vars.TREESEED_API_BASE_URL || (needs.classify.outputs.scope == 'prod' && 'https://api.treeseed.dev' || 'https://api.preview.treeseed.dev') }}
-      TREESEED_CATALOG_MARKET_API_BASE_URLS: ${{ vars.TREESEED_CATALOG_MARKET_API_BASE_URLS }}
-      TREESEED_SMTP_HOST: ${{ vars.TREESEED_SMTP_HOST }}
-      TREESEED_SMTP_PORT: ${{ vars.TREESEED_SMTP_PORT }}
-      TREESEED_SMTP_USERNAME: ${{ vars.TREESEED_SMTP_USERNAME }}
-      TREESEED_SMTP_FROM: ${{ vars.TREESEED_SMTP_FROM }}
-      TREESEED_SMTP_REPLY_TO: ${{ vars.TREESEED_SMTP_REPLY_TO }}
-      TREESEED_HOSTED_HUBS_GITHUB_OWNER: ${{ vars.TREESEED_HOSTED_HUBS_GITHUB_OWNER }}
-      TREESEED_GITHUB_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN }}
-      TREESEED_PLATFORM_RUNNER_SECRET: ${{ secrets.TREESEED_PLATFORM_RUNNER_SECRET }}
-      TREESEED_CREDENTIAL_SESSION_SECRET: ${{ secrets.TREESEED_CREDENTIAL_SESSION_SECRET }}
-      TREESEED_SMTP_PASSWORD: ${{ secrets.TREESEED_SMTP_PASSWORD }}
-      TREESEED_WEB_ASSERTION_SECRET: ${{ secrets.TREESEED_WEB_ASSERTION_SECRET }}
-      TREESEED_HOSTED_HUBS_GITHUB_TOKEN: ${{ secrets.TREESEED_HOSTED_HUBS_GITHUB_TOKEN }}
-      TREESEED_WEB_SERVICE_ID: ${{ vars.TREESEED_WEB_SERVICE_ID || vars.TREESEED_API_WEB_SERVICE_ID || 'web' }}
-      TREESEED_WEB_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET || secrets.TREESEED_API_WEB_SERVICE_SECRET }}
-      TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF || '') || '' }}
-      TREESEED_API_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/api:{0}', github.ref_name) || vars.TREESEED_API_IMAGE_REF || '') || '' }}
-      TREESEED_OPERATIONS_RUNNER_IMAGE_REF: ${{ needs.classify.outputs.scope == 'prod' && (needs.classify.outputs.release_tag == 'true' && format('treeseed/op-runner:{0}', github.ref_name) || vars.TREESEED_OPERATIONS_RUNNER_IMAGE_REF || '') || '' }}
-      TREESEED_KEY_AGENT_TRANSPORT: inline
-      TREESEED_KEY_PASSPHRASE: treeseed-api-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24.12.0
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        run: |
-          npm ci --workspaces=false || (echo "dependency install failed; retrying" && npm ci --workspaces=false)
-      - name: Resolve Treeseed CLI binary
-        run: |
-          cli_bin="$(node --input-type=module <<'NODE'
-          import { existsSync, readFileSync } from 'node:fs';
-          import { dirname, resolve } from 'node:path';
-          const packageJsonPath = resolve(process.cwd(), 'node_modules/@treeseed/cli/package.json');
-          const packageRoot = dirname(packageJsonPath);
-          const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-          const bin = pkg.bin?.trsd ?? pkg.bin?.treeseed;
-          if (typeof bin !== 'string' || !bin || bin.includes('/src/')) {
-            console.error('The packaged @treeseed/cli trsd bin must point at a built package file.');
-            process.exit(1);
-          }
-          const cliBin = resolve(packageRoot, bin);
-          if (!existsSync(cliBin)) {
-            console.error(`The packaged @treeseed/cli trsd bin target does not exist: ${cliBin}`);
-            process.exit(1);
-          }
-          process.stdout.write(cliBin);
-          NODE
-          )"
-          echo "TREESEED_CLI_BIN=${cli_bin}" >> "${GITHUB_ENV}"
-          node "${cli_bin}" --help >/dev/null
-      - name: Prepare Treeseed secret session
-        run: node "${TREESEED_CLI_BIN}" secrets:unlock --from-env --create-if-missing --json
       - name: Resolve live API service credentials
         shell: bash
         run: |
