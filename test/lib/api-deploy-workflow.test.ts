@@ -63,6 +63,9 @@ describe('API deploy workflow', () => {
 			staging: 'git',
 			prod: 'image',
 		});
+		expect(manifest.releaseGate).toEqual({
+			workflow: 'deploy.yml',
+		});
 		expect(deploy.name).toBe('TreeSeed API Deploy');
 		expect(deploy.on.push.branches).toContain('staging');
 		expect(JSON.stringify(releaseGate.on)).not.toContain('push');

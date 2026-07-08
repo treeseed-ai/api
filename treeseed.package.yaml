@@ -35,7 +35,7 @@ artifacts:
       - amd64
       - arm64
 releaseGate:
-  workflow: release-gate.yml
+  workflow: deploy.yml
 dockerImages:
   releaseWorkflow: publish.yml
   architectures:
