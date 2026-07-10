@@ -149,11 +149,22 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install dependencies
-        timeout-minutes: 30
+        timeout-minutes: 45
         run: |
           set -euo pipefail
+          run_with_heartbeat() {
+            "$@" &
+            local pid="$!"
+            while kill -0 "${pid}" 2>/dev/null; do
+              sleep 60
+              if kill -0 "${pid}" 2>/dev/null; then
+                echo "dependency install still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              fi
+            done
+            wait "${pid}"
+          }
           install_dependencies() {
-            timeout 12m npm ci --workspaces=false --foreground-scripts --no-audit --no-fund
+            run_with_heartbeat timeout 20m npm ci --workspaces=false --foreground-scripts --no-audit --no-fund
           }
           install_dependencies || (
             echo "dependency install failed or timed out; verifying npm cache and retrying" >&2
