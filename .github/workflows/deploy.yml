@@ -155,8 +155,9 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           mode="${1:-continue}"
+          budget="${2:-90s}"
           set +e
-          timeout 90s npm install --workspaces=false --foreground-scripts --no-audit --no-fund
+          timeout "${budget}" npm install --workspaces=false --foreground-scripts --no-audit --no-fund
           status="$?"
           set -e
           if [[ "${status}" == "124" || "${status}" == "143" ]]; then
@@ -219,7 +220,7 @@ jobs:
         run: ./.treeseed-install-deps-chunk.sh continue
       - name: Install dependencies final
         run: |
-          ./.treeseed-install-deps-chunk.sh final
+          ./.treeseed-install-deps-chunk.sh final 900s
           git diff --exit-code -- package.json package-lock.json
           test -f node_modules/@treeseed/cli/dist/cli/main.js
           node node_modules/@treeseed/cli/dist/cli/main.js --help >/dev/null

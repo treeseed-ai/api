@@ -86,7 +86,9 @@ describe('API deploy workflow', () => {
 		expect(deployRun).toContain('Install dependencies chunk 1');
 		expect(deployRun).toContain('Install dependencies chunk 24');
 		expect(deployRun).toContain('Install dependencies final');
-		expect(deployRun).toContain('timeout 90s npm install --workspaces=false --foreground-scripts --no-audit --no-fund');
+		expect(deployRun).toContain('budget=\\"${2:-90s}\\"');
+		expect(deployRun).toContain('timeout \\"${budget}\\" npm install --workspaces=false --foreground-scripts --no-audit --no-fund');
+		expect(deployRun).toContain('./.treeseed-install-deps-chunk.sh final 900s');
 		expect(deployRun).toContain('if [[ \\"${status}\\" == \\"124\\" || \\"${status}\\" == \\"143\\" ]]; then');
 		expect(deployRun).toContain('git diff --exit-code -- package.json package-lock.json');
 		expect(deployRun).toContain('node_modules/@treeseed/cli/dist/cli/main.js');
