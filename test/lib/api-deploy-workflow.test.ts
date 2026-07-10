@@ -81,7 +81,13 @@ describe('API deploy workflow', () => {
 		const deployRun = JSON.stringify(deploy.jobs['deploy-api']);
 		expect(deploy.jobs['deploy-api'].needs).not.toContain('build-staging-images');
 		expect(deploy.jobs['deploy-api'].needs).toBe('classify');
-		expect(deployRun).toContain('npm ci --workspaces=false --foreground-scripts --no-audit --no-fund');
+		expect(deployRun).toContain('Prepare dependency install helper');
+		expect(deployRun).toContain('Install dependencies chunk 1');
+		expect(deployRun).toContain('Install dependencies chunk 6');
+		expect(deployRun).toContain('Install dependencies final');
+		expect(deployRun).toContain('timeout 135s npm install --workspaces=false --foreground-scripts --no-audit --no-fund');
+		expect(deployRun).toContain('git diff --exit-code -- package.json package-lock.json');
+		expect(deployRun).toContain('node_modules/@treeseed/cli/dist/cli/main.js');
 		expect(deployRun).toContain('axllent/mailpit:v1.21');
 		expect(deployRun).toContain('Wait for Mailpit');
 		expect(deployRun).toContain('Verify API package');
