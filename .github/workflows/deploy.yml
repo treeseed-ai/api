@@ -193,6 +193,30 @@ jobs:
         run: ./.treeseed-install-deps-chunk.sh continue
       - name: Install dependencies chunk 12
         run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 13
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 14
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 15
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 16
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 17
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 18
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 19
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 20
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 21
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 22
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 23
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 24
+        run: ./.treeseed-install-deps-chunk.sh continue
       - name: Install dependencies final
         run: |
           ./.treeseed-install-deps-chunk.sh final

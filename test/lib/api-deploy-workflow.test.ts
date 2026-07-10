@@ -65,6 +65,7 @@ describe('API deploy workflow', () => {
 		});
 		expect(manifest.releaseGate).toEqual({
 			workflow: 'deploy.yml',
+			timeoutSeconds: 7200,
 		});
 		expect(deploy.name).toBe('TreeSeed API Deploy');
 		expect(deploy.on.push.branches).toContain('staging');
@@ -83,7 +84,7 @@ describe('API deploy workflow', () => {
 		expect(deploy.jobs['deploy-api'].needs).toBe('classify');
 		expect(deployRun).toContain('Prepare dependency install helper');
 		expect(deployRun).toContain('Install dependencies chunk 1');
-		expect(deployRun).toContain('Install dependencies chunk 12');
+		expect(deployRun).toContain('Install dependencies chunk 24');
 		expect(deployRun).toContain('Install dependencies final');
 		expect(deployRun).toContain('timeout 90s npm install --workspaces=false --foreground-scripts --no-audit --no-fund');
 		expect(deployRun).toContain('if [[ \\"${status}\\" == \\"124\\" || \\"${status}\\" == \\"143\\" ]]; then');

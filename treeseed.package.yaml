@@ -36,6 +36,7 @@ artifacts:
       - arm64
 releaseGate:
   workflow: deploy.yml
+  timeoutSeconds: 7200
 dockerImages:
   releaseWorkflow: publish.yml
   architectures:
