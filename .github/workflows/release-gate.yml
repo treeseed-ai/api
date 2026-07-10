@@ -1,7 +1,6 @@
 name: Verify TreeSeed API
 
 on:
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -24,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm run release:setup || (echo "dependency install failed; retrying" && npm run release:setup)
+      - run: npm run release:setup
       - name: Wait for Mailpit
         run: |
           for attempt in {1..30}; do

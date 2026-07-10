@@ -4,6 +4,7 @@ kind: node-typescript
 type: hosted-service
 repository: treeseed-ai/api
 publishTarget: docker
+capabilities: { save: true, verify: true, publish: true, deploy: true, localOnly: false }
 deploymentSource:
   staging: git
   prod: image
@@ -35,8 +36,8 @@ artifacts:
       - amd64
       - arm64
 releaseGate:
-  workflow: deploy.yml
-  timeoutSeconds: 7200
+  workflow: verify.yml
+  timeoutSeconds: 1800
 dockerImages:
   releaseWorkflow: publish.yml
   architectures:

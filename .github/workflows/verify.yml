@@ -1,12 +1,16 @@
 name: Verify
 
 on:
+  push:
   pull_request:
   workflow_dispatch:
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     services:
       mailpit:
         image: axllent/mailpit:v1.21
@@ -21,6 +25,7 @@ jobs:
       TREESEED_MAILPIT_URL: http://127.0.0.1:8025
       TREESEED_MAILPIT_SMTP_HOST: 127.0.0.1
       TREESEED_MAILPIT_SMTP_PORT: "1025"
+      GH_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN || github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,8 +35,34 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - run: npm ci --workspaces=false
+      - name: Hydrate exact SDK artifact
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_sha="$(node -e "const spec=require('./package.json').dependencies['@treeseed/sdk']; const match=spec.match(/#([0-9a-f]{40})$/); if(!match) process.exit(1); process.stdout.write(match[1]);")"
+          run_id=""
+          for attempt in {1..120}; do
+            run_id="$(gh run list --repo treeseed-ai/sdk --workflow verify.yml --commit "${sdk_sha}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            [[ -n "${run_id}" ]] && break
+            sleep 10
+          done
+          [[ -n "${run_id}" ]]
+          mkdir -p artifacts/sdk
+          gh run download "${run_id}" --repo treeseed-ai/sdk --name "sdk-${sdk_sha}" --dir artifacts/sdk
+
+      - name: Install dependencies
+        timeout-minutes: 20
+        run: |
+          npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
+          rm -rf node_modules/@treeseed/sdk
+          mkdir -p node_modules/@treeseed/sdk
+          tar -xzf "$(find artifacts/sdk -name '*.tgz' -type f -print -quit)" --strip-components=1 -C node_modules/@treeseed/sdk
+          test -f node_modules/@treeseed/sdk/package.json
+          test -d node_modules/@treeseed/sdk/dist
       - name: Wait for Mailpit
         run: |
           for attempt in {1..30}; do
@@ -43,3 +74,10 @@ jobs:
           echo "Mailpit did not become ready" >&2
           exit 1
       - run: npm run verify:direct
+      - name: Pack verified artifact
+        run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-${{ github.sha }}
+          path: artifacts/*.tgz
+          if-no-files-found: error
