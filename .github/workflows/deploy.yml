@@ -156,13 +156,13 @@ jobs:
           set -euo pipefail
           mode="${1:-continue}"
           set +e
-          timeout 135s npm install --workspaces=false --foreground-scripts --no-audit --no-fund
+          timeout 90s npm install --workspaces=false --foreground-scripts --no-audit --no-fund
           status="$?"
           set -e
-          if [[ "${status}" == "124" ]]; then
+          if [[ "${status}" == "124" || "${status}" == "143" ]]; then
             echo "dependency install chunk reached its hosted step budget at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             if [[ "${mode}" == "final" ]]; then
-              exit 124
+              exit "${status}"
             fi
             exit 0
           fi
@@ -180,6 +180,18 @@ jobs:
       - name: Install dependencies chunk 5
         run: ./.treeseed-install-deps-chunk.sh continue
       - name: Install dependencies chunk 6
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 7
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 8
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 9
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 10
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 11
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 12
         run: ./.treeseed-install-deps-chunk.sh continue
       - name: Install dependencies final
         run: |

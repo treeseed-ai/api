@@ -83,9 +83,10 @@ describe('API deploy workflow', () => {
 		expect(deploy.jobs['deploy-api'].needs).toBe('classify');
 		expect(deployRun).toContain('Prepare dependency install helper');
 		expect(deployRun).toContain('Install dependencies chunk 1');
-		expect(deployRun).toContain('Install dependencies chunk 6');
+		expect(deployRun).toContain('Install dependencies chunk 12');
 		expect(deployRun).toContain('Install dependencies final');
-		expect(deployRun).toContain('timeout 135s npm install --workspaces=false --foreground-scripts --no-audit --no-fund');
+		expect(deployRun).toContain('timeout 90s npm install --workspaces=false --foreground-scripts --no-audit --no-fund');
+		expect(deployRun).toContain('if [[ \\"${status}\\" == \\"124\\" || \\"${status}\\" == \\"143\\" ]]; then');
 		expect(deployRun).toContain('git diff --exit-code -- package.json package-lock.json');
 		expect(deployRun).toContain('node_modules/@treeseed/cli/dist/cli/main.js');
 		expect(deployRun).toContain('axllent/mailpit:v1.21');
