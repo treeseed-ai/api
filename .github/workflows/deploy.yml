@@ -149,9 +149,17 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install dependencies
+        timeout-minutes: 30
         run: |
           set -euo pipefail
-          npm ci --workspaces=false --foreground-scripts --no-audit --no-fund
+          install_dependencies() {
+            timeout 12m npm ci --workspaces=false --foreground-scripts --no-audit --no-fund
+          }
+          install_dependencies || (
+            echo "dependency install failed or timed out; verifying npm cache and retrying" >&2
+            npm cache verify || true
+            install_dependencies
+          )
       - name: Wait for Mailpit
         run: |
           for attempt in {1..30}; do
