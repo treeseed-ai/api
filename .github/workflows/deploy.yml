@@ -148,29 +148,45 @@ jobs:
           node-version: 24.12.0
           cache: npm
           cache-dependency-path: package-lock.json
-      - name: Install dependencies
-        timeout-minutes: 45
+      - name: Prepare dependency install helper
         run: |
           set -euo pipefail
-          run_with_heartbeat() {
-            "$@" &
-            local pid="$!"
-            while kill -0 "${pid}" 2>/dev/null; do
-              sleep 60
-              if kill -0 "${pid}" 2>/dev/null; then
-                echo "dependency install still running at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              fi
-            done
-            wait "${pid}"
-          }
-          install_dependencies() {
-            run_with_heartbeat timeout 20m npm ci --workspaces=false --foreground-scripts --no-audit --no-fund
-          }
-          install_dependencies || (
-            echo "dependency install failed or timed out; verifying npm cache and retrying" >&2
-            npm cache verify || true
-            install_dependencies
-          )
+          cat > .treeseed-install-deps-chunk.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mode="${1:-continue}"
+          set +e
+          timeout 135s npm install --workspaces=false --foreground-scripts --no-audit --no-fund
+          status="$?"
+          set -e
+          if [[ "${status}" == "124" ]]; then
+            echo "dependency install chunk reached its hosted step budget at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            if [[ "${mode}" == "final" ]]; then
+              exit 124
+            fi
+            exit 0
+          fi
+          exit "${status}"
+          SH
+          chmod 0755 .treeseed-install-deps-chunk.sh
+      - name: Install dependencies chunk 1
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 2
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 3
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 4
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 5
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies chunk 6
+        run: ./.treeseed-install-deps-chunk.sh continue
+      - name: Install dependencies final
+        run: |
+          ./.treeseed-install-deps-chunk.sh final
+          git diff --exit-code -- package.json package-lock.json
+          test -f node_modules/@treeseed/cli/dist/cli/main.js
+          node node_modules/@treeseed/cli/dist/cli/main.js --help >/dev/null
       - name: Wait for Mailpit
         run: |
           for attempt in {1..30}; do
