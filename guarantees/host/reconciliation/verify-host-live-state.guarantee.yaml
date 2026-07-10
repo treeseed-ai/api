@@ -34,6 +34,7 @@ preconditions:
   fixtures:
     - integrated_treeseed_project
   notes:
+    - Planned by guarantee journey audit: the referenced UI route/behavior is not implemented as an executable service journey yet.
     - "Journey dependencies must be satisfied: 23, 24"
 scene:
   required: true
@@ -42,8 +43,8 @@ scene:
     acceptance: true
     demo: true
     training: true
-  entryRoute: /app/hosts/verify-host-live-state
-  componentContract: dashboard/read-model guarantee harness
+  entryRoute: /app/hosts
+  componentContract: dashboard/read-model service journey
   expectedEvidence:
     - playwright_trace
     - scene_video

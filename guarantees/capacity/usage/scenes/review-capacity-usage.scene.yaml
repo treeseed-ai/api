@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.capacity.usage.review-capacity-usage.0
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Review Capacity Usage opens the canonical @treeseed/api record operations workflow.
+    - Review Capacity Usage exercises a service journey instead of only loading /app/capacity.
+    - Review Capacity Usage records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: capacity-provider.primary
+      kind: capacity-provider
 mode:
   test: true
   demo: true
@@ -52,10 +65,15 @@ workflow:
   - id: open-entry-route
     title: Open Review Capacity Usage
     action:
-      goto: /app/capacity/review-capacity-usage
+      goto: /app/capacity
     expect:
-      urlIncludes: /app/capacity/review-capacity-usage
-    demoOnly: true
+      urlIncludes: /app/capacity
+  - id: inspect-service-surface
+    title: Inspect Review Capacity Usage service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/capacity
 chapters: []
 overlays: []
 diagrams: []

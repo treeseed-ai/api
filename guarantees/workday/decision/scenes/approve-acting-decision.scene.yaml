@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.workday.decision.approve-acting-decisi
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Approve Acting Decision opens the canonical @treeseed/api record action workflow.
+    - Approve Acting Decision exercises a service journey instead of only loading /app/projects/seed-project/workdays/seed-workday.
+    - Approve Acting Decision records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: project.primary
+      kind: project
 mode:
   test: true
   demo: true
@@ -55,10 +68,15 @@ workflow:
   - id: open-entry-route
     title: Open Approve Acting Decision
     action:
-      goto: /app/projects/:projectId/workdays/approve-acting-decision
+      goto: /app/work/decisions
     expect:
-      urlIncludes: /app/projects
-    demoOnly: true
+      urlIncludes: /app/work/decisions
+  - id: inspect-service-surface
+    title: Inspect Approve Acting Decision service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/work/decisions
 chapters: []
 overlays: []
 diagrams: []

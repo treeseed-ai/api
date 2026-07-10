@@ -11176,7 +11176,7 @@ describe('market api', () => {
 		expect(planResponse.status).toBe(200);
 		const plan = await json(planResponse);
 		expect(plan.ok).toBe(true);
-		expect(plan.summary).toMatchObject({ create: 18, update: 1, unchanged: 0, skip: 20 });
+		expect(plan.summary).toMatchObject({ create: 20, update: 1, unchanged: 0, skip: 20 });
 		expect(plan.run).toMatchObject({ state: 'completed', mode: 'plan', seedName: 'treeseed' });
 
 		const firstApplyResponse = await app.request('/v1/seeds/treeseed/apply', {
@@ -11190,9 +11190,9 @@ describe('market api', () => {
 		expect(firstApplyResponse.status).toBe(200);
 		const firstApply = await json(firstApplyResponse);
 		expect(firstApply.ok).toBe(true);
-		expect(firstApply.summary).toMatchObject({ create: 18, update: 1, unchanged: 0, skip: 20 });
+		expect(firstApply.summary).toMatchObject({ create: 20, update: 1, unchanged: 0, skip: 20 });
 		expect(firstApply.run).toMatchObject({ state: 'completed', mode: 'apply', seedName: 'treeseed' });
-		expect(firstApply.result.actionCount).toBe(19);
+		expect(firstApply.result.actionCount).toBe(21);
 		expect(firstApply.result.capacityProviderKeys.created).toHaveLength(0);
 
 		const runs = await json(await app.request('/v1/seeds/runs', {
@@ -11217,7 +11217,7 @@ describe('market api', () => {
 		});
 		expect(secondApplyResponse.status).toBe(200);
 		const secondApply = await json(secondApplyResponse);
-		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 19, skip: 20 });
+		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 21, skip: 20 });
 		expect(secondApply.result.actionCount).toBe(0);
 		expect(secondApply.result.capacityProviderKeys.created).toHaveLength(0);
 		expect(secondApply.result.capacityProviderKeys.existing).toHaveLength(0);

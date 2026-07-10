@@ -204,6 +204,43 @@ describe('API acceptance framework', () => {
 		}
 	});
 
+	it('maps every workspace apiAcceptanceCase verifier to an expanded acceptance case', async () => {
+		const { readdirSync, readFileSync, statSync } = await import('node:fs');
+		const { join, resolve } = await import('node:path');
+		const spec = loadSpec('test/acceptance/api.base.yaml');
+		const caseIds = new Set([
+			...((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean),
+			...expandDeploymentFlows(spec).map((entry) => entry.id).filter(Boolean),
+			...expandRoleMatrices(spec).map((entry) => entry.id).filter(Boolean),
+			...expandDescriptorMatrices(spec).map((entry) => entry.id).filter(Boolean),
+			...expandSdkMethodMatrices(spec).map((entry) => entry.id).filter(Boolean),
+		]);
+		const workspaceRoot = resolve(process.cwd(), '..', '..');
+		const files: string[] = [];
+		const walk = (directory: string) => {
+			if (!statSync(directory, { throwIfNoEntry: false })) return;
+			for (const entry of readdirSync(directory)) {
+				const path = join(directory, entry);
+				if (entry === 'node_modules' || entry === 'dist') continue;
+				if (statSync(path).isDirectory()) walk(path);
+				else if (path.endsWith('.verifiers.yaml')) files.push(path);
+			}
+		};
+		walk(join(workspaceRoot, 'guarantees'));
+		walk(join(workspaceRoot, 'packages'));
+		const missing: string[] = [];
+		for (const file of files) {
+			const text = readFileSync(file, 'utf8');
+			for (const block of text.split(/\n(?=  [A-Za-z0-9_.-]+:)/u)) {
+				if (!/kind:\s*apiAcceptanceCase/u.test(block)) continue;
+				const ref = block.match(/^\s*([A-Za-z0-9_.-]+):/u)?.[1];
+				const caseId = block.match(/caseId:\s*([^\s]+)/u)?.[1];
+				if (!ref || !caseId || !caseIds.has(caseId)) missing.push(`${file}:${ref ?? '<missing-ref>'}:${caseId ?? '<missing-case>'}`);
+			}
+		}
+		expect(missing).toEqual([]);
+	});
+
 	it('writes an expanded case report for review without requiring live credentials', async () => {
 		const { mkdtempSync, readFileSync } = await import('node:fs');
 		const { tmpdir } = await import('node:os');

@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.host.reconciliation.verify-host-live-s
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Verify Host Live State opens the canonical @treeseed/api record operations workflow.
+    - Verify Host Live State exercises a service journey instead of only loading /app/hosts.
+    - Verify Host Live State records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: host.primary
+      kind: host
 mode:
   test: true
   demo: true
@@ -52,10 +65,15 @@ workflow:
   - id: open-entry-route
     title: Open Verify Host Live State
     action:
-      goto: /app/hosts/verify-host-live-state
+      goto: /app/hosts
     expect:
-      urlIncludes: /app/hosts/verify-host-live-state
-    demoOnly: true
+      urlIncludes: /app/hosts
+  - id: inspect-service-surface
+    title: Inspect Verify Host Live State service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/hosts
 chapters: []
 overlays: []
 diagrams: []

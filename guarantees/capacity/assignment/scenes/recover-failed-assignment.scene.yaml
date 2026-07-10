@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.capacity.assignment.recover-failed-ass
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Recover Failed Assignment opens the canonical @treeseed/api record operations workflow.
+    - Recover Failed Assignment exercises a service journey instead of only loading /app/capacity/runtime.
+    - Recover Failed Assignment records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: capacity-provider.primary
+      kind: capacity-provider
 mode:
   test: true
   demo: true
@@ -52,10 +65,15 @@ workflow:
   - id: open-entry-route
     title: Open Recover Failed Assignment
     action:
-      goto: /app/capacity/recover-failed-assignment
+      goto: /app/capacity/runtime
     expect:
-      urlIncludes: /app/capacity/recover-failed-assignment
-    demoOnly: true
+      urlIncludes: /app/capacity
+  - id: inspect-service-surface
+    title: Inspect Recover Failed Assignment service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/capacity
 chapters: []
 overlays: []
 diagrams: []

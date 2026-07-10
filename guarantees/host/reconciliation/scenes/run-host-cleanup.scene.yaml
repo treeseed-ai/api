@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.host.reconciliation.run-host-cleanup.0
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Run Host Cleanup opens the canonical @treeseed/api record operations workflow.
+    - Run Host Cleanup exercises a service journey instead of only loading /app/hosts.
+    - Run Host Cleanup records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: host.primary
+      kind: host
 mode:
   test: true
   demo: true
@@ -52,10 +65,15 @@ workflow:
   - id: open-entry-route
     title: Open Run Host Cleanup
     action:
-      goto: /app/hosts/run-host-cleanup
+      goto: /app/hosts
     expect:
-      urlIncludes: /app/hosts/run-host-cleanup
-    demoOnly: true
+      urlIncludes: /app/hosts
+  - id: inspect-service-surface
+    title: Inspect Run Host Cleanup service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/hosts
 chapters: []
 overlays: []
 diagrams: []

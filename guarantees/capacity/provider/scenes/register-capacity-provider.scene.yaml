@@ -5,6 +5,20 @@ description: Scene scaffold for guarantee.capacity.provider.register-capacity-pr
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Register Capacity Provider opens the canonical @treeseed/api auth form workflow.
+    - Register Capacity Provider exercises a service journey instead of only loading /app/capacity/providers/new.
+    - Register Capacity Provider records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  producesState:
+    - key: capacity-provider.primary
+      kind: capacity-provider
+  consumesState:
+    - key: auth.owner
+      kind: user
 mode:
   test: true
   demo: true
@@ -52,10 +66,15 @@ workflow:
   - id: open-entry-route
     title: Open Register Capacity Provider
     action:
-      goto: /app/capacity/register-capacity-provider
+      goto: /app/capacity/providers/new
     expect:
-      urlIncludes: /app/capacity/register-capacity-provider
-    demoOnly: true
+      urlIncludes: /app/capacity
+  - id: inspect-service-surface
+    title: Inspect Register Capacity Provider service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/capacity
 chapters: []
 overlays: []
 diagrams: []

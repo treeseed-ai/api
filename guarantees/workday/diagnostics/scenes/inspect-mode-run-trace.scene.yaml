@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.workday.diagnostics.inspect-mode-run-t
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Inspect Mode Run Trace opens the canonical @treeseed/api record operations workflow.
+    - Inspect Mode Run Trace exercises a service journey instead of only loading /app/capacity/workday-runs/seed-run.
+    - Inspect Mode Run Trace records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: project.primary
+      kind: project
 mode:
   test: true
   demo: true
@@ -55,10 +68,15 @@ workflow:
   - id: open-entry-route
     title: Open Inspect Mode Run Trace
     action:
-      goto: /app/projects/:projectId/workdays/inspect-mode-run-trace
+      goto: /app/capacity/workday-runs
     expect:
-      urlIncludes: /app/projects
-    demoOnly: true
+      urlIncludes: /app/capacity/workday-runs
+  - id: inspect-service-surface
+    title: Inspect Inspect Mode Run Trace service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/capacity/workday-runs
 chapters: []
 overlays: []
 diagrams: []

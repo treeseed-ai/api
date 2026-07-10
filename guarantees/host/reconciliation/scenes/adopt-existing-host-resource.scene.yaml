@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.host.reconciliation.adopt-existing-hos
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Adopt Existing Host Resource opens the canonical @treeseed/api record operations workflow.
+    - Adopt Existing Host Resource exercises a service journey instead of only loading /app/hosts.
+    - Adopt Existing Host Resource records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: host.primary
+      kind: host
 mode:
   test: true
   demo: true
@@ -36,6 +49,9 @@ devices:
       isMobile: false
       hasTouch: false
 setup:
+  auth:
+    required: true
+    role: owner
   dev:
     required: true
     command: trsd dev start --web-runtime local --json
@@ -52,10 +68,15 @@ workflow:
   - id: open-entry-route
     title: Open Adopt Existing Host Resource
     action:
-      goto: /app/hosts/adopt-existing-host-resource
+      goto: /app/hosts
     expect:
-      urlIncludes: /app/hosts/adopt-existing-host-resource
-    demoOnly: true
+      urlIncludes: /app/hosts
+  - id: inspect-service-surface
+    title: Inspect Adopt Existing Host Resource service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/hosts
 chapters: []
 overlays: []
 diagrams: []

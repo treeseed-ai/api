@@ -5,6 +5,19 @@ description: Scene scaffold for Verify TreeDX Access.
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Verify TreeDX Access opens the canonical @treeseed/api dashboard read model workflow.
+    - Verify TreeDX Access exercises a service journey instead of only loading /app/projects/seed-project/knowledge.
+    - Verify TreeDX Access records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: project.primary
+      kind: project
 mode:
   test: true
   demo: true
@@ -36,6 +49,9 @@ devices:
       isMobile: false
       hasTouch: false
 setup:
+  auth:
+    required: true
+    role: owner
   dev:
     required: true
     command: trsd dev start --web-runtime local --json
@@ -52,10 +68,15 @@ workflow:
   - id: open-entry-route
     title: Open Verify TreeDX Access
     action:
-      goto: /app/projects/:projectId/treedx/verify-treedx-access
+      goto: /app/hosts/knowledge-library
     expect:
-      urlIncludes: /app/projects
-    demoOnly: true
+      urlIncludes: /app/hosts/knowledge-library
+  - id: inspect-service-surface
+    title: Inspect Verify TreeDX Access service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/hosts/knowledge-library
 chapters: []
 overlays: []
 diagrams: []

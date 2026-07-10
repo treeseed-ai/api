@@ -110,7 +110,7 @@ describe('local seed apply', () => {
 			} as any);
 
 			expect(applied.plan.summary).toMatchObject({
-				create: 37,
+				create: 39,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -145,7 +145,7 @@ describe('local seed apply', () => {
 			});
 
 			expect(first.plan.summary).toMatchObject({
-				create: 37,
+				create: 39,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -438,7 +438,7 @@ describe('local seed apply', () => {
 			expect(second.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 37,
+				unchanged: 39,
 				skip: 2,
 			});
 			const secondResult = second.result as any;
@@ -473,7 +473,7 @@ describe('local seed apply', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 37,
+				unchanged: 39,
 				skip: 2,
 			});
 			expect((repaired.result as any).repairs).toEqual([
@@ -582,7 +582,7 @@ describe('local seed apply', () => {
 			expect(seedPage.selectedSeed).toBe('treeseed');
 			expect(seedPage.selectedEnvironments).toBe('local');
 			expect(seedPage.plan.summary).toMatchObject({
-				create: 36,
+				create: 38,
 				update: 1,
 				unchanged: 0,
 				skip: 2,

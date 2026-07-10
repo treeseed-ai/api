@@ -677,6 +677,23 @@ resources:
         repository: research
         gitUrl: https://github.com/treeseed-templates/research.git
 
+    - key: product:treeseed/seed-knowledge-pack
+      team: team:treeseed
+      kind: knowledge_pack
+      slug: seed-pack
+      title: TreeSeed Seed Knowledge Pack
+      summary: First-party knowledge import used to prove public pack acquisition, entitlement, and project import workflows.
+      visibility: public
+      listingEnabled: true
+      offerMode: free
+      manifestKey: src/content/knowledge-packs/seed-pack.mdx
+      artifactKey: catalog/treeseed-seed-pack/1.0.0/knowledge-pack
+      searchText: TreeSeed seed knowledge pack public import entitlement project knowledge
+      metadata:
+        provider: treedx
+        owner: treeseed
+        package: seed-pack
+
   catalogArtifacts:
     - key: catalog-artifact:treeseed/market-template/1.0.0
       product: product:treeseed/market-template
@@ -712,6 +729,17 @@ resources:
         owner: treeseed-templates
         repository: research
         gitUrl: https://github.com/treeseed-templates/research.git
+
+    - key: catalog-artifact:treeseed/seed-knowledge-pack/1.0.0
+      product: product:treeseed/seed-knowledge-pack
+      version: 1.0.0
+      kind: knowledge_pack
+      contentKey: catalog/treeseed-seed-pack/1.0.0/knowledge-pack
+      manifestKey: src/content/knowledge-packs/seed-pack.mdx
+      metadata:
+        provider: treedx
+        owner: treeseed
+        package: seed-pack
 
   agentPools: []
 

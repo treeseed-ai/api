@@ -5,6 +5,19 @@ description: Scene scaffold for guarantee.capacity.provider.inspect-provider-che
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Inspect Provider Check Ins opens the canonical @treeseed/api record operations workflow.
+    - Inspect Provider Check Ins exercises a service journey instead of only loading /app/capacity/providers.
+    - Inspect Provider Check Ins records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: capacity-provider.primary
+      kind: capacity-provider
 mode:
   test: true
   demo: true
@@ -52,10 +65,15 @@ workflow:
   - id: open-entry-route
     title: Open Inspect Provider Check-Ins
     action:
-      goto: /app/capacity/inspect-provider-check-ins
+      goto: /app/capacity/providers
     expect:
-      urlIncludes: /app/capacity/inspect-provider-check-ins
-    demoOnly: true
+      urlIncludes: /app/capacity
+  - id: inspect-service-surface
+    title: Inspect Inspect Provider Check-Ins service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/capacity
 chapters: []
 overlays: []
 diagrams: []

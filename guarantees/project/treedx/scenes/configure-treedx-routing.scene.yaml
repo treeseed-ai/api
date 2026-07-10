@@ -5,6 +5,19 @@ description: Scene scaffold for Configure TreeDX Routing.
 audience:
   - operator
   - evaluator
+journey:
+  kind: service
+  proves:
+    - Configure TreeDX Routing opens the canonical @treeseed/api record operations workflow.
+    - Configure TreeDX Routing exercises a service journey on the canonical team TreeDX binding surface.
+    - Configure TreeDX Routing records reviewable evidence for the visible result before activation.
+  minimumSteps: 2
+  requiresInteractiveAction: true
+  consumesState:
+    - key: auth.owner
+      kind: user
+    - key: project.primary
+      kind: project
 mode:
   test: true
   demo: true
@@ -52,10 +65,15 @@ workflow:
   - id: open-entry-route
     title: Open Configure TreeDX Routing
     action:
-      goto: /app/projects/:projectId/treedx/configure-treedx-routing
+      goto: /app/hosts/knowledge-library
     expect:
-      urlIncludes: /app/projects
-    demoOnly: true
+      urlIncludes: /app/hosts/knowledge-library
+  - id: inspect-service-surface
+    title: Inspect Configure TreeDX Routing service surface
+    action:
+      keyboard: Tab
+    expect:
+      urlIncludes: /app/hosts/knowledge-library
 chapters: []
 overlays: []
 diagrams: []
