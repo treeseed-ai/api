@@ -1,32 +1,227 @@
-name: TreeSeed API Deployment Redirect
+name: Deploy TreeSeed API
 
 on:
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: Target environment
-        required: true
-        default: staging
-        type: choice
-        options:
-          - staging
-          - prod
+  push:
+    branches: [staging]
+    tags: ['*.*.*']
+
+concurrency:
+  group: treeseed-api-deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
+  packages: write
+  id-token: write
 
 jobs:
-  redirect:
+  verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: treeseed
+          POSTGRES_PASSWORD: treeseed
+          POSTGRES_DB: treeseed_api
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U treeseed -d treeseed_api"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      mailpit:
+        image: axllent/mailpit:v1.28
+        ports: ['1025:1025', '8025:8025']
+    outputs:
+      production: ${{ steps.target.outputs.production }}
+      version: ${{ steps.target.outputs.version }}
+    env:
+      CI: "true"
+      TREESEED_DATABASE_URL: postgresql://treeseed:treeseed@127.0.0.1:5432/treeseed_api
+      TREESEED_SMTP_HOST: 127.0.0.1
+      TREESEED_SMTP_PORT: "1025"
+      TREESEED_MAILPIT_API_URL: http://127.0.0.1:8025
     steps:
-      - name: Use the root-owned deployment workflow
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Validate deployment target
+        id: target
         shell: bash
         run: |
-          if [[ "${{ inputs.environment }}" == "staging" ]]; then
-            echo "API staging is deployed and proved by the root Treeseed Staging Candidate workflow." >> "${GITHUB_STEP_SUMMARY}"
-            echo "Run: npx trsd stage --json" >> "${GITHUB_STEP_SUMMARY}"
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            [[ "${GITHUB_REF_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            git fetch origin main
+            git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
+            test "$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME}"
+            echo "production=true" >> "${GITHUB_OUTPUT}"
+            echo "version=${GITHUB_REF_NAME}" >> "${GITHUB_OUTPUT}"
           else
-            echo "API production is promoted only from an attested candidate by the root Treeseed Production Release workflow." >> "${GITHUB_STEP_SUMMARY}"
-            echo "Run: npx trsd release --patch --json" >> "${GITHUB_STEP_SUMMARY}"
+            test "${GITHUB_REF_NAME}" = "staging"
+            echo "production=false" >> "${GITHUB_OUTPUT}"
+            echo "version=" >> "${GITHUB_OUTPUT}"
           fi
-          exit 1
+      - run: npm run release:setup
+      - name: Verify API without guarantees
+        run: npm run release:verify
+
+  publish-images:
+    needs: verify
+    if: needs.verify.outputs.production == 'true'
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            suffix: amd64
+          - platform: linux/arm64
+            suffix: arm64
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: api
+          platforms: ${{ matrix.platform }}
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: treeseed/api:${{ needs.verify.outputs.version }}-${{ matrix.suffix }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: operations-runner
+          platforms: ${{ matrix.platform }}
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: treeseed/op-runner:${{ needs.verify.outputs.version }}-${{ matrix.suffix }}
+
+  publish-manifests:
+    needs: [verify, publish-images]
+    if: needs.verify.outputs.production == 'true'
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Publish and verify immutable manifests
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          for image in treeseed/api treeseed/op-runner; do
+            docker buildx imagetools create -t "${image}:${VERSION}" -t "${image}:latest" "${image}:${VERSION}-amd64" "${image}:${VERSION}-arm64"
+            docker buildx imagetools inspect "${image}:${VERSION}"
+            raw="$(docker buildx imagetools inspect --raw "${image}:${VERSION}")"
+            grep -q 'sha256:' <<<"${raw}"
+          done
+
+  deploy-staging:
+    needs: verify
+    if: needs.verify.outputs.production == 'false'
+    runs-on: ubuntu-latest
+    environment: staging
+    env: &hosting_env
+      TREESEED_RAILWAY_API_TOKEN: ${{ secrets.TREESEED_RAILWAY_API_TOKEN }}
+      TREESEED_GITHUB_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN }}
+      TREESEED_CLOUDFLARE_API_TOKEN: ${{ secrets.TREESEED_CLOUDFLARE_API_TOKEN }}
+      TREESEED_CLOUDFLARE_ACCOUNT_ID: ${{ vars.TREESEED_CLOUDFLARE_ACCOUNT_ID }}
+      TREESEED_PLATFORM_RUNNER_SECRET: ${{ secrets.TREESEED_PLATFORM_RUNNER_SECRET }}
+      TREESEED_CREDENTIAL_SESSION_SECRET: ${{ secrets.TREESEED_CREDENTIAL_SESSION_SECRET }}
+      TREESEED_WEB_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET }}
+      TREESEED_WEB_ASSERTION_SECRET: ${{ secrets.TREESEED_WEB_ASSERTION_SECRET }}
+      TREESEED_WEB_CSRF_SECRET: ${{ secrets.TREESEED_WEB_CSRF_SECRET }}
+      TREESEED_BETTER_AUTH_SECRET: ${{ secrets.TREESEED_BETTER_AUTH_SECRET }}
+      TREESEED_FORM_TOKEN_SECRET: ${{ secrets.TREESEED_FORM_TOKEN_SECRET }}
+      TREESEED_EDITORIAL_PREVIEW_SECRET: ${{ secrets.TREESEED_EDITORIAL_PREVIEW_SECRET }}
+      TREESEED_SMTP_HOST: ${{ vars.TREESEED_SMTP_HOST }}
+      TREESEED_SMTP_PORT: ${{ vars.TREESEED_SMTP_PORT }}
+      TREESEED_SMTP_USERNAME: ${{ vars.TREESEED_SMTP_USERNAME }}
+      TREESEED_SMTP_PASSWORD: ${{ secrets.TREESEED_SMTP_PASSWORD }}
+      TREESEED_SMTP_FROM: ${{ vars.TREESEED_SMTP_FROM }}
+      TREESEED_SMTP_REPLY_TO: ${{ vars.TREESEED_SMTP_REPLY_TO }}
+      TREESEED_SMTP_SECURE: ${{ vars.TREESEED_SMTP_SECURE }}
+      TREESEED_TREEDX_ADMIN_TOKEN: ${{ secrets.TREESEED_TREEDX_ADMIN_TOKEN }}
+      TREESEED_TREEDX_SECRET_KEY_BASE: ${{ secrets.TREESEED_TREEDX_SECRET_KEY_BASE }}
+      TREESEED_TREEDX_JWT_HS256_SECRET: ${{ secrets.TREESEED_TREEDX_JWT_HS256_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install exact verified TreeSeed deployment CLI
+        env:
+          GH_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TREESEED_CLI_SHA="$(gh api repos/treeseed-ai/cli/git/ref/heads/staging --jq .object.sha)"
+          run_id=""
+          for attempt in $(seq 1 60); do
+            run_id="$(gh run list --repo treeseed-ai/cli --workflow verify.yml --commit "${TREESEED_CLI_SHA}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            [[ -n "${run_id}" ]] && break
+            sleep 10
+          done
+          test -n "${run_id}"
+          mkdir -p .treeseed/cli-artifact
+          gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
+          npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz
+      - name: Reconcile staging API from Git source
+        run: |
+          npx trsd hosting plan --environment staging --app api --json
+          npx trsd hosting apply --environment staging --app api --json
+          npx trsd hosting verify --environment staging --app api --live --json
+
+  deploy-production:
+    needs: [verify, publish-manifests]
+    if: needs.verify.outputs.production == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    env: *hosting_env
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install exact verified TreeSeed deployment CLI
+        env:
+          GH_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TREESEED_CLI_SHA="$(gh api repos/treeseed-ai/cli/git/ref/heads/main --jq .object.sha)"
+          run_id=""
+          for attempt in $(seq 1 60); do
+            run_id="$(gh run list --repo treeseed-ai/cli --workflow verify.yml --commit "${TREESEED_CLI_SHA}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            [[ -n "${run_id}" ]] && break
+            sleep 10
+          done
+          test -n "${run_id}"
+          mkdir -p .treeseed/cli-artifact
+          gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
+          npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz
+      - name: Reconcile production API from published images
+        env:
+          TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}
+          TREESEED_OPERATIONS_RUNNER_IMAGE_REF: treeseed/op-runner:${{ needs.verify.outputs.version }}
+        run: |
+          npx trsd hosting plan --environment prod --app api --json
+          npx trsd hosting apply --environment prod --app api --json
+          npx trsd hosting verify --environment prod --app api --live --json

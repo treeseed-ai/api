@@ -1,37 +1,72 @@
-name: Verify TreeSeed API
+name: Verify TreeSeed API and Agent Guarantees
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Live environment to verify
+        required: true
+        default: staging
+        type: choice
+        options: [staging, prod]
+
+permissions:
+  contents: read
 
 jobs:
-  verify:
+  guarantees:
     runs-on: ubuntu-latest
-    services:
-      mailpit:
-        image: axllent/mailpit:v1.21
-        ports:
-          - 1025:1025
-          - 8025:8025
+    timeout-minutes: 120
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'staging' }}
     env:
-      TREESEED_MAILPIT_URL: http://127.0.0.1:8025
-      TREESEED_MAILPIT_SMTP_HOST: 127.0.0.1
-      TREESEED_MAILPIT_SMTP_PORT: "1025"
+      CI: "true"
+      TREESEED_AGENT_GUARANTEE_EXECUTION_PROVIDER: mock
+      TREESEED_GITHUB_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN }}
+      TREESEED_RAILWAY_API_TOKEN: ${{ secrets.TREESEED_RAILWAY_API_TOKEN }}
+      TREESEED_CLOUDFLARE_API_TOKEN: ${{ secrets.TREESEED_CLOUDFLARE_API_TOKEN }}
+      TREESEED_CLOUDFLARE_ACCOUNT_ID: ${{ vars.TREESEED_CLOUDFLARE_ACCOUNT_ID }}
+      TREESEED_WEB_SERVICE_SECRET: ${{ secrets.TREESEED_WEB_SERVICE_SECRET }}
+      TREESEED_ACCEPTANCE_SERVICE_ID: ${{ vars.TREESEED_ACCEPTANCE_SERVICE_ID || vars.TREESEED_WEB_SERVICE_ID || 'web' }}
+      TREESEED_ACCEPTANCE_SERVICE_SECRET: ${{ secrets.TREESEED_ACCEPTANCE_SERVICE_SECRET || secrets.TREESEED_WEB_SERVICE_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with:
+          repository: knowledge-coop/market
+          ref: ${{ inputs.environment == 'prod' && 'main' || 'staging' }}
+          token: ${{ secrets.TREESEED_GITHUB_TOKEN }}
           submodules: recursive
+          path: workspace
+      - name: Overlay API revision under test
+        run: rm -rf workspace/packages/api
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: workspace/packages/api
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm run release:setup
-      - name: Wait for Mailpit
+          node-version: 24.12.0
+          cache: npm
+          cache-dependency-path: workspace/package-lock.json
+      - name: Prepare guarantee operator
+        working-directory: workspace
         run: |
-          for attempt in {1..30}; do
-            if curl -fsS http://127.0.0.1:8025/api/v1/messages >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Mailpit did not become ready" >&2
-          exit 1
-      - run: bash -lc 'npm run verify:local'
+          npx --yes tsx ./.github/scripts/prepare-workspace-install.ts
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm -w packages/sdk run build:dist
+          npm -w packages/cli run build:dist
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Run API and Agent guarantees against live environment
+        working-directory: workspace
+        run: |
+          mkdir -p .treeseed/workflow/release-gates
+          node packages/cli/dist/cli/main.js guarantees run --environment "${{ inputs.environment }}" --owner-package '@treeseed/api,@treeseed/agent' --no-dependencies --scene-artifacts screenshots --json | tee .treeseed/workflow/release-gates/api-agent.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-agent-guarantees-${{ inputs.environment }}-${{ github.run_id }}
+          path: |
+            workspace/.treeseed/workflow/release-gates/**
+            workspace/.treeseed/guarantees/runs/**
+            workspace/.treeseed/scenes/runs/**
+          if-no-files-found: warn
+          retention-days: 30

@@ -37,14 +37,14 @@ describe('API deploy workflow', () => {
 			.filter((entry) => pushBranches(entry.parsed).some((branch) => branch === '*' || branch === 'staging'))
 			.map((entry) => entry.file);
 
-		expect(stagingPushWorkflows).toEqual([]);
+		expect(stagingPushWorkflows).toEqual(['deploy.yml']);
 		for (const entry of workflowEntries) {
 			expect(entry.source).not.toMatch(/node_modules\/@treeseed\/[^/\s]+\/src\//u);
 			expect(entry.source).not.toMatch(/@treeseed\/cli\/src\//u);
 		}
 	});
 
-	it('keeps package verification local and redirects deployment to root-owned workflows', () => {
+	it('verifies before source staging and image-backed production deployment', () => {
 		const pkg = packageJson();
 		const deploy = workflow('.github/workflows/deploy.yml');
 		const releaseGate = workflow('.github/workflows/release-gate.yml');
@@ -58,19 +58,26 @@ describe('API deploy workflow', () => {
 			workflow: 'verify.yml',
 			timeoutSeconds: 1800,
 		});
-		expect(deploy.name).toBe('TreeSeed API Deployment Redirect');
-		expect(deploy.on.push).toBeUndefined();
+		expect(manifest.dockerImages.releaseWorkflow).toBe('deploy.yml');
+		expect(deploy.name).toBe('Deploy TreeSeed API');
+		expect(deploy.on.push.branches).toEqual(['staging']);
+		expect(deploy.on.push.tags).toEqual(['*.*.*']);
 		expect(JSON.stringify(releaseGate.on)).not.toContain('push');
 		expect(JSON.stringify(verify.on)).toContain('push');
 		expect(pkg.devDependencies).not.toHaveProperty('@treeseed/cli');
 
-		const deployRun = JSON.stringify(deploy.jobs.redirect);
-		expect(deployRun).toContain('root Treeseed Staging Candidate workflow');
-		expect(deployRun).toContain('root Treeseed Production Release workflow');
-		expect(deployRun).toContain('npx trsd stage --json');
-		expect(deployRun).toContain('npx trsd release --patch --json');
-		expect(deployRun).not.toContain('npm ci');
-		expect(deployRun).not.toContain('treeseed-install-deps-chunk');
-		expect(deployRun).not.toContain('Install dependencies chunk');
+		expect(deploy.jobs['deploy-staging'].needs).toBe('verify');
+		expect(deploy.jobs['deploy-production'].needs).toEqual(['verify', 'publish-manifests']);
+		const deploySource = readFileSync('.github/workflows/deploy.yml', 'utf8');
+		expect(deploySource).toContain('git merge-base --is-ancestor "${GITHUB_SHA}" origin/main');
+		expect(deploySource).toContain('target: api');
+		expect(deploySource).toContain('target: operations-runner');
+		expect(deploySource).toContain('TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}');
+		expect(deploySource).toContain('hosting verify --environment staging --app api --live --json');
+		expect(deploySource).toContain('hosting verify --environment prod --app api --live --json');
+		expect(deploySource).toContain('gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}"');
+		expect(deploySource).not.toContain('guarantees run');
+		expect(readFileSync('.github/workflows/release-gate.yml', 'utf8')).toContain("--owner-package '@treeseed/api,@treeseed/agent' --no-dependencies");
+		expect(workflowFiles()).not.toContain('publish.yml');
 	});
 });
