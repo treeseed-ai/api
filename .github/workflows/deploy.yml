@@ -183,6 +183,7 @@ jobs:
           mkdir -p .treeseed/cli-artifact
           gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
           npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz
+          node -e "import('./node_modules/@treeseed/cli/dist/cli/runtime.js')"
       - name: Reconcile staging API from Git source
         run: |
           npx trsd hosting plan --environment staging --app api --json
@@ -217,6 +218,7 @@ jobs:
           mkdir -p .treeseed/cli-artifact
           gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
           npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz
+          node -e "import('./node_modules/@treeseed/cli/dist/cli/runtime.js')"
       - name: Reconcile production API from published images
         env:
           TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}
