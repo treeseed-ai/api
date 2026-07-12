@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.6.43] - 2026-07-12
+
+### Added
+
+- feat(config): Declare API SMTP runtime configuration for staged auth (2680e06c5f3b)
+- feat(config): guard API deploy proof workflow (06a9c5f67c39)
+
+### Fixed
+
+- build(build): fix stage completion and API SMTP routing (50ad6e48fd37)
+- build(build): Bind hosted API SMTP settings from root staging registry (1f19bffaa927)
+- build(build): fix staging candidate credential handoff (f307f6c97d15)
+- ci(ci): fix API deploy CLI package entrypoint (fbaa344a7468)
+- build(build): lock in UI shell architecture and test fixes (88320ace8479)
+
+### Infrastructure
+
+- ci(ci): release guarantee reviewer and coverage updates (6c3610cec60d)
+- ci(ci): release guarantee reviewer and coverage updates (4a28f03b1b21)
+
+### Tests
+
+- ci(ci): support published SDK dependencies in API verification (734fa0e74443)
+- build(build): verify local-only reviewer through workspace links (b258f28f312d)
+- ci(ci): Verify API deployment CLI artifact hydration (8b643ea1cd69)
+- ci(ci): Standardize verify release-gate and deploy workflows (5bc986f028f8)
+- ci(ci): recover reliable save stage release workflow (a4034d08b8fd)
+- ci(ci): release guarantee reviewer and coverage updates (8b3a1fa7d14b)
+- ci(build): release guarantee reviewer and coverage updates (cc4e7a664fed)
+- ci(ci): release guarantee reviewer and coverage updates (1e9de2ac2a9c)
+- test(tests): release guarantee reviewer and coverage updates (1621d97c14fc)
+- build(config): release guarantee reviewer and coverage updates (655c6119aa95)
+- build(config): release guarantee reviewer and coverage updates (0ac64b75d06f)
+- ci(ci): version API deploy concurrency guard (950b5ce3b4d5)
+- ci(ci): bound API deploy workflow runs (d8efc66ce9f5)
+- ci(ci): guard API deploy workflow install (06a33c0f4fc8)
+- ci(ci): guard API workflow entrypoints and staging fanout (26069f505b32)
+- ci(ci): guard API workflow entrypoints and staging fanout (95b06011c07a)
+- ci(ci): guard API workflow entrypoints and staging fanout (9245ed52cd74)
+- ci(ci): guard API workflow entrypoints and staging fanout (93bcc5d98510)
+- ci(build): guard API workflow entrypoints and staging fanout (42beb6d4439d)
+- ci(ci): use light API deploy install (5db501246783)
+- 3 additional changes omitted from this summary.
+
+### Dependencies
+
+- build(build): preserve registry dependency lock semantics (32745ea6caf6)
+- build(build): resume release after Hex credential rotation (f22bef36e057)
+- build(deps): update @treeseed/sdk dependency (f88db85a6318)
+- build(build): reuse staged package closure during release verification (d429d96e3bc9)
+- build(build): resolve managed release tooling and stale checkout (a5f51bc99558)
+- build(build): resolve managed release tooling and stale checkout (7788c3e9c688)
+- build(build): allow Railway deployments to settle before live (edc156fc09e9)
+- build(build): restore workspace links after release dependency hydration (6af4805e371f)
+- build(build): restore workspace links after release dependency hydration (1d663a9be579)
+- build(build): hydrate missing package dependencies before release (9a24147c3b2b)
+- build(build): avoid release tag collisions after partial publication (2ba71c3e10c6)
+- build(deps): update @treeseed/sdk pointer (ee03d3f1203e)
+- build(api): bump version to 0.6.40 and update dependencies (71fd49f9b1dd)
+- build(deps): update @treeseed/sdk git reference (b21f4c284dd8)
+- chore(deps): update @treeseed/sdk dependency pointer (d8b63ad4dc21)
+- chore(deps): update @treeseed/sdk dependency pointer (209c1bbc55c0)
+- build(deps): update @treeseed/sdk dependency pointer (2094f184d85c)
+- build(deps): bump version to 0.6.40 and update @treeseed/sdk (45a606514d3e)
+- build(build): Exclude verification-only packages from release (79d7b512a79c)
+- build(build): seed verified login fixture without browser session (93105ed96c77)
+- 10 additional changes omitted from this summary.
+
 ## [0.6.39] - 2026-07-06
 
 ### Fixed
