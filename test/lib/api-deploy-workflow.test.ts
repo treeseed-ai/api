@@ -73,6 +73,8 @@ describe('API deploy workflow', () => {
 		expect(deploySource).toContain('target: api');
 		expect(deploySource).toContain('target: operations-runner');
 		expect(deploySource).toContain('TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}');
+		expect(deploySource).toContain('TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF }}');
+		expect(deploySource).toContain('test -n "${TREESEED_PUBLIC_TREEDX_IMAGE_REF}"');
 		expect(deploySource).toContain('hosting verify --environment staging --app api --live --json');
 		expect(deploySource).toContain('hosting verify --environment prod --app api --live --json');
 		expect(deploySource).toContain('gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}"');

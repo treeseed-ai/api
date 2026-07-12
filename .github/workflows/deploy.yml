@@ -223,7 +223,10 @@ jobs:
         env:
           TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}
           TREESEED_OPERATIONS_RUNNER_IMAGE_REF: treeseed/op-runner:${{ needs.verify.outputs.version }}
+          TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF }}
         run: |
+          test -n "${TREESEED_PUBLIC_TREEDX_IMAGE_REF}"
+          [[ "${TREESEED_PUBLIC_TREEDX_IMAGE_REF}" =~ ^[^:[:space:]]+:[0-9]+\.[0-9]+\.[0-9]+$ ]]
           npx trsd hosting plan --environment prod --app api --json
           npx trsd hosting apply --environment prod --app api --json
           npx trsd hosting verify --environment prod --app api --live --json
