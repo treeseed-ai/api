@@ -59,6 +59,11 @@ describe('API deploy workflow', () => {
 			timeoutSeconds: 1800,
 		});
 		expect(manifest.dockerImages.releaseWorkflow).toBe('deploy.yml');
+		expect(manifest.requiredSecrets).toEqual(expect.arrayContaining([
+			'TREESEED_TREEDX_ADMIN_TOKEN',
+			'TREESEED_TREEDX_SECRET_KEY_BASE',
+			'TREESEED_TREEDX_JWT_HS256_SECRET',
+		]));
 		expect(deploy.name).toBe('Deploy TreeSeed API');
 		expect(deploy.on.push.branches).toEqual(['staging']);
 		expect(deploy.on.push.tags).toEqual(['*.*.*']);

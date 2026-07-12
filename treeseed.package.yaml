@@ -14,6 +14,9 @@ githubEnvironments:
   - production
 requiredSecrets:
   - TREESEED_DOCKERHUB_TOKEN
+  - TREESEED_TREEDX_ADMIN_TOKEN
+  - TREESEED_TREEDX_SECRET_KEY_BASE
+  - TREESEED_TREEDX_JWT_HS256_SECRET
 requiredVariables:
   - TREESEED_DOCKERHUB_USERNAME
 verify:
