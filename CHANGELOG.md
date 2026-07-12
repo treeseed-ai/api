@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.46] - 2026-07-12
+
+### Dependencies
+
+- build(deps): update @treeseed/sdk dependency pointer (c0cde5fbbf48)
+
 ## [0.6.45] - 2026-07-12
 
 ### Tests
