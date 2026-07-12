@@ -43,7 +43,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sdk_sha="$(node -e "const spec=require('./package.json').dependencies['@treeseed/sdk']; const match=spec.match(/#([0-9a-f]{40})$/); if(!match) process.exit(1); process.stdout.write(match[1]);")"
+          sdk_sha="$(node -e "const spec=require('./package.json').dependencies['@treeseed/sdk']; const match=spec.match(/#([0-9a-f]{40})$/); process.stdout.write(match?.[1] ?? '');")"
+          if [[ -z "${sdk_sha}" ]]; then
+            echo "Using the exact published SDK version declared by package.json."
+            exit 0
+          fi
           run_id=""
           for attempt in {1..120}; do
             run_id="$(gh run list --repo treeseed-ai/sdk --workflow verify.yml --commit "${sdk_sha}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
@@ -58,9 +62,14 @@ jobs:
         timeout-minutes: 20
         run: |
           npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
-          rm -rf node_modules/@treeseed/sdk
-          mkdir -p node_modules/@treeseed/sdk
-          tar -xzf "$(find artifacts/sdk -name '*.tgz' -type f -print -quit)" --strip-components=1 -C node_modules/@treeseed/sdk
+          sdk_archive="$(find artifacts/sdk -name '*.tgz' -type f -print -quit 2>/dev/null || true)"
+          if [[ -n "${sdk_archive}" ]]; then
+            rm -rf node_modules/@treeseed/sdk
+            mkdir -p node_modules/@treeseed/sdk
+            tar -xzf "${sdk_archive}" --strip-components=1 -C node_modules/@treeseed/sdk
+          else
+            node -e "const expected=require('./package.json').dependencies['@treeseed/sdk']; const actual=require('./node_modules/@treeseed/sdk/package.json').version; if(actual!==expected) throw new Error('SDK version mismatch: expected '+expected+', received '+actual);"
+          fi
           test -f node_modules/@treeseed/sdk/package.json
           test -d node_modules/@treeseed/sdk/dist
       - name: Wait for Mailpit
