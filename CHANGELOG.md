@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.45] - 2026-07-12
+
+### Tests
+
+- build(build): sync package dependency references (9b97484a28ed)
+
 ## [0.6.44] - 2026-07-12
 
 ### Tests
