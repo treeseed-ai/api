@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.44] - 2026-07-12
+
+### Tests
+
+- ci(deploy): add TREESEED_PUBLIC_TREEDX_IMAGE_REF and update SDK (074f752b22dc)
+
 ## [0.6.43] - 2026-07-12
 
 ### Added
