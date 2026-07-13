@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.51] - 2026-07-13
+
+### Dependencies
+
+- build(build): retain declared sibling operations runner resources (5802bb16caca)
+- build(build): reattach production Railway domains to exact desired (e7b21d1a3814)
+
 ## [0.6.50] - 2026-07-13
 
 ### Dependencies
