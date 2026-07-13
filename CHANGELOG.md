@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.53] - 2026-07-13
+
+### Fixed
+
+- build(build): fix selective release metadata for verification-only (b263b63e0e09)
+
+### Dependencies
+
+- build(build): scope release validation to selected packages (dda3b29d5c6e)
+
 ## [0.6.51] - 2026-07-13
 
 ### Dependencies
