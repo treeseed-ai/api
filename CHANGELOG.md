@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.48] - 2026-07-13
+
+### Dependencies
+
+- build(build): sync package dependency references (b724312d0343)
+
 ## [0.6.47] - 2026-07-12
 
 ### Dependencies
