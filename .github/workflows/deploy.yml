@@ -175,11 +175,24 @@ jobs:
           TREESEED_CLI_SHA="$(gh api repos/treeseed-ai/cli/git/ref/heads/staging --jq .object.sha)"
           run_id=""
           for attempt in $(seq 1 60); do
-            run_id="$(gh run list --repo treeseed-ai/cli --workflow verify.yml --commit "${TREESEED_CLI_SHA}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-            [[ -n "${run_id}" ]] && break
+            run_state="$(gh run list --repo treeseed-ai/cli --workflow verify.yml --commit "${TREESEED_CLI_SHA}" --limit 1 --json databaseId,status,conclusion --jq '.[0] | [.databaseId, .status, .conclusion] | @tsv')"
+            if [[ -n "${run_state}" ]]; then
+              IFS=$'\t' read -r candidate_run_id run_status run_conclusion <<< "${run_state}"
+              if [[ "${run_status}" == "completed" ]]; then
+                if [[ "${run_conclusion}" == "success" ]]; then
+                  run_id="${candidate_run_id}"
+                  break
+                fi
+                echo "::error::CLI verify.yml for exact SHA ${TREESEED_CLI_SHA} completed with ${run_conclusion}; refusing to wait for an impossible success."
+                exit 1
+              fi
+            fi
             sleep 10
           done
-          test -n "${run_id}"
+          if [[ -z "${run_id}" ]]; then
+            echo "::error::Timed out waiting for CLI verify.yml for exact SHA ${TREESEED_CLI_SHA}."
+            exit 1
+          fi
           mkdir -p .treeseed/cli-artifact
           gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
           npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz
@@ -210,11 +223,24 @@ jobs:
           TREESEED_CLI_SHA="$(gh api repos/treeseed-ai/cli/git/ref/heads/main --jq .object.sha)"
           run_id=""
           for attempt in $(seq 1 60); do
-            run_id="$(gh run list --repo treeseed-ai/cli --workflow verify.yml --commit "${TREESEED_CLI_SHA}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-            [[ -n "${run_id}" ]] && break
+            run_state="$(gh run list --repo treeseed-ai/cli --workflow verify.yml --commit "${TREESEED_CLI_SHA}" --limit 1 --json databaseId,status,conclusion --jq '.[0] | [.databaseId, .status, .conclusion] | @tsv')"
+            if [[ -n "${run_state}" ]]; then
+              IFS=$'\t' read -r candidate_run_id run_status run_conclusion <<< "${run_state}"
+              if [[ "${run_status}" == "completed" ]]; then
+                if [[ "${run_conclusion}" == "success" ]]; then
+                  run_id="${candidate_run_id}"
+                  break
+                fi
+                echo "::error::CLI verify.yml for exact SHA ${TREESEED_CLI_SHA} completed with ${run_conclusion}; refusing to wait for an impossible success."
+                exit 1
+              fi
+            fi
             sleep 10
           done
-          test -n "${run_id}"
+          if [[ -z "${run_id}" ]]; then
+            echo "::error::Timed out waiting for CLI verify.yml for exact SHA ${TREESEED_CLI_SHA}."
+            exit 1
+          fi
           mkdir -p .treeseed/cli-artifact
           gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
           npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz

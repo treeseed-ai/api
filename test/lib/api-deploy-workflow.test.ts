@@ -83,6 +83,9 @@ describe('API deploy workflow', () => {
 		expect(deploySource).toContain('hosting verify --environment staging --app api --live --json');
 		expect(deploySource).toContain('hosting verify --environment prod --app api --live --json');
 		expect(deploySource).toContain('gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}"');
+		expect(deploySource).toContain('refusing to wait for an impossible success');
+		expect(deploySource).toContain('Timed out waiting for CLI verify.yml for exact SHA');
+		expect(deploySource).not.toContain('--status success');
 		expect(deploySource).not.toContain('guarantees run');
 		expect(readFileSync('.github/workflows/release-gate.yml', 'utf8')).toContain("--owner-package '@treeseed/api,@treeseed/agent' --no-dependencies");
 		expect(workflowFiles()).not.toContain('publish.yml');
