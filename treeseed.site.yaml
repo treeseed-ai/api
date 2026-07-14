@@ -58,7 +58,6 @@ services:
         railwayEnvironment: staging
       prod:
         railwayEnvironment: prod
-        railwayServiceName: treeseed-api-production
   operationsRunner:
     enabled: true
     provider: railway
@@ -88,7 +87,6 @@ services:
         railwayEnvironment: staging
       prod:
         railwayEnvironment: prod
-        railwayServiceName: treeseed-api-operations-runner-production
 publicTreeDxFederation:
   railway:
     nodePool:
