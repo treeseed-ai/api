@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.55] - 2026-07-14
+
+### Dependencies
+
+- build(build): prevent stale stage auto-resume after candidate heads (478a726909c7)
+- build(build): allow retained production aliases during staging (57d0c5d35df0)
+- build(build): deduplicate Railway API services and enforce canonical (3a1d458d858d)
+
 ## [0.6.54] - 2026-07-14
 
 ### Fixed
