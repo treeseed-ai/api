@@ -230,3 +230,9 @@ jobs:
           npx trsd hosting plan --environment prod --app api --json
           npx trsd hosting apply --environment prod --app api --json
           npx trsd hosting verify --environment prod --app api --live --json
+      - name: Verify staging Git source remained invariant
+        run: |
+          set -euo pipefail
+          git fetch origin staging
+          git checkout --detach origin/staging
+          npx trsd hosting verify --environment staging --app api --live --json
