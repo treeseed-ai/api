@@ -1,6 +1,7 @@
 name: Deploy TreeSeed API
 
 on:
+  workflow_dispatch:
   push:
     branches: [staging]
     tags: ['*.*.*']

@@ -65,6 +65,7 @@ describe('API deploy workflow', () => {
 			'TREESEED_TREEDX_JWT_HS256_SECRET',
 		]));
 		expect(deploy.name).toBe('Deploy TreeSeed API');
+		expect(deploy.on.workflow_dispatch).toBeNull();
 		expect(deploy.on.push.branches).toEqual(['staging']);
 		expect(deploy.on.push.tags).toEqual(['*.*.*']);
 		expect(JSON.stringify(releaseGate.on)).not.toContain('push');
