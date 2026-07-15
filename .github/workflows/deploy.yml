@@ -246,7 +246,7 @@ jobs:
           gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
           npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz
           node -e "import('./node_modules/@treeseed/cli/dist/cli/runtime.js')"
-      - name: Reconcile production API from published images
+      - name: Plan production API from published images
         env:
           TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}
           TREESEED_OPERATIONS_RUNNER_IMAGE_REF: treeseed/op-runner:${{ needs.verify.outputs.version }}
@@ -255,8 +255,60 @@ jobs:
           test -n "${TREESEED_PUBLIC_TREEDX_IMAGE_REF}"
           [[ "${TREESEED_PUBLIC_TREEDX_IMAGE_REF}" =~ ^[^:[:space:]]+:[0-9]+\.[0-9]+\.[0-9]+$ ]]
           npx trsd hosting plan --environment prod --app api --json
+      - name: Apply production API from published images
+        env:
+          TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}
+          TREESEED_OPERATIONS_RUNNER_IMAGE_REF: treeseed/op-runner:${{ needs.verify.outputs.version }}
+          TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF }}
+        run: |
           npx trsd hosting apply --environment prod --app api --json
+      - name: Verify production API
+        env:
+          TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}
+          TREESEED_OPERATIONS_RUNNER_IMAGE_REF: treeseed/op-runner:${{ needs.verify.outputs.version }}
+          TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF }}
+        run: |
           npx trsd hosting verify --environment prod --app api --live --json
+
+  verify-staging-invariance:
+    needs: [verify, deploy-production]
+    if: needs.verify.outputs.production == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    env: *hosting_env
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install verified production CLI artifact
+        env:
+          GH_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TREESEED_CLI_SHA="$(gh api repos/treeseed-ai/cli/git/ref/heads/main --jq .object.sha)"
+          run_id=""
+          for attempt in $(seq 1 60); do
+            run_state="$(gh run list --repo treeseed-ai/cli --workflow verify.yml --commit "${TREESEED_CLI_SHA}" --limit 1 --json databaseId,status,conclusion --jq '.[0] | [.databaseId, .status, .conclusion] | @tsv')"
+            if [[ -n "${run_state}" ]]; then
+              IFS=$'\t' read -r candidate_run_id run_status run_conclusion <<< "${run_state}"
+              if [[ "${run_status}" == "completed" ]]; then
+                if [[ "${run_conclusion}" == "success" ]]; then
+                  run_id="${candidate_run_id}"
+                  break
+                fi
+                echo "::error::CLI verify.yml for exact SHA ${TREESEED_CLI_SHA} completed with ${run_conclusion}."
+                exit 1
+              fi
+            fi
+            sleep 10
+          done
+          test -n "${run_id}"
+          mkdir -p .treeseed/cli-artifact
+          gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}" --dir .treeseed/cli-artifact
+          npm install --no-save --ignore-scripts --no-audit --no-fund .treeseed/cli-artifact/*.tgz
+          node -e "import('./node_modules/@treeseed/cli/dist/cli/runtime.js')"
       - name: Verify staging Git source remained invariant
         run: |
           set -euo pipefail

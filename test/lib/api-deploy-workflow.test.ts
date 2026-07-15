@@ -74,6 +74,13 @@ describe('API deploy workflow', () => {
 
 		expect(deploy.jobs['deploy-staging'].needs).toBe('verify');
 		expect(deploy.jobs['deploy-production'].needs).toEqual(['verify', 'publish-manifests']);
+		expect(deploy.jobs['verify-staging-invariance'].needs).toEqual(['verify', 'deploy-production']);
+		const productionCommands = deploy.jobs['deploy-production'].steps.map((step: any) => step.run ?? '').join('\n');
+		const invarianceCommands = deploy.jobs['verify-staging-invariance'].steps.map((step: any) => step.run ?? '').join('\n');
+		expect(productionCommands).not.toContain('hosting verify --environment staging');
+		expect(invarianceCommands).toContain('gh run download');
+		expect(invarianceCommands).toContain('cli-${TREESEED_CLI_SHA}');
+		expect(invarianceCommands).toContain('hosting verify --environment staging --app api --live --json');
 		const deploySource = readFileSync('.github/workflows/deploy.yml', 'utf8');
 		expect(deploySource).toContain('git merge-base --is-ancestor "${GITHUB_SHA}" origin/main');
 		expect(deploySource).toContain('target: api');
