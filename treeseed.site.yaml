@@ -66,7 +66,7 @@ services:
     rootDir: .
     railway:
       projectName: treeseed-api
-      serviceName: treeseed-api-operations-runner-01
+      serviceName: treeseed-ops-01
       rootDir: .
       imageRefEnv: TREESEED_OPERATIONS_RUNNER_IMAGE_REF
       sourceMode: git
@@ -78,7 +78,7 @@ services:
       runtimeMode: service
       volumeMountPath: /data
       runnerPool:
-        bootstrapCount: 1
+        bootstrapCount: 2
         maxRunners: 4
         volumeMountPath: /data
     environments:
@@ -87,14 +87,14 @@ services:
         railwayEnvironment: local
       staging:
         railwayEnvironment: staging
-        serviceName: treeseed-api-operations-runner-staging-01
+        serviceName: treeseed-ops-staging-01
       prod:
         railwayEnvironment: prod
-        serviceName: treeseed-api-operations-runner-production-01
+        serviceName: treeseed-ops-production-01
 publicTreeDxFederation:
   railway:
     nodePool:
-      bootstrapCount: 1
+      bootstrapCount: 2
       maxNodes: 4
 providers:
   operations: api
