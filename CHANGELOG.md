@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.57] - 2026-07-15
+
+### Fixed
+
+- build(deps): update @treeseed/sdk to github commit (5dc67c4d293f)
+
 ## [0.6.56] - 2026-07-15
 
 ### Tests
