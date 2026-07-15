@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.6.56] - 2026-07-15
+
+### Tests
+
+- ci(ci): make API staging deployment safely retryable (e0df9b97ef81)
+- ci(ci): fail fast on conclusive deployment CLI verification (cd448ba7c14f)
+
+### Dependencies
+
+- build(build): archive stale stage resumes after repository heads (a43bca802de7)
+- build(build): wait for Railway deployments before live hosting (ea8edde0bd1c)
+- build(build): honor package deployment capabilities during staging (c2d32c5ec265)
+- build(deps): update @treeseed/sdk dependency pointer (c89005c0382a)
+- chore(deps): update @treeseed/sdk (62a04414532c)
+- build(build): sync package dependency references (28993b682fce)
+- build(build): enforce SDK-first Railway reconciliation (cbbede2915ff)
+- build(build): wait for Railway volume detach propagation (6be36723b7f0)
+- build(build): bound remote Git workflow probes (f40d485a1ca6)
+- build(build): handle orphaned Railway volume migration (3490cb470cb3)
+- build(build): use Railway SDK for environment patch operations (4a6f2789975e)
+- build(build): classify stale Railway attachments from blocker records (8cfa3fec65eb)
+- build(build): scope Railway migration cleanup to target environment (e3ff26b9064b)
+- build(build): resolve qualified Railway service from project inventory (c2ee84204bd0)
+- build(build): unblock exact inactive Railway migration attachment (2e59e2b6bb82)
+- build(deps): update @treeseed/sdk dependency pointer (0f6aa57f0daf)
+- build(build): commit Railway restored volume patch (d455839989f3)
+- build(build): restore Railway volumes through native source snapshots (0dd2725edabe)
+- build(build): retry Railway backup propagation safely (2403be54f10e)
+- build(build): treat Railway backup workflows as opaque (a90e72b6c7ea)
+- 3 additional changes omitted from this summary.
+
 ## [0.6.55] - 2026-07-14
 
 ### Dependencies
