@@ -6,14 +6,10 @@ subtype: reconciliation
 journey: Verify Host Live State
 ownerPackage: "@treeseed/api"
 summary: Refresh provider state and verify postconditions after reconciliation; ok true is valid only after live observation passes.
-status: active
+status: planned
 dependencies:
-  journeys:
-    - 23
-    - 24
-  guarantees:
-    - guarantee.host.host.create-host.023
-    - guarantee.host.host.edit-host.024
+  journeys: []
+  guarantees: []
 actors:
   allowed:
     - host_operator

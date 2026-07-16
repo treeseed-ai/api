@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Review Host Drift
 ownerPackage: "@treeseed/api"
 summary: Show missing stale duplicate misnamed detached or undeclared Treeseed-owned resources and require an explicit plan action for each drift item.
-status: active
+status: planned
 dependencies:
   journeys:
     - 75

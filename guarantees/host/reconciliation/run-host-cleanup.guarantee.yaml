@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Run Host Cleanup
 ownerPackage: "@treeseed/api"
 summary: Destroy isolated or stale Treeseed-owned resources through reconciliation cleanup flows with live verification after deletion.
-status: active
+status: planned
 dependencies:
   journeys:
     - 76

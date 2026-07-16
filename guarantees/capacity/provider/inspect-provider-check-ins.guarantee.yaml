@@ -6,7 +6,7 @@ subtype: provider
 journey: Inspect Provider Check-Ins
 ownerPackage: "@treeseed/api"
 summary: Show provider manager heartbeat capabilities runner count availability windows and diagnostics from API control-plane records.
-status: active
+status: planned
 dependencies:
   journeys:
     - 80

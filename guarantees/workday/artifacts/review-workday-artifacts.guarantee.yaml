@@ -6,12 +6,10 @@ subtype: artifacts
 journey: Review Workday Artifacts
 ownerPackage: "@treeseed/api"
 summary: Inspect generated questions proposals notes knowledge pages summaries and reports with links to agent execution and TreeDX content refs.
-status: active
+status: planned
 dependencies:
-  journeys:
-    - 63
-  guarantees:
-    - guarantee.workday.workday.monitor-workdays.063
+  journeys: []
+  guarantees: []
 actors:
   allowed:
     - project_manager

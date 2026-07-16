@@ -6,7 +6,7 @@ subtype: assignment
 journey: Recover Failed Assignment
 ownerPackage: "@treeseed/api"
 summary: Return expire or retry a failed assignment with traceable reason while preserving API lease and settlement integrity.
-status: active
+status: planned
 dependencies:
   journeys:
     - 82

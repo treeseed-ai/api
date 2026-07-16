@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Adopt Existing Host Resource
 ownerPackage: "@treeseed/api"
 summary: Attach an existing provider resource to Treeseed desired state with lineage and ownership instead of ignoring or manually mutating it.
-status: active
+status: planned
 dependencies:
   journeys:
     - 76

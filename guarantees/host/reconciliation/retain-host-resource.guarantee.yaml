@@ -6,7 +6,7 @@ subtype: reconciliation
 journey: Retain Host Resource
 ownerPackage: "@treeseed/api"
 summary: Mark an undeclared or removed resource as intentionally retained with a reason so exact-state reconciliation does not silently ignore it.
-status: active
+status: planned
 dependencies:
   journeys:
     - 76

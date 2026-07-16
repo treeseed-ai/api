@@ -6,12 +6,10 @@ subtype: diagnostics
 journey: Inspect Mode Run Trace
 ownerPackage: "@treeseed/api"
 summary: Show agent mode class handler assignment provider runner execution provider inputs outputs token counts durations errors and diagnostics for forensic traceability.
-status: active
+status: planned
 dependencies:
-  journeys:
-    - 63
-  guarantees:
-    - guarantee.workday.workday.monitor-workdays.063
+  journeys: []
+  guarantees: []
 actors:
   allowed:
     - project_manager

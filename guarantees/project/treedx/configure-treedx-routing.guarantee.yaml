@@ -6,12 +6,10 @@ subtype: treedx
 journey: Configure TreeDX Routing
 ownerPackage: "@treeseed/api"
 summary: Configure project-scoped TreeDX proxy handles and authorization; agents and operations must use TreeDX rather than direct local content access.
-status: active
+status: planned
 dependencies:
-  journeys:
-    - 32
-  guarantees:
-    - guarantee.project.project.create-project.032
+  journeys: []
+  guarantees: []
 actors:
   allowed:
     - project_manager

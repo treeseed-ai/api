@@ -6,7 +6,7 @@ subtype: treedx
 journey: Verify TreeDX Access
 ownerPackage: "@treeseed/api"
 summary: Run a read/write authorization check against the project TreeDX route before workdays or content operations depend on it.
-status: active
+status: planned
 dependencies:
   journeys:
     - 88

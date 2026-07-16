@@ -6,14 +6,10 @@ subtype: decision
 journey: Approve Acting Decision
 ownerPackage: "@treeseed/api"
 summary: Record accepted decision and readiness provenance before acting mode can run; acting must not execute from unapproved planning output.
-status: active
+status: planned
 dependencies:
-  journeys:
-    - 48
-    - 50
-  guarantees:
-    - guarantee.project.proposal.create-proposal.048
-    - guarantee.project.proposal.vote-on-proposal.050
+  journeys: []
+  guarantees: []
 actors:
   allowed:
     - project_manager

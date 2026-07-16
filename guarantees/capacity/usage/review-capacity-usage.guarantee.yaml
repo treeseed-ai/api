@@ -6,14 +6,10 @@ subtype: usage
 journey: Review Capacity Usage
 ownerPackage: "@treeseed/api"
 summary: Show usage actuals token counts durations budgets and ledger settlement records for providers projects agents and workdays.
-status: active
+status: planned
 dependencies:
-  journeys:
-    - 29
-    - 63
-  guarantees:
-    - guarantee.capacity.capacity.monitor-capacity.029
-    - guarantee.workday.workday.monitor-workdays.063
+  journeys: []
+  guarantees: []
 actors:
   allowed:
     - capacity_operator
