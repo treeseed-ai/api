@@ -42,7 +42,6 @@ releaseGate:
   workflow: verify.yml
   timeoutSeconds: 1800
 dockerImages:
-  releaseWorkflow: deploy.yml
   architectures:
     - amd64
     - arm64

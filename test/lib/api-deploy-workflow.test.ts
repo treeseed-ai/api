@@ -25,8 +25,8 @@ function pushBranches(spec: any) {
 	return [];
 }
 
-describe('API deploy workflow', () => {
-	it('keeps hosted workflows on packaged entrypoints and avoids duplicate staging push fan-out', () => {
+describe('API hosted deployment suspension', () => {
+	it('has no staging push workflow that can mutate hosting', () => {
 		const files = workflowFiles();
 		const workflowEntries = files.map((file) => ({
 			file,
@@ -37,16 +37,15 @@ describe('API deploy workflow', () => {
 			.filter((entry) => pushBranches(entry.parsed).some((branch) => branch === '*' || branch === 'staging'))
 			.map((entry) => entry.file);
 
-		expect(stagingPushWorkflows).toEqual(['deploy.yml']);
+		expect(stagingPushWorkflows).toEqual([]);
 		for (const entry of workflowEntries) {
 			expect(entry.source).not.toMatch(/node_modules\/@treeseed\/[^/\s]+\/src\//u);
 			expect(entry.source).not.toMatch(/@treeseed\/cli\/src\//u);
 		}
 	});
 
-	it('verifies before source staging and image-backed production deployment', () => {
+	it('retains verification and manual guarantees without a deployment workflow', () => {
 		const pkg = packageJson();
-		const deploy = workflow('.github/workflows/deploy.yml');
 		const releaseGate = workflow('.github/workflows/release-gate.yml');
 		const verify = workflow('.github/workflows/verify.yml');
 		const manifest = workflow('treeseed.package.yaml');
@@ -58,43 +57,16 @@ describe('API deploy workflow', () => {
 			workflow: 'verify.yml',
 			timeoutSeconds: 1800,
 		});
-		expect(manifest.dockerImages.releaseWorkflow).toBe('deploy.yml');
+		expect(manifest.dockerImages.releaseWorkflow).toBeUndefined();
 		expect(manifest.requiredSecrets).toEqual(expect.arrayContaining([
 			'TREESEED_TREEDX_ADMIN_TOKEN',
 			'TREESEED_TREEDX_SECRET_KEY_BASE',
 			'TREESEED_TREEDX_JWT_HS256_SECRET',
 		]));
-		expect(deploy.name).toBe('Deploy TreeSeed API');
-		expect(deploy.on.workflow_dispatch).toBeNull();
-		expect(deploy.on.push.branches).toEqual(['staging']);
-		expect(deploy.on.push.tags).toEqual(['*.*.*']);
+		expect(workflowFiles()).not.toContain('deploy.yml');
 		expect(JSON.stringify(releaseGate.on)).not.toContain('push');
 		expect(JSON.stringify(verify.on)).toContain('push');
 		expect(pkg.devDependencies).not.toHaveProperty('@treeseed/cli');
-
-		expect(deploy.jobs['deploy-staging'].needs).toBe('verify');
-		expect(deploy.jobs['deploy-production'].needs).toEqual(['verify', 'publish-manifests']);
-		expect(deploy.jobs['verify-staging-invariance'].needs).toEqual(['verify', 'deploy-production']);
-		const productionCommands = deploy.jobs['deploy-production'].steps.map((step: any) => step.run ?? '').join('\n');
-		const invarianceCommands = deploy.jobs['verify-staging-invariance'].steps.map((step: any) => step.run ?? '').join('\n');
-		expect(productionCommands).not.toContain('hosting verify --environment staging');
-		expect(invarianceCommands).toContain('gh run download');
-		expect(invarianceCommands).toContain('cli-${TREESEED_CLI_SHA}');
-		expect(invarianceCommands).toContain('hosting verify --environment staging --app api --live --json');
-		const deploySource = readFileSync('.github/workflows/deploy.yml', 'utf8');
-		expect(deploySource).toContain('git merge-base --is-ancestor "${GITHUB_SHA}" origin/main');
-		expect(deploySource).toContain('target: api');
-		expect(deploySource).toContain('target: operations-runner');
-		expect(deploySource).toContain('TREESEED_API_IMAGE_REF: treeseed/api:${{ needs.verify.outputs.version }}');
-		expect(deploySource).toContain('TREESEED_PUBLIC_TREEDX_IMAGE_REF: ${{ vars.TREESEED_PUBLIC_TREEDX_IMAGE_REF }}');
-		expect(deploySource).toContain('test -n "${TREESEED_PUBLIC_TREEDX_IMAGE_REF}"');
-		expect(deploySource).toContain('hosting verify --environment staging --app api --live --json');
-		expect(deploySource).toContain('hosting verify --environment prod --app api --live --json');
-		expect(deploySource).toContain('gh run download "${run_id}" --repo treeseed-ai/cli --name "cli-${TREESEED_CLI_SHA}"');
-		expect(deploySource).toContain('refusing to wait for an impossible success');
-		expect(deploySource).toContain('Timed out waiting for CLI verify.yml for exact SHA');
-		expect(deploySource).not.toContain('--status success');
-		expect(deploySource).not.toContain('guarantees run');
 		expect(readFileSync('.github/workflows/release-gate.yml', 'utf8')).toContain("--owner-package '@treeseed/api,@treeseed/agent' --no-dependencies");
 		expect(workflowFiles()).not.toContain('publish.yml');
 	});
