@@ -30,6 +30,7 @@ import { createMarketPostgresDatabase } from '../api/market-postgres.js';
 import { MarketControlPlaneStore } from '../api/store.js';
 import { applyHubLaunchFailure, applyHubLaunchResult } from '../api/hub-launch-application.js';
 import { createProjectWebDeploymentExecutor } from './project-web-deployment-executor.js';
+import { drainNotificationEmailOutbox } from '../notifications/service.js';
 
 function readArg(name, fallback = null) {
 	const index = process.argv.indexOf(name);
@@ -1227,6 +1228,7 @@ async function runLoop() {
 			healthState.status = 'running';
 			healthState.error = null;
 			await runOnceWithClient(config, client, version, { ...options, deploymentStore });
+			if (deploymentStore) await drainNotificationEmailOutbox(deploymentStore);
 		} catch (error) {
 			healthState.ready = false;
 			healthState.status = 'degraded';

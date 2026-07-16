@@ -15,6 +15,12 @@ Use this package when you operate or develop the Treeseed backend. Ordinary admi
 
 The root market/admin web app reaches this package through HTTP/proxy/client surfaces only.
 
+## Authentication and account ownership
+
+The API is authoritative for normalized username/email availability, registration races, immutable usernames, configured OAuth providers, one-time state/nonce/PKCE, explicit identity linking, scoped five-minute reauthentication, email/credential/session lifecycle, deletion blockers, personal themes, and exact notification preferences. The operations runner also owns idempotent immediate/daily/weekly notification delivery. Admin never persists or reimplements these policies.
+
+Cookie-authenticated browser mutations cross the Admin same-origin proxy, which enforces the shared double-submit CSRF contract before converting the cookie session to a bearer request. Direct bearer clients remain independent of browser CSRF.
+
 ## Runtime Services
 
 Railway builds backend services from this package root:

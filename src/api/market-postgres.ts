@@ -278,6 +278,26 @@ export class MarketPostgresDatabase {
 		return new MarketPostgresPreparedStatement(this, query);
 	}
 
+	async batch(statements) {
+		await this.migrate();
+		const client = await this.pool.connect();
+		try {
+			await client.query('BEGIN');
+			const results = [];
+			for (const statement of statements) {
+				const result = await client.query(translateMarketSqlToPostgres(statement.query), statement.bindings ?? []);
+				results.push({ success: true, results: result.rows ?? [], meta: {} });
+			}
+			await client.query('COMMIT');
+			return results;
+		} catch (error) {
+			await client.query('ROLLBACK');
+			throw error;
+		} finally {
+			client.release();
+		}
+	}
+
 	async exec(sql) {
 		for (const statement of splitSqlStatements(sql)) {
 			await this.pool.query(translateMarketSqlToPostgres(statement));

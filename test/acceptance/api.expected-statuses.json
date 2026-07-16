@@ -1,5 +1,23 @@
 {
   "statuses": {
+    "delete.v1.auth.web.providers.identityId": { "anonymous": 401, "siteAdmin": 404, "marketSteward": 404, "teamOwner": 404, "teamOperator": 404, "teamViewer": 404, "nonMember": 404, "providerOperator": 404, "providerKey": 401, "platformRunner": 401 },
+    "delete.v1.auth.web.themes.themeId": { "anonymous": 401, "siteAdmin": 404, "marketSteward": 404, "teamOwner": 404, "teamOperator": 404, "teamViewer": 404, "nonMember": 404, "providerOperator": 404, "providerKey": 401, "platformRunner": 401 },
+    "get.v1.auth.availability.email": { "anonymous": 200, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 200, "platformRunner": 200 },
+    "get.v1.auth.availability.username": { "anonymous": 200, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 200, "platformRunner": 200 },
+    "get.v1.auth.oauth.provider.callback": { "anonymous": 404, "siteAdmin": 404, "marketSteward": 404, "teamOwner": 404, "teamOperator": 404, "teamViewer": 404, "nonMember": 404, "providerOperator": 404, "providerKey": 404, "platformRunner": 404 },
+    "get.v1.auth.oauth.provider.start": { "anonymous": 404, "siteAdmin": 404, "marketSteward": 404, "teamOwner": 404, "teamOperator": 404, "teamViewer": 404, "nonMember": 404, "providerOperator": 404, "providerKey": 404, "platformRunner": 404 },
+    "get.v1.auth.providers": { "anonymous": 200, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 200, "platformRunner": 200 },
+    "get.v1.auth.web.account.identity": { "anonymous": 401, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 401, "platformRunner": 401 },
+    "get.v1.auth.web.notifications": { "anonymous": 401, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 401, "platformRunner": 401 },
+    "get.v1.auth.web.notifications.preferences": { "anonymous": 401, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 401, "platformRunner": 401 },
+    "get.v1.auth.web.themes": { "anonymous": 401, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 401, "platformRunner": 401 },
+    "patch.v1.auth.web.themes.themeId": { "anonymous": 401, "siteAdmin": 404, "marketSteward": 404, "teamOwner": 404, "teamOperator": 404, "teamViewer": 404, "nonMember": 404, "providerOperator": 404, "providerKey": 401, "platformRunner": 401 },
+    "patch.v1.auth.web.username": { "anonymous": 401, "siteAdmin": 409, "marketSteward": 409, "teamOwner": 409, "teamOperator": 409, "teamViewer": 409, "nonMember": 409, "providerOperator": 409, "providerKey": 401, "platformRunner": 401 },
+    "post.v1.auth.oauth.provider.callback": { "anonymous": 404, "siteAdmin": 404, "marketSteward": 404, "teamOwner": 404, "teamOperator": 404, "teamViewer": 404, "nonMember": 404, "providerOperator": 404, "providerKey": 404, "platformRunner": 404 },
+    "post.v1.auth.web.notifications.notificationId.read": { "anonymous": 401, "siteAdmin": 404, "marketSteward": 404, "teamOwner": 404, "teamOperator": 404, "teamViewer": 404, "nonMember": 404, "providerOperator": 404, "providerKey": 401, "platformRunner": 401 },
+    "post.v1.auth.web.reauthenticate": { "anonymous": 401, "siteAdmin": 400, "marketSteward": 400, "teamOwner": 400, "teamOperator": 400, "teamViewer": 400, "nonMember": 400, "providerOperator": 400, "providerKey": 401, "platformRunner": 401 },
+    "post.v1.auth.web.themes": { "anonymous": 401, "siteAdmin": 400, "marketSteward": 400, "teamOwner": 400, "teamOperator": 400, "teamViewer": 400, "nonMember": 400, "providerOperator": 400, "providerKey": 401, "platformRunner": 401 },
+    "put.v1.auth.web.notifications.preferences": { "anonymous": 401, "siteAdmin": 200, "marketSteward": 200, "teamOwner": 200, "teamOperator": 200, "teamViewer": 200, "nonMember": 200, "providerOperator": 200, "providerKey": 401, "platformRunner": 401 },
     "delete.v1.auth.web.account": {
       "anonymous": 401,
       "siteAdmin": 409,
@@ -215,18 +233,6 @@
       "providerOperator": 200,
       "providerKey": 401,
       "platformRunner": 401
-    },
-    "get.v1.auth.web.username.check": {
-      "anonymous": 200,
-      "siteAdmin": 200,
-      "marketSteward": 200,
-      "teamOwner": 200,
-      "teamOperator": 200,
-      "teamViewer": 200,
-      "nonMember": 200,
-      "providerOperator": 200,
-      "providerKey": 200,
-      "platformRunner": 200
     },
     "get.v1.capacity-plans.capacityPlanId": {
       "anonymous": 404,
@@ -2785,18 +2791,6 @@
       "platformRunner": 404
     },
     "patch.v1.auth.web.appearance": {
-      "anonymous": 401,
-      "siteAdmin": 200,
-      "marketSteward": 200,
-      "teamOwner": 200,
-      "teamOperator": 200,
-      "teamViewer": 200,
-      "nonMember": 200,
-      "providerOperator": 200,
-      "providerKey": 401,
-      "platformRunner": 401
-    },
-    "patch.v1.auth.web.email": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,

@@ -36,7 +36,10 @@ export const SDK_METHOD_ROUTE_MAP = {
 	webSignUp: 'post.v1.auth.web.sign-up',
 	confirmWebEmail: 'post.v1.auth.web.confirm-email',
 	webSignIn: 'post.v1.auth.web.sign-in',
-	checkWebUsername: 'get.v1.auth.web.username.check',
+	checkWebUsername: 'get.v1.auth.availability.username',
+	checkWebEmail: 'get.v1.auth.availability.email',
+	authProviders: 'get.v1.auth.providers',
+	accountIdentity: 'get.v1.auth.web.account.identity',
 	webEmails: 'get.v1.auth.web.emails',
 	addWebEmail: 'post.v1.auth.web.emails',
 	verifyWebEmail: 'post.v1.auth.web.emails.emailId.verify',
@@ -47,12 +50,19 @@ export const SDK_METHOD_ROUTE_MAP = {
 	updateWebProfile: 'patch.v1.auth.web.profile',
 	webAppearance: 'get.v1.auth.web.appearance',
 	updateWebAppearance: 'patch.v1.auth.web.appearance',
-	updateWebEmail: 'patch.v1.auth.web.email',
 	updateWebPassword: 'patch.v1.auth.web.password',
 	requestWebPasswordReset: 'post.v1.auth.web.password-reset.request',
 	completeWebPasswordReset: 'post.v1.auth.web.password-reset.complete',
 	accountDeletionBlockers: 'get.v1.auth.web.account.deletion-blockers',
 	deleteAccount: 'delete.v1.auth.web.account',
+	webNotificationPreferences: 'get.v1.auth.web.notifications.preferences',
+	updateWebNotificationPreferences: 'put.v1.auth.web.notifications.preferences',
+	webNotifications: 'get.v1.auth.web.notifications',
+	markWebNotificationRead: 'post.v1.auth.web.notifications.notificationId.read',
+	personalThemes: 'get.v1.auth.web.themes',
+	createPersonalTheme: 'post.v1.auth.web.themes',
+	updatePersonalTheme: 'patch.v1.auth.web.themes.themeId',
+	deletePersonalTheme: 'delete.v1.auth.web.themes.themeId',
 	me: 'get.v1.me',
 	markets: 'get.v1.me.markets',
 	currentMarket: 'get.v1.markets.current',
@@ -227,7 +237,7 @@ function authClass(path, method = 'get') {
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
 	if (path === '/v1/feedback') return 'public';
-	if (path === '/v1/markets/current' || path.startsWith('/v1/auth/web/sign-') || path.includes('/username/check') || path.includes('/password-reset/') || path.includes('/auth/device/')) {
+	if (path === '/v1/markets/current' || path.startsWith('/v1/auth/web/sign-') || path.startsWith('/v1/auth/availability/') || path === '/v1/auth/providers' || path.startsWith('/v1/auth/oauth/') || path.includes('/password-reset/') || path.includes('/auth/device/')) {
 		return 'public';
 	}
 	if (path.startsWith('/v1/platform/operations')) return 'platform-admin';

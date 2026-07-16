@@ -900,6 +900,13 @@ function sdkArgsForMethod(method) {
 		webSignUp: [{ email: `treeseed+${stamp}-sdk-signup@treeseed.ai`, username: `${stamp}-sdk-signup`, password: '${seed.password}', name: 'Acceptance SDK' }],
 		webSignIn: [{ email: '${actors.siteAdmin.email}', password: '${seed.password}' }],
 		checkWebUsername: ['${actors.teamOwner.username}'],
+		checkWebEmail: ['${actors.teamOwner.email}'],
+		markWebNotificationRead: ['missing-notification'],
+		updateWebNotificationPreferences: [{ emailCadence: 'daily', timeZone: 'UTC', globalContentTypes: [], projectOverrides: [] }],
+		webNotifications: [20],
+		createPersonalTheme: [{ name: 'Acceptance theme', baseScheme: 'fern', palette: { light: { canvas: '#ffffff', surface: '#f5f5f5', text: '#111111', accent: '#176b45' }, dark: { canvas: '#101510', surface: '#182018', text: '#f5fff5', accent: '#69d69a' } } }],
+		updatePersonalTheme: ['missing-theme', { name: 'Acceptance theme', baseScheme: 'fern', palette: { light: { canvas: '#ffffff', surface: '#f5f5f5', text: '#111111', accent: '#176b45' }, dark: { canvas: '#101510', surface: '#182018', text: '#f5fff5', accent: '#69d69a' } } }],
+		deletePersonalTheme: ['missing-theme'],
 		webEmails: [],
 		webSessions: [],
 		addWebEmail: [{ email: '${actors.teamOwner.email}' }],
@@ -1167,7 +1174,7 @@ function sdkArgsForMethod(method) {
 }
 
 function actorForSdkMethod(method, descriptor) {
-	if (method.startsWith('webSign') || method === 'startDeviceLogin' || method === 'pollDeviceLogin' || method === 'refreshToken' || method === 'checkWebUsername' || method === 'requestWebPasswordReset' || method === 'completeWebPasswordReset' || method === 'currentMarket') {
+	if (method.startsWith('webSign') || method === 'startDeviceLogin' || method === 'pollDeviceLogin' || method === 'refreshToken' || method === 'checkWebUsername' || method === 'checkWebEmail' || method === 'authProviders' || method === 'requestWebPasswordReset' || method === 'completeWebPasswordReset' || method === 'currentMarket') {
 		return 'anonymous';
 	}
 	if (descriptor?.authClass === 'platform-admin' || method.includes('Seed')) return 'siteAdmin';

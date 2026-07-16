@@ -275,26 +275,34 @@ function unsignedTestJwt(payload: Record<string, unknown>) {
 }
 
 async function authorizeApp(app: ReturnType<typeof createTestApp>, input: { principalId?: string; displayName?: string } = {}) {
-	const started = await json(await app.request('/auth/device/start', {
+	const principalId = input.principalId ?? 'user-1';
+	const namespace = `device-${principalId.replace(/[^a-z0-9-]+/giu, '-').toLowerCase()}`;
+	const seeded = await json(await app.request('/v1/acceptance/seed', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', 'x-treeseed-service-id': 'web', 'x-treeseed-service-secret': 'web-test-secret' },
+		body: JSON.stringify({ namespace, actorsOnly: true, actors: { deviceApprover: { userId: principalId, displayName: input.displayName ?? 'Market User', siteRoles: ['member'] } } }),
+	}));
+	if (!seeded.ok) throw new Error(`Acceptance actor seed failed: ${JSON.stringify(seeded)}`);
+	const approverToken = seeded.payload.actors.deviceApprover.accessToken;
+	const started = await json(await app.request('/v1/auth/device/start', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ scopes: ['auth:me'] }),
 	}));
-	await app.request('/auth/device/approve', {
+	const approval = await json(await app.request('/v1/auth/device/approve', {
 		method: 'POST',
-		headers: { 'content-type': 'application/json' },
+		headers: { 'content-type': 'application/json', authorization: `Bearer ${approverToken}` },
 		body: JSON.stringify({
 			userCode: started.userCode,
-			principalId: input.principalId ?? 'user-1',
-			displayName: input.displayName ?? 'Market User',
-			scopes: ['auth:me'],
 		}),
-	});
-	const tokenPayload = await json(await app.request('/auth/device/poll', {
+	}));
+	if (approval.ok === false) throw new Error(`Authenticated device approval failed: ${JSON.stringify(approval)}`);
+	const tokenPayload = await json(await app.request('/v1/auth/device/poll', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify({ deviceCode: started.deviceCode }),
 	}));
+	if (!tokenPayload.accessToken) throw new Error(`Device token poll failed: ${JSON.stringify(tokenPayload)}`);
 	return tokenPayload.accessToken as string;
 }
 
@@ -927,13 +935,15 @@ describe('market api', () => {
 			displayName: 'Reserved Team',
 		});
 
-		const unavailable = await json(await app.request('/v1/auth/web/username/check?username=reserved-team'));
+		const unavailable = await json(await app.request('/v1/auth/availability/username?value=reserved-team'));
 		expect(unavailable.payload).toMatchObject({
-			username: 'reserved-team',
+			value: 'reserved-team',
 			available: false,
 			status: 'taken',
 			message: 'Username is already taken by a team.',
 		});
+		const availableEmail = await json(await app.request('/v1/auth/availability/email?value=new-account@example.com'));
+		expect(availableEmail.payload).toMatchObject({ value: 'new-account@example.com', available: true, status: 'available' });
 
 		const signup = await json(await app.request('/v1/auth/web/sign-up', {
 			method: 'POST',
@@ -1152,6 +1162,36 @@ describe('market api', () => {
 			headers: { authorization: `Bearer ${token}` },
 		}));
 		expect(profile.payload.activity.projects.find((entry: { id: string }) => entry.id === project.id)).toBeUndefined();
+	}, 30000);
+
+	it('persists exact notification preferences and personal themes without activating creation', async () => {
+		const db = createTestPostgresDatabase();
+		const store = createTestStore(db);
+		const app = createTestApp({ db, store });
+		const token = await authorizeApp(app, { principalId: 'account-redesign-user', displayName: 'Account Redesign User' });
+		const { project } = await createTeamAndProject(app, token, { slug: 'account-redesign', name: 'Account Redesign', description: 'Account slice test.' });
+		const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+		const initial = await json(await app.request('/v1/auth/web/notifications/preferences', { headers }));
+		expect(initial.payload).toMatchObject({ emailCadence: 'daily', globalContentTypes: [], projectOverrides: [] });
+		const saved = await json(await app.request('/v1/auth/web/notifications/preferences', {
+			method: 'PUT', headers,
+			body: JSON.stringify({ emailCadence: 'weekly', timeZone: 'America/New_York', globalContentTypes: ['questions', 'notes'], projectOverrides: [{ projectId: project.id, contentTypes: ['decisions'] }] }),
+		}));
+		expect(saved.payload).toEqual({ emailCadence: 'weekly', timeZone: 'America/New_York', globalContentTypes: ['notes', 'questions'], projectOverrides: [{ projectId: project.id, contentTypes: ['decisions'] }] });
+
+		const created = await json(await app.request('/v1/auth/web/themes', {
+			method: 'POST', headers,
+			body: JSON.stringify({ name: 'Research dusk', baseScheme: 'fern', palette: {
+				light: { canvas: '#ffffff', surface: '#f5f5f5', text: '#111111', accent: '#176b45' },
+				dark: { canvas: '#101510', surface: '#182018', text: '#f5fff5', accent: '#69d69a' },
+			} }),
+		}));
+		expect(created.ok).toBe(true);
+		expect(created.payload.schemeId).toBe(`personal-${created.payload.id}`);
+		const identity = await json(await app.request('/v1/auth/web/account/identity', { headers }));
+		expect(identity.payload).not.toHaveProperty('appearance.scheme', created.payload.schemeId);
+		const themes = await json(await app.request('/v1/auth/web/themes', { headers }));
+		expect(themes.payload).toContainEqual(expect.objectContaining({ id: created.payload.id, name: 'Research dusk' }));
 	}, 30000);
 
 	it('updates project profile settings through the project API', async () => {
@@ -8581,6 +8621,7 @@ describe('market api', () => {
 				siteUrl: 'https://app.market.example.com',
 			},
 		});
+		const approverToken = await authorizeApp(app, { principalId: 'user-market-v1', displayName: 'Market V1 User' });
 		const started = await json(await app.request('/v1/auth/device/start', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
@@ -8590,12 +8631,9 @@ describe('market api', () => {
 		expect(started.verificationUriComplete).toBe(`https://app.market.example.com/auth/device/approve?user_code=${encodeURIComponent(started.userCode)}`);
 		await app.request('/v1/auth/device/approve', {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${approverToken}` },
 			body: JSON.stringify({
 				userCode: started.userCode,
-				principalId: 'user-market-v1',
-				displayName: 'Market V1 User',
-				scopes: ['auth:me', 'market'],
 			}),
 		});
 		const tokenPayload = await json(await app.request('/v1/auth/device/poll', {

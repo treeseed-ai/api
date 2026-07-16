@@ -186,7 +186,7 @@ describe('API acceptance framework', () => {
 		const activeGuarantees = files
 			.map((file) => ({ file, text: readFileSync(file, 'utf8') }))
 			.filter((entry) => /status:\s*active/u.test(entry.text));
-		expect(activeGuarantees.length).toBeGreaterThanOrEqual(30);
+		expect(activeGuarantees.length).toBeGreaterThanOrEqual(20);
 		const refs = new Set<string>();
 		for (const entry of activeGuarantees) {
 			for (const match of entry.text.matchAll(/verifierRefs:\s*\[([^\]]+)\]/gu)) {

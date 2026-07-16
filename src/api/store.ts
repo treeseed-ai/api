@@ -4689,6 +4689,12 @@ export class MarketControlPlaneStore {
 		return result.results ?? [];
 	}
 
+	async batch(operations) {
+		if (typeof this.db.batch !== 'function') throw new Error('The configured database does not support transactional batches.');
+		const statements = operations.map(({ query, params = [] }) => this.db.prepare(query).bind(...params));
+		return this.db.batch(statements);
+	}
+
 		ensureInitialized() {
 			if (!this.initializationPromise) {
 				this.initializationPromise = Promise.resolve()

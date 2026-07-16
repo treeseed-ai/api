@@ -64,6 +64,7 @@ import { getSiteAuthConfig } from '../auth/config.ts';
 import { accountDeletionConfirmationMatches } from '../auth/account.ts';
 import { validateUsername as validatePublicUsername } from '../auth/profile-validation.ts';
 import { authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, sendAuthEmail } from '../auth/email.ts';
+import { recordContentNotificationEvent } from '../notifications/service.ts';
 import { sendEmailConfirmation } from '../auth/email-confirmation.ts';
 import { sendWelcomeEmail } from '../auth/welcome-email.ts';
 import { createCipheriv, createDecipheriv, createHash, createHmac, createPublicKey, createVerify, pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -72,6 +73,12 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { contentRelationPolicy } from '../market/content-relations.js';
+import {
+	NOTIFICATION_CONTENT_CAPABILITIES,
+	PERSONAL_THEME_COMPILER_VERSION,
+	isValidPersonalThemeDraft,
+	normalizeNotificationPreferences,
+} from '@treeseed/sdk/account-contracts';
 
 function jsonError(c, status, error, details = {}) {
 	return c.json({
@@ -91,6 +98,145 @@ function jsonThrownError(c, error, fallbackStatus = 500) {
 }
 
 const POSTGRES_AUTH_PROVIDER_ID = 'market-postgres';
+const availabilityAttempts = new Map();
+const AUTH_PROVIDERS = {
+	github: { label: 'GitHub', authorizeUrl: 'https://github.com/login/oauth/authorize', tokenUrl: 'https://github.com/login/oauth/access_token', scopes: 'read:user user:email' },
+	google: { label: 'Google', authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: 'https://oauth2.googleapis.com/token', scopes: 'openid email profile', issuer: 'https://accounts.google.com', jwksUrl: 'https://www.googleapis.com/oauth2/v3/certs' },
+	microsoft: { label: 'Microsoft', authorizeUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize', tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token', scopes: 'openid email profile User.Read', issuerPrefix: 'https://login.microsoftonline.com/', jwksUrl: 'https://login.microsoftonline.com/common/discovery/v2.0/keys' },
+	apple: { label: 'Apple', authorizeUrl: 'https://appleid.apple.com/auth/authorize', tokenUrl: 'https://appleid.apple.com/auth/token', scopes: 'name email', issuer: 'https://appleid.apple.com', jwksUrl: 'https://appleid.apple.com/auth/keys' },
+};
+const providerJwksCache = new Map();
+
+function availabilityRateLimit(c, kind, value) {
+	const key = `${kind}:${c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'local'}:${createHash('sha256').update(value).digest('hex').slice(0, 16)}`;
+	const now = Date.now();
+	const current = availabilityAttempts.get(key);
+	const source = { ...process.env, ...(c.env ?? {}) };
+	const windowMs = Math.max(1_000, Number(source.TREESEED_AUTH_AVAILABILITY_WINDOW_MS ?? 60_000) || 60_000);
+	const limit = Math.max(1, Number(source.TREESEED_AUTH_AVAILABILITY_LIMIT ?? 10) || 10);
+	const next = !current || current.resetAt <= now ? { count: 1, resetAt: now + windowMs } : { ...current, count: current.count + 1 };
+	availabilityAttempts.set(key, next);
+	return next.count > limit ? Math.max(1, Math.ceil((next.resetAt - now) / 1000)) : 0;
+}
+
+function personalThemeFromRow(row) {
+	return {
+		id: row.id,
+		schemeId: `personal-${row.id}`,
+		name: row.name,
+		baseScheme: row.base_scheme,
+		palette: parseJsonObject(row.palette_json),
+		compilerVersion: Number(row.compiler_version ?? PERSONAL_THEME_COMPILER_VERSION),
+		createdAt: row.created_at,
+		updatedAt: row.updated_at,
+	};
+}
+
+async function accountDeletionBlockers(store, principal) {
+	const teams = await store.listTeamsForPrincipal(principal);
+	const blockers = teams
+		.filter((team) => Array.isArray(team.roles) ? team.roles.includes('owner') : team.role === 'owner')
+		.map((team) => ({
+			code: 'team_owner',
+			message: `Transfer or delete team "${team.displayName ?? team.name ?? team.slug}" before deleting this account.`,
+			teamId: team.id,
+			teamSlug: team.slug,
+			teamName: team.displayName ?? team.name ?? team.slug,
+		}));
+	if (principal.roles?.includes?.('platform_admin')) blockers.push({ code: 'platform_admin', message: 'Remove platform admin role before deleting this account.' });
+	return blockers;
+}
+
+async function consumeReauthentication(store, principal, action, body) {
+	const credential = await store.first(`SELECT password_hash FROM market_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [principal.id]);
+	if (credential && typeof body.currentPassword === 'string' && verifyMarketPassword(body.currentPassword, credential.password_hash)) return true;
+	const grantId = String(body.reauthenticationGrantId ?? '');
+	const sessionId = String(principal.metadata?.sessionId ?? '');
+	if (!grantId || !sessionId) return false;
+	const grant = await store.first(
+		`SELECT * FROM auth_reauthentication_grants WHERE id = ? AND user_id = ? AND session_id = ? AND action = ? AND consumed_at IS NULL LIMIT 1`,
+		[grantId, principal.id, sessionId, action],
+	);
+	if (!grant || new Date(grant.expires_at).getTime() <= Date.now()) return false;
+	await store.run(`UPDATE auth_reauthentication_grants SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL`, [new Date().toISOString(), grant.id]);
+	return true;
+}
+
+async function loadNotificationPreferences(store, userId) {
+	const settings = await store.first(`SELECT * FROM user_notification_preferences WHERE user_id = ? LIMIT 1`, [userId]);
+	const globalRows = await store.all(`SELECT content_type FROM user_notification_global_content_types WHERE user_id = ? ORDER BY content_type`, [userId]);
+	const overrideRows = await store.all(`SELECT project_id FROM user_notification_project_overrides WHERE user_id = ? ORDER BY project_id`, [userId]);
+	const typeRows = await store.all(`SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ? ORDER BY project_id, content_type`, [userId]);
+	return normalizeNotificationPreferences({
+		emailCadence: settings?.email_cadence,
+		timeZone: settings?.time_zone,
+		globalContentTypes: globalRows.map((row) => row.content_type),
+		projectOverrides: overrideRows.map((row) => ({ projectId: row.project_id, contentTypes: typeRows.filter((entry) => entry.project_id === row.project_id).map((entry) => entry.content_type) })),
+	});
+}
+
+function providerConfigFor(c, provider) {
+	const config = getSiteAuthConfig(marketAuthContext(c));
+	const spec = AUTH_PROVIDERS[provider];
+	const credentials = config.providers?.[provider];
+	return spec && credentials?.clientId && credentials?.clientSecret ? { ...spec, ...credentials } : null;
+}
+
+function base64Url(value) {
+	return Buffer.from(value).toString('base64url');
+}
+
+async function verifyProviderIdToken(token, configured, expectedNonce) {
+	const [encodedHeader, encodedPayload, encodedSignature] = String(token ?? '').split('.');
+	if (!encodedHeader || !encodedPayload || !encodedSignature) throw new Error('The identity provider did not return a valid identity token.');
+	const header = parseBase64urlJson(encodedHeader);
+	const claims = parseBase64urlJson(encodedPayload);
+	if (header.alg !== 'RS256' || !header.kid) throw new Error('The identity provider used an unsupported token algorithm.');
+	let cached = providerJwksCache.get(configured.jwksUrl);
+	if (!cached || cached.expiresAt <= Date.now()) {
+		const response = await fetch(configured.jwksUrl, { headers: { accept: 'application/json' } });
+		if (!response.ok) throw new Error('The identity provider signing keys are unavailable.');
+		const payload = await response.json();
+		cached = { keys: Array.isArray(payload.keys) ? payload.keys : [], expiresAt: Date.now() + 10 * 60_000 };
+		providerJwksCache.set(configured.jwksUrl, cached);
+	}
+	const key = cached.keys.find((entry) => entry.kid === header.kid);
+	if (!key) throw new Error('The identity provider signing key was not found.');
+	const verifier = createVerify('RSA-SHA256');
+	verifier.update(`${encodedHeader}.${encodedPayload}`);
+	verifier.end();
+	if (!verifier.verify(createPublicKey({ key, format: 'jwk' }), Buffer.from(encodedSignature, 'base64url'))) throw new Error('The identity provider token signature is invalid.');
+	const audience = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+	if (!audience.includes(configured.clientId)) throw new Error('The identity provider token audience is invalid.');
+	if (configured.issuer && claims.iss !== configured.issuer && !(configured.issuer === 'https://accounts.google.com' && claims.iss === 'accounts.google.com')) throw new Error('The identity provider token issuer is invalid.');
+	if (configured.issuerPrefix && (!String(claims.iss ?? '').startsWith(configured.issuerPrefix) || !String(claims.iss).endsWith('/v2.0'))) throw new Error('The identity provider token issuer is invalid.');
+	if (!claims.exp || Number(claims.exp) <= Math.floor(Date.now() / 1000)) throw new Error('The identity provider token has expired.');
+	if (!claims.nonce || claims.nonce !== expectedNonce) throw new Error('The identity provider nonce was not accepted.');
+	return claims;
+}
+
+async function exchangeProviderIdentity(provider, configured, code, redirectUri, verifier, expectedNonce) {
+	const body = new URLSearchParams({ code, client_id: configured.clientId, client_secret: configured.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' });
+	if (verifier) body.set('code_verifier', verifier);
+	const tokenResponse = await fetch(configured.tokenUrl, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded' }, body });
+	const tokens = await tokenResponse.json().catch(() => ({}));
+	if (!tokenResponse.ok || !tokens.access_token) throw new Error('The identity provider did not accept the authorization response.');
+	const claims = provider === 'github' ? {} : await verifyProviderIdToken(tokens.id_token, configured, expectedNonce);
+	if (provider === 'github') {
+		const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${tokens.access_token}`, 'user-agent': 'TreeSeed' };
+		const [userResponse, emailsResponse] = await Promise.all([fetch('https://api.github.com/user', { headers }), fetch('https://api.github.com/user/emails', { headers })]);
+		const user = await userResponse.json();
+		const emails = await emailsResponse.json().catch(() => []);
+		const email = emails.find?.((entry) => entry.primary && entry.verified)?.email ?? user.email;
+		return { subject: String(user.id), email, emailVerified: Boolean(email), displayName: user.name ?? user.login, profile: { image: user.avatar_url } };
+	}
+	if (provider === 'microsoft') {
+		const response = await fetch('https://graph.microsoft.com/v1.0/me', { headers: { authorization: `Bearer ${tokens.access_token}` } });
+		const user = await response.json();
+		return { subject: String(user.id), email: user.mail ?? user.userPrincipalName, emailVerified: true, displayName: user.displayName };
+	}
+	return { subject: String(claims.sub ?? ''), email: claims.email, emailVerified: claims.email_verified === true || claims.email_verified === 'true', displayName: claims.name ?? claims.email };
+}
 
 async function resolveLaunchTemplateRequirements({ store, principal, config, sourceKind, sourceRef, requireKnownTemplate = false }) {
 	if (!['template', 'market_listing'].includes(sourceKind) || typeof sourceRef !== 'string' || !sourceRef.trim()) {
@@ -7107,15 +7253,19 @@ export function createApiApp(options = {}): Hono {
 						|| `${safeNamespace.slice(0, namespaceLimit).replace(/-+$/gu, '')}-${actorSuffix}`.replace(/^-+|-+$/gu, '')
 						|| actorSuffix;
 					const displayName = optionalTrimmedString(actorInput.displayName) ?? `Acceptance ${actorId}`;
-					const synced = await runtimeMarketAuthProvider.syncUserIdentity({
-						provider: 'acceptance',
-						providerSubject: `${namespace}:${actorId}`,
-						email,
-						emailVerified: true,
-						username,
-						displayName,
-						profile: { acceptance: true, namespace, actorId },
-					});
+					const requestedUserId = process.env.NODE_ENV === 'test' ? optionalTrimmedString(actorInput.userId) : null;
+					let synced;
+					if (requestedUserId) {
+						const timestamp = new Date().toISOString();
+						await store.run(`INSERT INTO users (id, email, username, display_name, status, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?, ?) ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, username = EXCLUDED.username, display_name = EXCLUDED.display_name, status = 'active', metadata_json = EXCLUDED.metadata_json, updated_at = EXCLUDED.updated_at`, [requestedUserId, email, username, displayName, JSON.stringify({ username, acceptance: true, namespace, actorId }), timestamp, timestamp]);
+						await store.run(`INSERT INTO user_identities (id, user_id, provider, provider_subject, email, email_verified, profile_json, created_at, updated_at) VALUES (?, ?, 'acceptance', ?, ?, 1, ?, ?, ?) ON CONFLICT (provider, provider_subject) DO UPDATE SET user_id = EXCLUDED.user_id, email = EXCLUDED.email, email_verified = 1, profile_json = EXCLUDED.profile_json, updated_at = EXCLUDED.updated_at`, [randomUUID(), requestedUserId, `${namespace}:${actorId}`, email, JSON.stringify({ acceptance: true, namespace, actorId }), timestamp, timestamp]);
+						synced = { principal: { id: requestedUserId, metadata: { username } } };
+					} else {
+						synced = await runtimeMarketAuthProvider.syncUserIdentity({
+							provider: 'acceptance', providerSubject: `${namespace}:${actorId}`, email, emailVerified: true, username, displayName,
+							profile: { acceptance: true, namespace, actorId },
+						});
+					}
 					if (runtimeMarketAuthProvider.setUserRoles) {
 						await runtimeMarketAuthProvider.setUserRoles(synced.principal.id, Array.isArray(actorInput.siteRoles) ? actorInput.siteRoles.map(String) : ['viewer']);
 					}
@@ -7146,6 +7296,9 @@ export function createApiApp(options = {}): Hono {
 						sessionId: session.principal?.metadata?.sessionId ?? null,
 						expiresAt: session.expiresAt ?? null,
 					};
+				}
+				if (body.actorsOnly === true) {
+					return c.json({ ok: true, payload: { namespace, password, actors, fixtures: {} } });
 				}
 				let team = null;
 				let project = null;
@@ -7906,13 +8059,15 @@ export function createApiApp(options = {}): Hono {
 			});
 
 			app.post('/v1/auth/device/approve', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
 				const body = await c.req.json().catch(() => ({}));
 				try {
 					return c.json(await runtimeMarketAuthProvider.approveDeviceFlow({
 						userCode: String(body.userCode ?? ''),
-						principalId: String(body.principalId ?? ''),
-						displayName: typeof body.displayName === 'string' ? body.displayName : undefined,
-						metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined,
+						principalId: auth.principal.id,
+						displayName: auth.principal.displayName,
+						metadata: auth.principal.metadata,
 						scopes: Array.isArray(body.scopes) ? body.scopes.map(String) : undefined,
 					}));
 				} catch (error) {
@@ -7942,7 +8097,7 @@ export function createApiApp(options = {}): Hono {
 					`SELECT user_id FROM market_auth_credentials WHERE email = ? LIMIT 1`,
 					[email],
 				);
-				if (existingEmailCredential) return jsonError(c, 409, 'An account already exists for this email.');
+				if (existingEmailCredential) return jsonError(c, 409, 'This email can’t be used.', { code: 'email_unavailable' });
 				const existingUsernameCredential = await store.first(
 					`SELECT user_id FROM market_auth_credentials WHERE username = ? LIMIT 1`,
 					[username],
@@ -7956,7 +8111,7 @@ export function createApiApp(options = {}): Hono {
 					`SELECT user_id FROM user_email_addresses WHERE normalized_email = ? LIMIT 1`,
 					[email],
 				);
-				if (existingEmailAddress) return jsonError(c, 409, 'An account already exists for this email.');
+				if (existingEmailAddress) return jsonError(c, 409, 'This email can’t be used.', { code: 'email_unavailable' });
 				const synced = await runtimeMarketAuthProvider.syncUserIdentity({
 					provider: 'credential',
 					providerSubject: email,
@@ -8204,25 +8359,97 @@ export function createApiApp(options = {}): Hono {
 				return c.json({ ok: true, payload: webAuthPayload(session) });
 			});
 
-			app.get('/v1/auth/oauth/:provider/start', (c) => {
-				const provider = c.req.param('provider');
-				return jsonError(c, 501, `OAuth provider "${provider}" is not configured on the API yet.`);
+			app.get('/v1/auth/providers', (c) => {
+				const payload = Object.entries(AUTH_PROVIDERS)
+					.filter(([provider]) => Boolean(providerConfigFor(c, provider)))
+					.map(([id, provider]) => ({ id, label: provider.label }));
+				return c.json({ ok: true, payload });
 			});
 
-			app.get('/v1/auth/oauth/:provider/callback', (c) => {
+			app.get('/v1/auth/oauth/:provider/start', async (c) => {
 				const provider = c.req.param('provider');
-				return jsonError(c, 501, `OAuth provider "${provider}" is not configured on the API yet.`);
+				const configured = providerConfigFor(c, provider);
+				if (!configured) return jsonError(c, 404, 'The requested identity provider is unavailable.');
+				const purpose = ['link', 'reauthenticate'].includes(c.req.query('purpose')) ? c.req.query('purpose') : 'sign-in';
+				const auth = purpose === 'sign-in' ? null : await ensurePrincipal(c);
+				if (auth?.response) return auth.response;
+				const state = randomBytes(32).toString('base64url');
+				const verifier = randomBytes(48).toString('base64url');
+				const challenge = createHash('sha256').update(verifier).digest('base64url');
+				const callbackUrl = String(c.req.query('callbackUrl') ?? `${resolveAuthApprovalBaseUrl(config)}/auth/callback/${provider}`);
+				const returnTo = sanitizedReturnTo(c.req.query('returnTo'));
+				const now = new Date();
+				const nonce = randomBytes(24).toString('base64url');
+				await store.run(
+					`INSERT INTO auth_provider_states (id, provider, state_hash, code_verifier, nonce, callback_url, return_to, link_user_id, purpose, action, expires_at, used_at, created_at)
+					 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+					[randomUUID(), provider, createHash('sha256').update(state).digest('hex'), verifier, nonce, callbackUrl, returnTo, auth?.principal?.id ?? null, purpose, c.req.query('action') ?? null, new Date(now.getTime() + 10 * 60_000).toISOString(), now.toISOString()],
+				);
+				const target = new URL(configured.authorizeUrl);
+				target.searchParams.set('client_id', configured.clientId);
+				target.searchParams.set('redirect_uri', callbackUrl);
+				target.searchParams.set('response_type', 'code');
+				target.searchParams.set('scope', configured.scopes);
+				target.searchParams.set('state', state);
+				target.searchParams.set('code_challenge', challenge);
+				target.searchParams.set('code_challenge_method', 'S256');
+				if (provider !== 'github') target.searchParams.set('nonce', nonce);
+				if (provider === 'apple') target.searchParams.set('response_mode', 'form_post');
+				return c.redirect(target.toString(), 302);
 			});
 
-			app.get('/v1/auth/web/username/check', async (c) => {
+			app.on(['GET', 'POST'], '/v1/auth/oauth/:provider/callback', async (c) => {
+				const provider = c.req.param('provider');
+				const configured = providerConfigFor(c, provider);
+				if (!configured) return jsonError(c, 404, 'The requested identity provider is unavailable.');
+				const callbackBody = c.req.method === 'POST' ? await readJsonOrFormBody(c) : {};
+				const state = String(c.req.query('state') ?? callbackBody.state ?? '');
+				const code = String(c.req.query('code') ?? callbackBody.code ?? '');
+				const row = await store.first(`SELECT * FROM auth_provider_states WHERE provider = ? AND state_hash = ? AND used_at IS NULL LIMIT 1`, [provider, createHash('sha256').update(state).digest('hex')]);
+				if (!row || !code || new Date(row.expires_at).getTime() <= Date.now()) return jsonError(c, 401, 'The provider sign-in request is invalid or expired.');
+				await store.run(`UPDATE auth_provider_states SET used_at = ? WHERE id = ? AND used_at IS NULL`, [new Date().toISOString(), row.id]);
+				try {
+					const identity = await exchangeProviderIdentity(provider, configured, code, row.callback_url, row.code_verifier, row.nonce);
+					if (!identity.subject || !identity.emailVerified || !identity.email) return jsonError(c, 409, 'A verified provider email is required.');
+					const existingIdentity = await store.first(`SELECT user_id FROM user_identities WHERE provider = ? AND provider_subject = ? LIMIT 1`, [provider, identity.subject]);
+					const normalizedProviderEmail = normalizeEmail(identity.email);
+					const existingEmail = await store.first(`SELECT user_id FROM user_email_addresses WHERE normalized_email = ? LIMIT 1`, [normalizedProviderEmail])
+						?? await store.first(`SELECT id AS user_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`, [normalizedProviderEmail]);
+					if (existingIdentity && row.link_user_id && existingIdentity.user_id !== row.link_user_id) return jsonError(c, 409, 'The provider identity belongs to another account.');
+					if (!existingIdentity && !row.link_user_id && existingEmail) return jsonError(c, 409, 'Sign in to the existing account before linking this provider.');
+					let userId = existingIdentity?.user_id ?? row.link_user_id ?? null;
+					if (!existingIdentity && row.link_user_id) {
+						const now = new Date().toISOString();
+						await store.run(`INSERT INTO user_identities (id, user_id, provider, provider_subject, email, email_verified, profile_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`, [randomUUID(), row.link_user_id, provider, identity.subject, normalizedProviderEmail, JSON.stringify(identity.profile ?? {}), now, now]);
+					} else if (!userId) {
+						const synced = await runtimeMarketAuthProvider.syncUserIdentity({ provider, providerSubject: identity.subject, email: normalizedProviderEmail, emailVerified: true, displayName: identity.displayName, profile: identity.profile ?? {} });
+						userId = synced.principal.id;
+					}
+					const session = await createMarketWebSession(runtimeMarketAuthProvider, userId, webSessionData(c, `oauth_${provider}`), { store, authSecret: runtime.resolved.config.authSecret });
+					if (row.purpose === 'reauthenticate') {
+						const grantId = randomUUID();
+						await store.run(`INSERT INTO auth_reauthentication_grants (id, user_id, session_id, action, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)`, [grantId, userId, session.principal.metadata?.sessionId ?? '', row.action ?? 'account_delete', new Date(Date.now() + 5 * 60_000).toISOString(), new Date().toISOString()]);
+						return c.json({ ok: true, payload: { ...webAuthPayload(session), returnTo: `${row.return_to}${row.return_to.includes('?') ? '&' : '?'}reauthenticationGrantId=${encodeURIComponent(grantId)}` } });
+					}
+					const username = normalizeUsername(session.principal.metadata?.username);
+					return c.json({ ok: true, payload: { ...webAuthPayload(session), returnTo: username ? row.return_to : `/auth/username?returnTo=${encodeURIComponent(row.return_to)}` } });
+				} catch (error) {
+					return jsonError(c, 401, error instanceof Error ? error.message : 'Provider sign-in failed.');
+				}
+			});
+
+			app.get('/v1/auth/availability/username', async (c) => {
 				await ensureMarketCredentialSchema(store);
-				const username = normalizeUsername(c.req.query('username'));
+				const username = normalizeUsername(c.req.query('value'));
+				const retryAfterSeconds = availabilityRateLimit(c, 'username', username);
+				c.header('Cache-Control', 'no-store');
+				if (retryAfterSeconds) return c.json({ ok: true, payload: { value: username, available: false, status: 'throttled', message: 'Please wait before checking again.', retryAfterSeconds } });
 				const validation = validatePublicUsername(username);
 				if (!validation.ok) {
 					return c.json({
 						ok: true,
 						payload: {
-							username,
+							value: username,
 							available: false,
 							status: validation.code === 'missing' ? 'empty' : validation.code,
 							message: validation.code === 'missing' ? 'Username is public and cannot be changed after registration.' : validation.message,
@@ -8235,7 +8462,7 @@ export function createApiApp(options = {}): Hono {
 				return c.json({
 					ok: true,
 					payload: {
-						username,
+						value: username,
 						available: !userTaken && !teamTaken,
 						status: userTaken || teamTaken ? 'taken' : 'available',
 						message: userTaken ? 'Username is already taken.' : teamTaken ? 'Username is already taken by a team.' : 'Username is available.',
@@ -8243,11 +8470,77 @@ export function createApiApp(options = {}): Hono {
 				});
 			});
 
+			app.get('/v1/auth/availability/email', async (c) => {
+				await ensureMarketCredentialSchema(store);
+				const email = normalizeEmail(c.req.query('value'));
+				const retryAfterSeconds = availabilityRateLimit(c, 'email', email);
+				c.header('Cache-Control', 'no-store');
+				if (retryAfterSeconds) return c.json({ ok: true, payload: { value: email, available: false, status: 'throttled', message: 'Please wait before checking again.', retryAfterSeconds } });
+				if (!email || !email.includes('@')) return c.json({ ok: true, payload: { value: email, available: false, status: 'invalid', message: 'Enter a valid email address.' } });
+				const existing = await store.first(`SELECT user_id FROM user_email_addresses WHERE normalized_email = ? LIMIT 1`, [email])
+					?? await store.first(`SELECT user_id FROM market_auth_credentials WHERE email = ? LIMIT 1`, [email]);
+				return c.json({ ok: true, payload: { value: email, available: !existing, status: existing ? 'taken' : 'available', message: existing ? 'This email can’t be used.' : 'Email is available.' } });
+			});
+
 			app.get('/v1/auth/web/emails', async (c) => {
 				await ensureMarketCredentialSchema(store);
 				const auth = await ensurePrincipal(c);
 				if (auth.response) return auth.response;
 				return c.json({ ok: true, payload: await listUserEmailAddresses(store, auth.principal.id) });
+			});
+
+			app.get('/v1/auth/web/account/identity', async (c) => {
+				await ensureMarketCredentialSchema(store);
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const user = await store.first(`SELECT id, username, display_name, metadata_json FROM users WHERE id = ? LIMIT 1`, [auth.principal.id]);
+				const credential = await store.first(`SELECT user_id FROM market_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
+				const identities = await store.all(`SELECT id, provider, email, created_at FROM user_identities WHERE user_id = ? AND provider <> 'credential' ORDER BY created_at`, [auth.principal.id]);
+				const metadata = parseJsonObject(user?.metadata_json);
+				const usableMethods = identities.length + (credential ? 1 : 0);
+				return c.json({ ok: true, payload: {
+					id: auth.principal.id,
+					username: normalizeUsername(user?.username ?? metadata.username),
+					displayName: user?.display_name ?? auth.principal.displayName ?? '',
+					firstName: metadata.firstName ?? null,
+					lastName: metadata.lastName ?? null,
+					image: metadata.image ?? null,
+					hasCredential: Boolean(credential),
+					emails: await listUserEmailAddresses(store, auth.principal.id),
+					providers: identities.map((identity) => ({ id: identity.id, provider: identity.provider, email: identity.email, linkedAt: identity.created_at, canUnlink: usableMethods > 1 })),
+				} });
+			});
+
+			app.patch('/v1/auth/web/username', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const current = await store.first(`SELECT username FROM users WHERE id = ? LIMIT 1`, [auth.principal.id]);
+				if (normalizeUsername(current?.username ?? auth.principal.metadata?.username)) return jsonError(c, 409, 'Username is permanent and has already been assigned.', { code: 'username_immutable' });
+				const body = await readJsonOrFormBody(c);
+				const username = normalizeUsername(body.username);
+				const validation = validatePublicUsername(username);
+				if (!validation.ok) return jsonError(c, 400, validation.message, { code: validation.code });
+				if (await store.publicUsernameExists(username) || await store.teamPublicNameExists(username)) return jsonError(c, 409, 'Username is already taken.', { code: 'username_taken' });
+				const metadata = { ...(auth.principal.metadata ?? {}), username };
+				try {
+					await store.run(`UPDATE users SET username = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND (username IS NULL OR username = '')`, [username, JSON.stringify(metadata), new Date().toISOString(), auth.principal.id]);
+				} catch {
+					return jsonError(c, 409, 'Username is already taken.', { code: 'username_taken' });
+				}
+				const session = await createMarketWebSession(runtimeMarketAuthProvider, auth.principal.id, webSessionData(c, 'username_claim'), { store, authSecret: runtime.resolved.config.authSecret });
+				return c.json({ ok: true, payload: { ...webAuthPayload(session), username } });
+			});
+
+			app.delete('/v1/auth/web/providers/:identityId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const identity = await store.first(`SELECT * FROM user_identities WHERE id = ? AND user_id = ? LIMIT 1`, [c.req.param('identityId'), auth.principal.id]);
+				if (!identity) return jsonError(c, 404, 'Connected identity was not found.');
+				const credential = await store.first(`SELECT user_id FROM market_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
+				const identityCount = await store.first(`SELECT COUNT(*) AS count FROM user_identities WHERE user_id = ?`, [auth.principal.id]);
+				if (!credential && Number(identityCount?.count ?? 0) <= 1) return jsonError(c, 409, 'Keep at least one sign-in method connected.', { code: 'last_authentication_method' });
+				await store.run(`DELETE FROM user_identities WHERE id = ? AND user_id = ?`, [identity.id, auth.principal.id]);
+				return c.json({ ok: true, payload: { id: identity.id, unlinked: true } });
 			});
 
 			app.post('/v1/auth/web/emails', async (c) => {
@@ -8361,22 +8654,30 @@ export function createApiApp(options = {}): Hono {
 			app.post('/v1/auth/web/sessions/:sessionId/revoke', async (c) => {
 				const auth = await ensurePrincipal(c);
 				if (auth.response) return auth.response;
+				const sessionId = c.req.param('sessionId');
+				if (auth.principal.metadata?.sessionId === sessionId) return jsonError(c, 409, 'Use sign out to end the current session.', { code: 'current_session' });
+				const existing = await store.first(`SELECT revoked_at FROM auth_sessions WHERE id = ? AND user_id = ? LIMIT 1`, [sessionId, auth.principal.id]);
+				if (!existing) return c.json({ ok: true, payload: { id: sessionId, status: 'not-found' } });
 				await store.run(
 					`UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE id = ? AND user_id = ?`,
-					[new Date().toISOString(), new Date().toISOString(), c.req.param('sessionId'), auth.principal.id],
+					[new Date().toISOString(), new Date().toISOString(), sessionId, auth.principal.id],
 				);
-				return c.json({ ok: true });
+				return c.json({ ok: true, payload: { id: sessionId, status: existing.revoked_at ? 'already-revoked' : 'revoked' } });
 			});
 
 			app.patch('/v1/auth/web/profile', async (c) => {
 				const auth = await ensurePrincipal(c);
 				if (auth.response) return auth.response;
 				const body = await readJsonOrFormBody(c);
-				const displayName = String(body.displayName ?? body.name ?? '').trim();
+				const firstName = optionalTrimmedString(body.firstName);
+				const lastName = optionalTrimmedString(body.lastName);
+				const displayName = String(body.displayName ?? body.name ?? [firstName, lastName].filter(Boolean).join(' ')).trim();
 				const image = optionalTrimmedString(body.image);
 				if (!displayName) return jsonError(c, 400, 'Display name is required.');
 				const metadata = {
 					...(auth.principal.metadata ?? {}),
+					firstName,
+					lastName,
 					image,
 				};
 				await store.run(`UPDATE users SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?`, [
@@ -8385,8 +8686,7 @@ export function createApiApp(options = {}): Hono {
 					new Date().toISOString(),
 					auth.principal.id,
 				]);
-				const session = await createMarketWebSession(runtimeMarketAuthProvider, auth.principal.id, webSessionData(c, 'profile_update'), { store, authSecret: runtime.resolved.config.authSecret });
-				return c.json({ ok: true, payload: webAuthPayload(session) });
+				return c.json({ ok: true, payload: { changed: true } });
 			});
 
 			app.get('/v1/auth/web/appearance', async (c) => {
@@ -8403,6 +8703,11 @@ export function createApiApp(options = {}): Hono {
 				if (auth.response) return auth.response;
 				const body = await readJsonOrFormBody(c);
 				const appearance = normalizeAppearancePreference(body);
+				if (appearance.scheme.startsWith('personal-')) {
+					const themeId = appearance.scheme.slice('personal-'.length);
+					const owned = await store.first(`SELECT id FROM user_personal_themes WHERE id = ? AND user_id = ? LIMIT 1`, [themeId, auth.principal.id]);
+					if (!owned) return jsonError(c, 404, 'Personal theme was not found.');
+				}
 				const metadata = {
 					...(auth.principal.metadata ?? {}),
 					appearance,
@@ -8416,32 +8721,107 @@ export function createApiApp(options = {}): Hono {
 				return c.json({ ok: true, payload: { ...webAuthPayload(session), ...appearance } });
 			});
 
-			app.patch('/v1/auth/web/email', async (c) => {
-				await ensureMarketCredentialSchema(store);
+			app.get('/v1/auth/web/themes', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const rows = await store.all(`SELECT * FROM user_personal_themes WHERE user_id = ? ORDER BY normalized_name`, [auth.principal.id]);
+				return c.json({ ok: true, payload: rows.map(personalThemeFromRow) });
+			});
+
+			app.post('/v1/auth/web/themes', async (c) => {
 				const auth = await ensurePrincipal(c);
 				if (auth.response) return auth.response;
 				const body = await readJsonOrFormBody(c);
-				const email = normalizeEmail(body.email ?? body.newEmail);
-				if (!email || !email.includes('@')) return jsonError(c, 400, 'A valid email is required.');
+				const draft = typeof body.palette === 'string' ? { ...body, palette: JSON.parse(body.palette) } : body;
+				if (!isValidPersonalThemeDraft(draft)) return jsonError(c, 400, 'Theme name and valid light/dark palette colors are required.');
+				const id = randomUUID();
+				const now = new Date().toISOString();
 				try {
-					const result = await createOrResendUserEmailAddress(store, marketAuthContext(c), auth.principal.id, {
-						email,
-						displayName: auth.principal.displayName,
-						returnTo: '/app/account',
-						skipDelivery: shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config),
-					});
-					if (!result.ok) return jsonError(c, result.status, result.error);
-					if (result.emailAddress?.status === 'verified') {
-						await setPrimaryEmailAddress(store, auth.principal.id, result.emailAddress.id);
-					}
-						const session = await createMarketWebSession(runtimeMarketAuthProvider, auth.principal.id, webSessionData(c, 'email_update'), { store, authSecret: runtime.resolved.config.authSecret });
-					return c.json({ ok: true, payload: { ...webAuthPayload(session), ...result } });
-				} catch (error) {
-					console.warn('[market-auth] Email verification setup failed:', error instanceof Error ? error.message : String(error));
-					return jsonError(c, 503, 'Email verification could not be sent. Please try again shortly.', {
-						code: 'email_verification_delivery_failed',
-					});
+					await store.run(`INSERT INTO user_personal_themes (id, user_id, name, normalized_name, base_scheme, palette_json, compiler_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, auth.principal.id, draft.name.trim(), draft.name.trim().toLowerCase(), draft.baseScheme.trim(), JSON.stringify(draft.palette), PERSONAL_THEME_COMPILER_VERSION, now, now]);
+				} catch {
+					return jsonError(c, 409, 'A personal theme with that name already exists.', { code: 'theme_name_conflict' });
 				}
+				return c.json({ ok: true, payload: personalThemeFromRow(await store.first(`SELECT * FROM user_personal_themes WHERE id = ?`, [id])) }, 201);
+			});
+
+			app.patch('/v1/auth/web/themes/:themeId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const existing = await store.first(`SELECT * FROM user_personal_themes WHERE id = ? AND user_id = ? LIMIT 1`, [c.req.param('themeId'), auth.principal.id]);
+				if (!existing) return jsonError(c, 404, 'Personal theme was not found.');
+				const body = await readJsonOrFormBody(c);
+				const draft = typeof body.palette === 'string' ? { ...body, palette: JSON.parse(body.palette) } : body;
+				if (!isValidPersonalThemeDraft(draft)) return jsonError(c, 400, 'Theme name and valid light/dark palette colors are required.');
+				try {
+					await store.run(`UPDATE user_personal_themes SET name = ?, normalized_name = ?, base_scheme = ?, palette_json = ?, compiler_version = ?, updated_at = ? WHERE id = ? AND user_id = ?`, [draft.name.trim(), draft.name.trim().toLowerCase(), draft.baseScheme.trim(), JSON.stringify(draft.palette), PERSONAL_THEME_COMPILER_VERSION, new Date().toISOString(), existing.id, auth.principal.id]);
+				} catch {
+					return jsonError(c, 409, 'A personal theme with that name already exists.', { code: 'theme_name_conflict' });
+				}
+				return c.json({ ok: true, payload: personalThemeFromRow(await store.first(`SELECT * FROM user_personal_themes WHERE id = ?`, [existing.id])) });
+			});
+
+			app.delete('/v1/auth/web/themes/:themeId', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const themeId = c.req.param('themeId');
+				const existing = await store.first(`SELECT id FROM user_personal_themes WHERE id = ? AND user_id = ? LIMIT 1`, [themeId, auth.principal.id]);
+				if (!existing) return jsonError(c, 404, 'Personal theme was not found.');
+				const user = await store.first(`SELECT metadata_json FROM users WHERE id = ? LIMIT 1`, [auth.principal.id]);
+				const appearance = normalizeAppearancePreference(parseJsonObject(user?.metadata_json).appearance ?? {});
+				if (appearance.scheme === `personal-${themeId}`) return jsonError(c, 409, 'Switch themes from the theme selector before deleting the active theme.', { code: 'active_theme' });
+				await store.run(`DELETE FROM user_personal_themes WHERE id = ? AND user_id = ?`, [themeId, auth.principal.id]);
+				return c.json({ ok: true, payload: { id: themeId, deleted: true } });
+			});
+
+			app.get('/v1/auth/web/notifications/preferences', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				return c.json({ ok: true, payload: await loadNotificationPreferences(store, auth.principal.id), capabilities: NOTIFICATION_CONTENT_CAPABILITIES });
+			});
+
+			app.put('/v1/auth/web/notifications/preferences', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await readJsonOrFormBody(c);
+				const input = typeof body.preferences === 'string' ? JSON.parse(body.preferences) : body;
+				const preferences = normalizeNotificationPreferences(input);
+				try { new Intl.DateTimeFormat('en', { timeZone: preferences.timeZone }); } catch { return jsonError(c, 400, 'A valid IANA time zone is required.'); }
+				const projects = await store.listProjectsForPrincipal(auth.principal);
+				const allowed = new Set(projects.map((project) => project.id));
+				if (preferences.projectOverrides.some((entry) => !allowed.has(entry.projectId))) return jsonError(c, 403, 'A selected project is unavailable.');
+				const now = new Date().toISOString();
+				const replacements = [
+					{ query: `INSERT INTO user_notification_preferences (user_id, email_cadence, time_zone, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET email_cadence = EXCLUDED.email_cadence, time_zone = EXCLUDED.time_zone, updated_at = EXCLUDED.updated_at`, params: [auth.principal.id, preferences.emailCadence, preferences.timeZone, now, now] },
+					{ query: `DELETE FROM user_notification_global_content_types WHERE user_id = ?`, params: [auth.principal.id] },
+					{ query: `DELETE FROM user_notification_project_content_types WHERE user_id = ?`, params: [auth.principal.id] },
+					{ query: `DELETE FROM user_notification_project_overrides WHERE user_id = ?`, params: [auth.principal.id] },
+					...preferences.globalContentTypes.map((contentType) => ({ query: `INSERT INTO user_notification_global_content_types (user_id, content_type) VALUES (?, ?)`, params: [auth.principal.id, contentType] })),
+				];
+				for (const override of preferences.projectOverrides) {
+					replacements.push({ query: `INSERT INTO user_notification_project_overrides (user_id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?)`, params: [auth.principal.id, override.projectId, now, now] });
+					for (const contentType of override.contentTypes) replacements.push({ query: `INSERT INTO user_notification_project_content_types (user_id, project_id, content_type) VALUES (?, ?, ?)`, params: [auth.principal.id, override.projectId, contentType] });
+				}
+				await store.batch(replacements);
+				return c.json({ ok: true, payload: await loadNotificationPreferences(store, auth.principal.id) });
+			});
+
+			app.get('/v1/auth/web/notifications', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const allowedProjects = new Set((await store.listProjectsForPrincipal(auth.principal)).map((project) => project.id));
+				const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 20)));
+				const rows = await store.all(`SELECT user_notifications.id, user_notifications.read_at, user_notifications.created_at, notification_events.* FROM user_notifications INNER JOIN notification_events ON notification_events.id = user_notifications.event_id WHERE user_notifications.user_id = ? ORDER BY user_notifications.created_at DESC LIMIT ?`, [auth.principal.id, limit * 3]);
+				return c.json({ ok: true, payload: rows.filter((row) => allowedProjects.has(row.project_id)).slice(0, limit).map((row) => ({ id: row.id, eventType: row.event_type, contentType: row.content_type, projectId: row.project_id, title: row.title, summary: row.summary, targetUrl: row.target_url, createdAt: row.created_at, readAt: row.read_at })) });
+			});
+
+			app.post('/v1/auth/web/notifications/:notificationId/read', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const row = await store.first(`SELECT id, read_at FROM user_notifications WHERE id = ? AND user_id = ? LIMIT 1`, [c.req.param('notificationId'), auth.principal.id]);
+				if (!row) return jsonError(c, 404, 'Notification was not found.');
+				const readAt = row.read_at ?? new Date().toISOString();
+				await store.run(`UPDATE user_notifications SET read_at = ? WHERE id = ? AND user_id = ?`, [readAt, row.id, auth.principal.id]);
+				return c.json({ ok: true, payload: { id: row.id, readAt } });
 			});
 
 			app.patch('/v1/auth/web/password', async (c) => {
@@ -8453,9 +8833,7 @@ export function createApiApp(options = {}): Hono {
 				const newPassword = String(body.newPassword ?? body.password ?? '');
 				if (!validateMarketPassword(newPassword)) return jsonError(c, 400, 'Password must be at least 12 characters.');
 				const row = await store.first(`SELECT password_hash FROM market_auth_credentials WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
-				if (row && currentPassword && !verifyMarketPassword(currentPassword, row.password_hash)) {
-					return jsonError(c, 401, 'Current password was not accepted.');
-				}
+				if (!await consumeReauthentication(store, auth.principal, 'password_change', body)) return jsonError(c, 401, 'Reauthentication is required.', { code: 'reauthentication_required' });
 				if (!row) {
 					const email = normalizeEmail(auth.principal.metadata?.email);
 					const username = normalizeUsername(auth.principal.metadata?.username ?? auth.principal.id);
@@ -8471,7 +8849,20 @@ export function createApiApp(options = {}): Hono {
 						auth.principal.id,
 					]);
 				}
-				return c.json({ ok: true });
+				return c.json({ ok: true, payload: { changed: true } });
+			});
+
+			app.post('/v1/auth/web/reauthenticate', async (c) => {
+				const auth = await ensurePrincipal(c);
+				if (auth.response) return auth.response;
+				const body = await readJsonOrFormBody(c);
+				const action = ['password_change', 'account_delete'].includes(body.action) ? body.action : null;
+				if (!action) return jsonError(c, 400, 'A valid reauthentication action is required.');
+				const credential = await store.first(`SELECT password_hash FROM market_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
+				if (!credential || !verifyMarketPassword(String(body.password ?? ''), credential.password_hash)) return jsonError(c, 401, 'Current password was not accepted.');
+				const grantId = randomUUID();
+				await store.run(`INSERT INTO auth_reauthentication_grants (id, user_id, session_id, action, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)`, [grantId, auth.principal.id, auth.principal.metadata?.sessionId ?? '', action, new Date(Date.now() + 5 * 60_000).toISOString(), new Date().toISOString()]);
+				return c.json({ ok: true, payload: { grantId, action, expiresInSeconds: 300 } });
 			});
 
 			app.post('/v1/auth/web/password-reset/request', async (c) => {
@@ -8568,20 +8959,8 @@ export function createApiApp(options = {}): Hono {
 			app.get('/v1/auth/web/account/deletion-blockers', async (c) => {
 				const auth = await ensurePrincipal(c);
 				if (auth.response) return auth.response;
-				const teams = await store.listTeamsForPrincipal(auth.principal);
-				const blockers = teams
-					.filter((team) => Array.isArray(team.roles) ? team.roles.includes('owner') : team.role === 'owner')
-					.map((team) => ({
-						code: 'team_owner',
-						message: `Transfer or delete team "${team.displayName ?? team.name ?? team.slug}" before deleting this account.`,
-						teamId: team.id,
-						teamSlug: team.slug,
-						teamName: team.displayName ?? team.name ?? team.slug,
-					}));
-				if (auth.principal.roles?.includes?.('platform_admin')) {
-					blockers.push({ code: 'platform_admin', message: 'Remove platform admin role before deleting this account.' });
-				}
-				return c.json({ ok: true, payload: blockers });
+				const blockers = await accountDeletionBlockers(store, auth.principal);
+				return c.json({ ok: true, payload: { blockers, canDelete: blockers.length === 0 } });
 			});
 
 			app.delete('/v1/auth/web/account', async (c) => {
@@ -8592,15 +8971,17 @@ export function createApiApp(options = {}): Hono {
 				if (!accountDeletionConfirmationMatches(String(body.confirmation ?? ''))) {
 					return jsonError(c, 409, 'Type "DELETE MY ACCOUNT" to delete this account.', { code: 'confirmation' });
 				}
-				await store.run(`UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?`, [new Date().toISOString(), auth.principal.id]);
-				await store.run(`UPDATE market_auth_credentials SET status = 'deleted', updated_at = ? WHERE user_id = ?`, [new Date().toISOString(), auth.principal.id]);
-				await store.run(`DELETE FROM user_email_addresses WHERE user_id = ?`, [auth.principal.id]).catch(() => null);
-				await store.run(`UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE user_id = ?`, [
-					new Date().toISOString(),
-					new Date().toISOString(),
-					auth.principal.id,
-				]).catch(() => {});
-				return c.json({ ok: true });
+				const blockers = await accountDeletionBlockers(store, auth.principal);
+				if (blockers.length) return jsonError(c, 409, 'Account deletion is blocked.', { code: 'deletion_blocked', blockers });
+				if (!await consumeReauthentication(store, auth.principal, 'account_delete', body)) return jsonError(c, 401, 'Reauthentication is required.', { code: 'reauthentication_required' });
+				const now = new Date().toISOString();
+				await store.batch([
+					{ query: `UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?`, params: [now, auth.principal.id] },
+					{ query: `UPDATE market_auth_credentials SET email = ?, status = 'deleted', updated_at = ? WHERE user_id = ?`, params: [`deleted+${auth.principal.id}@invalid`, now, auth.principal.id] },
+					...['user_email_addresses', 'user_identities', 'auth_reauthentication_grants', 'user_personal_themes', 'user_notification_global_content_types', 'user_notification_project_content_types', 'user_notification_project_overrides', 'user_notification_preferences', 'notification_email_deliveries', 'user_notifications'].map((table) => ({ query: `DELETE FROM ${table} WHERE user_id = ?`, params: [auth.principal.id] })),
+					{ query: `UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE user_id = ?`, params: [now, now, auth.principal.id] },
+				]);
+				return c.json({ ok: true, payload: { deleted: true } });
 			});
 
 			app.post('/v1/auth/token/refresh', async (c) => {
@@ -16397,6 +16778,19 @@ export function createApiApp(options = {}): Hono {
 				}
 				if (job.namespace === 'content' && job.operation === 'publish') {
 					await applyContentPublishResult(store, job, body.output);
+					for (const event of Array.isArray(body.output?.notificationEvents) ? body.output.notificationEvents : []) {
+						await recordContentNotificationEvent(store, {
+							idempotencyKey: String(event.idempotencyKey ?? `${job.id}:${event.contentType}:${event.resourceId}`),
+							eventType: String(event.eventType ?? ''),
+							contentType: String(event.contentType ?? ''),
+							projectId: job.projectId,
+							actorId: typeof event.actorId === 'string' ? event.actorId : null,
+							resourceId: String(event.resourceId ?? ''),
+							title: String(event.title ?? ''),
+							summary: typeof event.summary === 'string' ? event.summary : null,
+							targetUrl: String(event.targetUrl ?? ''),
+						});
+					}
 					const project = await store.getProject(job.projectId);
 					if (project) {
 						await store.deleteTeamInboxItemsByItemKey(project.teamId, job.id);
