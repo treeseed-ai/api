@@ -551,7 +551,7 @@ function bodyForFactory(factory, descriptor, actor) {
 		capacityProviderDeployment: { launchMode: 'self_hosted' },
 		executionProvider: {
 			name: `Acceptance ${actor} Native Capacity`,
-			kind: 'codex_subscription',
+			kind: 'codex',
 			nativeUnit: 'wall_minute',
 			quotaVisibility: 'opaque',
 			maxConcurrentWorkers: 1,

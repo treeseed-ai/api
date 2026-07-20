@@ -139,7 +139,7 @@ describe('atomic capacity admission and settlement', () => {
 			await expect(commitCapacityAdmission(store, { idempotencyKey: 'admit-over-cap', admission: admission(5), assignment: { projectAgentClassId: 'class-a', workDayId: 'workday-over-cap' } })).rejects.toMatchObject({ code: 'capacity_admission_concurrent_limit_exhausted' });
 
 			const usageActual = {
-				nativeUsage: { executionUsage: [{ kind: 'codex_subscription', unit: 'wall_minute', amount: 1.25 }] },
+				nativeUsage: { executionUsage: [{ kind: 'codex', unit: 'wall_minute', amount: 1.25 }] },
 				taskSignature: 'class-a:planning',
 				executionProviderId: 'codex',
 				inputTokens: 100,
