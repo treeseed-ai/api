@@ -7,7 +7,7 @@ journey: Release Downstream After Deliverable Approval
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Approved deliverable manifests satisfy graph dependencies and release downstream assignment nodes."
-status: active
+status: planned
 actors:
   allowed: [project_manager, capacity_operator, team_owner]
   forbidden: [anonymous_user, unauthorized_user]

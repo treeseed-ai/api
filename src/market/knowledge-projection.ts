@@ -159,7 +159,7 @@ async function loadKnowledgeBundles(input: KnowledgeProjectionInput): Promise<Kn
 		const [summary, agents, workdays, approvals, releases] = await Promise.all([
 			typeof store.getProjectSummary === 'function' ? store.getProjectSummary(project.id, input.principal).catch(() => null) : null,
 			typeof store.getProjectAgentsSummary === 'function' ? store.getProjectAgentsSummary(project.id, input.principal).catch(() => null) : null,
-			typeof store.listProjectWorkdaySummaries === 'function' ? store.listProjectWorkdaySummaries(project.id, null).catch(() => []) : [],
+			typeof store.listWorkdayCapacityEnvelopes === 'function' ? store.listWorkdayCapacityEnvelopes(project.id) : [],
 			typeof store.listApprovalRequestsForProject === 'function' ? store.listApprovalRequestsForProject(project.id, 200).catch(() => []) : [],
 			typeof store.getProjectReleasesSummary === 'function' ? store.getProjectReleasesSummary(project.id, input.principal).catch(() => null) : null,
 		]);

@@ -69,71 +69,6 @@ function mergeSeedMetadata(existingMetadata, desiredMetadata, action, manifestHa
 	};
 }
 
-function normalizeProviderKind(kind) {
-	if (kind === 'local') return 'team_owned';
-	if (kind === 'managed') return 'treeseed_managed';
-	return kind ?? 'team_owned';
-}
-
-function providerManifestKind(provider) {
-	return provider?.metadata?.manifestKind ?? provider?.metadata?.seedManifestKind ?? (provider?.kind === 'team_owned' && provider?.provider === 'local' ? 'local' : provider?.kind);
-}
-
-function emptyObjectAsNull(value) {
-	return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0 ? null : value ?? null;
-}
-
-function zeroAsNull(value) {
-	return Number(value ?? 0) === 0 ? null : Number(value);
-}
-
-function normalizeNativeLimits(limits, desiredLimits = []) {
-	return (Array.isArray(limits) ? limits : [])
-		.map((limit) => {
-			const desired = desiredLimits.find((entry) => (
-				(entry.id && entry.id === limit.id)
-				|| ((entry.scope ?? entry.limitScope ?? 'daily') === (limit.scope ?? 'daily') && (entry.nativeUnit ?? limit.nativeUnit) === limit.nativeUnit)
-			)) ?? null;
-			return {
-				id: desired?.id ? limit.id ?? undefined : undefined,
-				scope: limit.scope ?? undefined,
-				nativeUnit: limit.nativeUnit ?? undefined,
-				limitAmount: Number(limit.limitAmount ?? 0),
-				reserveBufferPercent: limit.reserveBufferPercent ?? undefined,
-				resetCadence: limit.resetCadence ?? undefined,
-				resetAt: limit.resetAt ?? undefined,
-				confidence: limit.confidence ?? undefined,
-				source: limit.source ?? undefined,
-				metadata: emptyObjectAsNull(limit.metadata) ?? undefined,
-			};
-		})
-		.sort(sortBy((limit) => limit.id, (limit) => limit.scope, (limit) => limit.nativeUnit));
-}
-
-function normalizeExecutionProviders(executionProviders, desiredProviders = []) {
-	return (Array.isArray(executionProviders) ? executionProviders : [])
-		.map((provider) => {
-			const desired = desiredProviders.find((entry) => (
-				(entry.id && entry.id === provider.id)
-				|| (entry.name === provider.name && entry.kind === provider.kind)
-			)) ?? null;
-			return {
-				id: desired?.id ? provider.id ?? undefined : undefined,
-				name: provider.name,
-				kind: provider.kind,
-				status: desired?.status ? provider.status ?? undefined : undefined,
-				nativeUnit: provider.nativeUnit,
-				quotaVisibility: provider.quotaVisibility ?? undefined,
-				maxConcurrentWorkers: provider.maxConcurrentWorkers ?? undefined,
-				resetCadence: provider.resetCadence ?? undefined,
-				config: emptyObjectAsNull(provider.config) ?? undefined,
-				metadata: emptyObjectAsNull(provider.metadata) ?? undefined,
-				nativeLimits: normalizeNativeLimits(provider.nativeLimits, desired?.nativeLimits ?? []),
-			};
-		})
-		.sort(sortBy((provider) => provider.id, (provider) => provider.name, (provider) => provider.kind));
-}
-
 export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
 	const localEnv = {
 		...env,
@@ -248,26 +183,8 @@ function manifestRefIsAllowed(seedName, manifestRef) {
 	return manifestRef === undefined || manifestRef === null || manifestRef === '' || manifestRef === `seeds/${seedName}.yaml`;
 }
 
-async function findProviderByName(store, teamId, name) {
-	return (await store.listTeamCapacityProviders(teamId)).find((provider) => provider.name === name) ?? null;
-}
-
-async function findLaneByName(store, teamId, providerId, name) {
-	return (await store.listCapacityProviderLanes(teamId, providerId)).find((lane) => lane.name === name) ?? null;
-}
-
-async function findGrant(store, teamId, input) {
-	return (await store.listCapacityGrants(teamId, {
-		providerId: input.capacityProviderId,
-		projectId: input.projectId ?? null,
-	})).find((grant) => (
-		grant.capacityProviderId === input.capacityProviderId
-		&& (grant.laneId ?? null) === (input.laneId ?? null)
-		&& grant.teamId === (input.teamId ?? teamId)
-		&& (grant.projectId ?? null) === (input.projectId ?? null)
-		&& (grant.environment ?? null) === (input.environment ?? null)
-		&& (grant.grantScope ?? 'team') === (input.grantScope ?? 'team')
-	)) ?? null;
+function emptyObjectAsNull(value) {
+	return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0 ? null : value ?? null;
 }
 
 function teamCurrentPayload(action, team) {
@@ -348,91 +265,6 @@ function hubRepositoryCurrentPayload(action, repository) {
 		accessPolicy: emptyObjectAsNull(repository.accessPolicy),
 		releasePolicy: emptyObjectAsNull(repository.releasePolicy),
 		publishPolicy: emptyObjectAsNull(repository.publishPolicy),
-		metadata: action.payload.metadata,
-	};
-}
-
-async function providerCurrentPayload(store, teamId, action, provider) {
-	if (!provider) return null;
-	const executionProviders = teamId && typeof store.listExecutionProviders === 'function'
-		? await store.listExecutionProviders(teamId, provider.id)
-		: [];
-	return {
-		teamKey: action.payload.teamKey,
-		name: provider.name,
-		kind: providerManifestKind(provider),
-		provider: provider.provider,
-		billingScope: provider.billingScope ?? null,
-			creditBudgetMode: provider.creditBudgetMode ?? 'derived',
-		monthlyCreditBudget: zeroAsNull(provider.monthlyCreditBudget),
-		dailyCreditBudget: zeroAsNull(provider.dailyCreditBudget),
-		maxConcurrentWorkdays: provider.maxConcurrentWorkdays ?? null,
-		maxConcurrentWorkers: provider.maxConcurrentWorkers ?? null,
-		capacityModel: emptyObjectAsNull(provider.capacityModel),
-		registration: action.payload.registration ?? null,
-		executionProviders: normalizeExecutionProviders(executionProviders, action.payload.executionProviders ?? []),
-		metadata: action.payload.metadata,
-	};
-}
-
-function laneCurrentPayload(action, lane) {
-	if (!lane) return null;
-	return {
-		providerKey: action.payload.providerKey,
-		name: lane.name,
-		businessModel: lane.businessModel ?? null,
-		modelFamily: lane.modelFamily ?? null,
-		modelClass: lane.modelClass ?? null,
-		regionPolicy: lane.regionPolicy ?? null,
-		unit: lane.unit ?? null,
-		scarcityLevel: lane.scarcityLevel ?? null,
-		hardLimits: emptyObjectAsNull(lane.hardLimits),
-		routingPolicy: emptyObjectAsNull(lane.routingPolicy),
-		metadata: action.payload.metadata,
-	};
-}
-
-function grantCurrentPayload(action, grant) {
-	if (!grant) return null;
-	return {
-		providerKey: action.payload.providerKey,
-		laneKey: action.payload.laneKey ?? null,
-		teamKey: action.payload.teamKey,
-		projectKey: action.payload.projectKey ?? null,
-		environment: grant.environment ?? null,
-		grantScope: grant.grantScope ?? null,
-		dailyCreditLimit: grant.dailyCreditLimit ?? null,
-		weeklyCreditLimit: grant.weeklyCreditLimit ?? null,
-		monthlyCreditLimit: grant.monthlyCreditLimit ?? null,
-		dailyUsdLimit: grant.dailyUsdLimit ?? null,
-		weeklyQuotaMinutes: grant.weeklyQuotaMinutes ?? null,
-		monthlyProviderUnits: grant.monthlyProviderUnits ?? null,
-		portfolioAllocationPercent: grant.portfolioAllocationPercent ?? null,
-		reservePoolPercent: grant.reservePoolPercent ?? null,
-		maxDailyProjectCredits: grant.maxDailyProjectCredits ?? null,
-		emergencyOverride: action.payload.emergencyOverride === true ? grant.emergencyOverride === true : null,
-		priorityWeight: grant.priorityWeight ?? null,
-		overflowPolicy: grant.overflowPolicy ?? null,
-		state: action.payload.state ?? (grant.state === 'active' ? null : grant.state ?? null),
-		metadata: action.payload.metadata,
-	};
-}
-
-function workPolicyCurrentPayload(action, policy) {
-	if (!policy) return null;
-	return {
-		projectKey: action.payload.projectKey,
-		environment: policy.environment,
-		enabled: policy.enabled ?? true,
-		startCron: policy.startCron ?? '0 9 * * 1-5',
-		durationMinutes: policy.durationMinutes ?? 480,
-		maxRunners: policy.maxRunners ?? 1,
-		maxWorkersPerRunner: policy.maxWorkersPerRunner ?? 4,
-		dailyCreditBudget: policy.dailyCreditBudget ?? null,
-		maxQueuedTasks: policy.maxQueuedTasks ?? null,
-		maxQueuedCredits: policy.maxQueuedCredits ?? null,
-		autoscale: Object.keys(policy.autoscale ?? {}).length > 0 ? policy.autoscale : null,
-		creditWeights: (policy.creditWeights ?? []).length > 0 ? policy.creditWeights : null,
 		metadata: action.payload.metadata,
 	};
 }
@@ -533,8 +365,6 @@ async function reconcilePlanWithStore(plan, store) {
 	const teamIds = new Map();
 	const repositoryHostIds = new Map();
 	const projectIds = new Map();
-	const providerIds = new Map();
-	const laneIds = new Map();
 	const productIds = new Map();
 	const nextActions = [];
 
@@ -569,41 +399,6 @@ async function reconcilePlanWithStore(plan, store) {
 			existing = projectId ? (await store.listHubRepositories(projectId)).find((repository) => repository.role === action.payload.role) ?? null : null;
 			if (existing) repositoryHostIds.set(action.payload.repositoryHostKey, existing.repositoryHostId);
 			currentPayload = hubRepositoryCurrentPayload(action, existing);
-		}
-		if (action.kind === 'capacityProvider') {
-			const teamId = teamIds.get(action.payload.teamKey);
-			existing = teamId ? await findProviderByName(store, teamId, action.payload.name) : null;
-			if (existing) providerIds.set(action.key, existing.id);
-			currentPayload = await providerCurrentPayload(store, teamId, action, existing);
-		}
-		if (action.kind === 'capacityLane') {
-			const providerId = providerIds.get(action.payload.providerKey);
-			const providerAction = plan.actions.find((entry) => entry.key === action.payload.providerKey);
-			const teamId = providerAction ? teamIds.get(providerAction.payload.teamKey) : null;
-			existing = teamId && providerId ? await findLaneByName(store, teamId, providerId, action.payload.name) : null;
-			if (existing) laneIds.set(action.key, existing.id);
-			currentPayload = laneCurrentPayload(action, existing);
-		}
-		if (action.kind === 'capacityGrant') {
-			const providerId = providerIds.get(action.payload.providerKey);
-			const teamId = teamIds.get(action.payload.teamKey);
-			const input = providerId && teamId
-				? {
-					capacityProviderId: providerId,
-					laneId: action.payload.laneKey ? laneIds.get(action.payload.laneKey) ?? null : null,
-					teamId,
-					projectId: action.payload.projectKey ? projectIds.get(action.payload.projectKey) ?? null : null,
-					environment: action.payload.environment ?? null,
-					grantScope: action.payload.grantScope ?? 'team',
-				}
-				: null;
-			existing = input ? await findGrant(store, teamId, input) : null;
-			currentPayload = grantCurrentPayload(action, existing);
-		}
-		if (action.kind === 'workPolicy') {
-			const projectId = projectIds.get(action.payload.projectKey);
-			existing = projectId ? await store.getProjectWorkPolicy(projectId, action.payload.environment) : null;
-			currentPayload = workPolicyCurrentPayload(action, existing);
 		}
 		if (action.kind === 'product') {
 			const teamId = teamIds.get(action.payload.teamKey);
@@ -733,107 +528,6 @@ async function applyAction({ action, store, ids, manifestHash, appliedAt, plan }
 			metadata,
 		});
 		return repository;
-	}
-	if (action.kind === 'capacityProvider') {
-		const teamId = ids.teams.get(action.payload.teamKey);
-		if (!teamId) throw new Error(`Missing team for ${action.key}.`);
-		let provider;
-		try {
-			provider = await store.upsertCapacityProvider(teamId, {
-				id: action.existing?.id,
-				teamId,
-				ownerTeamId: teamId,
-				name: action.payload.name,
-				kind: normalizeProviderKind(action.payload.kind),
-				status: 'active',
-					provider: action.payload.provider,
-					billingScope: action.payload.billingScope ?? 'team',
-					creditBudgetMode: action.payload.creditBudgetMode ?? 'derived',
-					monthlyCreditBudget: action.payload.monthlyCreditBudget ?? 0,
-					dailyCreditBudget: action.payload.dailyCreditBudget ?? 0,
-				maxConcurrentWorkdays: action.payload.maxConcurrentWorkdays ?? 1,
-				maxConcurrentWorkers: action.payload.maxConcurrentWorkers ?? 1,
-				capacityModel: action.payload.capacityModel ?? {},
-				metadata: {
-					...metadata,
-					manifestKind: action.payload.kind,
-				},
-			});
-		} catch (error) {
-			throw new Error(`Unable to upsert capacity provider ${action.key} for team ${teamId}: ${error instanceof Error ? error.message : String(error)}`);
-		}
-		ids.providers.set(action.key, provider.id);
-		for (const executionProvider of action.payload.executionProviders ?? []) {
-			await store.upsertExecutionProvider(teamId, provider.id, executionProvider);
-		}
-		return provider;
-	}
-	if (action.kind === 'capacityLane') {
-		const providerId = ids.providers.get(action.payload.providerKey);
-		const providerAction = plan.actions.find((entry) => entry.key === action.payload.providerKey);
-		const teamId = providerAction ? ids.teams.get(providerAction.payload.teamKey) : null;
-		if (!teamId || !providerId) throw new Error(`Missing provider for ${action.key}.`);
-		const lane = await store.upsertCapacityProviderLane(teamId, providerId, {
-			id: action.existing?.id,
-			name: action.payload.name,
-			businessModel: action.payload.businessModel ?? 'custom',
-			modelFamily: action.payload.modelFamily,
-			modelClass: action.payload.modelClass,
-			regionPolicy: action.payload.regionPolicy,
-			unit: action.payload.unit ?? 'treeseed_credit',
-			scarcityLevel: action.payload.scarcityLevel ?? 'medium',
-			hardLimits: action.payload.hardLimits ?? {},
-			routingPolicy: action.payload.routingPolicy ?? {},
-			metadata,
-		});
-		ids.lanes.set(action.key, lane.id);
-		return lane;
-	}
-	if (action.kind === 'capacityGrant') {
-		const teamId = ids.teams.get(action.payload.teamKey);
-		const providerId = ids.providers.get(action.payload.providerKey);
-		if (!teamId || !providerId) throw new Error(`Missing team or provider for ${action.key}.`);
-		return store.upsertCapacityGrant(teamId, {
-			id: action.existing?.id,
-			capacityProviderId: providerId,
-			laneId: action.payload.laneKey ? ids.lanes.get(action.payload.laneKey) ?? null : null,
-			teamId,
-			projectId: action.payload.projectKey ? ids.projects.get(action.payload.projectKey) ?? null : null,
-			environment: action.payload.environment ?? null,
-			grantScope: action.payload.grantScope ?? 'team',
-			state: action.payload.state ?? 'active',
-			dailyCreditLimit: action.payload.dailyCreditLimit,
-			weeklyCreditLimit: action.payload.weeklyCreditLimit,
-			monthlyCreditLimit: action.payload.monthlyCreditLimit,
-			dailyUsdLimit: action.payload.dailyUsdLimit,
-			weeklyQuotaMinutes: action.payload.weeklyQuotaMinutes,
-			monthlyProviderUnits: action.payload.monthlyProviderUnits,
-			portfolioAllocationPercent: action.payload.portfolioAllocationPercent,
-			reservePoolPercent: action.payload.reservePoolPercent,
-			maxDailyProjectCredits: action.payload.maxDailyProjectCredits,
-			emergencyOverride: action.payload.emergencyOverride,
-			priorityWeight: action.payload.priorityWeight ?? 1,
-			overflowPolicy: action.payload.overflowPolicy ?? 'soft_grant',
-			metadata,
-		});
-	}
-	if (action.kind === 'workPolicy') {
-		const projectId = ids.projects.get(action.payload.projectKey);
-		if (!projectId) throw new Error(`Missing project for ${action.key}.`);
-		return store.upsertProjectWorkPolicy(projectId, {
-			environment: action.payload.environment,
-			enabled: action.payload.enabled,
-			startCron: action.payload.startCron,
-			durationMinutes: action.payload.durationMinutes,
-			maxRunners: action.payload.maxRunners,
-			maxWorkersPerRunner: action.payload.maxWorkersPerRunner,
-			dailyCreditBudget: action.payload.dailyCreditBudget,
-			maxQueuedTasks: action.payload.maxQueuedTasks,
-			maxQueuedCredits: action.payload.maxQueuedCredits,
-			autoscale: action.payload.autoscale ?? {},
-			creditWeights: action.payload.creditWeights ?? [],
-			metadata,
-		});
 	}
 	if (action.kind === 'product') {
 		const teamId = ids.teams.get(action.payload.teamKey);
@@ -987,88 +681,8 @@ async function createProductionApproval({ store, plan, manifestHash, actor }) {
 	return { ok: true, approvalRequest: request };
 }
 
-function registrationApiKeyPolicy(action) {
-	const apiKey = action.payload?.registration?.apiKey;
-	if (!apiKey || typeof apiKey !== 'object' || apiKey.createIfMissing !== true) return null;
-	return apiKey;
-}
-
-function publicProviderKeyRecord(action, providerId, key, extra = {}) {
-	return {
-		providerId,
-		providerKey: action.key,
-		providerName: action.payload.name,
-		keyId: key?.id ?? null,
-		keyPrefix: key?.keyPrefix ?? null,
-		...extra,
-	};
-}
-
-function normalizedScopeList(scopes) {
-	return Array.isArray(scopes)
-		? [...new Set(scopes.map((scope) => String(scope ?? '').trim()).filter(Boolean))].sort()
-		: [];
-}
-
-function scopeListsEqual(left, right) {
-	const a = normalizedScopeList(left);
-	const b = normalizedScopeList(right);
-	return a.length === b.length && a.every((scope, index) => scope === b[index]);
-}
-
-async function ensureCapacityProviderApiKeys({ plan, store, ids, actor }) {
-	const result = { created: [], existing: [], updated: [] };
-	if (typeof store.listCapacityProviderApiKeys !== 'function' || typeof store.createCapacityProviderApiKey !== 'function') {
-		return result;
-	}
-	for (const action of selectedActions(plan)) {
-		if (action.kind !== 'capacityProvider') continue;
-		const apiKey = registrationApiKeyPolicy(action);
-		if (!apiKey) continue;
-		const teamId = ids.teams.get(action.payload.teamKey);
-		const providerId = ids.providers.get(action.key);
-		if (!teamId || !providerId) continue;
-		const activeKey = (await store.listCapacityProviderApiKeys(teamId, providerId))
-			.find((key) => key.status === 'active' && !key.revokedAt) ?? null;
-		if (activeKey) {
-			const desiredScopes = Array.isArray(apiKey.scopes) && apiKey.scopes.length > 0 ? apiKey.scopes.map(String) : null;
-			if (desiredScopes && !scopeListsEqual(activeKey.scopes, desiredScopes) && typeof store.updateCapacityProviderApiKeyScopes === 'function') {
-				const updated = await store.updateCapacityProviderApiKeyScopes(teamId, providerId, activeKey.id, desiredScopes);
-				if (updated) {
-					result.updated.push(publicProviderKeyRecord(action, providerId, updated, {
-						scopeReconciled: true,
-					}));
-					continue;
-				}
-			}
-			result.existing.push(publicProviderKeyRecord(action, providerId, activeKey));
-			continue;
-		}
-		const created = await store.createCapacityProviderApiKey(teamId, providerId, {
-			name: typeof apiKey.name === 'string' && apiKey.name.trim() ? apiKey.name.trim() : 'Seed provider security code',
-			plaintextKey: typeof apiKey.plaintextKey === 'string' && apiKey.plaintextKey.trim() ? apiKey.plaintextKey.trim() : undefined,
-			scopes: Array.isArray(apiKey.scopes) && apiKey.scopes.length > 0 ? apiKey.scopes.map(String) : undefined,
-			expiresAt: typeof apiKey.expiresAt === 'string' && apiKey.expiresAt.trim() ? apiKey.expiresAt.trim() : null,
-			createdById: actorId(actor),
-		});
-		if (created?.key) {
-			result.created.push(publicProviderKeyRecord(action, providerId, created.key, {
-				plaintextKey: created.plaintextKey,
-			}));
-		}
-	}
-	return result;
-}
-
 function redactSeedApplyResult(result) {
-	if (!result?.capacityProviderKeys) return result;
-	return {
-		...result,
-		capacityProviderKeys: {
-			...result.capacityProviderKeys,
-			created: (result.capacityProviderKeys.created ?? []).map(({ plaintextKey: _plaintextKey, ...entry }) => entry),
-		},
-	};
+	return result;
 }
 
 function localBootstrapEmails(env = process.env) {
@@ -1217,15 +831,13 @@ export async function applySeedWithStore(input) {
 		}
 	}
 	const appliedAt = isoNow();
-	const ids = { teams: new Map(), repositoryHosts: new Map(), projects: new Map(), providers: new Map(), lanes: new Map(), products: new Map(), productTeams: new Map() };
+	const ids = { teams: new Map(), repositoryHosts: new Map(), projects: new Map(), products: new Map(), productTeams: new Map() };
 	const repairs = [];
 	for (const action of selectedActions(planned.plan)) {
 		if (action.existing?.id) {
 			if (action.kind === 'team') ids.teams.set(action.key, action.existing.id);
 			if (action.kind === 'repositoryHost') ids.repositoryHosts.set(action.key, action.existing.id);
 			if (action.kind === 'project') ids.projects.set(action.key, action.existing.id);
-			if (action.kind === 'capacityProvider') ids.providers.set(action.key, action.existing.id);
-			if (action.kind === 'capacityLane') ids.lanes.set(action.key, action.existing.id);
 			if (action.kind === 'product') {
 				ids.products.set(action.key, action.existing.id);
 				ids.productTeams.set(action.key, action.existing.teamId);
@@ -1234,12 +846,6 @@ export async function applySeedWithStore(input) {
 		await applyAction({ action, store, ids, manifestHash, appliedAt, plan: planned.plan });
 		repairs.push(...await ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt }));
 	}
-	const capacityProviderKeys = await ensureCapacityProviderApiKeys({
-		plan: planned.plan,
-		store,
-		ids,
-		actor: input.actor,
-	});
 	const localTeamMemberships = input.localOnly === true
 		? await ensureLocalSeedTeamMemberships({
 			store,
@@ -1254,7 +860,6 @@ export async function applySeedWithStore(input) {
 		manifestHash,
 		actionCount: mutationActions(planned.plan).length,
 		repairs,
-		capacityProviderKeys,
 		localTeamMemberships,
 	};
 	run = await updateSeedRunIfAvailable(store, run?.id, {
@@ -1324,10 +929,6 @@ export async function exportSeedWithStore(input) {
 			hubRepositories: [],
 			products: [],
 			catalogArtifacts: [],
-			capacityProviders: [],
-			capacityGrants: [],
-			workPolicies: [],
-			agentPools: [],
 		},
 	};
 
@@ -1419,114 +1020,6 @@ export async function exportSeedWithStore(input) {
 			const metadata = exportMetadata(repository.metadata);
 			if (metadata) resource.metadata = metadata;
 			manifest.resources.hubRepositories.push(resource);
-		}
-	}
-
-	const providers = (await input.store.listTeamCapacityProviders(team.id)).sort(sortBy((provider) => provider.name));
-	const providerKeyById = new Map();
-	const laneKeyById = new Map();
-	for (const provider of providers) {
-		const key = seededKey(provider.metadata, generatedKey('capacity-provider', team.slug, provider.name));
-		providerKeyById.set(provider.id, key);
-		const resource = {
-			key,
-			team: teamKey,
-			name: provider.name,
-			kind: providerManifestKind(provider),
-			provider: provider.provider,
-			billingScope: provider.billingScope,
-			maxConcurrentWorkdays: provider.maxConcurrentWorkdays,
-			maxConcurrentWorkers: provider.maxConcurrentWorkers,
-			lanes: [],
-		};
-			maybeAssign(resource, 'creditBudgetMode', provider.creditBudgetMode ?? 'derived');
-		if (Number(provider.monthlyCreditBudget ?? 0) > 0) resource.monthlyCreditBudget = provider.monthlyCreditBudget;
-		if (Number(provider.dailyCreditBudget ?? 0) > 0) resource.dailyCreditBudget = provider.dailyCreditBudget;
-		if (typeof input.store.listExecutionProviders === 'function') {
-			const rawExecutionProviders = await input.store.listExecutionProviders(team.id, provider.id);
-			const executionProviders = normalizeExecutionProviders(rawExecutionProviders, rawExecutionProviders);
-			if (executionProviders.length > 0) resource.executionProviders = executionProviders;
-		}
-		const metadata = exportMetadata(provider.metadata);
-		if (metadata) resource.metadata = metadata;
-		for (const lane of (await input.store.listCapacityProviderLanes(team.id, provider.id)).sort(sortBy((lane) => lane.name))) {
-			const laneKey = seededKey(lane.metadata, generatedKey('lane', team.slug, provider.name, lane.name));
-			laneKeyById.set(lane.id, laneKey);
-			const laneResource = {
-				key: laneKey,
-				name: lane.name,
-				businessModel: lane.businessModel,
-				modelFamily: lane.modelFamily,
-				modelClass: lane.modelClass,
-				regionPolicy: lane.regionPolicy,
-				unit: lane.unit,
-				scarcityLevel: lane.scarcityLevel,
-			};
-			if (Object.keys(lane.hardLimits ?? {}).length > 0) laneResource.hardLimits = lane.hardLimits;
-			if (Object.keys(lane.routingPolicy ?? {}).length > 0) laneResource.routingPolicy = lane.routingPolicy;
-			const laneMetadata = exportMetadata(lane.metadata);
-			if (laneMetadata) laneResource.metadata = laneMetadata;
-			resource.lanes.push(laneResource);
-		}
-		manifest.resources.capacityProviders.push(resource);
-	}
-
-	for (const grant of (await input.store.listCapacityGrants(team.id)).sort(sortBy((grant) => grant.environment, (grant) => grant.grantScope, (grant) => grant.projectId))) {
-		const providerKey = providerKeyById.get(grant.capacityProviderId);
-		if (!providerKey) continue;
-		const projectKey = grant.projectId ? projectKeyById.get(grant.projectId) : undefined;
-		const resource = {
-			key: seededKey(grant.metadata, generatedKey('grant', team.slug, grant.environment ?? 'all', grant.grantScope ?? 'team', projectKey ?? 'team')),
-			provider: providerKey,
-			team: teamKey,
-			grantScope: grant.grantScope,
-			dailyCreditLimit: grant.dailyCreditLimit,
-			weeklyCreditLimit: grant.weeklyCreditLimit,
-			monthlyCreditLimit: grant.monthlyCreditLimit,
-			dailyUsdLimit: grant.dailyUsdLimit,
-			weeklyQuotaMinutes: grant.weeklyQuotaMinutes,
-			monthlyProviderUnits: grant.monthlyProviderUnits,
-			portfolioAllocationPercent: grant.portfolioAllocationPercent,
-			reservePoolPercent: grant.reservePoolPercent,
-			maxDailyProjectCredits: grant.maxDailyProjectCredits,
-			emergencyOverride: grant.emergencyOverride,
-			priorityWeight: grant.priorityWeight,
-			overflowPolicy: grant.overflowPolicy,
-			state: grant.state === 'active' ? undefined : grant.state,
-		};
-		if (grant.environment) resource.environment = grant.environment;
-		if (grant.laneId && laneKeyById.has(grant.laneId)) resource.lane = laneKeyById.get(grant.laneId);
-		if (projectKey) resource.project = projectKey;
-		const metadata = exportMetadata(grant.metadata);
-		if (metadata) resource.metadata = metadata;
-		manifest.resources.capacityGrants.push(resource);
-	}
-
-	for (const project of projects) {
-		const projectKey = projectKeyById.get(project.id);
-		if (!projectKey) continue;
-		for (const environment of environments) {
-			const policy = await input.store.getProjectWorkPolicy(project.id, environment);
-			if (!policy) continue;
-			const resource = {
-				key: seededKey(policy.metadata, generatedKey('work-policy', team.slug, environment, project.slug)),
-				environments: [environment],
-				project: projectKey,
-				environment,
-				enabled: policy.enabled,
-				startCron: policy.startCron,
-				durationMinutes: policy.durationMinutes,
-				maxRunners: policy.maxRunners,
-				maxWorkersPerRunner: policy.maxWorkersPerRunner,
-				dailyCreditBudget: policy.dailyCreditBudget,
-				maxQueuedTasks: policy.maxQueuedTasks,
-				maxQueuedCredits: policy.maxQueuedCredits,
-			};
-			if (Object.keys(policy.autoscale ?? {}).length > 0) resource.autoscale = policy.autoscale;
-			if ((policy.creditWeights ?? []).length > 0) resource.creditWeights = policy.creditWeights;
-			const metadata = exportMetadata(policy.metadata);
-			if (metadata) resource.metadata = metadata;
-			manifest.resources.workPolicies.push(resource);
 		}
 	}
 

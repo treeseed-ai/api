@@ -41,6 +41,22 @@ describe('API backend boundaries', () => {
 		expect(adapterSource).toContain('applyDrizzleMigrations');
 	});
 
+	it('has no remote-job capacity-provider claim bypass', () => {
+		const storeSource = readFileSync('src/api/store.ts', 'utf8');
+		const appSource = readFileSync('src/api/app.ts', 'utf8');
+		expect(storeSource).not.toContain('pullCapacityProviderJobs');
+		expect(appSource).not.toContain('pullCapacityProviderJobs');
+		expect(storeSource).not.toContain("json_extract(input_json, '$.capacity.providerId')");
+	});
+
+	it('has no destructive project-capacity evidence cleanup path', () => {
+		const storeSource = readFileSync('src/api/store.ts', 'utf8');
+		expect(storeSource).not.toContain('async deleteProject(');
+		for (const table of ['capacity_usage_actuals', 'capacity_ledger_entries', 'capacity_reservations']) {
+			expect(storeSource).not.toContain(`DELETE FROM ${table} WHERE project_id`);
+		}
+	});
+
 	it('keeps project launch route persistence ahead of hosting readiness work', () => {
 		const api = readFileSync('src/api/app.ts', 'utf8');
 		const routeStart = api.indexOf("app.post('/v1/teams/:teamId/projects/launch'");

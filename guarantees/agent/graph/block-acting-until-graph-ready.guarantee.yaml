@@ -7,7 +7,7 @@ journey: Block Acting Until Graph Ready
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Acting assignments are not leased until active graph dependencies and deliverables are ready."
-status: active
+status: planned
 actors:
   allowed: [project_manager, capacity_operator, team_owner]
   forbidden: [anonymous_user, unauthorized_user]

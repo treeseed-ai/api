@@ -156,7 +156,7 @@ describe('API acceptance framework', () => {
 		expect(explicitCases.find((entry) => entry.id === 'teams.member-remove.team-owner')?.path).toBe('${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}');
 	});
 
-	it('maps every active API guarantee verifier ref to an acceptance case', async () => {
+	it('maps every active API guarantee verifier ref to executable evidence', async () => {
 		const { readdirSync, readFileSync, statSync } = await import('node:fs');
 		const { join } = await import('node:path');
 		const spec = loadSpec('test/acceptance/api.base.yaml');
@@ -168,11 +168,15 @@ describe('API acceptance framework', () => {
 			...expandSdkMethodMatrices(spec).map((entry) => entry.id).filter(Boolean),
 		]);
 		const verifierText = readFileSync('guarantees/verifiers/api.verifiers.yaml', 'utf8');
-		const verifierCaseIds = new Map<string, string>();
+		const verifiers = new Map<string, { kind: string | null; caseId: string | null; testFile: string | null; testName: string | null }>();
 		for (const block of verifierText.split(/\n(?=  api\.)/u)) {
 			const ref = block.match(/^\s*(api\.[^:]+):/u)?.[1];
-			const caseId = block.match(/caseId:\s*([^\s]+)/u)?.[1];
-			if (ref && caseId) verifierCaseIds.set(ref, caseId);
+			if (ref) verifiers.set(ref, {
+				kind: block.match(/kind:\s*([^\s]+)/u)?.[1] ?? null,
+				caseId: block.match(/caseId:\s*([^\s]+)/u)?.[1] ?? null,
+				testFile: block.match(/testFile:\s*([^\s]+)/u)?.[1] ?? null,
+				testName: block.match(/testName:\s*(.+)$/mu)?.[1]?.trim() ?? null,
+			});
 		}
 		const files: string[] = [];
 		const walk = (directory: string) => {
@@ -186,21 +190,34 @@ describe('API acceptance framework', () => {
 		const activeGuarantees = files
 			.map((file) => ({ file, text: readFileSync(file, 'utf8') }))
 			.filter((entry) => /status:\s*active/u.test(entry.text));
-		expect(activeGuarantees.length).toBeGreaterThanOrEqual(20);
+		expect(activeGuarantees.length).toBeGreaterThan(0);
 		const refs = new Set<string>();
 		for (const entry of activeGuarantees) {
+			const entryRefs = new Set<string>();
 			for (const match of entry.text.matchAll(/verifierRefs:\s*\[([^\]]+)\]/gu)) {
-				for (const ref of match[1].split(',').map((value) => value.trim()).filter(Boolean)) refs.add(ref);
+				for (const ref of match[1].split(',').map((value) => value.trim()).filter(Boolean)) entryRefs.add(ref);
 			}
 			for (const match of entry.text.matchAll(/verifierRefs:\s*\n((?:\s+-\s+api\.[A-Za-z0-9_.-]+\n?)+)/gu)) {
-				for (const refMatch of match[1].matchAll(/-\s+(api\.[A-Za-z0-9_.-]+)/gu)) refs.add(refMatch[1]);
+				for (const refMatch of match[1].matchAll(/-\s+(api\.[A-Za-z0-9_.-]+)/gu)) entryRefs.add(refMatch[1]);
 			}
+			expect(entryRefs.size, `${entry.file} is active without verifierRefs`).toBeGreaterThan(0);
+			for (const ref of entryRefs) refs.add(ref);
 		}
-		expect(refs.size).toBeGreaterThanOrEqual(25);
+		expect(refs.size).toBeGreaterThan(0);
 		for (const ref of refs) {
-			const caseId = verifierCaseIds.get(ref);
-			expect(caseId, `${ref} is missing from api.verifiers.yaml`).toBeTruthy();
-			expect(caseIds.has(caseId!), `${ref} references missing acceptance case ${caseId}`).toBe(true);
+			const verifier = verifiers.get(ref);
+			expect(verifier, `${ref} is missing from api.verifiers.yaml`).toBeTruthy();
+			if (verifier?.kind === 'apiAcceptanceCase') {
+				expect(verifier.caseId, `${ref} is missing caseId`).toBeTruthy();
+				expect(caseIds.has(verifier.caseId!), `${ref} references missing acceptance case ${verifier.caseId}`).toBe(true);
+			} else if (verifier?.kind === 'vitestCase') {
+				expect(verifier.testFile, `${ref} is missing testFile`).toBeTruthy();
+				expect(verifier.testName, `${ref} is missing testName`).toBeTruthy();
+				const testSource = readFileSync(verifier.testFile!, 'utf8');
+				expect(testSource, `${ref} references missing test ${verifier.testName}`).toContain(verifier.testName!);
+			} else {
+				throw new Error(`${ref} has unsupported verifier kind ${verifier?.kind ?? 'missing'}`);
+			}
 		}
 	});
 

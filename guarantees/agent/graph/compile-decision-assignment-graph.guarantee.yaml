@@ -7,7 +7,7 @@ journey: Compile Decision Assignment Graph
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Accepted structured estimates compile into deterministic versioned decision assignment graphs."
-status: active
+status: planned
 actors:
   allowed: [project_manager, capacity_operator, team_owner]
   forbidden: [anonymous_user, unauthorized_user]

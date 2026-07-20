@@ -4,6 +4,7 @@ import { DataType, newDb } from 'pg-mem';
 import { describe, expect, it } from 'vitest';
 import { MarketPostgresDatabase } from '../../src/api/market-postgres.js';
 import { MarketControlPlaneStore } from '../../src/api/store.js';
+import { compileAssignmentCapabilityContext } from '../../src/api/capacity/services/assignment-capability-service.js';
 
 const packageRoot = process.cwd();
 const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
@@ -38,43 +39,17 @@ function createTestStore() {
 	}, createTestPostgresDatabase());
 }
 
-async function seedAssignmentScope(store: MarketControlPlaneStore) {
-	const team = await store.createTeam({ id: 'team-1', slug: 'team-one', name: 'team-one' });
-	await store.createProject(team.id, { id: 'project-1', slug: 'project-one', name: 'Project One' });
-	const project = await store.getProject('project-1');
-	const provider = await store.upsertCapacityProvider(team.id, {
-		id: 'provider-1',
-		name: 'Provider One',
-		provider: '@treeseed/agent',
-		status: 'active',
-	});
-	const agentClass = await store.upsertProjectAgentClass(project.id, {
-		id: 'class-1',
-		slug: 'engineer',
-		name: 'Engineer',
-		allowedModes: ['planning', 'acting'],
-		requiredCapabilities: ['repo_read'],
-	});
-	return { team, project, provider, agentClass };
-}
-
 describe('provider assignment capability handles', () => {
 	it('derives provider-safe repository and TreeDX handles from assignment proxy metadata', async () => {
-		const store = createTestStore();
-		const { team, project, provider, agentClass } = await seedAssignmentScope(store);
-		const assignment = await store.createProviderAssignment(team.id, {
+		const workspaceContext = compileAssignmentCapabilityContext({
 			id: 'assignment-1',
-			projectId: project.id,
-			capacityProviderId: provider.id,
-			projectAgentClassId: agentClass!.id,
+			teamId: 'team-1',
+			projectId: 'project-1',
 			mode: 'planning',
-			agentId: 'engineer',
-			capacityEnvelope: { teamId: team.id, projectId: project.id, mode: 'planning', capacityProviderId: provider.id },
-			decisionInput: { teamId: team.id, projectId: project.id, projectAgentClassId: agentClass!.id, mode: 'planning', input: {} },
 			treedxProxyHandle: {
 				id: 'tdx-handle-1',
-				teamId: team.id,
-				projectId: project.id,
+				teamId: 'team-1',
+				projectId: 'project-1',
 				assignmentId: 'assignment-1',
 				repositoryId: 'repo-1',
 				workspaceId: 'workspace-1',
@@ -84,7 +59,7 @@ describe('provider assignment capability handles', () => {
 			},
 		});
 
-		expect(assignment).toMatchObject({
+		expect(workspaceContext).toMatchObject({
 			capabilityHandles: {
 				workspaceAccessMode: 'context_only',
 				treeDx: [expect.objectContaining({
@@ -99,35 +74,45 @@ describe('provider assignment capability handles', () => {
 				})],
 			},
 		});
-		expect(JSON.stringify(assignment!.capabilityHandles)).not.toContain('ghs_');
-		expect(JSON.stringify(assignment!.capabilityHandles)).not.toContain('token');
+		expect(JSON.stringify(workspaceContext.capabilityHandles)).not.toContain('ghs_');
+		expect(JSON.stringify(workspaceContext.capabilityHandles)).not.toContain('token');
 	});
 
 	it('rejects plaintext-like provider assignment capability handles before persistence', async () => {
-		const store = createTestStore();
-		const { team, project, provider, agentClass } = await seedAssignmentScope(store);
-
-		await expect(store.createProviderAssignment(team.id, {
+		expect(() => compileAssignmentCapabilityContext({
 			id: 'assignment-secret',
-			projectId: project.id,
-			capacityProviderId: provider.id,
-			projectAgentClassId: agentClass!.id,
+			teamId: 'team-1',
+			projectId: 'project-1',
 			mode: 'planning',
-			agentId: 'engineer',
-			capacityEnvelope: { teamId: team.id, projectId: project.id, mode: 'planning', capacityProviderId: provider.id },
-			decisionInput: { teamId: team.id, projectId: project.id, projectAgentClassId: agentClass!.id, mode: 'planning', input: {} },
 			capabilityHandles: {
 				workspaceAccessMode: 'brokered_workspace',
 				repository: [{
 					id: 'repo-handle-secret',
 					kind: 'repository_access',
-					teamId: team.id,
-					projectId: project.id,
+					teamId: 'team-1',
+					projectId: 'project-1',
 					assignmentId: 'assignment-secret',
 					operations: ['read'],
 					githubInstallationToken: 'ghs_nope',
 				}],
 			},
-		})).rejects.toMatchObject({ code: 'assignment_capability_handle_secret_material' });
+		})).toThrow(expect.objectContaining({ code: 'assignment_capability_handle_secret_material' }));
+	});
+
+	it('binds acting repository authority to the governed exact base ref', () => {
+		const exactBaseRef = '0123456789abcdef0123456789abcdef01234567';
+		const workspaceContext = compileAssignmentCapabilityContext({
+			id: 'assignment-acting', teamId: 'team-1', projectId: 'project-1', mode: 'acting',
+			decisionInput: { input: { exactBaseRef } },
+			synthesizedFrom: 'capacity_plan',
+			metadata: { capacityPlanId: 'plan-1' },
+			treedxProxyHandle: {
+				id: 'tdx-acting', teamId: 'team-1', projectId: 'project-1', assignmentId: 'assignment-acting',
+				repositoryId: 'repo-1', workspaceId: 'workspace-1', allowedOperations: ['files:read'], allowedPaths: ['**'],
+			},
+		});
+		expect(workspaceContext.capabilityHandles.repository).toEqual([
+			expect.objectContaining({ allowedRefs: [exactBaseRef] }),
+		]);
 	});
 });

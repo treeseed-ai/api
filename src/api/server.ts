@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveApiConfig } from '@treeseed/sdk/api';
 import type { Hono } from 'hono';
 import { createApiApp } from './app.js';
+import { createMarketPostgresDatabase } from './market-postgres.js';
 
 function hasRequestBody(method) {
 	return method !== 'GET' && method !== 'HEAD';
@@ -52,9 +53,15 @@ export async function createApiServer(options = {}): Promise<ApiServerInstance> 
 		...resolveApiConfig(),
 		...(options.config ?? {}),
 	};
+	const ownedDatabase = options.db
+		? null
+		: createMarketPostgresDatabase(config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL);
+	const db = options.db ?? ownedDatabase;
+	await db.migrate();
 	const app = createApiApp({
 		...options,
 		config,
+		db,
 	});
 	const server = createServer((req, res) => {
 		void honoNodeHandler(app, req, res);
@@ -73,6 +80,7 @@ export async function createApiServer(options = {}): Promise<ApiServerInstance> 
 			await new Promise((resolvePromise, rejectPromise) => {
 				server.close((error) => (error ? rejectPromise(error) : resolvePromise()));
 			});
+			if (ownedDatabase) await ownedDatabase.close();
 		},
 	};
 }

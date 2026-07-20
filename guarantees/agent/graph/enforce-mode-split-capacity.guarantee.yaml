@@ -7,7 +7,7 @@ journey: Enforce Mode Split Capacity
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Planning and acting reservations respect workday mode split min, max, and hard-cap policy."
-status: active
+status: planned
 actors:
   allowed: [project_manager, capacity_operator, team_owner]
   forbidden: [anonymous_user, unauthorized_user]
@@ -29,3 +29,5 @@ negativeCases:
     verifierRefs: [api.agent.graph.enforce-mode-split-capacity]
 evidence:
   required: [guarantee_report, verifier_evidence]
+notes:
+  - "The canonical evaluator and atomic admission transaction enforce hierarchical targets, minimum protection, maximums, hard caps, reserve policy, and explicit borrowing. This guarantee remains planned until Phase 12 adds a real service-workflow verifier for the complete matrix; focused tests are not promoted into release evidence."

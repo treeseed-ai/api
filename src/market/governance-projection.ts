@@ -237,7 +237,7 @@ async function loadGovernanceBundles(input: GovernanceContextInput): Promise<Gov
 			typeof store.getProjectAgentsSummary === 'function' ? store.getProjectAgentsSummary(project.id, input.principal).catch(() => null) : null,
 			typeof store.listApprovalRequestsForProject === 'function' ? store.listApprovalRequestsForProject(project.id, 200).catch(() => []) : [],
 			typeof store.getProjectCapacityOperations === 'function' ? store.getProjectCapacityOperations(project.id, 'staging').catch(() => null) : null,
-			typeof store.listProjectWorkdaySummaries === 'function' ? store.listProjectWorkdaySummaries(project.id, null).catch(() => []) : [],
+			typeof store.listWorkdayCapacityEnvelopes === 'function' ? store.listWorkdayCapacityEnvelopes(project.id) : [],
 			typeof store.listAuditEventsForTarget === 'function' ? store.listAuditEventsForTarget('project', project.id, 100).catch(() => []) : [],
 		]);
 		return {
@@ -317,29 +317,29 @@ function policyItemsForBundle(bundle: GovernanceBundle): GovernancePolicyItem[] 
 			policyType: 'approval',
 			constraints: objectValue(grant?.approvalPolicy) ?? {},
 		}));
-	const workPolicy = bundle.capacityOperations?.summary?.workPolicy;
-	const workPolicyItem = workPolicy ? [{
-		id: `policy-workday-${bundle.project?.id ?? 'team'}`,
-		title: `${compact(bundle.project?.name, 'Project')} workday policy`,
-		description: workPolicy.enabled === false ? 'Workday execution is paused by policy.' : 'Execution windows and budget thresholds are enforced.',
+	const allocationSet = bundle.capacityOperations?.summary?.allocationSet;
+	const allocationPolicyItem = allocationSet ? [{
+		id: `policy-capacity-allocation-${allocationSet.id}`,
+		title: `${compact(bundle.project?.name, 'Project')} capacity allocation`,
+		description: 'The active team allocation set governs project shares, reserves, borrowing, and admission limits.',
 		category: 'governance' as const,
 		phase: 'governance' as const,
-		state: workPolicy.enabled === false ? 'paused' : 'active',
-		tone: workPolicy.enabled === false ? 'warning' as const : 'success' as const,
+		state: compact(allocationSet.status, 'active'),
+		tone: toneForState(allocationSet.status),
 		href: bundle.project?.id ? `/app/projects/${encodeURIComponent(bundle.project.id)}/guidance` : '/app/work/decisions',
-		meta: compact(workPolicy.environment, 'staging'),
+		meta: `allocation v${Number(allocationSet.version ?? 0)}`,
 		projectId: compact(bundle.project?.id, '') || null,
 		projectName: compact(bundle.project?.name, ''),
-		policyType: 'workday',
+		policyType: 'capacity-allocation',
 		constraints: {
-			dailyTaskCreditBudget: workPolicy.dailyTaskCreditBudget,
-			maxQueuedTasks: workPolicy.maxQueuedTasks,
-			maxQueuedCredits: workPolicy.maxQueuedCredits,
-			startCron: workPolicy.startCron,
-			durationMinutes: workPolicy.durationMinutes,
+			reservePolicy: allocationSet.reservePolicy,
+			slices: safeArray(allocationSet.slices),
+			borrowingRules: safeArray(allocationSet.borrowingRules),
+			effectiveFrom: allocationSet.effectiveFrom,
+			effectiveUntil: allocationSet.effectiveUntil,
 		},
 	}] : [];
-	return [...capabilityPolicies, ...workPolicyItem];
+	return [...capabilityPolicies, ...allocationPolicyItem];
 }
 
 function capacityConstraintsForBundle(bundle: GovernanceBundle): GovernanceCapacityConstraint[] {
@@ -361,22 +361,6 @@ function capacityConstraintsForBundle(bundle: GovernanceBundle): GovernanceCapac
 		projectName: compact(bundle.project?.name, ''),
 		constraintType: 'readiness',
 	}] : [];
-	const blocked = safeArray(operations.blockedRoutingDecisions).map((decision: any) => ({
-		id: `capacity-route-${decision.id}`,
-		title: decision.decision === 'approval_required' ? 'Capacity approval required' : 'Capacity routing blocked',
-		description: compact(decision.reason, 'Routing decision requires governance review.'),
-		category: 'governance' as const,
-		phase: 'governance' as const,
-		state: compact(decision.decision, 'blocked'),
-		tone: toneForState(decision.decision),
-		timestamp: latestDate(decision.createdAt),
-		href: bundle.project?.id ? `/app/projects/${encodeURIComponent(bundle.project.id)}/guidance` : '/app/work/decisions',
-		meta: compact(bundle.project?.name, 'capacity'),
-		governanceRefs: [],
-		projectId: compact(bundle.project?.id, '') || null,
-		projectName: compact(bundle.project?.name, ''),
-		constraintType: 'routing',
-	}));
 	const reservations = safeArray(operations.interruptionReservations).map((reservation: any) => ({
 		id: `capacity-reservation-${reservation.id}`,
 		title: 'Execution interrupted by capacity policy',
@@ -393,7 +377,7 @@ function capacityConstraintsForBundle(bundle: GovernanceBundle): GovernanceCapac
 		projectName: compact(bundle.project?.name, ''),
 		constraintType: 'reservation',
 	}));
-	return [...readinessEvents, ...blocked, ...reservations];
+	return [...readinessEvents, ...reservations];
 }
 
 function activityEventsForBundle(bundle: GovernanceBundle): GovernanceEvent[] {

@@ -110,7 +110,7 @@ describe('local seed apply', () => {
 			} as any);
 
 			expect(applied.plan.summary).toMatchObject({
-				create: 39,
+				create: 29,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -145,7 +145,7 @@ describe('local seed apply', () => {
 			});
 
 			expect(first.plan.summary).toMatchObject({
-				create: 39,
+				create: 29,
 				update: 0,
 				unchanged: 0,
 				skip: 2,
@@ -236,113 +236,6 @@ describe('local seed apply', () => {
 				]);
 			}
 
-			const providers = await store.listTeamCapacityProviders(team!.id);
-			const provider = providers.find((entry: any) => entry.name === 'treeseed-local-dev');
-			expect(provider).toMatchObject({
-				kind: 'team_owned',
-				provider: 'local',
-				monthlyCreditBudget: 0,
-				dailyCreditBudget: 0,
-				creditBudgetMode: 'derived',
-			});
-			expect(provider?.metadata).toMatchObject({
-				manifestKind: 'local',
-				seed: {
-					resourceKey: 'capacity-provider:treeseed/local-dev',
-					manifestHash: first.result.manifestHash,
-				},
-			});
-			const firstResult = first.result as any;
-			expect(firstResult.capacityProviderKeys.created).toHaveLength(1);
-			expect(firstResult.capacityProviderKeys.created[0]).toMatchObject({
-				providerId: provider!.id,
-				providerKey: 'capacity-provider:treeseed/local-dev',
-				providerName: 'treeseed-local-dev',
-			});
-			expect(firstResult.capacityProviderKeys.created[0].keyPrefix).toBe(firstResult.capacityProviderKeys.created[0].plaintextKey.slice(0, 16));
-			expect(firstResult.capacityProviderKeys.created[0].plaintextKey).toMatch(/^tsp_/);
-			const providerKeys = await store.listCapacityProviderApiKeys(team!.id, provider!.id);
-			expect(providerKeys).toHaveLength(1);
-			expect(providerKeys[0]).not.toHaveProperty('plaintextKey');
-			expect(providerKeys[0].scopes).toEqual(expect.arrayContaining([
-				'provider:register',
-				'provider:heartbeat',
-				'provider:portfolio:read',
-				'provider:assignments:read',
-				'provider:assignments:write',
-				'provider:usage:report',
-				'provider:reports:write',
-				'provider:capabilities:write',
-			]));
-			const executionProviders = await store.listExecutionProviders(team!.id, provider!.id);
-			expect(executionProviders).toHaveLength(1);
-			const executionProvider = executionProviders[0]!;
-			expect(executionProvider).toMatchObject({
-				id: 'treeseed-local-codex',
-				name: 'Local Codex capacity',
-				kind: 'codex_subscription',
-				nativeUnit: 'wall_minute',
-				quotaVisibility: 'opaque',
-				maxConcurrentWorkers: 4,
-			});
-			expect(executionProvider.nativeLimits).toEqual([
-				expect.objectContaining({
-					scope: 'daily',
-					nativeUnit: 'wall_minute',
-					limitAmount: 10,
-					reserveBufferPercent: 20,
-					resetCadence: 'daily',
-				}),
-			]);
-
-			const lanes = await store.listCapacityProviderLanes(team!.id, provider!.id);
-			expect(lanes).toHaveLength(0);
-
-			const grants = await store.listCapacityGrants(team!.id, { providerId: provider!.id });
-			expect(grants).toHaveLength(9);
-			expect(grants.map((grant: any) => grant.environment)).toEqual(Array(9).fill('local'));
-			expect(grants.map((grant: any) => grant.grantScope)).toEqual(Array(9).fill('project'));
-			expect(grants.map((grant: any) => grant.priorityWeight)).toEqual(Array(9).fill(1));
-			const projectSlugById = new Map(projects.map((project: any) => [project.id, project.slug]));
-			const allocationByProject = Object.fromEntries(grants
-				.map((grant: any) => [projectSlugById.get(grant.projectId), grant.portfolioAllocationPercent])
-				.sort(([left], [right]) => String(left).localeCompare(String(right))));
-			expect(allocationByProject).toEqual({
-				admin: 6,
-				agent: 4,
-				api: 6,
-				cli: 6,
-				core: 6,
-				market: 50,
-				sdk: 6,
-				treedx: 10,
-				ui: 6,
-			});
-			expect(grants.reduce((sum: number, grant: any) => sum + Number(grant.portfolioAllocationPercent ?? 0), 0)).toBe(100);
-			expect(grants.map((grant: any) => grant.maxDailyProjectCredits ?? null)).toEqual(Array(9).fill(null));
-
-			const policy = await store.getProjectWorkPolicy(marketProject!.id, 'local');
-			expect(policy).toMatchObject({
-				environment: 'local',
-				enabled: true,
-				dailyCreditBudget: 5000,
-				maxQueuedTasks: 100,
-				maxQueuedCredits: 10000,
-			});
-			expect(policy?.metadata?.seed?.resourceKey).toBe('work-policy:treeseed/local/market');
-			for (const slug of TREESEED_PACKAGE_SLUGS) {
-				const packageProject = await store.getProjectByTeamAndSlug(team!.id, slug);
-				const packagePolicy = await store.getProjectWorkPolicy(packageProject!.id, 'local');
-				expect(packagePolicy).toMatchObject({
-					environment: 'local',
-					enabled: true,
-					dailyCreditBudget: 5000,
-					maxQueuedTasks: 100,
-					maxQueuedCredits: 10000,
-				});
-				expect(packagePolicy?.metadata?.seed?.resourceKey).toBe(`work-policy:treeseed/local/${slug}`);
-			}
-
 			const repositoryHosts = await store.listRepositoryHosts(team!.id, { includePlatform: false });
 			expect(repositoryHosts).toEqual(expect.arrayContaining([
 				expect.objectContaining({
@@ -413,16 +306,10 @@ describe('local seed apply', () => {
 			expect(exported.yaml).toContain('sitePath: docs');
 			expect(exported.yaml).toContain('products:');
 			expect(exported.yaml).toContain('catalogArtifacts:');
-			expect(exported.yaml).toContain('executionProviders:');
-			expect(exported.yaml).toContain('nativeLimits:');
 			expect(exported.yaml).toContain('project:treeseed/api');
 			expect(exported.yaml).toContain('project:treeseed/agent');
-			expect(exported.yaml).toContain('portfolioAllocationPercent: 50');
-			expect(exported.yaml).toContain('portfolioAllocationPercent: 4');
-			expect(exported.yaml).toContain('priorityWeight: 1');
-			expect(exported.yaml).not.toContain('maxDailyProjectCredits');
-			expect(exported.yaml).not.toContain('dailyCreditBudget: 0');
-			expect(exported.yaml).not.toContain('monthlyCreditBudget: 0');
+			expect(exported.yaml).not.toContain('capacityProviders:');
+			expect(exported.yaml).not.toContain('capacityGrants:');
 			expect(exported.yaml).not.toContain('project:karyon');
 			expect(exported.yaml).not.toContain('repositoryTopology');
 			expect(exported.yaml).not.toContain('contentRoot');
@@ -438,13 +325,9 @@ describe('local seed apply', () => {
 			expect(second.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 39,
+				unchanged: 29,
 				skip: 2,
 			});
-			const secondResult = second.result as any;
-			expect(secondResult.capacityProviderKeys.created).toHaveLength(0);
-			expect(secondResult.capacityProviderKeys.existing).toHaveLength(1);
-			expect(secondResult.capacityProviderKeys.existing[0]).not.toHaveProperty('plaintextKey');
 		} finally {
 			db.close();
 		}
@@ -473,7 +356,7 @@ describe('local seed apply', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 39,
+				unchanged: 29,
 				skip: 2,
 			});
 			expect((repaired.result as any).repairs).toEqual([
@@ -582,7 +465,7 @@ describe('local seed apply', () => {
 			expect(seedPage.selectedSeed).toBe('treeseed');
 			expect(seedPage.selectedEnvironments).toBe('local');
 			expect(seedPage.plan.summary).toMatchObject({
-				create: 38,
+				create: 28,
 				update: 1,
 				unchanged: 0,
 				skip: 2,

@@ -1,6 +1,116 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.capacity.provider.membership-admission-workflow:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/capacity-registration-governance.test.ts
+    testName: runs registration through governed admission and exactly-once settlement as one service workflow
+  api.capacity.assignment.execution-run-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/capacity-admission-settlement.test.ts
+    testName: commits reservation and assignment together, enforces counters, and settles exactly once
+  api.capacity.assignment.execution-run-failure-visible:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/execution-run-repository.test.ts
+    testName: surfaces telemetry read failure instead of returning an incomplete forensic projection
+  api.capacity.usage.repository-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/task-usage-repository.test.ts
+    testName: fails closed for malformed durable usage evidence
+  api.capacity.admission.durable-json-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/durable-capacity-json.test.ts
+    testName: fails closed for malformed grant and admission durable JSON
+  api.capacity.request-json.strict-object:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/capacity-request-json.test.ts
+    testName: rejects malformed JSON and every non-object JSON root with one stable contract
+  api.capacity.request-json.mutation-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/capacity-request-json.test.ts
+    testName: rejects malformed operator mutations before invoking persistence
+  api.capacity.request-json.inline-boundary-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/capacity-request-json.test.ts
+    testName: maps strict decoder failures for inline capacity composition routes
+  api.capacity.provider.synthesis-authority-fail-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/provider-synthesis-context-service.test.ts
+    testName: propagates storage failure instead of synthesizing under incomplete authority
+  api.capacity.provider.assignment-context-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/assignment-context-service.test.ts
+    testName: propagates architecture storage failure instead of synthesizing fallback assignment context
+  api.capacity.provider.synthesis-denial-audited:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/provider-assignment-synthesis-service.test.ts
+    testName: records durable pre-admission denial evidence without writing a nonexistent assignment explanation
+  api.capacity.provider.workday-synthesis-source-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/workday-assignment-synthesis-service.test.ts
+    testName: fails closed for corrupt workday source state before assignment synthesis
+  api.capacity.provider.workday-synthesis-collection-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/workday-assignment-synthesis-service.test.ts
+    testName: fails closed instead of silently truncating active runs or omitting requested projects
+  api.capacity.provider.workday-workspace-response-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/workday-treedx-workspace-service.test.ts
+    testName: bounds and strictly decodes TreeDX workspace responses
+  api.capacity.assignment.terminalization-requires-settlement:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/workday-assignment-terminalization-service.test.ts
+    testName: leaves assignment and mode-run state recoverable when settlement cannot commit
+  api.capacity.assignment.fallback-evidence-required:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/provider-assignment-retry-policy.test.ts
+    testName: does not release a lease when required fallback evidence cannot be persisted
+  api.capacity.assignment.fallback-evidence-replay-safe:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/runtime-evidence-repository.test.ts
+    testName: persists scoped handles, fallback outputs, and bounded proxy audit evidence
+  api.capacity.assignment.repository-fails-closed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/provider-assignment-repository.test.ts
+    testName: fails closed for corrupt JSON
+  api.capacity.assignment.expired-lease-denied:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/provider-assignment-retry-policy.test.ts
+    testName: rejects terminal mutations from an expired lease without mutation
+  api.capacity.assignment.expired-lease-recovery-converges:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/assignment-recovery-service.test.ts
+    testName: converges a provider failure interrupted after settlement but before lifecycle transition
+  api.capacity.workday.envelope-terminalization-exact:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/workday-scheduling-service.test.ts
+    testName: terminalizes envelopes by exact durable run ownership instead of id prefix
+  api.capacity.workday.schedule-recovery-required:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: test/lib/workday-scheduling-service.test.ts
+    testName: attempts every required recovery record and reports incomplete evidence
   api.endpoints.health-and-markets:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
@@ -35,7 +145,7 @@ verifiers:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
-    caseId: capacity.provider.register-capacity-provider
+    caseId: capacity.provider.list-memberships
   api.endpoints.agent-graphs-and-workdays:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
@@ -210,22 +320,22 @@ verifiers:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
-    caseId: capacity.provider.register-capacity-provider
+    caseId: capacity.provider.list-memberships
   api.capacity.provider.register-capacity-provider.audit:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
-    caseId: capacity.provider.register-capacity-provider
+    caseId: capacity.provider.list-memberships
   api.capacity.provider.register-capacity-provider.content:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
-    caseId: capacity.provider.register-capacity-provider
+    caseId: capacity.provider.list-memberships
   api.capacity.provider.register-capacity-provider.negative:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/api-acceptance.ts
-    caseId: capacity.provider.register-capacity-provider
+    caseId: capacity.provider.list-memberships
   api.capacity.usage.review-capacity-usage.api:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"

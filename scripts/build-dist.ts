@@ -3,6 +3,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import ts from 'typescript';
 import { packageRoot } from './package-tools.ts';
@@ -143,6 +144,29 @@ function assertRequiredOutputs() {
 	}
 }
 
+async function assertCapacityRouteDescriptorCoverage() {
+	const routeRoot = resolve(distRoot, 'api', 'capacity', 'routes');
+	const routeFiles = walkFiles(routeRoot).filter((filePath) => filePath.endsWith('.js') && !filePath.endsWith('.d.js'));
+	const declarations: Array<{ method: string; path: string; filePath: string }> = [];
+	for (const filePath of routeFiles) {
+		const source = readFileSync(filePath, 'utf8');
+		if (/app\.(get|post|put|patch|delete)\(\s*`/u.test(source)) {
+			throw new Error(`Capacity route registrations must use literal quoted paths so descriptor discovery is complete: ${relative(distRoot, filePath)}`);
+		}
+		for (const match of source.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/gu)) {
+			if (match[2].startsWith('/v1')) declarations.push({ method: match[1].toUpperCase(), path: match[2], filePath });
+		}
+	}
+	const descriptorModuleUrl = `${pathToFileURL(resolve(distRoot, 'api', 'route-descriptors.js')).href}?build=${Date.now()}`;
+	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<{ method: string; path: string }> };
+	const descriptorKeys = new Set(descriptorModule.API_ROUTE_DESCRIPTORS.map((entry) => `${entry.method} ${entry.path}`));
+	for (const declaration of declarations) {
+		if (!descriptorKeys.has(`${declaration.method} ${declaration.path}`)) {
+			throw new Error(`Built route descriptor inventory omitted ${declaration.method} ${declaration.path} from ${relative(distRoot, declaration.filePath)}.`);
+		}
+	}
+}
+
 function packageJson() {
 	return JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
 		dependencies?: Record<string, string>;
@@ -260,3 +284,4 @@ for (const filePath of walkFiles(scriptsRoot)) {
 emitDeclarations();
 copySdkRuntimeArtifacts();
 assertRequiredOutputs();
+await assertCapacityRouteDescriptorCoverage();

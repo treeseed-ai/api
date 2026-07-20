@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,6 +27,22 @@ function sourcePathFor(baseName) {
 
 const appSourcePath = sourcePathFor('app');
 const projectDeploymentRoutesSourcePath = sourcePathFor('project-deployment-routes');
+
+function capacityRouteSourcePaths() {
+	const directory = resolve(here, 'capacity/routes');
+	const entries = readdirSync(directory);
+	// Keep TypeScript suffixes out of a single string literal because the package
+	// build's runtime-specifier rewrite intentionally converts quoted `.ts` suffixes.
+	const tsExtension = ['.', 't', 's'].join('');
+	const declarationExtension = ['.', 'd', '.', 't', 's'].join('');
+	const extension = entries.some((name) => name.endsWith(tsExtension) && !name.endsWith(declarationExtension))
+		? tsExtension
+		: '.js';
+	return entries
+		.filter((name) => name.endsWith(extension) && !name.endsWith('.d.js'))
+		.map((name) => resolve(directory, name))
+		.sort();
+}
 
 export const SDK_METHOD_ROUTE_MAP = {
 	startDeviceLogin: 'post.v1.auth.device.start',
@@ -67,11 +83,16 @@ export const SDK_METHOD_ROUTE_MAP = {
 	markets: 'get.v1.me.markets',
 	currentMarket: 'get.v1.markets.current',
 	teams: 'get.v1.teams',
+	createTeam: 'post.v1.teams',
+	deleteTeam: 'delete.v1.teams.teamId',
 	teamMembers: 'get.v1.teams.teamId.members',
 	teamPermissions: 'get.v1.teams.teamId.permissions',
 	importProjectRepository: 'post.v1.teams.teamId.projects.import',
 	projects: 'get.v1.projects',
+	createProject: 'post.v1.teams.teamId.projects',
+	deleteProject: 'delete.v1.projects.projectId',
 	projectAccess: 'get.v1.projects.projectId.access',
+	upsertProjectConnection: 'post.v1.projects.projectId.connection',
 	projectDeploymentState: 'get.v1.projects.projectId.deployment-state',
 	projectHosts: 'get.v1.projects.projectId.hosts',
 	projectSecretEscrowRecords: 'get.v1.projects.projectId.secrets.escrow',
@@ -96,28 +117,49 @@ export const SDK_METHOD_ROUTE_MAP = {
 	retryProjectDeployment: 'post.v1.projects.projectId.deployments.deploymentId.retry',
 	resumeProjectDeployment: 'post.v1.projects.projectId.deployments.deploymentId.resume',
 	cancelProjectDeployment: 'post.v1.projects.projectId.deployments.deploymentId.cancel',
-	teamCapacity: 'get.v1.teams.teamId.capacity',
-	teamCapacityProviders: 'get.v1.teams.teamId.capacity-providers',
-	updateCapacityProvider: 'patch.v1.teams.teamId.capacity-providers.providerId',
-	launchManagedCapacityProvider: 'post.v1.teams.teamId.capacity.providers.managed',
-	capacityProvider: 'get.v1.capacity.providers.providerId',
-	rotateCapacityProviderApiKey: 'post.v1.teams.teamId.capacity-providers.providerId.keys.rotate',
+	teamCapacityRegistrationKey: 'get.v1.teams.teamId.capacity-registration-key',
+	revealTeamCapacityRegistrationKey: 'get.v1.teams.teamId.capacity-registration-key.reveal',
+	rotateTeamCapacityRegistrationKey: 'post.v1.teams.teamId.capacity-registration-key.rotate',
+	enableTeamCapacityRegistrationKey: 'post.v1.teams.teamId.capacity-registration-key.enable',
+	disableTeamCapacityRegistrationKey: 'post.v1.teams.teamId.capacity-registration-key.disable',
+	capacityProviderRegistrationRequests: 'get.v1.teams.teamId.capacity-provider-requests',
+	capacityProviderRegistrationRequest: 'get.v1.teams.teamId.capacity-provider-requests.requestId',
+	reviewCapacityProviderRegistration: 'post.v1.teams.teamId.capacity-provider-requests.requestId.approve',
+	capacityProviderMemberships: 'get.v1.teams.teamId.capacity-provider-memberships',
+	capacityProviderMembership: 'get.v1.teams.teamId.capacity-provider-memberships.membershipId',
+	capacityAuditEvents: 'get.v1.teams.teamId.capacity-audit-events',
+	capacityProviderCredentials: 'get.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials',
+	authorizeCapacityProviderCredentialRotation: 'post.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials.rotate',
+	revokeCapacityProviderCredential: 'post.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials.credentialId.revoke',
+	suspendCapacityProviderMembership: 'post.v1.teams.teamId.capacity-provider-memberships.membershipId.suspend',
+	resumeCapacityProviderMembership: 'post.v1.teams.teamId.capacity-provider-memberships.membershipId.resume',
+	revokeCapacityProviderMembership: 'post.v1.teams.teamId.capacity-provider-memberships.membershipId.revoke',
 	capacityGrants: 'get.v1.teams.teamId.capacity-grants',
+	capacityGrant: 'get.v1.teams.teamId.capacity-grants.grantId',
+	planCapacityGrant: 'post.v1.teams.teamId.capacity-grants.plan',
 	createCapacityGrant: 'post.v1.teams.teamId.capacity-grants',
-	executionProviders: 'get.v1.teams.teamId.capacity-providers.providerId.execution-providers',
-	createExecutionProvider: 'post.v1.teams.teamId.capacity-providers.providerId.execution-providers',
-	updateExecutionProvider: 'patch.v1.teams.teamId.capacity-providers.providerId.execution-providers.executionProviderId',
-	createExecutionProviderNativeLimit: 'post.v1.teams.teamId.capacity-providers.providerId.execution-providers.executionProviderId.native-limits',
+	transitionCapacityGrant: 'post.v1.teams.teamId.capacity-grants.grantId.activate',
 	capacityAllocationSets: 'get.v1.teams.teamId.capacity.allocation-sets',
+	planCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets.plan',
 	createCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets',
 	capacityAllocationSet: 'get.v1.teams.teamId.capacity.allocation-sets.allocationSetId',
 	activateCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.activate',
-	providerAvailabilitySessions: 'get.v1.teams.teamId.capacity.provider-sessions',
-	providerAssignments: 'get.v1.teams.teamId.capacity.assignments',
-	createProviderAssignment: 'post.v1.teams.teamId.capacity.assignments',
+	supersedeCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.supersede',
+	archiveCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.archive',
+	explainCapacityAllocationSet: 'post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.explain',
+	providerAvailabilitySessions: 'get.v1.teams.teamId.capacity.availability-sessions',
+	capacityProviderAssignments: 'get.v1.teams.teamId.capacity.assignments',
+	capacityProviderAssignment: 'get.v1.teams.teamId.capacity.assignments.assignmentId',
+	capacityReservations: 'get.v1.teams.teamId.capacity.reservations',
+	capacityReservationExplanation: 'get.v1.teams.teamId.capacity.reservations.reservationId.explanation',
+	capacityUsage: 'get.v1.teams.teamId.capacity.usage',
+	capacityLedger: 'get.v1.teams.teamId.capacity.ledger',
+	executionRuns: 'get.v1.teams.teamId.capacity.execution-runs',
+	admitCapacityAssignment: 'post.v1.teams.teamId.capacity.admissions',
+	reportProviderAssignmentUsage: 'post.v1.provider.assignments.assignmentId.usage',
+	settleProviderAssignment: 'post.v1.provider.assignments.assignmentId.settle',
 	providerAssignmentExplanation: 'get.v1.teams.teamId.capacity.assignments.assignmentId.explanation',
-	projectCapacityPlan: 'get.v1.projects.projectId.capacity-plan',
-	createCapacityReservation: 'post.v1.projects.projectId.capacity.reservations',
+	projectCapacityDiagnostics: 'get.v1.projects.projectId.capacity-diagnostics',
 	projectCapacityRuntimeDiagnostics: 'get.v1.projects.projectId.capacity-runtime-diagnostics',
 	projectAgentClasses: 'get.v1.projects.projectId.agent-classes',
 	createProjectAgentClass: 'post.v1.projects.projectId.agent-classes',
@@ -128,10 +170,15 @@ export const SDK_METHOD_ROUTE_MAP = {
 	projectTreeDxProxyAudit: 'get.v1.projects.projectId.treedx-proxy-audit',
 	decisionPlanningStatus: 'get.v1.decisions.decisionId.planning-status',
 	createPlanningInputRequest: 'post.v1.decisions.decisionId.planning-input-requests',
+	decisionStructuredEstimates: 'get.v1.decisions.decisionId.estimates',
+	createStructuredAgentEstimate: 'post.v1.decisions.decisionId.estimates',
+	acceptStructuredAgentEstimate: 'post.v1.structured-agent-estimates.estimateId.accept',
 	decisionExecutionInputs: 'get.v1.decisions.decisionId.execution-inputs',
 	createDecisionExecutionInput: 'post.v1.decisions.decisionId.execution-inputs',
 	acceptDecisionExecutionInput: 'post.v1.decision-execution-inputs.inputId.accept',
 	requestDecisionExecutionInputRevision: 'post.v1.decision-execution-inputs.inputId.request-revision',
+	decisionAssignmentGraphs: 'get.v1.decisions.decisionId.assignment-graphs',
+	decisionAssignmentGraph: 'get.v1.decision-assignment-graphs.graphId',
 	decisionCapacityPlans: 'get.v1.decisions.decisionId.capacity-plans',
 	createDecisionCapacityPlan: 'post.v1.decisions.decisionId.capacity-plans',
 	capacityPlan: 'get.v1.capacity-plans.capacityPlanId',
@@ -143,14 +190,24 @@ export const SDK_METHOD_ROUTE_MAP = {
 	workday: 'get.v1.workdays.workdayId',
 	startWorkday: 'post.v1.workdays.workdayId.start',
 	pauseWorkday: 'post.v1.workdays.workdayId.pause',
+	resumeWorkday: 'post.v1.workdays.workdayId.resume',
+	cancelWorkday: 'post.v1.workdays.workdayId.cancel',
 	completeWorkday: 'post.v1.workdays.workdayId.complete',
 	workdaySummary: 'get.v1.workdays.workdayId.summary',
 	workdayRuns: 'get.v1.teams.teamId.workday-runs',
 	createWorkdayRun: 'post.v1.teams.teamId.workday-runs',
 	workdayRun: 'get.v1.teams.teamId.workday-runs.runId',
 	updateWorkdayRun: 'patch.v1.teams.teamId.workday-runs.runId',
+	tickWorkdayRun: 'post.v1.teams.teamId.workday-runs.runId.tick',
+	createResearchWorkflow: 'post.v1.projects.projectId.research-workflows',
+	researchWorkflow: 'get.v1.research-workflows.workflowId',
 	workdayEvents: 'get.v1.teams.teamId.workday-runs.runId.events',
 	createWorkdayEvent: 'post.v1.teams.teamId.workday-runs.runId.events',
+	cancelCapacityAssignment: 'post.v1.teams.teamId.capacity.assignments.assignmentId.cancel',
+	approveCapacityReservationOverrun: 'post.v1.teams.teamId.capacity.reservations.reservationId.overrun.approve',
+	rejectCapacityReservationOverrun: 'post.v1.teams.teamId.capacity.reservations.reservationId.overrun.reject',
+	requeueCapacityAssignment: 'post.v1.teams.teamId.capacity.assignments.assignmentId.requeue',
+	decideCapacityOverrun: 'post.v1.teams.teamId.capacity.reservations.reservationId.overrun.approve',
 	teamTreeDx: 'get.v1.teams.teamId.treedx',
 	updateTeamTreeDx: 'put.v1.teams.teamId.treedx',
 	provisionTeamTreeDx: 'post.v1.teams.teamId.treedx.provision',
@@ -183,7 +240,7 @@ export const ACCEPTANCE_ACTORS = [
 	'teamViewer',
 	'nonMember',
 	'providerOperator',
-	'providerKey',
+	'providerAccessToken',
 	'platformRunner',
 ];
 
@@ -213,7 +270,7 @@ function isTreeDxCredentialBridgePath(path) {
 function ownerDomain(path) {
 	if (path === '/v1/internal/github/app/webhook') return 'secrets-capability';
 	if (isTreeDxCredentialBridgePath(path)) return 'secrets-capability';
-	if (path.startsWith('/v1/provider/')) return 'provider-ingress';
+	if (path.startsWith('/v1/provider/') || path.startsWith('/v1/provider-registrations')) return 'provider-ingress';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/platform/operations')) return 'platform-operation';
 	if (path.startsWith('/v1/ui/')) return 'market-ui';
@@ -233,7 +290,8 @@ function ownerDomain(path) {
 function authClass(path, method = 'get') {
 	if (path === '/v1/internal/github/app/webhook') return 'github-webhook';
 	if (isTreeDxCredentialBridgePath(path)) return 'service';
-	if (path.startsWith('/v1/provider/')) return 'provider-key';
+	if (path.startsWith('/v1/provider-registrations') || path === '/v1/provider/access-tokens') return 'provider-proof';
+	if (path.startsWith('/v1/provider/')) return 'provider-access-token';
 	if (path.startsWith('/v1/platform/runners/')) return 'platform-runner';
 	if (path.startsWith('/v1/acceptance/')) return 'acceptance-service';
 	if (path === '/v1/feedback') return 'public';
@@ -338,14 +396,17 @@ function safeProduction(path, method) {
 }
 
 function routeNeedsManagement(path, method) {
+	if (path.includes('/capacity-registration-key')) return true;
+	if (path.endsWith('/explain')) return false;
 	if (method === 'get') return false;
-	return /\/members\/|\/invites|\/api-keys|\/repository-hosts|\/web-hosts|\/hosts|\/capacity\/|\/capacity-providers|\/capacity-grants|\/provider-credential-sessions|\/projects\/launch|\/treedx/u.test(path);
+	if (path.includes('/capacity-provider-requests') || path.includes('/capacity-provider-memberships') || path.includes('/workday-runs')) return true;
+	return /\/members\/|\/invites|\/api-keys|\/repository-hosts|\/web-hosts|\/hosts|\/capacity\/|\/capacity-grants|\/provider-credential-sessions|\/projects\/launch|\/treedx/u.test(path);
 }
 
 function successActorsFor(path, method) {
 	if (path === '/v1/internal/github/app/webhook') return [];
 	if (isTreeDxCredentialBridgePath(path)) return [];
-	if (path.startsWith('/v1/provider/')) return ['providerKey'];
+	if (path.startsWith('/v1/provider/')) return ['providerAccessToken'];
 	if (path.startsWith('/v1/platform/runners/')) return ['platformRunner'];
 	if (path.startsWith('/v1/acceptance/')) return [];
 	if (path.startsWith('/v1/platform/operations/:operationId')) return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
@@ -360,15 +421,12 @@ function successActorsFor(path, method) {
 	if (path.startsWith('/v1/auth/')) return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 	if (path.startsWith('/v1/teams/:teamId')) return routeNeedsManagement(path, method) ? TEAM_MANAGER_ACTORS : TEAM_MEMBER_ACTORS;
 	if (path.startsWith('/v1/decisions/') || path.startsWith('/v1/decision-execution-inputs/') || path.startsWith('/v1/capacity-plans/')) return method === 'get' ? PROJECT_MEMBER_ACTORS : PROJECT_MANAGER_ACTORS;
+	if (path.startsWith('/v1/research-workflows/')) return method === 'get' ? PROJECT_MEMBER_ACTORS : PROJECT_MANAGER_ACTORS;
 	if (path.startsWith('/v1/workdays')) return method === 'get' ? PROJECT_MEMBER_ACTORS : PROJECT_MANAGER_ACTORS;
-	if (path.startsWith('/v1/projects/:projectId') && path.includes('/workday-policy') && method !== 'get') {
-		return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer'];
-	}
 	if (path.startsWith('/v1/projects/:projectId')) return method === 'get' ? PROJECT_MEMBER_ACTORS : PROJECT_MANAGER_ACTORS;
 	if (path.startsWith('/v1/teams')) return method === 'get'
 		? ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator']
 		: ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
-	if (path.startsWith('/v1/capacity/providers/:providerId/heartbeat')) return ['providerKey'];
 	if (path.startsWith('/v1/capacity/')) return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
 	if (path === '/v1/commons/summary') return ACCEPTANCE_ACTORS;
 	if (path.startsWith('/v1/commons/questions') && method === 'get') return ACCEPTANCE_ACTORS;
@@ -458,11 +516,6 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/platform/runners/jobs/') && path.endsWith('/cancel')) return 'platformRunnerCancel';
 	if (path.includes('/platform/runners/jobs/') && path.endsWith('/complete')) return 'platformRunnerComplete';
 	if (path.includes('/platform/runners/jobs/') && path.endsWith('/fail')) return 'platformRunnerFail';
-	if (path.includes('/provider/register')) return 'providerRegister';
-	if (path.includes('/provider/heartbeat')) return 'providerHeartbeat';
-	if (path.includes('/provider/check-in')) return 'providerCheckIn';
-	if (path.includes('/provider/workdays')) return 'providerWorkday';
-	if (path.includes('/provider/sessions')) return 'providerAvailabilitySession';
 	if (path.includes('/provider/assignments/next')) return 'providerNextAssignment';
 	if (path.includes('/provider/assignments/') && path.endsWith('/mode-runs')) return 'agentModeRun';
 	if (path.includes('/provider/assignments/') && path.includes('/workflow-operations/') && path.endsWith('/dispatch')) return 'providerAssignmentWorkflowOperationDispatch';
@@ -470,8 +523,8 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/provider/assignments/') && path.endsWith('/return')) return 'providerAssignmentReturn';
 	if (path.includes('/provider/assignments/') && path.endsWith('/complete')) return 'providerAssignmentComplete';
 	if (path.includes('/provider/assignments/') && path.endsWith('/fail')) return 'providerAssignmentFail';
-	if (path.includes('/provider/usage')) return 'providerUsage';
-	if (path.includes('/provider/reports')) return 'providerReport';
+	if (path.includes('/provider/assignments/') && path.endsWith('/usage')) return 'empty';
+	if (path.includes('/provider/assignments/') && path.endsWith('/settle')) return 'empty';
 	if (path.includes('/decisions/') && path.endsWith('/planning-input-requests')) return 'planningInputRequest';
 	if (path.includes('/decisions/') && path.endsWith('/execution-inputs')) return 'decisionExecutionInput';
 	if (path.includes('/decision-execution-inputs/') && path.endsWith('/accept')) return 'empty';
@@ -481,18 +534,13 @@ function bodyFactoryFor(path, method) {
 	if (path.includes('/capacity-plans/') && path.endsWith('/request-revision')) return 'decisionExecutionRevision';
 	if (path.includes('/capacity-plans/') && path.endsWith('/supersede')) return 'decisionExecutionRevision';
 	if (path === '/v1/workdays') return 'workdayCapacityEnvelope';
-	if (path.includes('/workdays/') && (path.endsWith('/start') || path.endsWith('/pause') || path.endsWith('/complete'))) return 'empty';
+	if (path.includes('/workdays/') && (path.endsWith('/start') || path.endsWith('/pause') || path.endsWith('/resume') || path.endsWith('/complete') || path.endsWith('/cancel'))) return 'empty';
 	if (path.includes('/teams') && path.endsWith('/projects')) return 'projectCreate';
 	if (path.includes('/teams') && path.endsWith('/projects/launch')) return 'projectLaunch';
 	if (path.includes('/teams') && path.endsWith('/invites')) return 'teamInvite';
 	if (path.includes('/teams') && path.includes('/members/')) return method === 'delete' ? 'empty' : 'teamMemberUpdate';
 	if (path.includes('/teams') && path.includes('/repository-hosts')) return method === 'delete' ? 'empty' : 'repositoryHost';
 	if (path.includes('/teams') && (path.includes('/web-hosts') || path.includes('/hosts'))) return method === 'delete' ? 'empty' : path.endsWith('/validate') ? 'hostValidate' : 'webHost';
-	if (path.includes('/teams') && path.includes('/capacity-providers') && path.endsWith('/deployments')) return 'capacityProviderDeployment';
-	if (path.includes('/teams') && path.includes('/capacity-providers') && path.endsWith('/keys/rotate')) return 'empty';
-	if (path.includes('/teams') && path.includes('/capacity-providers') && path.endsWith('/native-limits')) return 'executionProviderNativeLimit';
-	if (path.includes('/teams') && path.includes('/capacity-providers') && path.includes('/execution-providers')) return 'executionProvider';
-	if (path.includes('/teams') && path.includes('/capacity-providers')) return method === 'patch' ? 'capacityProviderPatch' : 'capacityProviderCreate';
 	if (path.includes('/teams') && path.includes('/capacity-grants')) return 'capacityGrant';
 	if (path.includes('/teams') && path.includes('/capacity/allocation-sets')) return path.endsWith('/activate') ? 'empty' : 'capacityAllocationSet';
 	if (path.includes('/teams') && path.includes('/capacity/assignments')) return 'providerAssignment';
@@ -579,9 +627,7 @@ function bodyFactoryFor(path, method) {
 				: path.includes('/approval') ? 'approvalDecision'
 					: path.includes('/agent-classes') ? 'projectAgentClass'
 						: path.includes('/runner/') ? 'runnerProjectBody'
-						: path.includes('/work-policy') || path.includes('/workday-policy') ? 'workPolicy'
-							: path.includes('/priority-overrides') ? 'priorityOverride'
-								: path.includes('/deployments') ? 'projectDeployment'
+							: path.includes('/deployments') ? 'projectDeployment'
 									: path.includes('/resources') ? 'projectResource'
 										: path.includes('/hosting') || path.includes('/environments') ? 'projectEnvironment'
 											: path.includes('/workspace-links') ? 'workspaceLink'
@@ -611,7 +657,11 @@ function acceptancePolicy(path, method) {
 	};
 }
 
-export function extractActiveApiRoutes(source = `${readFileSync(appSourcePath, 'utf8')}\n${readFileSync(projectDeploymentRoutesSourcePath, 'utf8')}`) {
+export function extractActiveApiRoutes(source = [
+	appSourcePath,
+	projectDeploymentRoutesSourcePath,
+	...capacityRouteSourcePaths(),
+].map((path) => readFileSync(path, 'utf8')).join('\n')) {
 	const routes = [];
 	const pattern = /app\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/gu;
 	for (const match of source.matchAll(pattern)) {
@@ -627,7 +677,7 @@ export function extractActiveApiRoutes(source = `${readFileSync(appSourcePath, '
 			mutability: mutability(method),
 			safeProduction: safeProduction(path, method),
 			fixtures: fixtureRequirements(path),
-			providerIngress: path.startsWith('/v1/provider/'),
+			providerIngress: path.startsWith('/v1/provider/') || path.startsWith('/v1/provider-registrations'),
 			internalRunner: path.startsWith('/v1/platform/runners/'),
 			acceptance: acceptancePolicy(path, method),
 			guarantee: endpointGuarantee(path),

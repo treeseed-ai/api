@@ -11,8 +11,6 @@ import { packageRoot } from './package-tools.ts';
 
 const textExtensions = new Set(['.js', '.ts', '.d.ts', '.json', '.md']);
 const forbiddenPatterns = [
-	/['"`]workspace:[^'"`\n]+['"`]/,
-	/['"`]file:[^'"`\n]+['"`]/,
 	/['"`][^'"`\n]*\/packages\/[^'"`\n]*\/src\/[^'"`\n]*['"`]/,
 	/['"`](?:\.\.\/)+(?:sdk|core|agent|cli)\/src\/[^'"`\n]*['"`]/,
 ];

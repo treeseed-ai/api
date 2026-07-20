@@ -7,7 +7,7 @@ journey: Transition Assignment Lease State
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Verify API control-plane behavior for Transition Assignment Lease State."
-status: active
+status: planned
 dependencies:
   journeys:
     - 60
@@ -57,4 +57,3 @@ evidence:
     - verifier_evidence
 notes:
   - "API companion guarantee for Transition Assignment Lease State."
-

@@ -28,6 +28,8 @@ import {
 } from '@treeseed/sdk/platform-operation-store';
 import { createMarketPostgresDatabase } from '../api/market-postgres.js';
 import { MarketControlPlaneStore } from '../api/store.js';
+import { CapacityWorkdayMaintenanceScheduler } from '../api/capacity/services/workday-maintenance-service.js';
+import { createCapacityControlPlane } from '../api/capacity/control-plane.js';
 import { applyHubLaunchFailure, applyHubLaunchResult } from '../api/hub-launch-application.js';
 import { createProjectWebDeploymentExecutor } from './project-web-deployment-executor.js';
 import { drainNotificationEmailOutbox } from '../notifications/service.js';
@@ -115,6 +117,7 @@ async function loadConfig({ requireSecrets = true } = {}) {
 		dataDir: env('TREESEED_PLATFORM_RUNNER_DATA_DIR', resolve(process.cwd(), '.treeseed/operations-runner')),
 		environment: env('TREESEED_PLATFORM_RUNNER_ENVIRONMENT', marketId === 'prod' ? 'production' : marketId),
 		port: Number(env('PORT', '0')),
+		capacityWorkdayMaintenanceIntervalMs: Math.max(1_000, Number(env('TREESEED_CAPACITY_WORKDAY_MAINTENANCE_INTERVAL_MS', '30000')) || 30_000),
 	};
 	if (requireSecrets) {
 		const missing = config.apiDatabaseUrl
@@ -159,7 +162,7 @@ function createClient(config) {
 function createDeploymentStore(config) {
 	if (!config.apiDatabaseUrl) return null;
 	const db = createMarketPostgresDatabase(config.apiDatabaseUrl);
-	return new MarketControlPlaneStore(config, db);
+	return createCapacityControlPlane(new MarketControlPlaneStore(config, db));
 }
 
 function treeDxSlug(value, fallback = 'treedx') {
@@ -1170,7 +1173,12 @@ async function runOnce(options = {}) {
 	const client = await createClient(config);
 	const deploymentStore = options.deploymentStore ?? createDeploymentStore(config);
 	try {
-		return await runOnceWithClient(config, client, version, { ...options, deploymentStore });
+		const result = await runOnceWithClient(config, client, version, { ...options, deploymentStore });
+		if (deploymentStore) {
+			const maintenance = new CapacityWorkdayMaintenanceScheduler(deploymentStore, config.capacityWorkdayMaintenanceIntervalMs);
+			await maintenance.runIfDue();
+		}
+		return result;
 	} finally {
 		await client.close?.();
 		await deploymentStore?.db?.close?.();
@@ -1214,6 +1222,7 @@ async function runLoop() {
 	let client = null;
 	let config = null;
 	let deploymentStore = null;
+	let capacityWorkdayMaintenance = null;
 	while (!stopping) {
 		try {
 			if (!config) {
@@ -1222,6 +1231,9 @@ async function runLoop() {
 			if (!client) {
 				client = await createClient(config);
 				deploymentStore = options.deploymentStore ?? createDeploymentStore(config);
+				capacityWorkdayMaintenance = deploymentStore
+					? new CapacityWorkdayMaintenanceScheduler(deploymentStore, config.capacityWorkdayMaintenanceIntervalMs)
+					: null;
 				await registerAndHeartbeat(client, config, version, { ...options, deploymentStore });
 			}
 			healthState.ready = true;
@@ -1229,6 +1241,7 @@ async function runLoop() {
 			healthState.error = null;
 			await runOnceWithClient(config, client, version, { ...options, deploymentStore });
 			if (deploymentStore) await drainNotificationEmailOutbox(deploymentStore);
+			await capacityWorkdayMaintenance?.runIfDue();
 		} catch (error) {
 			healthState.ready = false;
 			healthState.status = 'degraded';
@@ -1243,6 +1256,7 @@ async function runLoop() {
 			await deploymentStore?.db?.close?.().catch?.(() => {});
 			client = null;
 			deploymentStore = null;
+			capacityWorkdayMaintenance = null;
 		}
 		await new Promise((resolveSleep) => setTimeout(resolveSleep, options.pollIntervalMs));
 	}

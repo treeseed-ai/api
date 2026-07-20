@@ -66,22 +66,19 @@ export async function buildInfrastructureProjection(input: BuildInfrastructurePr
 	const store = input.store;
 	if (!store) return emptyProjection();
 	const teamId = compact(input.team?.id);
-	const [webHosts, repositoryHosts, capacityProviders, capacityGrants, products, teamCapacitySummary, teamAuditEvents] = teamId
+	const [webHosts, repositoryHosts, capacityProviders, products, teamCapacitySummary, teamAuditEvents] = teamId
 		? await Promise.all([
 			call(store, 'listTeamWebHosts', teamId),
 			call(store, 'listRepositoryHosts', teamId),
 			call(store, 'listTeamCapacityProviders', teamId),
-			call(store, 'listCapacityGrants', teamId),
 			call(store, 'listTeamProducts', teamId, input.principal),
 			call(store, 'getTeamCapacitySummary', teamId),
 			call(store, 'listAuditEventsForTarget', 'team', teamId, 50),
 		])
-		: [[], [], [], [], [], null, []];
+		: [[], [], [], [], null, []];
 	const providerDetails = await Promise.all(safeArray(capacityProviders).map(async (provider: any) => ({
 		provider,
 		hosts: teamId ? await call(store, 'listCapacityProviderHosts', teamId, provider.id) : [],
-		lanes: teamId ? await call(store, 'listCapacityProviderLanes', teamId, provider.id) : [],
-		apiKeys: teamId ? await call(store, 'listCapacityProviderApiKeys', teamId, provider.id) : [],
 	})));
 	const bundles = await Promise.all(safeArray(input.projects).map((project: any) => loadProjectBundle(input, project)));
 
@@ -90,7 +87,6 @@ export async function buildInfrastructureProjection(input: BuildInfrastructurePr
 	const deployments = bundles.flatMap(deploymentItems).sort(compareItemDesc);
 	const capacity = [
 		...safeArray(capacityProviders).map(providerItem),
-		...safeArray(capacityGrants).map(grantItem),
 		...providerDetails.flatMap(providerDetailItems),
 		...bundles.flatMap(capacityOperationItems),
 	].sort(compareItemDesc);
@@ -225,20 +221,6 @@ function providerItem(provider: any): InfrastructureItem {
 	};
 }
 
-function grantItem(grant: any): InfrastructureItem {
-	return {
-		id: `grant-${anchorPart(grant?.id ?? grant?.projectId ?? grant?.grantScope)}`,
-		title: `Grant ${compact(grant?.environment, compact(grant?.grantScope, 'team'))}`,
-		description: describeState(grant?.state, 'active'),
-		category: 'governance',
-		state: compact(grant?.state, 'active'),
-		tone: toneForState(grant?.state ?? 'active'),
-		href: '/app/capacity/providers',
-		meta: grant?.projectId ? 'project grant' : 'team grant',
-		projectId: compact(grant?.projectId, '') || null,
-	};
-}
-
 function providerDetailItems(detail: any): InfrastructureItem[] {
 	const providerId = compact(detail.provider?.id, compact(detail.provider?.name, 'provider'));
 	return [
@@ -252,26 +234,6 @@ function providerDetailItems(detail: any): InfrastructureItem[] {
 			href: `/app#host-${anchorPart(host?.hostId ?? host?.id)}`,
 			meta: compact(host?.role, 'host'),
 		})),
-		...safeArray(detail.lanes).map((lane: any) => ({
-			id: `provider-lane-${anchorPart(providerId)}-${anchorPart(lane?.id ?? lane?.name)}`,
-			title: compact(lane?.name, 'Capacity lane'),
-			description: describeState(lane?.state ?? lane?.status, 'available'),
-			category: 'infrastructure' as const,
-			state: compact(lane?.state, compact(lane?.status, 'available')),
-			tone: toneForState(lane?.state ?? lane?.status ?? 'active'),
-			href: `/app/capacity/providers/${encodeURIComponent(anchorPart(providerId))}/edit`,
-			meta: 'capacity lane',
-		})),
-		{
-			id: `provider-keys-${anchorPart(providerId)}`,
-			title: `${compact(detail.provider?.name, 'Capacity provider')} API keys`,
-			description: `${safeArray(detail.apiKeys).length} configured key${safeArray(detail.apiKeys).length === 1 ? '' : 's'}`,
-			category: 'infrastructure',
-			state: safeArray(detail.apiKeys).length ? 'configured' : 'missing',
-			tone: safeArray(detail.apiKeys).length ? 'success' : 'warning',
-			href: `/app/capacity/providers/${encodeURIComponent(anchorPart(providerId))}/edit`,
-			meta: 'credentials',
-		},
 	];
 }
 
@@ -292,7 +254,6 @@ function capacityOperationItems(bundle: InfrastructureBundle): InfrastructureIte
 			projectId: compact(bundle.project?.id, '') || null,
 			projectName: projectName(bundle),
 		} : null,
-		...safeArray(operations.blockedRoutingDecisions).map((decision: any) => routingDecisionItem(bundle, decision)),
 		...safeArray(operations.interruptionReservations).map((reservation: any) => ({
 			id: `capacity-reservation-${anchorPart(reservation?.id ?? reservation?.taskId)}`,
 			title: `${projectName(bundle)} continuation required`,
@@ -308,35 +269,7 @@ function capacityOperationItems(bundle: InfrastructureBundle): InfrastructureIte
 	].filter(Boolean) as InfrastructureItem[];
 }
 
-function routingDecisionItem(bundle: InfrastructureBundle, decision: any): InfrastructureItem {
-	return {
-		id: `routing-${anchorPart(decision?.id ?? decision?.taskId ?? decision?.workDayId)}`,
-		title: `${projectName(bundle)} routing decision`,
-		description: compact(decision?.reason, describeState(decision?.decision, 'routing recorded')),
-		category: 'execution',
-		state: compact(decision?.decision, 'recorded'),
-		tone: toneForState(decision?.decision === 'selected' ? 'active' : decision?.decision),
-		href: '/app/work/objectives',
-		meta: compact(decision?.environment, 'routing'),
-		timestamp: latestDate(decision?.createdAt, decision?.updatedAt),
-		projectId: compact(bundle.project?.id, '') || null,
-		projectName: projectName(bundle),
-	};
-}
-
 function workerItems(bundle: InfrastructureBundle): InfrastructureItem[] {
-	const runners = safeArray(bundle.agents?.workerRunners).map((runner: any) => ({
-		id: `worker-${anchorPart(runner?.id ?? runner?.runnerId ?? runner?.runnerServiceName)}`,
-		title: compact(runner?.runnerServiceName, compact(runner?.runnerId, 'Worker runner')),
-		description: `${projectName(bundle)} - ${describeState(runner?.state, 'unknown')}`,
-		category: 'execution' as const,
-		state: compact(runner?.state, 'unknown'),
-		tone: toneForState(runner?.state),
-		href: '/app/capacity/providers',
-		meta: `${Number(runner?.activeLocalWorkers ?? 0)} / ${Number(runner?.maxLocalWorkers ?? 0)} workers`,
-		projectId: compact(bundle.project?.id, '') || null,
-		projectName: projectName(bundle),
-	}));
 	const tasks = safeArray(bundle.agents?.taskHealth?.activeTasks).map((task: any) => ({
 		id: `queue-${anchorPart(task?.id ?? task?.workDayId ?? task?.type)}`,
 		title: `${projectName(bundle)} ${describeState(task?.type, 'task')}`,
@@ -350,7 +283,7 @@ function workerItems(bundle: InfrastructureBundle): InfrastructureItem[] {
 		projectId: compact(bundle.project?.id, '') || null,
 		projectName: projectName(bundle),
 	}));
-	return [...runners, ...tasks];
+	return tasks;
 }
 
 function hostItem(host: any): InfrastructureItem {
@@ -477,12 +410,7 @@ function diagnosticsFromCapacity(teamCapacitySummary: any, bundles: Infrastructu
 			meta: 'capacity',
 		}]
 		: [];
-	const projectDiagnostics = bundles.flatMap((bundle) => safeArray(bundle.capacityOperations?.blockedRoutingDecisions).map((decision: any) => ({
-		...routingDecisionItem(bundle, decision),
-		id: `diagnostic-${anchorPart(decision?.id ?? decision?.taskId)}`,
-		title: `${projectName(bundle)} routing blocked`,
-	})));
-	return [...teamDiagnostic, ...projectDiagnostics];
+	return teamDiagnostic;
 }
 
 function diagnosticsFromDeployments(deployments: InfrastructureItem[]): InfrastructureItem[] {

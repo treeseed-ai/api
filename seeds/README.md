@@ -36,8 +36,8 @@ of mutating resources.
 
 Seed manifests must not store provider or cloud secrets. They may reference
 credential locations such as `env:TREESEED_GITHUB_TOKEN`. Local-only
-capacity-provider bootstrap may use a deterministic disposable provider API key
-through the API key registration flow, but non-local provider connection
-material should be generated or configured outside the manifest. Returned seed
-run records redact plaintext provider keys; the CLI stores newly-created local
-provider connection material in encrypted TreeSeed config.
+capacity-provider bootstrap uses signed provider identity and approval-only team membership
+through the broadcast registration-key flow. Provider manifests store only identity,
+registration-key, and membership-credential references. Registration keys and membership
+credentials are created and rotated through the capacity API or CLI and never returned in
+seed run records.

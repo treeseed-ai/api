@@ -11,6 +11,7 @@ import {
 	type OperationalArtifact,
 	type OperationalTone,
 } from './operational-artifacts.js';
+import { MAX_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
 
 export type { OperationalArtifact, OperationalTone } from './operational-artifacts.js';
 
@@ -69,72 +70,86 @@ const phaseDefinitions: Array<Pick<OperationalPhase, 'key' | 'label' | 'descript
 	{ key: 'knowledge', label: 'Knowledge', description: 'Reports, release guidance, decisions, and institutional memory.' },
 ];
 
+async function boundedProjectionPage(load: () => Promise<any>, collection: string) {
+	const result = await load().catch(() => null);
+	if (!result || !Array.isArray(result.items) || !result.page) return [];
+	if (result.page.hasMore) {
+		throw Object.assign(new Error(`Workday projection exceeded the ${MAX_CAPACITY_PAGE_LIMIT}-record ${collection} bound; inspect the paginated operator collection directly.`), {
+			code: 'workday_projection_collection_bound_exceeded',
+			status: 409,
+			details: { collection, limit: MAX_CAPACITY_PAGE_LIMIT, nextCursor: result.page.nextCursor ?? null },
+		});
+	}
+	return result.items;
+}
+
 export async function buildWorkdayProjection(input: BuildWorkdayProjectionInput): Promise<WorkdayProjection | null> {
 	const store = input.store;
 	const workdayId = compact(input.workdayId);
 	if (!store || !workdayId) return null;
-
-	for (const project of safeArray(input.projects)) {
-		const bundle = await loadProjectWorkdayBundle(store, input.principal, project, workdayId);
-		if (!bundle.workday) continue;
-		return projectWorkdayProjection(bundle);
-	}
-
-	return null;
+	const envelope = await store.getWorkdayCapacityEnvelope(workdayId);
+	if (!envelope) return null;
+	const project = safeArray(input.projects).find((candidate) => compact(candidate?.id) === compact(envelope.projectId));
+	if (!project) return null;
+	return projectWorkdayProjection(await loadProjectWorkdayBundle(store, input.principal, project, envelope));
 }
 
-async function loadProjectWorkdayBundle(store: any, principal: any, project: any, workdayId: string) {
-	const projectId = compact(project?.id);
-	const [workdaySummaries, runtimeWorkdays, agents] = await Promise.all([
-		typeof store.listProjectWorkdaySummaries === 'function' ? store.listProjectWorkdaySummaries(projectId, null).catch(() => []) : [],
-		typeof store.listRuntimeWorkDays === 'function' ? store.listRuntimeWorkDays(projectId, { limit: 1000 }).catch(() => []) : [],
-		typeof store.getProjectAgentsSummary === 'function' ? store.getProjectAgentsSummary(projectId, principal).catch(() => null) : null,
-	]);
-
-	const summary = safeArray(workdaySummaries).find((entry: any) => matchesWorkdayId(entry, workdayId)) ?? null;
-	const runtime = safeArray(runtimeWorkdays).find((entry: any) => matchesWorkdayId(entry, workdayId)) ?? null;
-	const current = matchesWorkdayId(agents?.currentWorkday, workdayId) ? agents.currentWorkday : null;
-	const source = summary ?? runtime ?? current;
-	if (!source) {
-		return { project, workday: null };
+function boundedEvidencePage(result: any, collection: string) {
+	if (!result || !Array.isArray(result.items) || !result.page) return [];
+	if (result.page.hasMore) {
+		throw Object.assign(new Error(`Workday projection exceeded the ${MAX_CAPACITY_PAGE_LIMIT}-record ${collection} bound; inspect the paginated operator collection directly.`), {
+			code: 'workday_projection_collection_bound_exceeded',
+			status: 409,
+			details: { collection, limit: MAX_CAPACITY_PAGE_LIMIT, nextCursor: result.page.nextCursor ?? null },
+		});
 	}
+	return result.items;
+}
 
-	const workday = normalizeWorkday(project, source, runtime, summary);
-	const [projectSummary, assignments, modeRuns, approvals, capacityOperations, capacitySummary, ledgerEntries, routingDecisions] = await Promise.all([
-		typeof store.getProjectSummary === 'function' ? store.getProjectSummary(projectId, principal).catch(() => null) : null,
-		typeof store.listProviderAssignments === 'function' ? store.listProviderAssignments(project?.teamId, { projectId }).catch(() => []) : [],
-		typeof store.listAgentModeRuns === 'function' ? store.listAgentModeRuns(projectId, {}).catch(() => []) : [],
-		typeof store.listApprovalRequestsForProject === 'function' ? store.listApprovalRequestsForProject(projectId, 200).catch(() => []) : [],
-		typeof store.getProjectCapacityOperations === 'function' ? store.getProjectCapacityOperations(projectId, workday.environment).catch(() => null) : null,
-		typeof store.getProjectCapacitySummary === 'function' ? store.getProjectCapacitySummary(projectId, workday.environment).catch(() => null) : null,
-		typeof store.listCapacityLedgerEntries === 'function' ? store.listCapacityLedgerEntries(projectId, workday.id).catch(() => []) : [],
-		typeof store.listCapacityRoutingDecisionsForProject === 'function' ? store.listCapacityRoutingDecisionsForProject(projectId, 200).catch(() => []) : [],
+async function loadProjectWorkdayBundle(store: any, principal: any, project: any, envelope: any) {
+	const projectId = compact(project?.id);
+	const [summaryReport, projectSummary, agents, approvals, capacitySummary] = await Promise.all([
+		store.getWorkdayCapacitySummary(envelope.id, { limit: MAX_CAPACITY_PAGE_LIMIT }),
+		store.getProjectSummary(projectId, principal),
+		store.getProjectAgentsSummary(projectId, principal),
+		store.listApprovalRequestsForProject(projectId, 200),
+		store.getProjectCapacitySummary(projectId, compact(envelope.metadata?.environment, 'staging')),
 	]);
-
-	const assignmentDetails = safeArray(assignments)
-		.filter((assignment: any) => !workdayRef(assignment) || workdayRef(assignment) === workday.id)
-		.map((assignment: any) => ({
-			assignment,
-			modeRuns: safeArray(modeRuns).filter((run: any) => compact(run?.providerAssignmentId ?? run?.provider_assignment_id) === compact(assignment?.id)),
-		}));
-
+	if (!summaryReport?.payload) {
+		throw Object.assign(new Error(`Canonical workday summary is unavailable for ${envelope.id}.`), {
+			code: 'workday_projection_summary_missing',
+			status: 409,
+			details: { workdayId: envelope.id, projectId },
+		});
+	}
+	const evidence = summaryReport.payload.evidence ?? {};
+	const assignments = boundedEvidencePage(evidence.assignments, 'assignments');
+	const modeRuns = boundedEvidencePage(evidence.modeRuns, 'mode runs');
+	const reservations = boundedEvidencePage(evidence.reservations, 'reservations');
+	const usageActuals = boundedEvidencePage(evidence.usageActuals, 'usage actuals');
+	const ledgerEntries = boundedEvidencePage(evidence.ledgerEntries, 'ledger entries');
+	const workday = normalizeWorkday(project, envelope, summaryReport.payload);
+	const assignmentDetails = assignments.map((assignment: any) => ({
+		assignment,
+		modeRuns: modeRuns.filter((run: any) => compact(run?.providerAssignmentId ?? run?.provider_assignment_id) === compact(assignment?.id)),
+	}));
 	return {
 		project,
 		workday,
-		summary,
-		runtime,
+		summary: summaryReport.payload,
+		runtime: null,
 		agents,
 		projectSummary,
 		assignmentDetails,
 		approvals: safeArray(approvals).filter((approval: any) => !workdayRef(approval) || workdayRef(approval) === workday.id),
-		capacityOperations,
-		capacitySummary: capacityOperations?.summary ?? capacitySummary,
-		ledgerEntries: safeArray(capacityOperations?.ledgerEntries ?? ledgerEntries),
-		routingDecisions: safeArray(capacityOperations?.routingDecisions ?? routingDecisions).filter((decision: any) => !workdayRef(decision) || workdayRef(decision) === workday.id),
-		reservations: safeArray(capacityOperations?.reservations),
-		usageActuals: safeArray(capacityOperations?.usageActuals).filter((actual: any) => !workdayRef(actual) || workdayRef(actual) === workday.id),
+		capacityOperations: null,
+		capacitySummary,
+		ledgerEntries,
+		reservations,
+		usageActuals,
 	};
 }
+
 
 function projectWorkdayProjection(bundle: any): WorkdayProjection {
 	const assignmentIds: Set<string> = new Set(bundle.assignmentDetails.map((entry: any) => compact(entry.assignment?.id)).filter(Boolean));
@@ -153,10 +168,7 @@ function projectWorkdayProjection(bundle: any): WorkdayProjection {
 	return {
 		workday: {
 			...bundle.workday,
-			budget: {
-				capacityBudget: numberValue(bundle.runtime?.capacityBudget, numberValue(bundle.workday?.summary?.capacityBudget, 0)),
-				capacityUsed: numberValue(bundle.runtime?.capacityUsed, numberValue(bundle.workday?.summary?.capacityUsed, 0)),
-			},
+			budget: bundle.workday.budget,
 			riskClassification: riskClassification(approvals),
 			currentPhase: currentPhase(phases, bundle.workday),
 		},
@@ -371,10 +383,9 @@ function currentPhase(phases: OperationalPhase[], workday: any) {
 
 function capacityProjection(bundle: any) {
 	const ledgerEntries = safeArray(bundle.ledgerEntries);
-	const routingDecisions = safeArray(bundle.routingDecisions);
 	const reservations = safeArray(bundle.reservations).filter((reservation: any) => !workdayRef(reservation) || workdayRef(reservation) === bundle.workday.id);
 	const usageActuals = safeArray(bundle.usageActuals);
-	const derivedEntries = safeArray(bundle.capacitySummary?.derivedCapacity?.entries ?? bundle.capacityOperations?.plan?.derivedCapacity?.entries);
+	const derivedEntries = safeArray(bundle.capacitySummary?.derivedCapacity?.entries ?? bundle.capacityOperations?.diagnostics?.derivedCapacity?.entries);
 	const nativeUsage = usageActuals.map((actual: any) => ({
 		id: compact(actual?.id, compact(actual?.taskId, 'usage')),
 		taskId: compact(actual?.taskId ?? actual?.task_id, ''),
@@ -386,7 +397,6 @@ function capacityProjection(bundle: any) {
 	return {
 		summary: bundle.capacitySummary ?? null,
 		ledgerEntries,
-		routingDecisions,
 		reservations,
 		usageActuals,
 		nativeUsage,
@@ -395,7 +405,6 @@ function capacityProjection(bundle: any) {
 		totalUsd: ledgerEntries.reduce((sum: number, entry: any) => sum + numberValue(entry?.usd, 0), 0),
 		totalReservedNative: reservations.reduce((sum: number, reservation: any) => sum + numberValue(reservation?.reservedNativeAmount, 0), 0),
 		totalConsumedNative: reservations.reduce((sum: number, reservation: any) => sum + numberValue(reservation?.consumedNativeAmount, 0), 0),
-		routingDecisionCount: routingDecisions.length,
 	};
 }
 
@@ -421,29 +430,35 @@ function repositoryContextFor(bundle: any, artifacts: OperationalArtifact[]) {
 	];
 }
 
-function normalizeWorkday(project: any, source: any, runtime: any, summaryEntry: any) {
-	const summary = objectValue(summaryEntry?.summary) ?? objectValue(source?.summary) ?? parseJson(source?.summaryJson, {});
+function normalizeWorkday(project: any, source: any, summaryEntry: any) {
+	const metadata = objectValue(source?.metadata) ?? {};
+	const envelope = objectValue(source?.envelope) ?? {};
+	const summary = objectValue(metadata?.summary) ?? objectValue(envelope?.summary) ?? objectValue(summaryEntry) ?? {};
 	const contentSnapshot = objectValue(summary?.contentSnapshot) ?? {};
 	const docsAutomation = objectValue(summary?.docsAutomation) ?? {};
-	const id = compact(workdayRef(source), compact(workdayRef(runtime), compact(source?.id, 'workday')));
+	const id = compact(source?.id, 'workday');
 	return {
 		id,
 		recordId: compact(source?.id, id),
 		projectId: compact(source?.projectId, compact(project?.id, '')),
 		projectName: compact(project?.name, compact(project?.slug, 'Project')),
 		projectSlug: compact(project?.slug, ''),
-		environment: compact(source?.environment, 'staging'),
+		environment: compact(metadata?.environment, 'staging'),
 		kind: compact(source?.kind, 'workday'),
-		state: compact(source?.state, compact(runtime?.state, 'active')),
+		state: compact(source?.status, 'draft'),
 		objective: compact(summary?.objective, compact(summary?.title, compact(contentSnapshot?.title, `Operational workday ${id}`))),
-		startedAt: latestDate(source?.startedAt, runtime?.startedAt, summary?.startedAt),
-		endedAt: latestDate(source?.endedAt, runtime?.endedAt, summary?.endedAt),
-		updatedAt: latestDate(source?.updatedAt, runtime?.updatedAt, source?.createdAt, runtime?.createdAt),
+		startedAt: latestDate(source?.startedAt, summary?.startedAt),
+		endedAt: latestDate(source?.completedAt, summary?.endedAt),
+		updatedAt: latestDate(source?.updatedAt, source?.createdAt),
 		summary,
+		budget: {
+			envelope,
+			settlement: objectValue(summaryEntry?.settlement) ?? {},
+		},
 		docsAutomation,
 		contentSnapshot,
 		href: project?.id ? `/app/projects/${encodeURIComponent(project.id)}#development` : '/app/projects',
-		tone: toneForState(source?.state ?? runtime?.state),
+		tone: toneForState(source?.status),
 	};
 }
 

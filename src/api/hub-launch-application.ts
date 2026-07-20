@@ -352,26 +352,6 @@ export async function applyHubLaunchResult(store, runtime, job, output, principa
 	for (const resource of resourceRowsFromLaunch(project.id, launchResult)) {
 		await store.upsertProjectInfrastructureResource(project.id, resource);
 	}
-	if (railwayApiService) {
-		await store.upsertAgentPool(project.id, {
-			teamId: project.teamId,
-			environment: 'prod',
-			name: 'managed-default',
-			registrationIdentity: `market:${project.id}`,
-			serviceBaseUrl: railwayApiService.publicBaseUrl ?? null,
-			status: 'active',
-			autoscale: {
-				minWorkers: Number(process.env.TREESEED_AGENT_POOL_MIN_WORKERS ?? 1),
-				maxWorkers: Number(process.env.TREESEED_AGENT_POOL_MAX_WORKERS ?? 3),
-				targetQueueDepth: Number(process.env.TREESEED_AGENT_POOL_TARGET_QUEUE_DEPTH ?? 3),
-				cooldownSeconds: Number(process.env.TREESEED_AGENT_POOL_COOLDOWN_SECONDS ?? 120),
-			},
-			metadata: {
-				source: 'hub_launch_worker',
-				services: launchResult.railway?.services ?? [],
-			},
-		});
-	}
 	await store.updateHubLaunch(hubLaunch.id, {
 		state: 'completed',
 		currentPhase: 'launch_completed',

@@ -8,7 +8,6 @@ export type ProjectDeploymentEnvironment = (typeof PROJECT_DEPLOYMENT_ENVIRONMEN
 
 export const FORBIDDEN_DEPLOYMENT_REQUEST_FIELDS = [
 	'capacityProviderId',
-	'laneId',
 	'grantId',
 	'workerPoolId',
 	'runtimeHostId',

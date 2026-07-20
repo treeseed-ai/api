@@ -41,9 +41,7 @@ actors:
   teamManagedMember: {}
   nonMember: {}
   providerOperator: {}
-  providerKey:
-    tokenEnv: TREESEED_ACCEPTANCE_PROVIDER_TOKEN
-    required: false
+  providerAccessToken: {}
   platformRunner:
     tokenEnv: TREESEED_ACCEPTANCE_PLATFORM_RUNNER_TOKEN
     required: false
@@ -52,7 +50,7 @@ descriptorMatrices:
   - id: descriptor-executable-role-matrix
     coverageOnly: true
     methods: [GET, POST, PUT, PATCH, DELETE]
-    actors: [anonymous, siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember, providerOperator, providerKey, platformRunner]
+    actors: [anonymous, siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember, providerOperator, providerAccessToken, platformRunner]
     excludeProviderIngress: false
     excludeInternalRunner: false
     expectByDescriptor:
@@ -234,7 +232,6 @@ coverage:
     - auth.web.sign-in.site-admin
     - auth.availability.username.seeded
     - auth.availability.email.seeded
-    - provider-key-cannot-read-platform-operations
     - site-role-matrix.me.siteAdmin
     - site-role-matrix.platform-operations-read.teamViewer
     - team-role-matrix.team-members.teamOwner
@@ -242,7 +239,6 @@ coverage:
     - sdk.me.site-admin
     - sdk.teams.team-owner
     - sdk.me.teamOwner
-    - sdk.rotateCapacityProviderApiKey.teamOwner
     - deployment-flow.local-acceptance-web-deployment
 
 cases:
@@ -256,7 +252,7 @@ cases:
   - id: agent.provider-availability-session.persisted
     actor: siteAdmin
     method: GET
-    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/provider-sessions
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/availability-sessions
     expect:
       status: 200
       envelope: { ok: true }
@@ -394,10 +390,10 @@ cases:
       status: 200
       envelope: { ok: true }
 
-  - id: capacity.provider.register-capacity-provider
+  - id: capacity.provider.list-memberships
     actor: siteAdmin
     method: GET
-    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity-providers
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity-provider-memberships
     expect:
       status: 200
       envelope: { ok: true }
@@ -405,7 +401,7 @@ cases:
   - id: capacity.provider.inspect-provider-check-ins
     actor: siteAdmin
     method: GET
-    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/provider-sessions
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/availability-sessions
     expect:
       status: 200
       envelope: { ok: true }
@@ -501,7 +497,7 @@ cases:
   - id: workday.decision.approve-acting-decision
     actor: siteAdmin
     method: GET
-    path: ${apiVersionPath}/projects/${fixtures.project.id}/workday-policy
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-classes
     expect:
       status: 200
       envelope: { ok: true }
@@ -509,7 +505,7 @@ cases:
   - id: workday.artifacts.review-workday-artifacts
     actor: siteAdmin
     method: GET
-    path: ${apiVersionPath}/projects/${fixtures.project.id}/workdays
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-mode-runs
     expect:
       status: 200
       envelope: { ok: true }
@@ -716,15 +712,6 @@ cases:
 
   - id: platform.operations.requires-auth
     actor: anonymous
-    method: GET
-    path: ${apiVersionPath}/platform/operations
-    expect:
-      status: 401
-      envelope:
-        ok: false
-
-  - id: provider-key-cannot-read-platform-operations
-    actor: providerKey
     method: GET
     path: ${apiVersionPath}/platform/operations
     expect:

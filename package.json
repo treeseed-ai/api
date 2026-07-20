@@ -77,6 +77,8 @@
     "lint": "npm run build:dist",
     "test": "npm run test:unit",
     "test:unit": "vitest run --config ./vitest.config.ts",
+    "test:postgres:phase1": "vitest run --config ./vitest.config.ts test/postgres/phase1-postgres-proof.test.ts",
+    "test:capacity-load": "vitest run --config ./vitest.config.ts test/performance/capacity-admission-settlement-load.test.ts",
     "test:acceptance": "node --import tsx ./scripts/api-acceptance.ts",
     "verify:direct": "npm run release:verify",
     "verify:local": "TREESEED_VERIFY_DRIVER=direct TMPDIR=/tmp node --import tsx ./scripts/verify-driver.ts",
@@ -90,7 +92,7 @@
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#14cef4cbec20b1224be1d0daa1a798c206c69987",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#93e6fc3d561a6dff6c7474bddaca652464482ff4",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.8.2",
     "libsodium-wrappers": "^0.7.16",

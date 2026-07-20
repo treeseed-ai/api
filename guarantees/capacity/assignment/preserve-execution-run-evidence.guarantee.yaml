@@ -1,0 +1,60 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.capacity.assignment.preserve-execution-run-evidence.502
+journeyIndex: 502
+type: capacity
+subtype: assignment
+journey: Preserve Execution Run Evidence
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Assignment execution projections remain bounded and replay-safe, include all related mode-run telemetry, and fail visibly when forensic evidence cannot be read."
+status: planned
+dependencies:
+  journeys: []
+  guarantees: []
+actors:
+  allowed:
+    - capacity_operator
+    - team_owner
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required: []
+gates:
+  - core
+  - release
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Runs against the typed API repositories and a PostgreSQL-compatible service database without requiring an Admin UI."
+scene:
+  required: false
+api:
+  required: true
+  verifierRefs:
+    - api.capacity.assignment.execution-run-projection
+    - api.capacity.assignment.execution-run-failure-visible
+    - api.capacity.usage.repository-fails-closed
+content:
+  required: false
+  verifierRefs: []
+audit:
+  required: true
+  verifierRefs:
+    - api.capacity.assignment.execution-run-projection
+    - api.capacity.assignment.execution-run-failure-visible
+    - api.capacity.usage.repository-fails-closed
+negativeCases:
+  - id: telemetry-storage-failure-is-not-an-empty-success
+    actor: capacity_operator
+    verifierRefs:
+      - api.capacity.assignment.execution-run-failure-visible
+      - api.capacity.usage.repository-fails-closed
+evidence:
+  required:
+    - guarantee_report
+    - verifier_evidence
+notes:
+  - "CLI workday forensics propagates the same API uncertainty instead of rendering missing assignment, execution-run, or mode-run evidence as an empty successful report."
+  - "Task-usage evidence is decoded by one bounded typed repository; corrupt JSON or numeric state and storage failure remain visible, while exactly-once settlement is the sole usage writer."

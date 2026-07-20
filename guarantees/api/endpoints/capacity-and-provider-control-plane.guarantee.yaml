@@ -7,9 +7,9 @@ journey: Capacity And Provider Endpoint Reliability
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Capacity provider, grant, reservation, session, assignment, and usage endpoints are descriptor-covered and workflow-verified."
-status: active
+status: planned
 actors:
-  allowed: [capacity_operator, provider_key, team_owner]
+  allowed: [capacity_operator, provider_access_token, team_owner]
   forbidden: [anonymous_user, unauthorized_user]
 gates: [core, release, security]
 preconditions:
@@ -21,8 +21,9 @@ audit:
   required: true
   verifierRefs: [api.endpoints.capacity-and-provider-control-plane]
 negativeCases:
-  - id: provider-key-cannot-read-platform-operations
+  - id: provider-access-token-cannot-read-platform-operations
     verifierRefs: [api.endpoints.capacity-and-provider-control-plane]
 evidence:
   required: [guarantee_report, api_acceptance_report]
-
+notes:
+  - "Planned while legacy provider registration/check-in routes are replaced by the multi-team membership and availability-session API."
