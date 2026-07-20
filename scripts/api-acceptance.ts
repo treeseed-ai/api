@@ -110,6 +110,12 @@ function interpolate(value, variables) {
 	return value;
 }
 
+function equalJsonValue(left, right) {
+	if (Object.is(left, right)) return true;
+	if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false;
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function actorHeaders(actor = {}) {
 	const headers = new Headers(actor.headers ?? {});
 	if (actor.token) {
@@ -348,7 +354,7 @@ function assertCase(caseSpec, response, body) {
 	}
 	for (const assertion of caseSpec.expect?.json ?? []) {
 		const actual = getPath(body, assertion.path);
-		if ('equals' in assertion && actual !== assertion.equals) failures.push(`${assertion.path} expected ${JSON.stringify(assertion.equals)}, got ${JSON.stringify(actual)}`);
+		if ('equals' in assertion && !equalJsonValue(actual, assertion.equals)) failures.push(`${assertion.path} expected ${JSON.stringify(assertion.equals)}, got ${JSON.stringify(actual)}`);
 		if ('exists' in assertion && Boolean(actual !== undefined && actual !== null) !== Boolean(assertion.exists)) failures.push(`${assertion.path} existence mismatch`);
 		if ('type' in assertion && typeof actual !== assertion.type) failures.push(`${assertion.path} expected type ${assertion.type}, got ${typeof actual}`);
 	}
@@ -898,7 +904,7 @@ function sdkArgsForMethod(method) {
 		verifyWebEmail: ['missing-email'],
 		setPrimaryWebEmail: ['missing-email'],
 		deleteWebEmail: ['missing-email'],
-		revokeWebSession: ['${fixtures.session.id}'],
+		revokeWebSession: ['missing-session'],
 		updateWebProfile: [{ name: 'Acceptance SDK Profile' }],
 		webAppearance: [],
 		updateWebAppearance: [{ colorScheme: 'fern', themeMode: 'system' }],
@@ -912,9 +918,14 @@ function sdkArgsForMethod(method) {
 		markets: [],
 		currentMarket: [],
 		teams: [],
+		createTeam: [{ slug: 'acceptance-${runNonce}-sdk-team', name: 'Acceptance SDK Team' }],
+		deleteTeam: ['missing-team', { confirmation: 'DELETE missing-team' }],
 		teamMembers: ['${fixtures.team.id}'],
 		teamPermissions: ['${fixtures.team.id}'],
 		projects: ['${fixtures.team.id}'],
+		createProject: ['${fixtures.team.id}', { slug: 'acceptance-${runNonce}-sdk-project', name: 'Acceptance SDK Project' }],
+		deleteProject: ['missing-project', { confirmation: 'DELETE missing-project' }],
+		upsertProjectConnection: ['${fixtures.project.id}', { mode: 'hybrid', executionOwner: 'project_runner' }],
 		importProjectRepository: ['${fixtures.team.id}', {
 			repository: {
 				provider: 'github',
@@ -972,20 +983,44 @@ function sdkArgsForMethod(method) {
 		retryProjectDeployment: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
 		resumeProjectDeployment: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
 		cancelProjectDeployment: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
+		teamCapacityRegistrationKey: ['${fixtures.team.id}'],
+		revealTeamCapacityRegistrationKey: ['${fixtures.team.id}'],
+		rotateTeamCapacityRegistrationKey: ['${fixtures.team.id}', 'acceptance-${runNonce}-registration-rotate'],
+		enableTeamCapacityRegistrationKey: ['${fixtures.team.id}', 'acceptance-${runNonce}-registration-enable'],
+		disableTeamCapacityRegistrationKey: ['${fixtures.team.id}', 'acceptance-${runNonce}-registration-disable'],
+		capacityProviderRegistrationRequests: ['${fixtures.team.id}'],
+		capacityProviderRegistrationRequest: ['${fixtures.team.id}', 'missing-registration-request'],
+		reviewCapacityProviderRegistration: ['${fixtures.team.id}', 'missing-registration-request', 'approve', 'acceptance-${runNonce}-review-registration', {}],
+		capacityProviderMemberships: ['${fixtures.team.id}'],
+		capacityProviderMembership: ['${fixtures.team.id}', 'missing-membership'],
+		capacityAuditEvents: ['${fixtures.team.id}', { limit: 25 }],
+		capacityProviderCredentials: ['${fixtures.team.id}', 'missing-membership'],
+		authorizeCapacityProviderCredentialRotation: ['${fixtures.team.id}', 'missing-membership', 'acceptance-${runNonce}-credential-rotate'],
+		revokeCapacityProviderCredential: ['${fixtures.team.id}', 'missing-membership', 'missing-credential', 'acceptance-${runNonce}-credential-revoke'],
+		suspendCapacityProviderMembership: ['${fixtures.team.id}', 'missing-membership', 'acceptance-${runNonce}-membership-suspend'],
+		resumeCapacityProviderMembership: ['${fixtures.team.id}', 'missing-membership', 'acceptance-${runNonce}-membership-resume'],
+		revokeCapacityProviderMembership: ['${fixtures.team.id}', 'missing-membership', 'acceptance-${runNonce}-membership-revoke'],
 		capacityGrants: ['${fixtures.team.id}'],
-		createCapacityGrant: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}', environment: '${environment}', dailyCreditBudget: 1000 }],
+		capacityGrant: ['${fixtures.team.id}', 'missing-grant'],
+		planCapacityGrant: ['${fixtures.team.id}', { membershipId: 'missing-membership', providerId: 'missing-provider', projectId: '${fixtures.project.id}', environment: 'local', executionProviderIds: ['missing-execution-provider'], capabilities: ['engineering'], allowedModes: ['planning'], dailyCreditLimit: 1, monthlyCreditLimit: 1, maxConcurrentAssignments: 1, unmetered: false }],
+		createCapacityGrant: ['${fixtures.team.id}', { membershipId: 'missing-membership', providerId: 'missing-provider', projectId: '${fixtures.project.id}', environment: 'local', executionProviderIds: ['missing-execution-provider'], capabilities: ['engineering'], allowedModes: ['planning'], dailyCreditLimit: 1, monthlyCreditLimit: 1, maxConcurrentAssignments: 1, unmetered: false }, 'acceptance-${runNonce}-grant-create'],
 		capacityAllocationSets: ['${fixtures.team.id}'],
-		createCapacityAllocationSet: ['${fixtures.team.id}', {
-			version: 'acceptance-${runNonce}',
-			status: 'draft',
-			policy: { mode: 'acceptance' },
-			slices: [],
-			metadata: { acceptance: true, runNonce: '${runNonce}' },
-		}],
+		createCapacityAllocationSet: ['${fixtures.team.id}', { id: 'acceptance-${runNonce}-allocation', reservePolicy: { percent: 0, overflow: 'deny' }, slices: [{ id: 'project:${fixtures.project.id}', scope: 'project', targetId: '${fixtures.project.id}', policy: { minPercent: 0, targetPercent: 100, maxPercent: 100, hardCapPercent: 100 } }], borrowingRules: [], metadata: { acceptance: true } }, 'acceptance-${runNonce}-allocation-create'],
+		planCapacityAllocationSet: ['${fixtures.team.id}', { id: 'acceptance-${runNonce}-allocation-plan', reservePolicy: { percent: 0, overflow: 'deny' }, slices: [{ id: 'project:${fixtures.project.id}', scope: 'project', targetId: '${fixtures.project.id}', policy: { minPercent: 0, targetPercent: 100, maxPercent: 100, hardCapPercent: 100 } }], borrowingRules: [], metadata: { acceptance: true } }],
 		capacityAllocationSet: ['${fixtures.team.id}', 'missing-allocation-set'],
 		activateCapacityAllocationSet: ['${fixtures.team.id}', 'missing-allocation-set'],
+		supersedeCapacityAllocationSet: ['${fixtures.team.id}', 'missing-allocation-set', { expectedActiveAllocationSetId: 'missing-active-allocation' }, 'acceptance-${runNonce}-allocation-supersede'],
+		archiveCapacityAllocationSet: ['${fixtures.team.id}', 'missing-allocation-set', 'acceptance-${runNonce}-allocation-archive'],
+		explainCapacityAllocationSet: ['${fixtures.team.id}', 'missing-allocation-set', {}],
 		providerAvailabilitySessions: ['${fixtures.team.id}', { providerId: '${fixtures.provider.id}' }],
 		capacityProviderAssignments: ['${fixtures.team.id}', { providerId: '${fixtures.provider.id}', projectId: '${fixtures.project.id}' }],
+		capacityProviderAssignment: ['${fixtures.team.id}', 'missing-assignment'],
+		capacityReservations: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
+		capacityReservationExplanation: ['${fixtures.team.id}', 'missing-reservation'],
+		capacityUsage: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
+		capacityLedger: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
+		executionRuns: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
+		admitCapacityAssignment: ['${fixtures.team.id}', { providerId: 'missing-provider', membershipId: 'missing-membership', projectId: '${fixtures.project.id}', projectAgentClassId: 'missing-agent-class', agentId: 'acceptance-agent', mode: 'planning', environment: 'local', requestedCredits: 1 }, 'acceptance-${runNonce}-admission'],
 		createProviderAssignment: ['${fixtures.team.id}', {
 			projectId: '${fixtures.project.id}',
 			capacityProviderId: '${fixtures.provider.id}',
@@ -1049,7 +1084,7 @@ function sdkArgsForMethod(method) {
 			environment: 'local',
 			state: 'active',
 			summary: { acceptance: true, runNonce: '${runNonce}' },
-		}],
+		}, 'acceptance-${runNonce}-workday-create'],
 		workday: ['missing-workday'],
 		startWorkday: ['missing-workday'],
 		pauseWorkday: ['missing-workday'],
@@ -1062,19 +1097,24 @@ function sdkArgsForMethod(method) {
 			environment: 'local',
 			parameters: { acceptance: true, runNonce: '${runNonce}' },
 		}],
-		workdayRun: ['${fixtures.team.id}', '${fixtures.capacityWorkdayRun.id}'],
-		updateWorkdayRun: ['${fixtures.team.id}', '${fixtures.capacityWorkdayRun.id}', {
+		workdayRun: ['${fixtures.team.id}', 'missing-workday-run'],
+		updateWorkdayRun: ['${fixtures.team.id}', 'missing-workday-run', {
 			status: 'running',
 			summary: { acceptance: true, runNonce: '${runNonce}' },
 		}],
-		workdayEvents: ['${fixtures.team.id}', '${fixtures.capacityWorkdayRun.id}'],
-		createWorkdayEvent: ['${fixtures.team.id}', '${fixtures.capacityWorkdayRun.id}', {
+		tickWorkdayRun: ['${fixtures.team.id}', 'missing-workday-run', { idempotencyKey: 'acceptance-${runNonce}-workday-tick' }],
+		createResearchWorkflow: ['${fixtures.project.id}', {}],
+		workdayEvents: ['${fixtures.team.id}', 'missing-workday-run'],
+		createWorkdayEvent: ['${fixtures.team.id}', 'missing-workday-run', {
 			eventType: 'acceptance',
 			status: 'recorded',
 			title: 'Acceptance event',
 			message: 'Acceptance workday event.',
 			parameters: { runNonce: '${runNonce}' },
 		}],
+		cancelCapacityAssignment: ['${fixtures.team.id}', 'missing-assignment', { idempotencyKey: 'acceptance-${runNonce}-assignment-cancel' }],
+		requeueCapacityAssignment: ['${fixtures.team.id}', 'missing-assignment', { idempotencyKey: 'acceptance-${runNonce}-assignment-requeue' }],
+		decideCapacityOverrun: ['${fixtures.team.id}', 'missing-reservation', 'approve', { idempotencyKey: 'acceptance-${runNonce}-overrun' }],
 		teamTreeDx: ['${fixtures.team.id}'],
 		updateTeamTreeDx: ['${fixtures.team.id}', {
 			name: 'Acceptance SDK TreeDX',
@@ -1440,6 +1480,7 @@ async function main() {
 		}
 		variables.actors = Object.fromEntries(Object.entries(actors).map(([id, actor]) => [id, {
 			email: actor.email,
+			emailEncoded: actor.email ? encodeURIComponent(actor.email) : '',
 			username: actor.username,
 		}]));
 	}
@@ -1536,10 +1577,13 @@ async function main() {
 					if (caseSpec.body !== undefined) headers.set('content-type', 'application/json');
 					if (caseSpec.sdkMethod) {
 						const { MarketClient } = await loadMarketClient();
-						const sdkFetch = (url, init = {}) => {
+						let sdkResponseStatus = null;
+						const sdkFetch = async (url, init = {}) => {
 							const sdkHeaders = new Headers(init.headers ?? {});
 							addOptionalAcceptanceServiceHeaders(sdkHeaders, { environment: args.environment, enabled: emailBypass });
-							return fetchWithTimeout(url, { ...init, headers: sdkHeaders }, `${caseSpec.sdkMethod} ${url}`);
+							const sdkResponse = await fetchWithTimeout(url, { ...init, headers: sdkHeaders }, `${caseSpec.sdkMethod} ${url}`);
+							sdkResponseStatus = sdkResponse.status;
+							return sdkResponse;
 						};
 						const client = new MarketClient({
 							profile: {
@@ -1554,7 +1598,7 @@ async function main() {
 						});
 						try {
 							body = await client[caseSpec.sdkMethod](...(caseSpec.sdkArgs ?? []));
-							response = { status: Number(caseSpec.expect?.status ?? caseSpec.expect?.statusAny?.[0] ?? 200) };
+							response = { status: sdkResponseStatus ?? 0 };
 						} catch (error) {
 							if (typeof error?.status === 'number') {
 								body = error.payload ?? { ok: false, error: error.message };

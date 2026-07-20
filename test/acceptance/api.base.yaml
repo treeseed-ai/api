@@ -164,18 +164,6 @@ sdkMethodMatrices:
     expect:
       status: 201
       envelope: { ok: true }
-  - method: auditProjectHosts
-    actor: teamOwner
-    expect:
-      statusAny: [200, 400]
-  - method: resyncProjectHost
-    actor: teamOwner
-    expect:
-      statusAny: [200, 400]
-  - method: rotateProjectHost
-    actor: teamOwner
-    expect:
-      statusAny: [200, 400]
   - method: enqueueAgentTask
     actor: teamOwner
     expect:
@@ -193,19 +181,151 @@ sdkMethodMatrices:
       envelope: { ok: false }
   - method: auditProjectHosts
     actor: teamOwner
-    environments: [local]
     expect:
       status: 202
       envelope: { ok: true }
   - method: resyncProjectHost
     actor: teamOwner
-    environments: [local]
     expect:
       status: 202
       envelope: { ok: true }
   - method: rotateProjectHost
     actor: teamOwner
-    environments: [local]
+    expect:
+      status: 202
+      envelope: { ok: true }
+  - method: revokeWebSession
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: createPersonalTheme
+    actor: teamOwner
+    expect:
+      status: 201
+      envelope: { ok: true }
+  - method: deleteTeam
+    actor: teamOwner
+    expect:
+      status: 403
+      envelope: { ok: false }
+  - method: deleteProject
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: rotateTeamCapacityRegistrationKey
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: enableTeamCapacityRegistrationKey
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: disableTeamCapacityRegistrationKey
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: reviewCapacityProviderRegistration
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: suspendCapacityProviderMembership
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: resumeCapacityProviderMembership
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: revokeCapacityProviderMembership
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: createCapacityGrant
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  - method: planCapacityAllocationSet
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: supersedeCapacityAllocationSet
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  - method: explainCapacityAllocationSet
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: capacityReservations
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: capacityUsage
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: capacityLedger
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: admitCapacityAssignment
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: createDecisionCapacityPlan
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  - method: createWorkdayRun
+    actor: teamOwner
+    expect:
+      status: 201
+      envelope: { ok: true }
+  - method: workdayRun
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: updateWorkdayRun
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: tickWorkdayRun
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: workdayEvents
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: createWorkdayEvent
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: provisionTeamTreeDx
+    actor: teamOwner
     expect:
       status: 202
       envelope: { ok: true }
@@ -581,7 +701,7 @@ cases:
   - id: auth.availability.email.seeded
     actor: anonymous
     method: GET
-    path: ${apiVersionPath}/auth/availability/email?value=${actors.teamOwner.email}
+    path: ${apiVersionPath}/auth/availability/email?value=${actors.teamOwner.emailEncoded}
     expect:
       status: 200
       envelope:
@@ -590,7 +710,7 @@ cases:
         - path: payload.available
           equals: false
         - path: payload.message
-          equals: This email can’t be used
+          equals: This email can’t be used.
 
   - id: auth.me.site-admin
     actor: siteAdmin
