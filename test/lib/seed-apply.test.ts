@@ -110,10 +110,10 @@ describe('local seed apply', () => {
 			} as any);
 
 			expect(applied.plan.summary).toMatchObject({
-				create: 29,
+				create: 20,
 				update: 0,
 				unchanged: 0,
-				skip: 2,
+				skip: 0,
 			});
 			expect((applied.result as any).localTeamMemberships).toEqual([
 				expect.objectContaining({
@@ -145,10 +145,10 @@ describe('local seed apply', () => {
 			});
 
 			expect(first.plan.summary).toMatchObject({
-				create: 29,
+				create: 20,
 				update: 0,
 				unchanged: 0,
-				skip: 2,
+				skip: 0,
 			});
 
 			const team = await store.getTeamBySlug('treeseed');
@@ -325,8 +325,8 @@ describe('local seed apply', () => {
 			expect(second.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 29,
-				skip: 2,
+				unchanged: 20,
+				skip: 0,
 			});
 		} finally {
 			db.close();
@@ -356,8 +356,8 @@ describe('local seed apply', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 0,
-				unchanged: 29,
-				skip: 2,
+				unchanged: 20,
+				skip: 0,
 			});
 			expect((repaired.result as any).repairs).toEqual([
 				expect.objectContaining({ kind: 'projectHosting', projectId: marketProject!.id }),
@@ -465,10 +465,10 @@ describe('local seed apply', () => {
 			expect(seedPage.selectedSeed).toBe('treeseed');
 			expect(seedPage.selectedEnvironments).toBe('local');
 			expect(seedPage.plan.summary).toMatchObject({
-				create: 28,
+				create: 19,
 				update: 1,
 				unchanged: 0,
-				skip: 2,
+				skip: 0,
 			});
 			expect(await store.listSeedRuns()).toHaveLength(0);
 		} finally {

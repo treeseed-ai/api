@@ -127,6 +127,7 @@ describe('capacity static architecture', () => {
 		expect(store).not.toMatch(/^\s*(?:async\s+)?(?:getCapacityProvider|listProviderAssignmentsPage|createProviderAvailabilitySession|createWorkdayCapacityEnvelope|createCapacityWorkdayRun|createAgentModeRun|upsertDecisionPlanningStatus)\s*\(/mu);
 		expect(app).not.toMatch(/store\.(?:getCapacityProvider|listProviderAssignmentsPage|createWorkdayCapacityEnvelope|createCapacityWorkdayRun|createAgentModeRun|upsertDecisionPlanningStatus)\s*\(/u);
 		expect(providerControlPlane).toMatch(/admitSynthesizedProviderAssignment\s*\(/u);
+		expect(controlPlane).not.toMatch(/new\s+\w+(?:Service|Repository)\(this\)/u);
 		expect(`${controlPlane}\n${providerControlPlane}`).not.toMatch(/\bany\b/u);
 	});
 });

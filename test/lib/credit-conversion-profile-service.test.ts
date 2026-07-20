@@ -18,8 +18,9 @@ function profileRow(overrides: Record<string, unknown> = {}) {
 
 function usageRow() {
 	return {
-		id: 'usage-a', task_id: null, work_day_id: 'workday-a', project_id: 'project-a',
+		id: 'usage-a', idempotency_key: 'usage-a-report', task_id: null, work_day_id: 'workday-a', project_id: 'project-a',
 		task_signature: 'engineering:planning', execution_profile_id: 'standard-code-model', assignment_id: 'assignment-a',
+		assignment_attempt: 1, usage_dimension: 'wall_minutes', accounting_mode: 'incremental',
 		mode_run_id: 'mode-a', mode: 'planning', capacity_provider_id: 'provider-a', execution_provider_id: 'codex-a', lane_id: null,
 		business_model: 'credit', model_name: 'codex', input_tokens: 1, output_tokens: 1, cached_input_tokens: 0,
 		quota_minutes: null, wall_minutes: 2, files_opened: 0, files_changed: 0, diff_lines_added: 0,

@@ -13,7 +13,7 @@ describe('durable capacity JSON', () => {
 		const grant = {
 			id: 'grant-a', membership_id: 'membership-a', team_id: 'team-a', capacity_provider_id: 'provider-a',
 			project_id: 'project-a', environment: 'local', status: 'active', execution_provider_ids_json: '["codex"]',
-			capabilities_json: '{', allowed_modes_json: '["planning"]', metadata_json: '{}',
+			lane_ids_json: '[]', capabilities_json: '{', allowed_modes_json: '["planning"]', metadata_json: '{}',
 		};
 		const service = new CapacityGrantService({
 			ensureInitialized: vi.fn(),

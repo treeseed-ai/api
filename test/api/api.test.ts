@@ -1313,13 +1313,18 @@ describe('market api', () => {
 			authorization: `Bearer ${token}`,
 		};
 
-		await store.createWorkdayCapacityEnvelope({
-			id: 'busy-project-workday',
-			projectId: project.id,
-			status: 'active',
-			environment: 'local',
-			metadata: { source: 'project_deletion_regression' },
-		});
+		const createdWorkday = await json(await app.request('/v1/workdays', {
+			method: 'POST',
+			headers: { ...headers, 'idempotency-key': 'busy-project-workday-create' },
+			body: JSON.stringify({
+				id: 'busy-project-workday',
+				projectId: project.id,
+				status: 'active',
+				environment: 'local',
+				metadata: { source: 'project_deletion_regression' },
+			}),
+		}));
+		expect(createdWorkday.ok).toBe(true);
 		const blockers = await json(await app.request(`/v1/projects/${project.id}/deletion-blockers`, { headers }));
 		expect(blockers.payload.some((entry: { code: string }) => entry.code === 'active_workday')).toBe(true);
 
@@ -8107,13 +8112,22 @@ describe('market api', () => {
 			options: [{ id: 'approve', label: 'Approve', state: 'approved' }],
 		});
 		if (!approval) throw new Error('Expected UI projection approval fixture to be created.');
-		await store.createWorkdayCapacityEnvelope({
-			id: 'ui-workday-1',
-			projectId: project.id,
-			environment: 'staging',
-			status: 'active',
-			metadata: { summary: { objective: 'Verify backend UI projections' } },
-		});
+		const createdUiWorkday = await json(await app.request('/v1/workdays', {
+			method: 'POST',
+			headers: {
+				...headers,
+				'content-type': 'application/json',
+				'idempotency-key': 'ui-workday-1-create',
+			},
+			body: JSON.stringify({
+				id: 'ui-workday-1',
+				projectId: project.id,
+				environment: 'staging',
+				status: 'active',
+				metadata: { summary: { objective: 'Verify backend UI projections' } },
+			}),
+		}));
+		expect(createdUiWorkday.ok).toBe(true);
 
 		const governance = await json(await app.request('/v1/ui/governance', { headers }));
 		expect(governance).toMatchObject({
