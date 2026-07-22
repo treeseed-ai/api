@@ -68,43 +68,9 @@ function isTreeDxContentPublish(deployment, input) {
 	return input.action === 'publish_content' && isTreeDxContentRepository(objectValue(deployment.repository));
 }
 
-function mockWorkflowResult(deployment, input, result) {
-	const repository = repositorySlug(deployment.repository) ?? 'local-acceptance/project';
-	const branch = stringValue(deployment.repository?.branch, input.environment === 'prod' ? 'main' : 'staging');
-	const runId = input.mockRunId ?? 9001;
-	const runUrl = `https://github.com/${repository}/actions/runs/${runId}`;
-	return {
-		status: 'completed',
-		repository,
-		workflow: stringValue(input.workflowFile, 'deploy-web.yml'),
-		runId,
-		headSha: input.mockHeadSha ?? 'local-acceptance-head-sha',
-		branch,
-		createdAt: new Date().toISOString(),
-		updatedAt: new Date().toISOString(),
-		conclusion: result === 'failure' ? 'failure' : 'success',
-		url: runUrl,
-		jobs: [{
-			id: 1,
-			name: 'deploy',
-			status: 'completed',
-			conclusion: result === 'failure' ? 'failure' : 'success',
-			url: `${runUrl}/job/1`,
-			steps: [{
-				name: result === 'failure' ? 'Deploy web' : 'Publish result',
-				status: 'completed',
-				conclusion: result === 'failure' ? 'failure' : 'success',
-			}],
-		}],
-		failedJobs: result === 'failure'
-			? [{ id: 1, name: 'deploy', status: 'completed', conclusion: 'failure', url: `${runUrl}/job/1` }]
-			: [],
-	};
-}
-
 function deploymentTarget(deployment, workflowResult) {
 	const baseUrl = workflowResult?.conclusion === 'success'
-		? deployment.target?.baseUrl ?? deployment.target?.url ?? `https://${deployment.projectId}.example.test`
+		? deployment.target?.baseUrl ?? deployment.target?.url ?? null
 		: deployment.target?.baseUrl ?? deployment.target?.url ?? null;
 	return {
 		...(deployment.target ?? {}),
@@ -115,8 +81,6 @@ function deploymentTarget(deployment, workflowResult) {
 
 export function createProjectWebDeploymentExecutor(options = {}) {
 	const deploymentStore = options.deploymentStore ?? options.store ?? null;
-	const mockExternal = options.mockExternal === true;
-	const mockResult = options.mockResult === 'failure' ? 'failure' : 'success';
 	const planOnly = options.planOnly === true;
 	const githubClient = options.githubClient;
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
@@ -190,7 +154,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 		await context.throwIfCancelled();
 		const latest = await loadDeployment(deployment.id);
 		if (!isCancellationRequested(latest)) return latest;
-		if (externalWorkflow?.runId && externalWorkflow?.repository && !mockExternal) {
+		if (externalWorkflow?.runId && externalWorkflow?.repository) {
 			const cancellation = await cancelGitHubWorkflowRun(externalWorkflow.repository, externalWorkflow.runId, { client: githubClient }).catch((error) => ({
 				ok: false,
 				supported: true,
@@ -261,7 +225,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 		const workflowFile = stringValue(input.workflowFile ?? repository.workflowFile, 'deploy-web.yml');
 		if (!treeDxPublish && !workflowFile.endsWith('.yml') && !workflowFile.endsWith('.yaml')) throw new Error('Deployment workflow file must be a YAML workflow.');
 		if (input.action !== 'monitor' && (!deployment.target || Object.keys(objectValue(deployment.target)).length === 0)) throw new Error('Deployment web host target is not configured.');
-		if (input.action !== 'monitor' && !treeDxPublish && !mockExternal && !effectiveDryRun && !String(process.env.TREESEED_GITHUB_TOKEN ?? process.env.TREESEED_GITHUB_TOKEN ?? '').trim()) {
+		if (input.action !== 'monitor' && !treeDxPublish && !effectiveDryRun && !String(process.env.TREESEED_GITHUB_TOKEN ?? '').trim()) {
 			throw new Error('Configure GH_TOKEN before dispatching a project web deployment.');
 		}
 		return {
@@ -302,9 +266,9 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			mode: 'treedx_to_r2',
 			libraryId: binding.libraryId ?? null,
 			repositoryId: binding.repositoryId ?? null,
-			snapshotId: effectiveDryRun || mockExternal ? `plan-${deployment.id}` : `planned-${deployment.id}`,
+			snapshotId: effectiveDryRun ? `plan-${deployment.id}` : `planned-${deployment.id}`,
 			r2: {
-				status: effectiveDryRun || mockExternal ? 'plan' : 'planned',
+				status: effectiveDryRun ? 'plan' : 'planned',
 				withoutGitHubActions: true,
 				bucket: r2BucketName || null,
 				manifestKey: r2ManifestKey || null,
@@ -349,9 +313,8 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			target: monitorTarget,
 			externalWorkflow: deployment.externalWorkflow,
 			workflowResult,
-			githubClient: mockExternal ? null : githubClient,
+			githubClient,
 			fetchImpl: fetchImpl ?? null,
-			mockExternal,
 			planOnly: input.planOnly === true,
 		});
 		await checkpoint(deployment, context, 'monitor_completed', { monitor }, {
@@ -373,56 +336,10 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 				repository: preflight.repositorySlug,
 				workflow: preflight.workflowFile,
 				branch: preflight.branch,
-				mockExternal,
 				planOnly: effectiveDryRun,
 			},
 		});
-		if (mockExternal || effectiveDryRun) {
-			const result = mockWorkflowResult(deployment, input, mockResult);
-			const externalWorkflow = {
-				provider: 'github',
-				repository: result.repository,
-				workflow: result.workflow,
-				runId: result.runId,
-				runUrl: result.url,
-				headSha: result.headSha,
-				branch: result.branch,
-				status: 'queued',
-				conclusion: null,
-				localAcceptanceDriver: mockExternal,
-				planOnly: effectiveDryRun,
-			};
-			await deploymentStore.updateProjectDeployment(deployment.id, { externalWorkflow });
-			deployment = await loadDeployment(deployment.id);
-			await checkpoint(deployment, context, 'workflow_dispatched', { externalWorkflow }, {
-				kind: 'deployment.workflow.dispatched',
-				message: 'Project web deployment workflow dispatched.',
-				status: 'dispatching',
-				payload: externalWorkflow,
-			});
-			await throwIfDeploymentCancelled(deployment, context, externalWorkflow);
-			await deploymentStore.updateProjectDeployment(deployment.id, { status: 'running' });
-			deployment = await loadDeployment(deployment.id);
-			await emit(deployment, context, 'deployment.workflow.running', {
-				message: 'Project web deployment workflow is running.',
-				status: 'running',
-				payload: { runId: result.runId, runUrl: result.url, activeJob: 'deploy' },
-			});
-			await checkpoint(deployment, context, 'workflow_run_discovered', { externalWorkflow: { ...externalWorkflow, status: 'in_progress' } }, {
-				kind: 'deployment.workflow.run_discovered',
-				message: 'Project web deployment workflow run discovered.',
-				status: 'running',
-				payload: { runId: result.runId, runUrl: result.url },
-			});
-			await throwIfDeploymentCancelled(deployment, context, externalWorkflow);
-			await checkpoint(deployment, context, 'workflow_completed', { workflowResult: result }, {
-				kind: 'deployment.workflow.completed',
-				message: `Project web deployment workflow completed with ${result.conclusion}.`,
-				status: result.conclusion === 'success' ? 'running' : 'failed',
-				payload: { runId: result.runId, runUrl: result.url, conclusion: result.conclusion },
-			});
-			return result;
-		}
+		if (effectiveDryRun) throw new Error('Project web deployment plan reached the live workflow executor.');
 
 		const dispatch = await dispatchProjectGitHubWorkflow(preflight.repositorySlug, {
 			client: githubClient,
@@ -481,71 +398,41 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 			const normalizedInput = validateInput(input);
 			const effectiveDryRun = input.planOnly === true;
 			if (!deploymentStore) {
-				if (!mockExternal && !effectiveDryRun) {
+				if (!effectiveDryRun) {
 					throw new Error('Project web deployment executor requires the Market control-plane store for live deployments.');
-				}
-				const deployment = {
-					id: normalizedInput.deploymentId,
-					projectId: normalizedInput.projectId,
-					teamId: normalizedInput.teamId,
-					environment: normalizedInput.environment,
-					action: normalizedInput.action,
-					repository: {
-						owner: input.repositoryOwner ?? 'mock',
-						name: input.repositoryName ?? normalizedInput.projectId,
-						branch: input.branch ?? (normalizedInput.environment === 'prod' ? 'main' : 'staging'),
-					},
-					target: input.target ?? {},
-				};
-				const workflowResult = normalizedInput.action === 'monitor'
-					? null
-					: mockWorkflowResult(deployment, input, mockResult);
-				const terminalStatus = workflowResult?.conclusion === 'failure' ? 'failed' : 'succeeded';
-				const target = workflowResult ? deploymentTarget(deployment, workflowResult) : deployment.target;
-				const monitor = {
-					status: terminalStatus === 'failed' ? 'failed' : 'passed',
-					checks: [],
-					mockExternal,
-					planOnly: effectiveDryRun,
-				};
-				const summary = normalizedInput.action === 'monitor'
-					? `monitor for ${normalizedInput.environment} completed with ${monitor.status}.`
-					: `${normalizedInput.action} for ${normalizedInput.environment} ${terminalStatus}.`;
-				await context.checkpoint?.({
-					phase: 'mock_deployment_completed',
-					deploymentId: normalizedInput.deploymentId,
-					status: terminalStatus,
-					externalWorkflow: workflowResult,
-					target,
-					monitor,
-				}, {
-					kind: terminalStatus === 'failed' ? 'deployment.failed' : 'deployment.succeeded',
-					data: {
-						deploymentId: normalizedInput.deploymentId,
-						status: terminalStatus,
-						message: summary,
-						mockExternal,
-						planOnly: effectiveDryRun,
-					},
-				});
-				if (terminalStatus === 'failed') {
-					throw new Error(summary);
 				}
 				return {
 					ok: true,
-					status: terminalStatus,
+					status: 'planned',
 					deploymentId: normalizedInput.deploymentId,
 					projectId: normalizedInput.projectId,
 					teamId: normalizedInput.teamId,
 					environment: normalizedInput.environment,
 					action: normalizedInput.action,
-					externalWorkflow: workflowResult,
-					target,
-					monitor,
-					summary,
+					plan: {
+						repositoryOwner: input.repositoryOwner ?? null,
+						repositoryName: input.repositoryName ?? null,
+						branch: input.branch ?? (normalizedInput.environment === 'prod' ? 'main' : 'staging'),
+						target: input.target ?? {},
+					},
+					summary: `${normalizedInput.action} for ${normalizedInput.environment} is planned; no provider was called.`,
 				};
 			}
 			let deployment = await loadDeployment(normalizedInput.deploymentId);
+			if (effectiveDryRun) {
+				const preflight = validatePreflight(deployment, normalizedInput, true);
+				return {
+					ok: true,
+					status: 'planned',
+					deploymentId: deployment.id,
+					projectId: deployment.projectId,
+					teamId: deployment.teamId,
+					environment: deployment.environment,
+					action: deployment.action,
+					plan: { repository: preflight.repositorySlug, workflowFile: preflight.workflowFile, branch: preflight.branch, treeDxPublish: preflight.treeDxPublish },
+					summary: `${deployment.action} for ${deployment.environment} is planned; no durable or provider state changed.`,
+				};
+			}
 			let externalWorkflow = null;
 			try {
 				await throwIfDeploymentCancelled(deployment, context);
@@ -562,8 +449,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 					repository: preflight.repositorySlug,
 					workflowFile: preflight.workflowFile,
 					branch: preflight.branch,
-					mockExternal,
-					planOnly: effectiveDryRun,
+					planOnly: false,
 				}, {
 					kind: 'deployment.preflight.completed',
 					message: 'Deployment preflight checks completed.',
@@ -572,15 +458,14 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 						repository: preflight.repositorySlug,
 						workflowFile: preflight.workflowFile,
 						branch: preflight.branch,
-						mockExternal,
 					},
 				});
 				await throwIfDeploymentCancelled(deployment, context);
 				let workflowResult = null;
 				if (deployment.action !== 'monitor') {
 					workflowResult = preflight.treeDxPublish
-						? await executeTreeDxContentPublish(deployment, input, context, preflight, effectiveDryRun)
-						: await executeWorkflow(deployment, input, context, preflight, effectiveDryRun);
+						? await executeTreeDxContentPublish(deployment, input, context, preflight, false)
+						: await executeWorkflow(deployment, input, context, preflight, false);
 					externalWorkflow = preflight.treeDxPublish
 						? null
 						: {
@@ -593,8 +478,7 @@ export function createProjectWebDeploymentExecutor(options = {}) {
 							branch: workflowResult.branch,
 							status: workflowResult.status,
 							conclusion: workflowResult.conclusion,
-							mock: mockExternal,
-							planOnly: effectiveDryRun,
+							planOnly: false,
 						};
 					deployment = await loadDeployment(deployment.id);
 					await throwIfDeploymentCancelled(deployment, context, externalWorkflow);

@@ -13,6 +13,7 @@ import { admitSynthesizedProviderAssignment } from "./assignment-admission-servi
 import type { ProviderLeasePrincipal } from "./lease-authority-service.ts";
 import { workdayTreeDxWorkspaceId } from "./workday-treedx-workspace-service.ts";
 import { evaluateDurableWorkdayContinuation } from "./workday-continuation-service.ts";
+import type { ProviderSynthesisExecutionProvider } from "./provider-synthesis-context-service.ts";
 
 type JsonRecord = Record<string, unknown>;
 interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
@@ -38,6 +39,14 @@ function text(value: unknown, fallback = ""): string {
 function assignmentId(demandId: string): string {
   return `assignment_${createHash("sha256").update(demandId).digest("base64url").slice(0, 32)}`;
 }
+export function resolveAssignmentContentBaseRef(payload: JsonRecord): string {
+  const intent = record(payload.intent);
+  const relatedArtifact = record(intent.relatedArtifact);
+  return text(
+    relatedArtifact.commitSha,
+    text(payload.contentBaseRef, "refs/heads/main"),
+  );
+}
 function errorCode(error: unknown): string {
   return typeof error === "object" &&
     error !== null &&
@@ -50,6 +59,7 @@ function assignmentInput(
   demand: Awaited<ReturnType<CapacityWorkdayDemandRepository["claimNext"]>>,
   principal: ProviderLeasePrincipal,
   sessionId: string,
+  executionProviders: ProviderSynthesisExecutionProvider[],
   now: string,
 ) {
   if (!demand?.claimToken)
@@ -70,8 +80,23 @@ function assignmentInput(
       { demandId: demand.id },
     );
   const contentRoot = text(payload.contentRoot, "src/content");
-  const contentBaseRef = text(payload.contentBaseRef, "refs/heads/main");
+  const contentBaseRef = resolveAssignmentContentBaseRef(payload);
   const planning = demand.mode === "planning";
+  const requiredCapabilities = Array.isArray(demand.metadata.requiredCapabilities)
+    ? demand.metadata.requiredCapabilities.map(String).filter(Boolean)
+    : [];
+  const executionProvider = [...executionProviders]
+    .filter((provider) => provider.status === "available")
+    .filter((provider) => requiredCapabilities.every((capability) => provider.capabilities.includes(capability)))
+    .sort((left, right) => left.id.localeCompare(right.id))[0];
+  if (!executionProvider) {
+    throw new CapacityGovernanceError(
+      "capacity_execution_provider_unavailable",
+      "No advertised execution provider satisfies this demand.",
+      409,
+      { demandId: demand.id, requiredCapabilities },
+    );
+  }
   const allowedReadPaths = ["**"];
   const allowedWritePaths = planning
     ? [contentRoot, `${contentRoot}/**`]
@@ -118,6 +143,7 @@ function assignmentInput(
     workDayId: demand.workdayId,
     projectId: demand.projectId,
     capacityProviderId: principal.capacityProviderId,
+    executionProviderId: executionProvider.id,
     mode: demand.mode,
     reservedCredits: demand.requestedCredits,
     metadata: {
@@ -180,6 +206,7 @@ function assignmentInput(
     projectId: demand.projectId,
     environment: text(demand.metadata.environment, "local"),
     providerSessionId: sessionId,
+    executionProviderId: executionProvider.id,
     projectAgentClassId: demand.projectAgentClassId,
     mode: demand.mode,
     workDayId: demand.workdayId,
@@ -187,9 +214,7 @@ function assignmentInput(
     decisionId: demand.decisionId,
     proposalId:
       planningSubjectModel === "proposal" ? planningSubjectId || null : null,
-    requiredCapabilities: Array.isArray(demand.metadata.requiredCapabilities)
-      ? demand.metadata.requiredCapabilities
-      : [],
+    requiredCapabilities,
     agentId: demand.agentId,
     handlerId: demand.handlerId,
     capacityEnvelope,
@@ -293,6 +318,7 @@ export async function assignNextCompiledDemand(
   store: AssignmentFunctionStore,
   principal: ProviderLeasePrincipal,
   sessionId: string,
+  executionProviders: ProviderSynthesisExecutionProvider[],
   now = new Date().toISOString(),
 ): Promise<DurableProviderAssignment | null> {
   const demands = new CapacityWorkdayDemandRepository(store);
@@ -300,7 +326,7 @@ export async function assignNextCompiledDemand(
     principal.teamId,
     principal.capacityProviderId,
   )) {
-    const pendingInput = assignmentInput(pending, principal, sessionId, now);
+    const pendingInput = assignmentInput(pending, principal, sessionId, executionProviders, now);
     await provisionWorkspace(store, pending, pendingInput, now);
   }
   const demand = await demands.claimNext(
@@ -320,7 +346,14 @@ export async function assignNextCompiledDemand(
     await demands.releaseClaim(demand.id, demand.claimToken!, now);
     return null;
   }
-  const input = assignmentInput(demand, principal, sessionId, now);
+  let input: ReturnType<typeof assignmentInput>;
+  try {
+    input = assignmentInput(demand, principal, sessionId, executionProviders, now);
+  } catch (error) {
+    await demands.releaseClaim(demand.id, demand.claimToken!, now);
+    await recordDenial(store, principal, demand.id, errorCode(error), now);
+    return null;
+  }
   let assignment: DurableProviderAssignment | null;
   try {
     assignment = await admitSynthesizedProviderAssignment(

@@ -45,12 +45,21 @@ function researchRole(agent: CapacityWorkdayAgent) {
 	return null;
 }
 
-function researchStageIntent(stage: string, intent: CapacityWorkdayResolvedIntent): CapacityWorkdayResolvedIntent {
+function researchQuestionSlug(questionRef: string) {
+	return questionRef.replace(/^question:/u, '').trim();
+}
+
+function researchStageIntent(stage: string, intent: CapacityWorkdayResolvedIntent, questionRef: string): CapacityWorkdayResolvedIntent {
 	const artifactKind = stage === 'question-decomposition' ? 'planning_question'
 		: stage === 'cited-knowledge-publication' ? 'knowledge_page'
 			: stage === 'workday-report' ? 'workday_summary'
 				: 'planning_note';
-	return { ...intent, artifactKind, subjectModel: 'question', subjectId: intent.subjectId ?? 'what-should-this-research-map-first' };
+	return {
+		...intent,
+		artifactKind,
+		subjectModel: 'question',
+		subjectId: researchQuestionSlug(questionRef) || 'what-should-this-research-map-first',
+	};
 }
 
 async function researchWorkflowSource(
@@ -69,15 +78,19 @@ async function researchWorkflowSource(
 		const workflow = serializeResearchWorkflowRow(row);
 		const node = workflow?.nodes.find((candidate) => candidate.status === 'ready');
 		if (!workflow || !node || node.role !== role) continue;
+		const reviewAttempts = Array.isArray(workflow.metadata?.reviewAttempts) ? workflow.metadata.reviewAttempts : [];
+		const latestReviewAttempt = reviewAttempts.length ? reviewAttempts.at(-1) : undefined;
 		return {
 			sourceType: 'research-workflow', sourceId: `${workflow.id}:${node.stage}`, decisionId: null, priority: 100,
 			requestedCredits: 1,
 			payload: {
-				intent: researchStageIntent(node.stage, intent), planningSource: 'research-workflow', researchWorkflowId: workflow.id, researchWorkflowStateVersion: workflow.stateVersion,
+				intent: researchStageIntent(node.stage, intent, workflow.questionRef), planningSource: 'research-workflow', researchWorkflowId: workflow.id, researchWorkflowStateVersion: workflow.stateVersion,
 				researchStage: node.stage, objectiveRef: workflow.objectiveRef, questionRef: workflow.questionRef,
-				minimumIndependentSources: workflow.minimumIndependentSources, citations: workflow.citations, claims: workflow.claims,
+				minimumIndependentSources: workflow.minimumIndependentSources, maxRevisionCycles: workflow.maxRevisionCycles,
+				citations: workflow.citations, claims: workflow.claims,
 				reviewerRejectedUnsupportedClaims: workflow.reviewerRejectedUnsupportedClaims,
 				reviewerApprovedRevision: workflow.reviewerApprovedRevision, revisionCount: workflow.revisionCount,
+				...(latestReviewAttempt ? { latestReviewAttempt } : {}),
 			},
 		};
 	}
@@ -162,6 +175,7 @@ export async function resolvePlanningDemandSource(
 			payload: {
 				intent, prompt: text(row.prompt), planningInputRequestId: String(row.id), scopeHash: row.scope_hash ?? null,
 				planningSource: metadata.planningSource ?? 'planning-input',
+				...(text(metadata.objectiveId) ? { objectiveId: text(metadata.objectiveId) } : {}),
 			},
 		};
 	}

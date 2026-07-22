@@ -60,10 +60,6 @@ function parseOperationKey(value) {
 }
 
 function parseRunnerOptions() {
-	const mockExternal = hasArg('--mock-external');
-	if (mockExternal && process.env.TREESEED_ACCEPTANCE_EXTERNAL_DRIVER !== '1' && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
-		throw new Error('--mock-external is only allowed for the local acceptance external driver.');
-	}
 	return {
 		once: hasArg('--once'),
 		watch: hasArg('--watch'),
@@ -72,8 +68,6 @@ function parseRunnerOptions() {
 		pollIntervalMs: readNumberArg('--poll-interval-ms', 5000),
 		maxJobs: readNumberArg('--max-jobs', 1),
 		planOnly: hasArg('--plan'),
-		mockExternal,
-		mockResult: readArg('--mock-result', 'success') === 'failure' ? 'failure' : 'success',
 	};
 }
 
@@ -636,8 +630,6 @@ export function createExecutorsForOptions(options = {}) {
 		treeDxProvisionExecutor,
 		createProjectWebDeploymentExecutor({
 			deploymentStore: options.deploymentStore,
-			mockExternal: options.mockExternal,
-			mockResult: options.mockResult,
 			planOnly: options.planOnly,
 			pollSeconds: Math.max(0, Math.round(Number(options.pollIntervalMs ?? 5000) / 1000)),
 		}),
@@ -661,7 +653,6 @@ export async function registerAndHeartbeat(client, config, version, options = {}
 				maxConcurrentJobs: Math.max(1, Number(options.maxJobs ?? 1) || 1),
 			},
 			planOnly: options.planOnly === true,
-			mockExternal: options.mockExternal === true,
 		},
 	};
 	await client.register(payload);
@@ -1064,12 +1055,7 @@ async function runManagedLaunchJobs(config, store, _version, options = {}) {
 					title: 'Executing launch',
 				},
 			});
-			const result = options.mockExternal === true
-				? {
-					mode: 'inline',
-					payload: localAcceptanceManagedLaunchResult(prepared.intent),
-				}
-				: await new TreeseedOperationsSdk().execute({
+			const result = await new TreeseedOperationsSdk().execute({
 					operationName: prepared.resume ? 'hub.resume_launch' : 'hub.execute_launch',
 					input: prepared.intent,
 				}, {
@@ -1113,58 +1099,6 @@ async function runManagedLaunchJobs(config, store, _version, options = {}) {
 		}
 	}
 	return { ok: failed === 0, processed, failed, errors };
-}
-
-function localAcceptanceManagedLaunchResult(intent) {
-	const hub = objectValue(intent.hub);
-	const repository = objectValue(intent.repository);
-	const slug = String(hub.slug ?? hub.id ?? 'project');
-	const owner = String(repository.owner ?? 'treeseed-ai');
-	return {
-		plan: {
-			repository: {
-				hostId: repository.hostId ?? 'platform:github:hosted-hubs',
-				topology: repository.topology ?? 'split_software_content',
-			},
-			contentResolution: {},
-		},
-		repository: {
-			slug: `${owner}/${slug}`,
-			owner,
-			name: slug,
-			url: `https://github.com/${owner}/${slug}`,
-			defaultBranch: 'main',
-			stagingBranch: 'staging',
-			visibility: repository.visibility ?? 'private',
-		},
-		repositories: [{
-			role: 'software',
-			owner,
-			name: `${slug}-site`,
-			url: `https://github.com/${owner}/${slug}-site`,
-			defaultBranch: 'main',
-			create: true,
-		}, {
-			role: 'content',
-			owner,
-			name: `${slug}-content`,
-			url: `https://github.com/${owner}/${slug}-content`,
-			defaultBranch: 'main',
-			create: true,
-		}],
-		cloudflare: {
-			staging: { siteUrl: `https://${slug}-staging.pages.dev` },
-			prod: { siteUrl: `https://${slug}.pages.dev` },
-		},
-		railway: { services: [], deployments: [], schedules: [] },
-		projectApiBaseUrl: `https://${slug}-api.example.test`,
-		projectSiteUrl: `https://${slug}.pages.dev`,
-		projectMetadata: { localAcceptanceDriver: true },
-		phases: [
-			{ phase: 'repo_provision', status: 'completed', detail: 'Local acceptance repository provisioning completed.' },
-			{ phase: 'runtime_connection', status: 'completed', detail: 'Local acceptance runtime connection completed.' },
-		],
-	};
 }
 
 async function runOnce(options = {}) {

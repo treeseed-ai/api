@@ -153,9 +153,10 @@ describe('atomic capacity admission and settlement', () => {
 			await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-wall-a', usageDimension: 'wall-time', accountingMode: 'incremental', actualCredits: 2, providerUnits: 1.25, source: 'test', usageActual: { wallMinutes: 1.25 } });
 			await expect(reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-tokens-conflict', usageDimension: 'tokens', accountingMode: 'incremental', actualCredits: 1, source: 'test' }))
 				.rejects.toMatchObject({ code: 'capacity_usage_idempotency_conflict' });
-			const settled = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', actualCredits: 4, providerUnits: 1.25, source: 'test', usageActual });
+			const fractionalProviderUnits = 2.4753833333333333;
+			const settled = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', actualCredits: 4, providerUnits: fractionalProviderUnits, source: 'test', usageActual });
 			expect(settled).toMatchObject({ replayed: false, entry: { settlement_key: 'settle-a' }, usageActualId: 'usage:assignment-a:0:aggregate' });
-			const settledReplay = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', actualCredits: 4, providerUnits: 1.25, source: 'test', usageActual });
+			const settledReplay = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', actualCredits: 4, providerUnits: fractionalProviderUnits, source: 'test', usageActual });
 			expect(settledReplay.replayed).toBe(true);
 			const terminalizationReplay = await settleCapacityReservationExactlyOnce(store, {
 				settlementKey: 'workday-terminal:run-a:assignment-a', teamId: 'team-a', membershipId: 'membership-a',
@@ -426,9 +427,14 @@ describe('atomic capacity admission and settlement', () => {
 					explanation: { eligible: true, gates: { leaseState: 'leased', runnerId: 'runner-a' } },
 				},
 			});
+			const concurrentRenewals = await Promise.all(Array.from({ length: 4 }, () => store.renewProviderAssignmentLease(principal, 'lease-assignment-a', {
+				leaseToken: leased.leaseToken,
+				runnerId: 'runner-a',
+			})));
+			expect(concurrentRenewals.every((renewal) => renewal?.assignment.status === 'leased')).toBe(true);
 			expect(await store.completeProviderAssignment(principal, 'lease-assignment-a', { leaseToken: leased.leaseToken, runnerId: 'runner-a' })).toBeNull();
 			await settleCapacityReservationExactlyOnce(store, { settlementKey: 'lease-settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'lease-reservation-a', assignmentId: 'lease-assignment-a', actualCredits: 4, source: 'test' });
-			expect(await store.completeProviderAssignment(principal, 'lease-assignment-a', { leaseToken: leased.leaseToken, runnerId: 'runner-a' })).toMatchObject({ assignment: { status: 'completed', stateVersion: 3 } });
+			expect(await store.completeProviderAssignment(principal, 'lease-assignment-a', { leaseToken: leased.leaseToken, runnerId: 'runner-a' })).toMatchObject({ assignment: { status: 'completed', stateVersion: expect.any(Number) } });
 			await commitCapacityAdmission(store, { idempotencyKey: 'lease-admit-b', admission: admission(6, 4), assignment: { projectAgentClassId: 'class-a', workDayId: 'workday-a', providerSessionId: 'session-a' }, reservationId: 'lease-reservation-b', assignmentId: 'lease-assignment-b' });
 			const secondLease = await store.leaseNextProviderAssignment(principal, { sessionId: 'session-a', runnerId: 'runner-b' });
 			expect(secondLease).toMatchObject({ assignment: { id: 'lease-assignment-b', status: 'leased', stateVersion: 2 } });

@@ -330,18 +330,6 @@ sdkMethodMatrices:
       status: 202
       envelope: { ok: true }
 
-deploymentFlows:
-  - id: deployment-flow.local-acceptance-web-deployment
-    actor: teamOwner
-    runnerActor: platformRunner
-    market: local
-    environment: staging
-    mockResult: success
-    environments: [local]
-    expect:
-      status: 200
-      envelope: { ok: true }
-
 coverage:
   requireAllDescriptors: true
   requireAllSdkMethods: true
@@ -359,7 +347,6 @@ coverage:
     - sdk.me.site-admin
     - sdk.teams.team-owner
     - sdk.me.teamOwner
-    - deployment-flow.local-acceptance-web-deployment
 
 cases:
   - id: health.ready

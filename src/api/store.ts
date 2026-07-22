@@ -2879,6 +2879,12 @@ function serializeProjectSummarySnapshot(row) {
 }
 
 export class MarketControlPlaneStore {
+	// This is part of the public host contract consumed by the capacity facade.
+	// Declare it explicitly because this legacy store is still typechecked in
+	// transpile-only mode and constructor assignment alone is not emitted in its
+	// inferred declaration shape.
+	declare config: Record<string, unknown>;
+
 	constructor(config, db) {
 		this.config = config;
 		this.db = db;
@@ -11153,7 +11159,7 @@ export class MarketControlPlaneStore {
 		];
 	}
 
-	async deleteTeam(teamId, confirmation) {
+	async prepareTeamDeletion(teamId, confirmation) {
 		await this.ensureInitialized();
 		const team = await this.getTeam(teamId);
 		if (!team) return { ok: false, code: 'missing', message: 'Team not found.' };
@@ -11164,7 +11170,6 @@ export class MarketControlPlaneStore {
 		if (blockers.length > 0) {
 			return { ok: false, code: 'blocked', message: 'Team still has owned content.', blockers };
 		}
-		await this.run(`DELETE FROM teams WHERE id = ?`, [teamId]);
 		return { ok: true, team };
 	}
 

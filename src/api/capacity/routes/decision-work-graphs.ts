@@ -11,6 +11,7 @@ interface DecisionWorkGraphStore extends CapacityGovernanceDatabase {
 	listDecisionAssignmentGraphsForDecision(decisionId: string, filters: { active?: boolean }): Promise<DecisionAssignmentGraphRecord[]>;
 	getDecisionAssignmentGraph(id: string): Promise<DecisionAssignmentGraphRecord | null>;
 	getDeliverableContract(id: string): Promise<DeliverableContractRecord | null>;
+	getDeliverableManifest(id: string): Promise<DeliverableManifestRecord | null>;
 	submitDeliverableManifest(id: string, input: Record<string, unknown>): Promise<DeliverableManifestRecord | null>;
 	markDeliverableContractApproved(id: string, input: Record<string, unknown>): Promise<DeliverableContractRecord | null>;
 	markDeliverableContractRejected(id: string, input: Record<string, unknown>): Promise<DeliverableContractRecord | null>;
@@ -59,6 +60,14 @@ export function installDecisionWorkGraphRoutes(app: Hono, options: DecisionWorkG
 		const access = await options.requireProjectAccess(c, options.store, graph.projectId, 'projects:read:team');
 		if (access.response) return access.response;
 		return c.json({ ok: true, payload: graph });
+	});
+
+	app.get('/v1/deliverable-manifests/:manifestId', async (c) => {
+		const manifest = await store.getDeliverableManifest(c.req.param('manifestId'));
+		if (!manifest) return error(c, 404, 'Unknown deliverable manifest.');
+		const access = await options.requireProjectAccess(c, options.store, manifest.projectId, 'projects:read:team');
+		if (access.response) return access.response;
+		return c.json({ ok: true, payload: manifest });
 	});
 
 	app.post('/v1/deliverable-contracts/:contractId/manifests', async (c) => {

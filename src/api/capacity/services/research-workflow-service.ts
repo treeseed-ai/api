@@ -23,7 +23,12 @@ export class ResearchWorkflowService {
 		if (!objectiveRef || !questionRef || !idempotencyKey) throw new CapacityGovernanceError('research_workflow_input_required', 'objectiveRef, questionRef, and idempotencyKey are required.', 400);
 		const existing = await this.repository.getByIdempotency(projectId, idempotencyKey);
 		if (existing) return existing;
-		const workflow = compileResearchWorkflow({ id: text(input.id) || randomUUID(), teamId: project.teamId, projectId, objectiveRef, questionRef, minimumIndependentSources: Number(input.minimumIndependentSources ?? 2), metadata: input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata) ? input.metadata as JsonRecord : undefined });
+		const workflow = compileResearchWorkflow({
+			id: text(input.id) || randomUUID(), teamId: project.teamId, projectId, objectiveRef, questionRef,
+			minimumIndependentSources: Number(input.minimumIndependentSources ?? 2),
+			maxRevisionCycles: Number(input.maxRevisionCycles ?? 3),
+			metadata: input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata) ? input.metadata as JsonRecord : undefined,
+		});
 		return this.repository.create(workflow, idempotencyKey);
 	}
 	async completeStage(id: string, stage: string, input: JsonRecord) {
@@ -45,7 +50,7 @@ export class ResearchWorkflowService {
 			return this.repository.advance(workflow, next);
 		} catch (error) {
 			const code = error instanceof Error ? error.message.split(':')[0]! : 'research_workflow_transition_invalid';
-			throw new CapacityGovernanceError(code, 'Research workflow stage transition was denied.', code === 'research_workflow_state_conflict' ? 409 : 400, { workflowId: id, stage });
+			throw new CapacityGovernanceError(code, `Research workflow stage transition was denied: ${code}.`, code === 'research_workflow_state_conflict' ? 409 : 400, { workflowId: id, stage });
 		}
 	}
 }

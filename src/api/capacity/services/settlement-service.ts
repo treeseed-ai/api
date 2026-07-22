@@ -9,6 +9,7 @@ import {
 	type CapacityUsageReportRequest,
 } from './usage-report-service.ts';
 import type { CapacityUsageActualInput } from './usage-actual-input.ts';
+import { durableRealEquals } from './durable-number.ts';
 
 export interface CapacitySettlementRequest {
 	settlementKey: string;
@@ -40,10 +41,6 @@ function positiveOrZero(value: number, name: string) {
 function isEnforcedLimitViolation(error: unknown) {
 	const message = error instanceof Error ? error.message : String(error);
 	return /check constraint|committed_amount|hard_limit/u.test(message.toLowerCase());
-}
-
-function optionalNumber(value: unknown) {
-	return value == null ? null : Number(value);
 }
 
 function usageReportInput(input: CapacitySettlementRequest): CapacityUsageReportRequest {
@@ -80,9 +77,9 @@ function assertSettlementMatches(entry: Record<string, unknown>, input: Capacity
 		);
 	}
 	if (input.existingSettlementPolicy === 'replay') return;
-	const usageMatches = Number(entry.credits ?? 0) === Number(input.actualCredits)
-		&& optionalNumber(entry.provider_units) === optionalNumber(input.providerUnits)
-		&& optionalNumber(entry.usd) === optionalNumber(input.usd);
+	const usageMatches = durableRealEquals(entry.credits ?? 0, input.actualCredits)
+		&& durableRealEquals(entry.provider_units, input.providerUnits)
+		&& durableRealEquals(entry.usd, input.usd);
 	if (!usageMatches) {
 		throw new CapacityGovernanceError(
 			'capacity_settlement_usage_conflict',

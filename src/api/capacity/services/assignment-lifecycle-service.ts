@@ -172,7 +172,14 @@ export class ProviderAssignmentLifecycleService {
 			],
 		);
 		const renewed = await this.store.getProviderAssignment(principal.teamId, assignment.id);
-		if (!renewed || renewed.stateVersion !== assignment.stateVersion + 1 || renewed.leaseToken !== input.leaseToken) {
+		if (
+			!renewed
+			|| renewed.stateVersion < assignment.stateVersion + 1
+			|| renewed.status !== 'leased'
+			|| renewed.leaseState !== 'leased'
+			|| renewed.leaseToken !== input.leaseToken
+			|| (renewed.leaseExpiresAt && Date.parse(renewed.leaseExpiresAt) <= Date.parse(now))
+		) {
 			await recordFailure('lease_state_changed_concurrently');
 			return null;
 		}

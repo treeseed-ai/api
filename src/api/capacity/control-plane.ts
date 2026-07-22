@@ -49,7 +49,10 @@ export interface CapacityControlPlaneHost extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<Record<string, unknown>[]>;
 	requestProjectRuntime(projectId: string, principal: unknown, path: string, input?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 }
-export type CapacityControlPlaneStore = CapacityControlPlane & ProviderControlPlane & CapacityControlPlaneHost;
+type PublicSurface<T> = { [Key in keyof T]: T[Key] };
+export type CapacityControlPlaneStore = PublicSurface<CapacityControlPlane>
+	& PublicSurface<ProviderControlPlane>
+	& CapacityControlPlaneHost;
 type JsonRecord = Record<string, unknown>;
 interface PageFilters extends JsonRecord {
 	limit?: number | string | null;
@@ -67,7 +70,7 @@ function isoNow() {
 	return new Date().toISOString();
 }
 class CapacityControlPlane {
-	private context!: CapacityControlPlaneStore;
+	private capacityContext!: CapacityControlPlaneStore;
 	private capacityRuntimeEvidenceRepository!: CapacityRuntimeEvidenceRepository;
 	private workdayCapacityEnvelopeRepository!: WorkdayCapacityEnvelopeRepository;
 	private agentCapacityPlanService!: AgentCapacityPlanService;
@@ -77,7 +80,7 @@ class CapacityControlPlane {
 	private researchWorkflowService!: ResearchWorkflowService;
 	constructor(private readonly host: CapacityControlPlaneHost) {}
 	attach(context: CapacityControlPlaneStore) {
-		this.context = context;
+		this.capacityContext = context;
 		this.capacityRuntimeEvidenceRepository = new CapacityRuntimeEvidenceRepository(context);
 		this.workdayCapacityEnvelopeRepository = new WorkdayCapacityEnvelopeRepository(context);
 		this.agentCapacityPlanService = new AgentCapacityPlanService(context);
@@ -150,7 +153,10 @@ class CapacityControlPlane {
 			return this.decisionWorkGraphService.activate(graphId);
 		}
 	async getDeliverableContract(contractId: string) {
-			return this.decisionWorkGraphService.getContract(contractId);
+		return this.decisionWorkGraphService.getContract(contractId);
+		}
+	async getDeliverableManifest(manifestId: string) {
+		return this.decisionWorkGraphService.getManifest(manifestId);
 		}
 	async submitDeliverableManifest(contractId: string, input: JsonRecord = {}) {
 			return this.decisionWorkGraphService.submitManifest(contractId, input);
@@ -191,14 +197,14 @@ class CapacityControlPlane {
 		}
 	async getWorkdayCapacitySummary(workdayId: string, options: WorkdaySummaryOptions = {}) {
 			await this.ensureInitialized();
-			return buildWorkdayCapacitySummary(this.context, workdayId, options);
+			return buildWorkdayCapacitySummary(this.capacityContext, workdayId, options);
 		}
 	async recordProviderAssignmentExplanation(teamId: string, assignmentId: string, input: JsonRecord = {}) {
-			return persistProviderAssignmentExplanation(this.context, teamId, assignmentId, input);
+			return persistProviderAssignmentExplanation(this.capacityContext, teamId, assignmentId, input);
 		}
 	async getProjectCapacityRuntimeDiagnostics(projectId: string, teamId: string) {
 			await this.ensureInitialized();
-			return buildProjectCapacityRuntimeDiagnostics(this.context, projectId, teamId);
+			return buildProjectCapacityRuntimeDiagnostics(this.capacityContext, projectId, teamId);
 		}
 	async recordAgentFallbackOutput(input: JsonRecord = {}) {
 			return this.capacityRuntimeEvidenceRepository.recordFallbackOutput(input);
@@ -222,112 +228,112 @@ class CapacityControlPlane {
 			return this.capacityRuntimeEvidenceRepository.listProxyAudit(projectId, filters);
 		}
 	async createCapacityWorkdayTreeDxWorkspace(project: WorkdayProject, run: DurableCapacityWorkdayRun, input: JsonRecord) {
-			return createConfiguredWorkdayTreeDxWorkspace(this.context, project, run, input);
+			return createConfiguredWorkdayTreeDxWorkspace(this.capacityContext, project, run, input);
 		}
 	async scheduleCapacityWorkdayRun(run: DurableCapacityWorkdayRun) {
-			return scheduleWorkdayRun(this.context, run);
+			return scheduleWorkdayRun(this.capacityContext, run);
 		}
 	async terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string) {
-			return terminalizeWorkdayEnvelopes(this.context, teamId, runId, status);
+			return terminalizeWorkdayEnvelopes(this.capacityContext, teamId, runId, status);
 		}
 	async closeCapacityWorkdayAdmission(teamId: string, runId: string) {
-		return closeWorkdayAdmission(this.context, teamId, runId);
+		return closeWorkdayAdmission(this.capacityContext, teamId, runId);
 		}
 	async synthesizeProviderAssignments(principal: ProviderLeasePrincipal, input: ProviderSynthesisRequest = {}) {
-			return synthesizeProviderAssignments(this.context, principal, input);
+			return synthesizeProviderAssignments(this.capacityContext, principal, input);
 		}
 	async tickCapacityWorkdayRun(teamId: string, runId: string, now = isoNow(), idempotencyKey?: string) {
-		return tickWorkdayRun(this.context, teamId, runId, now, idempotencyKey);
+		return tickWorkdayRun(this.capacityContext, teamId, runId, now, idempotencyKey);
 		}
 	async cancelCapacityAssignment(teamId: string, assignmentId: string, input: JsonRecord = {}) {
-		return new OperatorAssignmentService(this.context).cancel(teamId, assignmentId, {
+		return new OperatorAssignmentService(this.capacityContext).cancel(teamId, assignmentId, {
 			idempotencyKey: String(input.idempotencyKey ?? ''), actorId: typeof input.actorId === 'string' ? input.actorId : null,
 			reason: typeof input.reason === 'string' ? input.reason : null,
 		});
 		}
 	async requeueCapacityAssignment(teamId: string, assignmentId: string, input: JsonRecord = {}) {
-		return new OperatorAssignmentService(this.context).requeue(teamId, assignmentId, {
+		return new OperatorAssignmentService(this.capacityContext).requeue(teamId, assignmentId, {
 			idempotencyKey: String(input.idempotencyKey ?? ''), actorId: typeof input.actorId === 'string' ? input.actorId : null,
 			reason: typeof input.reason === 'string' ? input.reason : null,
 		});
 		}
 	async listCapacityReservationsForProjectPage(projectId: string, filters: PageFilters = {}) {
-			return new CapacityReservationRepository(this.context).listProjectPage(projectId, filters);
+			return new CapacityReservationRepository(this.capacityContext).listProjectPage(projectId, filters);
 		}
 	async listCapacityLedgerEntriesPage(projectId: string, filters: PageFilters = {}) {
-			return new CapacityLedgerRepository(this.context).listProjectPage(projectId, filters);
+			return new CapacityLedgerRepository(this.capacityContext).listProjectPage(projectId, filters);
 		}
 	async listTaskUsageActualsPage(projectId: string, filters: PageFilters = {}) {
-			return readTaskUsageActualsPage(this.context, projectId, filters);
+			return readTaskUsageActualsPage(this.capacityContext, projectId, filters);
 		}
 	async getCapacityProviderDerivedCapacity(teamId: string, providerId: string, options: PageFilters = {}) {
-			return new DerivedCapacityService(this.context).provider(teamId, providerId, options);
+			return new DerivedCapacityService(this.capacityContext).provider(teamId, providerId, options);
 		}
 	async getTeamDerivedCapacity(teamId: string, options: PageFilters = {}) {
-			return new DerivedCapacityService(this.context).team(teamId, options);
+			return new DerivedCapacityService(this.capacityContext).team(teamId, options);
 		}
 	async listTaskUsageActualsForProject(projectId: string, limit: number = 50) {
-			return listRecentTaskUsageActuals(this.context, { projectId, limit });
+			return listRecentTaskUsageActuals(this.capacityContext, { projectId, limit });
 		}
 	async getProjectCapacityDiagnostics(projectId: string, environment: string = 'staging') {
-			return buildProjectCapacityDiagnostics(this.context, projectId, environment);
+			return buildProjectCapacityDiagnostics(this.capacityContext, projectId, environment);
 		}
 	async getProjectCapacityOperations(projectId: string, environment: string = 'staging') {
-			return new CapacityOperationsQueryService(this.context).project(projectId, environment);
+			return new CapacityOperationsQueryService(this.capacityContext).project(projectId, environment);
 		}
 	async getTeamCapacitySummary(teamId: string, options: PageFilters = {}) {
-			return new CapacitySummaryService(this.context).team(teamId, options);
+			return new CapacitySummaryService(this.capacityContext).team(teamId, options);
 		}
 	async getCapacityCreditReservationTotals(teamId: string, options: PageFilters = {}) {
 			await this.ensureInitialized();
-			return aggregateCapacityCreditReservations(this.context, {
+			return aggregateCapacityCreditReservations(this.capacityContext, {
 				teamId,
 				projectId: options.projectId ?? null,
 				now: options.now,
 			});
 		}
 	async getProjectCapacitySummary(projectId: string, environment: string = 'staging') {
-			return new CapacitySummaryService(this.context).project(projectId, environment);
+			return new CapacitySummaryService(this.capacityContext).project(projectId, environment);
 		}
 	async createCapacityWorkdayRun(teamId: string, input: JsonRecord = {}) {
-			return new CapacityWorkdayRunService(this.context).create(teamId, input);
+			return new CapacityWorkdayRunService(this.capacityContext).create(teamId, input);
 		}
 	async terminalizeCapacityWorkdayAssignments(teamId: string, runId: string, input: JsonRecord = {}) {
-			return terminalizeWorkdayAssignments(this.context, teamId, runId, input);
+			return terminalizeWorkdayAssignments(this.capacityContext, teamId, runId, input);
 		}
 	async updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord = {}) {
-			return new CapacityWorkdayRunService(this.context).update(teamId, runId, input);
+			return new CapacityWorkdayRunService(this.capacityContext).update(teamId, runId, input);
 		}
 	async maintainCapacityWorkdayRuns(teamId: string | null = null, now: string = isoNow()) {
-		return maintainWorkdayRuns(this.context, teamId, now);
+		return maintainWorkdayRuns(this.capacityContext, teamId, now);
 	}
 	async maintainCapacityRuntimeRetention(now: string = isoNow()) {
-		return maintainRuntimeRetention(this.context, now);
+		return maintainRuntimeRetention(this.capacityContext, now);
 	}
 	async recoverExpiredProviderAssignments(input: { teamId?: string | null; providerId?: string | null; now?: string; limit?: number } = {}) {
-		return recoverExpiredAssignments(this.context, input);
+		return recoverExpiredAssignments(this.capacityContext, input);
 		}
 	async getCapacityWorkdayRun(teamId: string, runId: string) {
-			return new CapacityWorkdayRunRepository(this.context).get(teamId, runId);
+			return new CapacityWorkdayRunRepository(this.capacityContext).get(teamId, runId);
 		}
 	async listCapacityWorkdayRunsPage(teamId: string, filters: PageFilters = {}) {
-			return new CapacityWorkdayRunRepository(this.context).list(teamId, filters);
+			return new CapacityWorkdayRunRepository(this.capacityContext).list(teamId, filters);
 		}
 	async createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord = {}) {
-			return new CapacityWorkdayEventService(this.context).create(teamId, runId, input);
+			return new CapacityWorkdayEventService(this.capacityContext).create(teamId, runId, input);
 		}
 	async listCapacityWorkdayEventsPage(teamId: string, runId: string, filters: PageFilters = {}) {
-			return new CapacityWorkdayEventService(this.context).list(teamId, runId, filters);
+			return new CapacityWorkdayEventService(this.capacityContext).list(teamId, runId, filters);
 		}
 	async collectControlPlaneGeneratedArtifacts(projectId: string, modeRuns: JsonRecord[] = []) {
-			return collectProjectAgentArtifacts(this.context, projectId, modeRuns.length ? modeRuns : undefined);
+			return collectProjectAgentArtifacts(this.capacityContext, projectId, modeRuns.length ? modeRuns : undefined);
 		}
 	async getProjectAgentsSummary(projectId: string, principal: unknown = null) {
-			return buildProjectAgentSummary(this.context, projectId, principal);
+			return buildProjectAgentSummary(this.capacityContext, projectId, principal);
 		}
 	async evaluateProjectDeletionBlockers(projectId: string) {
 			await this.ensureInitialized();
-			return listProjectDeletionBlockers(this.context, projectId);
+			return listProjectDeletionBlockers(this.capacityContext, projectId);
 		}
 }
 export function createCapacityControlPlane(host: CapacityControlPlaneHost): CapacityControlPlaneStore {

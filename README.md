@@ -57,7 +57,7 @@ Runtime scripts:
 
 ```bash
 npm run dev:api
-npm run dev:runner -- --market local --watch --operation project:web_deployment --mock-external
+npm run dev:runner -- --market local --watch --operation project:web_deployment
 npm run dev:compose
 npm run start:api
 npm run start:runner

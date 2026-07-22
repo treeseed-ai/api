@@ -2,7 +2,7 @@ import type { CapacityGovernanceDatabase } from '../database.ts';
 import { CapacityGovernanceError } from '../database.ts';
 import { decodeDurableJsonArray, decodeDurableJsonObject } from '../durable-json.ts';
 import type { DurableCapacityWorkdayRun } from '../repositories/workday-run.ts';
-import { resolveEngineeringNodeSourceRef } from './engineering-source-authority.ts';
+import { resolveEngineeringNodeAuthority } from './engineering-source-authority.ts';
 import { projectAgentActivityRefs } from './project-agent-activity-refs.ts';
 import type { WorkdayProject } from './workday-project-policy.ts';
 
@@ -48,9 +48,10 @@ async function readyGraphNode(input: {
 	for (const contractId of contractIds) {
 		if (!await database.first(`SELECT id FROM deliverable_contracts WHERE id = ? AND status = 'approved' LIMIT 1`, [contractId])) return null;
 	}
+	const authority = await resolveEngineeringNodeAuthority({ database, graphId: String(row.id), graph, node });
 	return {
 		graphId: String(row.id), nodeId: workGraphNodeId,
-		exactBaseRef: await resolveEngineeringNodeSourceRef({ database, graphId: String(row.id), graph, node }),
+		...authority,
 	};
 }
 
@@ -116,7 +117,11 @@ export async function listActingDemandSources(
 			const capacityPlanStatus = String(row.status);
 			const decisionInput = decodeDurableJsonObject(JSON.stringify(record(unit.decisionInput)), { owner: 'capacity plan work unit', ownerId: sourceId, column: 'decisionInput' });
 			const governedInput = graphNode.exactBaseRef
-				? { ...record(decisionInput.input), exactBaseRef: graphNode.exactBaseRef }
+				? {
+					...record(decisionInput.input), exactBaseRef: graphNode.exactBaseRef,
+					governedPredecessorEvidence: graphNode.predecessorEvidence,
+					...(graphNode.reviewPolicy ? { governedReviewPolicy: graphNode.reviewPolicy } : {}),
+				}
 				: record(decisionInput.input);
 			sources.push({
 				sourceType: 'capacity-plan', sourceId, decisionId, capacityPlanId, projectAgentClassId,

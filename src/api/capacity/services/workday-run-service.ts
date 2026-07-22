@@ -30,6 +30,9 @@ function settlementGraceUntil(parameters: JsonRecord, from: string) {
 	const seconds = Math.max(300, Number(parameters.settlementGraceSeconds ?? parameters.waitSeconds ?? 0) || 0);
 	return new Date(Date.parse(from) + seconds * 1000).toISOString();
 }
+export function workdayTerminalizationPreserveUntil(status: CapacityWorkdayRunStatus, parameters: JsonRecord, now: string) {
+	return status === 'completed' ? settlementGraceUntil(parameters, now) : now;
+}
 
 export class CapacityWorkdayRunService {
 	private readonly runs: CapacityWorkdayRunRepository;
@@ -91,7 +94,7 @@ export class CapacityWorkdayRunService {
 		const updated = await this.writes.update(next, existing.status);
 		if (!updated) throw new CapacityGovernanceError('capacity_workday_run_transition_conflict', 'Workday run changed concurrently.', 409, { runId, expectedStatus: existing.status });
 		if (TERMINAL.has(status) && !TERMINAL.has(existing.status)) {
-			await this.store.terminalizeCapacityWorkdayAssignments(teamId, runId, { now, preserveActiveLeasesUntil: settlementGraceUntil(parameters, now), settlementKeyPrefix: 'workday-explicit-terminal', source: 'capacity_workday_explicit_terminalization', code: `workday_${status}`, reason: `Workday was explicitly terminalized with status ${status}.`, metadata: { status } });
+			await this.store.terminalizeCapacityWorkdayAssignments(teamId, runId, { now, preserveActiveLeasesUntil: workdayTerminalizationPreserveUntil(status, parameters, now), settlementKeyPrefix: 'workday-explicit-terminal', source: 'capacity_workday_explicit_terminalization', code: `workday_${status}`, reason: `Workday was explicitly terminalized with status ${status}.`, metadata: { status } });
 			await this.store.terminalizeCapacityWorkdayEnvelopes(teamId, runId, status);
 		}
 		return this.runs.get(teamId, runId);

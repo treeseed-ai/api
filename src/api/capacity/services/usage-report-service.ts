@@ -3,6 +3,7 @@ import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../d
 import { CapacityGovernanceError } from '../database.ts';
 import { isUniqueConstraintViolation } from '../database-errors.ts';
 import type { CapacityUsageActualInput } from './usage-actual-input.ts';
+import { durableRealEquals } from './durable-number.ts';
 
 export interface CapacityUsageReportRequest {
 	teamId: string;
@@ -27,10 +28,6 @@ export interface CapacityUsageIdentity {
 	idempotencyKey: string;
 	assignmentAttempt: number;
 	usageDimension: string;
-}
-
-function optionalNumber(value: unknown) {
-	return value == null ? null : Number(value);
 }
 
 function positiveOrZero(value: number, name: string) {
@@ -59,9 +56,9 @@ export function assertCapacityUsageMatches(row: Record<string, unknown>, input: 
 		&& Number(row.assignment_attempt) === identity.assignmentAttempt
 		&& String(row.usage_dimension ?? '') === identity.usageDimension
 		&& String(row.accounting_mode ?? '') === String(input.accountingMode ?? 'informational')
-		&& Number(row.actual_credits) === Number(input.actualCredits)
-		&& optionalNumber(metadata.providerUnits) === optionalNumber(input.providerUnits)
-		&& optionalNumber(row.actual_usd) === optionalNumber(input.usd);
+		&& durableRealEquals(row.actual_credits, input.actualCredits)
+		&& durableRealEquals(metadata.providerUnits, input.providerUnits)
+		&& durableRealEquals(row.actual_usd, input.usd);
 	if (!matches) throw new CapacityGovernanceError('capacity_usage_idempotency_conflict', 'Usage identity is already bound to a different report.', 409, { assignmentId: input.assignmentId, usageActualId: identity.id });
 }
 

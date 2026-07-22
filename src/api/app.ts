@@ -40,6 +40,7 @@ import { createMarketPostgresDatabase } from './market-postgres.js';
 import { installProjectDeploymentRoutes } from './project-deployment-routes.js';
 import { installCapacityRoutes } from './capacity/routes/index.ts';
 import { createCapacityControlPlane } from './capacity/control-plane.ts';
+import { deleteTeamCapacityAggregate } from './capacity/services/team-deletion-service.ts';
 import { readCapacityRequestObject } from './capacity/routes/request-json.ts';
 import { createStripeConnectService, resolveStripeEnvironment, stripeAccountToConnectedAccountPatch } from './stripe-connect.js';
 import { applySeedWithStore, exportSeedWithStore, planSeedWithStore } from '../market/seeds/apply.js';
@@ -2600,7 +2601,6 @@ async function runProjectLaunchApiBootstrap({
 	cloudflareLaunchConfig,
 	auditHostKinds,
 	principal,
-	mockExternal = false,
 }) {
 	let job = await store.findJobById(jobId);
 	let bootstrapPhase = 'credential_bootstrap';
@@ -2707,37 +2707,7 @@ async function runProjectLaunchApiBootstrap({
 				title: 'Provider bootstrap',
 			},
 		});
-		const result = mockExternal
-			? {
-				mode: 'inline',
-				payload: {
-					plan: bootstrappedIntent.execution?.launchPlan ?? planKnowledgeHubLaunch(bootstrappedIntent),
-					repository: {
-						owner: bootstrappedIntent.repository?.owner ?? 'treeseed-sites',
-						name: `${bootstrappedIntent.hub?.slug ?? 'project'}-site`,
-						url: `https://github.com/${bootstrappedIntent.repository?.owner ?? 'treeseed-sites'}/${bootstrappedIntent.hub?.slug ?? 'project'}-site`,
-						defaultBranch: 'main',
-					},
-					repositories: planKnowledgeHubLaunch(bootstrappedIntent).repository.repositories.map((repository) => ({
-						...repository,
-						url: `https://github.com/${repository.owner}/${repository.name}`,
-						create: false,
-					})),
-					cloudflare: {
-						staging: { siteUrl: `https://${bootstrappedIntent.hub?.slug ?? 'project'}-staging.pages.dev` },
-						prod: { siteUrl: `https://${bootstrappedIntent.hub?.slug ?? 'project'}.pages.dev` },
-					},
-					railway: { services: [], deployments: [], schedules: [] },
-					projectApiBaseUrl: `https://${bootstrappedIntent.hub?.slug ?? 'project'}-api.example.test`,
-					projectSiteUrl: `https://${bootstrappedIntent.hub?.slug ?? 'project'}.pages.dev`,
-					projectMetadata: { localAcceptanceDriver: true },
-					phases: [
-						{ phase: 'repo_provision', status: 'completed', detail: 'Local acceptance repository provisioning completed.' },
-						{ phase: 'runtime_connection', status: 'completed', detail: 'Local acceptance runtime connection completed.' },
-					],
-				},
-			}
-			: await new TreeseedOperationsSdk().execute({
+		const result = await new TreeseedOperationsSdk().execute({
 				operationName: 'hub.execute_launch',
 				input: bootstrappedIntent,
 			}, {
@@ -2801,7 +2771,6 @@ async function runProjectDeletionApiDestroy({
 	projectId,
 	jobId,
 	passphrase,
-	mockExternal = false,
 }) {
 	let job = await store.findJobById(jobId);
 	if (!job) return null;
@@ -2862,10 +2831,6 @@ async function runProjectDeletionApiDestroy({
 				repositoryOperations.push(projectDeletionOperation('github', 'repository', `${repository.owner}/${repository.name}`, 'skipped', { reason: 'not_created_by_project_launch' }));
 				continue;
 			}
-			if (mockExternal) {
-				repositoryOperations.push(projectDeletionOperation('github', 'repository', `${repository.owner}/${repository.name}`, 'deleted', { localAcceptanceDriver: true }));
-				continue;
-			}
 			if (!githubToken) throw new Error('GitHub token is required to delete project repositories.');
 			const result = await githubRequestForProjectDeletion({
 				token: githubToken,
@@ -2891,25 +2856,7 @@ async function runProjectDeletionApiDestroy({
 		});
 		const names = cloudflareProjectDeletionResourceNames(project, details);
 		let cloudflareOperations = [];
-		if (mockExternal) {
-			cloudflareOperations = [
-				...names.pagesProjects.map((name) => projectDeletionOperation('cloudflare', 'pages-project', name, 'deleted', { localAcceptanceDriver: true })),
-				...names.workers.map((name) => projectDeletionOperation('cloudflare', 'worker', name, 'deleted', { localAcceptanceDriver: true })),
-				...(names.turnstileWidgets ?? []).map((widget) => projectDeletionOperation('cloudflare', 'turnstile-widget', widget.name ?? widget.sitekey, 'deleted', {
-					localAcceptanceDriver: true,
-					sitekey: widget.sitekey ?? null,
-				})),
-				...(names.kvNamespaces ?? []).map((namespace) => projectDeletionOperation('cloudflare', 'kv-namespace', namespace.name ?? namespace.id, 'deleted', {
-					localAcceptanceDriver: true,
-					id: namespace.id ?? null,
-					binding: namespace.binding ?? null,
-				})),
-				...names.buckets.map((name) => projectDeletionOperation('cloudflare', 'r2-bucket', name, 'deleted', { localAcceptanceDriver: true })),
-				...names.databases.map((name) => projectDeletionOperation('cloudflare', 'd1-database', name, 'deleted', { localAcceptanceDriver: true })),
-				...names.queues.map((name) => projectDeletionOperation('cloudflare', 'queue', name, 'deleted', { localAcceptanceDriver: true })),
-				...names.domains.map((name) => projectDeletionOperation('cloudflare', 'dns-record', name, 'deleted', { localAcceptanceDriver: true })),
-			];
-		} else if (webHost) {
+		if (webHost) {
 			const cloudflareToken = overlay.CLOUDFLARE_API_TOKEN;
 			if (!cloudflareToken) throw new Error('Cloudflare API token is required to delete project web host resources.');
 			const accountId = overlay.CLOUDFLARE_ACCOUNT_ID ?? names.accountId;
@@ -3032,7 +2979,6 @@ async function retryApiLaunchBootstrapFromRequest({
 	access,
 	body,
 	resume = false,
-	mockExternal = false,
 }) {
 	const rejectedUnlock = rejectProjectSecretUnlockMaterial(
 		c,
@@ -3162,7 +3108,6 @@ async function retryApiLaunchBootstrapFromRequest({
 		cloudflareLaunchConfig,
 		auditHostKinds: ['repository', 'web', 'email'],
 		principal: { id: access.principal.id, type: c.get('actorType') === 'service' ? 'service' : 'user' },
-		mockExternal,
 	}));
 	return {
 		response: c.json({
@@ -6432,9 +6377,6 @@ export function createApiExtension(options = {}) {
 
 export function createApiApp(options = {}): Hono {
 	const config = defaultConfig(options.config ?? {});
-	if (options.mockExternal === true && process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test' && process.env.TREESEED_ACCEPTANCE_IN_PROCESS !== '1') {
-		throw new Error('mockExternal API mode is only allowed in tests and local acceptance runs.');
-	}
 	const apiDatabaseUrl = config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? null;
 	if (!options.db && !apiDatabaseUrl) {
 		throw new Error('TREESEED_DATABASE_URL is required for the Treeseed PostgreSQL control-plane database.');
@@ -8786,7 +8728,7 @@ export function createApiApp(options = {}): Hono {
 				const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 				if (access.response) return access.response;
 				const body = await c.req.json().catch(() => ({}));
-				const result = await store.deleteTeam(c.req.param('teamId'), body.confirmation);
+				const result = await deleteTeamCapacityAggregate(store, c.req.param('teamId'), body.confirmation);
 				return c.json(result, result.ok ? 200 : 400);
 			});
 
@@ -10238,7 +10180,6 @@ export function createApiApp(options = {}): Hono {
 					cloudflareLaunchConfig,
 					auditHostKinds,
 					principal: { id: access.principal.id, type: c.get('actorType') === 'service' ? 'service' : 'user' },
-					mockExternal: options.mockExternal === true,
 				}));
 
 				const projectSummary = await store.getProjectSummary(details.project.id, access.principal);
@@ -10722,7 +10663,6 @@ export function createApiApp(options = {}): Hono {
 					projectId: project.id,
 					jobId: job.id,
 					passphrase: null,
-					mockExternal: options.mockExternal === true,
 				}));
 				return c.json({
 					ok: true,
@@ -12168,7 +12108,6 @@ export function createApiApp(options = {}): Hono {
 						access,
 						body,
 						resume: false,
-						mockExternal: options.mockExternal === true,
 					});
 					return retried.response;
 				}
@@ -12222,7 +12161,6 @@ export function createApiApp(options = {}): Hono {
 						access,
 						body,
 						resume: true,
-						mockExternal: options.mockExternal === true,
 					});
 					return resumed.response;
 				}

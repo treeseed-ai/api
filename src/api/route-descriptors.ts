@@ -85,12 +85,14 @@ export const SDK_METHOD_ROUTE_MAP = {
 	teams: 'get.v1.teams',
 	createTeam: 'post.v1.teams',
 	deleteTeam: 'delete.v1.teams.teamId',
+	teamDeletionBlockers: 'get.v1.teams.teamId.deletion-blockers',
 	teamMembers: 'get.v1.teams.teamId.members',
 	teamPermissions: 'get.v1.teams.teamId.permissions',
 	importProjectRepository: 'post.v1.teams.teamId.projects.import',
 	projects: 'get.v1.projects',
 	createProject: 'post.v1.teams.teamId.projects',
 	deleteProject: 'delete.v1.projects.projectId',
+	projectDeletionBlockers: 'get.v1.projects.projectId.deletion-blockers',
 	projectAccess: 'get.v1.projects.projectId.access',
 	upsertProjectConnection: 'post.v1.projects.projectId.connection',
 	projectDeploymentState: 'get.v1.projects.projectId.deployment-state',
@@ -216,6 +218,7 @@ export const SDK_METHOD_ROUTE_MAP = {
 	upsertProjectTreeDxLibrary: 'post.v1.projects.projectId.treedx-library',
 	projectRepositoryTopology: 'get.v1.projects.projectId.repository-topology',
 	updateProjectRepositoryTopology: 'put.v1.projects.projectId.repository-topology',
+	deliverableManifest: 'get.v1.deliverable-manifests.manifestId',
 	treeDxBuildContext: 'post.v1.dx.projects.projectId.repos.repoId.context.build',
 	treeDxReadRepositoryFiles: 'post.v1.dx.projects.projectId.repos.repoId.files.read',
 	createTreeDxWorkspace: 'post.v1.dx.projects.projectId.repos.repoId.workspaces',
@@ -358,7 +361,7 @@ function endpointGuaranteeFamily(path) {
 	if (path.startsWith('/v1/internal/') || path.startsWith('/v1/acceptance/') || path === '/v1/feedback') return 'internal-webhooks-and-federation';
 	if (path.startsWith('/v1/platform/') || path.startsWith('/v1/jobs/') || path.startsWith('/v1/approval-requests/')) return 'platform-operations-and-runners';
 	if (path.startsWith('/v1/provider/') || path.startsWith('/v1/capacity/') || path.includes('/capacity-') || path.includes('/capacity/')) return 'capacity-and-provider-control-plane';
-	if (path.startsWith('/v1/decisions/') || path.startsWith('/v1/decision-execution-inputs/') || path.startsWith('/v1/decision-assignment-graphs/') || path.startsWith('/v1/deliverable-contracts/') || path.startsWith('/v1/capacity-plans/') || path.startsWith('/v1/workdays') || path.includes('/workday') || path.includes('/agent-mode-runs') || path.includes('/assignments/')) return 'agent-graphs-and-workdays';
+	if (path.startsWith('/v1/decisions/') || path.startsWith('/v1/decision-execution-inputs/') || path.startsWith('/v1/decision-assignment-graphs/') || path.startsWith('/v1/deliverable-contracts/') || path.startsWith('/v1/deliverable-manifests/') || path.startsWith('/v1/capacity-plans/') || path.startsWith('/v1/workdays') || path.includes('/workday') || path.includes('/agent-mode-runs') || path.includes('/assignments/')) return 'agent-graphs-and-workdays';
 	if (path.startsWith('/v1/dx/') || path.includes('/repos/') || path.includes('/workspaces/')) return 'dx-repository-workspaces';
 	if (path.includes('/treedx') || path.includes('/local-content') || path.includes('/content-previews')) return 'treedx-and-content-proxy';
 	if (path.includes('/hosts') || path.includes('/hosting') || path.includes('/secrets') || path.includes('/environments') || path.includes('/resources') || path.includes('/workflow-operations') || path.includes('/repositories/')) return 'hosting-and-secrets';

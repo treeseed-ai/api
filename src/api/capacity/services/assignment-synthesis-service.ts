@@ -40,6 +40,7 @@ export async function synthesizeProviderAssignments(
 		store,
 		principal,
 		String(input.sessionId ?? input.providerSessionId ?? context.session.id),
+		context.executionProviders,
 		now,
 	);
 	return assignment ? [assignment] : [];

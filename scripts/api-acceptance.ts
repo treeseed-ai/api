@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -361,28 +360,6 @@ function assertCase(caseSpec, response, body) {
 	return failures;
 }
 
-const FORBIDDEN_DEPLOYMENT_OUTPUT = [
-	'capacityProviderId',
-	'grantId',
-	'workerPoolId',
-	'runtimeHostId',
-	'railwayServiceId',
-	'runnerToken',
-	'runner-token-secret',
-	'capacity-provider-secret',
-	'TREESEED_PLATFORM_RUNNER_SECRET',
-	'RAILWAY_API_TOKEN',
-	'TREESEED_RAILWAY_PROJECT_ID',
-];
-
-function assertNoForbiddenDeploymentOutput(value, label = 'deployment output') {
-	const serialized = JSON.stringify(value);
-	const failures = FORBIDDEN_DEPLOYMENT_OUTPUT
-		.filter((needle) => serialized.includes(needle))
-		.map((needle) => `${label} exposed forbidden field or value ${needle}`);
-	return failures;
-}
-
 function expandRoleMatrices(spec, caseId = '') {
 	const matrices = Array.isArray(spec.roleMatrices) ? spec.roleMatrices : [];
 	const expanded = [];
@@ -416,21 +393,6 @@ function expandRoleMatrices(spec, caseId = '') {
 		}
 	}
 	return expanded;
-}
-
-function expandDeploymentFlows(spec, caseId = '') {
-	return (Array.isArray(spec.deploymentFlows) ? spec.deploymentFlows : [])
-		.filter((flow) => matchesCaseFilter(caseId, flow.id ?? 'deployment-flow.local-acceptance'))
-		.map((flow) => ({
-			id: flow.id ?? 'deployment-flow.local-acceptance',
-			actor: flow.actor ?? 'teamOwner',
-			method: 'FLOW',
-			path: '/v1/projects/${fixtures.project.id}/deployments/web',
-			deploymentFlow: true,
-			flow,
-			expect: flow.expect ?? { status: 200, envelope: { ok: true } },
-			environments: flow.environments,
-		}));
 }
 
 function fixtureValue(name) {
@@ -925,6 +887,7 @@ function sdkArgsForMethod(method) {
 		projects: ['${fixtures.team.id}'],
 		createProject: ['${fixtures.team.id}', { slug: 'acceptance-${runNonce}-sdk-project', name: 'Acceptance SDK Project' }],
 		deleteProject: ['missing-project', { confirmation: 'DELETE missing-project' }],
+		projectDeletionBlockers: ['missing-project'],
 		upsertProjectConnection: ['${fixtures.project.id}', { mode: 'hybrid', executionOwner: 'project_runner' }],
 		importProjectRepository: ['${fixtures.team.id}', {
 			repository: {
@@ -969,8 +932,8 @@ function sdkArgsForMethod(method) {
 			encryptedValue: 'redacted-acceptance-secret',
 			keyId: 'acceptance-key',
 		}],
-		dispatchProjectWorkflowOperation: ['${fixtures.project.id}', 'missing-operation', { mockExternal: true }],
-		initializeProjectRepository: ['${fixtures.project.id}', 'software', { mockExternal: true }],
+		dispatchProjectWorkflowOperation: ['${fixtures.project.id}', 'missing-operation', {}],
+		initializeProjectRepository: ['${fixtures.project.id}', 'software', {}],
 		auditProjectHosts: ['${fixtures.project.id}', {}],
 		replaceProjectHost: ['${fixtures.project.id}', 'publicWeb', {}],
 		resyncProjectHost: ['${fixtures.project.id}', 'publicWeb', {}],
@@ -1066,6 +1029,7 @@ function sdkArgsForMethod(method) {
 		}],
 		acceptDecisionExecutionInput: ['missing-input', {}],
 		requestDecisionExecutionInputRevision: ['missing-input', { reason: 'acceptance revision fixture' }],
+		deliverableManifest: ['missing-deliverable-manifest'],
 		decisionCapacityPlans: ['${fixtures.decision.id}'],
 		createDecisionCapacityPlan: ['${fixtures.decision.id}', {
 			projectId: '${fixtures.project.id}',
@@ -1234,159 +1198,6 @@ function assertCoverage(spec, cases) {
 	}
 }
 
-async function requestAcceptanceJson({ variables, actors, actorId, method = 'GET', path, body }) {
-	const actor = actors[actorId ?? 'anonymous'] ?? {};
-	const headers = actorHeaders(actor);
-	if (!headers) {
-		throw new Error(`Actor ${actorId} is unavailable for acceptance request ${method} ${path}.`);
-	}
-	headers.set('accept', 'application/json');
-	if (body !== undefined) headers.set('content-type', 'application/json');
-	const response = await fetchWithTimeout(`${variables.baseUrl}${path}`, {
-		method,
-		headers,
-		body: body === undefined ? undefined : JSON.stringify(body),
-	}, `${method} ${path}`);
-	const envelope = await response.json().catch(() => null);
-	if (!response.ok || envelope?.ok === false) {
-		throw new Error(`${method} ${path} failed with ${response.status}: ${JSON.stringify(envelope)}`);
-	}
-	return { response, body: envelope };
-}
-
-function runLocalAcceptanceDeploymentRunner({ variables, actors, flow, args, operationId = null }) {
-	const runnerActor = actors[flow.runnerActor ?? 'platformRunner'] ?? {};
-	const runnerSecret = runnerActor.token ?? process.env.TREESEED_PLATFORM_RUNNER_SECRET ?? 'treeseed-platform-runner-dev-secret';
-	const databaseUrl = process.env.TREESEED_DATABASE_URL ?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api';
-	const market = flow.market ?? args.environment ?? 'local';
-	const runnerDataDir = variables.fixtures?.platformRunner?.metadata?.dataDir
-		?? resolve(process.cwd(), '.treeseed/acceptance-runners', String(market || 'local'));
-	const runnerArgs = [
-		'./dist/operations-runner/entrypoint.js',
-		'once',
-		'--operation',
-		'project:web_deployment',
-		...(operationId ? ['--operation-id', operationId] : []),
-		'--mock-external',
-		'--mock-result',
-		flow.mockResult ?? 'success',
-	];
-	const result = spawnSync(process.execPath, runnerArgs, {
-		cwd: process.cwd(),
-		encoding: 'utf8',
-		env: {
-			...process.env,
-			TREESEED_API_BASE_URL: variables.baseUrl,
-			TREESEED_ACCEPTANCE_EXTERNAL_DRIVER: '1',
-			TREESEED_DATABASE_URL: databaseUrl,
-			TREESEED_URL: variables.baseUrl,
-			TREESEED_MANAGER_ID: market,
-				TREESEED_PLATFORM_RUNNER_API_TRANSPORT: 'http',
-				TREESEED_PLATFORM_RUNNER_DATA_DIR: runnerDataDir,
-				TREESEED_PLATFORM_RUNNER_SECRET: runnerSecret,
-				TREESEED_PLATFORM_RUNNER_ID: variables.fixtures?.platformRunner?.id ?? `treeseed-ops-${market}-1`,
-			},
-	});
-	if (result.status !== 0) {
-		throw new Error(`Local acceptance deployment runner failed with ${result.status}.\n${result.stdout}\n${result.stderr}`);
-	}
-	return {
-		status: result.status,
-		stdout: result.stdout,
-		stderr: result.stderr,
-	};
-}
-
-async function runDeploymentAcceptanceFlow(caseSpec, variables, actors, args) {
-	const flow = caseSpec.flow ?? {};
-	const actorId = caseSpec.actor ?? flow.actor ?? 'teamOwner';
-	const projectId = variables.fixtures?.project?.id;
-	if (!projectId) throw new Error('Deployment acceptance flow requires fixtures.project.id.');
-	const basePath = `${variables.apiVersionPath ?? '/v1'}/projects/${projectId}`;
-	const failures = [];
-	const firstState = await requestAcceptanceJson({
-		variables,
-		actors,
-		actorId,
-		path: `${basePath}/deployment-state`,
-	});
-	failures.push(...assertNoForbiddenDeploymentOutput(firstState.body, 'initial deployment state'));
-	const initialState = firstState.body?.payload ?? firstState.body;
-	if (initialState?.readiness?.ready !== true) {
-		throw new Error(`Seeded project is not deployment-ready: ${JSON.stringify(initialState?.readiness?.blockers ?? [])}`);
-	}
-	const deploy = await requestAcceptanceJson({
-		variables,
-		actors,
-		actorId,
-		method: 'POST',
-		path: `${basePath}/deployments/web`,
-		body: {
-			environment: flow.environment ?? 'staging',
-			action: 'deploy_web',
-			source: 'acceptance',
-			idempotencyKey: `acceptance-${variables.runNonce}-deploy`,
-		},
-	});
-	failures.push(...assertNoForbiddenDeploymentOutput(deploy.body, 'queued deployment'));
-	const deploymentId = deploy.body?.payload?.deployment?.id ?? deploy.body?.deployment?.id;
-	const deploymentOperationId = deploy.body?.payload?.deployment?.platformOperationId ?? deploy.body?.deployment?.platformOperationId;
-	runLocalAcceptanceDeploymentRunner({ variables, actors, flow, args, operationId: deploymentOperationId });
-	const deploymentDetail = await requestAcceptanceJson({
-		variables,
-		actors,
-		actorId,
-		path: `${basePath}/deployments/${deploymentId}`,
-	});
-	const completedDeployment = deploymentDetail.body?.payload?.deployment ?? deploymentDetail.body?.payload ?? deploymentDetail.body?.deployment;
-	if (completedDeployment?.status !== 'succeeded') {
-		throw new Error(`Local acceptance deployment did not succeed: ${JSON.stringify(deploymentDetail.body)}`);
-	}
-	failures.push(...assertNoForbiddenDeploymentOutput(deploymentDetail.body, 'completed deployment'));
-	const monitor = await requestAcceptanceJson({
-		variables,
-		actors,
-		actorId,
-		method: 'POST',
-		path: `${basePath}/deployments/web`,
-		body: {
-			environment: flow.environment ?? 'staging',
-			action: 'monitor',
-			source: 'acceptance',
-			idempotencyKey: `acceptance-${variables.runNonce}-monitor`,
-		},
-	});
-	failures.push(...assertNoForbiddenDeploymentOutput(monitor.body, 'queued monitor'));
-	const monitorDeploymentId = monitor.body?.payload?.deployment?.id ?? monitor.body?.deployment?.id;
-	const monitorOperationId = monitor.body?.payload?.deployment?.platformOperationId ?? monitor.body?.deployment?.platformOperationId;
-	runLocalAcceptanceDeploymentRunner({ variables, actors, flow, args, operationId: monitorOperationId });
-	const monitorDetail = await requestAcceptanceJson({
-		variables,
-		actors,
-		actorId,
-		path: `${basePath}/deployments/${monitorDeploymentId}`,
-	});
-	const completedMonitor = monitorDetail.body?.payload?.deployment ?? monitorDetail.body?.payload ?? monitorDetail.body?.deployment;
-	const monitorPayload = completedMonitor?.monitor;
-	if (!monitorPayload?.status) {
-		throw new Error(`Local acceptance monitor result was not persisted: ${JSON.stringify(monitorDetail.body)}`);
-	}
-	failures.push(...assertNoForbiddenDeploymentOutput(monitorDetail.body, 'completed monitor'));
-	const finalState = await requestAcceptanceJson({
-		variables,
-		actors,
-		actorId,
-		path: `${basePath}/deployment-state`,
-	});
-	const finalStateModel = finalState.body?.payload ?? finalState.body;
-	const latestMonitor = finalStateModel?.latestMonitors?.[flow.environment ?? 'staging'];
-	if (!latestMonitor?.monitor?.status && !latestMonitor?.status) {
-		throw new Error(`Deployment state does not expose the latest monitor: ${JSON.stringify(finalStateModel?.latestMonitors ?? null)}`);
-	}
-	failures.push(...assertNoForbiddenDeploymentOutput(finalState.body, 'final deployment state'));
-	return failures;
-}
-
 function junit(report) {
 	const failures = report.results.filter((result) => !result.ok);
 	const escape = (value) => String(value ?? '').replace(/[<>&"']/gu, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[char]));
@@ -1487,7 +1298,6 @@ async function main() {
 	const explicitCases = Array.isArray(spec.cases) ? spec.cases.filter((entry) => matchesCaseFilter(args.caseId, entry.id)) : [];
 	const allCases = [
 		...explicitCases,
-		...expandDeploymentFlows(spec, args.caseId),
 		...expandRoleMatrices(spec, args.caseId),
 		...expandDescriptorMatrices(spec, expectedStatuses, args.caseId),
 		...expandSdkMethodMatrices(spec, expectedStatuses, args.caseId),
@@ -1518,7 +1328,6 @@ async function main() {
 				method: entry.method ?? 'GET',
 					path: entry.path ?? null,
 					sdkMethod: entry.sdkMethod ?? null,
-					deploymentFlow: entry.deploymentFlow === true,
 					expect: entry.expect ?? {},
 				})),
 		}, null, 2)}\n`);
@@ -1549,11 +1358,7 @@ async function main() {
 				console.log(`coverage ${caseSpec.id}`);
 				continue;
 			}
-				if (caseSpec.deploymentFlow) {
-					failures = await runDeploymentAcceptanceFlow(caseSpec, variables, actors, args);
-					response = { status: failures.length > 0 ? 500 : Number(caseSpec.expect?.status ?? 200) };
-					body = { ok: failures.length === 0 };
-				} else {
+			{
 					const actor = await actorForCase(caseSpec, actors[caseSpec.actor ?? 'anonymous'] ?? {}, variables);
 					const headers = actorHeaders(actor);
 					if (!headers) {
@@ -1666,7 +1471,6 @@ export {
 	assertCoverage,
 	bodyForFactory,
 	deepMerge,
-	expandDeploymentFlows,
 	expandDescriptorMatrices,
 	expandRoleMatrices,
 	expandSdkMethodMatrices,

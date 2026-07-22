@@ -11,12 +11,14 @@ import { compileProviderWorkdayDemand } from '../../src/api/capacity/services/de
 import { OperatorAssignmentService } from '../../src/api/capacity/services/operator-assignment-service.ts';
 import { tickCapacityWorkdayRun } from '../../src/api/capacity/services/workday-tick-service.ts';
 import { listTreeDxPlanningDemandSources } from '../../src/api/capacity/services/workday-content-demand-source.ts';
-import { assignNextCompiledDemand } from '../../src/api/capacity/services/assignment-function.ts';
+import { assignNextCompiledDemand, resolveAssignmentContentBaseRef } from '../../src/api/capacity/services/assignment-function.ts';
 import { evaluateProviderAssignmentLeaseAuthority } from '../../src/api/capacity/services/lease-authority-service.ts';
 import { listActingDemandSources } from '../../src/api/capacity/services/acting-demand-source.ts';
+import { resolveEngineeringNodeAuthority } from '../../src/api/capacity/services/engineering-source-authority.ts';
 import { CapacityAllocationService } from '../../src/api/capacity/services/allocation-service.ts';
 import { CapacityGrantService } from '../../src/api/capacity/services/grant-service.ts';
 import { evaluateDurableWorkdayContinuation } from '../../src/api/capacity/services/workday-continuation-service.ts';
+import { workdayTerminalizationPreserveUntil } from '../../src/api/capacity/services/workday-run-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../src/api/capacity/services/settlement-service.ts';
 import { ProviderAssignmentLifecycleService } from '../../src/api/capacity/services/assignment-lifecycle-service.ts';
 
@@ -65,6 +67,27 @@ async function seedAdmittedAssignment(
 }
 
 describe('durable workday demand and participation', () => {
+	it('forces explicit cancellation terminalization while preserving completed-run settlement grace', () => {
+		const now = '2026-07-18T12:00:00.000Z';
+		expect(workdayTerminalizationPreserveUntil('cancelled', {}, now)).toBe(now);
+		expect(workdayTerminalizationPreserveUntil('failed', {}, now)).toBe(now);
+		expect(workdayTerminalizationPreserveUntil('completed', {}, now)).toBe('2026-07-18T12:05:00.000Z');
+	});
+
+	it('bases a content handoff workspace on the exact upstream artifact commit', () => {
+		expect(resolveAssignmentContentBaseRef({
+			contentBaseRef: 'refs/heads/main',
+			intent: {
+				relatedArtifact: {
+					contentPath: 'src/content/proposals/release-channel.mdx',
+					commitSha: '893c6d70a2b7ac0de4f0a8a90a47138df7ee1f00',
+				},
+			},
+		})).toBe('893c6d70a2b7ac0de4f0a8a90a47138df7ee1f00');
+		expect(resolveAssignmentContentBaseRef({ contentBaseRef: 'refs/heads/reviewed' }))
+			.toBe('refs/heads/reviewed');
+	});
+
 	it('derives deterministic open objectives, questions, proposals, decisions, and knowledge gaps through TreeDX', async () => {
 		const requests: Array<{ authorization: string | null; body: Record<string, unknown> }> = [];
 		const fetchImpl: typeof fetch = async (_url, init) => {
@@ -156,6 +179,61 @@ describe('durable workday demand and participation', () => {
 			await store.run(`UPDATE decision_assignment_graphs SET graph_json = ? WHERE id = 'graph-a'`, [JSON.stringify(graph)]);
 			await expect(listActingDemandSources(store, run, { id: 'project-a' }, 'workday-a')).rejects.toMatchObject({ code: 'engineering_source_ref_ambiguous' });
 		} finally { await database.close(); }
+	});
+
+	it('projects authenticated transitive predecessor evidence only for engineering review', async () => {
+		const now = '2026-07-18T12:00:00.000Z';
+		const refs = ['1111111111111111', '2222222222222222', '3333333333333333'];
+		const stages = ['test', 'implementation', 'verification'];
+		const contracts = new Map(stages.map((stage, index) => [`contract-${stage}`, {
+			status: 'approved',
+			deliverable_type: `${stage}_evidence`,
+			metadata_json: JSON.stringify({ deliverableManifestId: `manifest-${stage}` }),
+		}]));
+		const manifests = new Map(stages.map((stage, index) => [`manifest-${stage}`, {
+			manifest_json: JSON.stringify({
+				id: `manifest-${stage}`, deliverableContractId: `contract-${stage}`, projectId: 'project-a', decisionId: 'decision-a',
+				producedRefs: [{ model: 'note', collection: 'notes', slug: stage }], summary: `${stage} evidence`, readyForReview: true,
+				sourceAuthority: { assignmentId: `assignment-${stage}`, modeRunId: `mode-${stage}`, baseRef: index === 0 ? refs[0] : refs[index - 1], effectiveRef: refs[index], checkpointCommit: stage === 'verification' ? null : refs[index] },
+				createdAt: now,
+			}),
+		}]));
+		const modeRuns = new Map(stages.map((stage, index) => [`mode-${stage}`, {
+			outputs_json: JSON.stringify({
+				artifactManifest: {
+					schemaVersion: 1, assignmentId: `assignment-${stage}`, modeRunId: `mode-${stage}`, teamId: 'team-a', projectId: 'project-a',
+					providerId: 'provider-a', mode: 'acting', agentClassId: 'class-a', agentId: stage, handlerId: 'actor', activityType: 'acting',
+					status: 'completed', summary: `${stage} evidence`, toolEvents: [], contentReferences: [],
+					...(stage === 'verification' ? { verification: [{ status: 'passed', commands: ['npm test'] }] } : { sourceWorktree: { changedPaths: [`src/${stage}.ts`] }, verification: [] }),
+					citations: [], signals: [], usage: [], diagnostics: [], createdAt: now,
+				},
+			}),
+		}]));
+		const database = {
+			async first(sql: string, params: unknown[]) {
+				if (sql.includes('FROM deliverable_contracts')) return contracts.get(String(params[0])) ?? null;
+				if (sql.includes('FROM deliverable_manifests')) return manifests.get(String(params[0])) ?? null;
+				if (sql.includes('FROM agent_mode_runs')) return modeRuns.get(String(params[0])) ?? null;
+				return null;
+			},
+		};
+		const graph = {
+			projectId: 'project-a', decisionId: 'decision-a', metadata: { workflowKind: 'engineering-test-first', exactBaseRef: refs[0], requireRevisionCycle: true },
+			nodes: [
+				...stages.map((stage) => ({ id: `node-${stage}`, status: 'completed', metadata: { stage, producesDeliverableContractId: `contract-${stage}` } })),
+				{ id: 'node-review', status: 'ready', metadata: { stage: 'review' } },
+			],
+			edges: [
+				{ fromNodeId: 'node-test', toNodeId: 'node-implementation' },
+				{ fromNodeId: 'node-implementation', toNodeId: 'node-verification' },
+				{ fromNodeId: 'node-verification', toNodeId: 'node-review' },
+			],
+		};
+		const result = await resolveEngineeringNodeAuthority({ database: database as never, graphId: 'graph-a', graph, node: graph.nodes[3]! });
+		expect(result.exactBaseRef).toBe(refs[2]);
+		expect(result.predecessorEvidence.map((entry) => entry.stage)).toEqual(stages);
+		expect(result.predecessorEvidence[2]?.artifactManifest.verification).toEqual([{ status: 'passed', commands: ['npm test'] }]);
+		expect(result.reviewPolicy).toEqual({ requireRevisionCycle: true, completedRevisionCycles: 0, requiredDisposition: 'rejected' });
 	});
 
 	it('creates one idempotent positive demand and allows one concurrent claim', async () => {
@@ -374,6 +452,26 @@ describe('durable workday demand and participation', () => {
 		} finally { await pendingHarness.database.close(); }
 	});
 
+	it('allows an operator to resolve an expired assignment and its stranded reservation', async () => {
+		const expiredHarness = harness();
+		try {
+			await seedAdmittedAssignment(expiredHarness.store, 'failed');
+			await expiredHarness.store.run(
+				`UPDATE capacity_provider_assignments
+				 SET status = 'expired', lease_state = 'expired', lifecycle_code = 'expired_lease_side_effect_evidence_present'
+				 WHERE id = 'assignment-a'`,
+			);
+			const service = new OperatorAssignmentService(expiredHarness.store);
+			await expect(service.cancel('team-a', 'assignment-a', {
+				idempotencyKey: 'cancel-expired-a',
+				reason: 'Operator reviewed and abandoned the expired attempt.',
+			})).resolves.toMatchObject({ status: 'cancelled', leaseState: 'released' });
+			expect(await expiredHarness.store.first(
+				`SELECT state, consumed_credits FROM capacity_reservations WHERE id = 'reservation-a'`,
+			)).toEqual({ state: 'consumed', consumed_credits: 0 });
+		} finally { await expiredHarness.database.close(); }
+	});
+
 	it('preserves renewal authority for a valid lease while its completed workday settles', async () => {
 		const { database, store } = harness();
 		try {
@@ -464,7 +562,7 @@ describe('durable workday demand and participation', () => {
 			(controlPlane as unknown as { createCapacityWorkdayTreeDxWorkspace: (...args: unknown[]) => Promise<Record<string, unknown>> }).createCapacityWorkdayTreeDxWorkspace = async () => {
 				workspaceCreates += 1; return { workspaceId: 'workspace-a' };
 			};
-			await expect(assignNextCompiledDemand(controlPlane, principal, 'session-a', now)).resolves.toBeNull();
+			await expect(assignNextCompiledDemand(controlPlane, principal, 'session-a', [{ id: 'codex', status: 'available', capabilities: ['engineering'] }], now)).resolves.toBeNull();
 			expect(workspaceCreates).toBe(1);
 			expect(await store.first(`SELECT status FROM treedx_proxy_handles WHERE assignment_id = 'assignment-a'`)).toEqual({ status: 'issued' });
 			expect((await evaluateProviderAssignmentLeaseAuthority(store, principal, 'assignment-a', now)).reasons).not.toContain('assignment_workspace_not_ready');
@@ -509,12 +607,13 @@ describe('durable workday demand and participation', () => {
 				return { workspaceId: 'workspace-race' };
 			};
 			const results = await Promise.all([
-				assignNextCompiledDemand(controlPlane, principal, session.id, now),
-				assignNextCompiledDemand(controlPlane, principal, session.id, now),
+				assignNextCompiledDemand(controlPlane, principal, session.id, [{ id: 'codex', status: 'available', capabilities: ['engineering'] }], now),
+				assignNextCompiledDemand(controlPlane, principal, session.id, [{ id: 'codex', status: 'available', capabilities: ['engineering'] }], now),
 			]);
 			expect(results.filter(Boolean)).toHaveLength(1);
 			expect(results.find(Boolean)?.decisionInput).toMatchObject({ input: { activityType: 'reporting' }, metadata: { activityType: 'reporting' } });
 			expect(results.find(Boolean)?.metadata).toMatchObject({ contentRoot: 'src/content' });
+			expect(results.find(Boolean)?.executionProviderId).toBe('codex');
 			expect(workspaceCreates).toBe(1);
 			expect(workspaceBaseRef).toBe('refs/heads/main');
 			expect(await store.all(`SELECT id FROM capacity_provider_assignments`)).toHaveLength(1);

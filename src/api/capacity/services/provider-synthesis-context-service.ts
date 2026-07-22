@@ -1,5 +1,6 @@
 import type { CapacityGovernanceDatabase } from '../database.ts';
 import { CapacityGovernanceError } from '../database.ts';
+import { decodeDurableJsonArray } from '../durable-json.ts';
 
 type Row = Record<string, unknown>;
 
@@ -29,8 +30,15 @@ export interface ProviderSynthesisContext {
 		availableUntil: string | null;
 		expiresAt: string | null;
 	};
+	executionProviders: ProviderSynthesisExecutionProvider[];
 	now: string;
 	environment: string | null;
+}
+
+export interface ProviderSynthesisExecutionProvider {
+	id: string;
+	status: string;
+	capabilities: string[];
 }
 
 function text(value: unknown): string | null {
@@ -57,6 +65,16 @@ function sessionContext(row: Row) {
 		availableUntil: text(row.available_until),
 		expiresAt: text(row.expires_at),
 	};
+}
+
+function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
+	return decodeDurableJsonArray<Row>(row.execution_providers_json, {
+		owner: 'provider availability session', ownerId: text(row.id), column: 'execution_providers_json',
+	}).map((provider) => ({
+		id: String(provider.id ?? '').trim(),
+		status: String(provider.status ?? 'unavailable'),
+		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
+	})).filter((provider) => provider.id);
 }
 
 export async function resolveProviderSynthesisContext(
@@ -127,6 +145,7 @@ export async function resolveProviderSynthesisContext(
 	return {
 		provider: { id: String(authority.provider_id), status: String(authority.provider_status) },
 		session,
+		executionProviders: executionProviders(row),
 		now,
 		environment: input.environment ?? session.environment,
 	};

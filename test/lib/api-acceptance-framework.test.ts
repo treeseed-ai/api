@@ -4,7 +4,6 @@ import {
 	assertAcceptanceTarget,
 	assertCoverage,
 	bodyForFactory,
-	expandDeploymentFlows,
 	expandDescriptorMatrices,
 	expandRoleMatrices,
 	expandSdkMethodMatrices,
@@ -112,7 +111,6 @@ describe('API acceptance framework', () => {
 		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const allCases = [
 			...(spec.cases ?? []),
-			...expandDeploymentFlows(spec),
 			...expandRoleMatrices(spec),
 			...expandDescriptorMatrices(spec),
 			...expandSdkMethodMatrices(spec),
@@ -122,23 +120,9 @@ describe('API acceptance framework', () => {
 		expect([...sdkMethods].sort()).toEqual(Object.keys(SDK_METHOD_ROUTE_MAP).sort());
 	});
 
-	it('includes the local acceptance web deployment flow in expansion', () => {
-		const spec = loadSpec('test/acceptance/api.base.yaml');
-		const flows = expandDeploymentFlows(spec);
-		expect(flows).toHaveLength(1);
-		expect(flows[0]).toMatchObject({
-			id: 'deployment-flow.local-acceptance-web-deployment',
-			actor: 'teamOwner',
-			deploymentFlow: true,
-			method: 'FLOW',
-		});
-		expect(JSON.stringify(flows)).not.toMatch(/capacityProviderId|runnerToken|TREESEED_PLATFORM_RUNNER_SECRET/u);
-	});
-
 	it('filters generated cases by explicit case id before expansion', () => {
 		const spec = loadSpec('test/acceptance/api.base.yaml');
 		expect(expandRoleMatrices(spec, 'site-role-matrix.me.teamOwner').map((entry) => entry.id)).toEqual(['site-role-matrix.me.teamOwner']);
-		expect(expandDeploymentFlows(spec, 'site-role-matrix.me.teamOwner')).toEqual([]);
 		expect(expandDescriptorMatrices(spec, undefined, 'descriptor-executable-role-matrix.get.v1.me.teamOwner').map((entry) => entry.id)).toEqual([
 			'descriptor-executable-role-matrix.get.v1.me.teamOwner',
 		]);
@@ -162,7 +146,6 @@ describe('API acceptance framework', () => {
 		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const caseIds = new Set([
 			...((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean),
-			...expandDeploymentFlows(spec).map((entry) => entry.id).filter(Boolean),
 			...expandRoleMatrices(spec).map((entry) => entry.id).filter(Boolean),
 			...expandDescriptorMatrices(spec).map((entry) => entry.id).filter(Boolean),
 			...expandSdkMethodMatrices(spec).map((entry) => entry.id).filter(Boolean),
@@ -227,7 +210,6 @@ describe('API acceptance framework', () => {
 		const spec = loadSpec('test/acceptance/api.base.yaml');
 		const caseIds = new Set([
 			...((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean),
-			...expandDeploymentFlows(spec).map((entry) => entry.id).filter(Boolean),
 			...expandRoleMatrices(spec).map((entry) => entry.id).filter(Boolean),
 			...expandDescriptorMatrices(spec).map((entry) => entry.id).filter(Boolean),
 			...expandSdkMethodMatrices(spec).map((entry) => entry.id).filter(Boolean),
@@ -271,7 +253,7 @@ describe('API acceptance framework', () => {
 		expect(result.status).toBe(0);
 		const expanded = JSON.parse(readFileSync(output, 'utf8'));
 		expect(expanded.caseCount).toBeGreaterThan(2700);
-		expect(expanded.cases.some((entry: any) => entry.id === 'deployment-flow.local-acceptance-web-deployment' && entry.deploymentFlow === true)).toBe(true);
+		expect(expanded.cases.some((entry: any) => entry.deploymentFlow === true)).toBe(false);
 		expect(expanded.cases.filter((entry: any) => entry.expect?.statusAny !== undefined).map((entry: any) => entry.id)).toEqual([]);
 	});
 });

@@ -997,6 +997,18 @@
       "providerAccessToken": 401,
       "platformRunner": 401
     },
+    "get.v1.deliverable-manifests.manifestId": {
+      "anonymous": 401,
+      "siteAdmin": 404,
+      "marketSteward": 404,
+      "teamOwner": 404,
+      "teamOperator": 404,
+      "teamViewer": 404,
+      "nonMember": 404,
+      "providerOperator": 404,
+      "providerAccessToken": 401,
+      "platformRunner": 401
+    },
     "get.v1.decisions.decisionId.assignment-graphs": {
       "anonymous": 401,
       "siteAdmin": 404,

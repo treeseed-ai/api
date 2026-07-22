@@ -44,6 +44,7 @@ export class DecisionWorkGraphService {
 	getGraph(id: string) { return this.repository.getGraph(id); }
 	listGraphs(decisionId: string, active?: boolean) { return this.repository.listGraphs(decisionId, active); }
 	getContract(id: string) { return this.repository.getContract(id); }
+	getManifest(id: string) { return this.repository.getManifest(id); }
 
 	async compile(decisionId: string, input: JsonRecord) {
 		const projectId = text(input.projectId);

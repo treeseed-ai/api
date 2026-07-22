@@ -127,6 +127,10 @@ describe('decision work graph service', () => {
 			const contractId = graph!.deliverableContracts[0]!.id;
 			const manifest = await store.submitDeliverableManifest(contractId, { id: 'manifest-a', producedRefs: [{ model: 'note', collection: 'notes', slug: 'test-proof' }], summary: 'Regression proof', readyForReview: true });
 			expect(manifest).toMatchObject({ id: 'manifest-a', readyForReview: true });
+			const app = new Hono();
+			installDecisionWorkGraphRoutes(app, { store, async requireProjectAccess(c) { return c.req.header('x-deny') === 'true' ? { response: c.json({ ok: false }, 403) } : {}; } });
+			expect(await (await app.request('/v1/deliverable-manifests/manifest-a')).json()).toMatchObject({ ok: true, payload: { id: 'manifest-a', projectId: 'project-a' } });
+			expect((await app.request('/v1/deliverable-manifests/manifest-a', { headers: { 'x-deny': 'true' } })).status).toBe(403);
 			expect(await store.getDeliverableContract(contractId)).toMatchObject({ status: 'submitted' });
 			expect(await store.markDeliverableContractApproved(contractId, { approvedBy: 'reviewer-a' })).toMatchObject({ status: 'approved' });
 			await expect(store.markDeliverableContractRejected(contractId, {})).rejects.toMatchObject({ code: 'deliverable_contract_transition_conflict' });

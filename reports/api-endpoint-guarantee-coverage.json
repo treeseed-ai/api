@@ -1,7 +1,7 @@
 {
-  "routeCount": 538,
-  "descriptorCount": 538,
-  "coveredByGuarantee": 538,
+  "routeCount": 539,
+  "descriptorCount": 539,
+  "coveredByGuarantee": 539,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -355,6 +355,7 @@
       "get.v1.decisions.decisionId.estimates",
       "get.v1.decisions.decisionId.execution-inputs",
       "get.v1.decisions.decisionId.planning-status",
+      "get.v1.deliverable-manifests.manifestId",
       "get.v1.projects.projectId.agent-mode-runs",
       "get.v1.projects.projectId.assignments.assignmentId.timeline",
       "get.v1.teams.teamId.workday-runs",

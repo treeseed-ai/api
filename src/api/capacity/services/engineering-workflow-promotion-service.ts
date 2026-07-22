@@ -105,7 +105,10 @@ async function graphFor(
 			graph = await store.createDecisionAssignmentGraph(config.decisionId, {
 				id: graphId, projectId: config.projectId, workflowKind: 'engineering-test-first', exactBaseRef: config.exactBaseRef,
 				roles: config.roles, includeResearch: config.includeResearch === true, includeArchitecture: config.includeArchitecture === true,
-				credits: config.credits ?? {}, metadata: { workflowPromotionId: config.id, workdayRunId: run.id, objectiveId: config.objectiveId, ...(config.metadata ?? {}) },
+				credits: config.credits ?? {}, metadata: {
+					...(config.metadata ?? {}), workflowPromotionId: config.id, workdayRunId: run.id, objectiveId: config.objectiveId,
+					requireRevisionCycle: config.requireRevisionCycle === true,
+				},
 			});
 		} catch (error) {
 			graph = (await store.listDecisionAssignmentGraphsForDecision(config.decisionId)).find((candidate) => candidate.id === graphId) ?? null;
@@ -113,7 +116,9 @@ async function graphFor(
 		}
 	}
 	if (!graph) throw new CapacityGovernanceError('engineering_workflow_graph_persistence_failed', 'Engineering workflow graph was not persisted.', 500, { graphId });
-	if (graph.projectId !== config.projectId || graph.metadata?.workflowPromotionId !== config.id || graph.metadata?.exactBaseRef !== config.exactBaseRef) {
+	if (graph.projectId !== config.projectId || graph.metadata?.workflowPromotionId !== config.id
+		|| graph.metadata?.exactBaseRef !== config.exactBaseRef
+		|| graph.metadata?.requireRevisionCycle !== (config.requireRevisionCycle === true)) {
 		throw new CapacityGovernanceError('engineering_workflow_graph_conflict', 'Existing engineering workflow graph does not match the requested promotion.', 409, { graphId });
 	}
 	if (!graph.active) {

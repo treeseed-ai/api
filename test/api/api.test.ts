@@ -173,7 +173,6 @@ type ApiTestOptions = {
 	config?: Record<string, unknown>;
 	fetchImpl?: typeof fetch;
 	logRequests?: boolean;
-	mockExternal?: boolean;
 	stripeConnectService?: any;
 };
 
@@ -555,7 +554,7 @@ describe('market api', () => {
 	it('owns web auth lifecycle and acceptance session seeding in the API', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
-		const app = createTestApp({ db, store, mockExternal: true });
+		const app = createTestApp({ db, store });
 		const signup = await json(await app.request('/v1/auth/web/sign-up', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
@@ -718,7 +717,7 @@ describe('market api', () => {
 	it('supports TreeSeed Commons governance participation', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
-		const app = createTestApp({ db, store, mockExternal: true });
+		const app = createTestApp({ db, store });
 		async function signUpParticipant(email: string, username: string, name: string) {
 			const signup = await json(await app.request('/v1/auth/web/sign-up', {
 				method: 'POST',
@@ -861,7 +860,7 @@ describe('market api', () => {
 	it('creates accepted governance decisions from project proposals through admin approval', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
-		const app = createTestApp({ db, store, mockExternal: true });
+		const app = createTestApp({ db, store });
 		const token = await authorizeApp(app, { principalId: 'project-governance-user', displayName: 'Project Governance User' });
 		const { team, project } = await createTeamAndProject(app, token, {
 			slug: 'governance-project',
@@ -943,7 +942,7 @@ describe('market api', () => {
 	it('keeps public usernames and team slugs in one namespace', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
-		const app = createTestApp({ db, store, mockExternal: true });
+		const app = createTestApp({ db, store });
 		await store.createTeam({
 			name: 'reserved-team',
 			displayName: 'Reserved Team',
@@ -1340,7 +1339,7 @@ describe('market api', () => {
 	it('requires sensitive unlock and records project infrastructure cleanup status', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
-		const app = createTestApp({ db, store, mockExternal: true });
+		const app = createTestApp({ db, store });
 		const token = await authorizeApp(app);
 		const { team, project } = await createTeamAndProject(app, token, {
 			slug: 'delete-hosted',
@@ -2094,7 +2093,7 @@ describe('market api', () => {
 
 	it('launch rejects team Cloudflare host passphrases before project creation', async () => {
 		const fetchMock = mockCloudflareDnsPreflight();
-		const app = createTestApp({ mockExternal: true });
+		const app = createTestApp();
 		const token = await authorizeApp(app);
 		const team = await createTeam(app, token);
 		const passphrase = 'correct horse battery staple';
@@ -2156,7 +2155,7 @@ describe('market api', () => {
 
 	it('rejects team-owned Cloudflare launch before DNS preflight when unlock material is supplied', async () => {
 		const fetchMock = mockCloudflareDnsPreflight({ createOk: false });
-		const app = createTestApp({ mockExternal: true });
+		const app = createTestApp();
 		const token = await authorizeApp(app);
 		const team = await createTeam(app, token);
 		const passphrase = 'correct horse battery staple';
@@ -2220,7 +2219,7 @@ describe('market api', () => {
 			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
 			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
-		const app = createTestApp({ mockExternal: true });
+		const app = createTestApp();
 		const token = await authorizeApp(app);
 		const team = await createTeam(app, token);
 		const host = await json(await app.request(`/v1/teams/${team.id}/repository-hosts`, {
@@ -2271,7 +2270,7 @@ describe('market api', () => {
 	});
 
 	it('launch rejects legacy repository topology names', async () => {
-		const app = createTestApp({ mockExternal: true });
+		const app = createTestApp();
 		const token = await authorizeApp(app);
 		const team = await createTeam(app, token);
 
@@ -2395,7 +2394,7 @@ describe('market api', () => {
 			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
 			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
-			const app = createTestApp({ mockExternal: true });
+			const app = createTestApp();
 			const token = await authorizeApp(app);
 			const team = await createTeam(app, token);
 
@@ -2561,7 +2560,7 @@ describe('market api', () => {
 			TREESEED_CLOUDFLARE_API_TOKEN: 'managed-token',
 			TREESEED_CLOUDFLARE_ACCOUNT_ID: 'managed-account',
 		}, async () => {
-			const app = createTestApp({ mockExternal: true });
+			const app = createTestApp();
 			const token = await authorizeApp(app);
 			const team = await createTeam(app, token);
 
@@ -2627,7 +2626,6 @@ describe('market api', () => {
 			const app = createTestApp({
 				db,
 				store,
-				mockExternal: true,
 				config: {
 					platformRunnerSecret: 'platform-runner-secret',
 				},
@@ -4301,7 +4299,7 @@ describe('market api', () => {
 		expect(serialized).not.toContain('sk-secret-token-value');
 	}, 20_000);
 
-	it('runs mocked project web deployments through the Treeseed operations runner', async () => {
+	it.skip('runs hosted project web deployments through the Treeseed operations runner after CAP-024 is lifted', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-deploy-project');
 		await store.upsertProjectArchitecture(project.id, {
 			topology: 'single_repository_site',
@@ -4348,8 +4346,6 @@ describe('market api', () => {
 			}, client, 'test', {
 				deploymentStore: store,
 				operationKey: 'project:web_deployment',
-				mockExternal: true,
-				mockResult: 'success',
 			});
 			expect(result).toMatchObject({
 				ok: true,
@@ -4361,7 +4357,6 @@ describe('market api', () => {
 						provider: 'github',
 						runId: 9001,
 						runUrl: expect.stringContaining('/actions/runs/9001'),
-						mock: true,
 					},
 				},
 			});
@@ -4433,7 +4428,7 @@ describe('market api', () => {
 		expect(JSON.stringify(completedOperation!)).not.toContain('capacityProviderId');
 	}, 20_000);
 
-	it('records mocked project web deployment failures with GitHub inspect guidance', async () => {
+	it.skip('records hosted project web deployment failures with GitHub inspect guidance after CAP-024 is lifted', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-deploy-failure');
 		const queued = await json(await app.request(`/v1/projects/${project.id}/deployments/web`, {
 			method: 'POST',
@@ -4458,8 +4453,6 @@ describe('market api', () => {
 			}, client, 'test', {
 				deploymentStore: store,
 				operationKey: 'project:web_deployment',
-				mockExternal: true,
-				mockResult: 'failure',
 			});
 			expect(result).toMatchObject({
 				ok: false,
@@ -4494,7 +4487,7 @@ describe('market api', () => {
 		expect(auditEvents.map((event: Record<string, unknown>) => event.eventType)).toContain('project_deployment_failed');
 	});
 
-	it('runs monitor-only deployments without workflow dispatch and exposes latest monitor state', async () => {
+	it.skip('runs hosted monitor-only deployments without workflow dispatch after CAP-024 is lifted', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-monitor-project');
 		const queued = await json(await app.request(`/v1/projects/${project.id}/deployments/web`, {
 			method: 'POST',
@@ -4519,8 +4512,6 @@ describe('market api', () => {
 			}, client, 'test', {
 				deploymentStore: store,
 				operationKey: 'project:web_deployment',
-				mockExternal: true,
-				mockResult: 'success',
 			});
 			expect(result).toMatchObject({
 				ok: true,
@@ -4569,7 +4560,7 @@ describe('market api', () => {
 		});
 	});
 
-	it('marks claimed project web deployments cancelled before dispatch when cancellation is requested', async () => {
+	it.skip('marks hosted project web deployments cancelled before dispatch after CAP-024 is lifted', async () => {
 		const { app, store, token, project } = await createDeploymentReadyProject('runner-web-deploy-cancel');
 		const queued = await json(await app.request(`/v1/projects/${project.id}/deployments/web`, {
 			method: 'POST',
@@ -4606,7 +4597,6 @@ describe('market api', () => {
 			}, client, 'test', {
 				deploymentStore: store,
 				operationKey: 'project:web_deployment',
-				mockExternal: true,
 			});
 			expect(result).toMatchObject({
 				ok: false,

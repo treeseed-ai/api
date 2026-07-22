@@ -79,6 +79,7 @@ describe('API route descriptors', () => {
 			'post.v1.decisions.decisionId.assignment-graphs.compile',
 			'post.v1.deliverable-contracts.contractId.approve',
 			'post.v1.deliverable-contracts.contractId.reject',
+			'get.v1.deliverable-manifests.manifestId',
 		]) expect(descriptorIds.has(id), id).toBe(true);
 	});
 
