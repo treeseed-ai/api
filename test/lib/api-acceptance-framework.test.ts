@@ -120,6 +120,13 @@ describe('API acceptance framework', () => {
 		expect([...sdkMethods].sort()).toEqual(Object.keys(SDK_METHOD_ROUTE_MAP).sort());
 	});
 
+	it('targets seeded resources for successful SDK deletion-blocker cases', () => {
+		const spec = loadSpec('test/acceptance/api.base.yaml');
+		const cases = expandSdkMethodMatrices(spec);
+		expect(cases.find((entry) => entry.sdkMethod === 'teamDeletionBlockers')?.sdkArgs).toEqual(['${fixtures.team.id}']);
+		expect(cases.find((entry) => entry.sdkMethod === 'projectDeletionBlockers')?.sdkArgs).toEqual(['${fixtures.project.id}']);
+	});
+
 	it('filters generated cases by explicit case id before expansion', () => {
 		const spec = loadSpec('test/acceptance/api.base.yaml');
 		expect(expandRoleMatrices(spec, 'site-role-matrix.me.teamOwner').map((entry) => entry.id)).toEqual(['site-role-matrix.me.teamOwner']);

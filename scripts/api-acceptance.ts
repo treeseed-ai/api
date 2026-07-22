@@ -882,12 +882,13 @@ function sdkArgsForMethod(method) {
 		teams: [],
 		createTeam: [{ slug: 'acceptance-${runNonce}-sdk-team', name: 'Acceptance SDK Team' }],
 		deleteTeam: ['missing-team', { confirmation: 'DELETE missing-team' }],
+		teamDeletionBlockers: ['${fixtures.team.id}'],
 		teamMembers: ['${fixtures.team.id}'],
 		teamPermissions: ['${fixtures.team.id}'],
 		projects: ['${fixtures.team.id}'],
 		createProject: ['${fixtures.team.id}', { slug: 'acceptance-${runNonce}-sdk-project', name: 'Acceptance SDK Project' }],
 		deleteProject: ['missing-project', { confirmation: 'DELETE missing-project' }],
-		projectDeletionBlockers: ['missing-project'],
+		projectDeletionBlockers: ['${fixtures.project.id}'],
 		upsertProjectConnection: ['${fixtures.project.id}', { mode: 'hybrid', executionOwner: 'project_runner' }],
 		importProjectRepository: ['${fixtures.team.id}', {
 			repository: {
