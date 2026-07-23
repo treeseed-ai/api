@@ -97,7 +97,7 @@ export function serializeAgentModeRunRow(row: Record<string, unknown> | null): A
 		mode: text(row.mode),
 		status: text(row.status),
 		selectedInput: jsonRecord(row.selected_input_json, 'selected_input_json', id),
-		capacityEnvelope: jsonRecord(row.capacity_envelope_json, 'capacity_envelope_json', id) as AgentModeRun['capacityEnvelope'],
+		capacityEnvelope: jsonRecord(row.capacity_envelope_json, 'capacity_envelope_json', id) as unknown as AgentModeRun['capacityEnvelope'],
 		outputs: jsonRecord(row.outputs_json, 'outputs_json', id),
 		traceRefs: jsonRecord(row.trace_refs_json, 'trace_refs_json', id),
 		usageActual: jsonRecord(row.usage_actual_json, 'usage_actual_json', id),

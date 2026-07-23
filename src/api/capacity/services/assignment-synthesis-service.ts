@@ -2,10 +2,12 @@ import type { CapacityGovernanceDatabase } from '../database.ts';
 import type { DurableProviderAssignment } from '../repositories/assignment.ts';
 import type { DurableCapacityWorkdayRun } from '../repositories/workday-run.ts';
 import type { WorkdayProject } from './workday-project-policy.ts';
+import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { assignNextCompiledDemand } from './assignment-function.ts';
 import { compileProviderWorkdayDemand } from './demand-compiler.ts';
 import type { ProviderLeasePrincipal } from './lease-authority-service.ts';
 import { resolveProviderSynthesisContext } from './provider-synthesis-context-service.ts';
+import type { ConfiguredWorkspaceInput } from './workday-treedx-workspace-service.ts';
 
 export interface ProviderSynthesisRequest extends Record<string, unknown> {
 	sessionId?: string | null;
@@ -17,9 +19,13 @@ export interface ProviderSynthesisRequest extends Record<string, unknown> {
 
 interface ProviderAssignmentFunctionStore extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
-	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<{ items: unknown[]; page: { hasMore: boolean } }>;
+	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
-	createCapacityWorkdayTreeDxWorkspace(project: { id: string }, run: DurableCapacityWorkdayRun, input: Record<string, unknown>): Promise<Record<string, unknown>>;
+	createCapacityWorkdayTreeDxWorkspace(project: WorkdayProject, run: DurableCapacityWorkdayRun, input: ConfiguredWorkspaceInput): Promise<Record<string, unknown>>;
+	getProject(projectId: string): Promise<Record<string, unknown> | null>;
+	getTeam(teamId: string): Promise<Record<string, unknown> | null>;
+	listHubRepositories(projectId: string): Promise<Array<Record<string, unknown>>>;
+	getProjectArchitecture(projectId: string): Promise<Record<string, unknown> | null>;
 }
 
 /**

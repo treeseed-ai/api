@@ -6,15 +6,23 @@ import { readCapacityRequestObject } from './request-json.ts';
 import { requireProviderPrincipal } from './provider-auth.ts';
 
 interface ProviderWorkflowStore extends CapacityGovernanceDatabase {
-	getProviderAssignment(teamId: string, assignmentId: string): Promise<Record<string, unknown> | null>;
+	getProviderAssignment(teamId: string, assignmentId: string): Promise<ProviderWorkflowAssignment | null>;
 	recordSecretCapabilityAudit(eventType: string, record: Record<string, unknown>): Promise<unknown>;
+}
+
+interface ProviderWorkflowAssignment extends Record<string, unknown> {
+	capacityProviderId: string;
+	leaseState: string;
+	leaseToken?: string | null;
+	leaseExpiresAt?: string | null;
+	capabilityHandles?: { workflowOperations?: unknown[] };
 }
 
 function routeError(c: Context, error: unknown) {
 	const candidate = error && typeof error === 'object' ? error as { status?: unknown; code?: unknown; message?: unknown } : {};
 	const status = Number(candidate.status);
 	if (Number.isInteger(status) && status >= 400 && status <= 599) {
-		return c.json({ ok: false, error: typeof candidate.message === 'string' ? candidate.message : 'Workflow dispatch failed.', code: typeof candidate.code === 'string' ? candidate.code : 'provider_workflow_dispatch_failed' }, { status });
+		return new Response(JSON.stringify({ ok: false, error: typeof candidate.message === 'string' ? candidate.message : 'Workflow dispatch failed.', code: typeof candidate.code === 'string' ? candidate.code : 'provider_workflow_dispatch_failed' }), { status, headers: { 'content-type': 'application/json' } });
 	}
 	throw error;
 }
@@ -39,13 +47,13 @@ export function installProviderWorkflowDispatchRoutes(app: Hono, options: { stor
 			if (assignment!.leaseState === 'leased' && assignment!.leaseToken !== body.leaseToken) deny('assignment_lease_token_required', 'Assignment lease token is required for workflow operation dispatch.', 409);
 			if (assignment!.leaseExpiresAt && Date.parse(assignment!.leaseExpiresAt) <= Date.now()) deny('assignment_lease_expired', 'Assignment lease has expired.', 409);
 
-			const capabilityHandles = assignment!.capabilityHandles && typeof assignment!.capabilityHandles === 'object' ? assignment!.capabilityHandles : {};
+			const capabilityHandles = assignment!.capabilityHandles ?? {};
 			const workflowHandles = Array.isArray(capabilityHandles.workflowOperations) ? capabilityHandles.workflowOperations : [];
 			const requestedHandleId = typeof body.handleId === 'string' ? body.handleId : null;
 			const operationId = c.req.param('operationId');
 			const handle = workflowHandles.map(record).find((entry) => entry.operationId === operationId
 				&& (!requestedHandleId || entry.id === requestedHandleId));
-			if (!handle || (handle.status && !['active', 'issued'].includes(String(handle.status))) || (handle.expiresAt && Date.parse(handle.expiresAt) <= Date.now())) {
+			if (!handle || (handle.status && !['active', 'issued'].includes(String(handle.status))) || (typeof handle.expiresAt === 'string' && Date.parse(handle.expiresAt) <= Date.now())) {
 				deny('assignment_workflow_operation_denied', 'Assignment does not include an active workflow operation handle for this operation.', 403);
 			}
 			if (!Array.isArray(handle.operations) || !handle.operations.map(String).includes('dispatch_workflow')) {

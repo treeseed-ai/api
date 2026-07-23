@@ -8,9 +8,25 @@ import type { TreeDxProxyScope } from './treedx-proxy-token-service.ts';
 
 interface TreeDxAccessStore extends CapacityGovernanceDatabase {
 	getProjectDetails(projectId: string): Promise<{ project: { id: string; teamId: string } } | null>;
-	getProviderAssignment(teamId: string, assignmentId: string): Promise<Record<string, unknown> | null>;
-	getTreeDxProxyHandle(teamId: string, projectId: string, handleId: string): Promise<Record<string, unknown> | null>;
+	getProviderAssignment(teamId: string, assignmentId: string): Promise<ProviderAssignmentRecord | null>;
+	getTreeDxProxyHandle(teamId: string, projectId: string, handleId: string): Promise<TreeDxProxyHandleRecord | null>;
 	recordTreeDxProxyAudit(input: Record<string, unknown>): Promise<unknown>;
+}
+
+interface ProviderAssignmentRecord extends Record<string, unknown> {
+	projectId: string;
+	capacityProviderId: string;
+	leaseState: string;
+	leaseExpiresAt: string | null;
+}
+
+interface TreeDxProxyHandleRecord extends Record<string, unknown> {
+	id: string;
+	projectId: string;
+	teamId: string;
+	assignmentId?: string | null;
+	tokenHash?: string | null;
+	scopes?: string[];
 }
 
 export interface TreeDxProxyAccess {
@@ -34,7 +50,7 @@ async function recordDenial(store: TreeDxAccessStore, c: Context, input: {
 	code: string;
 	message: string;
 	details: Record<string, unknown>;
-}) {
+}): Promise<never> {
 	await store.recordTreeDxProxyAudit({
 		teamId: input.principal.teamId,
 		projectId: input.projectId,

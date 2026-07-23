@@ -1,0 +1,40 @@
+import type { MarketControlPlaneStore } from '../../store.ts';
+import { setArtifactBucketMethod } from '../set-artifact-bucket.ts';
+import { principalCanAccessCatalogItemMethod } from '../principal-can-access-catalog-item.ts';
+import { createSeedRunMethod } from '../create-seed-run.ts';
+import { updateSeedRunMethod } from '../update-seed-run.ts';
+import { getSeedRunMethod } from '../get-seed-run.ts';
+import { listSeedRunsMethod } from '../list-seed-runs.ts';
+import { upsertCatalogItemMethod } from '../upsert-catalog-item.ts';
+import { getCatalogItemMethod } from '../get-catalog-item.ts';
+import { getCatalogItemBySlugMethod } from '../get-catalog-item-by-slug.ts';
+import { listCatalogItemsMethod } from '../list-catalog-items.ts';
+import { upsertCatalogArtifactVersionMethod } from '../upsert-catalog-artifact-version.ts';
+import { listCatalogArtifactVersionsMethod } from '../list-catalog-artifact-versions.ts';
+import { getCatalogArtifactVersionMethod } from '../get-catalog-artifact-version.ts';
+import { getCatalogArtifactVersionByIdMethod } from '../get-catalog-artifact-version-by-id.ts';
+import { uploadRuntimeArtifactMethod } from '../upload-runtime-artifact.ts';
+import { readRuntimeArtifactContentMethod } from '../read-runtime-artifact-content.ts';
+import { createKnowledgePackMethod } from '../create-knowledge-pack.ts';
+import { listKnowledgePacksMethod } from '../list-knowledge-packs.ts';
+
+export function installCatalogStoreMethods(prototype: MarketControlPlaneStore) {
+	prototype.setArtifactBucket = setArtifactBucketMethod;
+	prototype.principalCanAccessCatalogItem = principalCanAccessCatalogItemMethod;
+	prototype.createSeedRun = createSeedRunMethod;
+	prototype.updateSeedRun = updateSeedRunMethod;
+	prototype.getSeedRun = getSeedRunMethod;
+	prototype.listSeedRuns = listSeedRunsMethod;
+	prototype.upsertCatalogItem = upsertCatalogItemMethod;
+	prototype.getCatalogItem = getCatalogItemMethod;
+	prototype.getCatalogItemBySlug = getCatalogItemBySlugMethod;
+	prototype.listCatalogItems = listCatalogItemsMethod;
+	prototype.upsertCatalogArtifactVersion = upsertCatalogArtifactVersionMethod;
+	prototype.listCatalogArtifactVersions = listCatalogArtifactVersionsMethod;
+	prototype.getCatalogArtifactVersion = getCatalogArtifactVersionMethod;
+	prototype.getCatalogArtifactVersionById = getCatalogArtifactVersionByIdMethod;
+	prototype.uploadRuntimeArtifact = uploadRuntimeArtifactMethod;
+	prototype.readRuntimeArtifactContent = readRuntimeArtifactContentMethod;
+	prototype.createKnowledgePack = createKnowledgePackMethod;
+	prototype.listKnowledgePacks = listKnowledgePacksMethod;
+}

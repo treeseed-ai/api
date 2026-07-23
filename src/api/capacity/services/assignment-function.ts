@@ -12,11 +12,16 @@ import {
 import { admitSynthesizedProviderAssignment } from "./assignment-admission-service.ts";
 import type { ProviderLeasePrincipal } from "./lease-authority-service.ts";
 import { workdayTreeDxWorkspaceId } from "./workday-treedx-workspace-service.ts";
+import type { ConfiguredWorkspaceInput } from "./workday-treedx-workspace-service.ts";
 import { evaluateDurableWorkdayContinuation } from "./workday-continuation-service.ts";
 import type { ProviderSynthesisExecutionProvider } from "./provider-synthesis-context-service.ts";
 
 type JsonRecord = Record<string, unknown>;
 interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
+  getProject(projectId: string): Promise<JsonRecord | null>;
+  getTeam(teamId: string): Promise<JsonRecord | null>;
+  listHubRepositories(projectId: string): Promise<JsonRecord[]>;
+  getProjectArchitecture(projectId: string): Promise<JsonRecord | null>;
   getProviderAssignment(
     teamId: string,
     assignmentId: string,
@@ -24,7 +29,7 @@ interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
   createCapacityWorkdayTreeDxWorkspace(
     project: { id: string },
     run: DurableCapacityWorkdayRun,
-    input: JsonRecord,
+    input: ConfiguredWorkspaceInput,
   ): Promise<JsonRecord>;
 }
 

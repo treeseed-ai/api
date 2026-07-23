@@ -47,10 +47,10 @@ function digestDueAt(cadence: 'immediate' | 'daily' | 'weekly', timeZone: string
 }
 
 async function preferencesFor(store: MarketControlPlaneStore, userId: string) {
-	const settings = await store.first(`SELECT * FROM user_notification_preferences WHERE user_id = ? LIMIT 1`, [userId]);
-	const globalRows = await store.all(`SELECT content_type FROM user_notification_global_content_types WHERE user_id = ?`, [userId]);
-	const overrideRows = await store.all(`SELECT project_id FROM user_notification_project_overrides WHERE user_id = ?`, [userId]);
-	const projectRows = await store.all(`SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ?`, [userId]);
+	const settings = await store.first<{ email_cadence: 'immediate' | 'daily' | 'weekly'; time_zone: string }>(`SELECT * FROM user_notification_preferences WHERE user_id = ? LIMIT 1`, [userId]);
+	const globalRows = await store.all<{ content_type: string }>(`SELECT content_type FROM user_notification_global_content_types WHERE user_id = ?`, [userId]);
+	const overrideRows = await store.all<{ project_id: string }>(`SELECT project_id FROM user_notification_project_overrides WHERE user_id = ?`, [userId]);
+	const projectRows = await store.all<{ project_id: string; content_type: string }>(`SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ?`, [userId]);
 	return normalizeNotificationPreferences({
 		emailCadence: settings?.email_cadence,
 		timeZone: settings?.time_zone,
@@ -86,17 +86,23 @@ export async function recordContentNotificationEvent(store: MarketControlPlaneSt
 }
 
 export async function drainNotificationEmailOutbox(store: MarketControlPlaneStore, limit = 20) {
-	const deliveries = await store.all(`SELECT * FROM notification_email_deliveries WHERE status = 'pending' AND due_at <= ? ORDER BY due_at ASC LIMIT ?`, [new Date().toISOString(), limit]);
+	const deliveries = await store.all<{
+		id: string;
+		user_id: string;
+		event_id: string | null;
+		due_at: string;
+		cadence: 'immediate' | 'daily' | 'weekly';
+	}>(`SELECT * FROM notification_email_deliveries WHERE status = 'pending' AND due_at <= ? ORDER BY due_at ASC LIMIT ?`, [new Date().toISOString(), limit]);
 	let sent = 0;
 	for (const delivery of deliveries) {
 		const claimedAt = new Date().toISOString();
 		await store.run(`UPDATE notification_email_deliveries SET status = 'sending', attempts = attempts + 1, updated_at = ? WHERE id = ? AND status = 'pending'`, [claimedAt, delivery.id]);
 		try {
-			const address = await store.first(`SELECT email FROM user_email_addresses WHERE user_id = ? AND status = 'verified' ORDER BY is_primary DESC, created_at ASC LIMIT 1`, [delivery.user_id]);
+			const address = await store.first<{ email: string }>(`SELECT email FROM user_email_addresses WHERE user_id = ? AND status = 'verified' ORDER BY is_primary DESC, created_at ASC LIMIT 1`, [delivery.user_id]);
 			if (!address?.email) throw new Error('No verified notification email is available.');
 			const events = delivery.event_id
-				? await store.all(`SELECT notification_events.* FROM notification_events WHERE id = ?`, [delivery.event_id])
-				: await store.all(`SELECT notification_events.* FROM user_notifications INNER JOIN notification_events ON notification_events.id = user_notifications.event_id WHERE user_notifications.user_id = ? AND user_notifications.created_at <= ? AND user_notifications.created_at > ? ORDER BY user_notifications.created_at ASC`, [delivery.user_id, delivery.due_at, new Date(new Date(delivery.due_at).getTime() - (delivery.cadence === 'weekly' ? 7 : 1) * 86_400_000).toISOString()]);
+				? await store.all<{ title: string; summary: string | null; target_url: string }>(`SELECT notification_events.* FROM notification_events WHERE id = ?`, [delivery.event_id])
+				: await store.all<{ title: string; summary: string | null; target_url: string }>(`SELECT notification_events.* FROM user_notifications INNER JOIN notification_events ON notification_events.id = user_notifications.event_id WHERE user_notifications.user_id = ? AND user_notifications.created_at <= ? AND user_notifications.created_at > ? ORDER BY user_notifications.created_at ASC`, [delivery.user_id, delivery.due_at, new Date(new Date(delivery.due_at).getTime() - (delivery.cadence === 'weekly' ? 7 : 1) * 86_400_000).toISOString()]);
 			if (!events.length) throw new Error('No authorized notification events remain for delivery.');
 			await sendAuthEmail(undefined, {
 				to: address.email,

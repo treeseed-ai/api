@@ -74,7 +74,7 @@ export function serializeWorkdayCapacityEnvelopeRow(row: Row | null): DurableWor
 		startedAt: nullableText(row.started_at),
 		pausedAt: nullableText(row.paused_at),
 		completedAt: nullableText(row.completed_at),
-		envelope: json(row, id, 'envelope_json') as DurableWorkdayCapacityEnvelope['envelope'],
+		envelope: json(row, id, 'envelope_json') as unknown as DurableWorkdayCapacityEnvelope['envelope'],
 		metadata: json(row, id, 'metadata_json'),
 		createdAt: text(row.created_at),
 		updatedAt: text(row.updated_at),

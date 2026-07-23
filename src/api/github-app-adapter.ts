@@ -46,7 +46,7 @@ function missingPermissions(actual: Record<string, unknown>, required: Record<st
 }
 
 function failClosedError(code: string, message: string) {
-	const error = new Error(message);
+	const error: Error & Record<string, any> = new Error(message);
 	(error as any).status = 403;
 	(error as any).code = code;
 	return error;

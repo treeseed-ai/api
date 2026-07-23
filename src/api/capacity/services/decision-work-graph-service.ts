@@ -136,7 +136,8 @@ export class DecisionWorkGraphService {
 		const now = new Date().toISOString();
 		const manifest: DeliverableManifestRecord = {
 			id: requestedId || randomUUID(), deliverableContractId: contract.id, projectId: contract.projectId, decisionId: contract.decisionId,
-			producedRefs: array(input.producedRefs) as DeliverableManifestRecord['producedRefs'], coverage: input.coverage == null ? undefined : record(input.coverage),
+			producedRefs: array(input.producedRefs) as DeliverableManifestRecord['producedRefs'],
+			coverage: input.coverage == null ? undefined : record(input.coverage) as unknown as DeliverableManifestRecord['coverage'],
 			summary: text(input.summary), readyForReview: input.readyForReview === true, submittedByAgentId: text(input.submittedByAgentId) || null,
 			submittedAt: text(input.submittedAt) || now,
 			sourceAuthority: input.sourceAuthority == null ? undefined : record(input.sourceAuthority) as unknown as DeliverableManifestRecord['sourceAuthority'],

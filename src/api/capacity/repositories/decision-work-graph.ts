@@ -145,7 +145,7 @@ export class DecisionWorkGraphRepository {
 		await this.database.batch([
 			{ query: `UPDATE deliverable_contracts SET status = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND status = 'submitted'`, params: [to, JSON.stringify(metadataValue), now, contract.id] },
 			{ query: `UPDATE decision_assignment_graphs SET status = ?, graph_json = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND version = ? AND updated_at = ?`, params: [graph.status, JSON.stringify(graph), JSON.stringify(graph.metadata ?? {}), now, graph.id, graph.version, expectedGraphUpdatedAt] },
-			...newContracts.map(contractInsert),
+			...newContracts.map((candidate) => contractInsert(candidate)),
 			{ query: `SELECT 1 / CASE WHEN EXISTS (SELECT 1 FROM deliverable_contracts WHERE id = ? AND status = ?) THEN 1 ELSE 0 END AS transition_guard`, params: [contract.id, to] },
 			{ query: `SELECT 1 / CASE WHEN EXISTS (SELECT 1 FROM decision_assignment_graphs WHERE id = ? AND updated_at = ?) THEN 1 ELSE 0 END AS graph_transition_guard`, params: [graph.id, now] },
 		]);

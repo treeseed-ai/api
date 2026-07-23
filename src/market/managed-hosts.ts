@@ -1,4 +1,3 @@
-// @ts-nocheck
 function runtimeEnvValue(runtime, name) {
 	const runtimeValue = runtime?.env?.[name];
 	if (typeof runtimeValue === 'string' && runtimeValue.trim()) return runtimeValue.trim();
@@ -12,7 +11,7 @@ function configValue(values, name) {
 	return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function firstRuntimeEnvValue(runtime, names, values = {}) {
+function firstRuntimeEnvValue(runtime, names, values: any = {}) {
 	for (const name of names) {
 		const configuredValue = configValue(values, name);
 		if (configuredValue) return configuredValue;
@@ -47,7 +46,7 @@ async function collectLocalTreeseedConfigValues(runtime, scope = 'prod') {
 	return {};
 }
 
-export function resolveTreeseedManagedCloudflareHostConfig(runtime, values = {}) {
+export function resolveTreeseedManagedCloudflareHostConfig(runtime, values: any = {}) {
 	const token = firstRuntimeEnvValue(runtime, ['TREESEED_CLOUDFLARE_API_TOKEN'], values);
 	const accountId = firstRuntimeEnvValue(runtime, ['TREESEED_CLOUDFLARE_ACCOUNT_ID'], values);
 	const config = {
@@ -77,7 +76,7 @@ function managedStatus(missing) {
 	return missing.length > 0 ? 'configuration_required' : 'active';
 }
 
-export function listTreeseedManagedHosts(teamId, runtime, values = {}) {
+export function listTreeseedManagedHosts(teamId, runtime, values: any = {}) {
 	const cloudflareConfig = resolveTreeseedManagedCloudflareHostConfig(runtime, values);
 	const cloudflareMissing = managedCloudflareConfigMissing(cloudflareConfig);
 	const now = null;

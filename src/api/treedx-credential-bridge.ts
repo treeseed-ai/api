@@ -18,7 +18,7 @@ const TREEDX_CREDENTIAL_BRIDGE_OPERATIONS = [
 ];
 
 function failClosedError(code: string, message: string, status = 403) {
-	const error = new Error(message);
+	const error: Error & Record<string, any> = new Error(message);
 	(error as any).status = status;
 	(error as any).code = code;
 	return error;

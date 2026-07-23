@@ -8,7 +8,7 @@ export interface CapacityRuntimeRouteOptions {
 }
 
 export function capacityRuntimeFailure(c: Context, error: unknown) {
-	if (error instanceof CapacityGovernanceError) return c.json({ ok: false, error: error.message, code: error.code, details: error.details }, { status: error.status });
+	if (error instanceof CapacityGovernanceError) return new Response(JSON.stringify({ ok: false, error: error.message, code: error.code, details: error.details }), { status: error.status, headers: { 'content-type': 'application/json' } });
 	return c.json({ ok: false, error: error instanceof Error ? error.message : String(error), code: 'capacity_runtime_failed' }, { status: 500 });
 }
 

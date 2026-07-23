@@ -5,14 +5,14 @@ import { CapacityGovernanceError } from '../database.ts';
 import { CapacityWorkdayRunRepository, parseCapacityWorkdayRunStatus } from '../repositories/workday-run.ts';
 import { CapacityWorkdayRunWriteRepository } from '../repositories/workday-run-write.ts';
 import { assertCapacityWorkdayParametersSafe, assertRunningCapacityWorkdayBounded } from './workday-lifecycle-service.ts';
-import { recordCapacityWorkdayScheduleFailure } from './workday-scheduling-service.ts';
+import { recordCapacityWorkdayScheduleFailure, type WorkdayScheduleStore } from './workday-scheduling-service.ts';
 import { engineeringWorkflowPromotionConfigs } from './engineering-workflow-promotion-service.ts';
 
 type JsonRecord = Record<string, unknown>;
-interface WorkdayRunServiceStore extends CapacityGovernanceDatabase {
+interface WorkdayRunServiceStore extends WorkdayScheduleStore {
 	scheduleCapacityWorkdayRun(run: CapacityWorkdayRunRecord): Promise<unknown>;
 	terminalizeCapacityWorkdayAssignments(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
-	terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string): Promise<unknown>;
+	terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string): Promise<{ terminalized: number }>;
 	closeCapacityWorkdayAdmission(teamId: string, runId: string): Promise<unknown>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<CapacityWorkdayRunRecord | null>;

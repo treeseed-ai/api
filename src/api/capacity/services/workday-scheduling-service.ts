@@ -2,6 +2,10 @@ import type { CapacityAllocationSetV2 } from '@treeseed/sdk/agent-capacity/alloc
 import type { CapacityGovernanceDatabase } from '../database.ts';
 import { CapacityGovernanceError } from '../database.ts';
 import type { DurableCapacityWorkdayRun } from '../repositories/workday-run.ts';
+import type {
+	CreateWorkdayCapacityEnvelopeInput,
+	DurableWorkdayCapacityEnvelope,
+} from '../repositories/workday-envelope.ts';
 import { CapacityGrantService } from './grant-service.ts';
 import { resolveGovernedWorkdaySchedule } from './workday-governance-service.ts';
 import {
@@ -12,12 +16,12 @@ import {
 
 type JsonRecord = Record<string, unknown>;
 
-interface WorkdayScheduleStore extends CapacityGovernanceDatabase {
+export interface WorkdayScheduleStore extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
 	getCapacityAllocationSet(teamId: string, allocationSetId: string): Promise<CapacityAllocationSetV2 | null>;
 	getActiveCapacityAllocationSet(teamId: string): Promise<CapacityAllocationSetV2 | null>;
 	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown } | null>;
-	createWorkdayCapacityEnvelope(input: JsonRecord): Promise<{ id?: unknown } | null>;
+	createWorkdayCapacityEnvelope(input: CreateWorkdayCapacityEnvelopeInput, idempotencyKey?: string): Promise<DurableWorkdayCapacityEnvelope | null>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<DurableCapacityWorkdayRun | null>;
 	terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string): Promise<{ terminalized: number }>;

@@ -4,7 +4,7 @@ import { CapacityGovernanceError } from '../database.ts';
 import { CapacityGrantService } from '../services/grant-service.ts';
 import type { CapacityGrantStatus } from '@treeseed/sdk/agent-capacity/allocation';
 import { CapacityAllocationPolicyError, CapacityAllocationService } from '../services/allocation-service.ts';
-import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
+import { decodeCapacityPageCursor, normalizeCapacityPageLimit, type CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { readCapacityRequestObject } from './request-json.ts';
 import { explainCapacityAllocation } from '../services/allocation-explanation-service.ts';
 import type { CapacityAdmissionStateRequest } from '../services/admission-state-service.ts';
@@ -15,8 +15,8 @@ interface CapacityPolicyRouteOptions {
 }
 
 function failure(c: Context, error: unknown) {
-	if (error instanceof CapacityGovernanceError) return c.json({ ok: false, error: error.message, code: error.code, details: error.details }, { status: error.status });
-	if (error instanceof CapacityAllocationPolicyError) return c.json({ ok: false, error: error.message, code: error.code, diagnostics: error.diagnostics }, { status: error.status });
+	if (error instanceof CapacityGovernanceError) return new Response(JSON.stringify({ ok: false, error: error.message, code: error.code, details: error.details }), { status: error.status, headers: { 'content-type': 'application/json' } });
+	if (error instanceof CapacityAllocationPolicyError) return new Response(JSON.stringify({ ok: false, error: error.message, code: error.code, diagnostics: error.diagnostics }), { status: error.status, headers: { 'content-type': 'application/json' } });
 	return c.json({ ok: false, error: error instanceof Error ? error.message : String(error), code: 'capacity_policy_failed' }, { status: 500 });
 }
 

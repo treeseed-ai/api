@@ -2,7 +2,7 @@ import type {
 	CapacityExecutionProvider,
 	CapacityProviderMembershipView,
 } from '@treeseed/sdk/capacity-provider/contracts';
-import type { CapacityReservation, DerivedCapacityAvailability, DerivedCapacitySummary } from '@treeseed/sdk';
+import type { CapacityReservation, DerivedCapacityAvailability, DerivedCapacityInput, DerivedCapacitySummary } from '@treeseed/sdk';
 import { deriveAvailableCredits, resolveNativeAccountingWindow } from '@treeseed/sdk/capacity-usage';
 import type { CapacityGovernanceDatabase } from '../database.ts';
 import { CreditConversionProfileRepository } from '../repositories/credit-conversion-profile.ts';
@@ -63,13 +63,13 @@ export class DerivedCapacityService {
 		for (const executionProvider of executionProviders) {
 			const limits = executionProvider.nativeLimits.length > 0
 				? executionProvider.nativeLimits
-				: [{ nativeUnit: executionProvider.nativeUnit, scope: null, limitAmount: null, reserveBufferPercent: 0 }];
+				: [null];
 			for (const limit of limits) {
-				const nativeUnit = limit.nativeUnit ?? executionProvider.nativeUnit;
+				const nativeUnit = limit?.nativeUnit ?? executionProvider.nativeUnit;
 				const conversionProfile = await this.profiles.best(executionProvider.adapter, nativeUnit);
-				const accountingInput = {
+				const accountingInput: DerivedCapacityInput = {
 					executionProvider, nativeLimit: limit, latestObservation: executionProvider.latestObservation ?? null,
-					scope: limit.scope ?? null, nativeUnit, now: calculatedAt,
+					scope: limit?.scope ?? null, nativeUnit, now: calculatedAt,
 				};
 				const accountingWindow = resolveNativeAccountingWindow(accountingInput);
 				const reservationDebits = options.activeReservations ? null : await aggregateNativeReservationDebits(this.database, {

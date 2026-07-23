@@ -14,14 +14,14 @@ function objectValue(value) {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
-function stripeSecretKey(config = {}) {
+function stripeSecretKey(config: any = {}) {
 	return optionalString(config.stripeSecretKey)
 		?? optionalString(config.STRIPE_SECRET_KEY)
 		?? optionalString(process.env.TREESEED_STRIPE_SECRET_KEY)
 		?? optionalString(process.env.STRIPE_SECRET_KEY);
 }
 
-export function resolveStripeEnvironment(config = {}) {
+export function resolveStripeEnvironment(config: any = {}) {
 	const value = optionalString(config.stripeMode)
 		?? optionalString(config.STRIPE_MODE)
 		?? optionalString(process.env.TREESEED_STRIPE_MODE)
@@ -81,7 +81,7 @@ function sanitizeStripeError(error) {
 	return next;
 }
 
-export function createStripeConnectService(options = {}) {
+export function createStripeConnectService(options: any = {}) {
 	const config = options.config ?? {};
 	const environment = options.environment ?? resolveStripeEnvironment(config);
 	let stripePromise = null;

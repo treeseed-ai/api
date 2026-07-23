@@ -138,7 +138,8 @@ async function authenticateStreamSmtp(context: StreamSocketContext, smtp: SmtpCo
 }
 
 async function sendWithCloudflareSockets(message: AuthEmailMessage, smtp: SmtpConfig, siteUrl: string) {
-	const { connect } = await import('cloudflare:sockets');
+	const socketsModule = 'cloudflare:sockets';
+	const { connect } = await import(socketsModule) as { connect: (...args: any[]) => any };
 	const secureMode = String(smtp.secure ?? '').toLowerCase();
 	const secureTransport = ['true', '1', 'tls', 'ssl', 'on'].includes(secureMode)
 		? 'on'

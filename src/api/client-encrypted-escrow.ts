@@ -6,7 +6,7 @@ import {
 import { randomUUID } from 'node:crypto';
 
 function badRequest(message, code = 'invalid_client_encrypted_escrow') {
-	const error = new Error(message);
+	const error: Error & Record<string, any> = new Error(message);
 	error.status = 400;
 	error.code = code;
 	return error;
@@ -59,11 +59,11 @@ export function createClientEncryptedEscrowService({ store, now = () => new Date
 		});
 	}
 
-	async function getRecord(input = {}) {
+	async function getRecord(input: any = {}) {
 		const id = requireString(input.escrowId, 'escrowId');
 		const record = await store.getClientEncryptedEscrowRecord(id);
 		if (!record || record.teamId !== input.teamId || record.projectId !== input.projectId) {
-			const error = new Error('Client-encrypted escrow record not found.');
+			const error: Error & Record<string, any> = new Error('Client-encrypted escrow record not found.');
 			error.status = 404;
 			error.code = 'client_encrypted_escrow_not_found';
 			throw error;
@@ -72,7 +72,7 @@ export function createClientEncryptedEscrowService({ store, now = () => new Date
 	}
 
 	return {
-		async create(input = {}) {
+		async create(input: any = {}) {
 			ensureNoPlaintext(input);
 			const secretId = input.secretId ?? input.id ?? randomUUID();
 			const escrowId = input.escrowId ?? `escrow-${randomUUID()}`;
@@ -111,7 +111,7 @@ export function createClientEncryptedEscrowService({ store, now = () => new Date
 			return { escrow: escrowSummary(escrow, now), secret };
 		},
 
-		async list(input = {}) {
+		async list(input: any = {}) {
 			const records = await store.listClientEncryptedEscrowRecords({
 				teamId: input.teamId,
 				projectId: input.projectId,
@@ -122,11 +122,11 @@ export function createClientEncryptedEscrowService({ store, now = () => new Date
 			return records.map((record) => escrowSummary(record, now));
 		},
 
-		async get(input = {}) {
+		async get(input: any = {}) {
 			return getRecord(input);
 		},
 
-		async update(input = {}) {
+		async update(input: any = {}) {
 			ensureNoPlaintext(input);
 			const existing = await getRecord(input);
 			const patch = {
@@ -145,7 +145,7 @@ export function createClientEncryptedEscrowService({ store, now = () => new Date
 			return escrowSummary(updated, now);
 		},
 
-		async migrate(input = {}) {
+		async migrate(input: any = {}) {
 			ensureNoPlaintext(input);
 			const existing = await getRecord(input);
 			const migratedTo = input.migratedTo ?? 'github_actions_secret_enclave';
@@ -158,7 +158,7 @@ export function createClientEncryptedEscrowService({ store, now = () => new Date
 					migrationTarget: input.migrationTarget ?? null,
 				},
 			});
-			const secretPatch = {
+			const secretPatch: Record<string, unknown> = {
 				custodyMode: migratedTo,
 				status: 'active',
 				metadata: {
@@ -182,7 +182,7 @@ export function createClientEncryptedEscrowService({ store, now = () => new Date
 			return { escrow: escrowSummary(migrated, now), secret };
 		},
 
-		async tombstone(input = {}) {
+		async tombstone(input: any = {}) {
 			const existing = await getRecord(input);
 			const tombstoned = await store.tombstoneClientEncryptedEscrowRecord(existing.id, {
 				metadata: {

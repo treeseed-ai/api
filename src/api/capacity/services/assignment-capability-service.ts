@@ -3,6 +3,7 @@ import {
 	redactedProviderAssignmentCapabilityHandles,
 	validateProviderAssignmentCapabilityHandles,
 } from '@treeseed/sdk/agent-capacity';
+import type { ProviderAssignmentSynthesisSource } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../database.ts';
 
 type RecordValue = Record<string, unknown>;
@@ -64,6 +65,10 @@ export function compileAssignmentCapabilityContext(input: AssignmentCapabilityIn
 	});
 	const treeDx = record(input.treedxProxyHandle ?? context.treedxProxyHandle);
 	const governedBaseRef = exactBaseRef(input);
+	const synthesizedFrom = ['approved_decision', 'planning_input_request', 'capacity_plan', 'workday_demand', 'verification_failure', 'fallback_queue']
+		.includes(String(input.synthesizedFrom ?? ''))
+		? input.synthesizedFrom as ProviderAssignmentSynthesisSource
+		: null;
 	if (treeDx.id) {
 		const proxyHandleId = text(treeDx.id);
 		const repositoryId = text(treeDx.repositoryId);
@@ -107,7 +112,22 @@ export function compileAssignmentCapabilityContext(input: AssignmentCapabilityIn
 			});
 		}
 	}
-	const fallback = validateProviderAssignmentCapabilityHandles({ assignment: { ...input, capabilityHandles: handles }, capabilityHandles: handles });
+	const fallback = validateProviderAssignmentCapabilityHandles({
+		assignment: {
+			...input,
+			metadata: input.metadata ?? {},
+			decisionInput: input.decisionInput ?? {},
+			capacityEnvelope: {
+				...(input.capacityEnvelope ?? {}),
+				mode: input.mode,
+				teamId: input.teamId,
+				projectId: input.projectId,
+			},
+			synthesizedFrom,
+			capabilityHandles: handles,
+		},
+		capabilityHandles: handles,
+	});
 	if (fallback) {
 		throw new CapacityGovernanceError(
 			fallback.code ?? 'assignment_capability_handle_invalid',

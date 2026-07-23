@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { randomUUID } from 'node:crypto';
 import {
 	deploymentKindForAction,
@@ -69,7 +68,7 @@ function deploymentEnvelope(deployment, operation) {
 }
 
 export function installProjectDeploymentRoutes(app, { store, requireProjectAccess }) {
-	async function requireDeploymentPermission(c, projectId, intent, input = {}) {
+	async function requireDeploymentPermission(c, projectId, intent, input: any = {}) {
 		const access = await requireProjectAccess(c, store, projectId, null);
 		if (access.response) return access;
 		const permission = await checkProjectDeploymentPermission({

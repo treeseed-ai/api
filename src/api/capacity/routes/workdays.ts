@@ -40,7 +40,7 @@ function error(c: Context, status: 400 | 404, message: string) {
 
 function governanceError(c: Context, cause: unknown) {
 	if (cause instanceof CapacityGovernanceError) {
-		return c.json({ ok: false, error: cause.message, code: cause.code, details: cause.details }, { status: cause.status });
+		return new Response(JSON.stringify({ ok: false, error: cause.message, code: cause.code, details: cause.details }), { status: cause.status, headers: { 'content-type': 'application/json' } });
 	}
 	throw cause;
 }

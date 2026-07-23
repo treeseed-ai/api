@@ -42,17 +42,39 @@ import { recoverExpiredProviderAssignments as recoverExpiredAssignments } from '
 import { maintainCapacityRuntimeRetention as maintainRuntimeRetention } from './services/runtime-retention-service.ts';
 export interface CapacityControlPlaneHost extends CapacityGovernanceDatabase {
 	config: Record<string, unknown>;
+	createTeam(input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+	prepareTeamDeletion(teamId: string, confirmation: string): Promise<{ ok: boolean; team?: unknown; [key: string]: unknown }>;
 	getProject(projectId: string): Promise<Record<string, unknown> | null>;
 	getProjectDetails(projectId: string): Promise<Record<string, unknown> | null>;
 	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
 	listApprovalRequestsForProject(projectId: string, limit: number): Promise<Record<string, unknown>[]>;
-	listTeamProjects(teamId: string): Promise<Record<string, unknown>[]>;
+	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
+	getTeam(teamId: string): Promise<Record<string, unknown> | null>;
+	listHubRepositories(projectId: string): Promise<Record<string, unknown>[]>;
+	getProjectArchitecture(projectId: string): Promise<Record<string, unknown> | null>;
 	requestProjectRuntime(projectId: string, principal: unknown, path: string, input?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 }
 type PublicSurface<T> = { [Key in keyof T]: T[Key] };
 export type CapacityControlPlaneStore = PublicSurface<CapacityControlPlane>
 	& PublicSurface<ProviderControlPlane>
 	& CapacityControlPlaneHost;
+type CapacityServiceStore = CapacityControlPlaneStore
+	& ConstructorParameters<typeof AgentCapacityPlanService>[0]
+	& ConstructorParameters<typeof PlanningStateService>[0]
+	& ConstructorParameters<typeof StructuredAgentEstimateService>[0]
+	& ConstructorParameters<typeof DecisionWorkGraphService>[0]
+	& ConstructorParameters<typeof ResearchWorkflowService>[0]
+	& ConstructorParameters<typeof CapacityOperationsQueryService>[0]
+	& Parameters<typeof buildWorkdayCapacitySummary>[0]
+	& Parameters<typeof buildProjectCapacityRuntimeDiagnostics>[0]
+	& Parameters<typeof persistProviderAssignmentExplanation>[0]
+	& Parameters<typeof createConfiguredWorkdayTreeDxWorkspace>[0]
+	& Parameters<typeof scheduleWorkdayRun>[0]
+	& Parameters<typeof synthesizeProviderAssignments>[0]
+	& Parameters<typeof tickWorkdayRun>[0]
+	& Parameters<typeof buildProjectCapacityDiagnostics>[0]
+	& Parameters<typeof collectProjectAgentArtifacts>[0]
+	& Parameters<typeof buildProjectAgentSummary>[0];
 type JsonRecord = Record<string, unknown>;
 interface PageFilters extends JsonRecord {
 	limit?: number | string | null;
@@ -70,7 +92,7 @@ function isoNow() {
 	return new Date().toISOString();
 }
 class CapacityControlPlane {
-	private capacityContext!: CapacityControlPlaneStore;
+	private capacityContext!: CapacityServiceStore;
 	private capacityRuntimeEvidenceRepository!: CapacityRuntimeEvidenceRepository;
 	private workdayCapacityEnvelopeRepository!: WorkdayCapacityEnvelopeRepository;
 	private agentCapacityPlanService!: AgentCapacityPlanService;
@@ -80,14 +102,15 @@ class CapacityControlPlane {
 	private researchWorkflowService!: ResearchWorkflowService;
 	constructor(private readonly host: CapacityControlPlaneHost) {}
 	attach(context: CapacityControlPlaneStore) {
-		this.capacityContext = context;
-		this.capacityRuntimeEvidenceRepository = new CapacityRuntimeEvidenceRepository(context);
-		this.workdayCapacityEnvelopeRepository = new WorkdayCapacityEnvelopeRepository(context);
-		this.agentCapacityPlanService = new AgentCapacityPlanService(context);
-		this.planningStateService = new PlanningStateService(context);
-		this.structuredAgentEstimateService = new StructuredAgentEstimateService(context);
-		this.decisionWorkGraphService = new DecisionWorkGraphService(context);
-		this.researchWorkflowService = new ResearchWorkflowService(context);
+		const serviceContext = context as unknown as CapacityServiceStore;
+		this.capacityContext = serviceContext;
+		this.capacityRuntimeEvidenceRepository = new CapacityRuntimeEvidenceRepository(serviceContext);
+		this.workdayCapacityEnvelopeRepository = new WorkdayCapacityEnvelopeRepository(serviceContext);
+		this.agentCapacityPlanService = new AgentCapacityPlanService(serviceContext);
+		this.planningStateService = new PlanningStateService(serviceContext);
+		this.structuredAgentEstimateService = new StructuredAgentEstimateService(serviceContext);
+		this.decisionWorkGraphService = new DecisionWorkGraphService(serviceContext);
+		this.researchWorkflowService = new ResearchWorkflowService(serviceContext);
 	}
 	ensureInitialized() { return this.host.ensureInitialized(); }
 	run(query: string, params: unknown[] = []) { return this.host.run(query, params); }
@@ -97,47 +120,47 @@ class CapacityControlPlane {
 	scopeHash(value: unknown = {}) {
 			return `scope_${createHash('sha256').update(JSON.stringify(value, Object.keys(objectValue(value)).sort())).digest('hex').slice(0, 16)}`;
 		}
-	async upsertDecisionPlanningStatus(input: JsonRecord = {}) {
+	async upsertDecisionPlanningStatus(input: Parameters<PlanningStateService['upsertPlanningStatus']>[0]) {
 			return this.planningStateService.upsertPlanningStatus(input);
 		}
 	async getDecisionPlanningStatus(decisionId: string) {
 			return this.planningStateService.getPlanningStatus(decisionId);
 		}
-	async createPlanningInputRequest(decisionId: string, input: JsonRecord = {}) {
+	async createPlanningInputRequest(decisionId: string, input: Parameters<PlanningStateService['createPlanningRequest']>[1]) {
 			return this.planningStateService.createPlanningRequest(decisionId, input);
 		}
 	async listPlanningInputRequests(decisionId: string) {
 			return this.planningStateService.listPlanningRequests(decisionId);
 		}
-	async createDecisionExecutionInput(decisionId: string, input: JsonRecord = {}) {
+	async createDecisionExecutionInput(decisionId: string, input: Parameters<PlanningStateService['createExecutionInput']>[1]) {
 			return this.planningStateService.createExecutionInput(decisionId, input);
 		}
-	async listDecisionExecutionInputs(decisionId: string, filters: PageFilters = {}) {
+	async listDecisionExecutionInputs(decisionId: string, filters: Parameters<PlanningStateService['listExecutionInputs']>[1] = {}) {
 			return this.planningStateService.listExecutionInputs(decisionId, filters);
 		}
 	async getDecisionExecutionInput(inputId: string) {
 			return this.planningStateService.getExecutionInput(inputId);
 		}
-	async updateDecisionExecutionInputStatus(inputId: string, status: string, input: JsonRecord = {}) {
+	async updateDecisionExecutionInputStatus(inputId: string, status: Parameters<PlanningStateService['transitionExecutionInput']>[1], input: Parameters<PlanningStateService['transitionExecutionInput']>[2] = {}) {
 			return this.planningStateService.transitionExecutionInput(inputId, status, input);
 		}
-	async createStructuredAgentEstimate(decisionId: string, input: JsonRecord = {}) {
+	async createStructuredAgentEstimate(decisionId: string, input: Parameters<StructuredAgentEstimateService['create']>[1]) {
 			return this.structuredAgentEstimateService.create(decisionId, input);
 		}
-	async listStructuredAgentEstimatesForDecision(decisionId: string, filters: PageFilters = {}) {
+	async listStructuredAgentEstimatesForDecision(decisionId: string, filters: { status?: Parameters<StructuredAgentEstimateService['listDecision']>[1] } = {}) {
 			return this.structuredAgentEstimateService.listDecision(decisionId, filters.status ?? null);
 		}
 	async getStructuredAgentEstimate(estimateId: string) {
 			return this.structuredAgentEstimateService.get(estimateId);
 		}
-	async updateStructuredAgentEstimateStatus(estimateId: string, status: string, input: JsonRecord = {}) {
+	async updateStructuredAgentEstimateStatus(estimateId: string, status: Parameters<StructuredAgentEstimateService['transition']>[1], input: Parameters<StructuredAgentEstimateService['transition']>[2] = {}) {
 			if (status !== 'accepted' && status !== 'rejected') throw new Error(`Unsupported structured estimate transition ${status}.`);
 			return this.structuredAgentEstimateService.transition(estimateId, status, input);
 		}
-	async acceptStructuredAgentEstimate(estimateId: string, input: JsonRecord = {}) {
+	async acceptStructuredAgentEstimate(estimateId: string, input: Parameters<StructuredAgentEstimateService['transition']>[2] = {}) {
 			return this.updateStructuredAgentEstimateStatus(estimateId, 'accepted', input);
 		}
-	async rejectStructuredAgentEstimate(estimateId: string, input: JsonRecord = {}) {
+	async rejectStructuredAgentEstimate(estimateId: string, input: Parameters<StructuredAgentEstimateService['transition']>[2] = {}) {
 			return this.updateStructuredAgentEstimateStatus(estimateId, 'rejected', input);
 		}
 	async createDecisionAssignmentGraph(decisionId: string, input: JsonRecord = {}) {
@@ -171,25 +194,25 @@ class CapacityControlPlane {
 	async getResearchWorkflow(id: string) { return this.researchWorkflowService.get(id); }
 	async listResearchWorkflows(projectId: string, filters: PageFilters = {}) { return this.researchWorkflowService.list(projectId, filters.status ?? undefined); }
 	async completeResearchWorkflowStage(id: string, stage: string, input: JsonRecord = {}) { return this.researchWorkflowService.completeStage(id, stage, input); }
-	async createAgentCapacityPlan(decisionId: string, input: JsonRecord = {}) {
+	async createAgentCapacityPlan(decisionId: string, input: Parameters<AgentCapacityPlanService['create']>[1]) {
 			return this.agentCapacityPlanService.create(decisionId, input);
 		}
-	async listAgentCapacityPlans(decisionId: string, filters: PageFilters = {}) {
+	async listAgentCapacityPlans(decisionId: string, filters: Parameters<AgentCapacityPlanService['list']>[1] = {}) {
 			return this.agentCapacityPlanService.list(decisionId, filters);
 		}
 	async getAgentCapacityPlan(planId: string) {
 			return this.agentCapacityPlanService.get(planId);
 		}
-	async updateAgentCapacityPlanStatus(planId: string, status: string, input: JsonRecord = {}) {
+	async updateAgentCapacityPlanStatus(planId: string, status: Parameters<AgentCapacityPlanService['transition']>[1], input: Parameters<AgentCapacityPlanService['transition']>[2] = {}) {
 			return this.agentCapacityPlanService.transition(planId, status, input);
 		}
-	async createWorkdayCapacityEnvelope(input: JsonRecord = {}, idempotencyKey?: string | null) {
+	async createWorkdayCapacityEnvelope(input: Parameters<WorkdayCapacityEnvelopeRepository['create']>[0], idempotencyKey?: string | null) {
 			return this.workdayCapacityEnvelopeRepository.create(input, idempotencyKey);
 		}
 	async getWorkdayCapacityEnvelope(workdayId: string) {
 			return this.workdayCapacityEnvelopeRepository.get(workdayId);
 		}
-	async listWorkdayCapacityEnvelopes(projectId: string, filters: PageFilters = {}) {
+	async listWorkdayCapacityEnvelopes(projectId: string, filters: Parameters<WorkdayCapacityEnvelopeRepository['list']>[1] = {}) {
 			return this.workdayCapacityEnvelopeRepository.list(projectId, filters);
 		}
 	async updateWorkdayCapacityEnvelopeState(workdayId: string, status: string, idempotencyKey?: string | null) {
@@ -199,23 +222,23 @@ class CapacityControlPlane {
 			await this.ensureInitialized();
 			return buildWorkdayCapacitySummary(this.capacityContext, workdayId, options);
 		}
-	async recordProviderAssignmentExplanation(teamId: string, assignmentId: string, input: JsonRecord = {}) {
+	async recordProviderAssignmentExplanation(teamId: string, assignmentId: string, input: Parameters<typeof persistProviderAssignmentExplanation>[3]) {
 			return persistProviderAssignmentExplanation(this.capacityContext, teamId, assignmentId, input);
 		}
 	async getProjectCapacityRuntimeDiagnostics(projectId: string, teamId: string) {
 			await this.ensureInitialized();
 			return buildProjectCapacityRuntimeDiagnostics(this.capacityContext, projectId, teamId);
 		}
-	async recordAgentFallbackOutput(input: JsonRecord = {}) {
+	async recordAgentFallbackOutput(input: Parameters<CapacityRuntimeEvidenceRepository['recordFallbackOutput']>[0]) {
 			return this.capacityRuntimeEvidenceRepository.recordFallbackOutput(input);
 		}
-	async listAgentFallbackOutputsPage(projectId: string, filters: PageFilters = {}) {
+	async listAgentFallbackOutputsPage(projectId: string, filters: Parameters<CapacityRuntimeEvidenceRepository['listFallbackOutputs']>[1] = {}) {
 			return this.capacityRuntimeEvidenceRepository.listFallbackOutputs(projectId, filters);
 		}
-	async recordTreeDxProxyAudit(input: JsonRecord = {}) {
+	async recordTreeDxProxyAudit(input: Parameters<CapacityRuntimeEvidenceRepository['recordProxyAudit']>[0]) {
 			return this.capacityRuntimeEvidenceRepository.recordProxyAudit(input);
 		}
-	async issueTreeDxProxyHandle(input: JsonRecord = {}) {
+	async issueTreeDxProxyHandle(input: Parameters<CapacityRuntimeEvidenceRepository['issueProxyHandle']>[0]) {
 			return this.capacityRuntimeEvidenceRepository.issueProxyHandle(input);
 		}
 	async getTreeDxProxyHandle(teamId: string, projectId: string, handleId: string) {
@@ -224,10 +247,10 @@ class CapacityControlPlane {
 	async revokeTreeDxProxyHandle(teamId: string, projectId: string, handleId: string, input: JsonRecord = {}) {
 			return this.capacityRuntimeEvidenceRepository.revokeProxyHandle(teamId, projectId, handleId, input);
 		}
-	async listTreeDxProxyAuditPage(projectId: string, filters: PageFilters = {}) {
+	async listTreeDxProxyAuditPage(projectId: string, filters: Parameters<CapacityRuntimeEvidenceRepository['listProxyAudit']>[1] = {}) {
 			return this.capacityRuntimeEvidenceRepository.listProxyAudit(projectId, filters);
 		}
-	async createCapacityWorkdayTreeDxWorkspace(project: WorkdayProject, run: DurableCapacityWorkdayRun, input: JsonRecord) {
+	async createCapacityWorkdayTreeDxWorkspace(project: WorkdayProject, run: DurableCapacityWorkdayRun, input: Parameters<typeof createConfiguredWorkdayTreeDxWorkspace>[3]) {
 			return createConfiguredWorkdayTreeDxWorkspace(this.capacityContext, project, run, input);
 		}
 	async scheduleCapacityWorkdayRun(run: DurableCapacityWorkdayRun) {
@@ -257,13 +280,13 @@ class CapacityControlPlane {
 			reason: typeof input.reason === 'string' ? input.reason : null,
 		});
 		}
-	async listCapacityReservationsForProjectPage(projectId: string, filters: PageFilters = {}) {
+	async listCapacityReservationsForProjectPage(projectId: string, filters: Parameters<CapacityReservationRepository['listProjectPage']>[1] = {}) {
 			return new CapacityReservationRepository(this.capacityContext).listProjectPage(projectId, filters);
 		}
-	async listCapacityLedgerEntriesPage(projectId: string, filters: PageFilters = {}) {
+	async listCapacityLedgerEntriesPage(projectId: string, filters: Parameters<CapacityLedgerRepository['listProjectPage']>[1] = {}) {
 			return new CapacityLedgerRepository(this.capacityContext).listProjectPage(projectId, filters);
 		}
-	async listTaskUsageActualsPage(projectId: string, filters: PageFilters = {}) {
+	async listTaskUsageActualsPage(projectId: string, filters: Parameters<typeof readTaskUsageActualsPage>[2] = {}) {
 			return readTaskUsageActualsPage(this.capacityContext, projectId, filters);
 		}
 	async getCapacityProviderDerivedCapacity(teamId: string, providerId: string, options: PageFilters = {}) {
@@ -275,10 +298,10 @@ class CapacityControlPlane {
 	async listTaskUsageActualsForProject(projectId: string, limit: number = 50) {
 			return listRecentTaskUsageActuals(this.capacityContext, { projectId, limit });
 		}
-	async getProjectCapacityDiagnostics(projectId: string, environment: string = 'staging') {
+	async getProjectCapacityDiagnostics(projectId: string, environment: Parameters<typeof buildProjectCapacityDiagnostics>[2] = 'staging') {
 			return buildProjectCapacityDiagnostics(this.capacityContext, projectId, environment);
 		}
-	async getProjectCapacityOperations(projectId: string, environment: string = 'staging') {
+	async getProjectCapacityOperations(projectId: string, environment: Parameters<CapacityOperationsQueryService['project']>[1] = 'staging') {
 			return new CapacityOperationsQueryService(this.capacityContext).project(projectId, environment);
 		}
 	async getTeamCapacitySummary(teamId: string, options: PageFilters = {}) {
@@ -292,7 +315,7 @@ class CapacityControlPlane {
 				now: options.now,
 			});
 		}
-	async getProjectCapacitySummary(projectId: string, environment: string = 'staging') {
+	async getProjectCapacitySummary(projectId: string, environment: Parameters<CapacitySummaryService['project']>[1] = 'staging') {
 			return new CapacitySummaryService(this.capacityContext).project(projectId, environment);
 		}
 	async createCapacityWorkdayRun(teamId: string, input: JsonRecord = {}) {
@@ -316,13 +339,13 @@ class CapacityControlPlane {
 	async getCapacityWorkdayRun(teamId: string, runId: string) {
 			return new CapacityWorkdayRunRepository(this.capacityContext).get(teamId, runId);
 		}
-	async listCapacityWorkdayRunsPage(teamId: string, filters: PageFilters = {}) {
+	async listCapacityWorkdayRunsPage(teamId: string, filters: Parameters<CapacityWorkdayRunRepository['list']>[1] = {}) {
 			return new CapacityWorkdayRunRepository(this.capacityContext).list(teamId, filters);
 		}
 	async createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord = {}) {
 			return new CapacityWorkdayEventService(this.capacityContext).create(teamId, runId, input);
 		}
-	async listCapacityWorkdayEventsPage(teamId: string, runId: string, filters: PageFilters = {}) {
+	async listCapacityWorkdayEventsPage(teamId: string, runId: string, filters: Parameters<CapacityWorkdayEventService['list']>[2] = {}) {
 			return new CapacityWorkdayEventService(this.capacityContext).list(teamId, runId, filters);
 		}
 	async collectControlPlaneGeneratedArtifacts(projectId: string, modeRuns: JsonRecord[] = []) {
@@ -339,7 +362,7 @@ class CapacityControlPlane {
 export function createCapacityControlPlane(host: CapacityControlPlaneHost): CapacityControlPlaneStore {
 	const target = new CapacityControlPlane(host);
 	let provider!: ProviderControlPlane;
-	const proxy = new Proxy(target as CapacityControlPlaneStore, {
+	const proxy = new Proxy(target as unknown as CapacityControlPlaneStore, {
 		get(instance, property, receiver) {
 			const owner = Reflect.has(instance, property) ? instance : Reflect.has(provider, property) ? provider : host;
 			const value = Reflect.get(owner, property, owner === instance ? receiver : owner);

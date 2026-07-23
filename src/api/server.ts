@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { resolveApiConfig } from '@treeseed/sdk/api';
-import type { Hono } from 'hono';
 import { createApiApp } from './app.js';
 import { createMarketPostgresDatabase } from './market-postgres.js';
 
@@ -19,12 +17,13 @@ async function honoNodeHandler(app, request, response) {
 	const res = response;
 	const origin = req.headers.host ? `http://${req.headers.host}` : 'http://127.0.0.1';
 	const url = new URL(req.url ?? '/', origin);
-	const webRequest = new Request(url, {
+	const requestInit: RequestInit & { duplex: 'half' } = {
 		method: req.method,
 		headers: req.headers,
 		body: hasRequestBody(req.method) ? req : undefined,
 		duplex: 'half',
-	});
+	};
+	const webRequest = new Request(url, requestInit);
 
 	const webResponse = await app.fetch(webRequest);
 	res.statusCode = webResponse.status;
@@ -41,14 +40,14 @@ async function honoNodeHandler(app, request, response) {
 }
 
 export type ApiServerInstance = {
-	app: Hono;
+	app: ReturnType<typeof createApiApp>;
 	config: ReturnType<typeof resolveApiConfig>;
 	server: Server;
 	url: string;
 	close(): Promise<void>;
 };
 
-export async function createApiServer(options = {}): Promise<ApiServerInstance> {
+export async function createApiServer(options: any = {}): Promise<ApiServerInstance> {
 	const config = {
 		...resolveApiConfig(),
 		...(options.config ?? {}),
@@ -67,7 +66,7 @@ export async function createApiServer(options = {}): Promise<ApiServerInstance> 
 		void honoNodeHandler(app, req, res);
 	});
 
-	await new Promise((resolvePromise) => {
+	await new Promise<void>((resolvePromise) => {
 		server.listen(config.port, config.host, () => resolvePromise());
 	});
 
@@ -77,7 +76,7 @@ export async function createApiServer(options = {}): Promise<ApiServerInstance> 
 		server,
 		url: config.baseUrl,
 		async close() {
-			await new Promise((resolvePromise, rejectPromise) => {
+			await new Promise<void>((resolvePromise, rejectPromise) => {
 				server.close((error) => (error ? rejectPromise(error) : resolvePromise()));
 			});
 			if (ownedDatabase) await ownedDatabase.close();

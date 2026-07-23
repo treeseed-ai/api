@@ -58,7 +58,7 @@ export function installProjectDiagnosticsRoutes(app: Hono, options: ProjectDiagn
 		}
 		if (!projectDetails) return notFound(c, 'Unknown project.');
 		const teamId = team?.id ?? projectDetails.project.teamId;
-		const providerAuth = c.get('capacityProviderAccessAuth') as { principal?: { teamId: string; scopes: string[] } } | null;
+		const providerAuth = (c as unknown as Context<{ Variables: { capacityProviderAccessAuth: { principal?: { teamId: string; scopes: string[] } } | null } }>).get('capacityProviderAccessAuth');
 		const providerCanRead = providerAuth?.principal?.teamId === projectDetails.project.teamId
 			&& providerAuth.principal.scopes.includes('provider:assignments:read');
 		if (!providerCanRead) {

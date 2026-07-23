@@ -6,6 +6,7 @@ import { classifyCapacityFailure } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../database.ts';
 import { CapacityGovernanceError } from '../database.ts';
 import type { DurableProviderAssignment } from '../repositories/assignment.ts';
+import type { AgentFallbackOutputWrite } from '../repositories/runtime-evidence.ts';
 import type { ProviderAssignmentExplanationWrite } from './assignment-explanation-service.ts';
 import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
 import {
@@ -28,7 +29,7 @@ export interface ExtendedProviderAssignmentLifecycleRequest extends ProviderAssi
 
 interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, AssignmentDeliverableStore, AssignmentPlanningOutputStore, ResearchWorkflowProjectionStore {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
-	recordAgentFallbackOutput(input: JsonRecord): Promise<unknown>;
+	recordAgentFallbackOutput(input: AgentFallbackOutputWrite): Promise<unknown>;
 	recordProviderAssignmentExplanation(
 		teamId: string,
 		assignmentId: string,

@@ -194,7 +194,12 @@ export class PlanningStateService {
 			workGraphNodeId: optionalText(sourceInput.workGraphNodeId),
 			taskId: optionalText(sourceInput.taskId), workDayId: optionalText(sourceInput.workDayId),
 			agentId: optionalText(sourceInput.agentId), handlerId: optionalText(sourceInput.handlerId),
-			capacity: record(sourceInput.capacity ?? input.capacity), input: record(sourceInput.input ?? input.payload),
+			capacity: {
+				...record(sourceInput.capacity ?? input.capacity),
+				mode: selectedMode,
+				teamId: project.teamId,
+				projectId: project.id,
+			}, input: record(sourceInput.input ?? input.payload),
 			metadata: record(sourceInput.metadata ?? input.metadata),
 		};
 		const scopeHash = input.scopeHash ?? this.store.scopeHash(input.scope ?? normalizedInput);

@@ -2,7 +2,7 @@ import { CapacityGovernanceError } from '../database.ts';
 
 type JsonRecord = Record<string, unknown>;
 
-export interface WorkdayProject {
+export interface WorkdayProject extends JsonRecord {
 	id: string;
 	slug?: string | null;
 	metadata?: JsonRecord | null;

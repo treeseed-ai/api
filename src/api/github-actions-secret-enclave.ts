@@ -9,7 +9,7 @@ import { Octokit } from 'octokit';
 import { createGitHubAppAdapter, resolveGitHubAppConfig } from './github-app-adapter.ts';
 
 function failClosedError(code: string, message: string, status = 403) {
-	const error = new Error(message);
+	const error: Error & Record<string, any> = new Error(message);
 	(error as any).status = status;
 	(error as any).code = code;
 	return error;
@@ -84,10 +84,12 @@ function workflowDispatchUnit(input: {
 		unitType: 'github-workflow-dispatch',
 		provider: 'github',
 		identity: {
-			project: 'treeseed',
+			teamId: 'treeseed',
+			projectId: 'treeseed',
+			slug: 'github-workflow-dispatch',
 			environment: 'staging',
-			resource: 'github-workflow-dispatch',
-			name: `${input.repository}:${input.workflow}`,
+			deploymentKey: `${input.repository}:${input.workflow}`,
+			environmentKey: 'staging',
 		},
 		target: { kind: 'persistent', scope: 'staging' },
 		logicalName: `${input.repository} ${input.workflow} @ ${input.branch}`,

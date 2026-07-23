@@ -1,4 +1,3 @@
-// @ts-nocheck
 export const WORK_CONTENT_COLLECTIONS = ['objectives', 'questions', 'notes', 'proposals', 'decisions'];
 
 export const WORK_CONTENT_LABELS = {

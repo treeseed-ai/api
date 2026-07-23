@@ -41,6 +41,10 @@ export interface SynthesizedProviderAssignmentInput {
 
 interface SynthesizedAssignmentAdmissionStore extends CapacityGovernanceDatabase {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
+	getProject(projectId: string): Promise<JsonRecord | null>;
+	getTeam(teamId: string): Promise<JsonRecord | null>;
+	listHubRepositories(projectId: string): Promise<JsonRecord[]>;
+	getProjectArchitecture(projectId: string): Promise<JsonRecord | null>;
 }
 
 function record(value: unknown): JsonRecord {
@@ -82,7 +86,7 @@ export async function admitSynthesizedProviderAssignment(
 		decisionId: input.decisionId ?? null,
 		requiredCapabilities: (input.requiredCapabilities ?? []).map(String).filter(Boolean),
 	});
-	const workspaceContext = {
+	const workspaceContext: JsonRecord = {
 		...record(input.workspaceContext),
 		project: await compileAssignmentProjectContext(store, input.projectId),
 	};

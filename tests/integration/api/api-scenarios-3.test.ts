@@ -1,0 +1,25 @@
+// Import-only collector keeps scenarios small without one worker startup per case.
+import './adopts-an-existing-baseline-postgres-schema-before-serving-deep-health.scenarios.ts';
+import './repairs-an-incomplete-postgres-baseline-with-a-stale-applied-marker-before-serving-deep-health.scenarios.ts';
+import './queues-project-runner-jobs-and-records-lifecycle-events.scenarios.ts';
+import './creates-platform-operations-and-lets-the-treeseed-operations-runner-claim-and-complete-them.scenarios.ts';
+import './queues-project-web-deployment-operations-with-readiness-idempotency-events-retry-resume-and-cancel-semantics.scenarios.ts';
+import './enforces-deployment-governance-and-audit-redaction-boundaries.scenarios.ts';
+import './tracks-platform-repository-claims-with-runner-ownership-and-safe-release-metadata.scenarios.ts';
+import './skips-approval-waiting-operations-and-preserves-cancellation-retry-safety.scenarios.ts';
+import './lets-the-treeseed-operations-runner-complete-a-queued-noop-operation-through-api-service-auth.scenarios.ts';
+import './converts-local-content-write-routes-into-repository-platform-operations.scenarios.ts';
+import './queues-core-objective-repository-sync-when-project-settings-change-the-objective.scenarios.ts';
+import './runs-repository-content-jobs-in-the-runner-workspace-instead-of-the-api-process.scenarios.ts';
+import './queues-linked-repository-initialization-through-the-project-api-and-operations-runner.scenarios.ts';
+import './runs-branch-mode-repository-jobs-with-verification-and-fails-before-commit-when-verification-fails.scenarios.ts';
+import './stores-project-hosting-topology-and-runner-authenticated-infrastructure-reports.scenarios.ts';
+import './keeps-project-runner-approval-reporting-while-every-retired-workday-compatibility-route-returns-404.scenarios.ts';
+import './blocks-dispatch-when-a-project-capability-grant-is-disabled.scenarios.ts';
+import './indexes-team-owned-catalog-items-and-artifact-versions-centrally.scenarios.ts';
+import './manages-phase-2-commerce-cooperative-governance-vendors-products-offers-prices-catalog-sync-and-commerce-marketplace.scenarios.ts';
+import './manages-phase-3-commerce-stripe-connect-onboarding-for-approved-vendors.scenarios.ts';
+import './syncs-phase-4-commerce-stripe-product-and-price-mirrors-for-approved-vendor-offers.scenarios.ts';
+import './runs-phase-5-commerce-checkout-plus-phase-6-commerce-vendor-sales-commerce-seller-monitoring-and-commerce-refunds-fu.scenarios.ts';
+import './runs-phase-8-commerce-scoped-services-request-quote-contract-checkout-and-fulfillment.scenarios.ts';
+import './manages-commerce-capacity-marketplace-listings-and-inquiries-without-execution-or-billing-side-effects.scenarios.ts';

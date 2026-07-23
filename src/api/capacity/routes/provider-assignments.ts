@@ -16,7 +16,7 @@ interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
 
 function errorResponse(c: Context, error: unknown) {
 	if (error instanceof CapacityGovernanceError) {
-		return c.json({ ok: false, error: error.message, code: error.code, details: error.details }, { status: error.status });
+		return new Response(JSON.stringify({ ok: false, error: error.message, code: error.code, details: error.details }), { status: error.status, headers: { 'content-type': 'application/json' } });
 	}
 	throw error;
 }

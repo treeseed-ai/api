@@ -126,7 +126,8 @@ export function verifyCapacityProviderProof(input: {
 	});
 	if (!validation.ok) throw new CapacityGovernanceError('provider_proof_invalid', 'Provider proof claims are invalid.', 401, { diagnostics: validation.diagnostics });
 	const signingInput = Buffer.from(`${input.proof.protected}.${input.proof.payload}`);
-	const valid = verify(null, signingInput, createPublicKey({ key: input.publicJwk, format: 'jwk' }), Buffer.from(input.proof.signature, 'base64url'));
+	const publicKeyInput = { key: input.publicJwk, format: 'jwk' } as unknown as Parameters<typeof createPublicKey>[0];
+	const valid = verify(null, signingInput, createPublicKey(publicKeyInput), Buffer.from(input.proof.signature, 'base64url'));
 	if (!valid) throw new CapacityGovernanceError('provider_proof_signature_invalid', 'Provider proof signature is invalid.', 401);
 	return { payload, fingerprint };
 }

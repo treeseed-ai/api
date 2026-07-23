@@ -1,0 +1,978 @@
+version: 1
+name: api-live-acceptance
+expectedStatuses: tests/acceptance/api/expected-statuses.json
+
+variables:
+  apiVersionPath: /v1
+
+seed:
+  enabled: true
+  path: /v1/acceptance/seed
+  namespace: acc-${environment}-${runNonce}
+  actors:
+    siteAdmin:
+      siteRoles: [platform_admin]
+    marketSteward:
+      siteRoles: [market_admin]
+    teamOwner:
+      siteRoles: [member]
+      teamRole: team_owner
+    teamOperator:
+      siteRoles: [member]
+      teamRole: contributor
+    teamViewer:
+      siteRoles: [viewer]
+      teamRole: reviewer
+    teamManagedMember:
+      siteRoles: [member]
+      teamRole: reviewer
+    nonMember:
+      siteRoles: [viewer]
+    providerOperator:
+      siteRoles: [member]
+
+actors:
+  anonymous: {}
+  siteAdmin: {}
+  marketSteward: {}
+  teamOwner: {}
+  teamOperator: {}
+  teamViewer: {}
+  teamManagedMember: {}
+  nonMember: {}
+  providerOperator: {}
+  providerAccessToken: {}
+  platformRunner:
+    tokenEnv: TREESEED_ACCEPTANCE_PLATFORM_RUNNER_TOKEN
+    required: false
+
+descriptorMatrices:
+  - id: descriptor-executable-role-matrix
+    coverageOnly: true
+    methods: [GET, POST, PUT, PATCH, DELETE]
+    actors: [anonymous, siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember, providerOperator, providerAccessToken, platformRunner]
+    excludeProviderIngress: false
+    excludeInternalRunner: false
+    expectByDescriptor:
+      get.v1.auth.web.sessions:
+        anonymous: { status: 401, envelope: { ok: false } }
+      get.v1.auth.web.account.deletion-blockers:
+        anonymous: { status: 401, envelope: { ok: false } }
+      get.v1.teams.teamId.members:
+        nonMember: { status: 403, envelope: { ok: false } }
+      get.v1.teams.teamId.permissions:
+        nonMember: { status: 403, envelope: { ok: false } }
+      get.v1.projects.projectId.summary:
+        nonMember: { status: 403, envelope: { ok: false } }
+
+roleMatrices:
+  - id: site-role-matrix
+    actors: [siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember]
+    endpoints:
+      - id: me
+        method: GET
+        path: ${apiVersionPath}/me
+        expect:
+          status: 200
+          envelope: { ok: true }
+      - id: markets
+        method: GET
+        path: ${apiVersionPath}/me/markets
+        expect:
+          status: 200
+          envelope: { ok: true }
+      - id: platform-operations-read
+        method: GET
+        path: ${apiVersionPath}/platform/operations
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          marketSteward: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 403, envelope: { ok: false } }
+          teamOperator: { status: 403, envelope: { ok: false } }
+          teamViewer: { status: 403, envelope: { ok: false } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: seeds-runs
+        method: GET
+        path: ${apiVersionPath}/seeds/runs
+        expect:
+          status: 200
+          envelope: { ok: true }
+  - id: team-role-matrix
+    actors: [siteAdmin, teamOwner, teamOperator, teamViewer, nonMember]
+    endpoints:
+      - id: teams-list
+        method: GET
+        path: ${apiVersionPath}/teams
+        expect:
+          status: 200
+          envelope: { ok: true }
+      - id: team-members
+        method: GET
+        path: ${apiVersionPath}/teams/${fixtures.team.id}/members
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 403, envelope: { ok: false } }
+          teamViewer: { status: 403, envelope: { ok: false } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: team-permissions
+        method: GET
+        path: ${apiVersionPath}/teams/${fixtures.team.id}/permissions
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 200, envelope: { ok: true } }
+          teamViewer: { status: 200, envelope: { ok: true } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: projects-list
+        method: GET
+        path: ${apiVersionPath}/projects?teamId=${fixtures.team.id}
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 200, envelope: { ok: true } }
+          teamViewer: { status: 200, envelope: { ok: true } }
+          nonMember: { status: 403, envelope: { ok: false } }
+      - id: project-summary
+        method: GET
+        path: ${apiVersionPath}/projects/${fixtures.project.id}/summary
+        expectByActor:
+          siteAdmin: { status: 200, envelope: { ok: true } }
+          teamOwner: { status: 200, envelope: { ok: true } }
+          teamOperator: { status: 200, envelope: { ok: true } }
+          teamViewer: { status: 200, envelope: { ok: true } }
+          nonMember: { status: 403, envelope: { ok: false } }
+
+sdkMethodMatrices:
+  - method: webSignIn
+    actor: anonymous
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: confirmWebEmail
+    actor: anonymous
+    expect:
+      status: 400
+      envelope: { ok: false }
+  - method: completeWebPasswordReset
+    actor: anonymous
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: importProjectRepository
+    actor: teamOwner
+    expect:
+      status: 201
+      envelope: { ok: true }
+  - method: enqueueAgentTask
+    actor: teamOwner
+    expect:
+      status: 201
+      envelope: { ok: true }
+  - method: projectGitHubActionsSecretPublicKey
+    actor: teamOwner
+    expect:
+      status: 403
+      envelope: { ok: false }
+  - method: deployProjectGitHubActionsSecret
+    actor: teamOwner
+    expect:
+      status: 403
+      envelope: { ok: false }
+  - method: auditProjectHosts
+    actor: teamOwner
+    expect:
+      status: 202
+      envelope: { ok: true }
+  - method: resyncProjectHost
+    actor: teamOwner
+    expect:
+      status: 202
+      envelope: { ok: true }
+  - method: rotateProjectHost
+    actor: teamOwner
+    expect:
+      status: 202
+      envelope: { ok: true }
+  - method: revokeWebSession
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: createPersonalTheme
+    actor: teamOwner
+    expect:
+      status: 201
+      envelope: { ok: true }
+  - method: deleteTeam
+    actor: teamOwner
+    expect:
+      status: 403
+      envelope: { ok: false }
+  - method: deleteProject
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: rotateTeamCapacityRegistrationKey
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: enableTeamCapacityRegistrationKey
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: disableTeamCapacityRegistrationKey
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: reviewCapacityProviderRegistration
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: suspendCapacityProviderMembership
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: resumeCapacityProviderMembership
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: revokeCapacityProviderMembership
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: createCapacityGrant
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  - method: planCapacityAllocationSet
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: supersedeCapacityAllocationSet
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  - method: explainCapacityAllocationSet
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: capacityReservations
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: capacityUsage
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: capacityLedger
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
+  - method: admitCapacityAssignment
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: createDecisionCapacityPlan
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  - method: createWorkdayRun
+    actor: teamOwner
+    expect:
+      status: 201
+      envelope: { ok: true }
+  - method: workdayRun
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: updateWorkdayRun
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: tickWorkdayRun
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: workdayEvents
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: createWorkdayEvent
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: provisionTeamTreeDx
+    actor: teamOwner
+    expect:
+      status: 202
+      envelope: { ok: true }
+
+coverage:
+  requireAllDescriptors: true
+  requireAllSdkMethods: true
+  requiredCaseIds:
+    - health.ready
+    - auth.web.sign-up.sends-confirmation-email
+    - descriptor-executable-role-matrix.post.v1.auth.web.sign-up.anonymous
+    - auth.web.sign-in.site-admin
+    - auth.availability.username.seeded
+    - auth.availability.email.seeded
+    - site-role-matrix.me.siteAdmin
+    - site-role-matrix.platform-operations-read.teamViewer
+    - team-role-matrix.team-members.teamOwner
+    - team-role-matrix.team-members.nonMember
+    - sdk.me.site-admin
+    - sdk.teams.team-owner
+    - sdk.me.teamOwner
+
+cases:
+  - id: health.ready
+    actor: anonymous
+    method: GET
+    path: /readyz
+    expect:
+      status: 200
+
+  - id: agent.provider-availability-session.persisted
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/availability-sessions
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.provider-assignment.created
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.assignment-lease.transitioned
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.mode-run.persisted
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-mode-runs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.usage-actual.persisted
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity-runtime-diagnostics
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.capacity-ledger.settled-once
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.compile-decision-assignment-graph
+    actor: siteAdmin
+    method: POST
+    path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs/compile
+    body:
+      projectId: ${fixtures.project.id}
+      activate: true
+      estimates:
+        - id: acceptance-estimate-${runNonce}
+          teamId: ${fixtures.team.id}
+          projectId: ${fixtures.project.id}
+          decisionId: ${fixtures.decision.id}
+          agentClass: engineer
+          minCredits: 1
+          expectedCredits: 1
+          maxCredits: 2
+          confidence: medium
+          riskLevel: low
+          assumptions: []
+          blockers: []
+          dependencies:
+            - id: architecture-spec
+              type: artifact
+              requiredBefore: start
+              deliverableType: architecture_spec
+              agentClass: architect
+          expectedOutputs:
+            - outputType: implementation_report
+              required: true
+          acceptanceCriteria:
+            - Acceptance graph compiles.
+          completionEvidence:
+            - Graph response is persisted.
+    expect:
+      status: 201
+      envelope: { ok: true }
+
+  - id: agent.graph.block-acting-until-graph-ready
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.release-downstream-after-deliverable-approval
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.reserve-planning-capacity
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.graph.enforce-mode-split-capacity
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity-runtime-diagnostics
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.treedx.assignment-scoped-authorized
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-library
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: agent.treedx.cross-project-denied
+    actor: nonMember
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-library
+    expect:
+      status: 403
+      envelope: { ok: false }
+
+  - id: agent.audit.runtime-events-recorded
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-proxy-audit
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.provider.list-memberships
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity-provider-memberships
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.provider.inspect-provider-check-ins
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/availability-sessions
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.assignment.inspect-assignment-leases
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.assignment.recover-failed-assignment
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/capacity/assignments
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: capacity.usage.review-capacity-usage
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/capacity-runtime-diagnostics
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.preview-host-plan
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.verify-host-live-state
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.review-host-drift
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.adopt-existing-host-resource
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.retain-host-resource
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: host.reconciliation.run-host-cleanup
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: project.treedx.configure-treedx-routing
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/treedx
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: project.treedx.verify-treedx-access
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-library
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: workday.decision.approve-acting-decision
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-classes
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: workday.artifacts.review-workday-artifacts
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-mode-runs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: workday.diagnostics.inspect-mode-run-trace
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/projects/${fixtures.project.id}/agent-mode-runs
+    expect:
+      status: 200
+      envelope: { ok: true }
+
+  - id: auth.web.sign-up.sends-confirmation-email
+    actor: anonymous
+    method: POST
+    path: ${apiVersionPath}/auth/web/sign-up
+    body:
+      email: acceptance-signup-${runNonce}@treeseed.ai
+      username: acceptance-signup-${runNonce}
+      password: AcceptancePassword123!
+      firstName: Acceptance
+      lastName: Signup
+      name: Acceptance Signup
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.confirmationRequired
+          equals: true
+        - path: payload.email
+          equals: acceptance-signup-${runNonce}@treeseed.ai
+      mailpit:
+        to: acceptance-signup-${runNonce}@treeseed.ai
+        timeoutMs: 10000
+
+  - id: auth.me.requires-user
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/me
+    expect:
+      status: 401
+      envelope:
+        ok: false
+
+  - id: auth.web.sign-in.site-admin
+    actor: anonymous
+    method: POST
+    path: ${apiVersionPath}/auth/web/sign-in
+    body:
+      email: ${actors.siteAdmin.email}
+      password: ${seed.password}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.accessToken
+          type: string
+
+  - id: auth.availability.username.seeded
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/auth/availability/username?value=${actors.teamOwner.username}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.available
+          equals: false
+
+  - id: auth.availability.email.seeded
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/auth/availability/email?value=${actors.teamOwner.emailEncoded}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.available
+          equals: false
+        - path: payload.message
+          equals: This email can’t be used.
+
+  - id: auth.me.site-admin
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/me
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.principal.id
+          type: string
+
+  - id: sdk.me.site-admin
+    actor: siteAdmin
+    sdkMethod: me
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.principal.id
+          type: string
+
+  - id: sdk.teams.team-owner
+    actor: teamOwner
+    sdkMethod: teams
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload
+          exists: true
+
+  - id: auth.sessions.team-owner
+    actor: teamOwner
+    method: GET
+    path: ${apiVersionPath}/auth/web/sessions
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload
+          exists: true
+
+  - id: auth.appearance.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/auth/web/appearance
+    body:
+      colorScheme: fern
+      themeMode: system
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.scheme
+          type: string
+
+  - id: auth.notifications.team-owner
+    actor: teamOwner
+    method: PUT
+    path: ${apiVersionPath}/auth/web/notifications/preferences
+    body:
+      emailCadence: weekly
+      timeZone: America/New_York
+      globalContentTypes: [questions, notes, decisions]
+      projectOverrides: []
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.emailCadence
+          equals: weekly
+        - path: payload.timeZone
+          equals: America/New_York
+        - path: payload.projectOverrides
+          equals: []
+
+  - id: auth.password-change.team-operator
+    actor: teamOperator
+    method: PATCH
+    path: ${apiVersionPath}/auth/web/password
+    body:
+      currentPassword: ${seed.password}
+      password: ${seed.password}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: auth.password-reset.request.mailpit
+    actor: anonymous
+    method: POST
+    path: ${apiVersionPath}/auth/web/password-reset/request
+    body:
+      email: ${actors.teamOwner.email}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      mailpit:
+        to: ${actors.teamOwner.email}
+        subjectIncludes: Reset your TreeSeed password
+        timeoutMs: 10000
+
+  - id: auth.account-blockers.team-viewer
+    actor: teamViewer
+    method: GET
+    path: ${apiVersionPath}/auth/web/account/deletion-blockers
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: platform.operations.requires-auth
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 401
+      envelope:
+        ok: false
+
+  - id: platform.operations.site-admin
+    actor: siteAdmin
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: platform.operations.team-viewer-denied
+    actor: teamViewer
+    method: GET
+    path: ${apiVersionPath}/platform/operations
+    expect:
+      status: 403
+      envelope:
+        ok: false
+
+  - id: teams.list.team-owner
+    actor: teamOwner
+    method: GET
+    path: ${apiVersionPath}/teams
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.list.non-member
+    actor: nonMember
+    method: GET
+    path: ${apiVersionPath}/teams
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: auth.profile.update.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/auth/web/profile
+    body:
+      name: Acceptance Profile
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: auth.email.add.team-owner
+    actor: teamOwner
+    method: POST
+    path: ${apiVersionPath}/auth/web/emails
+    body:
+      email: acceptance-extra-${runNonce}@treeseed.ai
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      mailpit:
+        to: acceptance-extra-${runNonce}@treeseed.ai
+        timeoutMs: 10000
+
+  - id: teams.create.team-owner
+    actor: teamOwner
+    method: POST
+    path: ${apiVersionPath}/teams
+    body:
+      name: acceptance-created-${runNonce}
+      displayName: Acceptance Created ${runNonce}
+      profileSummary: Acceptance-created team for guarantees.
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.update.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/teams/${fixtures.team.id}
+    body:
+      displayName: Acceptance Updated Team
+      profileSummary: Acceptance updated profile.
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.invite.team-owner
+    actor: teamOwner
+    method: POST
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/invites
+    body:
+      email: acceptance-invite-${runNonce}@treeseed.ai
+      roleKey: reviewer
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      mailpit:
+        to: acceptance-invite-${runNonce}@treeseed.ai
+        timeoutMs: 10000
+
+  - id: teams.member-role.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}
+    body:
+      roleKey: contributor
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.member-remove.team-owner
+    actor: teamOwner
+    method: DELETE
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.deletion-blockers.team-owner
+    actor: teamOwner
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/deletion-blockers
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: teams.profile.by-name
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/teams/by-name/${fixtures.team.slug}/profile
+    expect:
+      status: 200
+      envelope:
+        ok: true
+
+  - id: catalog-list-envelope
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/catalog
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload
+          exists: true

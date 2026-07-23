@@ -26,7 +26,11 @@ export interface TreeDxProxyRouteOptions {
 }
 
 function repositoryId(library: Record<string, unknown> | null): string | null {
-	return library?.repositoryId ?? library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+	const topology = library?.topology && typeof library.topology === 'object' ? library.topology as Record<string, unknown> : {};
+	const contentRepository = topology.contentRepository && typeof topology.contentRepository === 'object' ? topology.contentRepository as Record<string, unknown> : {};
+	const treeDx = contentRepository.treeDx && typeof contentRepository.treeDx === 'object' ? contentRepository.treeDx as Record<string, unknown> : {};
+	const value = library?.repositoryId ?? treeDx.repositoryId;
+	return typeof value === 'string' ? value : null;
 }
 
 function assertRepository(library: Record<string, unknown> | null, requested: string) {
@@ -35,7 +39,7 @@ function assertRepository(library: Record<string, unknown> | null, requested: st
 }
 
 function errorResponse(c: Context, error: unknown) {
-	if (error instanceof CapacityGovernanceError) return c.json({ ok: false, error: error.message, code: error.code, details: error.details }, { status: error.status });
+	if (error instanceof CapacityGovernanceError) return new Response(JSON.stringify({ ok: false, error: error.message, code: error.code, details: error.details }), { status: error.status, headers: { 'content-type': 'application/json' } });
 	throw error;
 }
 

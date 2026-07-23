@@ -3,6 +3,7 @@ import type {
 	ProviderTeamCredentialMetadata,
 	ProviderTeamMembership,
 	ProviderMembershipScope,
+	ProviderCredentialIssuanceAuthorization,
 	TeamCapacityRegistrationKeyMetadata,
 } from '@treeseed/sdk/capacity-provider/contracts';
 import {

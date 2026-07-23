@@ -51,8 +51,8 @@ export async function buildProjectAgentSummary(store: SummaryStore, projectId: s
 	const taskHealth = {
 		activeTasks: activeModeRuns,
 		staleTasks: [],
-		recoveredTaskCount: modeRuns.filter((run) => run.metadata?.recovered === true).length,
-		failedStaleTaskCount: failedModeRuns.filter((run) => run.metadata?.stale === true).length,
+		recoveredTaskCount: modeRuns.filter((run) => record(run.metadata).recovered === true).length,
+		failedStaleTaskCount: failedModeRuns.filter((run) => record(run.metadata).stale === true).length,
 		retryBackoffPolicy: { source: 'provider_assignment_retry_policy' },
 	};
 	const docsAutomation = {
@@ -65,7 +65,7 @@ export async function buildProjectAgentSummary(store: SummaryStore, projectId: s
 		pendingApprovalCount: pendingApprovals.length,
 		docsMutationCount: generatedArtifacts.filter((artifact) => artifact.artifactKind === 'docs_mutation_result').length,
 		verificationFailureCount: failedModeRuns.length,
-		repairTaskCount: modeRuns.filter((run) => run.metadata?.repair === true).length,
+		repairTaskCount: modeRuns.filter((run) => record(run.metadata).repair === true).length,
 		staleTaskCount: 0,
 		recoveredTaskCount: taskHealth.recoveredTaskCount,
 		failedStaleTaskCount: taskHealth.failedStaleTaskCount,

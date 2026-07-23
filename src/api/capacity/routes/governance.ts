@@ -1,5 +1,5 @@
 import type { Context, Hono } from 'hono';
-import type { CapacityProviderSignedProof, ProviderRegistrationSubmission } from '@treeseed/sdk/capacity-provider/contracts';
+import type { CapacityProviderIdentityRotationRequest, CapacityProviderSignedProof, ProviderRegistrationSubmission } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapacityGovernanceDatabase } from '../database.ts';
 import { CapacityGovernanceError } from '../database.ts';
 import { CapacityGovernanceRepository } from '../repositories/governance.ts';
@@ -32,6 +32,24 @@ function idempotencyKey(c: Context) {
 function registrationCredential(c: Context) {
 	const value = c.req.header('authorization')?.trim() ?? '';
 	return value.startsWith('Treeseed-Registration ') ? value.slice('Treeseed-Registration '.length).trim() : '';
+}
+
+type ProviderAccessPrincipal = { membershipId: string; teamId: string; capacityProviderId: string; scopes: string[] };
+
+function providerAccessPrincipal(c: Context): ProviderAccessPrincipal {
+	const auth = (c as Context<{ Variables: { capacityProviderAccessAuth: { principal?: ProviderAccessPrincipal } | null } }>).get('capacityProviderAccessAuth');
+	if (!auth?.principal) throw new CapacityGovernanceError('provider_access_token_required', 'Provider membership access token is required.', 401);
+	return auth.principal;
+}
+
+function identityRotationRequest(body: Record<string, unknown>): CapacityProviderIdentityRotationRequest {
+	if (!Number.isInteger(body.expectedIdentityVersion)
+		|| !body.newPublicJwk || typeof body.newPublicJwk !== 'object'
+		|| !body.oldProof || typeof body.oldProof !== 'object'
+		|| !body.newProof || typeof body.newProof !== 'object') {
+		throw new CapacityGovernanceError('provider_identity_rotation_invalid', 'Identity rotation requires the expected version, new public key, and both signed proofs.', 400);
+	}
+	return body as unknown as CapacityProviderIdentityRotationRequest;
 }
 
 function membershipCredential(c: Context) {
@@ -248,26 +266,23 @@ export function installCapacityGovernanceRoutes(app: Hono, options: CapacityGove
 
 	app.post('/v1/provider/credential-rotation', async (c) => {
 		try {
-			const auth = c.get('capacityProviderAccessAuth') as { principal?: { membershipId: string; teamId: string; capacityProviderId: string; scopes: string[] } } | null;
-			if (!auth?.principal) throw new CapacityGovernanceError('provider_access_token_required', 'Provider membership access token is required.', 401);
-			return c.json({ ok: true, payload: await service.authorizeProviderCredentialRotation(auth.principal, idempotencyKey(c)) }, { status: 201 });
+			const principal = providerAccessPrincipal(c);
+			return c.json({ ok: true, payload: await service.authorizeProviderCredentialRotation(principal, idempotencyKey(c)) }, { status: 201 });
 		} catch (error) { return errorResponse(c, error); }
 	});
 
 	app.post('/v1/provider/membership/leave', async (c) => {
 		try {
-			const auth = c.get('capacityProviderAccessAuth') as { principal?: { membershipId: string; teamId: string; capacityProviderId: string; scopes: string[] } } | null;
-			if (!auth?.principal) throw new CapacityGovernanceError('provider_access_token_required', 'Provider membership access token is required.', 401);
-			return c.json({ ok: true, payload: await service.leaveMembership(auth.principal, idempotencyKey(c)) });
+			const principal = providerAccessPrincipal(c);
+			return c.json({ ok: true, payload: await service.leaveMembership(principal, idempotencyKey(c)) });
 		} catch (error) { return errorResponse(c, error); }
 	});
 
 	app.post('/v1/provider/identity/rotate', async (c) => {
 		try {
-			const auth = c.get('capacityProviderAccessAuth') as { principal?: { membershipId: string; teamId: string; capacityProviderId: string; scopes: string[] } } | null;
-			if (!auth?.principal) throw new CapacityGovernanceError('provider_access_token_required', 'Provider membership access token is required.', 401);
+			const principal = providerAccessPrincipal(c);
 			const body = await readCapacityRequestObject(c);
-			return c.json({ ok: true, payload: await service.rotateIdentity(auth.principal, body, idempotencyKey(c)) });
+			return c.json({ ok: true, payload: await service.rotateIdentity(principal, identityRotationRequest(body), idempotencyKey(c)) });
 		} catch (error) { return errorResponse(c, error); }
 	});
 

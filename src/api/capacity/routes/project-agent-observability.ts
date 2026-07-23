@@ -29,18 +29,22 @@ function notFound(c: Context, message: string) {
 }
 
 function sourceMap(artifact: Row): unknown[] {
-	const frontmatter = artifact.frontmatter && typeof artifact.frontmatter === 'object' ? artifact.frontmatter : {};
-	return artifact.sourceMap ?? artifact.source_map ?? frontmatter.source_map ?? artifact.docsMutationResult?.sourceMap ?? artifact.promotionToStaging?.sourceMap ?? [];
+	const frontmatter = artifact.frontmatter && typeof artifact.frontmatter === 'object' ? artifact.frontmatter as Row : {};
+	const docsMutationResult = artifact.docsMutationResult && typeof artifact.docsMutationResult === 'object' ? artifact.docsMutationResult as Row : {};
+	const promotionToStaging = artifact.promotionToStaging && typeof artifact.promotionToStaging === 'object' ? artifact.promotionToStaging as Row : {};
+	const value = artifact.sourceMap ?? artifact.source_map ?? frontmatter.source_map ?? docsMutationResult.sourceMap ?? promotionToStaging.sourceMap;
+	return Array.isArray(value) ? value : [];
 }
 
 function diff(artifact: Row) {
+	const docsMutationResult = artifact.docsMutationResult && typeof artifact.docsMutationResult === 'object' ? artifact.docsMutationResult as Row : {};
 	return {
 		id: artifact.id ?? artifact.taskId ?? null,
 		diff: artifact.diff ?? artifact.patch ?? null,
 		changedPaths: Array.isArray(artifact.changedPaths) ? artifact.changedPaths : [],
 		snapshots: Array.isArray(artifact.snapshots) ? artifact.snapshots : [],
 		verification: artifact.verification ?? null,
-		verificationStatus: artifact.verificationStatus ?? artifact.docsMutationResult?.verificationStatus ?? null,
+		verificationStatus: artifact.verificationStatus ?? docsMutationResult.verificationStatus ?? null,
 		repairTask: artifact.repairTask ?? null,
 		mergedToStaging: artifact.mergedToStaging ?? null,
 	};

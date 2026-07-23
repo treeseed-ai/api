@@ -58,6 +58,7 @@ export interface WorkdaySummaryAggregate {
 	reservation: { total: number; reservedCredits: number; consumedCredits: number };
 	usage: {
 		total: number;
+		assignmentTotal: number;
 		negativeCount: number;
 		inputTokens: number;
 		outputTokens: number;

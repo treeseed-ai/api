@@ -40,7 +40,7 @@ export function serializeAvailabilitySessionRow(row: Row | null): ProviderAvaila
 			pressure: pressureValue as ProviderAvailabilitySession['snapshot']['pressure'],
 			maxConcurrentAssignments: Number(pressure.maxConcurrentRunners ?? nativeLimits.maxConcurrentRunners ?? 0),
 			activeAssignmentIds: Array.isArray(pressure.activeAssignmentIds) ? pressure.activeAssignmentIds.map(String) : [],
-			executionProviders: executionProviders as ProviderAvailabilitySession['snapshot']['executionProviders'], capabilities, constraints,
+			executionProviders: executionProviders as unknown as ProviderAvailabilitySession['snapshot']['executionProviders'], capabilities, constraints,
 		},
 		openedAt: text(row.opened_at), refreshedAt: text(row.refreshed_at), expiresAt: text(row.expires_at), closedAt: nullableText(row.closed_at),
 	};

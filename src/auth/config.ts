@@ -16,7 +16,7 @@ const LOCAL_AUTH_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1'
 type RuntimeEnv = CloudflareRuntime['env'];
 
 function runtimeEnv(context?: Pick<APIContext, 'locals'>) {
-	return ((context?.locals as App.Locals | undefined)?.runtime as CloudflareRuntime | undefined)?.env;
+	return ((context?.locals as { runtime?: CloudflareRuntime } | undefined)?.runtime)?.env;
 }
 
 function envValue(name: string, env?: RuntimeEnv) {

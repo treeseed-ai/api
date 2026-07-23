@@ -72,7 +72,7 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 		runnerId: row.runner_id == null ? null : text(row.runner_id),
 		agentId: row.agent_id == null ? null : text(row.agent_id),
 		handlerId: row.handler_id == null ? null : text(row.handler_id),
-		capacityEnvelope: json(row.capacity_envelope_json, {}, 'capacity_envelope_json', id) as DurableProviderAssignment['capacityEnvelope'],
+		capacityEnvelope: json(row.capacity_envelope_json, {}, 'capacity_envelope_json', id) as unknown as DurableProviderAssignment['capacityEnvelope'],
 		decisionInput: json(row.decision_input_json, {}, 'decision_input_json', id),
 		workspaceContext,
 		allowedOutputs: json(row.allowed_outputs_json, {}, 'allowed_outputs_json', id),

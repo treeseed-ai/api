@@ -42,7 +42,7 @@ export function serializeCapacityLedgerEntryRow(row: Row | null): CapacityLedger
 	return {
 		id: requiredText(row, 'id'), settlementKey: requiredText(row, 'settlement_key'), membershipId: requiredText(row, 'membership_id'),
 		capacityProviderId: requiredText(row, 'capacity_provider_id'), reservationId: nullableText(row, 'reservation_id'), assignmentId: nullableText(row, 'assignment_id'),
-		modeRunId: nullableText(row, 'mode_run_id'), mode, teamId: requiredText(row, 'team_id'), projectId: nullableText(row, 'project_id'),
+		modeRunId: nullableText(row, 'mode_run_id'), mode: mode as 'planning' | 'acting' | null, teamId: requiredText(row, 'team_id'), projectId: nullableText(row, 'project_id'),
 		workDayId: nullableText(row, 'work_day_id'), taskId: nullableText(row, 'task_id'), phase, credits: number(row, 'credits')!,
 		providerUnits: number(row, 'provider_units', true), usd: number(row, 'usd', true), source: requiredText(row, 'source'),
 		metadata: object(row, 'metadata_json'), createdAt: requiredText(row, 'created_at'),

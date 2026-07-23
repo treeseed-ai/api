@@ -132,10 +132,10 @@ export async function buildProjectCapacityRuntimeDiagnostics(
 		limit: DEFAULT_CAPACITY_PAGE_LIMIT,
 	});
 	const index = await loadRuntimeDiagnosticIndex(repository, { projectId, teamId: resolvedTeamId, assignmentIds });
-	return summarizeCapacityRuntimeDiagnostics({
+	const diagnosticInput: Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0] = {
 		projectId,
 		teamId: resolvedTeamId,
-		assignments,
+		assignments: assignments as unknown as Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0]['assignments'],
 		explanations: assignments.flatMap((assignment) => {
 			const explanation = record(assignment.explanation);
 			return Object.keys(explanation).length ? [{
@@ -143,10 +143,10 @@ export async function buildProjectCapacityRuntimeDiagnostics(
 				teamId: assignment.teamId,
 				assignmentId: assignment.id,
 			}] : [];
-		}),
-		modeRuns: modeRunPage.items,
+		}) as unknown as NonNullable<Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0]['explanations']>,
+		modeRuns: modeRunPage.items as unknown as Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0]['modeRuns'],
 		treeDxProxyAudit: treeDxProxyAuditPage.items,
-		ledgerEntries: ledgerPage.items,
+		ledgerEntries: ledgerPage.items as unknown as Parameters<typeof summarizeCapacityRuntimeDiagnostics>[0]['ledgerEntries'],
 		fallbackOutputs: fallbackOutputPage.items,
 		settledAssignmentIds: index.settledAssignmentIds,
 		auditedAssignmentIds: index.auditedAssignmentIds,
@@ -157,5 +157,6 @@ export async function buildProjectCapacityRuntimeDiagnostics(
 			ledgerEntries: { ...ledgerPage.page, total: index.totals.ledgerEntries },
 			fallbackOutputs: { ...fallbackOutputPage.page, total: index.totals.fallbackOutputs },
 		},
-	});
+	};
+	return summarizeCapacityRuntimeDiagnostics(diagnosticInput);
 }

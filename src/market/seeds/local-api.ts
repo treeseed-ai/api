@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createApiApp } from '../../api/app.js';
 import { resolveLocalSeedEnv } from './apply.js';
 
@@ -32,8 +31,8 @@ function seedRequestBody(input) {
 	};
 }
 
-async function jsonRequest(app, path, input, body = {}) {
-	const headers = {
+async function jsonRequest(app, path, input, body: any = {}) {
+	const headers: Record<string, string> = {
 		accept: 'application/json',
 		'content-type': 'application/json',
 	};
@@ -48,7 +47,7 @@ async function jsonRequest(app, path, input, body = {}) {
 	const payload = await response.json().catch(() => null);
 	if (!response.ok || !payload?.ok) {
 		const message = payload?.error ?? payload?.diagnostics?.[0]?.message ?? `Local seed API request failed with HTTP ${response.status}.`;
-		const error = new Error(message);
+		const error: Error & Record<string, any> = new Error(message);
 		error.status = response.status;
 		error.payload = payload;
 		throw error;

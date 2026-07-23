@@ -61,7 +61,8 @@ export async function proxyTreeDxJson(input: {
 	if (input.method === 'POST' && input.path === '/api/v1/repos') {
 		const payloadRecord = record(payload);
 		const repo = record(payloadRecord.repo ?? payloadRecord.repository ?? payload);
-		const repoId = repo.repoId ?? repo.id ?? null;
+		const rawRepoId = repo.repoId ?? repo.id ?? null;
+		const repoId = typeof rawRepoId === 'string' ? rawRepoId : null;
 		if (repoId && isLoopbackTreeDxBaseUrl(baseUrl)) {
 			const env = treeDxRuntimeEnv(input.runtime);
 			const grantToken = resolveTreeDxProxyToken(input.runtime, baseUrl, input.projectId, treeDxTokenScope({ repoId, capabilities: ['policy:write'], paths: ['**'] }));
@@ -82,7 +83,9 @@ export async function proxyTreeDxJson(input: {
 		projectId: input.projectId,
 		assignmentId: access.assignment?.id ?? input.c.req.header('x-treeseed-assignment-id') ?? input.c.req.query('assignmentId') ?? null,
 		actorType: access.actorType,
-		actorId: access.actorType === 'capacity_provider' ? access.principal.capacityProviderId : access.principal.id ?? null,
+		actorId: access.actorType === 'capacity_provider'
+			? (access.principal as { capacityProviderId: string }).capacityProviderId
+			: (access.principal as Record<string, unknown>).id ?? null,
 		method: input.method,
 		path: input.path,
 		handle: { ...(access.handle ?? {}), projectId: input.projectId, assignmentId: access.assignment?.id ?? null, scopes: input.tokenScope.capabilities },

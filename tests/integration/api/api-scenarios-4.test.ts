@@ -1,0 +1,27 @@
+// Import-only collector keeps scenarios small without one worker startup per case.
+import './keeps-stripe-connect-onboarding-disabled-when-the-market-has-no-stripe-configuration.scenarios.ts';
+import './exposes-market-owned-v1-auth-market-registry-access-and-artifact-download-contracts.scenarios.ts';
+import './serves-market-ui-projections-from-backend-v1-routes.scenarios.ts';
+import './uses-the-configured-production-web-approval-url-for-the-central-api.scenarios.ts';
+import './redirects-legacy-v1-browser-approval-links-to-the-web-approval-page.scenarios.ts';
+import './signs-editorial-preview-links-for-team-scoped-overlays.scenarios.ts';
+import './executes-the-managed-project-launch-pipeline-and-persists-launch-topology.scenarios.ts';
+import './keeps-managed-project-launch-bootstrap-owned-by-the-api-instead-of-the-runner.scenarios.ts';
+import './exchanges-github-oidc-for-managed-operation-jobs-without-exposing-provider-secrets.scenarios.ts';
+import './queues-launch-failures-for-worker-recovery-instead-of-failing-the-request.scenarios.ts';
+import './creates-repository-credential-sessions-from-real-secretbox-envelopes-in-the-api-runtime.scenarios.ts';
+import './plans-and-applies-staging-seeds-with-audit-records-then-reports-unchanged.scenarios.ts';
+import './gates-production-seed-apply-on-matching-approved-requests.scenarios.ts';
+import './provisions-one-active-team-treedx-binding-and-exposes-mirrors-and-shares.scenarios.ts';
+import './queues-public-federation-provisioning-instead-of-treating-it-as-a-metadata-only-attachment.scenarios.ts';
+import './lets-trusted-deploy-services-bootstrap-the-default-public-treedx-federation-team.scenarios.ts';
+import './runs-treedx-provisioning-through-railway-project-service-volume-variable-domain-and-deploy-adapters.scenarios.ts';
+import './persists-canonical-repository-topology-project-architecture-in-project-details.scenarios.ts';
+import './imports-existing-github-repositories-as-canonical-project-architecture-without-token-values.scenarios.ts';
+import './does-not-proxy-normal-treedx-project-calls-with-static-admin-tokens-or-implicit-local-secrets.scenarios.ts';
+import './mints-scoped-treeseed-issued-treedx-tokens-for-normal-project-proxy-calls.scenarios.ts';
+import './automatically-provisions-private-treedx-and-central-public-mirror-trust-for-private-teams.scenarios.ts';
+import './skipped-api-scenario-1.scenarios.ts';
+import './skipped-api-scenario-2.scenarios.ts';
+import './skipped-api-scenario-3.scenarios.ts';
+import './skipped-api-scenario-4.scenarios.ts';

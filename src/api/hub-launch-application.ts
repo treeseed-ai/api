@@ -1,4 +1,3 @@
-// @ts-nocheck
 function resourceRowsFromLaunch(projectId, launch) {
 	const rows = [];
 	for (const [environment, summary] of [['staging', launch.cloudflare?.staging], ['prod', launch.cloudflare?.prod]]) {

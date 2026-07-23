@@ -35,18 +35,26 @@ interface PageFilters extends JsonRecord {
 export interface ProviderControlPlaneContext extends CapacityGovernanceDatabase {
 	getCapacityProvider(teamId: string, providerId: string): Promise<unknown>;
 }
+type ProviderServiceContext = ProviderControlPlaneContext
+	& ConstructorParameters<typeof ProjectAgentClassService>[0]
+	& Parameters<typeof admitSynthesizedAssignment>[0]
+	& Parameters<typeof leaseProviderAssignment>[0]
+	& ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0]
+	& Parameters<typeof persistAgentModeRun>[0];
 
 export class ProviderControlPlane {
+	private readonly providerContext: ProviderServiceContext;
 	private readonly assignmentRepository: ProviderAssignmentRepository;
 	private readonly allocationService: CapacityAllocationService;
 	private readonly agentClassService: ProjectAgentClassService;
 	private readonly availabilityService: AvailabilitySessionService;
 
-	constructor(private readonly providerContext: ProviderControlPlaneContext) {
-		this.assignmentRepository = new ProviderAssignmentRepository(providerContext);
-		this.allocationService = new CapacityAllocationService(providerContext);
-		this.agentClassService = new ProjectAgentClassService(providerContext);
-		this.availabilityService = new AvailabilitySessionService(providerContext);
+	constructor(providerContext: ProviderControlPlaneContext) {
+		this.providerContext = providerContext as unknown as ProviderServiceContext;
+		this.assignmentRepository = new ProviderAssignmentRepository(this.providerContext);
+		this.allocationService = new CapacityAllocationService(this.providerContext);
+		this.agentClassService = new ProjectAgentClassService(this.providerContext);
+		this.availabilityService = new AvailabilitySessionService(this.providerContext);
 	}
 
 	async listTeamCapacityProviders(teamId: string) {
@@ -63,7 +71,7 @@ export class ProviderControlPlane {
 		return listCapacityExecutionProviders(this.providerContext, providerId);
 	}
 
-	async listCapacityGrantsPage(teamId: string, filters: PageFilters = {}) {
+	async listCapacityGrantsPage(teamId: string, filters: Parameters<CapacityGrantService['listPage']>[1] = {}) {
 		return new CapacityGrantService(this.providerContext).listPage(teamId, filters);
 	}
 
@@ -74,7 +82,7 @@ export class ProviderControlPlane {
 		return this.allocationService.create(teamId, policy, typeof input.createdById === 'string' ? input.createdById : null, idempotencyKey);
 	}
 
-	async listCapacityAllocationSetsPage(teamId: string, { limit, cursor }: PageFilters = {}) {
+	async listCapacityAllocationSetsPage(teamId: string, { limit, cursor }: Partial<Parameters<CapacityAllocationService['listPage']>[1]> = {}) {
 		return this.allocationService.listPage(teamId, { limit, cursor });
 	}
 
@@ -94,7 +102,7 @@ export class ProviderControlPlane {
 		return this.allocationService.activate(teamId, allocationSetId, idempotencyKey);
 	}
 
-	listProjectAgentClassesPage(projectId: string, filters: PageFilters = {}) {
+	listProjectAgentClassesPage(projectId: string, filters: Partial<Parameters<ProjectAgentClassService['listPage']>[1]> = {}) {
 		return this.agentClassService.listPage(projectId, {
 			limit: normalizeCapacityPageLimit(filters.limit),
 			cursor: filters.cursor ?? null,
@@ -105,11 +113,11 @@ export class ProviderControlPlane {
 		return this.agentClassService.get(projectId, classId);
 	}
 
-	createProviderAvailabilitySession(principal: ProviderAvailabilityPrincipal, input: JsonRecord = {}) {
+	createProviderAvailabilitySession(principal: ProviderAvailabilityPrincipal, input: Parameters<AvailabilitySessionService['open']>[1]) {
 		return this.availabilityService.open(principal, input);
 	}
 
-	refreshProviderAvailabilitySession(principal: ProviderAvailabilityPrincipal, sessionId: string, input: JsonRecord = {}) {
+	refreshProviderAvailabilitySession(principal: ProviderAvailabilityPrincipal, sessionId: string, input: Parameters<AvailabilitySessionService['refresh']>[2]) {
 		return this.availabilityService.refresh(principal, sessionId, input);
 	}
 
@@ -117,7 +125,7 @@ export class ProviderControlPlane {
 		return this.availabilityService.close(principal, sessionId);
 	}
 
-	listProviderAvailabilitySessionsPage(teamId: string, filters: PageFilters = {}) {
+	listProviderAvailabilitySessionsPage(teamId: string, filters: Partial<Parameters<AvailabilitySessionService['listPage']>[1]> = {}) {
 		return this.availabilityService.listPage(teamId, {
 			providerId: filters.providerId ?? null,
 			status: filters.status ?? null,
@@ -134,7 +142,7 @@ export class ProviderControlPlane {
 		return resolveProviderSynthesisContext(this.providerContext, principal, input);
 	}
 
-	listProviderAssignmentsPage(teamId: string, filters: PageFilters = {}) {
+	listProviderAssignmentsPage(teamId: string, filters: Parameters<ProviderAssignmentRepository['list']>[1] = {}) {
 		return this.assignmentRepository.list(teamId, filters);
 	}
 
@@ -149,35 +157,35 @@ export class ProviderControlPlane {
 		return admitSynthesizedAssignment(this.providerContext, principal, input);
 	}
 
-	leaseNextProviderAssignment(principal: ProviderLeasePrincipal, input: JsonRecord = {}) {
+	leaseNextProviderAssignment(principal: ProviderLeasePrincipal, input: Parameters<typeof leaseProviderAssignment>[2] = {}) {
 		return leaseProviderAssignment(this.providerContext, principal, input);
 	}
 
-	renewProviderAssignmentLease(principal: ProviderLeasePrincipal, assignmentId: string, input: JsonRecord = {}) {
+	renewProviderAssignmentLease(principal: ProviderLeasePrincipal, assignmentId: string, input: Parameters<ProviderAssignmentLifecycleService['renew']>[2]) {
 		return new ProviderAssignmentLifecycleService(this.providerContext).renew(principal, assignmentId, input);
 	}
 
-	returnProviderAssignment(principal: ProviderLeasePrincipal, assignmentId: string, input: JsonRecord = {}) {
+	returnProviderAssignment(principal: ProviderLeasePrincipal, assignmentId: string, input: Parameters<ProviderAssignmentLifecycleService['return']>[2]) {
 		return new ProviderAssignmentLifecycleService(this.providerContext).return(principal, assignmentId, input);
 	}
 
-	completeProviderAssignment(principal: ProviderLeasePrincipal, assignmentId: string, input: JsonRecord = {}) {
+	completeProviderAssignment(principal: ProviderLeasePrincipal, assignmentId: string, input: Parameters<ProviderAssignmentLifecycleService['complete']>[2]) {
 		return new ProviderAssignmentLifecycleService(this.providerContext).complete(principal, assignmentId, input);
 	}
 
-	failProviderAssignment(principal: ProviderLeasePrincipal, assignmentId: string, input: JsonRecord = {}) {
+	failProviderAssignment(principal: ProviderLeasePrincipal, assignmentId: string, input: Parameters<ProviderAssignmentLifecycleService['fail']>[2]) {
 		return new ProviderAssignmentLifecycleService(this.providerContext).fail(principal, assignmentId, input);
 	}
 
-	createAgentModeRun(input: JsonRecord = {}) {
+	createAgentModeRun(input: Parameters<typeof persistAgentModeRun>[1]) {
 		return persistAgentModeRun(this.providerContext, input);
 	}
 
-	listAgentModeRunsPage(projectId: string, filters: PageFilters = {}) {
+	listAgentModeRunsPage(projectId: string, filters: Parameters<typeof readAgentModeRunsPage>[2] = {}) {
 		return readAgentModeRunsPage(this.providerContext, projectId, filters);
 	}
 
-	listExecutionRunsForTeamPage(teamId: string, filters: PageFilters = {}) {
+	listExecutionRunsForTeamPage(teamId: string, filters: Parameters<typeof readExecutionRunsForTeamPage>[2] = {}) {
 		return readExecutionRunsForTeamPage(this.providerContext, teamId, filters);
 	}
 

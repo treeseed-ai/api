@@ -7,7 +7,7 @@ import { assignmentArtifactManifest } from './assignment-deliverable-service.ts'
 
 type JsonRecord = Record<string, unknown>;
 export interface ResearchWorkflowProjectionStore {
-	first(query: string, params?: unknown[]): Promise<Record<string, unknown> | null>;
+	first<T extends Record<string, unknown> = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T | null>;
 	getResearchWorkflow(id: string): Promise<ResearchWorkflowRecord | null>;
 	completeResearchWorkflowStage(id: string, stage: string, input: JsonRecord): Promise<ResearchWorkflowRecord | null>;
 }

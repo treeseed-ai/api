@@ -268,8 +268,8 @@ class MarketPostgresPreparedStatement {
 }
 
 export class MarketPostgresDatabase {
-	readonly pool: Pool;
-	private readonly migrationRoot: string | null;
+	pool: Pool;
+	private migrationRoot: string | null;
 	private migrationPromise: Promise<void> | null;
 
 	constructor(databaseUrl: string, options: { migrationRoot?: string | null } = {}) {

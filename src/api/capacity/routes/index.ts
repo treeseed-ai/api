@@ -20,12 +20,12 @@ import { CapacityGovernanceError } from '../database.ts';
 function installCapacityErrorBoundary(app: Hono) {
 	app.onError((error, c) => {
 		if (error instanceof CapacityGovernanceError) {
-			return c.json({
+			return new Response(JSON.stringify({
 				ok: false,
 				error: error.message,
 				code: error.code,
 				details: error.details,
-			}, { status: error.status });
+			}), { status: error.status, headers: { 'content-type': 'application/json' } });
 		}
 		if ('getResponse' in error && typeof error.getResponse === 'function') {
 			const response = error.getResponse();

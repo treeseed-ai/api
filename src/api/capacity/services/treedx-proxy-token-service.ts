@@ -19,6 +19,12 @@ function text(value: unknown): string {
 	return typeof value === 'string' ? value.trim() : '';
 }
 
+function record(value: unknown): Record<string, unknown> {
+	return value && typeof value === 'object' && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: {};
+}
+
 export function treeDxRuntimeEnv(runtime: TreeDxProxyRuntime): Record<string, string | undefined> {
 	return { ...process.env, ...(runtime.env && typeof runtime.env === 'object' ? runtime.env : {}) } as Record<string, string | undefined>;
 }
@@ -56,7 +62,10 @@ export function treeDxPathScope(filePath: unknown): string[] {
 
 export function resolveTreeDxProxyBaseUrl(runtime: TreeDxProxyRuntime, library: Record<string, unknown> | null): string {
 	const env = treeDxRuntimeEnv(runtime);
-	const value = text(library?.topology?.contentRepository?.treeDx?.baseUrl)
+	const topology = record(library?.topology);
+	const contentRepository = record(topology.contentRepository);
+	const treeDx = record(contentRepository.treeDx);
+	const value = text(treeDx.baseUrl)
 		|| text(env.TREESEED_TREEDX_URL)
 		|| text(env.TREESEED_TREEDX_BASE_URL)
 		|| text(env.TREESEED_PUBLIC_TREEDX_BASE_URL)
@@ -93,7 +102,11 @@ export async function verifyTreeDxWorkspace(input: {
 	workspaceId: string;
 	fetchImpl?: typeof fetch;
 }): Promise<void> {
-	const repositoryId = input.library?.repositoryId ?? input.library?.topology?.contentRepository?.treeDx?.repositoryId ?? null;
+	const topology = record(input.library?.topology);
+	const contentRepository = record(topology.contentRepository);
+	const treeDx = record(contentRepository.treeDx);
+	const rawRepositoryId = input.library?.repositoryId ?? treeDx.repositoryId ?? null;
+	const repositoryId = typeof rawRepositoryId === 'string' ? rawRepositoryId : null;
 	if (!repositoryId) throw new CapacityGovernanceError('treedx_repository_not_bound', 'TreeDX repository is not bound to this project.', 404, { projectId: input.projectId });
 	const baseUrl = resolveTreeDxProxyBaseUrl(input.runtime, input.library);
 	const token = resolveTreeDxProxyToken(input.runtime, baseUrl, input.projectId, treeDxTokenScope({ repoId: repositoryId, capabilities: ['files:read'], paths: ['**'] }));
@@ -104,8 +117,10 @@ export async function verifyTreeDxWorkspace(input: {
 		tooLargeCode: 'treedx_workspace_response_too_large',
 		owner: 'TreeDX workspace response',
 	});
-	if (!response.ok) throw new CapacityGovernanceError('treedx_workspace_verification_failed', 'TreeDX workspace could not be verified for this project.', response.status, { projectId: input.projectId, workspaceId: input.workspaceId, details: payload?.error ?? payload });
-	const workspace = payload?.workspace ?? payload?.payload?.workspace ?? payload?.payload ?? payload;
+	const payloadRecord = record(payload);
+	const nestedPayload = record(payloadRecord.payload);
+	if (!response.ok) throw new CapacityGovernanceError('treedx_workspace_verification_failed', 'TreeDX workspace could not be verified for this project.', response.status, { projectId: input.projectId, workspaceId: input.workspaceId, details: payloadRecord.error ?? payload });
+	const workspace = record(payloadRecord.workspace ?? nestedPayload.workspace ?? payloadRecord.payload ?? payload);
 	const actualRepositoryId = workspace?.repoId ?? workspace?.repositoryId ?? null;
 	if (actualRepositoryId !== repositoryId) throw new CapacityGovernanceError('treedx_workspace_project_mismatch', 'TreeDX workspace is not bound to this project repository.', 403, { projectId: input.projectId, workspaceId: input.workspaceId, repositoryId: actualRepositoryId, expectedRepositoryId: repositoryId });
 }

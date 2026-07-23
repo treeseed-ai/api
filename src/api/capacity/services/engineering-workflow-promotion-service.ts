@@ -2,32 +2,38 @@ import { createHash } from 'node:crypto';
 import {
 	validateEngineeringWorkflowPromotionConfig,
 	type AgentCapacityPlanRecord,
+	type DurableAgentCapacityPlanStatus,
 	type DecisionAssignmentGraphRecord,
 	type DecisionExecutionInputRecord,
+	type DecisionExecutionInputStatus,
 	type DecisionPlanningStatus,
 	type EngineeringWorkflowPromotionConfigV1,
 	type ProjectAgentClass,
 	type StructuredAgentEstimate,
+	type StructuredAgentEstimateStatus,
 } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../database.ts';
 import { CapacityGovernanceError } from '../database.ts';
 import { ProjectAgentClassRepository } from '../repositories/project-agent-class.ts';
 import type { DurableCapacityWorkdayRun } from '../repositories/workday-run.ts';
 import { projectAgentActivityRefs } from './project-agent-activity-refs.ts';
+import type { CreateDecisionExecutionInputInput } from './planning-state-service.ts';
+import type { CreateAgentCapacityPlanInput } from './agent-capacity-plan-service.ts';
+import type { AgentCapacityPlanTransitionInput } from '../repositories/agent-capacity-plan.ts';
 
 type JsonRecord = Record<string, unknown>;
 
 export interface EngineeringWorkflowPromotionStore extends CapacityGovernanceDatabase {
 	getDecisionPlanningStatus(decisionId: string): Promise<DecisionPlanningStatus | null>;
-	listStructuredAgentEstimatesForDecision(decisionId: string, filters: { status: string }): Promise<StructuredAgentEstimate[]>;
+	listStructuredAgentEstimatesForDecision(decisionId: string, filters?: { status?: StructuredAgentEstimateStatus }): Promise<StructuredAgentEstimate[]>;
 	listDecisionAssignmentGraphsForDecision(decisionId: string, filters?: JsonRecord): Promise<DecisionAssignmentGraphRecord[]>;
 	createDecisionAssignmentGraph(decisionId: string, input: JsonRecord): Promise<DecisionAssignmentGraphRecord | null>;
 	activateDecisionAssignmentGraphVersion(graphId: string): Promise<DecisionAssignmentGraphRecord | null>;
-	createDecisionExecutionInput(decisionId: string, input: JsonRecord): Promise<DecisionExecutionInputRecord | null>;
-	listDecisionExecutionInputs(decisionId: string, filters: { status: string }): Promise<DecisionExecutionInputRecord[]>;
-	createAgentCapacityPlan(decisionId: string, input: JsonRecord): Promise<AgentCapacityPlanRecord | null>;
-	listAgentCapacityPlans(decisionId: string, filters?: JsonRecord): Promise<AgentCapacityPlanRecord[]>;
-	updateAgentCapacityPlanStatus(planId: string, status: string, input?: JsonRecord): Promise<AgentCapacityPlanRecord | null>;
+	createDecisionExecutionInput(decisionId: string, input: CreateDecisionExecutionInputInput): Promise<DecisionExecutionInputRecord | null>;
+	listDecisionExecutionInputs(decisionId: string, filters?: { status?: DecisionExecutionInputStatus }): Promise<DecisionExecutionInputRecord[]>;
+	createAgentCapacityPlan(decisionId: string, input: CreateAgentCapacityPlanInput): Promise<AgentCapacityPlanRecord | null>;
+	listAgentCapacityPlans(decisionId: string, filters?: { status?: DurableAgentCapacityPlanStatus | null }): Promise<AgentCapacityPlanRecord[]>;
+	updateAgentCapacityPlanStatus(planId: string, status: DurableAgentCapacityPlanStatus, input?: AgentCapacityPlanTransitionInput): Promise<AgentCapacityPlanRecord | null>;
 }
 
 export interface EngineeringWorkflowPromotionResult {

@@ -1,7 +1,7 @@
-// @ts-nocheck
 const operationalCollections = ['books', 'decisions', 'notes', 'objectives', 'proposals', 'questions', 'docs', 'knowledge_packs'];
 export async function loadKnowledgeContentEntries() {
-    const content = await import(/* @vite-ignore */ 'astro:content').catch(() => null);
+    const moduleId = 'astro:content';
+    const content: any = await import(/* @vite-ignore */ moduleId).catch(() => null);
     if (!content?.getCollection)
         return [];
     const { getCollection } = content;

@@ -18,7 +18,7 @@ interface CreateWorkdayTreeDxWorkspaceInput {
 
 type ConfiguredWorkspaceStore = WorkdayTreeDxConnectionStore;
 
-interface ConfiguredWorkspaceInput {
+export interface ConfiguredWorkspaceInput {
 	repositoryId?: string;
 	assignmentId: string;
 	baseRef?: string;

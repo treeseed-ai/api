@@ -92,7 +92,7 @@ export function serializeDecisionExecutionInputRow(row: Row | null): DecisionExe
 		mode,
 		status: enumValue(row.status, EXECUTION_STATUSES, 'decision_execution_input_status_invalid'),
 		scopeHash: required(row, id, 'scopeHash', 'scope_hash'),
-		input: object(row, id, 'input_json') as DecisionExecutionInputRecord['input'],
+		input: object(row, id, 'input_json') as unknown as DecisionExecutionInputRecord['input'],
 		metadata: object(row, id, 'metadata_json'),
 		acceptedAt: nullableText(row.accepted_at),
 		revisionRequestedAt: nullableText(row.revision_requested_at),
