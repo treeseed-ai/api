@@ -7,7 +7,7 @@ function source(path: string) {
 
 describe('feedback API architecture contract', () => {
 	it('declares a narrow feedback endpoint with validation, audit, and triage behavior', () => {
-		const feedbackRoute = source('src/api/routes/foundation-healthz-deep-through-feedback.ts');
+		const feedbackRoute = source('src/api/routes/foundation-health-market-and-feedback.ts');
 		const feedbackSupport = source('src/api/app/support/feedback.ts');
 
 		expect(feedbackRoute).toContain("app.post('/v1/feedback'");
@@ -23,10 +23,10 @@ describe('feedback API architecture contract', () => {
 
 	it('classifies feedback as public while preserving private-context access checks', () => {
 		const descriptors = [
-			source('src/api/route-descriptors-support/part-2.ts'),
-			source('src/api/route-descriptors-support/part-3.ts'),
+			source('src/api/route-descriptors-support/authorization-policy.ts'),
+			source('src/api/route-descriptors-support/request-body-factories.ts'),
 		].join('\n');
-		const acceptance = source('scripts/api-acceptance-support/part-2.ts');
+		const acceptance = source('scripts/api-acceptance-support/request-body-factories.ts');
 
 		expect(descriptors).toMatch(/if \(path === '\/v1\/feedback'\)\s+return 'public'/u);
 		expect(descriptors).toMatch(/if \(path === '\/v1\/feedback'\)\s+return ACCEPTANCE_ACTORS/u);

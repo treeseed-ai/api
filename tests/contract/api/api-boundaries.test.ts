@@ -16,7 +16,7 @@ describe('API backend boundaries', () => {
 	});
 
 	it('keeps local content routes job-backed instead of filesystem-backed', () => {
-		const source = readFileSync('src/api/routes/projects-projects-item-capabilities-through-projects-item-ci-oidc-exchange.ts', 'utf8');
+		const source = readFileSync('src/api/routes/projects-capabilities-content-and-ci.ts', 'utf8');
 		const routeStart = source.indexOf("app.post('/v1/projects/:projectId/local-content/decisions/from-proposals'");
 		const routeEnd = source.indexOf("app.post('/v1/projects/:projectId/ci/oidc/exchange'", routeStart);
 		expect(routeStart).toBeGreaterThan(-1);
@@ -82,12 +82,12 @@ describe('API backend boundaries', () => {
 
 	it('keeps backend credential and launch recovery guardrails in API routes', () => {
 		const api = [
-			'src/api/routes/operations-jobs-item-through-jobs-item-provider-credential-sessions-item-consume.ts',
+			'src/api/routes/operations-project-jobs-and-credential-sessions.ts',
 			'src/api/routes/projects-teams-item-projects-launch.ts',
 			'src/api/routes/project-launch-phases.ts',
 			'src/api/app/support/hosting-launch-bootstrap.ts',
 			'src/api/app/support/foundation-configuration.ts',
-			'src/api/routes/teams-teams-item-web-hosts-through-teams-item-hosts-item-validate.ts',
+			'src/api/routes/teams-repository-and-web-hosts.ts',
 		].map((path) => readFileSync(path, 'utf8')).join('\n');
 		expect(api).toContain('retryApiLaunchBootstrapFromRequest');
 		expect(api).toContain('rejectProjectSecretUnlockMaterial');

@@ -1,0 +1,22 @@
+// Import-only collector groups API scenarios by bounded context.
+import './inspects-audits-and-queues-governed-project-host-operations.scenarios.ts';
+import './routes-remote-inline-dispatch-through-a-hosted-project-api-connection.scenarios.ts';
+import './keeps-project-artifacts-durable-while-delegating-approvals-operations-and-codex-readiness.scenarios.ts';
+import './serves-deep-health-and-runner-health-summaries.scenarios.ts';
+import './uses-the-drizzle-owned-web-session-schema-before-serving-deep-health.scenarios.ts';
+import './adopts-an-existing-baseline-postgres-schema-before-serving-deep-health.scenarios.ts';
+import './repairs-an-incomplete-postgres-baseline-with-a-stale-applied-marker-before-serving-deep-health.scenarios.ts';
+import './queues-project-runner-jobs-and-records-lifecycle-events.scenarios.ts';
+import './queues-project-web-deployment-operations-with-readiness-idempotency-events-retry-resume-and-cancel-semantics.scenarios.ts';
+import './tracks-platform-repository-claims-with-runner-ownership-and-safe-release-metadata.scenarios.ts';
+import './skips-approval-waiting-operations-and-preserves-cancellation-retry-safety.scenarios.ts';
+import './converts-local-content-write-routes-into-repository-platform-operations.scenarios.ts';
+import './runs-repository-content-jobs-in-the-runner-workspace-instead-of-the-api-process.scenarios.ts';
+import './queues-linked-repository-initialization-through-the-project-api-and-operations-runner.scenarios.ts';
+import './runs-branch-mode-repository-jobs-with-verification-and-fails-before-commit-when-verification-fails.scenarios.ts';
+import './keeps-project-runner-approval-reporting-while-every-retired-workday-compatibility-route-returns-404.scenarios.ts';
+import './blocks-dispatch-when-a-project-capability-grant-is-disabled.scenarios.ts';
+import './keeps-managed-project-launch-bootstrap-owned-by-the-api-instead-of-the-runner.scenarios.ts';
+import './exchanges-github-oidc-for-managed-operation-jobs-without-exposing-provider-secrets.scenarios.ts';
+import './creates-repository-credential-sessions-from-real-secretbox-envelopes-in-the-api-runtime.scenarios.ts';
+import './hosted-deployment-lifecycle.scenarios.ts';
