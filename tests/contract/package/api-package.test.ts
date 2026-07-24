@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createApiApp } from '../../../src/api/app.js';
-import { createMarketPostgresDatabase } from '../../../src/api/market-postgres.js';
-import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/route-descriptors.js';
-import { MarketControlPlaneStore, validateProjectSlug } from '../../../src/api/store.js';
+import { createPlatformApiApp } from '../../../src/api/support/app.js';
+import { createMarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
+import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
+import { MarketControlPlaneStore, validateProjectSlug } from '../../../src/api/persistence/store.js';
 import { main as runMarketOperationsRunner } from '../../../src/operations-runner/entrypoint.js';
 
 function createNoopStore() {
@@ -20,7 +20,7 @@ function createNoopStore() {
 
 describe('API package surface', () => {
 	it('exports the backend constructors used by deployment entrypoints', () => {
-		expect(typeof createApiApp).toBe('function');
+		expect(typeof createPlatformApiApp).toBe('function');
 		expect(typeof MarketControlPlaneStore).toBe('function');
 		expect(typeof createMarketPostgresDatabase).toBe('function');
 		expect(typeof validateProjectSlug).toBe('function');
@@ -28,7 +28,7 @@ describe('API package surface', () => {
 	});
 
 	it('constructs the Hono app with injected backend dependencies', () => {
-		const app = createApiApp({
+		const app = createPlatformApiApp({
 			db: {},
 			store: createNoopStore(),
 			config: {

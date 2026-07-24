@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decodeDurableJsonArray, decodeDurableJsonObject } from '../../../src/api/capacity/durable-json.ts';
-import { loadCapacityAdmissionState } from '../../../src/api/capacity/services/admission-state-service.ts';
-import { CapacityGrantService } from '../../../src/api/capacity/services/grant-service.ts';
+import { loadCapacityAdmissionState } from '../../../src/api/capacity/services/support/admission-state-service.ts';
+import { CapacityGrantService } from '../../../src/api/capacity/services/capacity/allocations/grant-service.ts';
 
 describe('durable capacity JSON', () => {
 	it('fails closed for malformed grant and admission durable JSON', async () => {

@@ -1,5 +1,5 @@
-import { compact, safeArray, type OperationalArtifact } from '../operational-artifacts.js';
-import { type WorkdayProjection } from '../workday-projection.js';
+import { compact, safeArray, type OperationalArtifact } from '../operations/operational-artifacts.js';
+import { type WorkdayProjection } from '../capacity/workdays/workday-projection.js';
 import { currentPhase, capacityProjection, repositoryContextFor, riskClassification, compareTimelineAsc, agentActivityProjection, collectArtifacts, assignmentTimelineEvents, governanceEvent, objectiveEvent, artifactTimelineEvent, buildPhases } from './index.js';
 
 export function projectWorkdayProjection(bundle: any): WorkdayProjection {

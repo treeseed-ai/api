@@ -1,4 +1,4 @@
-import { type BuildInfrastructureProjectionInput, type InfrastructureBundle } from '../infrastructure-projection.js';
+import { type BuildInfrastructureProjectionInput, type InfrastructureBundle } from '../projects/hosting/infrastructure-projection.js';
 import { call } from './index.js';
 
 export async function loadProjectBundle(input: BuildInfrastructureProjectionInput, project: any): Promise<InfrastructureBundle> {

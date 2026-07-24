@@ -2,8 +2,8 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DataType, newDb } from 'pg-mem';
 import type { CapacityAdmissionInput } from '@treeseed/sdk/agent-capacity/allocation';
-import { MarketPostgresDatabase } from '../../../src/api/market-postgres.js';
-import { MarketControlPlaneStore } from '../../../src/api/store.js';
+import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
+import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
 import { createCapacityControlPlane, type CapacityControlPlaneStore } from '../../../src/api/capacity/control-plane.ts';
 
 const packageRoot = process.cwd();

@@ -3,11 +3,11 @@ import { resolve } from 'node:path';
 import { DataType, newDb } from 'pg-mem';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createCapacityControlPlane } from '../../../src/api/capacity/control-plane.ts';
-import { CapacityWorkdayDemandRepository } from '../../../src/api/capacity/repositories/workday-demand.ts';
-import { assignNextCompiledDemand } from '../../../src/api/capacity/services/assignment-function.ts';
-import { compileProviderWorkdayDemand } from '../../../src/api/capacity/services/demand-compiler.ts';
-import { MarketPostgresDatabase } from '../../../src/api/market-postgres.ts';
-import { MarketControlPlaneStore } from '../../../src/api/store.ts';
+import { CapacityWorkdayDemandRepository } from '../../../src/api/capacity/repositories/capacity/workdays/workday-demand.ts';
+import { assignNextCompiledDemand } from '../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
+import { compileProviderWorkdayDemand } from '../../../src/api/capacity/services/build/demand-compiler.ts';
+import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.ts';
+import { MarketControlPlaneStore } from '../../../src/api/persistence/store.ts';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))

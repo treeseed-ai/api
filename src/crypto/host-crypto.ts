@@ -119,7 +119,7 @@ export async function decryptHostConfig(envelope: HostEncryptedPayload | TestHos
 	if (
 		envelope.algorithm === 'test-json'
 		&& (typeof process !== 'undefined')
-		&& (process.env.NODE_ENV === 'test' || process.env.TREESEED_LOCAL_DEV_MODE)
+		&& (process.env.NODE_ENV === 'test' || process.env.LOCAL_DEV_MODE)
 	) {
 		const expected = envelope.passphrase ?? envelope.testPassphrase ?? passphrase;
 		if (expected !== passphrase) {

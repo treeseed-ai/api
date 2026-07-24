@@ -1,4 +1,4 @@
-import { type GovernanceTone } from '../governance-projection.js';
+import { type GovernanceTone } from '../projects/projects-core/governance-projection.js';
 
 export function safeArray<T = any>(value: unknown): T[] {
     return Array.isArray(value) ? value as T[] : [];

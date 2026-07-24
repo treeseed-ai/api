@@ -4,7 +4,7 @@ import {
 	serializeDecisionExecutionInputRow,
 	serializeDecisionPlanningStatusRow,
 	serializePlanningInputRequestRow,
-} from '../../../src/api/capacity/repositories/planning-state.ts';
+} from '../../../src/api/capacity/repositories/support/planning-state.ts';
 
 const timestamps = { created_at: '2026-07-18T00:00:00.000Z', updated_at: '2026-07-18T00:00:00.000Z' };
 

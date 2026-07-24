@@ -1,4 +1,4 @@
-import { compact, latestDate, safeArray, titleFromKind } from '../operational-artifacts.js';
+import { compact, latestDate, safeArray, titleFromKind } from '../operations/operational-artifacts.js';
 
 export function agentActivityProjection(bundle: any): any[] {
     const byAgent = new Map<string, any>();

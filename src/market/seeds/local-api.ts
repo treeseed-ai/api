@@ -1,4 +1,4 @@
-import { createApiApp } from '../../api/app.js';
+import { createPlatformApiApp } from '../../api/support/app.js';
 import { resolveLocalSeedEnv } from './apply.js';
 
 function localApiConfig(projectRoot, env = process.env) {
@@ -60,7 +60,7 @@ async function requestLocalSeedApi(input, endpoint) {
 	const db = input.db;
 	try {
 		const config = localApiConfig(input.projectRoot, localEnv);
-		const app = createApiApp({ config, ...(db ? { db } : {}) });
+		const app = createPlatformApiApp({ config, ...(db ? { db } : {}) });
 		return await jsonRequest(app, `/v1/seeds/${encodeURIComponent(input.seedName)}/${endpoint}`, input, seedRequestBody(input));
 	} finally {
 		if (!input.db) db?.close?.();
@@ -72,7 +72,7 @@ async function requestLocalSeedExport(input) {
 	const db = input.db;
 	try {
 		const config = localApiConfig(input.projectRoot, localEnv);
-		const app = createApiApp({ config, ...(db ? { db } : {}) });
+		const app = createPlatformApiApp({ config, ...(db ? { db } : {}) });
 		let teamId = input.team;
 		const teamsResponse = await app.request('/v1/teams', {
 			headers: {

@@ -1,5 +1,5 @@
-import { anchorPart, compact, describeState, safeArray, toneForState } from '../operational-artifacts.js';
-import { type InfrastructureBundle, type InfrastructureItem } from '../infrastructure-projection.js';
+import { anchorPart, compact, describeState, safeArray, toneForState } from '../operations/operational-artifacts.js';
+import { type InfrastructureBundle, type InfrastructureItem } from '../projects/hosting/infrastructure-projection.js';
 import { projectName } from './index.js';
 
 export function capacityOperationItems(bundle: InfrastructureBundle): InfrastructureItem[] {

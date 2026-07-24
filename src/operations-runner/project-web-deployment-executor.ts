@@ -4,7 +4,7 @@ import {
 	formatGitHubWorkflowFailure,
 	waitForGitHubWorkflowRunCompletion,
 } from '@treeseed/sdk';
-import { redactDeploymentValue } from '../market/deployment-actions.ts';
+import { redactDeploymentValue } from '../market/hosting/deployment-actions.ts';
 import { executeProjectWebDeployment } from './project-web-deployment-execution.ts';
 
 const ACTIONS = new Set(['deploy_web', 'publish_content', 'monitor']);

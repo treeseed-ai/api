@@ -12,24 +12,24 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DataType, newDb } from 'pg-mem';
 
-import * as treeseedCore from '@treeseed/sdk';
+import * as Core from '@treeseed/sdk';
 
 import { AgentSdk, PlatformRunnerClient } from '@treeseed/sdk';
 
-import { createApiApp } from '../../src/api/app.js';
+import { createPlatformApiApp } from '../../src/api/support/app.js';
 
-import { MarketPostgresDatabase } from '../../src/api/market-postgres.js';
+import { MarketPostgresDatabase } from '../../src/api/support/market-postgres.js';
 
-import { MarketControlPlaneStore } from '../../src/api/store.js';
+import { MarketControlPlaneStore } from '../../src/api/persistence/store.js';
 
 import { encryptHostConfig } from '../../src/crypto/host-crypto.ts';
 
-import { listTreeseedManagedHostsFromConfig } from '../../src/market/managed-hosts.js';
+import { listManagedHostsFromConfig } from '../../src/market/hosting/managed-hosts.js';
 
 import { runOnceWithClient } from '../../src/operations-runner/entrypoint.js';
 
 const apiMocks = vi.hoisted(() => ({
-    runTreeseedHostingAudit: vi.fn(async (input: Record<string, unknown> = {}) => ({
+    runHostingAudit: vi.fn(async (input: Record<string, unknown> = {}) => ({
         ok: true,
         environment: input.environment === 'prod' ? 'prod' : input.environment === 'local' ? 'local' : 'staging',
         requestedEnvironment: input.environment ?? 'current',
@@ -134,7 +134,7 @@ vi.mock('@treeseed/sdk', async (importOriginal) => {
 
 vi.mock('@treeseed/sdk/workflow-support', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@treeseed/sdk/workflow-support')>()),
-    runTreeseedHostingAudit: apiMocks.runTreeseedHostingAudit,
+    runHostingAudit: apiMocks.runHostingAudit,
 }));
 
 export const packageRoot = process.cwd();
@@ -201,7 +201,7 @@ export type ApiTestOptions = {
 };
 
 export function createTestApp(options: ApiTestOptions = {}) {
-    return createApiApp({
+    return createPlatformApiApp({
         ...options,
         db: options.db ?? createTestPostgresDatabase(),
         sdk: options.sdk ?? new AgentSdk({
@@ -466,8 +466,8 @@ export async function createDeploymentReadyProject(id: string) {
 afterEach(() => {
     vi.restoreAllMocks();
     apiMocks.executeKnowledgeHubProviderLaunch.mockReset();
-    apiMocks.runTreeseedHostingAudit.mockReset();
-    apiMocks.runTreeseedHostingAudit.mockImplementation(async (input: Record<string, unknown> = {}) => ({
+    apiMocks.runHostingAudit.mockReset();
+    apiMocks.runHostingAudit.mockImplementation(async (input: Record<string, unknown> = {}) => ({
         ok: true,
         environment: input.environment === 'prod' ? 'prod' : input.environment === 'local' ? 'local' : 'staging',
         requestedEnvironment: input.environment ?? 'current',
@@ -484,4 +484,4 @@ afterEach(() => {
         nextActions: ['Hosting setup is ready for host saving and project launch.'],
     }));
 });
-export { execFileSync, createServer, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, tmpdir, resolve, afterEach, describe, expect, it, vi, DataType, newDb, treeseedCore, AgentSdk, PlatformRunnerClient, createApiApp, MarketPostgresDatabase, MarketControlPlaneStore, encryptHostConfig, listTreeseedManagedHostsFromConfig, runOnceWithClient };
+export { execFileSync, createServer, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, tmpdir, resolve, afterEach, describe, expect, it, vi, DataType, newDb, Core, AgentSdk, PlatformRunnerClient, createPlatformApiApp, MarketPostgresDatabase, MarketControlPlaneStore, encryptHostConfig, listManagedHostsFromConfig, runOnceWithClient };

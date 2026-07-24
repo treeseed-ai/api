@@ -1,4 +1,4 @@
-import { compact, safeArray } from '../operational-artifacts.js';
+import { compact, safeArray } from '../operations/operational-artifacts.js';
 import { MAX_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
 import { normalizeWorkday, workdayRef } from './index.js';
 

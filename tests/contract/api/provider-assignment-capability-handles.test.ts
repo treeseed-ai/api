@@ -2,9 +2,9 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DataType, newDb } from 'pg-mem';
 import { describe, expect, it } from 'vitest';
-import { MarketPostgresDatabase } from '../../../src/api/market-postgres.js';
-import { MarketControlPlaneStore } from '../../../src/api/store.js';
-import { compileAssignmentCapabilityContext } from '../../../src/api/capacity/services/assignment-capability-service.js';
+import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
+import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
+import { compileAssignmentCapabilityContext } from '../../../src/api/capacity/services/capacity/assignments/admission/assignment-capability-service.js';
 
 const packageRoot = process.cwd();
 const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { NOTIFICATION_CONTENT_CAPABILITIES, normalizeNotificationPreferences } from '@treeseed/sdk/account-contracts';
 import { sendAuthEmail } from '../auth/email.js';
-import type { MarketControlPlaneStore } from '../api/store.js';
+import type { MarketControlPlaneStore } from '../api/persistence/store.js';
 
 export interface ContentNotificationEventInput {
 	idempotencyKey: string;

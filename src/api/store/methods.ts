@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../store.ts';
+import type { MarketControlPlaneStore } from '../persistence/store.ts';
 import { installAccountsStoreMethods } from './installers/accounts.ts';
 import { installCatalogStoreMethods } from './installers/catalog.ts';
 import { installCommerceStoreMethods } from './installers/commerce.ts';

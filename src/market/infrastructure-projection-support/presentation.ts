@@ -1,5 +1,5 @@
-import { compact, compareDatesDesc } from '../operational-artifacts.js';
-import { type InfrastructureBundle, type InfrastructureItem } from '../infrastructure-projection.js';
+import { compact, compareDatesDesc } from '../operations/operational-artifacts.js';
+import { type InfrastructureBundle, type InfrastructureItem } from '../projects/hosting/infrastructure-projection.js';
 
 export async function call(store: any, method: string, ...args: any[]) {
     return typeof store?.[method] === 'function' ? store[method](...args).catch(() => null) : null;

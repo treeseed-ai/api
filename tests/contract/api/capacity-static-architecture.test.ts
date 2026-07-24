@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 const packageRoot = process.cwd();
 const capacityRoot = resolve(packageRoot, 'src/api/capacity');
-const productionFiles = [...walk(capacityRoot), resolve(packageRoot, 'src/api/market-postgres.ts')].sort();
+const productionFiles = [...walk(capacityRoot), resolve(packageRoot, 'src/api/support/market-postgres.ts')].sort();
 const compilerSuppression = /@ts-(?:nocheck|ignore|expect-error)|eslint-disable|biome-ignore/gu;
 const explicitAny = /\bany\b/gu;
 const forbiddenBoundaryImport = /from\s+['"]@treeseed\/(?:admin|agent|cli|core|ui)(?:\/[^'"]*)?['"]/gu;
@@ -119,8 +119,8 @@ describe('capacity static architecture', () => {
 	});
 
 	it('keeps the suppressed legacy composition store outside the capacity implementation boundary', () => {
-		const store = readFileSync(resolve(packageRoot, 'src/api/store.ts'), 'utf8');
-		const app = readFileSync(resolve(packageRoot, 'src/api/app.ts'), 'utf8');
+		const store = readFileSync(resolve(packageRoot, 'src/api/persistence/store.ts'), 'utf8');
+		const app = readFileSync(resolve(packageRoot, 'src/api/support/app.ts'), 'utf8');
 		const controlPlane = readFileSync(resolve(packageRoot, 'src/api/capacity/control-plane.ts'), 'utf8');
 		const providerControlPlane = readFileSync(resolve(packageRoot, 'src/api/capacity/provider-control-plane.ts'), 'utf8');
 		expect(store).not.toMatch(/from ['"].*\/capacity\/(?:repositories|services|routes)\//u);

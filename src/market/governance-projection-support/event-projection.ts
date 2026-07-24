@@ -1,4 +1,4 @@
-import { type GovernanceBundle, type GovernanceEvent } from '../governance-projection.js';
+import { type GovernanceBundle, type GovernanceEvent } from '../projects/projects-core/governance-projection.js';
 import { safeArray, compact, latestDate, titleFromKind, describeState, toneForState } from './index.js';
 
 export function activityEventsForBundle(bundle: GovernanceBundle): GovernanceEvent[] {

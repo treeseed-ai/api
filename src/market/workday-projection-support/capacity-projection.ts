@@ -1,4 +1,4 @@
-import { compact, safeArray } from '../operational-artifacts.js';
+import { compact, safeArray } from '../operations/operational-artifacts.js';
 import { workdayRef, numberValue, numberOrNull } from './index.js';
 
 export function capacityProjection(bundle: any) {

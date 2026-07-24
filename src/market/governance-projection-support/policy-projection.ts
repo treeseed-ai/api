@@ -1,4 +1,4 @@
-import { type GovernanceBundle, type GovernancePolicyItem } from '../governance-projection.js';
+import { type GovernanceBundle, type GovernancePolicyItem } from '../projects/projects-core/governance-projection.js';
 import { safeArray, compact, toneForState, objectValue } from './index.js';
 
 export function policyItemsForBundle(bundle: GovernanceBundle): GovernancePolicyItem[] {

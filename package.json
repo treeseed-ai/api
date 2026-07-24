@@ -22,12 +22,12 @@
   "files": [
     "README.md",
     "dist",
-    "scripts/verify-driver.ts"
+    "scripts/support/verify-driver.ts"
   ],
   "bin": {
-    "treeseed-api": "./dist/api/server.js",
+    "treeseed-api": "./dist/api/support/server.js",
     "treeseed-api-operations-runner": "./dist/operations-runner/entrypoint.js",
-    "treeseed-api-db-migrate": "./dist/scripts/migrate-db.js"
+    "treeseed-api-db-migrate": "./dist/scripts/support/migrate-db.js"
   },
   "exports": {
     ".": {
@@ -35,66 +35,66 @@
       "default": "./dist/index.js"
     },
     "./api/app": {
-      "types": "./dist/api/app.d.ts",
-      "default": "./dist/api/app.js"
+      "types": "./dist/api/support/app.d.ts",
+      "default": "./dist/api/support/app.js"
     },
     "./api/server": {
-      "types": "./dist/api/server.d.ts",
-      "default": "./dist/api/server.js"
+      "types": "./dist/api/support/server.d.ts",
+      "default": "./dist/api/support/server.js"
     },
     "./api/store": {
-      "types": "./dist/api/store.d.ts",
-      "default": "./dist/api/store.js"
+      "types": "./dist/api/persistence/store.d.ts",
+      "default": "./dist/api/persistence/store.js"
     },
     "./api/market-postgres": {
-      "types": "./dist/api/market-postgres.d.ts",
-      "default": "./dist/api/market-postgres.js"
+      "types": "./dist/api/support/market-postgres.d.ts",
+      "default": "./dist/api/support/market-postgres.js"
     },
     "./operations-runner": {
       "types": "./dist/operations-runner/entrypoint.d.ts",
       "default": "./dist/operations-runner/entrypoint.js"
     },
     "./route-descriptors": {
-      "types": "./dist/api/route-descriptors.d.ts",
-      "default": "./dist/api/route-descriptors.js"
+      "types": "./dist/api/support/route-descriptors.d.ts",
+      "default": "./dist/api/support/route-descriptors.js"
     }
   },
   "scripts": {
     "setup": "npm install",
     "setup:ci": "npm ci",
     "build": "npm run build:dist",
-    "build:dist": "node --import tsx ./scripts/build-dist.ts",
-    "check:file-lengths": "node --import tsx ./scripts/check-file-lengths.ts && npm run check:file-architecture",
-    "check:file-architecture": "node --import tsx ./scripts/check-file-architecture.ts",
-    "prepare": "node --import tsx ./scripts/prepare.ts",
+    "build:dist": "node --import tsx ./scripts/build/build-dist.ts",
+    "check:file-lengths": "node --import tsx ./scripts/support/check-file-lengths.ts && npm run check:file-architecture",
+    "check:file-architecture": "node --import tsx ./scripts/support/check-file-architecture.ts",
+    "prepare": "node --import tsx ./scripts/support/prepare.ts",
     "prepack": "npm run build:dist",
-    "dev:api": "node --import tsx ./src/api/server.ts",
+    "dev:api": "node --import tsx ./src/api/support/server.ts",
     "dev:runner": "node --import tsx ./src/operations-runner/entrypoint.ts run",
     "dev:compose": "COMPOSE_DISABLE_ENV_FILE=1 docker compose up --build",
     "dev:compose:down": "COMPOSE_DISABLE_ENV_FILE=1 docker compose down",
     "dev:compose:logs": "COMPOSE_DISABLE_ENV_FILE=1 docker compose logs --follow api operations-runner",
-    "start:api": "node ./dist/api/server.js",
+    "start:api": "node ./dist/api/support/server.js",
     "start:runner": "node ./dist/operations-runner/entrypoint.js run",
-    "db:migrate": "node ./dist/scripts/migrate-db.js",
+    "db:migrate": "node ./dist/scripts/support/migrate-db.js",
     "lint": "npm run check:file-lengths && npm run build:dist",
     "test": "npm run test:unit",
     "test:unit": "vitest run --config ./vitest.config.ts",
     "test:postgres:phase1": "vitest run --config ./vitest.config.ts tests/integration/postgres/phase1-postgres-proof.test.ts",
     "test:capacity-load": "vitest run --config ./vitest.config.ts tests/performance/capacity-admission-settlement-load.test.ts",
-    "test:acceptance": "node --import tsx ./scripts/api-acceptance.ts",
+    "test:acceptance": "node --import tsx ./scripts/support/api-acceptance.ts",
     "verify:direct": "npm run release:verify",
-    "verify:local": "TREESEED_VERIFY_DRIVER=direct TMPDIR=/tmp node --import tsx ./scripts/verify-driver.ts",
-    "verify:action": "TREESEED_VERIFY_DRIVER=act TMPDIR=/tmp node --import tsx ./scripts/verify-driver.ts",
-    "verify": "TMPDIR=/tmp node --import tsx ./scripts/verify-driver.ts",
+    "verify:local": "TREESEED_VERIFY_DRIVER=direct TMPDIR=/tmp node --import tsx ./scripts/support/verify-driver.ts",
+    "verify:action": "TREESEED_VERIFY_DRIVER=act TMPDIR=/tmp node --import tsx ./scripts/support/verify-driver.ts",
+    "verify": "TMPDIR=/tmp node --import tsx ./scripts/support/verify-driver.ts",
     "release:setup": "npm run setup:ci",
-    "release:check-tag": "node --import tsx ./scripts/assert-release-tag-version.ts",
-    "release:verify": "npm run check:file-lengths && node --import tsx ./scripts/release-verify.ts",
-    "release:publish": "node --import tsx ./scripts/publish-package.ts"
+    "release:check-tag": "node --import tsx ./scripts/packages/assert-release-tag-version.ts",
+    "release:verify": "npm run check:file-lengths && node --import tsx ./scripts/packages/release-verify.ts",
+    "release:publish": "node --import tsx ./scripts/packages/publish-package.ts"
   },
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#363356034d2717f401f4cdd0c54b22c16dffc60c",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#8f2e04cb4dac647d7aa63179dd67b5027d2e393f",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.8.2",
     "libsodium-wrappers": "^0.7.16",

@@ -1,4 +1,4 @@
-import { compact, latestDate, toneForState } from '../operational-artifacts.js';
+import { compact, latestDate, toneForState } from '../operations/operational-artifacts.js';
 
 export function normalizeWorkday(project: any, source: any, summaryEntry: any) {
     const metadata = objectValue(source?.metadata) ?? {};

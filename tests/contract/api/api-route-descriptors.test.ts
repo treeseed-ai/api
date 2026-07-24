@@ -13,12 +13,12 @@ import {
 	PROJECT_MEMBER_ACTORS,
 	SDK_METHOD_ROUTE_MAP,
 	extractActiveApiRoutes,
-} from '../../../src/api/route-descriptors.js';
+} from '../../../src/api/support/route-descriptors.js';
 
 function publicMarketClientMethods() {
-	const sourcePath = existsSync(resolve(process.cwd(), '../sdk/src/market-client.ts'))
-		? resolve(process.cwd(), '../sdk/src/market-client.ts')
-		: resolve(process.cwd(), 'node_modules/@treeseed/sdk/dist/market-client.js');
+	const sourcePath = existsSync(resolve(process.cwd(), '../sdk/src/entrypoints/clients/market-client.ts'))
+		? resolve(process.cwd(), '../sdk/src/entrypoints/clients/market-client.ts')
+		: resolve(process.cwd(), 'node_modules/@treeseed/sdk/dist/entrypoints/clients/market-client.js');
 	const source = readFileSync(sourcePath, 'utf8');
 	const classStart = source.indexOf('export class MarketClient');
 	const classSource = source.slice(classStart);

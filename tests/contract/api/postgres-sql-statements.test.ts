@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { splitPostgresSqlStatements } from '../../../src/api/postgres-sql-statements.ts';
+import { splitPostgresSqlStatements } from '../../../src/api/persistence/postgres-sql-statements.ts';
 
 describe('PostgreSQL migration statement splitting', () => {
 	it('keeps dollar-quoted migration blocks atomic', () => {

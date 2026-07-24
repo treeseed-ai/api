@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CapacityGovernanceDatabase } from '../../../src/api/capacity/database.ts';
-import { listExecutionRunsForTeamPage } from '../../../src/api/capacity/repositories/execution-run.ts';
+import { listExecutionRunsForTeamPage } from '../../../src/api/capacity/repositories/support/execution-run.ts';
 
 describe('execution-run repository', () => {
 	it('surfaces telemetry read failure instead of returning an incomplete forensic projection', async () => {

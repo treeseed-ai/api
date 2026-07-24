@@ -9,8 +9,8 @@ import {
 	expandSdkMethodMatrices,
 	loadSpec,
 	usesHostedAcceptanceEmailBypass,
-} from '../../../scripts/api-acceptance.ts';
-import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/route-descriptors.js';
+} from '../../../scripts/support/api-acceptance.ts';
+import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
 
 describe('API acceptance framework', () => {
 	it('refuses hosted acceptance runs against local dev URLs', () => {
@@ -254,7 +254,7 @@ describe('API acceptance framework', () => {
 		const { spawnSync } = await import('node:child_process');
 		const dir = mkdtempSync(join(tmpdir(), 'treeseed-acceptance-expand-'));
 		const output = join(dir, 'cases.json');
-		const result = spawnSync(process.execPath, ['--import', 'tsx', './scripts/api-acceptance.ts', '--environment', 'local', '--expand-json', output], {
+		const result = spawnSync(process.execPath, ['--import', 'tsx', './scripts/support/api-acceptance.ts', '--environment', 'local', '--expand-json', output], {
 			encoding: 'utf8',
 		});
 		expect(result.status).toBe(0);

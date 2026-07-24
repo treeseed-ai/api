@@ -1,4 +1,4 @@
-import { compact, safeArray, uniqueStrings, type OperationalArtifact } from '../operational-artifacts.js';
+import { compact, safeArray, uniqueStrings, type OperationalArtifact } from '../operations/operational-artifacts.js';
 
 export function repositoryContextFor(bundle: any, artifacts: OperationalArtifact[]) {
     const repositories = safeArray(bundle.projectSummary?.repositories).map((repository: any) => ({

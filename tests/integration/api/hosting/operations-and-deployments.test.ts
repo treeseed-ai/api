@@ -1,0 +1,22 @@
+// Import-only collector groups API scenarios by bounded context.
+import '../projects/hosting/inspects-audits-and-queues-governed-project-host-operations.scenarios.ts';
+import '../projects/hosting/routes-remote-inline-dispatch-through-a-hosted-project-api-connection.scenarios.ts';
+import '../projects/governance/keeps-project-artifacts-durable-while-delegating-approvals-operations-and-codex-readiness.scenarios.ts';
+import '../operations/serves-deep-health-and-runner-health-summaries.scenarios.ts';
+import '../accounts/uses-the-drizzle-owned-web-session-schema-before-serving-deep-health.scenarios.ts';
+import '../support/adopts-an-existing-baseline-postgres-schema-before-serving-deep-health.scenarios.ts';
+import '../support/repairs-an-incomplete-postgres-baseline-with-a-stale-applied-marker-before-serving-deep-health.scenarios.ts';
+import '../projects/runtime/queues-project-runner-jobs-and-records-lifecycle-events.scenarios.ts';
+import '../projects/deployments/queues-project-web-deployment-operations-with-readiness-idempotency-events-retry-resume-and-cancel-semantics.scenarios.ts';
+import '../commerce/ownership/tracks-platform-repository-claims-with-runner-ownership-and-safe-release-metadata.scenarios.ts';
+import '../operations/skips-approval-waiting-operations-and-preserves-cancellation-retry-safety.scenarios.ts';
+import '../operations/converts-local-content-write-routes-into-repository-platform-operations.scenarios.ts';
+import '../treedx/repositories/runs-repository-content-jobs-in-the-runner-workspace-instead-of-the-api-process.scenarios.ts';
+import '../projects/repositories/queues-linked-repository-initialization-through-the-project-api-and-operations-runner.scenarios.ts';
+import '../operations/runs-branch-mode-repository-jobs-with-verification-and-fails-before-commit-when-verification-fails.scenarios.ts';
+import '../capacity/workdays/keeps-project-runner-approval-reporting-while-every-retired-workday-compatibility-route-returns-404.scenarios.ts';
+import '../capacity/allocations/blocks-dispatch-when-a-project-capability-grant-is-disabled.scenarios.ts';
+import '../projects/launch/keeps-managed-project-launch-bootstrap-owned-by-the-api-instead-of-the-runner.scenarios.ts';
+import '../capacity/providers/exchanges-github-oidc-for-managed-operation-jobs-without-exposing-provider-secrets.scenarios.ts';
+import '../accounts/creates-repository-credential-sessions-from-real-secretbox-envelopes-in-the-api-runtime.scenarios.ts';
+import './hosted-deployment-lifecycle.scenarios.ts';

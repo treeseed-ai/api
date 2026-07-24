@@ -1,5 +1,5 @@
-import { compact, describeState, safeArray, toneForState, type OperationalArtifact } from '../operational-artifacts.js';
-import { type OperationalPhase, type OperationalPhaseKey, type OperationalTimelineEvent } from '../workday-projection.js';
+import { compact, describeState, safeArray, toneForState, type OperationalArtifact } from '../operations/operational-artifacts.js';
+import { type OperationalPhase, type OperationalPhaseKey, type OperationalTimelineEvent } from '../capacity/workdays/workday-projection.js';
 
 export const phaseDefinitions: Array<Pick<OperationalPhase, 'key' | 'label' | 'description'>> = [
     { key: 'research', label: 'Research', description: 'Repository inspection, discovery, and operational context gathering.' },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CapacityGovernanceError } from '../../../src/api/capacity/database.ts';
-import { serializeAgentModeRunRow } from '../../../src/api/capacity/repositories/mode-run.ts';
+import { serializeAgentModeRunRow } from '../../../src/api/capacity/repositories/support/mode-run.ts';
 
 function modeRunRow(overrides: Record<string, unknown> = {}) {
 	return {

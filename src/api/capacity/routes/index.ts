@@ -1,20 +1,20 @@
 import type { Hono } from 'hono';
-import { installCapacityGovernanceRoutes } from './governance.ts';
-import { installCapacityPolicyRoutes } from './policy.ts';
-import { installCapacityRuntimeRoutes } from './runtime.ts';
-import { installCapacityOperatorRoutes } from './operator.ts';
-import { installProjectAgentOperatorRoutes, type ProjectAgentOperatorRouteOptions } from './project-agent-operator.ts';
-import { installCapacityWorkdayRoutes } from './workdays.ts';
-import { installCapacityPlanRoutes } from './capacity-plans.ts';
-import { installPlanningStateRoutes } from './planning-state.ts';
-import { installStructuredEstimateRoutes } from './structured-estimates.ts';
-import { installDecisionWorkGraphRoutes } from './decision-work-graphs.ts';
-import { installResearchWorkflowRoutes } from './research-workflows.ts';
-import { installProviderAssignmentRoutes } from './provider-assignments.ts';
-import { installProviderWorkflowDispatchRoutes } from './provider-workflow-dispatch.ts';
-import { installProjectDiagnosticsRoutes, type ProjectDiagnosticsRouteOptions } from './project-diagnostics.ts';
-import { installProjectAgentObservabilityRoutes, type ProjectAgentObservabilityRouteOptions } from './project-agent-observability.ts';
-import { installTreeDxProxyRoutes, type TreeDxProxyRouteOptions } from './treedx-proxy.ts';
+import { installCapacityGovernanceRoutes } from './governance/policy/governance.ts';
+import { installCapacityPolicyRoutes } from './support/policy.ts';
+import { installCapacityRuntimeRoutes } from './runtime/runtime.ts';
+import { installCapacityOperatorRoutes } from './support/operator.ts';
+import { installProjectAgentOperatorRoutes, type ProjectAgentOperatorRouteOptions } from './projects/projects-core/project-agent-operator.ts';
+import { installCapacityWorkdayRoutes } from './capacity/workdays/workdays.ts';
+import { installCapacityPlanRoutes } from './capacity/planning/capacity-plans.ts';
+import { installPlanningStateRoutes } from './support/planning-state.ts';
+import { installStructuredEstimateRoutes } from './support/structured-estimates.ts';
+import { installDecisionWorkGraphRoutes } from './treedx/graph/decision-work-graphs.ts';
+import { installResearchWorkflowRoutes } from './operations/research-workflows.ts';
+import { installProviderAssignmentRoutes } from './capacity/assignments/provider-assignments.ts';
+import { installProviderWorkflowDispatchRoutes } from './capacity/providers/provider-workflow-dispatch.ts';
+import { installProjectDiagnosticsRoutes, type ProjectDiagnosticsRouteOptions } from './projects/projects-core/project-diagnostics.ts';
+import { installProjectAgentObservabilityRoutes, type ProjectAgentObservabilityRouteOptions } from './projects/projects-core/project-agent-observability.ts';
+import { installTreeDxProxyRoutes, type TreeDxProxyRouteOptions } from './treedx/repositories/treedx-proxy.ts';
 import { CapacityGovernanceError } from '../database.ts';
 
 function installCapacityErrorBoundary(app: Hono) {

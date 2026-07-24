@@ -85,4 +85,4 @@ localDev:
   migrations:
     command: node
     args:
-      - scripts/migrate-db.ts
+      - scripts/support/migrate-db.ts

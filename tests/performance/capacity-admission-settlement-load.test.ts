@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
-import { commitCapacityAdmission } from '../../src/api/capacity/services/admission-service.ts';
-import { settleCapacityReservationExactlyOnce } from '../../src/api/capacity/services/settlement-service.ts';
+import { commitCapacityAdmission } from '../../src/api/capacity/services/support/admission-service.ts';
+import { settleCapacityReservationExactlyOnce } from '../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import {
 	capacityAdmissionInput,
 	createCapacityAdmissionTestHarness,
