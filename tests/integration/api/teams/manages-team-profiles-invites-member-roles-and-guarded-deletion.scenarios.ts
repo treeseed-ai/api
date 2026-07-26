@@ -2,7 +2,9 @@ import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPost
 
 describe('market api', () => {
 it('manages team profiles, invites, member roles, and guarded deletion', async () => {
-		const app = createTestApp();
+		const db = createTestPostgresDatabase();
+		const store = createTestStore(db);
+		const app = createTestApp({ db, store });
 		const token = await authorizeApp(app);
 		const created = await json(await app.request('/v1/teams', {
 			method: 'POST',
@@ -94,6 +96,10 @@ it('manages team profiles, invites, member roles, and guarded deletion', async (
 		}));
 		expect(accepted.ok).toBe(true);
 		expect(accepted.payload.accessToken).toEqual(expect.any(String));
+		const invitedHome = await app.request(`/v1/teams/${created.payload.id}/home`, {
+			headers: { authorization: `Bearer ${accepted.payload.accessToken}` },
+		});
+		expect(invitedHome.status).toBe(200);
 
 		const members = await json(await app.request(`/v1/teams/${created.payload.id}/members`, {
 			headers: { authorization: `Bearer ${token}` },
@@ -111,6 +117,16 @@ it('manages team profiles, invites, member roles, and guarded deletion', async (
 		}));
 		expect(updatedRole.ok).toBe(true);
 
+		const removedMember = await json(await app.request(`/v1/teams/${created.payload.id}/members/${member.id}`, {
+			method: 'DELETE',
+			headers: { authorization: `Bearer ${token}` },
+		}));
+		expect(removedMember.ok).toBe(true);
+		const removedHome = await app.request(`/v1/teams/${created.payload.id}/home`, {
+			headers: { authorization: `Bearer ${accepted.payload.accessToken}` },
+		});
+		expect(removedHome.status).toBe(403);
+
 		const deleted = await json(await app.request(`/v1/teams/${created.payload.id}`, {
 			method: 'DELETE',
 			headers: {
@@ -120,5 +136,15 @@ it('manages team profiles, invites, member roles, and guarded deletion', async (
 			body: JSON.stringify({ confirmation: 'DELETE alpha-collective' }),
 		}));
 		expect(deleted.ok).toBe(true);
+		const eventTypes = (await store.all(`SELECT event_type FROM audit_events ORDER BY created_at`)).map((row) => row.event_type);
+		expect(eventTypes).toEqual(expect.arrayContaining([
+			'team.created',
+			'team.updated',
+			'team.invitation.created',
+			'team.invitation.accepted',
+			'team.member.role_changed',
+			'team.member.removed',
+			'team.deleted',
+		]));
 	});
 });

@@ -119,6 +119,11 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						if (!inviteAcceptance.ok) {
 							return jsonError(c, inviteAcceptance.code === 'email_mismatch' ? 400 : 409, inviteAcceptance.message, { code: inviteAcceptance.code });
 						}
+						await store.recordAuditEvent({
+							actorType: 'user', actorId: synced.principal.id, eventType: 'team.invitation.accepted',
+							targetType: 'team', targetId: inviteAcceptance.team?.id ?? inviteProof.team?.id ?? null,
+							data: { invitationId: inviteAcceptance.invite?.id ?? inviteProof.invite?.id ?? null },
+						});
 						const session = await createMarketWebSession(runtimeMarketAuthProvider, synced.principal.id, webSessionData(c, 'team_invite_registration'), { store, authSecret: runtime.resolved.config.authSecret });
 						return c.json({ ok: true, payload: webAuthPayload(session) });
 					}
@@ -271,6 +276,10 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					}
 					await store.run(`DELETE FROM better_auth_verification WHERE id = ?`, [row.id]).catch(() => null);
 					const session = await createMarketWebSession(runtimeMarketAuthProvider, emailAddress.user_id, webSessionData(c, 'web_email_confirmed'), { store, authSecret: runtime.resolved.config.authSecret });
+					await store.recordAuditEvent({
+						actorType: 'user', actorId: emailAddress.user_id, eventType: 'auth.email.verified',
+						targetType: 'user', targetId: emailAddress.user_id, data: { emailAddressId: emailAddress.id },
+					});
 					if (credential.status !== 'active') {
 						await sendWelcomeEmail(marketAuthContext(c), {
 							email,

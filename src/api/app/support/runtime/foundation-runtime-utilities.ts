@@ -54,7 +54,12 @@ export function personalThemeFromRow(row) {
 export async function accountDeletionBlockers(store, principal) {
     const teams = await store.listTeamsForPrincipal(principal);
     const blockers = teams
-        .filter((team) => Array.isArray(team.roles) ? team.roles.includes('owner') : team.role === 'owner')
+        .filter((team) => {
+        const ownsTeam = Array.isArray(team.roles)
+            ? team.roles.some((role) => role === 'owner' || role === 'team_owner')
+            : team.role === 'owner' || team.role === 'team_owner';
+        return ownsTeam && team.metadata?.kind !== 'personal_research';
+    })
         .map((team) => ({
         code: 'team_owner',
         message: `Transfer or delete team "${team.displayName ?? team.name ?? team.slug}" before deleting this account.`,

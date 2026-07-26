@@ -224,6 +224,10 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						`UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE id = ? AND user_id = ?`,
 						[new Date().toISOString(), new Date().toISOString(), sessionId, auth.principal.id],
 					);
+					await store.recordAuditEvent({
+						actorType: 'user', actorId: auth.principal.id, eventType: 'auth.session.revoked',
+						targetType: 'auth_session', targetId: sessionId,
+					});
 					return c.json({ ok: true, payload: { id: sessionId, status: existing.revoked_at ? 'already-revoked' : 'revoked' } });
 				});
 	

@@ -17,6 +17,12 @@ export async function upsertPlatformRepositoryClaimMethod(this: MarketControlPla
     const timestamp = isoNow();
     const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));
     const leaseExpiresAt = input.leaseExpiresAt ?? new Date(Date.now() + leaseSeconds * 1000).toISOString();
+    await this.run(`UPDATE platform_repository_claims
+             SET claim_state = 'released', updated_at = ?
+             WHERE repository_key = ?
+               AND claim_state = 'active'
+               AND lease_expires_at IS NOT NULL
+               AND lease_expires_at <= ?`, [timestamp, repositoryKey, timestamp]);
     const existing = await this.first(`SELECT * FROM platform_repository_claims
 			 WHERE repository_key = ? AND runner_id = ? AND claim_state = 'active'
 			 LIMIT 1`, [repositoryKey, runnerId]);

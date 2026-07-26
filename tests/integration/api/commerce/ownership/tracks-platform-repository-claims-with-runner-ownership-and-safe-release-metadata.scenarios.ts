@@ -64,5 +64,24 @@ it('tracks platform repository claims with runner ownership and safe release met
 			commit_sha: 'abcdef1234567890abcdef1234567890abcdef12',
 			lease_expires_at: null,
 		});
+		await store.run(`UPDATE platform_repository_claims
+			SET claim_state = 'active', lease_expires_at = ?
+			WHERE id = ?`, [new Date(Date.now() - 60_000).toISOString(), released[0].id]);
+		const recovered = await store.upsertPlatformRepositoryClaim({
+			runnerId: 'treeseed-ops-runner-02',
+			repository: {
+				provider: 'local',
+				owner: 'treeseed',
+				name: 'market',
+				defaultBranch: 'staging',
+			},
+			workspaceRoot: '/data',
+		});
+		expect(recovered.runnerId).toBe('treeseed-ops-runner-02');
+		const recoveredRows = await store.all(`SELECT claim_state, runner_id FROM platform_repository_claims ORDER BY created_at`);
+		expect(recoveredRows).toEqual([
+			expect.objectContaining({ claim_state: 'released', runner_id: 'treeseed-ops-runner-01' }),
+			expect.objectContaining({ claim_state: 'active', runner_id: 'treeseed-ops-runner-02' }),
+		]);
 	});
 });

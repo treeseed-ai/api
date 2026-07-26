@@ -129,6 +129,10 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 						row.user_id,
 					]);
 					await store.run(`UPDATE market_auth_password_resets SET used_at = ? WHERE id = ?`, [new Date().toISOString(), row.id]);
+					await store.recordAuditEvent({
+						actorType: 'user', actorId: row.user_id, eventType: 'auth.password.reset',
+						targetType: 'user', targetId: row.user_id,
+					});
 					return c.json({ ok: true });
 				});
 	
@@ -150,6 +154,12 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 					const blockers = await accountDeletionBlockers(store, auth.principal);
 					if (blockers.length) return jsonError(c, 409, 'Account deletion is blocked.', { code: 'deletion_blocked', blockers });
 					if (!await consumeReauthentication(store, auth.principal, 'account_delete', body)) return jsonError(c, 401, 'Reauthentication is required.', { code: 'reauthentication_required' });
+					const personalTeams = (await store.listTeamsForPrincipal(auth.principal))
+						.filter((team) => team.metadata?.kind === 'personal_research' && team.metadata?.ownerUserId === auth.principal.id);
+					for (const team of personalTeams) {
+						const deletedTeam = await deleteTeamCapacityAggregate(store, team.id, `DELETE ${team.name ?? team.slug}`);
+						if (!deletedTeam.ok) return jsonError(c, 409, 'Personal account workspace could not be deleted.', { code: 'personal_team_deletion_failed' });
+					}
 					const now = new Date().toISOString();
 					await store.batch([
 						{ query: `UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?`, params: [now, auth.principal.id] },
@@ -157,6 +167,10 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 						...['user_email_addresses', 'user_identities', 'auth_reauthentication_grants', 'user_personal_themes', 'user_notification_global_content_types', 'user_notification_project_content_types', 'user_notification_project_overrides', 'user_notification_preferences', 'notification_email_deliveries', 'user_notifications'].map((table) => ({ query: `DELETE FROM ${table} WHERE user_id = ?`, params: [auth.principal.id] })),
 						{ query: `UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE user_id = ?`, params: [now, now, auth.principal.id] },
 					]);
+					await store.recordAuditEvent({
+						actorType: 'user', actorId: auth.principal.id, eventType: 'account.deleted',
+						targetType: 'user', targetId: auth.principal.id,
+					});
 					return c.json({ ok: true, payload: { deleted: true } });
 				});
 	
@@ -178,6 +192,10 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 							`UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE id = ? AND user_id = ?`,
 							[new Date().toISOString(), new Date().toISOString(), sessionId, auth.principal.id],
 						).catch(() => {});
+						await store.recordAuditEvent({
+							actorType: 'user', actorId: auth.principal.id, eventType: 'auth.session.revoked',
+							targetType: 'auth_session', targetId: sessionId, data: { reason: 'logout' },
+						});
 					}
 					return c.json({ ok: true });
 				});

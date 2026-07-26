@@ -4,6 +4,11 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const result = await store.acceptTeamInvite(c.req.param('token'), auth.principal.id);
+					if (result.ok) await store.recordAuditEvent({
+						actorType: 'user', actorId: auth.principal.id, eventType: 'team.invitation.accepted',
+						targetType: 'team', targetId: result.team?.id ?? result.invite?.teamId ?? null,
+						data: { invitationId: result.invite?.id ?? null },
+					});
 					return c.json(result, result.ok ? 200 : 400);
 				});
 	
@@ -128,6 +133,10 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 						const status = /already taken|already used/u.test(message) ? 409 : 400;
 						return jsonError(c, status, message, { code: status === 409 ? 'namespace_taken' : 'invalid_team' });
 					}
+					await store.recordAuditEvent({
+						actorType: 'user', actorId: auth.principal.id, eventType: 'team.created',
+						targetType: 'team', targetId: team.id, data: { name: team.name },
+					});
 					return c.json({ ok: true, payload: team });
 				});
 	
@@ -135,14 +144,19 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 					if (access.response) return access.response;
 					const body = await c.req.json().catch(() => ({}));
-					return c.json({
-						...await store.updateTeamSettings(c.req.param('teamId'), {
+					const result = await store.updateTeamSettings(c.req.param('teamId'), {
 							name: typeof body.name === 'string' ? body.name : undefined,
 							displayName: typeof body.displayName === 'string' ? body.displayName : undefined,
 							logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : undefined,
 							profileSummary: typeof body.profileSummary === 'string' ? body.profileSummary : typeof body.description === 'string' ? body.description : undefined,
 							metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
-						}),
+						});
+					if (result.ok) await store.recordAuditEvent({
+						actorType: 'user', actorId: access.principal.id, eventType: 'team.updated',
+						targetType: 'team', targetId: c.req.param('teamId'),
+					});
+					return c.json({
+						...result,
 					});
 				});
 	
@@ -174,6 +188,11 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 								...(shouldExposeNonProductionAuthDiagnostics(c, runtime) ? { detail: authEmailDeliveryFailureDetail(error) } : {}),
 							});
 						}
+						await store.recordAuditEvent({
+							actorType: 'user', actorId: access.principal.id, eventType: 'team.invitation.created',
+							targetType: 'team', targetId: c.req.param('teamId'),
+							data: { invitationId: result.invite.id, roleKey: result.invite.roleKey },
+						});
 					}
 					return c.json(result, result.ok ? 200 : 400);
 				});
@@ -183,6 +202,11 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					if (access.response) return access.response;
 					const body = await c.req.json().catch(() => ({}));
 					const result = await store.updateTeamMemberRole(c.req.param('teamId'), c.req.param('membershipId'), String(body.roleKey ?? body.role ?? 'contributor'));
+					if (result.ok) await store.recordAuditEvent({
+						actorType: 'user', actorId: access.principal.id, eventType: 'team.member.role_changed',
+						targetType: 'team', targetId: c.req.param('teamId'),
+						data: { membershipId: c.req.param('membershipId'), roleKey: body.roleKey ?? body.role ?? 'contributor' },
+					});
 					return c.json(result, result.ok ? 200 : 400);
 				});
 	
@@ -190,6 +214,11 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 					if (access.response) return access.response;
 					const result = await store.removeTeamMember(c.req.param('teamId'), c.req.param('membershipId'));
+					if (result.ok) await store.recordAuditEvent({
+						actorType: 'user', actorId: access.principal.id, eventType: 'team.member.removed',
+						targetType: 'team', targetId: c.req.param('teamId'),
+						data: { membershipId: c.req.param('membershipId') },
+					});
 					return c.json(result, result.ok ? 200 : 400);
 				});
 	
@@ -204,6 +233,10 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					if (access.response) return access.response;
 					const body = await c.req.json().catch(() => ({}));
 					const result = await deleteTeamCapacityAggregate(store, c.req.param('teamId'), body.confirmation);
+					if (result.ok) await store.recordAuditEvent({
+						actorType: 'user', actorId: access.principal.id, eventType: 'team.deleted',
+						targetType: 'team', targetId: c.req.param('teamId'),
+					});
 					return c.json(result, result.ok ? 200 : 400);
 				});
 	

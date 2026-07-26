@@ -41,6 +41,10 @@ it('owns web auth lifecycle and acceptance session seeding in the API', async ()
 		expect(confirmed.ok).toBe(true);
 		expect(confirmed.payload.accessToken).toEqual(expect.any(String));
 		expect(confirmed.payload.principal.metadata.appearance).toEqual({ scheme: 'cedar', mode: 'dark' });
+		expect(await store.first(`SELECT event_type FROM audit_events WHERE event_type = ? AND actor_id = ?`, [
+			'auth.email.verified',
+			confirmed.payload.principal.id,
+		])).toMatchObject({ event_type: 'auth.email.verified' });
 		const personalTeam = await store.getTeamBySlug('api-auth-user');
 		expect(personalTeam).toMatchObject({
 			name: 'api-auth-user',
@@ -97,6 +101,65 @@ it('owns web auth lifecycle and acceptance session seeding in the API', async ()
 			ipAddress: '203.0.113.9',
 			userAgent: 'Treeseed Test Browser/1.0',
 		}));
+		const resetRequest = await json(await app.request('/v1/auth/web/password-reset/request', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ email: 'api-auth@example.com' }),
+		}));
+		expect(resetRequest.payload.resetToken).toEqual(expect.any(String));
+		const reset = await json(await app.request('/v1/auth/web/password-reset/complete', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ token: resetRequest.payload.resetToken, newPassword: 'TreeSeed-auth-reset-456!' }),
+		}));
+		expect(reset.ok).toBe(true);
+		const extraSignin = await json(await app.request('/v1/auth/web/sign-in', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ email: 'api-auth@example.com', password: 'TreeSeed-auth-reset-456!' }),
+		}));
+		const sessionList = await json(await app.request('/v1/auth/web/sessions', {
+			headers: { authorization: `Bearer ${confirmed.payload.accessToken}` },
+		}));
+		const revocableSession = sessionList.payload.find((session: { current: boolean; id: string }) =>
+			!session.current && session.id !== extraSignin.payload.principal.metadata.sessionId);
+		const revoked = await json(await app.request(`/v1/auth/web/sessions/${revocableSession.id}/revoke`, {
+			method: 'POST',
+			headers: { authorization: `Bearer ${confirmed.payload.accessToken}` },
+		}));
+		expect(revoked.payload.status).toBe('revoked');
+		const loggedOut = await json(await app.request('/v1/auth/logout', {
+			method: 'POST',
+			headers: { authorization: `Bearer ${extraSignin.payload.accessToken}` },
+		}));
+		expect(loggedOut.ok).toBe(true);
+		const reauthenticated = await json(await app.request('/v1/auth/web/reauthenticate', {
+			method: 'POST',
+			headers: {
+				authorization: `Bearer ${confirmed.payload.accessToken}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ action: 'account_delete', password: 'TreeSeed-auth-reset-456!' }),
+		}));
+		expect(reauthenticated.payload.grantId).toEqual(expect.any(String));
+		const accountDeleted = await json(await app.request('/v1/auth/web/account', {
+			method: 'DELETE',
+			headers: {
+				authorization: `Bearer ${confirmed.payload.accessToken}`,
+				'content-type': 'application/json',
+			},
+			body: JSON.stringify({ confirmation: 'DELETE MY ACCOUNT', reauthenticationGrantId: reauthenticated.payload.grantId }),
+		}));
+		expect(accountDeleted.ok).toBe(true);
+		expect(await store.getTeamBySlug('api-auth-user')).toBeNull();
+		const auditEvents = (await store.all(`SELECT event_type FROM audit_events WHERE actor_id = ?`, [confirmed.payload.principal.id]))
+			.map((row) => row.event_type);
+		expect(auditEvents).toEqual(expect.arrayContaining([
+			'auth.email.verified',
+			'auth.password.reset',
+			'auth.session.revoked',
+			'account.deleted',
+		]));
 		const seeded = await json(await app.request('/v1/acceptance/seed', {
 			method: 'POST',
 			headers: {
