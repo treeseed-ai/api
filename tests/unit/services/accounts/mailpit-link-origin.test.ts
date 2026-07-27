@@ -45,6 +45,26 @@ describe('Mailpit acceptance link origin', () => {
 		expect(getSiteAuthConfig(context).siteBaseUrl).toBe('http://127.0.0.1:4321');
 	});
 
+	it('keeps an explicit Mailpit transport independent from the public link origin', () => {
+		const context = marketAuthContext({
+			env: {
+				TREESEED_MAILPIT_SMTP_HOST: '127.0.0.1',
+				TREESEED_MAILPIT_SMTP_PORT: '1025',
+			},
+			req: { url: 'http://127.0.0.1:3000/v1/auth/web/sign-up' },
+		}, {
+			siteUrl: 'https://market.example.com',
+		});
+
+		const config = getSiteAuthConfig(context);
+		expect(config.siteBaseUrl).toBe('https://market.example.com');
+		expect(config.authEmail).toMatchObject({
+			localCapture: true,
+			host: '127.0.0.1',
+			port: 1025,
+		});
+	});
+
 	it('passes only when the delivered service link uses the configured site origin', async () => {
 		const url = await mailpitServer('http://127.0.0.1:4321');
 		const expectation = {

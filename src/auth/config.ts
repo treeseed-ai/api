@@ -116,8 +116,9 @@ export function getSiteAuthConfig(context?: Pick<APIContext, 'locals'> & Partial
 	const configuredSiteBaseUrl = envValue('TREESEED_SITE_URL', env) || envValue('TREESEED_BETTER_AUTH_URL', env) || requestOrigin || 'http://127.0.0.1:4321';
 	const siteBaseUrl = normalizeSiteBaseUrl(configuredSiteBaseUrl);
 	const betterAuthBaseUrl = normalizeBetterAuthBaseUrl(envValue('TREESEED_BETTER_AUTH_URL', env) || siteBaseUrl);
-	const localAuthEmail = isLocalUrl(siteBaseUrl) || isLocalUrl(betterAuthBaseUrl);
-	const localMailpitHost = envValue('TREESEED_MAILPIT_SMTP_HOST', env) || DEFAULT_LOCAL_SMTP_HOST;
+	const configuredMailpitHost = envValue('TREESEED_MAILPIT_SMTP_HOST', env);
+	const localAuthEmail = Boolean(configuredMailpitHost) || isLocalUrl(siteBaseUrl) || isLocalUrl(betterAuthBaseUrl);
+	const localMailpitHost = configuredMailpitHost || DEFAULT_LOCAL_SMTP_HOST;
 	const localMailpitPort = parseIntEnv('TREESEED_MAILPIT_SMTP_PORT', DEFAULT_LOCAL_SMTP_PORT, env);
 	const authEmailFrom = firstEnvValue(env, 'TREESEED_AUTH_EMAIL_FROM', 'TREESEED_SMTP_FROM')
 		|| (localAuthEmail ? DEFAULT_LOCAL_AUTH_EMAIL_FROM : '');
@@ -141,6 +142,7 @@ export function getSiteAuthConfig(context?: Pick<APIContext, 'locals'> & Partial
 		emailVerificationTtlSeconds: parseIntEnv('TREESEED_AUTH_EMAIL_VERIFICATION_TTL', DEFAULT_EMAIL_TOKEN_TTL_SECONDS, env),
 		emailVerificationEnabled: parseBooleanEnv('TREESEED_AUTH_EMAIL_VERIFICATION_ENABLED', true, env),
 		authEmail: {
+			localCapture: localAuthEmail,
 			host: localAuthEmail ? localMailpitHost : envValue('TREESEED_SMTP_HOST', env),
 			port: localAuthEmail ? localMailpitPort : parseIntEnv('TREESEED_SMTP_PORT', 465, env),
 			username: localAuthEmail ? '' : envValue('TREESEED_SMTP_USERNAME', env),

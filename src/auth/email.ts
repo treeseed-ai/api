@@ -9,6 +9,7 @@ interface AuthEmailMessage {
 }
 
 interface SmtpConfig {
+	localCapture: boolean;
 	host: string;
 	port: number;
 	username: string;
@@ -336,7 +337,7 @@ export async function sendAuthEmail(context: Pick<APIContext, 'locals'> | undefi
 
 	assertSmtpConfigured(smtp);
 
-	if (isLocalAuthUrl(config.betterAuthBaseUrl) && isLocalSmtpHost(smtp.host)) {
+	if (smtp.localCapture && isLocalSmtpHost(smtp.host)) {
 		try {
 			await sendWithNodeSockets(message, smtp, config.siteBaseUrl);
 			return;
@@ -355,7 +356,7 @@ export async function sendAuthEmail(context: Pick<APIContext, 'locals'> | undefi
 			await sendWithNodeSockets(message, smtp, config.siteBaseUrl);
 			return;
 		} catch (nodeError) {
-			if (isLocalAuthUrl(config.betterAuthBaseUrl)) {
+			if (smtp.localCapture) {
 				console.info(`[auth-email] SMTP delivery failed (${errorMessage(cloudflareError)}; ${errorMessage(nodeError)}); using console fallback.`);
 				logConsoleFallback(message);
 				return;
