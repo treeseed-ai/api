@@ -253,6 +253,18 @@
       "providerAccessToken": 401,
       "platformRunner": 401
     },
+    "get.v1.auth.web.preferences": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 200,
+      "providerOperator": 200,
+      "providerAccessToken": 401,
+      "platformRunner": 401
+    },
     "get.v1.auth.web.emails": {
       "anonymous": 401,
       "siteAdmin": 200,
@@ -2474,6 +2486,18 @@
       "platformRunner": 404
     },
     "patch.v1.auth.web.appearance": {
+      "anonymous": 401,
+      "siteAdmin": 200,
+      "marketSteward": 200,
+      "teamOwner": 200,
+      "teamOperator": 200,
+      "teamViewer": 200,
+      "nonMember": 200,
+      "providerOperator": 200,
+      "providerAccessToken": 401,
+      "platformRunner": 401
+    },
+    "patch.v1.auth.web.preferences": {
       "anonymous": 401,
       "siteAdmin": 200,
       "marketSteward": 200,

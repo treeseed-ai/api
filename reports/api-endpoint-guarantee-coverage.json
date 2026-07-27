@@ -1,7 +1,7 @@
 {
-  "routeCount": 539,
-  "descriptorCount": 539,
-  "coveredByGuarantee": 539,
+  "routeCount": 541,
+  "descriptorCount": 541,
+  "coveredByGuarantee": 541,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -32,11 +32,13 @@
       "get.v1.auth.web.emails",
       "get.v1.auth.web.notifications",
       "get.v1.auth.web.notifications.preferences",
+      "get.v1.auth.web.preferences",
       "get.v1.auth.web.sessions",
       "get.v1.auth.web.themes",
       "get.v1.team-invites.token",
       "patch.v1.auth.web.appearance",
       "patch.v1.auth.web.password",
+      "patch.v1.auth.web.preferences",
       "patch.v1.auth.web.profile",
       "patch.v1.auth.web.themes.themeId",
       "patch.v1.auth.web.username",
