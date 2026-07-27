@@ -111,7 +111,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					if (auth.response) return auth.response;
 					const body = await readJsonOrFormBody(c);
 					try {
-						const result = await createOrResendUserEmailAddress(store, marketAuthContext(c), auth.principal.id, {
+						const result = await createOrResendUserEmailAddress(store, marketAuthContext(c, config), auth.principal.id, {
 							email: body.email,
 							displayName: auth.principal.displayName,
 							returnTo: '/app/account',
@@ -137,7 +137,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						return c.json({ ok: true, payload: { emailAddress: row, verificationSent: false } });
 					}
 					try {
-						const confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c), {
+						const confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c, config), {
 							email: row.email,
 							emailAddressId: row.id,
 							displayName: auth.principal.displayName,

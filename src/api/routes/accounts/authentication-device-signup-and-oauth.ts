@@ -129,7 +129,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					}
 					let confirmation;
 					try {
-						confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c), {
+						confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c, config), {
 							email,
 							emailAddressId,
 							displayName,
@@ -281,7 +281,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						targetType: 'user', targetId: emailAddress.user_id, data: { emailAddressId: emailAddress.id },
 					});
 					if (credential.status !== 'active') {
-						await sendWelcomeEmail(marketAuthContext(c), {
+						await sendWelcomeEmail(marketAuthContext(c, config), {
 							email,
 							displayName: credential.username ?? email,
 						}).catch((error) => {

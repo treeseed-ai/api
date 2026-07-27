@@ -173,7 +173,7 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 						try {
 							if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
 								const team = await store.getTeam(c.req.param('teamId'));
-								await sendTeamInviteEmail(marketAuthContext(c), {
+								await sendTeamInviteEmail(marketAuthContext(c, config), {
 									invite: result.invite,
 									team,
 									token: result.token,

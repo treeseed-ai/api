@@ -1,6 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { assertMailpitExpectation } from '../../../../scripts/api-acceptance-support/support/mailpit-assertions.ts';
+import { getSiteAuthConfig } from '../../../../src/auth/config.ts';
+import { marketAuthContext } from '../../../../src/api/app/support/accounts/authentication-sessions.ts';
 
 const servers: Server[] = [];
 
@@ -32,6 +34,17 @@ async function mailpitServer(linkOrigin: string) {
 }
 
 describe('Mailpit acceptance link origin', () => {
+	it('uses the configured site origin instead of the API request origin', () => {
+		const context = marketAuthContext({
+			env: {},
+			req: { url: 'http://127.0.0.1:3000/v1/auth/web/sign-up' },
+		}, {
+			siteUrl: 'http://127.0.0.1:4321',
+		});
+
+		expect(getSiteAuthConfig(context).siteBaseUrl).toBe('http://127.0.0.1:4321');
+	});
+
 	it('passes only when the delivered service link uses the configured site origin', async () => {
 		const url = await mailpitServer('http://127.0.0.1:4321');
 		const expectation = {

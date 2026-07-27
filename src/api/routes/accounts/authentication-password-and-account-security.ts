@@ -72,10 +72,10 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 								new Date().toISOString(),
 							],
 						);
-						const resetUrl = passwordResetUrlFor(marketAuthContext(c), resetToken);
+						const resetUrl = passwordResetUrlFor(marketAuthContext(c, config), resetToken);
 						try {
 							if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
-								await sendAuthEmail(marketAuthContext(c), {
+								await sendAuthEmail(marketAuthContext(c, config), {
 									to: email,
 									subject: 'Reset your TreeSeed password',
 									text: [

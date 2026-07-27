@@ -128,13 +128,15 @@ export function webSessionData(c, source) {
         ...requestSessionMetadata(c),
     };
 }
-export function marketAuthContext(c) {
+export function marketAuthContext(c, config: any = {}) {
+    const configuredSiteUrl = String(config.siteUrl ?? config.authApprovalBaseUrl ?? '').trim();
     return {
         locals: {
             runtime: {
                 env: {
                     ...process.env,
                     ...(c.env ?? {}),
+                    ...(configuredSiteUrl ? { TREESEED_SITE_URL: configuredSiteUrl } : {}),
                 },
             },
         },
