@@ -47,16 +47,25 @@ function digestDueAt(cadence: 'immediate' | 'daily' | 'weekly', timeZone: string
 }
 
 async function preferencesFor(store: MarketControlPlaneStore, userId: string) {
-	const settings = await store.first<{ email_cadence: 'immediate' | 'daily' | 'weekly'; time_zone: string }>(`SELECT * FROM user_notification_preferences WHERE user_id = ? LIMIT 1`, [userId]);
+	const settings = await store.first<{ email_cadence: 'immediate' | 'daily' | 'weekly' }>(
+		`SELECT email_cadence FROM user_notification_preferences WHERE user_id = ? LIMIT 1`,
+		[userId],
+	);
+	const accountPreferences = await store.first<{ time_zone: string | null }>(
+		`SELECT time_zone FROM user_preferences WHERE user_id = ? LIMIT 1`,
+		[userId],
+	);
 	const globalRows = await store.all<{ content_type: string }>(`SELECT content_type FROM user_notification_global_content_types WHERE user_id = ?`, [userId]);
 	const overrideRows = await store.all<{ project_id: string }>(`SELECT project_id FROM user_notification_project_overrides WHERE user_id = ?`, [userId]);
 	const projectRows = await store.all<{ project_id: string; content_type: string }>(`SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ?`, [userId]);
-	return normalizeNotificationPreferences({
-		emailCadence: settings?.email_cadence,
-		timeZone: settings?.time_zone,
-		globalContentTypes: globalRows.map((row) => row.content_type),
-		projectOverrides: overrideRows.map((row) => ({ projectId: row.project_id, contentTypes: projectRows.filter((type) => type.project_id === row.project_id).map((type) => type.content_type) })),
-	});
+	return {
+		preferences: normalizeNotificationPreferences({
+			emailCadence: settings?.email_cadence,
+			globalContentTypes: globalRows.map((row) => row.content_type),
+			projectOverrides: overrideRows.map((row) => ({ projectId: row.project_id, contentTypes: projectRows.filter((type) => type.project_id === row.project_id).map((type) => type.content_type) })),
+		}),
+		timeZone: accountPreferences?.time_zone || 'UTC',
+	};
 }
 
 export async function recordContentNotificationEvent(store: MarketControlPlaneStore, input: ContentNotificationEventInput) {
@@ -72,11 +81,11 @@ export async function recordContentNotificationEvent(store: MarketControlPlaneSt
 	let recipients = 0;
 	for (const member of await store.listTeamMembers(project.teamId)) {
 		if (member.status !== 'active' || member.userId === input.actorId) continue;
-		const preferences = await preferencesFor(store, member.userId);
+		const { preferences, timeZone } = await preferencesFor(store, member.userId);
 		if (!selectedContentTypes(preferences, input.projectId).includes(input.contentType)) continue;
 		const notificationId = randomUUID();
 		await store.run(`INSERT INTO user_notifications (id, user_id, event_id, read_at, created_at) VALUES (?, ?, ?, NULL, ?) ON CONFLICT (user_id, event_id) DO NOTHING`, [notificationId, member.userId, eventId, now]);
-		const dueAt = digestDueAt(preferences.emailCadence, preferences.timeZone, new Date(now));
+		const dueAt = digestDueAt(preferences.emailCadence, timeZone, new Date(now));
 		const period = preferences.emailCadence === 'immediate' ? eventId : dueAt;
 		const digestKey = deterministicId('delivery', `${member.userId}:${preferences.emailCadence}:${period}`);
 		await store.run(`INSERT INTO notification_email_deliveries (id, user_id, event_id, digest_key, cadence, status, due_at, attempts, sent_at, last_error, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, 0, NULL, NULL, ?, ?) ON CONFLICT (digest_key) DO NOTHING`, [randomUUID(), member.userId, preferences.emailCadence === 'immediate' ? eventId : null, digestKey, preferences.emailCadence, dueAt, now, now]);

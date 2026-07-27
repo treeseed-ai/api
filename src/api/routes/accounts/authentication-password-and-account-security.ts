@@ -164,7 +164,7 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 					await store.batch([
 						{ query: `UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?`, params: [now, auth.principal.id] },
 						{ query: `UPDATE market_auth_credentials SET email = ?, status = 'deleted', updated_at = ? WHERE user_id = ?`, params: [`deleted+${auth.principal.id}@invalid`, now, auth.principal.id] },
-						...['user_email_addresses', 'user_identities', 'auth_reauthentication_grants', 'user_personal_themes', 'user_notification_global_content_types', 'user_notification_project_content_types', 'user_notification_project_overrides', 'user_notification_preferences', 'notification_email_deliveries', 'user_notifications'].map((table) => ({ query: `DELETE FROM ${table} WHERE user_id = ?`, params: [auth.principal.id] })),
+						...['user_email_addresses', 'user_identities', 'auth_reauthentication_grants', 'user_personal_themes', 'user_preferences', 'user_notification_global_content_types', 'user_notification_project_content_types', 'user_notification_project_overrides', 'user_notification_preferences', 'notification_email_deliveries', 'user_notifications'].map((table) => ({ query: `DELETE FROM ${table} WHERE user_id = ?`, params: [auth.principal.id] })),
 						{ query: `UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE user_id = ?`, params: [now, now, auth.principal.id] },
 					]);
 					await store.recordAuditEvent({

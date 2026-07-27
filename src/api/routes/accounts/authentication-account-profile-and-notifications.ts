@@ -254,6 +254,42 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					]);
 					return c.json({ ok: true, payload: { changed: true } });
 				});
+
+	app.get('/v1/auth/web/preferences', async (c) => {
+					const auth = await ensurePrincipal(c);
+					if (auth.response) return auth.response;
+					const row = await store.first(`SELECT time_zone FROM user_preferences WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
+					return c.json({ ok: true, payload: { timeZone: row?.time_zone ?? 'UTC' } });
+				});
+
+	app.patch('/v1/auth/web/preferences', async (c) => {
+					const auth = await ensurePrincipal(c);
+					if (auth.response) return auth.response;
+					const body = await readJsonOrFormBody(c);
+					const timeZone = optionalTrimmedString(body.timeZone);
+					if (!timeZone) return jsonError(c, 400, 'A time zone is required.', { code: 'invalid_time_zone' });
+					try {
+						new Intl.DateTimeFormat('en', { timeZone }).format();
+					} catch {
+						return jsonError(c, 400, 'Select a valid IANA time zone.', { code: 'invalid_time_zone' });
+					}
+					const now = new Date().toISOString();
+					await store.run(
+						`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, created_at, updated_at)
+						 VALUES (?, 'fern', 'system', ?, ?, ?)
+						 ON CONFLICT (user_id) DO UPDATE SET time_zone = EXCLUDED.time_zone, updated_at = EXCLUDED.updated_at`,
+						[auth.principal.id, timeZone, now, now],
+					);
+					await store.recordAuditEvent({
+						actorType: 'user',
+						actorId: auth.principal.id,
+						eventType: 'account.preferences.updated',
+						targetType: 'user',
+						targetId: auth.principal.id,
+						data: { timeZone },
+					});
+					return c.json({ ok: true, payload: { timeZone } });
+				});
 	
 	app.get('/v1/auth/web/appearance', async (c) => {
 					const auth = await ensurePrincipal(c);
@@ -351,13 +387,12 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					const body = await readJsonOrFormBody(c);
 					const input = typeof body.preferences === 'string' ? JSON.parse(body.preferences) : body;
 					const preferences = normalizeNotificationPreferences(input);
-					try { new Intl.DateTimeFormat('en', { timeZone: preferences.timeZone }); } catch { return jsonError(c, 400, 'A valid IANA time zone is required.'); }
 					const projects = await store.listProjectsForPrincipal(auth.principal);
 					const allowed = new Set(projects.map((project) => project.id));
 					if (preferences.projectOverrides.some((entry) => !allowed.has(entry.projectId))) return jsonError(c, 403, 'A selected project is unavailable.');
 					const now = new Date().toISOString();
 					const replacements = [
-						{ query: `INSERT INTO user_notification_preferences (user_id, email_cadence, time_zone, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET email_cadence = EXCLUDED.email_cadence, time_zone = EXCLUDED.time_zone, updated_at = EXCLUDED.updated_at`, params: [auth.principal.id, preferences.emailCadence, preferences.timeZone, now, now] },
+						{ query: `INSERT INTO user_notification_preferences (user_id, email_cadence, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET email_cadence = EXCLUDED.email_cadence, updated_at = EXCLUDED.updated_at`, params: [auth.principal.id, preferences.emailCadence, now, now] },
 						{ query: `DELETE FROM user_notification_global_content_types WHERE user_id = ?`, params: [auth.principal.id] },
 						{ query: `DELETE FROM user_notification_project_content_types WHERE user_id = ?`, params: [auth.principal.id] },
 						{ query: `DELETE FROM user_notification_project_overrides WHERE user_id = ?`, params: [auth.principal.id] },

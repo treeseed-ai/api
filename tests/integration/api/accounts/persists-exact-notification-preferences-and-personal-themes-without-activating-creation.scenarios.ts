@@ -10,11 +10,22 @@ it('persists exact notification preferences and personal themes without activati
 		const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
 		const initial = await json(await app.request('/v1/auth/web/notifications/preferences', { headers }));
 		expect(initial.payload).toMatchObject({ emailCadence: 'daily', globalContentTypes: [], projectOverrides: [] });
+		const accountPreferences = await json(await app.request('/v1/auth/web/preferences', {
+			method: 'PATCH', headers,
+			body: JSON.stringify({ timeZone: 'America/New_York' }),
+		}));
+		expect(accountPreferences.payload).toEqual({ timeZone: 'America/New_York' });
+		expect((await json(await app.request('/v1/auth/web/preferences', { headers }))).payload).toEqual({ timeZone: 'America/New_York' });
+		const invalidPreferences = await json(await app.request('/v1/auth/web/preferences', {
+			method: 'PATCH', headers,
+			body: JSON.stringify({ timeZone: 'Not/A_Time_Zone' }),
+		}));
+		expect(invalidPreferences).toMatchObject({ ok: false, code: 'invalid_time_zone' });
 		const saved = await json(await app.request('/v1/auth/web/notifications/preferences', {
 			method: 'PUT', headers,
-			body: JSON.stringify({ emailCadence: 'weekly', timeZone: 'America/New_York', globalContentTypes: ['questions', 'notes'], projectOverrides: [{ projectId: project.id, contentTypes: ['decisions'] }] }),
+			body: JSON.stringify({ emailCadence: 'weekly', globalContentTypes: ['questions', 'notes'], projectOverrides: [{ projectId: project.id, contentTypes: ['decisions'] }] }),
 		}));
-		expect(saved.payload).toEqual({ emailCadence: 'weekly', timeZone: 'America/New_York', globalContentTypes: ['notes', 'questions'], projectOverrides: [{ projectId: project.id, contentTypes: ['decisions'] }] });
+		expect(saved.payload).toEqual({ emailCadence: 'weekly', globalContentTypes: ['notes', 'questions'], projectOverrides: [{ projectId: project.id, contentTypes: ['decisions'] }] });
 
 		const created = await json(await app.request('/v1/auth/web/themes', {
 			method: 'POST', headers,
@@ -29,5 +40,27 @@ it('persists exact notification preferences and personal themes without activati
 		expect(identity.payload).not.toHaveProperty('appearance.scheme', created.payload.schemeId);
 		const themes = await json(await app.request('/v1/auth/web/themes', { headers }));
 		expect(themes.payload).toContainEqual(expect.objectContaining({ id: created.payload.id, name: 'Research dusk' }));
+
+		const activated = await json(await app.request('/v1/auth/web/appearance', {
+			method: 'PATCH', headers,
+			body: JSON.stringify({ colorScheme: created.payload.schemeId, themeMode: 'dark' }),
+		}));
+		expect(activated).toMatchObject({
+			ok: true,
+			payload: {
+				scheme: created.payload.schemeId,
+				mode: 'dark',
+				principal: { metadata: { appearance: { scheme: created.payload.schemeId, mode: 'dark' } } },
+			},
+		});
+		const activatedHeaders = { authorization: `Bearer ${activated.payload.accessToken}` };
+		expect((await json(await app.request('/v1/auth/web/appearance', { headers: activatedHeaders }))).payload).toEqual({
+			scheme: created.payload.schemeId,
+			mode: 'dark',
+		});
+		expect(await json(await app.request('/v1/auth/web/appearance', {
+			method: 'PATCH', headers: { ...headers, authorization: `Bearer ${token}` },
+			body: JSON.stringify({ colorScheme: 'personal-not-owned', themeMode: 'dark' }),
+		}))).toMatchObject({ ok: false });
 	}, 30000);
 });

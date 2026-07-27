@@ -647,6 +647,7 @@ cases:
           equals: acceptance-signup-${runNonce}@treeseed.ai
       mailpit:
         to: acceptance-signup-${runNonce}@treeseed.ai
+        linkOrigin: ${siteUrl}
         timeoutMs: 10000
 
   - id: auth.me.requires-user
@@ -760,13 +761,26 @@ cases:
         - path: payload.scheme
           type: string
 
+  - id: auth.account-preferences.team-owner
+    actor: teamOwner
+    method: PATCH
+    path: ${apiVersionPath}/auth/web/preferences
+    body:
+      timeZone: America/New_York
+    expect:
+      status: 200
+      envelope:
+        ok: true
+      json:
+        - path: payload.timeZone
+          equals: America/New_York
+
   - id: auth.notifications.team-owner
     actor: teamOwner
     method: PUT
     path: ${apiVersionPath}/auth/web/notifications/preferences
     body:
       emailCadence: weekly
-      timeZone: America/New_York
       globalContentTypes: [questions, notes, decisions]
       projectOverrides: []
     expect:
@@ -776,8 +790,6 @@ cases:
       json:
         - path: payload.emailCadence
           equals: weekly
-        - path: payload.timeZone
-          equals: America/New_York
         - path: payload.projectOverrides
           equals: []
 
@@ -806,6 +818,7 @@ cases:
       mailpit:
         to: ${actors.teamOwner.email}
         subjectIncludes: Reset your TreeSeed password
+        linkOrigin: ${siteUrl}
         timeoutMs: 10000
 
   - id: auth.account-blockers.team-viewer
@@ -885,6 +898,7 @@ cases:
         ok: true
       mailpit:
         to: acceptance-extra-${runNonce}@treeseed.ai
+        linkOrigin: ${siteUrl}
         timeoutMs: 10000
 
   - id: teams.create.team-owner
@@ -925,6 +939,7 @@ cases:
         ok: true
       mailpit:
         to: acceptance-invite-${runNonce}@treeseed.ai
+        linkOrigin: ${siteUrl}
         timeoutMs: 10000
 
   - id: teams.member-role.team-owner

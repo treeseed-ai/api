@@ -69,6 +69,13 @@ it('supports multiple verified account emails for login, primary selection, dele
 			body: JSON.stringify({ token: resent.payload.confirmationToken }),
 		}));
 		expect(secondaryConfirmed.ok).toBe(true);
+		const confirmedEmails = await json(await app.request('/v1/auth/web/emails', { headers }));
+		expect(confirmedEmails.payload).toContainEqual(expect.objectContaining({
+			id: added.payload.emailAddress.id,
+			email: 'multi-secondary@example.com',
+			status: 'verified',
+			verified: true,
+		}));
 		const secondarySignin = await json(await app.request('/v1/auth/web/sign-in', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },

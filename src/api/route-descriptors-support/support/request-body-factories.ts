@@ -27,6 +27,8 @@ export function bodyFactoryFor(path, method) {
         return 'webProfile';
     if (path.includes('/auth/web/appearance'))
         return 'webAppearance';
+    if (path.includes('/auth/web/preferences'))
+        return 'accountPreferences';
     if (path.includes('/auth/web/email'))
         return 'webEmail';
     if (path.includes('/auth/web/password-reset/request'))

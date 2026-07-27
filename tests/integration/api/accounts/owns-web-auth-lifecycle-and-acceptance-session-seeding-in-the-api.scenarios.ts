@@ -70,7 +70,7 @@ it('owns web auth lifecycle and acceptance session seeding in the API', async ()
 			headers: {
 				'content-type': 'application/json',
 				'user-agent': 'Treeseed Test Browser/1.0',
-				'x-forwarded-for': '203.0.113.9, 10.0.0.2',
+				'x-treeseed-client-ip': '203.0.113.9',
 			},
 			body: JSON.stringify({
 				email: 'api-auth@example.com',

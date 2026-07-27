@@ -12,6 +12,8 @@ export const SDK_METHOD_ROUTE_MAP = {
     checkWebEmail: 'get.v1.auth.availability.email',
     authProviders: 'get.v1.auth.providers',
     accountIdentity: 'get.v1.auth.web.account.identity',
+    accountPreferences: 'get.v1.auth.web.preferences',
+    updateAccountPreferences: 'patch.v1.auth.web.preferences',
     webEmails: 'get.v1.auth.web.emails',
     addWebEmail: 'post.v1.auth.web.emails',
     verifyWebEmail: 'post.v1.auth.web.emails.emailId.verify',

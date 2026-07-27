@@ -15,6 +15,7 @@ export async function main() {
     const variables = {
         environment: args.environment,
         baseUrl: args.baseUrl,
+        siteUrl: process.env.TREESEED_SITE_URL ?? (args.environment === 'local' ? 'http://127.0.0.1:4321' : ''),
         runNonce: [
             Date.now().toString(36),
             randomBytes(4).toString('hex'),

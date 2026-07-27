@@ -3,7 +3,7 @@ site:
     src: https://treeseed.ai/logo.svg
     alt: TreeSeed api Knowledge Hub logo
   name: TreeSeed API Knowledge Hub
-  statement: TreeSeed API package knowledge, agents, and workday memory
+  statement: Grow what you know
   siteUrl: https://api.treeseed.ai
   githubRepository: https://github.com/treeseed-ai/api
   discordLink: https://discord.gg/example

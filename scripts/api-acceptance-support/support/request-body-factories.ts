@@ -21,6 +21,7 @@ export function bodyForFactory(factory, descriptor, actor) {
         sessionRevoke: {},
         webProfile: { name: `Acceptance ${actor}` },
         webAppearance: { colorScheme: 'fern', themeMode: 'system' },
+        accountPreferences: { timeZone: 'UTC' },
         webEmail: { email: actorEmail },
         feedback: {
             type: 'bug',

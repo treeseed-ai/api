@@ -46,7 +46,6 @@ export async function loadNotificationPreferences(store, userId) {
     const typeRows = await store.all(`SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ? ORDER BY project_id, content_type`, [userId]);
     return normalizeNotificationPreferences({
         emailCadence: settings?.email_cadence,
-        timeZone: settings?.time_zone,
         globalContentTypes: globalRows.map((row) => row.content_type),
         projectOverrides: overrideRows.map((row) => ({ projectId: row.project_id, contentTypes: typeRows.filter((entry) => entry.project_id === row.project_id).map((entry) => entry.content_type) })),
     });
