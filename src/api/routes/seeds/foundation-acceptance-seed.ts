@@ -112,7 +112,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 							name: teamSlug,
 							displayName: `Acceptance ${namespace}`,
 							ownerUserId: owner?.userId,
-							metadata: { acceptance: true, namespace },
+							metadata: { acceptance: true, namespace, visibility: 'public' },
 						});
 						let treeDx = await store.getTeamTreeDx(team.id);
 						if (!treeDx?.instance) {

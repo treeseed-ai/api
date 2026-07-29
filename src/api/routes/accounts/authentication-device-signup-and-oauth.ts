@@ -80,7 +80,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						provider: 'credential',
 						providerSubject: email,
 						email,
-						emailVerified: Boolean(inviteProof?.ok),
+						emailVerified: false,
 						username,
 						displayName,
 						profile: {
@@ -100,33 +100,15 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					await store.run(
 						`INSERT INTO market_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
 						 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-						[synced.principal.id, email, username, hashMarketPassword(password), inviteProof?.ok ? 'active' : 'pending_email_confirmation', now, now],
+						[synced.principal.id, email, username, hashMarketPassword(password), 'pending_email_confirmation', now, now],
 					);
 					const emailAddressId = randomUUID();
 					await store.run(
 						`INSERT INTO user_email_addresses (
 							id, user_id, email, normalized_email, status, is_primary, verification_requested_at, verified_at, created_at, updated_at
 						) VALUES (?, ?, ?, ?, ?, 1, NULL, ?, ?, ?)`,
-						[emailAddressId, synced.principal.id, email, email, inviteProof?.ok ? 'verified' : 'pending', inviteProof?.ok ? now : null, now, now],
+						[emailAddressId, synced.principal.id, email, email, 'pending', null, now, now],
 					);
-					if (inviteProof?.ok) {
-						const personalTeam = await store.ensurePersonalResearchTeamForUser(synced.principal.id);
-						if (!personalTeam.ok) {
-							return jsonError(c, personalTeam.code === 'namespace_conflict' ? 409 : 400, personalTeam.message, { code: personalTeam.code });
-						}
-						await setPrimaryEmailAddress(store, synced.principal.id, emailAddressId);
-						const inviteAcceptance = await store.acceptTeamInvite(inviteToken, synced.principal.id);
-						if (!inviteAcceptance.ok) {
-							return jsonError(c, inviteAcceptance.code === 'email_mismatch' ? 400 : 409, inviteAcceptance.message, { code: inviteAcceptance.code });
-						}
-						await store.recordAuditEvent({
-							actorType: 'user', actorId: synced.principal.id, eventType: 'team.invitation.accepted',
-							targetType: 'team', targetId: inviteAcceptance.team?.id ?? inviteProof.team?.id ?? null,
-							data: { invitationId: inviteAcceptance.invite?.id ?? inviteProof.invite?.id ?? null },
-						});
-						const session = await createMarketWebSession(runtimeMarketAuthProvider, synced.principal.id, webSessionData(c, 'team_invite_registration'), { store, authSecret: runtime.resolved.config.authSecret });
-						return c.json({ ok: true, payload: webAuthPayload(session) });
-					}
 					let confirmation;
 					try {
 						confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c, config), {

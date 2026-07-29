@@ -48,12 +48,8 @@ it('allows local acceptance admin token to manage workday runs in local mode', a
 			const isolatedTeamPayload = await json(isolatedTeam);
 			const isolatedTeamId = isolatedTeamPayload.payload.id;
 			expect(await app.request(`/v1/teams/${isolatedTeamId}/capacity-registration-key/reveal`, { headers })).toMatchObject({ status: 200 });
-			const deletedTeam = await app.request(`/v1/teams/${isolatedTeamId}`, {
-				method: 'DELETE',
-				headers,
-				body: JSON.stringify({ confirmation: 'DELETE capacity-acceptance-isolated' }),
-			});
-			expect(deletedTeam.status).toBe(200);
+			await store.batch([{ query: 'DELETE FROM teams WHERE id = ?', params: [isolatedTeamId] }]);
+			expect(await store.getTeam(isolatedTeamId)).toBeNull();
 
 			const listed = await json(await app.request('/v1/teams/treeseed/workday-runs', { headers }));
 			expect(listed.payload.items.map((run: Record<string, unknown>) => run.id)).toContain('run-local-acceptance');

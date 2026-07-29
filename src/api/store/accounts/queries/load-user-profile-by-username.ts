@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { publicUserKnowledgeProfile, publicUserProfileMetadata } from '../../public-profiles/knowledge-profile.ts';
 import { governanceVotingProvider } from '@treeseed/sdk';
 import { containsPlaintextSecretMaterial, validateClientEncryptedEscrowMetadata, validateSecretsCapabilityRegistry, validateWritableSecretMetadata, } from '@treeseed/sdk/secrets-capability';
 import { redactDeploymentValue } from "../../../../market/hosting/deployment-actions.ts";
@@ -15,7 +16,7 @@ export async function loadUserProfileByUsernameMethod(this: MarketControlPlaneSt
         || normalized.includes('--')) {
         return null;
     }
-    const row = await this.first(`SELECT users.id, users.email, users.username, users.display_name, users.status, users.created_at,
+    const row = await this.first(`SELECT users.id, users.email, users.username, users.display_name, users.status, users.created_at, users.metadata_json,
 			        user_identities.profile_json
 			   FROM users
 			   LEFT JOIN user_identities ON user_identities.user_id = users.id
@@ -25,48 +26,20 @@ export async function loadUserProfileByUsernameMethod(this: MarketControlPlaneSt
 			  LIMIT 1`, [normalized]);
     if (!row?.id || !row.username)
         return null;
-    const profile = parseJson(row.profile_json, {});
-    const viewerTeamIds = new Set(await this.teamIdsForPrincipal(principal));
-    const membershipRows = await this.all(`SELECT teams.id, teams.slug, teams.name, teams.display_name, teams.created_at
-			   FROM team_memberships
-			   INNER JOIN teams ON teams.id = team_memberships.team_id
-			  WHERE team_memberships.user_id = ?
-			    AND team_memberships.status = 'active'
-			  ORDER BY teams.created_at ASC`, [row.id]);
-    const profileTeams = membershipRows.map((team) => ({
-        id: team.id,
-        slug: team.slug ?? team.name,
-        name: team.display_name ?? team.name,
-        createdAt: team.created_at,
-    }));
-    const profileTeamIds = new Set(profileTeams.map((team) => team.id));
-    const catalogItems = (await this.listCatalogItems(principal)).filter((item) => profileTeamIds.has(item.teamId));
-    const knowledgePacks = (await this.listKnowledgePacks(principal)).filter((pack) => profileTeamIds.has(pack.teamId));
-    const visibleTeamIds = new Set([
-        ...profileTeams.map((team) => team.id),
-        ...catalogItems.map((item) => item.teamId),
-        ...knowledgePacks.map((pack) => pack.teamId),
-    ]);
-    const projects = [];
-    for (const team of profileTeams) {
-        if (!viewerTeamIds.has(team.id))
-            continue;
-        projects.push(...await this.listTeamProjects(team.id));
-    }
+    const accountProfile = parseJson(row.metadata_json, {});
+    const identityProfile = parseJson(row.profile_json, {});
+    const publicMetadata = publicUserProfileMetadata({ ...identityProfile, ...accountProfile });
     return {
         user: {
-            id: row.id,
             username: String(row.username).trim().toLowerCase(),
             displayName: row.display_name ?? null,
-            email: principal?.id === row.id || principalIsAdmin(principal) ? row.email ?? null : null,
-            image: typeof profile.image === 'string' ? profile.image : null,
+            ...(principal?.id === row.id || principalIsAdmin(principal) ? { email: row.email ?? null } : {}),
+            image: typeof accountProfile.image === 'string'
+                ? accountProfile.image
+                : typeof identityProfile.image === 'string' ? identityProfile.image : null,
             joinedAt: row.created_at,
+            ...publicMetadata,
         },
-        activity: {
-            teams: profileTeams.filter((team) => visibleTeamIds.has(team.id)),
-            projects,
-            catalogItems,
-            knowledgePacks,
-        },
+        knowledge: await publicUserKnowledgeProfile(this, row.id),
     };
 }

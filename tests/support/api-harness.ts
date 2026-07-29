@@ -198,6 +198,7 @@ export type ApiTestOptions = {
     fetchImpl?: typeof fetch;
     logRequests?: boolean;
     stripeConnectService?: any;
+    clock?: { now: () => Date };
 };
 
 export function createTestApp(options: ApiTestOptions = {}) {

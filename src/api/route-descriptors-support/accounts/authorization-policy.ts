@@ -11,6 +11,8 @@ export function authClass(path, method = 'get') {
         return 'provider-access-token';
     if (path.startsWith('/v1/platform/runners/'))
         return 'platform-runner';
+    if (path.startsWith('/v1/acceptance/teams/'))
+        return 'team-member';
     if (path.startsWith('/v1/acceptance/'))
         return 'acceptance-service';
     if (path === '/v1/feedback')
@@ -70,6 +72,8 @@ export function routeNeedsManagement(path, method) {
         return true;
     if (path.endsWith('/explain'))
         return false;
+    if (path.includes('/members/') || path.includes('/invites'))
+        return true;
     if (method === 'get')
         return false;
     if (path.includes('/capacity-provider-requests') || path.includes('/capacity-provider-memberships') || path.includes('/workday-runs'))
@@ -86,6 +90,8 @@ export function successActorsFor(path, method) {
         return ['providerAccessToken'];
     if (path.startsWith('/v1/platform/runners/'))
         return ['platformRunner'];
+    if (path.startsWith('/v1/acceptance/teams/'))
+        return TEAM_MANAGER_ACTORS;
     if (path.startsWith('/v1/acceptance/'))
         return [];
     if (path.startsWith('/v1/platform/operations/:operationId'))
@@ -105,6 +111,13 @@ export function successActorsFor(path, method) {
         return ['anonymous'];
     if (path.startsWith('/v1/auth/'))
         return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+    if (path.startsWith('/v1/teams/:teamId')
+        && (path.endsWith('/archive')
+            || path.endsWith('/restore')
+            || path.endsWith('/permanent-delete')
+            || path.endsWith('/deletion-readiness')
+            || path.endsWith('/ownership-transfer')))
+        return TEAM_MANAGER_ACTORS;
     if (path.startsWith('/v1/teams/:teamId'))
         return routeNeedsManagement(path, method) ? TEAM_MANAGER_ACTORS : TEAM_MEMBER_ACTORS;
     if (path.startsWith('/v1/decisions/') || path.startsWith('/v1/decision-execution-inputs/') || path.startsWith('/v1/capacity-plans/'))

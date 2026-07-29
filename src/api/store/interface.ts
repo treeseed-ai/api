@@ -12,6 +12,12 @@ declare module '../persistence/store.ts' {
 		listRoleKeysForMembership: OmitThisParameter<typeof import('./teams/queries/members/list-role-keys-for-membership.ts').listRoleKeysForMembershipMethod>;
 		resolvePrincipalTeamContext: OmitThisParameter<typeof import('./teams/queries/access/resolve-principal-team-context.ts').resolvePrincipalTeamContextMethod>;
 		getTeamAccessSummary: OmitThisParameter<typeof import('./teams/queries/access/get-team-access-summary.ts').getTeamAccessSummaryMethod>;
+		resendTeamInvite: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-invitation.ts').resendTeamInviteMethod>;
+		archiveTeam: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-lifecycle.ts').archiveTeamMethod>;
+		restoreTeam: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-lifecycle.ts').restoreTeamMethod>;
+		getTeamDeletionReadiness: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-lifecycle.ts').getTeamDeletionReadinessMethod>;
+		transferTeamOwnership: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-ownership.ts').transferTeamOwnershipMethod>;
+		leaveTeam: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-ownership.ts').leaveTeamMethod>;
 		getProjectAccessSummary: OmitThisParameter<typeof import('./projects/access/queries/get-project-access-summary.ts').getProjectAccessSummaryMethod>;
 		createTrustedUserAssertion: OmitThisParameter<typeof import('./support/creation/create-trusted-user-assertion.ts').createTrustedUserAssertionMethod>;
 		requestProjectRuntime: OmitThisParameter<typeof import('./projects/hosting/creation/request-project-runtime.ts').requestProjectRuntimeMethod>;

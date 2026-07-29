@@ -17,6 +17,9 @@ seed:
     teamOwner:
       siteRoles: [member]
       teamRole: team_owner
+    teamAdmin:
+      siteRoles: [member]
+      teamRole: project_lead
     teamOperator:
       siteRoles: [member]
       teamRole: contributor
@@ -36,6 +39,7 @@ actors:
   siteAdmin: {}
   marketSteward: {}
   teamOwner: {}
+  teamAdmin: {}
   teamOperator: {}
   teamViewer: {}
   teamManagedMember: {}
@@ -979,6 +983,59 @@ cases:
       status: 200
       envelope:
         ok: true
+
+  - id: teams.create.anonymous-denied
+    actor: anonymous
+    method: POST
+    path: ${apiVersionPath}/teams
+    body: { name: "denied-${runNonce}", displayName: Denied }
+    expect: { status: 401, envelope: { ok: false } }
+
+  - id: teams.update.contributor-denied
+    actor: teamOperator
+    method: PATCH
+    path: ${apiVersionPath}/teams/${fixtures.team.id}
+    body: { displayName: Denied contributor update }
+    expect: { status: 403, envelope: { ok: false } }
+
+  - id: teams.overview.anonymous-denied
+    actor: anonymous
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/home
+    expect: { status: 401, envelope: { ok: false } }
+
+  - id: teams.overview.nonmember-denied
+    actor: nonMember
+    method: GET
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/home
+    expect: { status: 403, envelope: { ok: false } }
+
+  - id: teams.invite.contributor-denied
+    actor: teamOperator
+    method: POST
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/invites
+    body: { email: "denied-invite-${runNonce}@treeseed.ai", roleKey: reviewer }
+    expect: { status: 403, envelope: { ok: false } }
+
+  - id: teams.role.contributor-denied
+    actor: teamOperator
+    method: PATCH
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}
+    body: { roleKey: reviewer }
+    expect: { status: 403, envelope: { ok: false } }
+
+  - id: teams.remove.contributor-denied
+    actor: teamOperator
+    method: DELETE
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/members/${fixtures.memberships.teamManagedMember.id}
+    expect: { status: 403, envelope: { ok: false } }
+
+  - id: teams.lifecycle.project-lead-denied
+    actor: teamAdmin
+    method: POST
+    path: ${apiVersionPath}/teams/${fixtures.team.id}/archive
+    body: { lifecycleVersion: 1 }
+    expect: { status: 403, envelope: { ok: false } }
 
   - id: catalog-list-envelope
     actor: anonymous

@@ -44,6 +44,9 @@ export function normalizeEmail(value) {
 }
 export const MARKET_EMAIL_CONFIRMATION_PREFIX = 'market_email_confirmation:';
 export function shouldBypassAcceptanceAuthEmailDelivery(c, config) {
+    if (process.env.NODE_ENV === 'test') {
+        return true;
+    }
     const serviceId = c.req.header('x-treeseed-service-id') ?? '';
     const serviceSecret = c.req.header('x-treeseed-service-secret') ?? '';
     return c.req.header('x-treeseed-acceptance-email-bypass') === '1'

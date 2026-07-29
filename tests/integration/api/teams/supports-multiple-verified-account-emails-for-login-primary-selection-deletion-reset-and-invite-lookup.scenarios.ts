@@ -99,10 +99,13 @@ it('supports multiple verified account emails for login, primary selection, dele
 		}));
 		expect(reset.ok).toBe(true);
 		expect(reset.payload.resetToken).toEqual(expect.any(String));
-		const team = await createTeam(app, secondarySignin.payload.accessToken);
+		const teamOwnerToken = await authorizeApp(app, { principalId: 'multi-email-team-owner' });
+		const team = await createTeam(app, teamOwnerToken);
 		const invite = await store.createTeamInvite(team.id, { email: 'multi-primary@example.com', roleKey: 'contributor' });
-		expect(invite.existingUser).toBe(true);
-		expect(invite.member?.userId).toBe(userId);
+		expect(invite).toMatchObject({ ok: true, invite: { status: 'pending' } });
+		expect((await store.listTeamMembers(team.id)).some((member) => member.userId === userId)).toBe(false);
+		const accepted = await store.acceptTeamInvite(invite.token, userId);
+		expect(accepted).toMatchObject({ ok: true, member: { userId } });
 
 		const originalEmail = initialEmails.payload[0];
 		const deletedOriginal = await json(await app.request(`/v1/auth/web/emails/${originalEmail.id}`, {

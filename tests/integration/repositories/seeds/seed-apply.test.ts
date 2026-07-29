@@ -158,7 +158,15 @@ describe('local seed apply', () => {
 				resourceKey: 'team:treeseed',
 				manifestHash: first.result.manifestHash,
 			});
-			expect(team?.metadata?.visibility).toBe('private');
+			expect(team?.metadata?.visibility).toBe('public');
+			expect(await store.loadTeamProfileByName('treeseed')).toEqual({
+				team: {
+					name: 'treeseed',
+					displayName: 'TreeSeed',
+					logoUrl: null,
+					profileSummary: 'TreeSeed platform market, integrated package, and agent operations.',
+				},
+			});
 
 			const marketProject = await store.getProjectByTeamAndSlug(team!.id, 'market');
 			expect(marketProject?.metadata?.metadata?.seed).toMatchObject({

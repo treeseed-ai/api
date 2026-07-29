@@ -67,6 +67,11 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						firstName: metadata.firstName ?? null,
 						lastName: metadata.lastName ?? null,
 						image: metadata.image ?? null,
+						headline: metadata.headline ?? null,
+						profileSummary: metadata.profileSummary ?? null,
+						location: metadata.location ?? null,
+						website: metadata.website ?? null,
+						expertise: Array.isArray(metadata.expertise) ? metadata.expertise : [],
 						hasCredential: Boolean(credential),
 						emails: await listUserEmailAddresses(store, auth.principal.id),
 						providers: identities.map((identity) => ({ id: identity.id, provider: identity.provider, email: identity.email, linkedAt: identity.created_at, canUnlink: usableMethods > 1 })),
@@ -239,12 +244,26 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					const lastName = optionalTrimmedString(body.lastName);
 					const displayName = String(body.displayName ?? body.name ?? [firstName, lastName].filter(Boolean).join(' ')).trim();
 					const image = optionalTrimmedString(body.image);
+					const headline = optionalTrimmedString(body.headline);
+					const profileSummary = optionalTrimmedString(body.profileSummary);
+					const location = optionalTrimmedString(body.location);
+					const website = optionalTrimmedString(body.website);
+					const expertise = (Array.isArray(body.expertise) ? body.expertise : String(body.expertise ?? '').split(','))
+						.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 8);
 					if (!displayName) return jsonError(c, 400, 'Display name is required.');
+					if (headline && headline.length > 120) return jsonError(c, 400, 'Headline must be 120 characters or fewer.', { code: 'profile_headline_invalid', fieldErrors: { headline: 'Headline must be 120 characters or fewer.' } });
+					if (profileSummary && profileSummary.length > 600) return jsonError(c, 400, 'Profile summary must be 600 characters or fewer.', { code: 'profile_summary_invalid', fieldErrors: { profileSummary: 'Profile summary must be 600 characters or fewer.' } });
+					if (website && (!website.startsWith('https://') || website.length > 240)) return jsonError(c, 400, 'Website must be a valid HTTPS URL.', { code: 'profile_website_invalid', fieldErrors: { website: 'Enter a valid HTTPS URL.' } });
 					const metadata = {
 						...(auth.principal.metadata ?? {}),
 						firstName,
 						lastName,
 						image,
+						headline,
+						profileSummary,
+						location,
+						website,
+						expertise,
 					};
 					await store.run(`UPDATE users SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?`, [
 						displayName,

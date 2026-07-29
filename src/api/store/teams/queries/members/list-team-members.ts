@@ -26,5 +26,14 @@ export async function listTeamMembersMethod(this: MarketControlPlaneStore, teamI
         existing.push(row.key);
         rolesByMembership.set(row.team_membership_id, uniqueStrings(existing));
     }
-    return rows.map((row) => serializeTeamMember(row, rolesByMembership.get(row.id) ?? []));
+    return rows.map((row) => {
+        const roles = rolesByMembership.get(row.id) ?? [];
+        const member = serializeTeamMember(row, roles);
+        return {
+            ...member,
+            joinedAt: member.createdAt,
+            roleDescriptions: Object.fromEntries(roles.map((role) => [role, TEAM_ROLE_DESCRIPTIONS[role] ?? role])),
+            effectiveCapabilities: uniqueStrings(roles.flatMap((role) => TEAM_ROLE_CAPABILITIES[role] ?? [])),
+        };
+    });
 }

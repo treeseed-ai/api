@@ -16,7 +16,11 @@ export async function getTeamAccessSummaryMethod(this: MarketControlPlaneStore, 
     return {
         teamId,
         roles,
+        capabilities,
         permissions,
+        teamPermissions: uniqueStrings(capabilities.map((capability) => CAPABILITY_PERMISSIONS[capability]).filter(Boolean)),
+        accountPermissions: uniqueStrings(principal?.permissions ?? []),
+        roleDescriptions: Object.fromEntries(roles.map((role) => [role, TEAM_ROLE_DESCRIPTIONS[role] ?? role])),
         summary: {
             canAdminStaging: capabilities.includes('stage_releases') || capabilities.includes('publish_releases'),
             canAdminProduction: capabilities.includes('publish_releases'),

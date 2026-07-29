@@ -37,6 +37,9 @@ import { getPendingTeamInviteByTokenMethod } from '../teams/queries/invites/get-
 import { getTeamInviteByTokenMethod } from '../teams/queries/invites/get-team-invite-by-token.ts';
 import { revokeTeamInviteMethod } from '../teams/retirement/revoke-team-invite.ts';
 import { acceptTeamInviteMethod } from '../teams/lifecycle/accept-team-invite.ts';
+import { resendTeamInviteMethod } from '../teams/lifecycle/manage-team-invitation.ts';
+import { archiveTeamMethod, getTeamDeletionReadinessMethod, restoreTeamMethod } from '../teams/lifecycle/manage-team-lifecycle.ts';
+import { leaveTeamMethod, transferTeamOwnershipMethod } from '../teams/lifecycle/manage-team-ownership.ts';
 import { createTeamApiKeyMethod } from '../teams/creation/create-team-api-key.ts';
 import { getTeamStorageLocatorMethod } from '../teams/queries/hosting/get-team-storage-locator.ts';
 import { upsertTeamStorageLocatorMethod } from '../teams/creation/upsert-team-storage-locator.ts';
@@ -89,6 +92,12 @@ export function installTeamsStoreMethods(prototype: MarketControlPlaneStore) {
 	prototype.getTeamInviteByToken = getTeamInviteByTokenMethod;
 	prototype.revokeTeamInvite = revokeTeamInviteMethod;
 	prototype.acceptTeamInvite = acceptTeamInviteMethod;
+	prototype.resendTeamInvite = resendTeamInviteMethod;
+	prototype.archiveTeam = archiveTeamMethod;
+	prototype.restoreTeam = restoreTeamMethod;
+	prototype.getTeamDeletionReadiness = getTeamDeletionReadinessMethod;
+	prototype.transferTeamOwnership = transferTeamOwnershipMethod;
+	prototype.leaveTeam = leaveTeamMethod;
 	prototype.createTeamApiKey = createTeamApiKeyMethod;
 	prototype.getTeamStorageLocator = getTeamStorageLocatorMethod;
 	prototype.upsertTeamStorageLocator = upsertTeamStorageLocatorMethod;

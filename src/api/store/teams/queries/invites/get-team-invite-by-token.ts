@@ -13,7 +13,8 @@ export async function getTeamInviteByTokenMethod(this: MarketControlPlaneStore, 
             continue;
         if (row.status === 'pending' && row.expires_at && new Date(String(row.expires_at)).getTime() <= Date.now()) {
             await this.run(`UPDATE team_invites SET status = 'expired', updated_at = ? WHERE id = ?`, [isoNow(), row.id]);
-            return { ok: false, code: 'expired', message: 'Invite link is invalid or expired.' };
+            row.status = 'expired';
+            row.updated_at = isoNow();
         }
         const team = await this.getTeam(row.team_id);
         return { ok: true, invite: serializeTeamInvite(row), team };

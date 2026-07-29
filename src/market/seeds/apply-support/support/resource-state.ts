@@ -1,5 +1,16 @@
 import { emptyObjectAsNull } from '../index.js';
 
+function managedMetadata(desired, actual) {
+    const desiredRecord = desired && typeof desired === 'object' && !Array.isArray(desired) ? desired : {};
+    const actualRecord = actual && typeof actual === 'object' && !Array.isArray(actual) ? actual : {};
+    return Object.fromEntries(Object.entries(desiredRecord).map(([key, desiredValue]) => [
+        key,
+        desiredValue && typeof desiredValue === 'object' && !Array.isArray(desiredValue)
+            ? managedMetadata(desiredValue, actualRecord[key])
+            : actualRecord[key],
+    ]));
+}
+
 export function teamCurrentPayload(action, team) {
     if (!team)
         return null;
@@ -9,7 +20,7 @@ export function teamCurrentPayload(action, team) {
         displayName: team.displayName ?? action.payload.displayName,
         logoUrl: team.logoUrl ?? null,
         profileSummary: team.profileSummary ?? null,
-        metadata: action.payload.metadata,
+        metadata: managedMetadata(action.payload.metadata, team.metadata),
     };
 }
 

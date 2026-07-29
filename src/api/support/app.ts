@@ -50,6 +50,7 @@ import { installTeamsDirectoryRoutes } from '../routes/teams/teams-directory.ts'
 import { installFoundationUsersByUsernameItemProfileRoutes } from '../routes/accounts/foundation-users-by-username-item-profile.ts';
 import { installCatalogSeedRunLifecycleRoutes } from '../routes/commerce/catalog/catalog-seed-run-lifecycle.ts';
 import { installTeamsInvitationsMembershipAndApiKeysRoutes } from '../routes/teams/teams-invitations-membership-and-api-keys.ts';
+import { installTeamsLifecycleAndConsentRoutes } from '../routes/teams/teams-lifecycle-and-consent.ts';
 import { installTreedxTeamServiceAndPublicFederationRoutes } from '../routes/treedx/repositories/treedx-team-service-and-public-federation.ts';
 import { installFoundationInternalGithubAppWebhookRoutes } from '../routes/repositories/foundation-internal-github-app-webhook.ts';
 import { installTreedxInternalTreedxPublicFederationStatusRoutes } from '../routes/treedx/repositories/treedx-internal-treedx-public-federation-status.ts';
@@ -183,6 +184,7 @@ export function createPlatformApiApp(options: any = {}): ReturnType<typeof creat
                     installFoundationUsersByUsernameItemProfileRoutes(routeContext);
                     installCatalogSeedRunLifecycleRoutes(routeContext);
                     installTeamsInvitationsMembershipAndApiKeysRoutes(routeContext);
+                    installTeamsLifecycleAndConsentRoutes(routeContext);
                     installTreedxTeamServiceAndPublicFederationRoutes(routeContext);
                     installFoundationInternalGithubAppWebhookRoutes(routeContext);
                     installTreedxInternalTreedxPublicFederationStatusRoutes(routeContext);

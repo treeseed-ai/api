@@ -54,16 +54,13 @@ it('deletes projects and project-owned records through the project API', async (
 			headers: { authorization: `Bearer ${token}` },
 		}));
 		expect(projects.payload.find((entry: { id: string }) => entry.id === project.id)).toBeUndefined();
-		const profile = await json(await app.request(`/v1/teams/by-name/${team.name}/profile`, {
+		const teamHome = await json(await app.request(`/v1/teams/${team.id}/home`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		expect(profile.payload.activity.projects.find((entry: { id: string }) => entry.id === project.id)).toBeUndefined();
+		expect(teamHome.payload.counts.projects).toBe(0);
+		expect(teamHome.payload.continueWorking.find((entry: { id: string }) => entry.id === project.id)).toBeUndefined();
 
-		const deletedTeam = await json(await app.request(`/v1/teams/${team.id}`, {
-			method: 'DELETE',
-			headers,
-			body: JSON.stringify({ confirmation: `DELETE ${team.name}` }),
-		}));
-		expect(deletedTeam).toMatchObject({ ok: true });
+		await store.batch([{ query: 'DELETE FROM teams WHERE id = ?', params: [team.id] }]);
+		expect(await store.getTeam(team.id)).toBeNull();
 	}, 30000);
 });

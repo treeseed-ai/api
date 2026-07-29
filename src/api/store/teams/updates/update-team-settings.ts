@@ -10,15 +10,18 @@ export async function updateTeamSettingsMethod(this: MarketControlPlaneStore, te
     const existing = await this.getTeam(teamId);
     if (!existing)
         return null;
+    if (input.expectedUpdatedAt && input.expectedUpdatedAt !== existing.updatedAt) {
+        return { ok: false, code: 'stale', message: 'The team settings changed. Reload and review the latest values.' };
+    }
     const requestedName = input.name === undefined || input.name === null || String(input.name).trim() === ''
         ? existing.name
         : String(input.name);
     const validation = validateTeamName(requestedName);
     if (!validation.ok) {
-        return { ok: false, code: validation.code, message: validation.message };
+        return { ok: false, code: validation.code, message: validation.message, fieldErrors: { name: validation.message } };
     }
     if (validation.name !== existing.name && !(await this.isTeamNameAvailable(validation.name, teamId))) {
-        return { ok: false, code: 'taken', message: 'That team name is already taken.' };
+        return { ok: false, code: 'taken', message: 'That team name is already taken.', fieldErrors: { name: 'That team name is already taken.' } };
     }
     const displayName = String(input.displayName ?? existing.displayName ?? existing.name).trim() || existing.name;
     const logoUrl = typeof input.logoUrl === 'string' && input.logoUrl.trim() ? input.logoUrl.trim() : null;

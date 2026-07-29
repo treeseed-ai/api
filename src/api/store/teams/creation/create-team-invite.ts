@@ -14,10 +14,19 @@ export async function createTeamInviteMethod(this: MarketControlPlaneStore, team
     const token = `tiv_${randomUUID().replaceAll('-', '')}${randomUUID().replaceAll('-', '')}`;
     const timestamp = isoNow();
     const expiresAt = input.expiresAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const existingUser = await this.findUserByEmail(email);
-    if (existingUser?.id && input.autoAddExisting !== false) {
-        const member = await this.upsertTeamMember(teamId, existingUser.id, roleKey);
-        return { ok: true, existingUser: true, member, invite: null, token: null };
+    const existing = await this.first(`SELECT * FROM team_invites
+        WHERE team_id = ? AND email = ? AND status = 'pending'
+        ORDER BY created_at DESC LIMIT 1`, [teamId, email]);
+    if (existing?.id) {
+        if (new Date(String(existing.expires_at)).getTime() > Date.now()) {
+            return {
+                ok: false,
+                code: 'invite_already_pending',
+                message: 'A pending invitation already exists for this email.',
+                invite: serializeTeamInvite(existing),
+            };
+        }
+        await this.run(`UPDATE team_invites SET status = 'expired', updated_at = ? WHERE id = ?`, [timestamp, existing.id]);
     }
     const id = randomUUID();
     await this.run(`INSERT INTO team_invites (
@@ -34,5 +43,5 @@ export async function createTeamInviteMethod(this: MarketControlPlaneStore, team
         timestamp,
         timestamp,
     ]);
-    return { ok: true, existingUser: false, invite: await this.getTeamInvite(id), token };
+    return { ok: true, invite: await this.getTeamInvite(id), token };
 }

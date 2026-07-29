@@ -16,15 +16,12 @@ it('blocks team deletion while the team owns projects', async () => {
 				name: 'Owned Project',
 			}),
 		}));
-		const blocked = await json(await app.request(`/v1/teams/${team.id}`, {
-			method: 'DELETE',
+		const blocked = await json(await app.request(`/v1/teams/${team.id}/deletion-readiness`, {
 			headers: {
-				'content-type': 'application/json',
 				authorization: `Bearer ${token}`,
 			},
-			body: JSON.stringify({ confirmation: 'DELETE team-one' }),
 		}));
-		expect(blocked).toMatchObject({ ok: false, code: 'blocked' });
+		expect(blocked).toMatchObject({ ok: true, ready: false });
 		expect(blocked.blockers.some((entry: { code: string }) => entry.code === 'project')).toBe(true);
 	});
 });

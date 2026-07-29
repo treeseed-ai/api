@@ -1,7 +1,7 @@
 import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPostgresDatabase, PlatformRunnerClient, afterEach, authorizeApp, createPlatformApiApp, createDeploymentReadyProject, createRunnerRepoFixture, createServer, createTeam, createTeamAndProject, createTestApp, createTestPostgresDatabase, createTestStore, describe, encryptHostConfig, encryptedHostEnvelope, encryptedTestHostEnvelope, execFileSync, existsSync, expect, getApiMocks, git, it, json, listManagedHostsFromConfig, mkdirSync, mkdtempSync, mockCloudflareDnsPreflight, newDb, resolve, rmSync, runOnceWithClient, tmpdir, Core, unsignedTestJwt, vi, waitForCondition, withEnv, withHttpMarketApp, writeFileSync } from '../../../../support/api-harness.ts';
 
 describe('market api', () => {
-it('allows project leads to manage team settings while hiding controls from contributors', async () => {
+it('allows project leads to manage team settings while contributors retain read-only directory access', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		const app = createTestApp({ db, store });
@@ -25,11 +25,29 @@ it('allows project leads to manage team settings while hiding controls from cont
 			},
 			body: JSON.stringify({ roleKey: 'owner' }),
 		}));
-		expect(ownerAliasUpdate.member.roleKey).toBe('team_owner');
+		expect(ownerAliasUpdate).toMatchObject({ ok: false, code: 'owner_required' });
 
-		const contributorMembers = await app.request(`/v1/teams/${team.id}/members`, {
+		const contributorMembers = await json(await app.request(`/v1/teams/${team.id}/members?q=Team&page=1&limit=25`, {
 			headers: { authorization: `Bearer ${contributorToken}` },
+		}));
+		expect(contributorMembers).toMatchObject({
+			ok: true,
+			payload: {
+				total: 3,
+				items: expect.arrayContaining([
+					expect.objectContaining({ userId: 'team-lead' }),
+					expect.objectContaining({ userId: 'team-contributor' }),
+				]),
+			},
 		});
-		expect(contributorMembers.status).toBe(403);
+		const contributorMutation = await app.request(`/v1/teams/${team.id}/members/${ownerMember.id}`, {
+			method: 'PATCH',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${contributorToken}`,
+			},
+			body: JSON.stringify({ roleKey: 'reviewer' }),
+		});
+		expect(contributorMutation.status).toBe(403);
 	});
 });
