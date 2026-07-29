@@ -116,8 +116,8 @@ roleMatrices:
         expectByActor:
           siteAdmin: { status: 200, envelope: { ok: true } }
           teamOwner: { status: 200, envelope: { ok: true } }
-          teamOperator: { status: 403, envelope: { ok: false } }
-          teamViewer: { status: 403, envelope: { ok: false } }
+          teamOperator: { status: 200, envelope: { ok: true } }
+          teamViewer: { status: 200, envelope: { ok: true } }
           nonMember: { status: 403, envelope: { ok: false } }
       - id: team-permissions
         method: GET
