@@ -38,5 +38,5 @@ export async function leaveTeamMethod(this: MarketControlPlaneStore, teamId: str
 	await this.ensureInitialized();
 	const membership = await this.first(`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? AND status = 'active' LIMIT 1`, [teamId, userId]);
 	if (!membership?.id) return { ok: false, code: 'missing', message: 'You are not an active member of this team.' };
-	return this.removeTeamMember(teamId, String(membership.id));
+	return this.removeTeamMember(teamId, String(membership.id), String(membership.updated_at));
 }

@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import { describe, expect, it } from 'vitest';
-import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.ts';
-import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../src/api/capacity/control-plane.ts';
 import type { DurableProviderAssignment } from '../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
-import { resolvePlanningDemandSource } from '../../../../src/api/capacity/services/support/planning-demand-source.ts';
-import { projectCompletedResearchWorkflow, type ResearchWorkflowProjectionStore } from '../../../../src/api/capacity/services/projects/projects-core/research-workflow-projection-service.ts';
 import type { CapacityWorkdayAgent } from '../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-policy.ts';
+import { projectCompletedResearchWorkflow,type ResearchWorkflowProjectionStore } from '../../../../src/api/capacity/services/projects/projects-core/research-workflow-projection-service.ts';
+import { resolvePlanningDemandSource } from '../../../../src/api/capacity/services/support/planning-demand-source.ts';
+import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.ts';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market')) ? resolve(packageRoot, '../sdk/drizzle/market') : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');

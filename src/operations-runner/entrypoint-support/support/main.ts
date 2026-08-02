@@ -1,4 +1,4 @@
-import { runOnce, runLoop, parseRunnerOptions, packageVersion, loadConfig } from '../index.js';
+import { loadConfig,packageVersion,parseRunnerOptions,runLoop,runOnce } from '../index.js';
 
 export async function main() {
     const command = process.argv[2] ?? 'help';

@@ -1,12 +1,18 @@
-import { executeProjectHostBindingOperation, executePlatformRepositoryOperation } from '@treeseed/sdk';
-import { createProjectWebDeploymentExecutor } from '../../project-web-deployment-executor.js';
-import { objectValue, redactProjectHostOperationValue, runnerRuntimeFromOptions, consumeProjectHostCredentialOverlay, persistProjectHostOperationResult, env, treeDxRailwayNames, treeDxSecretBase, treeDxRailway } from '../index.js';
+import { executePlatformRepositoryOperation } from '@treeseed/sdk';
+import { objectValue,treeDxRailway,treeDxRailwayNames,treeDxSecretBase } from '../index.js';
+import { createFeedbackExecutors } from '../../feedback/executors.ts';
+import { createKnowledgePublicationExecutor } from '../../knowledge/publication-executor.ts';
+import { createKnowledgePackCleanupExecutor, createKnowledgePackExecutor } from '../../knowledge/pack-executor.ts';
+import { createGitHubWorkflowExecutor } from '../../workflows/github-workflow-executor.ts';
+import { createGitHubConfigurationExecutor } from '../../workflows/github-configuration-executor.ts';
 
 export function createExecutors() {
     return createExecutorsForOptions({});
 }
 
 export function createExecutorsForOptions(options: any = {}) {
+    const workflowExecutor = createGitHubWorkflowExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
+    const workflowConfigurationExecutor = createGitHubConfigurationExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
     const noop = {
         namespace: 'market',
         operation: 'noop',
@@ -91,84 +97,11 @@ export function createExecutorsForOptions(options: any = {}) {
             return result;
         },
     });
-    const projectHostExecutor = (kind) => ({
-        namespace: 'project_hosts',
-        operation: `host_binding_${kind}`,
-        async run(input, context) {
-            if (!options.deploymentStore) {
-                throw new Error('Project host operations require a Treeseed control-plane store.');
-            }
-            await context.checkpoint({
-                phase: 'project_hosts.started',
-                kind,
-                projectId: input?.projectId ?? null,
-                requirementKey: input?.requirementKey ?? null,
-            }, {
-                kind: 'project_hosts.started',
-                data: { kind, projectId: input?.projectId ?? null, requirementKey: input?.requirementKey ?? null },
-            });
-            const runtime = runnerRuntimeFromOptions(options);
-            const valuesOverlay = await consumeProjectHostCredentialOverlay(options.deploymentStore, runtime, context.operation.id, input?.credentialSessions);
-            const result = await executeProjectHostBindingOperation({
-                ...objectValue(input),
-                kind,
-            }, {
-                workspaceRoot: context.workspaceRoot,
-                environment: context.environment,
-                valuesOverlay,
-                onProgress: async (event) => {
-                    await context.emit({
-                        kind: 'project_hosts.secret_sync_progress',
-                        data: event,
-                    });
-                },
-            });
-            await context.checkpoint({
-                phase: 'project_hosts.repository_complete',
-                kind,
-                projectId: input?.projectId ?? null,
-                requirementKey: input?.requirementKey ?? null,
-                repository: result.repository,
-            }, {
-                kind: 'project_hosts.repository_complete',
-                data: {
-                    kind,
-                    projectId: input?.projectId ?? null,
-                    requirementKey: input?.requirementKey ?? null,
-                    changedPaths: result.repository.changedPaths,
-                    commitSha: result.repository.commitSha,
-                },
-            });
-            if (result.summary.requiresSecretSync) {
-                await context.checkpoint({
-                    phase: 'project_hosts.secret_sync_complete',
-                    kind,
-                    projectId: input?.projectId ?? null,
-                    requirementKey: input?.requirementKey ?? null,
-                    secretSync: result.secretSync,
-                }, {
-                    kind: 'project_hosts.secret_sync_complete',
-                    data: {
-                        kind,
-                        projectId: input?.projectId ?? null,
-                        requirementKey: input?.requirementKey ?? null,
-                        ok: result.secretSync?.ok ?? false,
-                        providers: result.secretSync?.providers ?? [],
-                    },
-                });
-            }
-            await persistProjectHostOperationResult(options.deploymentStore, input, result, context.operation);
-            if (!result.ok) {
-                throw new Error('Project host operation failed during host-bound secret sync.');
-            }
-            return redactProjectHostOperationValue(result);
-        },
-    });
     const treeDxProvisionExecutor = {
         namespace: 'treedx',
         operation: 'provision',
         async run(input, context) {
-            if (!options.deploymentStore) {
+            if (!options.controlPlaneStore) {
                 throw new Error('TreeDX provisioning requires a Treeseed control-plane store.');
             }
             const payload = objectValue(input);
@@ -181,7 +114,7 @@ export function createExecutorsForOptions(options: any = {}) {
             const imageRef = typeof payload.imageRef === 'string' && payload.imageRef.trim() ? payload.imageRef.trim() : 'treeseed/treedx:latest';
             const volumeMountPath = typeof payload.volumeMountPath === 'string' && payload.volumeMountPath.trim() ? payload.volumeMountPath.trim() : '/data';
             const publicRead = payload.publicRead === true;
-            const team = await options.deploymentStore.getTeam?.(teamId);
+            const team = await options.controlPlaneStore.getTeam?.(teamId);
             const names = treeDxRailwayNames({
                 team,
                 teamId,
@@ -203,7 +136,7 @@ export function createExecutorsForOptions(options: any = {}) {
                 kind: 'treedx.provision.started',
                 data: { teamId, instanceId, deploymentId, imageRef, volumeMountPath, publicRead, projectName: names.projectName, serviceName: names.serviceName },
             });
-            await options.deploymentStore.updateTreeDxDeployment(deploymentId, {
+            await options.controlPlaneStore.updateTreeDxDeployment(deploymentId, {
                 status: 'running',
                 imageRef,
                 volumeMountPath,
@@ -342,7 +275,7 @@ export function createExecutorsForOptions(options: any = {}) {
                 },
                 planOnly: payload.planOnly === true,
             };
-            await options.deploymentStore.upsertTeamTreeDx(teamId, {
+            await options.controlPlaneStore.upsertTeamTreeDx(teamId, {
                 id: instanceId,
                 kind: publicRead ? 'managed_public_federation' : 'managed_private',
                 provider: 'railway',
@@ -367,7 +300,7 @@ export function createExecutorsForOptions(options: any = {}) {
                     planOnly: payload.planOnly === true,
                 },
             });
-            const deployment = await options.deploymentStore.updateTreeDxDeployment(deploymentId, {
+            const deployment = await options.controlPlaneStore.updateTreeDxDeployment(deploymentId, {
                 status: 'succeeded',
                 imageRef,
                 volumeMountPath,
@@ -414,15 +347,12 @@ export function createExecutorsForOptions(options: any = {}) {
         repositoryExecutor('write_content_record'),
         repositoryExecutor('create_related_content'),
         repositoryExecutor('create_decision_from_proposals'),
-        projectHostExecutor('audit'),
-        projectHostExecutor('resync'),
-        projectHostExecutor('replace'),
-        projectHostExecutor('rotate'),
-        treeDxProvisionExecutor,
-        createProjectWebDeploymentExecutor({
-            deploymentStore: options.deploymentStore,
-            planOnly: options.planOnly,
-            pollSeconds: Math.max(0, Math.round(Number(options.pollIntervalMs ?? 5000) / 1000)),
-        }),
+		treeDxProvisionExecutor,
+		...createFeedbackExecutors(options),
+		createKnowledgePublicationExecutor(options),
+		createKnowledgePackExecutor(options),
+		createKnowledgePackCleanupExecutor(options),
+		workflowExecutor,
+		workflowConfigurationExecutor,
     ].filter((executor) => !options.operationKey || `${executor.namespace}:${executor.operation}` === options.operationKey);
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
 import { splitPostgresSqlStatements } from '../../../src/api/persistence/postgres-sql-statements.ts';
 
 describe('PostgreSQL migration statement splitting', () => {

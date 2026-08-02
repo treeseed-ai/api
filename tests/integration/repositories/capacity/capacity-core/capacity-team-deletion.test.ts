@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import {
-	createCapacityRegistrationTestHarness,
-	ensureCapacityTestTeam,
-} from '../../../../support/capacity/registration.ts';
+import { afterEach,describe,expect,it } from 'vitest';
 import { deleteTeamCapacityAggregate } from '../../../../../src/api/capacity/services/teams/team-deletion-service.ts';
+import {
+createCapacityRegistrationTestHarness,
+ensureCapacityTestTeam,
+} from '../../../../support/capacity/registration.ts';
 
 const databases: Array<ReturnType<typeof createCapacityRegistrationTestHarness>['database']> = [];
 
@@ -57,5 +57,30 @@ describe('capacity team aggregate deletion', () => {
 		expect(await store.first(
 			`SELECT id FROM capacity_provider_team_memberships WHERE id = 'shared-remaining-membership'`,
 		)).toMatchObject({ id: 'shared-remaining-membership' });
+	});
+
+	it('removes an explicitly isolated local acceptance aggregate with active owned records', async () => {
+		const { database, store } = createCapacityRegistrationTestHarness();
+		databases.push(database);
+		const teamId = 'capacity-live-acceptance-cleanup';
+		await ensureCapacityTestTeam(store, teamId);
+		const now = new Date().toISOString();
+		await store.run(
+			`INSERT INTO capacity_workday_runs
+			 (id, team_id, scenario_id, status, environment, parameters_json, summary_json, metrics_json, expected_json, actual_json, report_refs_json, error_json, next_event_index, created_at, updated_at)
+			 VALUES ('acceptance-active-run', ?, 'acceptance', 'running', 'local', '{}', '{}', '{}', '{}', '{}', '{}', '{}', 0, ?, ?)`,
+			[teamId, now, now],
+		);
+
+		const deleted = await deleteTeamCapacityAggregate(
+			store,
+			teamId,
+			`DELETE ${teamId}`,
+			{ localAcceptanceCleanup: true },
+		);
+
+		expect(deleted.ok).toBe(true);
+		expect(await store.first('SELECT id FROM teams WHERE id = ?', [teamId])).toBeNull();
+		expect(await store.first(`SELECT id FROM capacity_workday_runs WHERE id = 'acceptance-active-run'`)).toBeNull();
 	});
 });

@@ -1,7 +1,6 @@
-import type { Context, Hono } from 'hono';
-import type { CapacityGovernanceDatabase } from '../../../database.ts';
-import { CapacityGovernanceError } from '../../../database.ts';
+import type { Context,Hono } from 'hono';
 import { bearerTokenFromRequest } from '../../../../accounts/request-auth.ts';
+import type { CapacityGovernanceDatabase } from '../../../database.ts';
 
 interface DiagnosticsStore extends CapacityGovernanceDatabase {
 	authenticateRunner(projectId: string, token: string): Promise<unknown | null>;

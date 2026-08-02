@@ -1,12 +1,12 @@
 import {
-	authorizeApp,
-	createTestApp,
-	createTestPostgresDatabase,
-	createTestStore,
-	describe,
-	expect,
-	it,
-	json,
+authorizeApp,
+createTestApp,
+createTestPostgresDatabase,
+createTestStore,
+describe,
+expect,
+it,
+json,
 } from '../../../../support/api-harness.ts';
 
 const acceptanceHeaders = {

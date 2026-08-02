@@ -156,22 +156,32 @@ verifiers:
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts
     caseId: project.treedx.verify-treedx-access
+  api.endpoints.knowledge-collaboration:
+    kind: apiAcceptanceCase
+    ownerPackage: "@treeseed/api"
+    spec: scripts/support/api-acceptance.ts
+    caseId: descriptor-executable-role-matrix.get.v1.knowledge.context.anonymous
   api.endpoints.dx-repository-workspaces:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts
     caseId: descriptor-executable-role-matrix.post.v1.dx.projects.projectId.repos.repoId.context.build.teamOwner
-  api.endpoints.hosting-and-secrets:
-    kind: apiAcceptanceCase
+  api.endpoints.services-and-vaults:
+    kind: vitestCase
     ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.preview-host-plan
+    testFile: tests/integration/api/teams/services/service-management.test.ts
+    testName: persists provider metadata and client ciphertext without accepting plaintext credentials
+  api.endpoints.feedback-management:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/integration/api/feedback/feedback-management.test.ts
+    testName: persists immutable trusted context and keeps attachments private
   api.endpoints.commerce-marketplace:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts
     caseId: descriptor-executable-role-matrix.get.v1.commerce.marketplace.anonymous
-  api.endpoints.catalog-templates-and-knowledge-packs:
+  api.endpoints.catalog-templates-and-seeds:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts
@@ -356,126 +366,6 @@ verifiers:
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts
     caseId: capacity.usage.review-capacity-usage
-  api.host.reconciliation.adopt-existing-host-resource.api:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.adopt-existing-host-resource
-  api.host.reconciliation.adopt-existing-host-resource.audit:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.adopt-existing-host-resource
-  api.host.reconciliation.adopt-existing-host-resource.content:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.adopt-existing-host-resource
-  api.host.reconciliation.adopt-existing-host-resource.negative:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.adopt-existing-host-resource
-  api.host.reconciliation.preview-host-plan.api:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.preview-host-plan
-  api.host.reconciliation.preview-host-plan.audit:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.preview-host-plan
-  api.host.reconciliation.preview-host-plan.content:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.preview-host-plan
-  api.host.reconciliation.preview-host-plan.negative:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.preview-host-plan
-  api.host.reconciliation.retain-host-resource.api:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.retain-host-resource
-  api.host.reconciliation.retain-host-resource.audit:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.retain-host-resource
-  api.host.reconciliation.retain-host-resource.content:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.retain-host-resource
-  api.host.reconciliation.retain-host-resource.negative:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.retain-host-resource
-  api.host.reconciliation.review-host-drift.api:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.review-host-drift
-  api.host.reconciliation.review-host-drift.audit:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.review-host-drift
-  api.host.reconciliation.review-host-drift.content:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.review-host-drift
-  api.host.reconciliation.review-host-drift.negative:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.review-host-drift
-  api.host.reconciliation.run-host-cleanup.api:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.run-host-cleanup
-  api.host.reconciliation.run-host-cleanup.audit:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.run-host-cleanup
-  api.host.reconciliation.run-host-cleanup.content:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.run-host-cleanup
-  api.host.reconciliation.run-host-cleanup.negative:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.run-host-cleanup
-  api.host.reconciliation.verify-host-live-state.api:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.verify-host-live-state
-  api.host.reconciliation.verify-host-live-state.audit:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.verify-host-live-state
-  api.host.reconciliation.verify-host-live-state.content:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.verify-host-live-state
-  api.host.reconciliation.verify-host-live-state.negative:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: host.reconciliation.verify-host-live-state
   api.project.treedx.configure-treedx-routing.api:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"

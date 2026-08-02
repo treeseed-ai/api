@@ -1,14 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import { evaluateCapacityAdmission } from '@treeseed/sdk/agent-capacity/allocation';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
-import { CapacityGovernanceRepository } from '../../../../../src/api/capacity/repositories/governance/policy/governance.ts';
-import { CapacityAuditRepository } from '../../../../../src/api/capacity/repositories/support/audit.ts';
-import { CapacityRegistrationService } from '../../../../../src/api/capacity/services/support/registration-service.ts';
-import { CapacityGrantService } from '../../../../../src/api/capacity/services/capacity/allocations/grant-service.ts';
-import { CapacityAllocationService } from '../../../../../src/api/capacity/services/capacity/allocations/allocation-service.ts';
-import { loadCapacityAdmissionState } from '../../../../../src/api/capacity/services/support/admission-state-service.ts';
+import { describe,expect,it } from 'vitest';
 import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
-import { capacityProviderTestIdentity as providerIdentity, capacityProviderTestProof as proof, capacityProviderTestSubmission as submission, createCapacityRegistrationTestHarness as createHarness, ensureCapacityTestTeam as ensureTeam, } from '../../../../support/capacity/registration.ts';
+import { CapacityAllocationService } from '../../../../../src/api/capacity/services/capacity/allocations/allocation-service.ts';
+import { CapacityGrantService } from '../../../../../src/api/capacity/services/capacity/allocations/grant-service.ts';
+import { loadCapacityAdmissionState } from '../../../../../src/api/capacity/services/support/admission-state-service.ts';
+import { createCapacityRegistrationTestHarness as createHarness,ensureCapacityTestTeam as ensureTeam,capacityProviderTestProof as proof,capacityProviderTestIdentity as providerIdentity,capacityProviderTestSubmission as submission,} from '../../../../support/capacity/registration.ts';
 
 describe('capacity provider registration governance', () => {
 it('rotates one global identity atomically and preserves memberships and credentials', async () => {

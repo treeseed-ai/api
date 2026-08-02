@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
-import { isoNow, serializeTeamInvite, stableHash, tokenPrefix } from '../../support/index.ts';
+import { isoNow,serializeTeamInvite,stableHash,tokenPrefix } from '../../support/index.ts';
 
 export async function resendTeamInviteMethod(this: MarketControlPlaneStore, teamId: string, inviteId: string) {
 	await this.ensureInitialized();

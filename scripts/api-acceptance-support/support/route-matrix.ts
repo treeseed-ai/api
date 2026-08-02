@@ -1,5 +1,5 @@
 import { API_ROUTE_DESCRIPTORS } from '../../../src/api/support/route-descriptors.ts';
-import { descriptorPath, bodyForFactory, expectedForDescriptor, matchesCaseFilter, loadExpectedStatuses } from '../index.js';
+import { bodyForFactory,descriptorPath,expectedForDescriptor,loadExpectedStatuses,matchesCaseFilter } from '../index.js';
 
 export function expandDescriptorMatrices(spec, expectedStatuses = loadExpectedStatuses(spec.expectedStatuses), caseId = '') {
     const matrices = Array.isArray(spec.descriptorMatrices) ? spec.descriptorMatrices : [];

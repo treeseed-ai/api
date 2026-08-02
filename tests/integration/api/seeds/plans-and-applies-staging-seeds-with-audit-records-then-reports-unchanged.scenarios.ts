@@ -1,4 +1,4 @@
-import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPostgresDatabase, PlatformRunnerClient, afterEach, authorizeApp, createPlatformApiApp, createDeploymentReadyProject, createRunnerRepoFixture, createServer, createTeam, createTeamAndProject, createTestApp, createTestPostgresDatabase, createTestStore, describe, encryptHostConfig, encryptedHostEnvelope, encryptedTestHostEnvelope, execFileSync, existsSync, expect, getApiMocks, git, it, json, listManagedHostsFromConfig, mkdirSync, mkdtempSync, mockCloudflareDnsPreflight, newDb, resolve, rmSync, runOnceWithClient, tmpdir, Core, unsignedTestJwt, vi, waitForCondition, withEnv, withHttpMarketApp, writeFileSync } from '../../../support/api-harness.ts';
+import { authorizeApp,createTestApp,describe,expect,it,json } from '../../../support/api-harness.ts';
 
 describe('market api', () => {
 it('plans and applies staging seeds with audit records, then reports unchanged', async () => {
@@ -99,7 +99,6 @@ it('plans and applies staging seeds with audit records, then reports unchanged',
 		expect(exportResponse.status).toBe(200);
 		const exported = await json(exportResponse);
 		expect(exported.ok).toBe(true);
-		expect(exported.yaml).toContain('repositoryHosts:');
 		expect(exported.yaml).toContain('products:');
 		expect(exported.yaml).toContain('catalogArtifacts:');
 		expect(exported.yaml).not.toMatch(/encryptedPayload|BEGIN PRIVATE KEY|ghp_/u);

@@ -1,12 +1,6 @@
-import { isTreeDxCredentialBridgePath } from '../index.js';
-
 export function bodyFactoryFor(path, method) {
     if (method === 'get')
         return null;
-    if (path === '/v1/internal/github/app/webhook')
-        return 'empty';
-    if (isTreeDxCredentialBridgePath(path))
-        return 'treedxCredentialBridge';
     if (path.includes('/auth/device/start'))
         return 'deviceStart';
     if (path === '/v1/feedback')
@@ -111,18 +105,12 @@ export function bodyFactoryFor(path, method) {
         return 'teamInvite';
     if (path.includes('/teams') && path.includes('/members/'))
         return method === 'delete' ? 'empty' : 'teamMemberUpdate';
-    if (path.includes('/teams') && path.includes('/repository-hosts'))
-        return method === 'delete' ? 'empty' : 'repositoryHost';
-    if (path.includes('/teams') && (path.includes('/web-hosts') || path.includes('/hosts')))
-        return method === 'delete' ? 'empty' : path.endsWith('/validate') ? 'hostValidate' : 'webHost';
     if (path.includes('/teams') && path.includes('/capacity-grants'))
         return 'capacityGrant';
     if (path.includes('/teams') && path.includes('/capacity/allocation-sets'))
         return path.endsWith('/activate') ? 'empty' : 'capacityAllocationSet';
     if (path.includes('/teams') && path.includes('/capacity/assignments'))
         return 'providerAssignment';
-    if (path.includes('/teams') && path.includes('/provider-credential-sessions'))
-        return 'providerCredentialSession';
     if (path.includes('/teams') && path.includes('/hosting-audit'))
         return 'hostingAudit';
     if (path.includes('/teams') && path.includes('/seeds/export'))
@@ -267,8 +255,6 @@ export function bodyFactoryFor(path, method) {
         return 'commerceOffer';
     if (path.startsWith('/v1/commerce/prices/') && path.endsWith('/activate'))
         return 'commerceTransition';
-    if (path.startsWith('/v1/project-deployments/'))
-        return 'projectDeployment';
     if (path.startsWith('/v1/projects/:projectId/secrets/github-actions/deploy'))
         return 'githubActionsSecretDeploy';
     if (path.startsWith('/v1/projects/:projectId/workflow-operations/') && path.endsWith('/dispatch'))
@@ -282,8 +268,7 @@ export function bodyFactoryFor(path, method) {
                     : path.includes('/approval') ? 'approvalDecision'
                         : path.includes('/agent-classes') ? 'projectAgentClass'
                             : path.includes('/runner/') ? 'runnerProjectBody'
-                                : path.includes('/deployments') ? 'projectDeployment'
-                                    : path.includes('/resources') ? 'projectResource'
+                                : path.includes('/resources') ? 'projectResource'
                                         : path.includes('/hosting') || path.includes('/environments') ? 'projectEnvironment'
                                             : path.includes('/workspace-links') ? 'workspaceLink'
                                                 : path.includes('/update-plans') ? 'updatePlan'

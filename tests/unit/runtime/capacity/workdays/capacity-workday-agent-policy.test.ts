@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
 import {
-	capacityWorkdayAgentsFromClasses,
-	compileCapacityWorkdayAssignmentIntent,
+capacityWorkdayAgentsFromClasses,
+compileCapacityWorkdayAssignmentIntent,
 } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-policy.ts';
 
 describe('capacity workday agent policy', () => {
@@ -12,8 +12,11 @@ describe('capacity workday agent policy', () => {
 			handlerRefs: {
 				agents: [{
 					slug: 'custom-investigator',
+					contentPath: 'src/content/agents/editorial/custom-investigator.mdx',
 					activities: { planning: {
 						handler: 'writer',
+						branchPolicy: { kind: 'staging-content', base: 'staging' },
+						contentAccess: { write: { paths: ['src/content/notes/editorial/books/guide/**'] } },
 						prompt: { task: 'planning' },
 						outputs: { modelMutations: ['linked_note:create'] },
 						planningIntent: { objective: 'Investigate the highest-value unanswered project question.' },
@@ -23,6 +26,9 @@ describe('capacity workday agent policy', () => {
 			},
 		}]);
 		expect(agents).toHaveLength(1);
+		expect(agents[0].contentPath).toBe('src/content/agents/editorial/custom-investigator.mdx');
+		expect(agents[0].branchPolicy).toEqual({ kind: 'staging-content', base: 'staging' });
+		expect(agents[0].contentAccess).toEqual({ write: { paths: ['src/content/notes/editorial/books/guide/**'] } });
 		expect(compileCapacityWorkdayAssignmentIntent(agents[0])).toEqual({
 			objective: 'Investigate the highest-value unanswered project question.',
 			artifactKind: 'planning_note',
@@ -92,5 +98,15 @@ describe('capacity workday agent policy', () => {
 			{ id: 'acting', status: 'active', allowedModes: ['acting'], handlerRefs: { agents: [{ slug: 'engineer', activities: { acting: { handler: 'actor' } } }] } },
 			{ id: 'paused', status: 'paused', allowedModes: ['planning'], handlerRefs: { agents: [{ slug: 'writer', activities: { planning: { handler: 'writer' } } }] } },
 		])).toEqual([]);
+	});
+
+	it('applies pinned class and agent selectors after eligibility filtering', () => {
+		const classes = [
+			{ id: 'project:evidence-research', slug: 'evidence-research', handlerRefs: { agents: [{ slug: 'researcher', activities: { planning: { handler: 'writer' } } }] } },
+			{ id: 'project:guide-writing', slug: 'guide-writing', handlerRefs: { agents: [{ slug: 'writer', activities: { planning: { handler: 'writer' } } }] } },
+		];
+		expect(capacityWorkdayAgentsFromClasses(classes, { classSlugs: ['guide-writing'] }).map((agent) => agent.slug)).toEqual(['writer']);
+		expect(capacityWorkdayAgentsFromClasses(classes, { classIds: ['project:evidence-research'], agentSlugs: ['researcher'] }).map((agent) => agent.slug)).toEqual(['researcher']);
+		expect(capacityWorkdayAgentsFromClasses(classes, { classSlugs: ['guide-writing'], agentSlugs: ['researcher'], mode: 'intersection' })).toEqual([]);
 	});
 });

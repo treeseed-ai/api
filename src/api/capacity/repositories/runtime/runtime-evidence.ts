@@ -1,15 +1,15 @@
-import { createHash, randomUUID } from 'node:crypto';
 import type {
-	AgentFallbackOutput,
-	TreeDxProjectProxyAuditRecord,
-	TreeDxProxyHandle,
+AgentFallbackOutput,
+TreeDxProjectProxyAuditRecord,
+TreeDxProxyHandle,
 } from '@treeseed/sdk/agent-capacity';
 import {
-	encodeCapacityPageCursor,
-	normalizeCapacityPageLimit,
-	type CapacityPage,
-	type CapacityPageCursor,
+encodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPage,
+type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
+import { createHash,randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 

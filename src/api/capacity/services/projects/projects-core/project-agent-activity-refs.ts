@@ -10,6 +10,7 @@ function text(value: unknown): string | null {
 
 export interface ProjectAgentActivityRef {
 	agentId: string;
+	contentPath: string | null;
 	activityType: string;
 	handlerId: string;
 	profile: JsonRecord;
@@ -22,7 +23,7 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 		const profile = record(record(agent.activities)[activityType]);
 		const agentId = text(agent.slug ?? agent.agentId);
 		const handlerId = text(profile.handler);
-		return agentId && handlerId ? [{ agentId, activityType, handlerId, profile }] : [];
+		return agentId && handlerId ? [{ agentId, contentPath: text(agent.contentPath), activityType, handlerId, profile }] : [];
 	});
 }
 

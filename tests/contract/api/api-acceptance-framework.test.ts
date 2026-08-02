@@ -1,16 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
 import {
-	addOptionalAcceptanceServiceHeaders,
-	assertAcceptanceTarget,
-	assertCoverage,
-	bodyForFactory,
-	expandDescriptorMatrices,
-	expandRoleMatrices,
-	expandSdkMethodMatrices,
-	loadSpec,
-	usesHostedAcceptanceEmailBypass,
+addOptionalAcceptanceServiceHeaders,
+assertAcceptanceTarget,
+assertCoverage,
+bodyForFactory,
+expandDescriptorMatrices,
+expandRoleMatrices,
+expandSdkMethodMatrices,
+loadSpec,
+usesHostedAcceptanceEmailBypass,
 } from '../../../scripts/support/api-acceptance.ts';
-import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
+import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS,SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
 
 describe('API acceptance framework', () => {
 	it('refuses hosted acceptance runs against local dev URLs', () => {

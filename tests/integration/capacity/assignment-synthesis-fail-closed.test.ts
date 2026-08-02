@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import { afterEach, describe, expect, it } from 'vitest';
+import { DataType,newDb } from 'pg-mem';
+import { afterEach,describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../src/api/capacity/control-plane.ts';
 import { CapacityWorkdayDemandRepository } from '../../../src/api/capacity/repositories/capacity/workdays/workday-demand.ts';
-import { assignNextCompiledDemand } from '../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
 import { compileProviderWorkdayDemand } from '../../../src/api/capacity/services/build/demand-compiler.ts';
-import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.ts';
+import { assignNextCompiledDemand } from '../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
 import { MarketControlPlaneStore } from '../../../src/api/persistence/store.ts';
+import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.ts';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
@@ -83,7 +83,11 @@ describe('capacity assignment synthesis fail-closed guarantees', () => {
 		expect(await store.first(`SELECT action, resource_id, metadata_json FROM capacity_audit_events WHERE resource_id = 'demand-a'`)).toEqual({
 			action: 'assignment-function.denied',
 			resource_id: 'demand-a',
-			metadata_json: JSON.stringify({ reasons: ['capacity_execution_provider_unavailable'] }),
+			metadata_json: JSON.stringify({
+				reasons: ['capacity_execution_provider_unavailable'],
+				message: 'No advertised execution provider satisfies this demand.',
+				details: { demandId: 'demand-a', requiredCapabilities: [] },
+			}),
 		});
 	});
 

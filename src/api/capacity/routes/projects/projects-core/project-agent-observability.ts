@@ -1,11 +1,10 @@
-import type { Context, Hono } from 'hono';
+import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 
 type Row = Record<string, unknown>;
 
 interface AgentObservabilityStore extends CapacityGovernanceDatabase {
 	getProjectAgentsSummary(projectId: string, principal?: unknown): Promise<Row | null>;
-	requestProjectRuntime(projectId: string, principal: unknown, path: string): Promise<unknown | null>;
 	collectControlPlaneGeneratedArtifacts(projectId: string): Promise<Row[]>;
 }
 
@@ -58,18 +57,6 @@ export function installProjectAgentObservabilityRoutes(app: Hono, options: Proje
 		const access = await read(c);
 		if (access.response) return access.response;
 		return c.json({ ok: true, payload: await store.getProjectAgentsSummary(c.req.param('projectId'), access.principal) });
-	});
-
-	app.get('/v1/projects/:projectId/agents/messages', async (c) => {
-		const access = await read(c);
-		if (access.response) return access.response;
-		const payload = await store.requestProjectRuntime(access.details!.project.id, access.principal, '/v1/agents/messages');
-		return payload ? c.json({ ok: true, payload }) : c.json({
-			ok: false,
-			error: 'Project runtime is not connected or unavailable.',
-			projectId: access.details!.project.id,
-			path: '/v1/agents/messages',
-		}, { status: 409 });
 	});
 
 	app.get('/v1/projects/:projectId/agents/:agentSlug', async (c) => {

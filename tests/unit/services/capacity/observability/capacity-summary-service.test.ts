@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { CapacityAllocationSetV2, ProjectCapacityDiagnostics } from '@treeseed/sdk';
+import type { CapacityAllocationSetV2,ProjectCapacityDiagnostics } from '@treeseed/sdk';
+import { describe,expect,it,vi } from 'vitest';
 import { CapacitySummaryService } from '../../../../../src/api/capacity/services/capacity/observability/capacity-summary-service.ts';
 
 function membershipRow() {

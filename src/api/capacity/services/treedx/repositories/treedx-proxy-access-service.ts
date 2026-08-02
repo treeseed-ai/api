@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { evaluateTreeDxProxyHandleAccess } from '@treeseed/sdk/agent-capacity';
 import type { Context } from 'hono';
+import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { requireProviderPrincipal, type CapacityProviderAccessPrincipal } from '../../../routes/capacity/providers/provider-auth.ts';
+import { requireProviderPrincipal,type CapacityProviderAccessPrincipal } from '../../../routes/capacity/providers/provider-auth.ts';
 import type { TreeDxProxyScope } from './treedx-proxy-token-service.ts';
 
 interface TreeDxAccessStore extends CapacityGovernanceDatabase {

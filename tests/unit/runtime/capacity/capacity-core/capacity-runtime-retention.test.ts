@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
-import type { CapacityDatabaseOperation } from '../../../../../src/api/capacity/database.ts';
+import { describe,expect,it,vi } from 'vitest';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { maintainCapacityRuntimeRetention } from '../../../../../src/api/capacity/services/runtime/runtime-retention-service.ts';
 
 describe('capacity runtime retention', () => {

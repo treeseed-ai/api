@@ -25,33 +25,6 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
         ids.teams.set(action.key, team.id);
         return team;
     }
-    if (action.kind === 'repositoryHost') {
-        const teamId = ids.teams.get(action.payload.teamKey);
-        if (!teamId)
-            throw new Error(`Missing team for ${action.key}.`);
-        const host = await store.upsertRepositoryHost(teamId, {
-            id: action.existing?.id,
-            teamId,
-            provider: action.payload.provider,
-            ownership: action.payload.ownership ?? 'treeseed_managed',
-            name: action.payload.name,
-            accountLabel: action.payload.accountLabel,
-            organizationOrOwner: action.payload.organizationOrOwner,
-            defaultVisibility: action.payload.defaultVisibility ?? 'private',
-            softwareRepositoryNameTemplate: action.payload.softwareRepositoryNameTemplate,
-            contentRepositoryNameTemplate: action.payload.contentRepositoryNameTemplate,
-            branchPolicy: action.payload.branchPolicy ?? {},
-            workflowPolicy: action.payload.workflowPolicy ?? {},
-            allowedProjectKinds: action.payload.allowedProjectKinds ?? [],
-            status: action.payload.status ?? 'active',
-            metadata: {
-                ...metadata,
-                ...(action.payload.credentialRef ? { credentialRef: action.payload.credentialRef } : {}),
-            },
-        });
-        ids.repositoryHosts.set(action.key, host.id);
-        return host;
-    }
     if (action.kind === 'project') {
         const teamId = ids.teams.get(action.payload.teamKey);
         if (!teamId)
@@ -90,7 +63,6 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
             id: action.existing?.id,
             teamId,
             role: action.payload.role,
-            repositoryHostId: action.payload.repositoryHostKey ? ids.repositoryHosts.get(action.payload.repositoryHostKey) ?? null : null,
             provider: action.payload.provider,
             owner: action.payload.owner,
             name: action.payload.name,

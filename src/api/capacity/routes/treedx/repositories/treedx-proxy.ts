@@ -1,14 +1,13 @@
-import type { Context, Hono } from 'hono';
+import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { proxyTreeDxJson } from '../../../services/treedx/repositories/treedx-proxy-service.ts';
 import {
-	resolveTreeDxProxyBaseUrl,
-	treeDxPathScope,
-	treeDxRepoScopedContextBody,
-	treeDxTokenScope,
-	verifyTreeDxWorkspace,
-	type TreeDxProxyRuntime,
+treeDxPathScope,
+treeDxRepoScopedContextBody,
+treeDxTokenScope,
+verifyTreeDxWorkspace,
+type TreeDxProxyRuntime
 } from '../../../services/treedx/repositories/treedx-proxy-token-service.ts';
 import { readCapacityRequestObject } from '../../support/request-json.ts';
 

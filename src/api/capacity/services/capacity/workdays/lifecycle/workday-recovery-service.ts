@@ -1,4 +1,4 @@
-import type { CapacityWorkdayEventRecord, CapacityWorkdayRunRecord, CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
+import type { CapacityWorkdayEventRecord,CapacityWorkdayRunRecord,CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
 import { MAX_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityWorkdayRecoveryRepository } from '../../../../repositories/capacity/workdays/workday-recovery.ts';

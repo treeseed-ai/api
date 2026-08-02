@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { CapacityGovernanceDatabase, CapacityDatabaseOperation } from '../../../../database.ts';
-import { ProviderAssignmentRepository, serializeProviderAssignmentRow, type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../../database.ts';
+import { ProviderAssignmentRepository,serializeProviderAssignmentRow,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { settleCapacityReservationExactlyOnce } from '../../accounting/settlement-service.ts';
 
 type RecoveryDisposition = 'safe-retry' | 'terminal-failure' | 'completed' | 'operator-action';

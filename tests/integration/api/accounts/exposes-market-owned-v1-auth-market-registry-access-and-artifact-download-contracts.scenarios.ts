@@ -1,4 +1,4 @@
-import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPostgresDatabase, PlatformRunnerClient, afterEach, authorizeApp, createPlatformApiApp, createDeploymentReadyProject, createRunnerRepoFixture, createServer, createTeam, createTeamAndProject, createTestApp, createTestPostgresDatabase, createTestStore, describe, encryptHostConfig, encryptedHostEnvelope, encryptedTestHostEnvelope, execFileSync, existsSync, expect, getApiMocks, git, it, json, listManagedHostsFromConfig, mkdirSync, mkdtempSync, mockCloudflareDnsPreflight, newDb, resolve, rmSync, runOnceWithClient, tmpdir, Core, unsignedTestJwt, vi, waitForCondition, withEnv, withHttpMarketApp, writeFileSync } from '../../../support/api-harness.ts';
+import { authorizeApp,createTestApp,describe,expect,it,json } from '../../../support/api-harness.ts';
 
 describe('market api', () => {
 it('exposes market-owned v1 auth, market registry, access, and artifact download contracts', async () => {
@@ -75,11 +75,11 @@ it('exposes market-owned v1 auth, market registry, access, and artifact download
 		const access = await json(await app.request(`/v1/projects/${project.payload.project.id}/access`, {
 			headers: { authorization: `Bearer ${tokenPayload.accessToken}` },
 		}));
-		expect(access.payload.team.summary.canAdminStaging).toBe(true);
-		expect(access.payload.team.summary.canAdminProduction).toBe(true);
+		expect(access.payload.team.summary.canAdminStaging).toBe(false);
+		expect(access.payload.team.summary.canAdminProduction).toBe(false);
 		expect(access.payload.environments).toEqual(expect.arrayContaining([
-			expect.objectContaining({ environment: 'staging', role: 'admin' }),
-			expect.objectContaining({ environment: 'prod', role: 'admin' }),
+			expect.objectContaining({ environment: 'staging', role: 'viewer' }),
+			expect.objectContaining({ environment: 'prod', role: 'viewer' }),
 		]));
 
 		const catalogItem = await json(await app.request(`/v1/teams/${team.payload.id}/catalog-items`, {

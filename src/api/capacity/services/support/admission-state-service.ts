@@ -1,10 +1,10 @@
-import type { CapacityAdmissionInput, CapacityAllocationSetV2, CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import type { CapacityAdmissionInput } from '@treeseed/sdk/agent-capacity/allocation';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { decodeDurableJsonArray, decodeDurableJsonObject } from '../../durable-json.ts';
-import { serializeCapacityGrantRow } from '../../repositories/capacity/allocations/grant.ts';
-import { serializeCapacityAllocationSetRow } from '../../repositories/capacity/allocations/allocation-set.ts';
 import { resolveCapacityAllocationPath } from '../../domain/allocation-path.ts';
+import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../durable-json.ts';
+import { serializeCapacityAllocationSetRow } from '../../repositories/capacity/allocations/allocation-set.ts';
+import { serializeCapacityGrantRow } from '../../repositories/capacity/allocations/grant.ts';
 
 export interface CapacityAdmissionStateRequest {
 	teamId: string;

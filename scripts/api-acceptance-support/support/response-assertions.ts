@@ -1,4 +1,4 @@
-import { matchesCaseFilter, equalJsonValue } from '../index.js';
+import { equalJsonValue,matchesCaseFilter } from '../index.js';
 
 export function getPath(value, path) {
     return String(path).split('.').filter(Boolean).reduce((current, part) => {

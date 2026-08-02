@@ -1,0 +1,27 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.knowledge-collaboration.415
+journeyIndex: 415
+type: api
+subtype: endpoints
+journey: Knowledge Collaboration Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Knowledge catalog, context, authoring, review, publication, relationship, and pack endpoints are descriptor-covered with exact authorization outcomes."
+status: active
+actors:
+  allowed: [knowledge_author, knowledge_reviewer, project_manager, team_owner]
+  forbidden: [anonymous_user, non_member]
+gates: [core, release, security]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.knowledge-collaboration]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.knowledge-collaboration]
+negativeCases:
+  - id: unauthorized-knowledge-mutation-denied
+    verifierRefs: [api.endpoints.knowledge-collaboration]
+evidence:
+  required: [guarantee_report, api_acceptance_report]

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { existsSync,readFileSync } from 'node:fs';
 
 const hardMaximum = 500;
 const targetMaximum = 350;

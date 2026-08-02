@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { DerivedCapacityService, summarizeDerivedCapacity } from '../../../../../src/api/capacity/services/capacity/capacity-core/derived-capacity-service.ts';
+import { describe,expect,it,vi } from 'vitest';
+import { DerivedCapacityService,summarizeDerivedCapacity } from '../../../../../src/api/capacity/services/capacity/capacity-core/derived-capacity-service.ts';
 
 function membershipRow(overrides: Record<string, unknown> = {}) {
 	return {

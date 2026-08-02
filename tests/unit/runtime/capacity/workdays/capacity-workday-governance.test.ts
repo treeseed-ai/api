@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import type { CapacityAllocationSetV2, CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import type { CapacityAllocationSetV2,CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import { describe,expect,it } from 'vitest';
 import {
-	resolveGovernedWorkdaySchedule,
-	type GovernedWorkdayScheduleRepository,
+resolveGovernedWorkdaySchedule,
+type GovernedWorkdayScheduleRepository,
 } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-governance-service.ts';
 
 const at = '2026-07-17T12:00:00.000Z';

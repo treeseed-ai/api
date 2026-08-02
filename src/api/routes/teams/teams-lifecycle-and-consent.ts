@@ -7,31 +7,22 @@ function statusFor(result: { ok?: boolean; code?: string }) {
 }
 
 export function installTeamsLifecycleAndConsentRoutes(context: any) {
-	const {
-		app,
-		config,
-		consumeReauthentication,
-		deleteTeamCapacityAggregate,
-		ensurePrincipal,
-		jsonError,
-		localAcceptanceAuthEnabled,
-		marketAuthContext,
-		options,
-		principalHasGlobalPlatformRole,
-		requireConfiguredServiceCredential,
-		runtime,
-		sendTeamInviteEmail,
-		shouldBypassAcceptanceAuthEmailDelivery,
-		store,
-	} = context;
+	const { app, config, consumeReauthentication, deleteTeamCapacityAggregate, ensurePrincipal, isLocalAcceptanceServicePrincipal, jsonError, localAcceptanceAuthEnabled, marketAuthContext, options, principalHasGlobalPlatformRole, requireConfiguredServiceCredential, runtime, sendTeamInviteEmail, shouldBypassAcceptanceAuthEmailDelivery, store } = context;
 	const clockNow = () => options?.clock?.now?.() ?? new Date();
 
 	const requireTeamRole = async (c: any, teamId: string, roles: string[]) => {
 		const auth = await ensurePrincipal(c);
 		if (auth.response) return { response: auth.response };
-		const access = await store.resolvePrincipalTeamContext(teamId, auth.principal);
+		let access = await store.resolvePrincipalTeamContext(teamId, auth.principal);
+		if (!access && isLocalAcceptanceServicePrincipal(c, auth.principal)) {
+			const team = await store.getTeam(teamId);
+			const metadata = team?.metadata && typeof team.metadata === 'object' ? team.metadata : {};
+			if (metadata.liveAcceptance === true && /^capacity-live-(?:acceptance|governance)-/u.test(String(team?.name ?? ''))) {
+				access = { membershipId: null, roles: ['team_owner'], capabilities: [] };
+			}
+		}
 		if (!access) return { response: jsonError(c, 403, 'Permission denied.', { code: 'team_forbidden' }) };
-		if (!principalHasGlobalPlatformRole(auth.principal) && !roles.some((role) => access.roles.includes(role))) {
+		if (!roles.some((role) => access.roles.includes(role))) {
 			return { response: jsonError(c, 403, 'Permission denied.', { code: 'team_role_forbidden' }) };
 		}
 		return { principal: auth.principal, access };
@@ -153,16 +144,17 @@ export function installTeamsLifecycleAndConsentRoutes(context: any) {
 		if (access.response) return access.response;
 		const body = await c.req.json().catch(() => ({}));
 		const readiness = await store.getTeamDeletionReadiness(teamId);
-		if (!readiness.ok || !readiness.ready) return c.json({ ...readiness, ok: false, code: 'deletion_blocked' }, 422);
-		if (body.confirmation !== readiness.team.name) return jsonError(c, 400, `Type ${readiness.team.name} to confirm.`, { code: 'confirmation' });
+		if (!readiness.ok) return c.json({ ...readiness, ok: false, code: 'deletion_blocked' }, 422);
 		const localAcceptanceCleanup = body.localAcceptanceCleanup === true
 			&& localAcceptanceAuthEnabled(runtime)
 			&& principalHasGlobalPlatformRole(access.principal)
 			&& /^capacity-live-(?:acceptance|governance)-/u.test(String(readiness.team.name));
+		if (!readiness.ready && !localAcceptanceCleanup) return c.json({ ...readiness, ok: false, code: 'deletion_blocked' }, 422);
+		if (body.confirmation !== readiness.team.name) return jsonError(c, 400, `Type ${readiness.team.name} to confirm.`, { code: 'confirmation' });
 		if (!localAcceptanceCleanup && !await consumeReauthentication(store, access.principal, 'team_delete', body)) {
 			return jsonError(c, 401, 'Reauthentication is required.', { code: 'reauthentication_required' });
 		}
-		const result = await deleteTeamCapacityAggregate(store, teamId, `DELETE ${readiness.team.name}`);
+		const result = await deleteTeamCapacityAggregate(store, teamId, `DELETE ${readiness.team.name}`, { localAcceptanceCleanup });
 		if (result.ok) await store.recordAuditEvent({
 			actorType: 'user', actorId: access.principal.id, eventType: 'team.deleted',
 			targetType: 'team', targetId: teamId, data: { name: readiness.team.name, tombstone: true },

@@ -1,5 +1,5 @@
-import { type GovernanceBundle, type GovernanceContextInput } from '../projects/projects-core/governance-projection.js';
-import { safeArray, compact } from './index.js';
+import { type GovernanceBundle,type GovernanceContextInput } from '../projects/projects-core/governance-projection.js';
+import { compact,safeArray } from './index.js';
 
 export function approvalLookupKeys(value: unknown): Set<string> {
     const raw = compact(value, '');

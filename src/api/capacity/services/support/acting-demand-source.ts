@@ -1,10 +1,10 @@
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { decodeDurableJsonArray, decodeDurableJsonObject } from '../../durable-json.ts';
+import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../durable-json.ts';
 import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
 import { resolveEngineeringNodeAuthority } from '../accounts/engineering-source-authority.ts';
-import { projectAgentActivityRefs } from '../projects/projects-core/project-agent-activity-refs.ts';
 import type { WorkdayProject } from '../capacity/workdays/policy/workday-project-policy.ts';
+import { projectAgentActivityRefs } from '../projects/projects-core/project-agent-activity-refs.ts';
 
 export interface ActingDemandSource {
 	sourceType: 'capacity-plan'; sourceId: string; decisionId: string; capacityPlanId: string;

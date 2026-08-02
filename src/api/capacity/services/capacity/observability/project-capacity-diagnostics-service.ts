@@ -1,13 +1,13 @@
 import type {
-	CapacityExecutionProvider,
-	CapacityProviderMembershipView,
-	CapacityReservation,
-	DerivedCapacitySummary,
-	ProjectCapacityDiagnostics,
-	ProjectEnvironmentName,
+CapacityExecutionProvider,
+CapacityProviderMembershipView,
+CapacityReservation,
+DerivedCapacitySummary,
+ProjectCapacityDiagnostics,
+ProjectEnvironmentName,
 } from '@treeseed/sdk';
 import type { CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
-import { MAX_CAPACITY_PAGE_LIMIT, type CapacityPage } from '@treeseed/sdk/capacity-pagination';
+import { MAX_CAPACITY_PAGE_LIMIT,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { CapacityGovernanceError } from '../../../database.ts';
 import type { CapacityCreditReservationTotals } from '../accounting/credit-reservation-aggregation-service.ts';
 

@@ -2,8 +2,8 @@ import { evaluateCapacityAdmission } from '@treeseed/sdk/agent-capacity/allocati
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import {
-	loadCapacityAdmissionState,
-	type CapacityAdmissionStateRequest,
+loadCapacityAdmissionState,
+type CapacityAdmissionStateRequest,
 } from '../../support/admission-state-service.ts';
 
 export async function explainCapacityAllocation(

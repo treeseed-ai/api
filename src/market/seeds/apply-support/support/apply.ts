@@ -1,4 +1,32 @@
-import { applyAction, seedRunInput, createSeedRunIfAvailable, updateSeedRunIfAvailable, approvalMatchesPlan, createProductionApproval, redactSeedApplyResult, ensureLocalSeedTeamMemberships, planSeedWithStore, isoNow, createLocalSeedStore, manifestHashFor, selectedActions, mutationActions, actorType, ensureProjectSeedDependencies } from '../index.js';
+import { applyAction,approvalMatchesPlan,createLocalSeedStore,createProductionApproval,createSeedRunIfAvailable,ensureLocalSeedTeamMemberships,ensureProjectSeedDependencies,isoNow,manifestHashFor,mutationActions,planSeedWithStore,redactSeedApplyResult,seedRunInput,selectedActions,updateSeedRunIfAvailable } from '../index.js';
+
+const PLATFORM_PROJECT_KEYS = ['market', 'admin', 'core', 'ui', 'sdk', 'api', 'cli', 'agent', 'treedx']
+    .map((slug) => `project:treeseed/${slug}`);
+
+async function verifyPlatformKnowledgeSeed(store, ids) {
+    const teamId = ids.teams.get('team:treeseed');
+    if (!teamId) throw new Error('TreeSeed knowledge seed postcondition failed: central team is absent.');
+    const missing = PLATFORM_PROJECT_KEYS.filter((key) => !ids.projects.get(key));
+    if (missing.length) throw new Error(`TreeSeed knowledge seed postcondition failed: missing projects ${missing.join(', ')}.`);
+    for (const key of PLATFORM_PROJECT_KEYS) {
+        const projectId = ids.projects.get(key);
+        const [details, library] = await Promise.all([
+            store.getProjectDetails(projectId), store.getProjectTreeDxLibrary(projectId),
+        ]);
+        if (!details || details.project.teamId !== teamId) throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} has the wrong owner.`);
+        const declaredMetadata = details.project.metadata?.metadata ?? details.project.metadata ?? {};
+        if (declaredMetadata.visibility !== 'public') throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} is not public.`);
+        if (details.architecture?.contentRuntimeSource !== 'r2_published_manifest') {
+            throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} does not use the atomic published runtime.`);
+        }
+        if (!library?.repositoryId || !library?.contentRepositoryRef || !library?.contentPath) {
+            throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} lacks a complete TreeDX binding.`);
+        }
+    }
+    const collection = await store.first(`SELECT team_id, book_ids_json FROM book_collections WHERE id = ? LIMIT 1`, ['treeseed-platform-library']);
+    if (!collection || collection.team_id !== teamId) throw new Error('TreeSeed knowledge seed postcondition failed: managed platform library is absent.');
+    return { teamId, projectCount: PLATFORM_PROJECT_KEYS.length, collectionId: 'treeseed-platform-library' };
+}
 
 export async function applySeedWithStore(input) {
     const planned = await planSeedWithStore({
@@ -51,14 +79,13 @@ export async function applySeedWithStore(input) {
         }
     }
     const appliedAt = isoNow();
-    const ids = { teams: new Map(), repositoryHosts: new Map(), projects: new Map(), products: new Map(), productTeams: new Map() };
+    const ids = { teams: new Map(), projects: new Map(), products: new Map(), productTeams: new Map() };
     const repairs = [];
+    const dependencyState = {};
     for (const action of selectedActions(planned.plan)) {
         if (action.existing?.id) {
             if (action.kind === 'team')
                 ids.teams.set(action.key, action.existing.id);
-            if (action.kind === 'repositoryHost')
-                ids.repositoryHosts.set(action.key, action.existing.id);
             if (action.kind === 'project')
                 ids.projects.set(action.key, action.existing.id);
             if (action.kind === 'product') {
@@ -67,7 +94,9 @@ export async function applySeedWithStore(input) {
             }
         }
         await applyAction({ action, store, ids, manifestHash, appliedAt, plan: planned.plan });
-        repairs.push(...await ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt }));
+        repairs.push(...await ensureProjectSeedDependencies({
+            action, store, ids, manifestHash, appliedAt, env: input.env, localOnly: input.localOnly, dependencyState,
+        }));
     }
     const localTeamMemberships = input.localOnly === true
         ? await ensureLocalSeedTeamMemberships({
@@ -78,12 +107,18 @@ export async function applySeedWithStore(input) {
             actor: input.actor,
         })
         : [];
+	const platformAdminOwnership = typeof store.syncPlatformAdminOwners === 'function'
+		? await store.syncPlatformAdminOwners()
+		: null;
+    const platformKnowledge = await verifyPlatformKnowledgeSeed(store, ids);
     const result = {
         appliedAt,
         manifestHash,
         actionCount: mutationActions(planned.plan).length,
         repairs,
         localTeamMemberships,
+		platformAdminOwnership,
+		platformKnowledge,
     };
     run = await updateSeedRunIfAvailable(store, run?.id, {
         state: 'completed',

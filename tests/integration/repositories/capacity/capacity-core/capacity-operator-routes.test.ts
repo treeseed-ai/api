@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { Hono } from 'hono';
-import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
-import { installCapacityOperatorRoutes } from '../../../../../src/api/capacity/routes/support/operator.ts';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { Hono } from 'hono';
+import { describe,expect,it } from 'vitest';
+import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
+import { installCapacityOperatorRoutes } from '../../../../../src/api/capacity/routes/support/operator.ts';
 
 describe('capacity operator routes', () => {
 	it('preserves fail-closed workday governance status and code at the HTTP boundary', async () => {
@@ -123,6 +123,41 @@ describe('capacity operator routes', () => {
 		}
 		expect(calls.map((call) => call.collection)).toEqual(['runs', 'events', 'sessions', 'executions']);
 		expect(calls.every((call) => call.limit === 1 && (call.cursor as { id?: string } | null)?.id === 'cursor-id')).toBe(true);
+	});
+
+	it('projects compact execution activity without repeated snapshots', async () => {
+		const app = new Hono();
+		const store = {
+			async listExecutionRunsForTeamPage() {
+				return { items: [{
+					id: 'run-a', status: 'succeeded', agent: { agentId: 'writer' },
+					input: { selectedInput: { cycle: 2, body: 'omit' }, decisionInput: { repeated: true } },
+					output: { outputs: { executionSnapshot: 'omit' } }, modeRuns: [{ outputs: 'omit' }],
+				}], page: { limit: 1, hasMore: false, nextCursor: null } };
+			},
+		} as unknown as CapacityGovernanceDatabase;
+		installCapacityOperatorRoutes(app, { store, async requireTeamAccess() { return { principal: { id: 'reader-a' } }; } });
+		const response = await app.request('/v1/teams/team-a/capacity/execution-runs?projection=activity&limit=1');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true, payload: {
+			items: [{ id: 'run-a', status: 'succeeded', agent: { agentId: 'writer' }, input: { selectedInput: { cycle: 2 } } }],
+			page: { limit: 1, hasMore: false, nextCursor: null },
+		} });
+	});
+
+	it('serves compact ordered workday activity after a durable sequence cursor', async () => {
+		const app = new Hono();
+		const store = {
+			async getCapacityWorkdayRun() { return { id: 'run-a' }; },
+			async listCapacityWorkdayEventsPage(_teamId: string, _runId: string, filters: Record<string, unknown>) {
+				expect(filters).toMatchObject({ afterEventIndex: 3, limit: 200 });
+				return { items: [{ id: 'event-4', runId: 'run-a', teamId: 'team-a', projectId: 'project-a', workdayId: 'run-a', assignmentId: 'assignment-a', modeRunId: 'mode-a', eventIndex: 4, eventType: 'item.completed', status: 'recorded', title: 'agent_message', message: 'Drafted.', parameters: {}, context: { agentId: 'writer', agentClassId: 'guide-writing' }, refs: {}, metadata: { severity: 'info', payloadDigest: 'digest' }, createdAt: '2026-08-02T12:00:00.000Z' }], page: { limit: 200, hasMore: false, nextCursor: null } };
+			},
+		} as unknown as CapacityGovernanceDatabase;
+		installCapacityOperatorRoutes(app, { store, async requireTeamAccess() { return { principal: { id: 'reader-a' } }; } });
+		const response = await app.request('/v1/teams/team-a/workday-runs/run-a/activity?after=3&agent=writer');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ payload: { cursor: 4, items: [{ sequence: 4, agentId: 'writer', summary: 'Drafted.' }] } });
 	});
 
 	it('routes idempotent tick, cancellation, and safe requeue with the managing actor', async () => {

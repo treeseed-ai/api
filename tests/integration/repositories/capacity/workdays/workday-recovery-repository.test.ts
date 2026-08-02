@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe,expect,it,vi } from "vitest";
 import { CapacityWorkdayRecoveryRepository } from "../../../../../src/api/capacity/repositories/capacity/workdays/workday-recovery.ts";
 
 describe("capacity workday recovery repository", () => {

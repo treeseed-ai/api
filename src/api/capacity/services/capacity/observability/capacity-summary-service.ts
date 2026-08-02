@@ -1,4 +1,4 @@
-import type { CapacityAllocationSetV2, ProjectCapacityDiagnostics } from '@treeseed/sdk';
+import type { CapacityAllocationSetV2,ProjectCapacityDiagnostics } from '@treeseed/sdk';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityProviderIdentityRepository } from '../../../repositories/capacity/providers/provider-identity.ts';
 import { aggregateCapacityCreditReservations } from '../accounting/credit-reservation-aggregation-service.ts';

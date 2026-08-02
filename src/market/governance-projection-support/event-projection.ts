@@ -1,5 +1,5 @@
-import { type GovernanceBundle, type GovernanceEvent } from '../projects/projects-core/governance-projection.js';
-import { safeArray, compact, latestDate, titleFromKind, describeState, toneForState } from './index.js';
+import { type GovernanceBundle,type GovernanceEvent } from '../projects/projects-core/governance-projection.js';
+import { compact,describeState,latestDate,safeArray,titleFromKind,toneForState } from './index.js';
 
 export function activityEventsForBundle(bundle: GovernanceBundle): GovernanceEvent[] {
     const activity = safeArray(bundle.summary?.recentActivity).map((entry: any) => ({

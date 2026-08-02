@@ -1,13 +1,13 @@
-import type { CapacityWorkdayEventRecord, CapacityWorkdayEventStatus } from '@treeseed/sdk/agent-capacity';
+import type { CapacityWorkdayEventRecord,CapacityWorkdayEventStatus } from '@treeseed/sdk/agent-capacity';
 import {
-	encodeCapacityPageCursor,
-	normalizeCapacityPageLimit,
-	type CapacityPage,
-	type CapacityPageCursor,
+encodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPage,
+type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
-import { decodeDurableJsonObject } from '../../../durable-json.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { decodeDurableJsonObject } from '../../../durable-json.ts';
 
 type Row = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -72,12 +72,14 @@ export class CapacityWorkdayEventRepository {
 		return serializeCapacityWorkdayEventRow(await this.database.first(`SELECT * FROM capacity_workday_events WHERE id = ? AND run_id = ? AND team_id = ? LIMIT 1`, [eventId, runId, teamId]));
 	}
 
-	async list(teamId: string, runId: string, filters: { limit?: unknown; cursor?: CapacityPageCursor | null } = {}): Promise<CapacityPage<CapacityWorkdayEventRecord>> {
+	async list(teamId: string, runId: string, filters: { limit?: unknown; cursor?: CapacityPageCursor | null; afterEventIndex?: number | null } = {}): Promise<CapacityPage<CapacityWorkdayEventRecord>> {
 		await this.database.ensureInitialized();
 		const clauses = ['team_id = ?', 'run_id = ?']; const values: unknown[] = [teamId, runId];
 		if (filters.cursor) { clauses.push('(created_at > ? OR (created_at = ? AND id > ?))'); values.push(filters.cursor.createdAt, filters.cursor.createdAt, filters.cursor.id); }
+		if (Number.isInteger(filters.afterEventIndex) && Number(filters.afterEventIndex) >= 0) { clauses.push('event_index > ?'); values.push(filters.afterEventIndex); }
 		const limit = normalizeCapacityPageLimit(filters.limit);
-		const rows = await this.database.all(`SELECT * FROM capacity_workday_events WHERE ${clauses.join(' AND ')} ORDER BY created_at ASC, id ASC LIMIT ?`, [...values, limit + 1]);
+		const order = Number.isInteger(filters.afterEventIndex) ? 'event_index ASC' : 'created_at ASC, id ASC';
+		const rows = await this.database.all(`SELECT * FROM capacity_workday_events WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT ?`, [...values, limit + 1]);
 		const selected = rows.slice(0, limit); const last = selected.at(-1); const hasMore = rows.length > limit;
 		return { items: selected.map((row) => serializeCapacityWorkdayEventRow(row)!), page: { limit, hasMore, nextCursor: hasMore && last ? encodeCapacityPageCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null } };
 	}

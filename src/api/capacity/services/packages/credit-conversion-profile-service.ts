@@ -1,8 +1,8 @@
-import { buildCreditConversionProfileFromActuals, DEFAULT_EXECUTION_PROFILE_ID } from '@treeseed/sdk/capacity-usage';
+import { buildCreditConversionProfileFromActuals,DEFAULT_EXECUTION_PROFILE_ID } from '@treeseed/sdk/capacity-usage';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { CreditConversionProfileRepository } from '../../repositories/packages/credit-conversion-profile.ts';
 import { listRecentTaskUsageActuals } from '../../repositories/capacity/accounting/task-usage.ts';
+import { CreditConversionProfileRepository } from '../../repositories/packages/credit-conversion-profile.ts';
 
 export interface CreditConversionProfileInput {
 	taskSignature: string;

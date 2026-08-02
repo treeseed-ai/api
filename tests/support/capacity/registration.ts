@@ -1,14 +1,14 @@
+import type { CapacityProviderPublicJwk,ProviderRegistrationSubmission } from '@treeseed/sdk/capacity-provider/contracts';
+import { generateKeyPairSync,sign,type KeyObject } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { DataType, newDb } from 'pg-mem';
-import type { CapacityProviderPublicJwk, ProviderRegistrationSubmission } from '@treeseed/sdk/capacity-provider/contracts';
-import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
-import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
-import { createCapacityControlPlane, type CapacityControlPlaneStore } from '../../../src/api/capacity/control-plane.ts';
+import { DataType,newDb } from 'pg-mem';
+import { createCapacityControlPlane,type CapacityControlPlaneStore } from '../../../src/api/capacity/control-plane.ts';
 import { CapacityGovernanceRepository } from '../../../src/api/capacity/repositories/governance/policy/governance.ts';
+import { CapacitySecretCodec,canonicalJson,capacityProviderFingerprint,sha256 } from '../../../src/api/capacity/security.ts';
 import { CapacityRegistrationService } from '../../../src/api/capacity/services/support/registration-service.ts';
-import { CapacitySecretCodec, canonicalJson, capacityProviderFingerprint, sha256 } from '../../../src/api/capacity/security.ts';
+import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
+import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))

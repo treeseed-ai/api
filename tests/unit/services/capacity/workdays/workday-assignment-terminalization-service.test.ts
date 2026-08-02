@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { terminalizeCapacityWorkdayAssignments } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
+import { describe,expect,it,vi } from 'vitest';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
+import { terminalizeCapacityWorkdayAssignments } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
 
 describe('workday assignment terminalization service', () => {
 	it('leaves assignment and mode-run state recoverable when settlement cannot commit', async () => {

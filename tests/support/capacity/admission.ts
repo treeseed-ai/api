@@ -1,10 +1,10 @@
+import type { CapacityAdmissionInput } from '@treeseed/sdk/agent-capacity/allocation';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import type { CapacityAdmissionInput } from '@treeseed/sdk/agent-capacity/allocation';
-import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
+import { DataType,newDb } from 'pg-mem';
+import { createCapacityControlPlane,type CapacityControlPlaneStore } from '../../../src/api/capacity/control-plane.ts';
 import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
-import { createCapacityControlPlane, type CapacityControlPlaneStore } from '../../../src/api/capacity/control-plane.ts';
+import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))

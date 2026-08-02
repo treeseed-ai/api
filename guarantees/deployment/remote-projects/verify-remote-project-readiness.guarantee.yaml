@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.deployment.remote-projects.verify-remote-project-readiness.592
+journeyIndex: 592
+type: deployment
+subtype: remote-projects
+journey: "Verify remote project readiness"
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Guarantee that TreeSeed can verify remote project readiness."
+status: planned
+dependencies: { journeys: [], guarantees: [] }
+actors: { allowed: [authenticated_user, team_owner, platform_admin], forbidden: [unauthorized_user] }
+devices: { required: [desktop_chromium] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: false, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit: { required: false, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [guarantee_report] }
+notes: ["Planned from the TreeSeed Guide platform coverage audit."]

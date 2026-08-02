@@ -1,8 +1,8 @@
-import { createServer, type Server } from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { createServer,type Server } from 'node:http';
+import { afterEach,describe,expect,it } from 'vitest';
 import { assertMailpitExpectation } from '../../../../scripts/api-acceptance-support/support/mailpit-assertions.ts';
-import { getSiteAuthConfig } from '../../../../src/auth/config.ts';
 import { marketAuthContext } from '../../../../src/api/app/support/accounts/authentication-sessions.ts';
+import { getSiteAuthConfig } from '../../../../src/auth/config.ts';
 
 const servers: Server[] = [];
 

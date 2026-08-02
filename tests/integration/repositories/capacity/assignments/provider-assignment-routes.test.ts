@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
-import { installProviderAssignmentRoutes } from '../../../../../src/api/capacity/routes/capacity/assignments/provider-assignments.ts';
+import { describe,expect,it } from 'vitest';
 import type { CapacityProviderAccessEnv } from '../../../../../src/api/capacity/provider-access-middleware.ts';
+import { installProviderAssignmentRoutes } from '../../../../../src/api/capacity/routes/capacity/assignments/provider-assignments.ts';
 
 const principal = {
 	membershipId: 'membership-a',
@@ -52,6 +52,30 @@ describe('provider assignment routes', () => {
 		const missingScope = await application(store, ['provider:assignments:write']).request('/v1/provider/assignments/assignment-b/mode-runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
 		expect(missingScope.status).toBe(403);
 		expect(await missingScope.json()).toMatchObject({ code: 'provider_scope_required', details: { missingScopes: ['provider:usage:write'] } });
+	});
+
+	it('promotes live mode-run telemetry to the owning workday run activity stream', async () => {
+		const events: Array<{ teamId: string; runId: string; input: Record<string, unknown> }> = [];
+		const assignment = {
+			id: 'assignment-a', teamId: 'team-a', projectId: 'project-a', capacityProviderId: 'provider-a',
+			workDayId: 'workday-run-a-project-a', agentId: 'evidence-researcher',
+			metadata: { workdayRunId: 'run-a' },
+		};
+		const response = await application({
+			async getProviderAssignment() { return assignment; },
+			async createAgentModeRun() { return { id: 'mode-a', providerAssignmentId: assignment.id, status: 'running' }; },
+			async createCapacityWorkdayEvent(teamId: string, runId: string, input: Record<string, unknown>) {
+				events.push({ teamId, runId, input }); return { id: 'event-a' };
+			},
+		}).request('/v1/provider/assignments/assignment-a/mode-runs', {
+			method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+		});
+		expect(response.status).toBe(201);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({
+			teamId: 'team-a', runId: 'run-a',
+			input: { assignmentId: 'assignment-a', modeRunId: 'mode-a', workdayId: 'workday-run-a-project-a' },
+		});
 	});
 
 	it('requires usage scope when failure reports financial evidence', async () => {

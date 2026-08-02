@@ -1,4 +1,4 @@
-import { expect, json } from './api-harness.ts';
+import { expect,json } from './api-harness.ts';
 
 export async function verifyCommerceCatalogPublication(app: any, state: any) {
 	const { team, ownerToken, adminToken, product, vendor, approvedProduct } = state;

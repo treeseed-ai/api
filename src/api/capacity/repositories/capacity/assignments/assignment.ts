@@ -1,10 +1,10 @@
 import type { ProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import { validateProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import {
-	encodeCapacityPageCursor,
-	normalizeCapacityPageLimit,
-	type CapacityPage,
-	type CapacityPageCursor,
+encodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPage,
+type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';

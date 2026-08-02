@@ -1,17 +1,17 @@
 import { performance } from 'node:perf_hooks';
-import { describe, expect, it } from 'vitest';
-import { commitCapacityAdmission } from '../../src/api/capacity/services/support/admission-service.ts';
+import { describe,expect,it } from 'vitest';
 import { settleCapacityReservationExactlyOnce } from '../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { commitCapacityAdmission } from '../../src/api/capacity/services/support/admission-service.ts';
 import {
-	capacityAdmissionInput,
-	createCapacityAdmissionTestHarness,
-	seedCapacityAdmissionDependencies,
+capacityAdmissionInput,
+createCapacityAdmissionTestHarness,
+seedCapacityAdmissionDependencies,
 } from '../support/capacity/admission.ts';
 import {
-	capacityProviderTestIdentity,
-	capacityProviderTestSubmission,
-	createCapacityRegistrationTestHarness,
-	ensureCapacityTestTeam,
+capacityProviderTestIdentity,
+capacityProviderTestSubmission,
+createCapacityRegistrationTestHarness,
+ensureCapacityTestTeam,
 } from '../support/capacity/registration.ts';
 
 const CONCURRENCY = 10;

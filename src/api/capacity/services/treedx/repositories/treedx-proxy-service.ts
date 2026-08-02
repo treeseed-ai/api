@@ -3,15 +3,15 @@ import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { authorizeTreeDxProxy } from './treedx-proxy-access-service.ts';
 import {
-	isLoopbackTreeDxBaseUrl,
-	resolveTreeDxProxyBaseUrl,
-	resolveTreeDxProxyToken,
-	treeDxProxyActorId,
-	treeDxProxyTenantId,
-	treeDxRuntimeEnv,
-	treeDxTokenScope,
-	type TreeDxProxyRuntime,
-	type TreeDxProxyScope,
+isLoopbackTreeDxBaseUrl,
+resolveTreeDxProxyBaseUrl,
+resolveTreeDxProxyToken,
+treeDxProxyActorId,
+treeDxProxyTenantId,
+treeDxRuntimeEnv,
+treeDxTokenScope,
+type TreeDxProxyRuntime,
+type TreeDxProxyScope,
 } from './treedx-proxy-token-service.ts';
 import { readBoundedTreeDxJson } from './treedx-response.ts';
 

@@ -1,4 +1,4 @@
-import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPostgresDatabase, PlatformRunnerClient, afterEach, authorizeApp, createPlatformApiApp, createDeploymentReadyProject, createRunnerRepoFixture, createServer, createTeam, createTeamAndProject, createTestApp, createTestPostgresDatabase, createTestStore, describe, encryptHostConfig, encryptedHostEnvelope, encryptedTestHostEnvelope, execFileSync, existsSync, expect, getApiMocks, git, it, json, listManagedHostsFromConfig, mkdirSync, mkdtempSync, mockCloudflareDnsPreflight, newDb, resolve, rmSync, runOnceWithClient, tmpdir, Core, unsignedTestJwt, vi, waitForCondition, withEnv, withHttpMarketApp, writeFileSync } from '../../../support/api-harness.ts';
+import { authorizeApp,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../support/api-harness.ts';
 
 describe('market api', () => {
 it('manages team profiles, invites, member roles, and guarded deletion', async () => {
@@ -42,8 +42,8 @@ it('manages team profiles, invites, member roles, and guarded deletion', async (
 		const creatorAccess = await json(await app.request(`/v1/teams/${created.payload.id}/permissions`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		expect(creatorAccess.payload.capabilities).toEqual(expect.arrayContaining(['launch_projects', 'manage_billing']));
-		expect(creatorAccess.payload.teamPermissions).toEqual(expect.arrayContaining(['project:create', 'billing:manage']));
+		expect(creatorAccess.payload.capabilities).toEqual(expect.arrayContaining(['manage_projects', 'manage_billing']));
+		expect(creatorAccess.payload.teamPermissions).toEqual(expect.arrayContaining(['project:manage', 'billing:manage']));
 
 		const updated = await json(await app.request(`/v1/teams/${created.payload.id}`, {
 			method: 'PATCH',

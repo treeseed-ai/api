@@ -1,4 +1,4 @@
-import type { ProviderAssignment, ProviderAssignmentExplanation } from '@treeseed/sdk/agent-capacity';
+import type { ProviderAssignment,ProviderAssignmentExplanation } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 
 type JsonRecord = Record<string, unknown>;

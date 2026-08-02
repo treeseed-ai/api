@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { ProviderAssignmentLifecycleService } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
+import { describe,expect,it,vi } from 'vitest';
 import type { CapacityDatabaseOperation } from '../../../../../src/api/capacity/database.ts';
+import { ProviderAssignmentLifecycleService } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
 
 describe('provider assignment retry policy', () => {
 	it('fails a repeatedly returned assignment when its durable attempt limit is reached', async () => {

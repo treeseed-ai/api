@@ -1,9 +1,9 @@
 import type {
-	ApprovalRequest,
-	CapacityLedgerEntry,
-	CapacityReservation,
-	CapacityUsageActual,
-	ProjectCapacityDiagnostics,
+ApprovalRequest,
+CapacityLedgerEntry,
+CapacityReservation,
+CapacityUsageActual,
+ProjectCapacityDiagnostics,
 } from '@treeseed/sdk';
 import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';

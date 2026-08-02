@@ -1,5 +1,5 @@
-import { type GovernanceBundle, type GovernanceCapacityConstraint } from '../projects/projects-core/governance-projection.js';
-import { safeArray, compact, latestDate, describeState, toneForState } from './index.js';
+import { type GovernanceBundle,type GovernanceCapacityConstraint } from '../projects/projects-core/governance-projection.js';
+import { compact,describeState,latestDate,safeArray,toneForState } from './index.js';
 
 export function capacityConstraintsForBundle(bundle: GovernanceBundle): GovernanceCapacityConstraint[] {
     const operations = bundle.capacityOperations;

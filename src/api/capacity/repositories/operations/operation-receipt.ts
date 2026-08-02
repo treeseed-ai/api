@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../database.ts';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { canonicalJson, sha256 } from '../../security.ts';
+import { canonicalJson,sha256 } from '../../security.ts';
 
 interface OperationReceiptRow extends Record<string, unknown> {
 	request_digest?: unknown;

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import { projectCompletedPlanningOutputs } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-planning-output-service.ts';
 
 const assignment = {

@@ -1,5 +1,5 @@
-import React from 'react';
 import type { APIContext } from 'astro';
+import React from 'react';
 import { sendAuthEmail } from './email.ts';
 import { render } from './react-email-render.ts';
 

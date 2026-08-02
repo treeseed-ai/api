@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
+import type { CapacityProviderAccessEnv } from '../../../../../src/api/capacity/provider-access-middleware.ts';
 import { authorizeTreeDxProxy } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-proxy-access-service.ts';
 import { treeDxTokenScope } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-proxy-token-service.ts';
-import type { CapacityProviderAccessEnv } from '../../../../../src/api/capacity/provider-access-middleware.ts';
 
 function app(store: Record<string, unknown>) {
 	const application = new Hono<CapacityProviderAccessEnv>();

@@ -1,4 +1,7 @@
-import { successActorsFor, productionSafeStrategy, bodyFactoryFor, ACCEPTANCE_ACTORS } from '../index.js';
+import { successActorsFor } from '../accounts/authorization-policy.js';
+import { productionSafeStrategy } from '../commerce/catalog/production-safety.js';
+import { ACCEPTANCE_ACTORS } from './actor-groups.js';
+import { bodyFactoryFor } from './request-body-factories.js';
 
 export function acceptancePolicy(path, method) {
     const successActors = successActorsFor(path, method);

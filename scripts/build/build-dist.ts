@@ -1,10 +1,9 @@
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, extname, join, relative, resolve } from 'node:path';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { spawnSync } from 'node:child_process';
+import { chmodSync,copyFileSync,cpSync,existsSync,mkdirSync,mkdtempSync,readdirSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname,extname,join,relative,resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { packageRoot } from '../packages/package-tools.ts';
 
@@ -26,11 +25,8 @@ const REQUIRED_OUTPUTS = [
 	'api/support/server.js',
 	'api/persistence/store.js',
 	'api/support/market-postgres.js',
-	'api/projects/deployments/project-deployment-routes.js',
 	'api/support/route-descriptors.js',
-	'api/support/hub-launch-application.js',
 	'operations-runner/entrypoint.js',
-	'operations-runner/project-web-deployment-executor.js',
 	'scripts/support/migrate-db.js',
 ];
 

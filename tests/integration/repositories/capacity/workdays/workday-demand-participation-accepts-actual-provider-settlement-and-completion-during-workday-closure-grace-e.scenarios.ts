@@ -1,26 +1,19 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import { describe, expect, it } from 'vitest';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
-import { CapacityWorkdayDemandRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-demand.ts';
-import { CapacityWorkdayParticipationRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-participation.ts';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
-import { compileProviderWorkdayDemand } from '../../../../../src/api/capacity/services/build/demand-compiler.ts';
-import { OperatorAssignmentService } from '../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
-import { tickCapacityWorkdayRun } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-tick-service.ts';
-import { listTreeDxPlanningDemandSources } from '../../../../../src/api/capacity/services/capacity/workdays/content/workday-content-demand-source.ts';
-import { assignNextCompiledDemand, resolveAssignmentContentBaseRef } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
+import { CapacityWorkdayDemandRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-demand.ts';
 import { evaluateProviderAssignmentLeaseAuthority } from '../../../../../src/api/capacity/services/accounts/lease-authority-service.ts';
-import { listActingDemandSources } from '../../../../../src/api/capacity/services/support/acting-demand-source.ts';
-import { resolveEngineeringNodeAuthority } from '../../../../../src/api/capacity/services/accounts/engineering-source-authority.ts';
+import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { CapacityAllocationService } from '../../../../../src/api/capacity/services/capacity/allocations/allocation-service.ts';
 import { CapacityGrantService } from '../../../../../src/api/capacity/services/capacity/allocations/grant-service.ts';
-import { evaluateDurableWorkdayContinuation } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-continuation-service.ts';
-import { workdayTerminalizationPreserveUntil } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
-import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { ProviderAssignmentLifecycleService } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
+import { OperatorAssignmentService } from '../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
+import { assignNextCompiledDemand } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
+import { tickCapacityWorkdayRun } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-tick-service.ts';
+import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
     ? resolve(packageRoot, '../sdk/drizzle/market')

@@ -1,27 +1,20 @@
+import type { CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import { describe, expect, it } from 'vitest';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
+import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
 import { CapacityWorkdayDemandRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-demand.ts';
 import { CapacityWorkdayParticipationRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-participation.ts';
-import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
-import { compileProviderWorkdayDemand } from '../../../../../src/api/capacity/services/build/demand-compiler.ts';
-import { OperatorAssignmentService } from '../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
-import { tickCapacityWorkdayRun } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-tick-service.ts';
-import { listTreeDxPlanningDemandSources } from '../../../../../src/api/capacity/services/capacity/workdays/content/workday-content-demand-source.ts';
-import { assignNextCompiledDemand, resolveAssignmentContentBaseRef } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
-import { evaluateProviderAssignmentLeaseAuthority } from '../../../../../src/api/capacity/services/accounts/lease-authority-service.ts';
-import { listActingDemandSources } from '../../../../../src/api/capacity/services/support/acting-demand-source.ts';
 import { resolveEngineeringNodeAuthority } from '../../../../../src/api/capacity/services/accounts/engineering-source-authority.ts';
-import { CapacityAllocationService } from '../../../../../src/api/capacity/services/capacity/allocations/allocation-service.ts';
-import { CapacityGrantService } from '../../../../../src/api/capacity/services/capacity/allocations/grant-service.ts';
+import { capacityWorkdayContentBaseRef,compileProviderWorkdayDemand } from '../../../../../src/api/capacity/services/build/demand-compiler.ts';
+import { resolveAssignmentContentBaseRef,resolveAssignmentContentPathScope } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
+import { listTreeDxPlanningDemandSources } from '../../../../../src/api/capacity/services/capacity/workdays/content/workday-content-demand-source.ts';
 import { evaluateDurableWorkdayContinuation } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-continuation-service.ts';
 import { workdayTerminalizationPreserveUntil } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
-import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
-import { ProviderAssignmentLifecycleService } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
-import type { CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
+import { listActingDemandSources } from '../../../../../src/api/capacity/services/support/acting-demand-source.ts';
+import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
     ? resolve(packageRoot, '../sdk/drizzle/market')
@@ -78,6 +71,8 @@ it('forces explicit cancellation terminalization while preserving completed-run 
 });
 
 it('bases a content handoff workspace on the exact upstream artifact commit', () => {
+	expect(capacityWorkdayContentBaseRef('local', { base: 'staging' })).toBe('refs/heads/main');
+	expect(capacityWorkdayContentBaseRef('staging', { base: 'staging' })).toBe('refs/heads/staging');
     expect(resolveAssignmentContentBaseRef({
         contentBaseRef: 'refs/heads/main',
         intent: {
@@ -89,6 +84,21 @@ it('bases a content handoff workspace on the exact upstream artifact commit', ()
     })).toBe('893c6d70a2b7ac0de4f0a8a90a47138df7ee1f00');
     expect(resolveAssignmentContentBaseRef({ contentBaseRef: 'refs/heads/reviewed' }))
         .toBe('refs/heads/reviewed');
+});
+
+it('narrows assignment TreeDX writes to the configured editorial book hierarchy', () => {
+    expect(resolveAssignmentContentPathScope({
+        contentAccess: { write: { paths: [
+            'src/content/notes/editorial/books/treeseed-guide/reviews/**',
+            'src/content/questions/editorial/books/treeseed-guide/**',
+        ] } },
+    }, 'write', 'src/content', ['src/content/**'])).toEqual([
+        'src/content/notes/editorial/books/treeseed-guide/reviews/**',
+        'src/content/questions/editorial/books/treeseed-guide/**',
+    ]);
+    expect(() => resolveAssignmentContentPathScope({
+        contentAccess: { write: { paths: ['packages/api/src/**'] } },
+    }, 'write', 'src/content', ['src/content/**'])).toThrow(/outside the project content root/u);
 });
 
 it('derives deterministic open objectives, questions, proposals, decisions, and knowledge gaps through TreeDX', async () => {

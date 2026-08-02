@@ -2,7 +2,7 @@ import type { CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { CapacityLedgerRepository } from '../../repositories/capacity/accounting/ledger.ts';
-import { CapacityReservationRepository, serializeCapacityReservationRow } from '../../repositories/capacity/accounting/reservation.ts';
+import { CapacityReservationRepository,serializeCapacityReservationRow } from '../../repositories/capacity/accounting/reservation.ts';
 import { listTaskUsageActualsPage } from '../../repositories/capacity/accounting/task-usage.ts';
 
 export interface CapacityOperatorEvidencePage {

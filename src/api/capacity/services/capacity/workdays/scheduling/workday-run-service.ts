@@ -1,12 +1,12 @@
+import type { CapacityWorkdayRunRecord,CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
+import { normalizeWorkdayAgentSelection } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
-import type { CapacityWorkdayRunRecord, CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
-import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
-import { CapacityWorkdayRunRepository, parseCapacityWorkdayRunStatus } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { CapacityWorkdayRunWriteRepository } from '../../../../repositories/capacity/workdays/workday-run-write.ts';
-import { assertCapacityWorkdayParametersSafe, assertRunningCapacityWorkdayBounded } from '../lifecycle/workday-lifecycle-service.ts';
-import { recordCapacityWorkdayScheduleFailure, type WorkdayScheduleStore } from './workday-scheduling-service.ts';
+import { CapacityWorkdayRunRepository,parseCapacityWorkdayRunStatus } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { engineeringWorkflowPromotionConfigs } from '../../../operations/engineering-workflow-promotion-service.ts';
+import { assertCapacityWorkdayParametersSafe,assertRunningCapacityWorkdayBounded } from '../lifecycle/workday-lifecycle-service.ts';
+import { recordCapacityWorkdayScheduleFailure,type WorkdayScheduleStore } from './workday-scheduling-service.ts';
 
 type JsonRecord = Record<string, unknown>;
 interface WorkdayRunServiceStore extends WorkdayScheduleStore {
@@ -43,6 +43,7 @@ export class CapacityWorkdayRunService {
 		const now = new Date().toISOString(); const id = text(input.id, randomUUID());
 		const status = parseCapacityWorkdayRunStatus(input.status ?? (input.startedAt ? 'running' : 'queued'));
 		const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters); engineeringWorkflowPromotionConfigs(parameters);
+		parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
 		const durationSeconds = Math.max(0, Number(parameters.durationSeconds ?? input.durationSeconds ?? 0));
 		const startedAt = nullable(input.startedAt) ?? (status === 'running' ? now : null);
 		const configuredDeadline = text(parameters.deadlineAt);
@@ -80,6 +81,10 @@ export class CapacityWorkdayRunService {
 		const now = new Date().toISOString(); const status = parseCapacityWorkdayRunStatus(input.status ?? existing.status);
 		if (status !== existing.status && !TRANSITIONS[existing.status].includes(status)) throw new CapacityGovernanceError('capacity_workday_run_transition_invalid', `Cannot transition workday run from ${existing.status} to ${status}.`, 409, { runId, from: existing.status, to: status });
 		const parameters = object(input.parameters ?? existing.parameters); assertCapacityWorkdayParametersSafe(parameters); engineeringWorkflowPromotionConfigs(parameters);
+		parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
+		if (input.parameters && JSON.stringify(parameters.agentSelection) !== JSON.stringify(normalizeWorkdayAgentSelection(existing.parameters.agentSelection))) {
+			throw new CapacityGovernanceError('capacity_workday_agent_selection_immutable', 'Workday agent selection cannot change after the run is created.', 409, { runId });
+		}
 		const startedAt = nullable(input.startedAt) ?? existing.startedAt ?? (status === 'running' ? now : null);
 		assertRunningCapacityWorkdayBounded({ status, durationSeconds: Math.max(0, Number(parameters.durationSeconds ?? 0)), deadlineAt: nullable(parameters.deadlineAt) });
 		const next: CapacityWorkdayRunRecord = {

@@ -1,22 +1,23 @@
+import { MAX_CAPACITY_PAGE_LIMIT,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
+import { workdayAgentSelectionActive, normalizeWorkdayAgentSelection } from '@treeseed/sdk/agent-capacity';
 import { createHash } from 'node:crypto';
-import { MAX_CAPACITY_PAGE_LIMIT, type CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { CapacityWorkdayDemandRepository } from '../../repositories/capacity/workdays/workday-demand.ts';
 import { CapacityWorkdayParticipationRepository } from '../../repositories/capacity/workdays/workday-participation.ts';
-import { CapacityWorkdayRunRepository, type DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
-import { listActingDemandSources } from '../support/acting-demand-source.ts';
+import { CapacityWorkdayRunRepository,type DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderLeasePrincipal } from '../accounts/lease-authority-service.ts';
-import { resolvePlanningDemandSource } from '../support/planning-demand-source.ts';
-import { capacityWorkdayAgentsFromClasses } from '../capacity/workdays/policy/workday-agent-policy.ts';
 import { resolveCapacityWorkdayAssignmentIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
+import { capacityWorkdayAgentsFromClasses } from '../capacity/workdays/policy/workday-agent-policy.ts';
 import {
-	capacityWorkdayContentRoot,
-	capacityWorkdayRepositoryId,
-	capacityWorkdayRequestedProjectSlugs,
-	resolveCapacityWorkdayProjects,
-	type WorkdayProject,
+capacityWorkdayContentRoot,
+capacityWorkdayRepositoryId,
+capacityWorkdayRequestedProjectSlugs,
+resolveCapacityWorkdayProjects,
+type WorkdayProject,
 } from '../capacity/workdays/policy/workday-project-policy.ts';
+import { listActingDemandSources } from '../support/acting-demand-source.ts';
+import { resolvePlanningDemandSource } from '../support/planning-demand-source.ts';
 
 interface DemandCompilerStore extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
@@ -25,6 +26,18 @@ interface DemandCompilerStore extends CapacityGovernanceDatabase {
 
 function id(prefix: string, value: string): string {
 	return `${prefix}_${createHash('sha256').update(value).digest('base64url').slice(0, 32)}`;
+}
+function text(value: unknown): string {
+	return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+function record(value: unknown): Record<string, unknown> {
+	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+export function capacityWorkdayContentBaseRef(environment: string, branchPolicy: Record<string, unknown>): string {
+	if (environment === 'local') return 'refs/heads/main';
+	const base = text(branchPolicy.base);
+	if (!base) return 'refs/heads/main';
+	return base.startsWith('refs/') || /^[0-9a-f]{40}$/iu.test(base) ? base : `refs/heads/${base}`;
 }
 function deadlineOpen(run: DurableCapacityWorkdayRun, now: string): boolean {
 	const configured = run.parameters.deadlineAt;
@@ -52,7 +65,17 @@ async function compilePlanningDemands(
 ) {
 	const page = await store.listProjectAgentClassesPage(project.id, { limit: MAX_CAPACITY_PAGE_LIMIT });
 	if (page.page.hasMore) throw new CapacityGovernanceError('capacity_internal_collection_bound_exceeded', 'Workday agent classes exceed the processing bound.', 409, { projectId: project.id, limit: MAX_CAPACITY_PAGE_LIMIT });
-	const agents = capacityWorkdayAgentsFromClasses(page.items);
+	const selectionSnapshot = record(record(run.parameters.resolvedAgentSelectionByProject)[project.id]);
+	const pinnedAgents = Array.isArray(selectionSnapshot.agents) ? selectionSnapshot.agents.map(record) : [];
+	const selection = pinnedAgents.length > 0 ? normalizeWorkdayAgentSelection({
+		classIds: pinnedAgents.map((agent) => text(agent.agentClassId)).filter(Boolean),
+		agentSlugs: pinnedAgents.map((agent) => text(agent.agentSlug)).filter(Boolean),
+		mode: 'intersection',
+	}) : normalizeWorkdayAgentSelection(run.parameters.agentSelection);
+	const agents = capacityWorkdayAgentsFromClasses(page.items, selection);
+	if (!agents.length && workdayAgentSelectionActive(selection)) {
+		throw new CapacityGovernanceError('capacity_workday_agent_selection_empty', 'Workday agent selection resolved no eligible agents.', 409, { runId: run.id, projectId: project.id, selection });
+	}
 	if (!agents.length) return 0;
 	const participation = new CapacityWorkdayParticipationRepository(store);
 	const { cycle, entries } = await participation.ensureOpenCycle({
@@ -80,7 +103,11 @@ async function compilePlanningDemands(
 			requestedCredits: source.requestedCredits, idempotencyKey,
 			payload: {
 				...source.payload, repositoryId: capacityWorkdayRepositoryId(project, run.parameters),
-				contentRoot: capacityWorkdayContentRoot(project), cycle: cycle.cycleNumber,
+				contentRoot: capacityWorkdayContentRoot(project), agentContentPath: agent.contentPath,
+				contentBaseRef: capacityWorkdayContentBaseRef(run.environment, agent.branchPolicy),
+				contentBranchPolicy: agent.branchPolicy,
+				contentAccess: agent.contentAccess,
+				cycle: cycle.cycleNumber,
 			},
 			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment }, availableAt: now, now,
 		});

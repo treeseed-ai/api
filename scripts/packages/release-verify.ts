@@ -1,10 +1,10 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { extname, join, relative, resolve } from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { spawn,spawnSync } from 'node:child_process';
+import { existsSync,readFileSync,readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { extname,join,relative,resolve } from 'node:path';
 import { Readable } from 'node:stream';
-import { DataType, newDb } from 'pg-mem';
+import { pathToFileURL } from 'node:url';
+import { DataType,newDb } from 'pg-mem';
 import { createPlatformApiApp } from '../../src/api/support/app.js';
 import { MarketPostgresDatabase } from '../../src/api/support/market-postgres.js';
 import { packageRoot } from './package-tools.ts';

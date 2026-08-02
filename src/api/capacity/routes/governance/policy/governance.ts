@@ -1,12 +1,12 @@
-import type { Context, Hono } from 'hono';
-import type { CapacityProviderIdentityRotationRequest, CapacityProviderSignedProof, ProviderRegistrationSubmission } from '@treeseed/sdk/capacity-provider/contracts';
+import type { CapacityProviderIdentityRotationRequest,CapacityProviderSignedProof,ProviderRegistrationSubmission } from '@treeseed/sdk/capacity-provider/contracts';
+import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { createCapacityProviderAccessMiddleware } from '../../../provider-access-middleware.ts';
 import { CapacityGovernanceRepository } from '../../../repositories/governance/policy/governance.ts';
 import { CapacityAuditRepository } from '../../../repositories/support/audit.ts';
-import { CapacityRegistrationService } from '../../../services/support/registration-service.ts';
 import { CapacitySecretCodec } from '../../../security.ts';
-import { createCapacityProviderAccessMiddleware } from '../../../provider-access-middleware.ts';
+import { CapacityRegistrationService } from '../../../services/support/registration-service.ts';
 import { readCapacityRequestObject } from '../../support/request-json.ts';
 
 interface CapacityGovernanceRouteOptions {

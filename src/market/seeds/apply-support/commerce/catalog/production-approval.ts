@@ -1,4 +1,4 @@
-import { stableJson, actorId, actorType } from '../../index.js';
+import { actorId,actorType,stableJson } from '../../index.js';
 
 export function planApprovalMetadata(plan, manifestHash) {
     return {

@@ -1,5 +1,5 @@
-import type { CapacityGrantStatus, CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
-import { decodeDurableJsonArray, decodeDurableJsonObject } from '../../../durable-json.ts';
+import type { CapacityGrantStatus,CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable-json.ts';
 
 export function serializeCapacityGrantRow(row: Record<string, unknown>): CapacityGrantV2 {
 	const context = (column: string) => ({ owner: 'capacity grant', ownerId: String(row.id ?? ''), column });

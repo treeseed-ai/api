@@ -1,4 +1,4 @@
-import { expect, json } from './api-harness.ts';
+import { expect,json } from './api-harness.ts';
 
 export async function verifyCommerceGovernanceSetup(app: any) {
 	    const seeded = await json(await app.request('/v1/acceptance/seed', {

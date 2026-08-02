@@ -3,7 +3,7 @@ import { CapacityGovernanceError } from '../../database.ts';
 import { AvailabilitySessionService } from '../../services/accounts/availability-session-service.ts';
 import { requireProviderPrincipal } from '../capacity/providers/provider-auth.ts';
 import { readCapacityRequestObject } from '../support/request-json.ts';
-import { capacityRuntimeFailure, type CapacityRuntimeRouteOptions } from './runtime-route-support.ts';
+import { capacityRuntimeFailure,type CapacityRuntimeRouteOptions } from './runtime-route-support.ts';
 
 export function installAvailabilityRuntimeRoutes(app: Hono, options: CapacityRuntimeRouteOptions) {
 	const availability = new AvailabilitySessionService(options.store);

@@ -1,4 +1,4 @@
-import type { CapacityWorkdayRunRecord, CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
+import type { CapacityWorkdayRunRecord,CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { CapacityWorkdayRunRepository } from './workday-run.ts';

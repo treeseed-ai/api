@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-import { createServer } from 'node:http';
+import { resolveApiConfig } from '@treeseed/sdk/api';
 import type { Server } from 'node:http';
+import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { resolveApiConfig } from '@treeseed/sdk/api';
 import { createPlatformApiApp } from './app.js';
 import { createMarketPostgresDatabase } from './market-postgres.js';
 

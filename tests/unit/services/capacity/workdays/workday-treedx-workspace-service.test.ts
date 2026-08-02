@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import {
-	createConfiguredWorkdayTreeDxWorkspace,
-	createWorkdayTreeDxWorkspace,
-	workdayTreeDxWorkspaceId,
+createConfiguredWorkdayTreeDxWorkspace,
+createWorkdayTreeDxWorkspace,
+workdayTreeDxWorkspaceId,
 } from '../../../../../src/api/capacity/services/capacity/workdays/treedx/workday-treedx-workspace-service.ts';
 
 describe('workday TreeDX workspace service', () => {

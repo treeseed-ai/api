@@ -2,10 +2,10 @@ import type { AgentExecutionMode } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
+import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
 import { commitCapacityAdmission } from '../../../support/admission-service.ts';
 import { loadCapacityAdmissionState } from '../../../support/admission-state-service.ts';
 import { compileAssignmentProjectContext } from '../context/assignment-context-service.ts';
-import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
 
 type JsonRecord = Record<string, unknown>;
 

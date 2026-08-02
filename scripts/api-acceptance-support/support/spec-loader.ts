@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync,readFileSync } from 'node:fs';
+import { dirname,resolve } from 'node:path';
 import { parse } from 'yaml';
 
 export function loadExpectedStatuses(path = 'tests/acceptance/api/expected-statuses.json') {

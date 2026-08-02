@@ -1,8 +1,8 @@
-import type { ProjectAgentClass, ProjectAgentClassStatus } from '@treeseed/sdk/agent-capacity';
-import { encodeCapacityPageCursor, type CapacityPage, type CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { decodeDurableJsonArray, decodeDurableJsonObject } from '../../../durable-json.ts';
-import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../../database.ts';
+import type { ProjectAgentClass,ProjectAgentClassStatus } from '@treeseed/sdk/agent-capacity';
+import { encodeCapacityPageCursor,type CapacityPage,type CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable-json.ts';
 
 type Row = Record<string, unknown>;
 const STATUSES = new Set<ProjectAgentClassStatus>(['active', 'paused', 'archived']);

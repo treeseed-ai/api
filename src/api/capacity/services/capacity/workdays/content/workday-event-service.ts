@@ -1,13 +1,13 @@
-import { randomUUID } from 'node:crypto';
 import type { CapacityWorkdayEventRecord } from '@treeseed/sdk/agent-capacity';
-import type { CapacityPage, CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import type { CapacityPage,CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { randomUUID } from 'node:crypto';
+import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import {
-	CapacityWorkdayEventRepository,
-	parseCapacityWorkdayEventStatus,
+CapacityWorkdayEventRepository,
+parseCapacityWorkdayEventStatus,
 } from '../../../../repositories/capacity/workdays/workday-event.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -40,7 +40,7 @@ export class CapacityWorkdayEventService {
 		return event;
 	}
 
-	list(teamId: string, runId: string, filters: { limit?: unknown; cursor?: CapacityPageCursor | null } = {}): Promise<CapacityPage<CapacityWorkdayEventRecord>> {
+	list(teamId: string, runId: string, filters: { limit?: unknown; cursor?: CapacityPageCursor | null; afterEventIndex?: number | null } = {}): Promise<CapacityPage<CapacityWorkdayEventRecord>> {
 		return this.events.list(teamId, runId, filters);
 	}
 }

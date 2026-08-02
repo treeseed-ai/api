@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { readBoundedTreeDxJson } from '../../../treedx/repositories/treedx-response.ts';
-import { resolveWorkdayTreeDxConnection, type WorkdayTreeDxConnectionStore } from './workday-treedx-connection.ts';
+import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from './workday-treedx-connection.ts';
 
 interface CreateWorkdayTreeDxWorkspaceInput {
 	baseUrl: string;

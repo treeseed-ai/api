@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { CapacityLedgerRepository, serializeCapacityLedgerEntryRow } from '../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
-import { CapacityReservationRepository, serializeCapacityReservationRow } from '../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
+import { describe,expect,it } from 'vitest';
+import { CapacityLedgerRepository,serializeCapacityLedgerEntryRow } from '../../../../src/api/capacity/repositories/capacity/accounting/ledger.ts';
+import { CapacityReservationRepository,serializeCapacityReservationRow } from '../../../../src/api/capacity/repositories/capacity/accounting/reservation.ts';
 
 function reservationRow(overrides: Record<string, unknown> = {}) {
 	return {

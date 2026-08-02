@@ -1,5 +1,5 @@
 import type { CapacityExecutionProvider } from '@treeseed/sdk/capacity-provider/contracts';
-import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../../database.ts';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
 
 function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value)

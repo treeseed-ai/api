@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import { compileAssignmentProjectContext } from '../../../../../src/api/capacity/services/capacity/assignments/context/assignment-context-service.ts';
 
 function store(overrides: Record<string, unknown> = {}) {

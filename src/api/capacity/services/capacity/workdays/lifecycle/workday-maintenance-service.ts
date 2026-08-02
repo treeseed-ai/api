@@ -8,6 +8,7 @@ export interface CapacityWorkdayMaintenanceStore {
 		deletedRateLimitBuckets: number;
 	}>;
 	recoverExpiredProviderAssignments(input?: { teamId?: string | null; providerId?: string | null; now?: string; limit?: number }): Promise<{ recovered: number; safeRetries: number; terminalFailures: number; completed: number; operatorActions: number }>;
+	tickDueCapacityWorkdaySchedules(now?: string): Promise<{ considered: number; created: number; failures: Record<string, unknown>[] }>;
 }
 
 export interface CapacityWorkdayMaintenanceResult {
@@ -24,16 +25,20 @@ export interface CapacityWorkdayMaintenanceResult {
 	expiredRegistrationRequests: number;
 	deletedProofNonces: number;
 	deletedRateLimitBuckets: number;
+	schedulesConsidered: number;
+	scheduledWorkdaysCreated: number;
+	scheduleTickFailures: number;
 }
 
 export async function runCapacityWorkdayMaintenance(
 	store: CapacityWorkdayMaintenanceStore,
 	now = new Date().toISOString(),
 ): Promise<CapacityWorkdayMaintenanceResult> {
-	const [workdays, assignments, retention] = await Promise.all([
+	const [workdays, assignments, retention, schedules] = await Promise.all([
 		store.maintainCapacityWorkdayRuns(null, now),
 		store.recoverExpiredProviderAssignments({ now, limit: 200 }),
 		store.maintainCapacityRuntimeRetention(now),
+		store.tickDueCapacityWorkdaySchedules(now),
 	]);
 	return {
 		ranAt: now,
@@ -45,6 +50,9 @@ export async function runCapacityWorkdayMaintenance(
 		expiredAssignmentCompletions: assignments.completed,
 		expiredAssignmentOperatorActions: assignments.operatorActions,
 		...retention,
+		schedulesConsidered: schedules.considered,
+		scheduledWorkdaysCreated: schedules.created,
+		scheduleTickFailures: schedules.failures.length,
 	};
 }
 

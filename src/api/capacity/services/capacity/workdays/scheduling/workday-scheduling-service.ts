@@ -1,17 +1,17 @@
 import type { CapacityAllocationSetV2 } from '@treeseed/sdk/agent-capacity/allocation';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
-import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type {
-	CreateWorkdayCapacityEnvelopeInput,
-	DurableWorkdayCapacityEnvelope,
+CreateWorkdayCapacityEnvelopeInput,
+DurableWorkdayCapacityEnvelope,
 } from '../../../../repositories/capacity/workdays/workday-envelope.ts';
+import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { CapacityGrantService } from '../../allocations/grant-service.ts';
 import { resolveGovernedWorkdaySchedule } from '../policy/workday-governance-service.ts';
 import {
-	capacityWorkdayContentRoot,
-	capacityWorkdayRequestedProjectSlugs,
-	type WorkdayProject,
+capacityWorkdayContentRoot,
+capacityWorkdayRequestedProjectSlugs,
+type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
 
 type JsonRecord = Record<string, unknown>;

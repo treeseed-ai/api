@@ -1,10 +1,12 @@
-import { ENGINEERING_HANDLER_KINDS, type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
-import { projectAgentActivityRefs, type ProjectAgentActivityRef } from '../../../projects/projects-core/project-agent-activity-refs.ts';
+import { ENGINEERING_HANDLER_KINDS,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
+import { selectWorkdayAgents } from '@treeseed/sdk/agent-capacity';
+import { projectAgentActivityRefs,type ProjectAgentActivityRef } from '../../../projects/projects-core/project-agent-activity-refs.ts';
 
 type UnknownRecord = Record<string, unknown>;
 
 export type CapacityWorkdayAgent = {
 	slug: string;
+	contentPath: string | null;
 	handler: EngineeringHandlerKind;
 	projectAgentClassId: string;
 	projectAgentClassSlug: string;
@@ -12,6 +14,8 @@ export type CapacityWorkdayAgent = {
 	promptTask: string;
 	outputContract: UnknownRecord;
 	planningIntent: UnknownRecord;
+	branchPolicy: UnknownRecord;
+	contentAccess: UnknownRecord;
 	planningPriority: number | null;
 	planningAllocationPercent: number | null;
 	activityType: 'planning' | 'estimating' | 'reviewing' | 'reporting';
@@ -78,7 +82,7 @@ export function compileCapacityWorkdayAssignmentIntent(agent: CapacityWorkdayAge
 	};
 }
 
-export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[]): CapacityWorkdayAgent[] {
+export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
 	const agents: CapacityWorkdayAgent[] = [];
 	for (const value of agentClasses) {
 		const agentClass = record(value);
@@ -105,6 +109,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[]): Capac
 			const priority = Number(profile.planningPriority);
 			agents.push({
 				slug,
+				contentPath: selectedActivity.contentPath,
 				handler: configuredHandler,
 				projectAgentClassId: text(agentClass.id),
 				projectAgentClassSlug: text(agentClass.slug, 'planning'),
@@ -112,6 +117,8 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[]): Capac
 				promptTask: text(record(profile.prompt).task),
 				outputContract: record(profile.outputs),
 				planningIntent: record(profile.planningIntent),
+				branchPolicy: record(profile.branchPolicy),
+				contentAccess: record(profile.contentAccess),
 				planningPriority: Number.isFinite(priority) ? priority : null,
 				planningAllocationPercent: Number.isFinite(allocation) && allocation > 0 ? allocation : null,
 				activityType: selectedActivity.activityType as CapacityWorkdayAgent['activityType'],
@@ -124,9 +131,10 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[]): Capac
 		|| left.slug.localeCompare(right.slug),
 	);
 	const seen = new Set<string>();
-	return ordered.filter((agent) => {
+	const unique = ordered.filter((agent) => {
 		if (seen.has(agent.slug)) return false;
 		seen.add(agent.slug);
 		return true;
 	});
+	return selectWorkdayAgents(unique, selection);
 }

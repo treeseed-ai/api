@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import { collectProjectAgentArtifacts } from '../../../../../src/api/capacity/services/projects/projects-core/project-agent-artifact-service.ts';
 
 describe('project agent artifact service', () => {

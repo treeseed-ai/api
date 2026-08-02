@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest';
 import type {
-	CapacityExecutionProvider,
-	CapacityProviderMembershipView,
-	CapacityReservation,
-	DerivedCapacitySummary,
+CapacityExecutionProvider,
+CapacityProviderMembershipView,
+CapacityReservation,
+DerivedCapacitySummary,
 } from '@treeseed/sdk';
 import type { CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import { describe,expect,it } from 'vitest';
 import {
-	buildProjectCapacityDiagnostics,
-	type ProjectCapacityDiagnosticsStore,
+buildProjectCapacityDiagnostics,
+type ProjectCapacityDiagnosticsStore,
 } from '../../../../../src/api/capacity/services/capacity/observability/project-capacity-diagnostics-service.ts';
 
 function fixture<T>(value: Partial<T>): T {

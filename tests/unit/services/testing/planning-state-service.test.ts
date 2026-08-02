@@ -1,11 +1,10 @@
 import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { DataType, newDb } from 'pg-mem';
-import { describe, expect, it } from 'vitest';
-import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.ts';
-import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { resolve } from 'node:path';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../src/api/capacity/control-plane.ts';
+import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.ts';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))

@@ -2,19 +2,19 @@ import { execFileSync } from 'node:child_process';
 
 import { createServer } from 'node:http';
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync,mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs';
 
 import { tmpdir } from 'node:os';
 
 import { resolve } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach,describe,expect,it,vi } from 'vitest';
 
-import { DataType, newDb } from 'pg-mem';
+import { DataType,newDb } from 'pg-mem';
 
 import * as Core from '@treeseed/sdk';
 
-import { AgentSdk, PlatformRunnerClient } from '@treeseed/sdk';
+import { AgentSdk,PlatformRunnerClient } from '@treeseed/sdk';
 
 import { createPlatformApiApp } from '../../src/api/support/app.js';
 
@@ -22,35 +22,7 @@ import { MarketPostgresDatabase } from '../../src/api/support/market-postgres.js
 
 import { MarketControlPlaneStore } from '../../src/api/persistence/store.js';
 
-import { encryptHostConfig } from '../../src/crypto/host-crypto.ts';
-
-import { listManagedHostsFromConfig } from '../../src/market/hosting/managed-hosts.js';
-
 import { runOnceWithClient } from '../../src/operations-runner/entrypoint.js';
-
-const apiMocks = vi.hoisted(() => ({
-    runHostingAudit: vi.fn(async (input: Record<string, unknown> = {}) => ({
-        ok: true,
-        environment: input.environment === 'prod' ? 'prod' : input.environment === 'local' ? 'local' : 'staging',
-        requestedEnvironment: input.environment ?? 'current',
-        repairMode: input.repair === true,
-        repaired: false,
-        target: { kind: 'persistent', scope: input.environment === 'prod' ? 'prod' : 'staging', label: input.environment === 'prod' ? 'prod' : 'staging' },
-        hostKinds: input.hostKinds ?? ['repository', 'web', 'email'],
-        checkedAt: '2026-01-01T00:00:00.000Z',
-        checks: [],
-        missingConfig: [],
-        resources: {},
-        warnings: [],
-        blockers: [],
-        nextActions: ['Hosting setup is ready for host saving and project launch.'],
-    })),
-    executeKnowledgeHubProviderLaunch: vi.fn(),
-}));
-
-export function getApiMocks() {
-    return apiMocks;
-}
 
 vi.mock('@treeseed/sdk', async (importOriginal) => {
     return {
@@ -128,14 +100,8 @@ vi.mock('@treeseed/sdk', async (importOriginal) => {
             'completed',
             'expired',
         ],
-        executeKnowledgeHubProviderLaunch: apiMocks.executeKnowledgeHubProviderLaunch,
     };
 });
-
-vi.mock('@treeseed/sdk/workflow-support', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('@treeseed/sdk/workflow-support')>()),
-    runHostingAudit: apiMocks.runHostingAudit,
-}));
 
 export const packageRoot = process.cwd();
 
@@ -186,6 +152,12 @@ export function createTestPostgresDatabase() {
         returns: DataType.text,
         implementation: (value: string) => `md5:${value}`,
     });
+	memory.public.registerFunction({
+		name: 'nullif',
+		args: [DataType.text, DataType.text],
+		returns: DataType.text,
+		implementation: (left: string, right: string) => left === right ? null : left,
+	});
     const pg = memory.adapters.createPg();
     return MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot: marketMigrationRoot });
 }
@@ -199,6 +171,7 @@ export type ApiTestOptions = {
     logRequests?: boolean;
     stripeConnectService?: any;
     clock?: { now: () => Date };
+	feedbackStorage?: any;
 };
 
 export function createTestApp(options: ApiTestOptions = {}) {
@@ -373,116 +346,7 @@ export async function createTeam(app: ReturnType<typeof createTestApp>, token: s
     return team.payload;
 }
 
-export function encryptedHostEnvelope(overrides: Record<string, unknown> = {}) {
-    return {
-        version: 1,
-        algorithm: 'secretbox',
-        kdf: {
-            algorithm: 'argon2id',
-            opsLimit: 2,
-            memLimit: 67108864,
-        },
-        salt: 'c2FsdA==',
-        nonce: 'bm9uY2U=',
-        ciphertext: 'Y2lwaGVydGV4dA==',
-        ...overrides,
-    };
-}
-
-export function encryptedTestHostEnvelope(config: Record<string, unknown>, passphrase: string) {
-    return encryptedHostEnvelope({
-        algorithm: 'test-json',
-        passphrase,
-        ciphertext: Buffer.from(JSON.stringify(config), 'utf8').toString('base64'),
-    });
-}
-
-export function mockCloudflareDnsPreflight({ createOk = true } = {}) {
-    return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init = {}) => {
-        const url = String(input);
-        const method = String(init.method ?? 'GET').toUpperCase();
-        if (url.includes('/zones?')) {
-            return new Response(JSON.stringify({ success: true, result: [{ id: 'zone-1', name: 'example.test' }] }), { status: 200 });
-        }
-        if (url.includes('/dns_records') && method === 'POST') {
-            if (!createOk) {
-                return new Response(JSON.stringify({
-                    success: false,
-                    errors: [{ code: 10000, message: 'Authentication error' }],
-                }), { status: 403 });
-            }
-            return new Response(JSON.stringify({ success: true, result: { id: 'dns-preflight-record' } }), { status: 200 });
-        }
-        if (url.includes('/dns_records/dns-preflight-record') && method === 'DELETE') {
-            return new Response(JSON.stringify({ success: true, result: { id: 'dns-preflight-record' } }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ success: true, result: {} }), { status: 200 });
-    });
-}
-
-export async function createDeploymentReadyProject(id: string) {
-    const db = createTestPostgresDatabase();
-    const store = createTestStore(db);
-    const app = createTestApp({
-        db,
-        store,
-        config: {
-            platformRunnerSecret: 'platform-runner-secret',
-        },
-    });
-    const token = await authorizeApp(app);
-    const { team, project } = await createTeamAndProject(app, token, {
-        id,
-        slug: id,
-        name: id.split('-').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' '),
-    });
-    await store.upsertHubRepository(project.id, {
-        teamId: team.id,
-        role: 'software',
-        provider: 'github',
-        owner: 'treeseed-ai',
-        name: id,
-        url: `https://github.com/treeseed-ai/${id}`,
-        defaultBranch: 'staging',
-        status: 'ready',
-    });
-    await json(await app.request(`/v1/teams/${team.id}/web-hosts`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-            name: 'Team Cloudflare',
-            ownership: 'team_owned',
-            encryptedPayload: encryptedHostEnvelope(),
-        }),
-    }));
-    await store.upsertProjectEnvironment(project.id, {
-        environment: 'staging',
-        deploymentProfile: 'hosted_project',
-        baseUrl: `https://staging.${id}.example.com`,
-        pagesProjectName: id,
-    });
-    return { app, db, store, token, team, project };
-}
-
 afterEach(() => {
     vi.restoreAllMocks();
-    apiMocks.executeKnowledgeHubProviderLaunch.mockReset();
-    apiMocks.runHostingAudit.mockReset();
-    apiMocks.runHostingAudit.mockImplementation(async (input: Record<string, unknown> = {}) => ({
-        ok: true,
-        environment: input.environment === 'prod' ? 'prod' : input.environment === 'local' ? 'local' : 'staging',
-        requestedEnvironment: input.environment ?? 'current',
-        repairMode: input.repair === true,
-        repaired: false,
-        target: { kind: 'persistent', scope: input.environment === 'prod' ? 'prod' : 'staging', label: input.environment === 'prod' ? 'prod' : 'staging' },
-        hostKinds: input.hostKinds ?? ['repository', 'web', 'email'],
-        checkedAt: '2026-01-01T00:00:00.000Z',
-        checks: [],
-        missingConfig: [],
-        resources: {},
-        warnings: [],
-        blockers: [],
-        nextActions: ['Hosting setup is ready for host saving and project launch.'],
-    }));
 });
-export { execFileSync, createServer, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, tmpdir, resolve, afterEach, describe, expect, it, vi, DataType, newDb, Core, AgentSdk, PlatformRunnerClient, createPlatformApiApp, MarketPostgresDatabase, MarketControlPlaneStore, encryptHostConfig, listManagedHostsFromConfig, runOnceWithClient };
+export { afterEach,AgentSdk,Core,createPlatformApiApp,createServer,DataType,describe,execFileSync,existsSync,expect,it,MarketControlPlaneStore,MarketPostgresDatabase,mkdirSync,mkdtempSync,newDb,PlatformRunnerClient,resolve,rmSync,runOnceWithClient,tmpdir,vi,writeFileSync };

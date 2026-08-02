@@ -1,15 +1,14 @@
-import {
-	RESERVED_USERNAMES,
-	composeDisplayNameFromParts,
-	normalizeUsername,
-	validateUsername,
-	type UsernameValidationResult,
-} from './profile-validation.ts';
 import { DELETE_ACCOUNT_CONFIRMATION } from './delete-confirmation.ts';
+import {
+RESERVED_USERNAMES,
+composeDisplayNameFromParts,
+normalizeUsername,
+validateUsername,
+type UsernameValidationResult,
+} from './profile-validation.ts';
 
-export { RESERVED_USERNAMES, composeDisplayNameFromParts, normalizeUsername, validateUsername };
+export { DELETE_ACCOUNT_CONFIRMATION,RESERVED_USERNAMES,composeDisplayNameFromParts,normalizeUsername,validateUsername };
 export type { UsernameValidationResult };
-export { DELETE_ACCOUNT_CONFIRMATION };
 
 export interface AccountProfileInput {
 	name: string;

@@ -1,6 +1,6 @@
 import {
-	normalizeCapacityPageLimit,
-	type CapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
 
 interface WorkdaySummaryDatabase {

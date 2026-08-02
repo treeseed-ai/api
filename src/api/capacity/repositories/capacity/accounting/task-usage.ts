@@ -1,9 +1,9 @@
-import {
-	encodeCapacityPageCursor,
-	normalizeCapacityPageLimit,
-	type CapacityPageCursor,
-} from '@treeseed/sdk/capacity-pagination';
 import type { CapacityUsageActual } from '@treeseed/sdk/agent-capacity';
+import {
+encodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPageCursor,
+} from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 

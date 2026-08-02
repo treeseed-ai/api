@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.governance.cooperative-decisions.record-a-member-vote.719
+journeyIndex: 719
+type: governance
+subtype: cooperative-decisions
+journey: "Record a member vote"
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Guarantee that TreeSeed can record a member vote."
+status: planned
+dependencies: { journeys: [], guarantees: [] }
+actors: { allowed: [authenticated_user, team_owner, platform_admin], forbidden: [unauthorized_user] }
+devices: { required: [desktop_chromium] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: false, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit: { required: false, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [guarantee_report] }
+notes: ["Planned from the TreeSeed Guide platform coverage audit."]

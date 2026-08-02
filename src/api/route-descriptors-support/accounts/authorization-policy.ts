@@ -1,10 +1,6 @@
-import { ACCEPTANCE_ACTORS, TEAM_MEMBER_ACTORS, TEAM_MANAGER_ACTORS, PROJECT_MEMBER_ACTORS, PROJECT_MANAGER_ACTORS, PLATFORM_ADMIN_ACTORS, isTreeDxCredentialBridgePath } from '../index.js';
+import { ACCEPTANCE_ACTORS,PLATFORM_ADMIN_ACTORS,PROJECT_MANAGER_ACTORS,PROJECT_MEMBER_ACTORS,TEAM_MANAGER_ACTORS,TEAM_MEMBER_ACTORS } from '../support/actor-groups.js';
 
 export function authClass(path, method = 'get') {
-    if (path === '/v1/internal/github/app/webhook')
-        return 'github-webhook';
-    if (isTreeDxCredentialBridgePath(path))
-        return 'service';
     if (path.startsWith('/v1/provider-registrations') || path === '/v1/provider/access-tokens')
         return 'provider-proof';
     if (path.startsWith('/v1/provider/'))
@@ -15,8 +11,16 @@ export function authClass(path, method = 'get') {
         return 'team-member';
     if (path.startsWith('/v1/acceptance/'))
         return 'acceptance-service';
-    if (path === '/v1/feedback')
+    if (path === '/v1/service-providers')
         return 'public';
+    if (path === '/v1/knowledge/library' || path === '/v1/knowledge/reader'
+        || path === '/v1/knowledge/context' || path === '/v1/knowledge/search'
+        || path.startsWith('/v1/knowledge/pages/'))
+        return 'public';
+    if (path.startsWith('/v1/admin/feedback'))
+        return 'platform-admin';
+    if (path === '/v1/feedback')
+        return 'user';
     if (path === '/v1/markets/current' || path.startsWith('/v1/auth/web/sign-') || path.startsWith('/v1/auth/availability/') || path === '/v1/auth/providers' || path.startsWith('/v1/auth/oauth/') || path.includes('/password-reset/') || path.includes('/auth/device/')) {
         return 'public';
     }
@@ -74,18 +78,21 @@ export function routeNeedsManagement(path, method) {
         return false;
     if (path.includes('/members/') || path.includes('/invites'))
         return true;
+    if (path.includes('/service-operation-leases')
+        || path.includes('/credential-envelopes')
+        || path.includes('/external-vault-bindings')
+        || path.includes('/vault/grant-candidates'))
+        return true;
+    if (path.endsWith('/vault'))
+        return true;
     if (method === 'get')
         return false;
     if (path.includes('/capacity-provider-requests') || path.includes('/capacity-provider-memberships') || path.includes('/workday-runs'))
         return true;
-    return /\/members\/|\/invites|\/api-keys|\/repository-hosts|\/web-hosts|\/hosts|\/capacity\/|\/capacity-grants|\/provider-credential-sessions|\/projects\/launch|\/treedx/u.test(path);
+    return /\/members\/|\/invites|\/api-keys|\/capacity\/|\/capacity-grants|\/services|\/vault|\/credential-profiles|\/operation-leases|\/external-vault|\/treedx/u.test(path);
 }
 
 export function successActorsFor(path, method) {
-    if (path === '/v1/internal/github/app/webhook')
-        return [];
-    if (isTreeDxCredentialBridgePath(path))
-        return [];
     if (path.startsWith('/v1/provider/'))
         return ['providerAccessToken'];
     if (path.startsWith('/v1/platform/runners/'))
@@ -100,7 +107,15 @@ export function successActorsFor(path, method) {
         return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/platform/operations'))
         return PLATFORM_ADMIN_ACTORS;
+    if (path.startsWith('/v1/admin/feedback'))
+        return ['siteAdmin'];
     if (path === '/v1/feedback')
+        return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+    if (path === '/v1/service-providers')
+        return ACCEPTANCE_ACTORS;
+    if (path === '/v1/knowledge/library' || path === '/v1/knowledge/reader'
+        || path === '/v1/knowledge/context' || path === '/v1/knowledge/search'
+        || path.startsWith('/v1/knowledge/pages/'))
         return ACCEPTANCE_ACTORS;
     if (path === '/v1/markets/current' || path.includes('/username/check') || path.includes('/confirm-email') || path.includes('/password-reset/request') || path.includes('/password-reset/complete') || path.includes('/auth/device/')) {
         return ACCEPTANCE_ACTORS;
@@ -214,7 +229,7 @@ export function successActorsFor(path, method) {
         return TEAM_MEMBER_ACTORS;
     if (path.startsWith('/v1/commerce/'))
         return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates') || path.startsWith('/v1/knowledge-packs'))
+    if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates'))
         return ACCEPTANCE_ACTORS;
     if (path.startsWith('/v1/seeds/') && method === 'get')
         return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];

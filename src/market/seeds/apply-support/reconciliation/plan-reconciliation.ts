@@ -1,4 +1,4 @@
-import { actionIsUnchanged, teamCurrentPayload, repositoryHostCurrentPayload, projectCurrentPayload, hubRepositoryCurrentPayload, productCurrentPayload, catalogArtifactCurrentPayload } from '../index.js';
+import { actionIsUnchanged,catalogArtifactCurrentPayload,hubRepositoryCurrentPayload,productCurrentPayload,projectCurrentPayload,teamCurrentPayload } from '../index.js';
 
 export function selectedActions(plan) {
     return plan.actions.filter((action) => action.action !== 'skip' && action.environments.some((environment) => plan.environments.includes(environment)));
@@ -10,7 +10,6 @@ export function mutationActions(plan) {
 
 export async function reconcilePlanWithStore(plan, store) {
     const teamIds = new Map();
-    const repositoryHostIds = new Map();
     const projectIds = new Map();
     const productIds = new Map();
     const nextActions = [];
@@ -27,15 +26,6 @@ export async function reconcilePlanWithStore(plan, store) {
                 teamIds.set(action.key, existing.id);
             currentPayload = teamCurrentPayload(action, existing);
         }
-        if (action.kind === 'repositoryHost') {
-            const teamId = teamIds.get(action.payload.teamKey);
-            existing = teamId
-                ? (await store.listRepositoryHosts(teamId, { includePlatform: true })).find((host) => host.provider === action.payload.provider && host.name === action.payload.name) ?? null
-                : null;
-            if (existing)
-                repositoryHostIds.set(action.key, existing.id);
-            currentPayload = repositoryHostCurrentPayload(action, existing);
-        }
         if (action.kind === 'project') {
             const teamId = teamIds.get(action.payload.teamKey);
             existing = teamId ? await store.getProjectByTeamAndSlug(teamId, action.payload.slug) : null;
@@ -46,8 +36,6 @@ export async function reconcilePlanWithStore(plan, store) {
         if (action.kind === 'hubRepository') {
             const projectId = projectIds.get(action.payload.projectKey);
             existing = projectId ? (await store.listHubRepositories(projectId)).find((repository) => repository.role === action.payload.role) ?? null : null;
-            if (existing)
-                repositoryHostIds.set(action.payload.repositoryHostKey, existing.repositoryHostId);
             currentPayload = hubRepositoryCurrentPayload(action, existing);
         }
         if (action.kind === 'product') {

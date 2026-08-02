@@ -1,9 +1,9 @@
-import {
-	providerAssignmentCapabilityHandlesContainSecretMaterial,
-	redactedProviderAssignmentCapabilityHandles,
-	validateProviderAssignmentCapabilityHandles,
-} from '@treeseed/sdk/agent-capacity';
 import type { ProviderAssignmentSynthesisSource } from '@treeseed/sdk/agent-capacity';
+import {
+providerAssignmentCapabilityHandlesContainSecretMaterial,
+redactedProviderAssignmentCapabilityHandles,
+validateProviderAssignmentCapabilityHandles,
+} from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../database.ts';
 
 type RecordValue = Record<string, unknown>;

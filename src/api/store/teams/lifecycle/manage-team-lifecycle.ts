@@ -1,5 +1,4 @@
 import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
-import { isoNow } from '../../support/index.ts';
 
 const RESTORE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const ARCHIVE_BLOCKER_CODES = new Set([

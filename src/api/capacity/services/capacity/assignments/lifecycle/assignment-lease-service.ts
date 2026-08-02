@@ -1,17 +1,17 @@
+import type { ProviderAssignmentExplanation,ProviderNextAssignmentRequest } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
-import type { ProviderAssignmentExplanation, ProviderNextAssignmentRequest } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
-import { ProviderAssignmentRepository, serializeProviderAssignmentRow, type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository,serializeProviderAssignmentRow,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import {
-	buildProviderAssignmentExplanation,
-	type ProviderAssignmentExplanationWrite,
-} from '../observability/assignment-explanation-service.ts';
-import {
-	evaluateProviderAssignmentLeaseAuthority,
-	type ProviderLeasePrincipal,
+evaluateProviderAssignmentLeaseAuthority,
+type ProviderLeasePrincipal,
 } from '../../../accounts/lease-authority-service.ts';
 import { resolveProviderSynthesisContext } from '../../providers/provider-synthesis-context-service.ts';
+import {
+buildProviderAssignmentExplanation,
+type ProviderAssignmentExplanationWrite,
+} from '../observability/assignment-explanation-service.ts';
 import { recoverExpiredProviderAssignments } from './assignment-recovery-service.ts';
 
 type JsonRecord = Record<string, unknown>;

@@ -1,5 +1,5 @@
-import { type GovernanceBundle, type GovernancePolicyItem } from '../projects/projects-core/governance-projection.js';
-import { safeArray, compact, toneForState, objectValue } from './index.js';
+import { type GovernanceBundle,type GovernancePolicyItem } from '../projects/projects-core/governance-projection.js';
+import { compact,objectValue,safeArray,toneForState } from './index.js';
 
 export function policyItemsForBundle(bundle: GovernanceBundle): GovernancePolicyItem[] {
     const capabilityPolicies = safeArray(bundle.summary?.capabilityGrants)

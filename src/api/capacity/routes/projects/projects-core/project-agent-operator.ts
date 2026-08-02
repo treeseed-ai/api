@@ -1,14 +1,15 @@
-import type { Context, Hono } from 'hono';
 import {
-	decodeCapacityPageCursor,
-	normalizeCapacityPageLimit,
-	type CapacityPage,
-	type CapacityPageCursor,
+decodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPage,
+type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
+import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { ProjectAgentClassService } from '../../../services/projects/agents/project-agent-class-service.ts';
 import { readCapacityRequestObject } from '../../support/request-json.ts';
+import { projectAgentActivityProjection } from './project-agent-activity-projection.ts';
 
 interface ProjectAgentOperatorStore extends CapacityGovernanceDatabase {
 	listProjectAgentClassesPage(projectId: string, page: PageInput): Promise<CapacityPage<Record<string, unknown>>>;
@@ -113,13 +114,16 @@ export function installProjectAgentOperatorRoutes(app: Hono, options: ProjectAge
 	app.get('/v1/projects/:projectId/agent-mode-runs', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
 		try {
+			const result = await store.listAgentModeRunsPage(c.req.param('projectId'), {
+				mode: query(c, 'mode'),
+				assignmentId: query(c, 'assignmentId'),
+				...page(c),
+			});
 			return c.json({
 				ok: true,
-				payload: await store.listAgentModeRunsPage(c.req.param('projectId'), {
-					mode: query(c, 'mode'),
-					assignmentId: query(c, 'assignmentId'),
-					...page(c),
-				}),
+				payload: query(c, 'projection') === 'activity'
+					? { ...result, items: result.items.map(projectAgentActivityProjection) }
+					: result,
 			});
 		} catch (error) {
 			return errorResponse(error);

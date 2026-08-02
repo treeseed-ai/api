@@ -1,4 +1,3 @@
-import { resolve } from 'node:path';
 
 export function acceptanceRequestTimeoutMs() {
     const value = Number.parseInt(process.env.TREESEED_ACCEPTANCE_REQUEST_TIMEOUT_MS ?? '30000', 10);

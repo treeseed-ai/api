@@ -1,5 +1,5 @@
-import type { Context, Hono } from 'hono';
 import type { ResearchWorkflowRecord } from '@treeseed/sdk/agent-capacity';
+import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { readCapacityRequestObject } from '../support/request-json.ts';
 

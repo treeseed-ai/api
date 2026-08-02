@@ -1,0 +1,19 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.operations.workflow.remote-workflow-operation.733
+journeyIndex: 733
+type: operations
+subtype: workflow
+journey: Execute An Exactly Correlated Remote Workflow
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Human and assignment-scoped actors dispatch only allowlisted workflows at exact SHAs and observe the exact correlated provider run.
+status: blocked
+actors: { allowed: [team_owner, capacity_provider], forbidden: [unauthorized_user, contributor] }
+devices: { required: [desktop_chromium] }
+gates: [security, release]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [A disposable workflow repository and Workflow Connector installation are required.] }
+api: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [api_acceptance_report, provider_run_log, audit_log, cleanup_report] }
+notes: [Blocked until dispatch, webhook, polling, cancellation, artifact, collision, and capacity authorization acceptance passes twice.]

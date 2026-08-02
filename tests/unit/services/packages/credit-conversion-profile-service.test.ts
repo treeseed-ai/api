@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import { serializeCreditConversionProfileRow } from '../../../../src/api/capacity/repositories/packages/credit-conversion-profile.ts';
 import { CreditConversionProfileService } from '../../../../src/api/capacity/services/packages/credit-conversion-profile-service.ts';
 

@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import { describe, expect, it } from 'vitest';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
-import { recoverExpiredProviderAssignments } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
-import { reportCapacityUsage } from '../../../../../src/api/capacity/services/capacity/accounting/usage-report-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { reportCapacityUsage } from '../../../../../src/api/capacity/services/capacity/accounting/usage-report-service.ts';
+import { recoverExpiredProviderAssignments } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
+import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))

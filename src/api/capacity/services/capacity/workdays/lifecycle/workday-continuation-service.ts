@@ -1,7 +1,7 @@
 import { evaluateWorkdayContinuation } from '@treeseed/sdk/agent-capacity';
-import { decodeDurableJsonObject } from '../../../../durable-json.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
+import { decodeDurableJsonObject } from '../../../../durable-json.ts';
 
 export interface DurableWorkdayContinuationDecision {
 	continue: boolean;

@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import type { CapacityGovernanceDatabase, CapacityDatabaseOperation } from '../../../database.ts';
-import { CapacityGovernanceError } from '../../../database.ts';
 import { isUniqueConstraintViolation } from '../../../database-errors.ts';
-import {
-	assertCapacityUsageMatches,
-	capacityUsageIdentity,
-	capacityUsageInsertOperation,
-	type CapacityUsageReportRequest,
-} from './usage-report-service.ts';
-import type { CapacityUsageActualInput } from './usage-actual-input.ts';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
+import { CapacityGovernanceError } from '../../../database.ts';
 import { durableRealEquals } from '../../support/durable-number.ts';
+import type { CapacityUsageActualInput } from './usage-actual-input.ts';
+import {
+assertCapacityUsageMatches,
+capacityUsageIdentity,
+capacityUsageInsertOperation,
+type CapacityUsageReportRequest,
+} from './usage-report-service.ts';
 
 export interface CapacitySettlementRequest {
 	settlementKey: string;

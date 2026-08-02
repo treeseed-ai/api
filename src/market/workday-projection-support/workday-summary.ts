@@ -1,6 +1,6 @@
-import { compact, safeArray, type OperationalArtifact } from '../operations/operational-artifacts.js';
 import { type WorkdayProjection } from '../capacity/workdays/workday-projection.js';
-import { currentPhase, capacityProjection, repositoryContextFor, riskClassification, compareTimelineAsc, agentActivityProjection, collectArtifacts, assignmentTimelineEvents, governanceEvent, objectiveEvent, artifactTimelineEvent, buildPhases } from './index.js';
+import { compact,safeArray,type OperationalArtifact } from '../operations/operational-artifacts.js';
+import { agentActivityProjection,artifactTimelineEvent,assignmentTimelineEvents,buildPhases,capacityProjection,collectArtifacts,compareTimelineAsc,currentPhase,governanceEvent,objectiveEvent,repositoryContextFor,riskClassification } from './index.js';
 
 export function projectWorkdayProjection(bundle: any): WorkdayProjection {
     const assignmentIds: Set<string> = new Set(bundle.assignmentDetails.map((entry: any) => compact(entry.assignment?.id)).filter(Boolean));

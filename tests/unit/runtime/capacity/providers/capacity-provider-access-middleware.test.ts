@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
-import { createCapacityProviderAccessMiddleware, type CapacityProviderAccessEnv } from '../../../../../src/api/capacity/provider-access-middleware.ts';
+import { describe,expect,it,vi } from 'vitest';
+import { createCapacityProviderAccessMiddleware,type CapacityProviderAccessEnv } from '../../../../../src/api/capacity/provider-access-middleware.ts';
 
 describe('capacity provider access middleware', () => {
 	it('authenticates provider access tokens on assignment-scoped TreeDX routes', async () => {

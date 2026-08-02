@@ -1,14 +1,14 @@
+import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import { describe, expect, it } from 'vitest';
-import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
-import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../src/api/capacity/control-plane.ts';
-import { CapacityRuntimeEvidenceRepository } from '../../../src/api/capacity/repositories/runtime/runtime-evidence.ts';
 import type { CapacityGovernanceDatabase } from '../../../src/api/capacity/database.ts';
+import { CapacityRuntimeEvidenceRepository } from '../../../src/api/capacity/repositories/runtime/runtime-evidence.ts';
+import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
+import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))

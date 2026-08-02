@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
 import { CapacityGovernanceError } from '../../../../../src/api/capacity/database.ts';
 import { serializeAgentCapacityPlanRow } from '../../../../../src/api/capacity/repositories/capacity/planning/agent-capacity-plan.ts';
 

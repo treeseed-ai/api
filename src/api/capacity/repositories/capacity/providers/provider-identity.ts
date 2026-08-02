@@ -1,14 +1,14 @@
-import type {
-	CapacityProviderIdentity,
-	CapacityProviderIdentityStatus,
-	CapacityProviderMembershipView,
-	CapacityProviderPublicJwk,
-	ProviderTeamMembershipStatus,
-} from '@treeseed/sdk/capacity-provider/contracts';
 import { validateCapacityProviderPublicJwk } from '@treeseed/sdk/capacity-provider';
+import type {
+CapacityProviderIdentity,
+CapacityProviderIdentityStatus,
+CapacityProviderMembershipView,
+CapacityProviderPublicJwk,
+ProviderTeamMembershipStatus,
+} from '@treeseed/sdk/capacity-provider/contracts';
+import { isUniqueConstraintViolation } from '../../../database-errors.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { isUniqueConstraintViolation } from '../../../database-errors.ts';
 
 type Row = Record<string, unknown>;
 const IDENTITY_STATUSES = new Set<CapacityProviderIdentityStatus>(['active', 'rotating', 'revoked']);

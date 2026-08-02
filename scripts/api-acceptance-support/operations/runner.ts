@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync,mkdirSync,writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { expandDescriptorMatrices, expandSdkMethodMatrices, assertCoverage, junit, actorForCase, record, type AcceptanceActor, parseArgs, assertAcceptanceTarget, matchesCaseFilter, loadExpectedStatuses, loadSpec, interpolate, actorHeaders, loadMarketClient, serviceHeaders, addOptionalAcceptanceServiceHeaders, usesHostedAcceptanceEmailBypass, sanitizeDiagnosticValue, fetchWithTimeout, assertMailpitExpectation, assertCase, expandRoleMatrices } from '../index.js';
+import { actorForCase,actorHeaders,addOptionalAcceptanceServiceHeaders,assertAcceptanceTarget,assertCase,assertCoverage,assertMailpitExpectation,expandDescriptorMatrices,expandRoleMatrices,expandSdkMethodMatrices,fetchWithTimeout,interpolate,junit,loadExpectedStatuses,loadMarketClient,loadSpec,matchesCaseFilter,parseArgs,record,sanitizeDiagnosticValue,serviceHeaders,usesHostedAcceptanceEmailBypass,type AcceptanceActor } from '../index.js';
 
 export async function main() {
     const args = parseArgs(process.argv.slice(2));
@@ -152,6 +152,8 @@ export async function main() {
                 addOptionalAcceptanceServiceHeaders(headers, { environment: args.environment, enabled: emailBypass });
                 if (caseSpec.body !== undefined)
                     headers.set('content-type', 'application/json');
+				if (caseSpec.path === '/v1/feedback')
+					headers.set('x-idempotency-key', `acceptance-${String(caseSpec.id).replace(/[^a-z0-9_-]+/giu, '-').slice(0, 96)}`);
                 if (caseSpec.sdkMethod) {
                     const { MarketClient } = await loadMarketClient();
                     let sdkResponseStatus = null;

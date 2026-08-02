@@ -1,5 +1,5 @@
-import { compact, compareDatesAsc, normalizeOperationalArtifact, safeArray, uniqueStrings, type OperationalArtifact } from '../operations/operational-artifacts.js';
-import { workdayRef, objectValue, parseJson } from './index.js';
+import { compact,compareDatesAsc,normalizeOperationalArtifact,safeArray,uniqueStrings,type OperationalArtifact } from '../operations/operational-artifacts.js';
+import { objectValue,parseJson,workdayRef } from './index.js';
 
 export function collectArtifacts(bundle: any, assignmentIds: Set<string>): OperationalArtifact[] {
     const workday = bundle.workday;

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import type { CapacityGovernanceDatabase } from '../../../src/api/capacity/database.ts';
 import { listExecutionRunsForTeamPage } from '../../../src/api/capacity/repositories/support/execution-run.ts';
 

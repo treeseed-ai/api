@@ -1,13 +1,13 @@
 import type { CapacityGovernanceDatabase } from "../../../../database.ts";
 import { CapacityGovernanceError } from "../../../../database.ts";
+import { canonicalArtifactManifestReferences } from "../../../../domain/artifact-manifest-evidence.ts";
 import type { DurableCapacityWorkdayRun } from "../../../../repositories/capacity/workdays/workday-run.ts";
 import {
-  compileCapacityWorkdayAssignmentIntent,
-  type CapacityWorkdayAgent,
-  type CapacityWorkdayAssignmentIntent,
+compileCapacityWorkdayAssignmentIntent,
+type CapacityWorkdayAgent,
+type CapacityWorkdayAssignmentIntent,
 } from "../policy/workday-agent-policy.ts";
 import type { WorkdayProject } from "../policy/workday-project-policy.ts";
-import { canonicalArtifactManifestReferences } from "../../../../domain/artifact-manifest-evidence.ts";
 
 type JsonRecord = Record<string, unknown>;
 

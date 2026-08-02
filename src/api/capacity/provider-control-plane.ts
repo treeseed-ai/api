@@ -1,27 +1,27 @@
 import { normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
-import { CapacityGovernanceError, type CapacityGovernanceDatabase } from './database.ts';
-import { ProviderAssignmentLifecycleService } from './services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
-import { leaseNextProviderAssignment as leaseProviderAssignment } from './services/capacity/assignments/lifecycle/assignment-lease-service.ts';
-import { admitSynthesizedProviderAssignment as admitSynthesizedAssignment } from './services/capacity/assignments/admission/assignment-admission-service.ts';
-import type { ProviderLeasePrincipal } from './services/accounts/lease-authority-service.ts';
-import { CapacityGrantService } from './services/capacity/allocations/grant-service.ts';
-import { CapacityAllocationService } from './services/capacity/allocations/allocation-service.ts';
-import { ProjectAgentClassService } from './services/projects/agents/project-agent-class-service.ts';
-import {
-	AvailabilitySessionService,
-	type ProviderAvailabilityPrincipal,
-} from './services/accounts/availability-session-service.ts';
-import { resolveProviderSynthesisContext } from './services/capacity/providers/provider-synthesis-context-service.ts';
-import type { ProviderSynthesisRequest } from './services/capacity/assignments/context/assignment-synthesis-service.ts';
-import { CapacityProviderIdentityRepository } from './repositories/capacity/providers/provider-identity.ts';
+import { CapacityGovernanceError,type CapacityGovernanceDatabase } from './database.ts';
 import { ProviderAssignmentRepository } from './repositories/capacity/assignments/assignment.ts';
 import { listCapacityExecutionProviders } from './repositories/capacity/providers/execution-provider.ts';
-import {
-	listAgentModeRunsPage as readAgentModeRunsPage,
-	persistAgentModeRun,
-	readAgentModeRun,
-} from './repositories/support/mode-run.ts';
+import { CapacityProviderIdentityRepository } from './repositories/capacity/providers/provider-identity.ts';
 import { listExecutionRunsForTeamPage as readExecutionRunsForTeamPage } from './repositories/support/execution-run.ts';
+import {
+persistAgentModeRun,
+readAgentModeRun,
+listAgentModeRunsPage as readAgentModeRunsPage,
+} from './repositories/support/mode-run.ts';
+import {
+AvailabilitySessionService,
+type ProviderAvailabilityPrincipal,
+} from './services/accounts/availability-session-service.ts';
+import type { ProviderLeasePrincipal } from './services/accounts/lease-authority-service.ts';
+import { CapacityAllocationService } from './services/capacity/allocations/allocation-service.ts';
+import { CapacityGrantService } from './services/capacity/allocations/grant-service.ts';
+import { admitSynthesizedProviderAssignment as admitSynthesizedAssignment } from './services/capacity/assignments/admission/assignment-admission-service.ts';
+import type { ProviderSynthesisRequest } from './services/capacity/assignments/context/assignment-synthesis-service.ts';
+import { leaseNextProviderAssignment as leaseProviderAssignment } from './services/capacity/assignments/lifecycle/assignment-lease-service.ts';
+import { ProviderAssignmentLifecycleService } from './services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
+import { resolveProviderSynthesisContext } from './services/capacity/providers/provider-synthesis-context-service.ts';
+import { ProjectAgentClassService } from './services/projects/agents/project-agent-class-service.ts';
 
 type JsonRecord = Record<string, unknown>;
 

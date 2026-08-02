@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
 import {
-	assertCapacityWorkdayParametersSafe,
-	assertRunningCapacityWorkdayBounded,
-	assertCapacityWorkdayTransition,
-	capacityWorkdayStatus,
-	capacityWorkdayTimestampField,
+assertCapacityWorkdayParametersSafe,
+assertCapacityWorkdayTransition,
+assertRunningCapacityWorkdayBounded,
+capacityWorkdayStatus,
+capacityWorkdayTimestampField,
 } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-lifecycle-service.ts';
 
 describe('capacity workday lifecycle contract', () => {

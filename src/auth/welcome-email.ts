@@ -1,7 +1,7 @@
-import React from 'react';
 import type { APIContext } from 'astro';
-import { sendAuthEmail } from './email.ts';
+import React from 'react';
 import { getSiteAuthConfig } from './config.ts';
+import { sendAuthEmail } from './email.ts';
 import { render } from './react-email-render.ts';
 
 interface WelcomeEmailInput {
@@ -79,7 +79,7 @@ function WelcomeEmail({ displayName, signInUrl }: { displayName: string; signInU
 					fontSize: 15,
 					lineHeight: '23px',
 				},
-			}, 'Your account is ready. Treeseed Market is where teams launch, connect, and manage working Treeseed projects.')),
+			}, 'Your account is ready. TreeSeed is where teams connect services and manage knowledge work.')),
 			React.createElement('div', { style: { padding: '28px 32px 32px' } },
 				React.createElement('p', {
 					style: {
@@ -88,7 +88,7 @@ function WelcomeEmail({ displayName, signInUrl }: { displayName: string; signInU
 						fontSize: 15,
 						lineHeight: '24px',
 					},
-				}, 'Sign in to create your first team, connect project infrastructure, and start shaping the workspace around the way your collaborators actually work.'),
+				}, 'Sign in to create your first team, connect the services it uses, and shape the workspace around the way your collaborators work.'),
 				React.createElement('a', {
 					href: signInUrl,
 					style: {

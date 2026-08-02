@@ -1,16 +1,16 @@
 import {
-	anchorPart,
-	artifactCategoryFromType,
-	categorySlug,
-	compact,
-	compareDatesDesc,
-	describeState,
-	normalizeOperationalArtifact,
-	safeArray,
-	titleFromKind,
-	toneForState,
-	type OperationalArtifact,
-	type OperationalTone,
+anchorPart,
+artifactCategoryFromType,
+categorySlug,
+compact,
+compareDatesDesc,
+describeState,
+normalizeOperationalArtifact,
+safeArray,
+titleFromKind,
+toneForState,
+type OperationalArtifact,
+type OperationalTone,
 } from '../../operations/operational-artifacts.js';
 
 export interface KnowledgeMetric {
@@ -98,13 +98,9 @@ const canonicalCategories = ['Architecture', 'Operations', 'Research', 'Implemen
 
 export async function buildKnowledgeProjection(input: KnowledgeProjectionInput): Promise<KnowledgeProjection> {
 	const bundles = await loadKnowledgeBundles(input);
-	const packs = input.store && typeof input.store.listKnowledgePacks === 'function'
-		? await input.store.listKnowledgePacks(input.principal).catch(() => [])
-		: [];
 	const contentArtifacts = safeArray(input.contentEntries).map((entry) => artifactFromContentEntry(entry));
 	const operationalArtifacts = bundles.flatMap((bundle) => artifactsForBundle(bundle));
 	const importArtifacts = [
-		...safeArray(packs).map((pack) => artifactFromImport(pack)),
 		...contentArtifacts.filter((artifact) => artifact.category === 'Imports'),
 	];
 	const allArtifacts = dedupeArtifacts([...operationalArtifacts, ...contentArtifacts.filter((artifact) => artifact.category !== 'Imports'), ...importArtifacts])
@@ -263,27 +259,6 @@ function artifactFromContentEntry(entry: any): KnowledgeArtifactProjection {
 	};
 }
 
-function artifactFromImport(pack: any): KnowledgeArtifactProjection {
-	const id = compact(pack?.id, compact(pack?.slug, compact(pack?.name, 'import')));
-	const normalized = normalizeOperationalArtifact({
-		artifact: {
-			id,
-			title: pack?.name ?? pack?.title ?? pack?.slug,
-			description: pack?.summary ?? 'Operational import available for future workdays.',
-			state: pack?.visibility ?? 'available',
-			artifactKind: 'knowledge_import',
-			createdAt: pack?.updatedAt ?? pack?.createdAt,
-		},
-		producedBy: 'Operational resources',
-		categoryOverride: 'Imports',
-	});
-	return {
-		...baseKnowledgeArtifact(normalized, null, []),
-		sourceCategory: 'Imports',
-		sourceSlug: normalized.slug,
-	};
-}
-
 function baseKnowledgeArtifact(normalized: OperationalArtifact, bundle: KnowledgeBundle | null, releaseRecords: any[]): KnowledgeArtifactProjection {
 	return {
 		...normalized,
@@ -418,7 +393,6 @@ function categoryForContent(collection: string, data: any, entry: any): string {
 	if (collection === 'questions') return 'Research';
 	if (collection === 'proposals') return 'Implementation';
 	if (collection === 'books' || haystack.includes('architecture')) return 'Architecture';
-	if (collection === 'knowledge_packs') return 'Imports';
 	return artifactCategoryFromType(titleFromKind(collection));
 }
 

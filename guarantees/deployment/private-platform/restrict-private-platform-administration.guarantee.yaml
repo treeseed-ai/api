@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.deployment.private-platform.restrict-private-platform-administration.606
+journeyIndex: 606
+type: deployment
+subtype: private-platform
+journey: "Restrict private platform administration"
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Guarantee that TreeSeed can restrict private platform administration."
+status: planned
+dependencies: { journeys: [], guarantees: [] }
+actors: { allowed: [authenticated_user, team_owner, platform_admin], forbidden: [unauthorized_user] }
+devices: { required: [desktop_chromium] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: false, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit: { required: false, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [guarantee_report] }
+notes: ["Planned from the TreeSeed Guide platform coverage audit."]

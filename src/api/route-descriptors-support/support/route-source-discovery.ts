@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync,readFileSync,readdirSync } from 'node:fs';
+import { dirname,resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const here = dirname(fileURLToPath(import.meta.url));
@@ -32,8 +32,6 @@ export function sourcePathFor(baseName) {
 
 export const appSourcePath = sourcePathFor('support/app');
 
-export const projectDeploymentRoutesSourcePath = sourcePathFor('projects/deployments/project-deployment-routes');
-
 function executableFiles(directory, extension) {
     return readdirSync(directory, { withFileTypes: true })
         .flatMap((entry) => {
@@ -62,7 +60,14 @@ export function capacityRouteSourcePaths() {
 }
 
 export function applicationRouteSourcePaths() {
-    const source = readFileSync(appSourcePath, 'utf8');
+    const appSource = readFileSync(appSourcePath, 'utf8');
+    const installerImport = [...appSource.matchAll(/from ['"](\.\/route-installers\.[^'"]+)['"]/gu)][0]?.[1];
+    const installerPath = installerImport
+        ? resolve(dirname(appSourcePath), installerImport).replace(/\.js$/u, '.ts')
+        : null;
+    const source = installerPath && existsSync(installerPath)
+        ? `${appSource}\n${readFileSync(installerPath, 'utf8')}`
+        : appSource;
     return [...source.matchAll(/from ['"](\.\.\/routes\/[^'"]+)['"]/gu)]
         .map((match) => resolve(dirname(appSourcePath), match[1]))
         .map((path) => {

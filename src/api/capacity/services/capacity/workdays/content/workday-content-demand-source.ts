@@ -2,8 +2,8 @@ import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type { WorkdayProject } from '../policy/workday-project-policy.ts';
-import { capacityWorkdayContentRoot, capacityWorkdayRepositoryId } from '../policy/workday-project-policy.ts';
-import { resolveWorkdayTreeDxConnection, type WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
+import { capacityWorkdayContentRoot,capacityWorkdayRepositoryId } from '../policy/workday-project-policy.ts';
+import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
 
 export type TreeDxPlanningSourceType = 'objective' | 'question' | 'proposal' | 'decision-review' | 'knowledge-gap';
 export interface TreeDxPlanningDemandSource {

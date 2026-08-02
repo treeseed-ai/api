@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { existsSync,readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import ts from 'typescript';
 
 function repositoryFiles() {

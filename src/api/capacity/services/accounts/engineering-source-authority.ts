@@ -1,9 +1,9 @@
 import {
-	validateAgentArtifactManifest,
-	type AgentArtifactManifest,
-	type DeliverableManifestRecord,
-	type GovernedPredecessorEvidence,
-	type GovernedReviewPolicy,
+validateAgentArtifactManifest,
+type AgentArtifactManifest,
+type DeliverableManifestRecord,
+type GovernedPredecessorEvidence,
+type GovernedReviewPolicy,
 } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';

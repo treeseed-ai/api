@@ -1,7 +1,7 @@
-import type { ResearchClaim, ResearchWorkflowRecord } from '@treeseed/sdk/agent-capacity';
+import type { ResearchClaim,ResearchWorkflowRecord } from '@treeseed/sdk/agent-capacity';
 import { validateAgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
-import { decodeDurableJsonObject } from '../../../durable-json.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { decodeDurableJsonObject } from '../../../durable-json.ts';
 import type { DurableProviderAssignment } from '../../../repositories/capacity/assignments/assignment.ts';
 import { assignmentArtifactManifest } from '../../capacity/assignments/context/assignment-deliverable-service.ts';
 

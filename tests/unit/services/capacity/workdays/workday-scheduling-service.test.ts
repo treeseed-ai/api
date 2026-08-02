@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import { terminalizeCapacityWorkdayEnvelopes } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-envelope-terminalization-service.ts';
 import { recordCapacityWorkdayScheduleFailure } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 

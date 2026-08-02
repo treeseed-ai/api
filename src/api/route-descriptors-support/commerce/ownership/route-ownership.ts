@@ -13,15 +13,7 @@ export function routeId(method, path) {
     ].join('.');
 }
 
-export function isTreeDxCredentialBridgePath(path) {
-    return path === '/v1/internal/treedx/credentials/github';
-}
-
 export function ownerDomain(path) {
-    if (path === '/v1/internal/github/app/webhook')
-        return 'secrets-capability';
-    if (isTreeDxCredentialBridgePath(path))
-        return 'secrets-capability';
     if (path.startsWith('/v1/provider/') || path.startsWith('/v1/provider-registrations'))
         return 'provider-ingress';
     if (path.startsWith('/v1/platform/runners/'))

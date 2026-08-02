@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { CapacityGovernanceError } from '../../../../../src/api/capacity/database.ts';
-import { WorkdayCapacityEnvelopeRepository, serializeWorkdayCapacityEnvelopeRow } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-envelope.ts';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
+import { WorkdayCapacityEnvelopeRepository,serializeWorkdayCapacityEnvelopeRow } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-envelope.ts';
 import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
+import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market')) ? resolve(packageRoot, '../sdk/drizzle/market') : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');

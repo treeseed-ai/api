@@ -1,4 +1,4 @@
-import type { ProviderCredentialIssuanceAuthorization, ProviderTeamMembership } from '@treeseed/sdk/capacity-provider/contracts';
+import type { ProviderCredentialIssuanceAuthorization,ProviderTeamMembership } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 
 function authorization(row: Record<string, unknown>): ProviderCredentialIssuanceAuthorization {

@@ -1,4 +1,4 @@
-import { API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.ts';
+import { API_ROUTE_DESCRIPTORS,SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.ts';
 
 export function assertCoverage(spec, cases) {
     const required = Array.isArray(spec.coverage?.requiredCaseIds) ? spec.coverage.requiredCaseIds : [];

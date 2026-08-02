@@ -1,11 +1,6 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { governanceVotingProvider } from '@treeseed/sdk';
-import { containsPlaintextSecretMaterial, validateClientEncryptedEscrowMetadata, validateSecretsCapabilityRegistry, validateWritableSecretMetadata, } from '@treeseed/sdk/secrets-capability';
-import { redactDeploymentValue } from '../../../../../market/hosting/deployment-actions.ts';
-import { projectDeploymentAuditPayload } from '../../../../../market/governance/policy/deployment-governance.ts';
-import { CONTENT_PUBLISH_TARGETS, CONTENT_RUNTIME_SOURCES, LOCAL_CONTENT_MATERIALIZATIONS, parseJson } from '../../foundation.ts';
+import { containsForbiddenPlaintextSecretMaterial } from '@treeseed/sdk/secrets-capability';
+import { CONTENT_PUBLISH_TARGETS,CONTENT_RUNTIME_SOURCES,LOCAL_CONTENT_MATERIALIZATIONS,parseJson } from '../../foundation.ts';
 import { TEAM_DELETION_CONFIRMATION_PREFIX } from '../../teams/teams.ts';
-import { serializeConnection, serializeRepositoryHost, serializeHubRepository, serializeHubContentSource, serializeHubLaunch, serializeHubLaunchEvent, serializeHubWorkspaceLink, serializePlatformRepositoryClaim, platformRepositoryKey, platformRepositoryWorkspacePath, serializeGitHubRepositoryGrant, serializeGitHubAppInstallationRecord, serializeGitHubAppTokenIssuanceRecord } from '../../index.ts';
 
 export const PROJECT_ARCHITECTURE_TOPOLOGIES = new Set(['single_repository_site', 'split_site_content', 'parent_workspace']);
 
@@ -76,7 +71,7 @@ export function normalizeProjectArchitecture(input): ProjectArchitecture {
         || input.metadata?.contentPath !== undefined) {
         throw projectArchitectureError('Project topology must be declared as canonical architecture, not legacy metadata.', 'legacy_project_topology_rejected');
     }
-    if (containsPlaintextSecretMaterial(input)) {
+    if (containsForbiddenPlaintextSecretMaterial(input).length > 0) {
         throw projectArchitectureError('Project architecture cannot contain plaintext credentials, tokens, or secret material.', 'project_architecture_secret_material_rejected');
     }
     const topology = normalizeProjectPath(input.topology, '');
@@ -218,47 +213,6 @@ export function summarizeProjectHealth({ hosting, connection, deployments, jobs 
         state: 'working_normally',
         label: 'Working normally',
         reason: 'This project has a healthy runtime surface and no active failures.',
-    };
-}
-
-export function serializeProjectUpdatePlan(row) {
-    if (!row)
-        return null;
-    return {
-        id: row.id,
-        hubId: row.hub_id,
-        teamId: row.team_id,
-        sourceKind: row.source_kind,
-        sourceRef: row.source_ref,
-        sourceVersion: row.source_version,
-        plan: parseJson(row.plan_json, {}),
-        state: row.state,
-        requiresDecision: Boolean(row.requires_decision),
-        decisionId: row.decision_id,
-        createdBy: row.created_by,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-    };
-}
-
-export function serializeProjectEnvironment(row) {
-    if (!row)
-        return null;
-    return {
-        id: row.id,
-        projectId: row.project_id,
-        environment: row.environment,
-        deploymentProfile: row.deployment_profile,
-        baseUrl: row.base_url,
-        cloudflareAccountId: row.cloudflare_account_id,
-        pagesProjectName: row.pages_project_name,
-        workerName: row.worker_name,
-        r2BucketName: row.r2_bucket_name,
-        d1DatabaseName: row.d1_database_name,
-        railwayProjectName: row.railway_project_name,
-        metadata: parseJson(row.metadata_json, {}),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
     };
 }
 

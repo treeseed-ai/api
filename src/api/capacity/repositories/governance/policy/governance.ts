@@ -1,23 +1,23 @@
-import type {
-	ProviderRegistrationRequest,
-	ProviderTeamCredentialMetadata,
-	ProviderTeamMembership,
-	ProviderMembershipScope,
-	ProviderCredentialIssuanceAuthorization,
-	TeamCapacityRegistrationKeyMetadata,
-} from '@treeseed/sdk/capacity-provider/contracts';
 import {
-	decodeCapacityPageCursor,
-	encodeCapacityPageCursor,
-	normalizeCapacityPageLimit,
-	type CapacityPage,
-	type CapacityPageCursor,
+decodeCapacityPageCursor,
+encodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPage,
+type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
-import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../../database.ts';
-import { CapacityGovernanceError } from '../../../database.ts';
+import type {
+ProviderCredentialIssuanceAuthorization,
+ProviderMembershipScope,
+ProviderRegistrationRequest,
+ProviderTeamCredentialMetadata,
+ProviderTeamMembership,
+TeamCapacityRegistrationKeyMetadata,
+} from '@treeseed/sdk/capacity-provider/contracts';
 import { isUniqueConstraintViolation } from '../../../database-errors.ts';
-import { CapacityRegistrationSecurityRepository, type RegistrationRateBucket } from '../../support/registration-security.ts';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
+import { CapacityGovernanceError } from '../../../database.ts';
 import { CapacityRegistrationRequestAdmissionRepository } from '../../support/registration-request-admission.ts';
+import { CapacityRegistrationSecurityRepository,type RegistrationRateBucket } from '../../support/registration-security.ts';
 function json<T>(value: unknown, fallback: T): T {
 	if (typeof value !== 'string' || !value) return fallback;
 	try {

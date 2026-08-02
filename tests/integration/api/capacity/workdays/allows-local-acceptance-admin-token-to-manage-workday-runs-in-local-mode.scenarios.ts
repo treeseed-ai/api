@@ -1,4 +1,4 @@
-import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPostgresDatabase, PlatformRunnerClient, afterEach, authorizeApp, createPlatformApiApp, createDeploymentReadyProject, createRunnerRepoFixture, createServer, createTeam, createTeamAndProject, createTestApp, createTestPostgresDatabase, createTestStore, describe, encryptHostConfig, encryptedHostEnvelope, encryptedTestHostEnvelope, execFileSync, existsSync, expect, getApiMocks, git, it, json, listManagedHostsFromConfig, mkdirSync, mkdtempSync, mockCloudflareDnsPreflight, newDb, resolve, rmSync, runOnceWithClient, tmpdir, Core, unsignedTestJwt, vi, waitForCondition, withEnv, withHttpMarketApp, writeFileSync } from '../../../../support/api-harness.ts';
+import { createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
 describe('market api', () => {
 it('allows local acceptance admin token to manage workday runs in local mode', async () => {
@@ -42,13 +42,27 @@ it('allows local acceptance admin token to manage workday runs in local mode', a
 			const isolatedTeam = await app.request('/v1/teams', {
 				method: 'POST',
 				headers,
-				body: JSON.stringify({ name: 'capacity-acceptance-isolated', displayName: 'Capacity acceptance isolated' }),
+				body: JSON.stringify({
+					name: 'capacity-live-acceptance-isolated',
+					displayName: 'Capacity acceptance isolated',
+					metadata: { liveAcceptance: true },
+				}),
 			});
 			expect(isolatedTeam.status).toBe(200);
 			const isolatedTeamPayload = await json(isolatedTeam);
 			const isolatedTeamId = isolatedTeamPayload.payload.id;
+			const cleanupInventory = await json(await app.request('/v1/teams', { headers }));
+			expect(cleanupInventory.payload).toContainEqual(expect.objectContaining({
+				id: isolatedTeamId,
+				name: 'capacity-live-acceptance-isolated',
+			}));
 			expect(await app.request(`/v1/teams/${isolatedTeamId}/capacity-registration-key/reveal`, { headers })).toMatchObject({ status: 200 });
-			await store.batch([{ query: 'DELETE FROM teams WHERE id = ?', params: [isolatedTeamId] }]);
+			const deleted = await app.request(`/v1/teams/${isolatedTeamId}/permanent-delete`, {
+				method: 'DELETE',
+				headers,
+				body: JSON.stringify({ confirmation: 'capacity-live-acceptance-isolated', localAcceptanceCleanup: true }),
+			});
+			expect(deleted.status).toBe(200);
 			expect(await store.getTeam(isolatedTeamId)).toBeNull();
 
 			const listed = await json(await app.request('/v1/teams/treeseed/workday-runs', { headers }));

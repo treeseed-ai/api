@@ -1,12 +1,12 @@
 import {
-  encodeCapacityPageCursor,
-  normalizeCapacityPageLimit,
-  type CapacityPage,
-  type CapacityPageCursor,
+encodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPage,
+type CapacityPageCursor,
 } from "@treeseed/sdk/capacity-pagination";
 import type { CapacityGovernanceDatabase } from "../../database.ts";
-import { canonicalArtifactManifestReferences } from "../../domain/artifact-manifest-evidence.ts";
 import { CapacityGovernanceError } from "../../database.ts";
+import { canonicalArtifactManifestReferences } from "../../domain/artifact-manifest-evidence.ts";
 import { serializeAgentModeRunRow } from "./mode-run.ts";
 
 type Row = Record<string, unknown>;
@@ -21,6 +21,7 @@ export interface ExecutionRunListFilters {
   executionProviderId?: string | null;
   limit?: unknown;
   cursor?: CapacityPageCursor | null;
+  projection?: 'activity' | null;
 }
 
 function record(value: unknown): Row {
@@ -118,6 +119,51 @@ function tokenDiagnostics(row: Row) {
     ),
     rawUsage: Object.keys(rawUsage).length > 0 ? rawUsage : null,
   };
+}
+
+function activityTokenDiagnostics(row: Row) {
+	const usage = jsonRecord(row.usage_actual_json);
+	const nativeUsage = record(usage.nativeUsage);
+	const entries = Array.isArray(nativeUsage.executionUsage) ? nativeUsage.executionUsage : [];
+	const metadata = record(record(entries.at(-1)).metadata);
+	const numberOrNull = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+	return {
+		inputTokens: numberOrNull(metadata.inputTokens ?? metadata.input_tokens),
+		outputTokens: numberOrNull(metadata.outputTokens ?? metadata.output_tokens),
+		cachedInputTokens: numberOrNull(metadata.cachedInputTokens ?? metadata.cached_input_tokens),
+		rawUsage: Object.keys(metadata).length > 0 ? metadata : null,
+	};
+}
+
+function activityContentArtifactRefs(row: Row) {
+	return canonicalArtifactManifestReferences(
+		jsonRecord(row.assignment_lifecycle_output_json ?? row.lifecycle_output_json),
+		`assignment ${String(row.assignment_id ?? row.provider_assignment_id ?? '')}`,
+	);
+}
+
+function activityExecutionRun(row: Row) {
+	const tokens = activityTokenDiagnostics(row);
+	const selectedInput = jsonRecord(row.selected_input_json);
+	const finishedAt = row.completed_at ?? row.failed_at ?? row.assignment_completed_at ?? row.assignment_failed_at ?? row.assignment_returned_at ?? null;
+	return {
+		id: row.id,
+		status: row.status,
+		mode: row.mode,
+		timing: { createdAt: row.created_at, startedAt: row.started_at, completedAt: row.completed_at, failedAt: row.failed_at,
+			finishedAt, durationMs: durationMs(row.started_at ?? row.created_at, finishedAt) },
+		agent: { projectId: row.project_id, projectSlug: row.project_slug ?? null, projectName: row.project_name ?? null,
+			projectAgentClassId: row.project_agent_class_id, classSlug: row.agent_class_slug ?? null, className: row.agent_class_name ?? null,
+			agentId: row.agent_id, handlerId: row.handler_id },
+		assignment: { id: row.provider_assignment_id, status: row.assignment_status ?? null, leaseState: row.assignment_lease_state ?? null,
+			workdayId: row.assignment_work_day_id ?? null, taskId: row.assignment_task_id ?? null, decisionId: row.assignment_decision_id ?? null,
+			proposalId: row.assignment_proposal_id ?? null, runnerId: row.assignment_runner_id ?? null,
+			lifecycleCode: row.assignment_lifecycle_code ?? null, lifecycleReason: row.assignment_lifecycle_reason ?? null },
+		executionProvider: { id: row.execution_provider_id, capacityProviderId: row.capacity_provider_id, tokenCounts: tokens,
+			hasTokenCounts: Boolean(tokens.inputTokens || tokens.outputTokens || tokens.cachedInputTokens) },
+		input: { selectedInput: { cycle: selectedInput.cycle ?? null } },
+		contentArtifactRefs: activityContentArtifactRefs(row),
+	};
 }
 
 function telemetryEntry(row: Row) {
@@ -228,11 +274,19 @@ export async function listExecutionRunsForTeamPage(
 		 LEFT JOIN projects p ON p.id = m.project_id
 		 LEFT JOIN project_agent_classes c ON c.project_id = m.project_id AND c.id = m.project_agent_class_id
 		 WHERE ${clauses.join(" AND ")}
-		 ORDER BY m.created_at DESC, m.id DESC
+		 ORDER BY ${filters.projection === 'activity' ? "CASE WHEN m.status IN ('succeeded', 'completed', 'failed', 'cancelled') THEN 0 ELSE 1 END," : ''} m.created_at DESC, m.id DESC
 		 LIMIT ?`,
     [...values, limit + 1],
   );
   const selected = rows.slice(0, limit);
+	if (filters.projection === 'activity') {
+		const last = selected.at(-1);
+		return {
+			items: selected.map(activityExecutionRun),
+			page: { limit, hasMore: rows.length > limit, nextCursor: rows.length > limit && last
+				? encodeCapacityPageCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null },
+		};
+	}
   const assignmentIds = [
     ...new Set(
       selected

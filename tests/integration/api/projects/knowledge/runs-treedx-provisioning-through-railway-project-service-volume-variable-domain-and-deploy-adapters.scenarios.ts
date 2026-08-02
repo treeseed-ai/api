@@ -1,6 +1,6 @@
 import { PlatformRunnerClient } from '@treeseed/sdk';
 import { runOnceWithClient } from '../../../../../src/operations-runner/entrypoint.ts';
-import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPostgresDatabase, afterEach, authorizeApp, createPlatformApiApp, createDeploymentReadyProject, createRunnerRepoFixture, createServer, createTeam, createTeamAndProject, createTestApp, createTestPostgresDatabase, createTestStore, describe, encryptHostConfig, encryptedHostEnvelope, encryptedTestHostEnvelope, execFileSync, existsSync, expect, getApiMocks, git, it, json, listManagedHostsFromConfig, mkdirSync, mkdtempSync, mockCloudflareDnsPreflight, newDb, resolve, rmSync, tmpdir, Core, unsignedTestJwt, vi, waitForCondition, withEnv, withHttpMarketApp, writeFileSync } from '../../../../support/api-harness.ts';
+import { authorizeApp,createTeam,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json,vi,withEnv,withHttpMarketApp } from '../../../../support/api-harness.ts';
 
 import { packageRoot } from '../../../../support/api-harness.ts';
 
@@ -75,7 +75,7 @@ it('runs TreeDX provisioning through Railway project, service, volume, variable,
 					environment: 'staging',
 					dataDir: packageRoot,
 				}, client, 'test', {
-					deploymentStore: store,
+					controlPlaneStore: store,
 					operationKey: 'treedx:provision',
 					config: { environment: 'staging' },
 					railway: fakeRailway,

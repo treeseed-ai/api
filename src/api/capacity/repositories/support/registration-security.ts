@@ -1,5 +1,5 @@
-import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../database.ts';
 import { isUniqueConstraintViolation } from '../../database-errors.ts';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../database.ts';
 
 export interface RegistrationRateBucket {
 	dimension: 'team' | 'ip' | 'fingerprint' | 'key-generation';

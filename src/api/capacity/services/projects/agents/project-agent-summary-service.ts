@@ -4,7 +4,6 @@ type Row = Record<string, unknown>;
 
 interface SummaryStore {
 	getProjectDetails(projectId: string): Promise<Row | null>;
-	requestProjectRuntime(projectId: string, principal: unknown, path: string): Promise<Row | null>;
 	listApprovalRequestsForProject(projectId: string, limit: number): Promise<Row[]>;
 	listWorkdayCapacityEnvelopes(projectId: string): Promise<Row[]>;
 	listAgentModeRunsPage(projectId: string, filters: { limit: number }): Promise<{ items: Row[]; page: { hasMore: boolean } }>;
@@ -21,10 +20,7 @@ function values(value: unknown): unknown[] {
 export async function buildProjectAgentSummary(store: SummaryStore, projectId: string, principal: unknown = null) {
 	const details = await store.getProjectDetails(projectId);
 	if (!details) return null;
-	const [statusPayload, messagePayload, codexReadiness, approvals, workdays, modeRunPage] = await Promise.all([
-		store.requestProjectRuntime(projectId, principal, '/v1/agents/status'),
-		store.requestProjectRuntime(projectId, principal, '/v1/agents/messages'),
-		store.requestProjectRuntime(projectId, principal, '/v1/providers/codex/readiness'),
+	const [approvals, workdays, modeRunPage] = await Promise.all([
 		store.listApprovalRequestsForProject(projectId, 200),
 		store.listWorkdayCapacityEnvelopes(projectId),
 		store.listAgentModeRunsPage(projectId, { limit: 200 }),
@@ -71,31 +67,30 @@ export async function buildProjectAgentSummary(store: SummaryStore, projectId: s
 		failedStaleTaskCount: taskHealth.failedStaleTaskCount,
 		latestReport: runtimeReports[0] ?? null,
 	};
-	const runtimeUnavailableWarning = 'Project runtime is not connected or unavailable.';
-	const runtimeWarnings = [
-		...(statusPayload ? [] : [runtimeUnavailableWarning]),
-		...(modeRunPage.page.hasMore ? ['More than 200 mode runs exist; use the paginated project agent-run API for complete history.'] : []),
-		...values(codexReadiness?.warnings),
-		...values(codexReadiness?.blockingIssues),
-	].filter(Boolean);
+	const agentEntries: Array<[string, Row]> = modeRuns
+		.map((run): [string, Row] => [String(run.agentSlug ?? run.agentId ?? ''), {
+			agentSlug: run.agentSlug ?? run.agentId,
+			status: activeModeRuns.some((active) => (
+				String(active.agentSlug ?? active.agentId ?? '') === String(run.agentSlug ?? run.agentId ?? '')
+			)) ? 'active' : 'idle',
+			}])
+		.filter(([key]) => Boolean(key));
+	const agents = [...new Map<string, Row>(agentEntries).values()];
 	return {
 		projectId,
-		agents: values(statusPayload?.agents),
-		messages: values(messagePayload),
+		agents,
 		generatedArtifacts,
 		researchNotes,
 		knowledgeDrafts,
 		optimizationReports,
 		approvals,
-		operationGrants: [],
-		operationEvents: [],
-		operationLifecycle: { worktreeSnapshots: [], stagingMerges: [], mergeFailures: [], repairTasks: [], releaseApprovals: [], releaseResults: [], codexUsage: [] },
 		taskHealth,
 		docsAutomation,
-		codexReadiness: codexReadiness ?? { ok: false, providerSelected: false, sdkInstalled: false, nodeVersionOk: true, authDetected: false, subscriptionPlan: 'unknown', warnings: [runtimeUnavailableWarning], blockingIssues: [] },
 		currentWorkday,
 		runtimeReports,
-		runtimeWarnings,
+		warnings: modeRunPage.page.hasMore
+			? ['More than 200 mode runs exist; use the paginated project agent-run API for complete history.']
+			: [],
 		workdaySummaries: runtimeReports,
 	};
 }

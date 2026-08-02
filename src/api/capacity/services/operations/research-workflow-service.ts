@@ -1,5 +1,5 @@
+import { advanceResearchWorkflow,compileResearchWorkflow,RESEARCH_WORKFLOW_STAGES,type ResearchStageCompletion } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
-import { advanceResearchWorkflow, compileResearchWorkflow, RESEARCH_WORKFLOW_STAGES, type ResearchStageCompletion } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { ResearchWorkflowRepository } from '../../repositories/operations/research-workflow.ts';

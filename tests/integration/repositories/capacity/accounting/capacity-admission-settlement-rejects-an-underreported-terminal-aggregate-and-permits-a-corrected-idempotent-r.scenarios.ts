@@ -1,17 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { evaluateCapacityAdmission } from '@treeseed/sdk/agent-capacity/allocation';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
-import { commitCapacityAdmission } from '../../../../../src/api/capacity/services/support/admission-service.ts';
+import { describe,expect,it } from 'vitest';
+import { CapacityOverrunService } from '../../../../../src/api/capacity/services/capacity/accounting/overrun-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { reportCapacityUsage } from '../../../../../src/api/capacity/services/capacity/accounting/usage-report-service.ts';
-import { CapacityOverrunService } from '../../../../../src/api/capacity/services/capacity/accounting/overrun-service.ts';
-import { aggregateCapacityCreditReservations } from '../../../../../src/api/capacity/services/capacity/accounting/credit-reservation-aggregation-service.ts';
-import { CapacityGovernanceRepository } from '../../../../../src/api/capacity/repositories/governance/policy/governance.ts';
-import { CapacityRegistrationService } from '../../../../../src/api/capacity/services/support/registration-service.ts';
-import { CapacitySecretCodec } from '../../../../../src/api/capacity/security.ts';
-import { loadCapacityAdmissionState } from '../../../../../src/api/capacity/services/support/admission-state-service.ts';
-import { CapacityAllocationService } from '../../../../../src/api/capacity/services/capacity/allocations/allocation-service.ts';
-import { capacityAdmissionInput as admission, createCapacityAdmissionTestHarness as harness, seedCapacityAdmissionDependencies as seedAdmissionDependencies, } from '../../../../support/capacity/admission.ts';
+import { commitCapacityAdmission } from '../../../../../src/api/capacity/services/support/admission-service.ts';
+import { capacityAdmissionInput as admission,createCapacityAdmissionTestHarness as harness,seedCapacityAdmissionDependencies as seedAdmissionDependencies,} from '../../../../support/capacity/admission.ts';
 
 describe('atomic capacity admission and settlement', () => {
 it.each([

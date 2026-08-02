@@ -1,8 +1,8 @@
 import type { CreditConversionProfile } from '@treeseed/sdk';
 import { DEFAULT_EXECUTION_PROFILE_ID } from '@treeseed/sdk/capacity-usage';
-import { decodeDurableJsonObject } from '../../durable-json.ts';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
+import { decodeDurableJsonObject } from '../../durable-json.ts';
 
 type Row = Record<string, unknown>;
 const CONFIDENCE = new Set(['low', 'medium', 'high']);

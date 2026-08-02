@@ -1,44 +1,5 @@
-import type { Hono } from 'hono';
-import { AgentSdk, RemoteClient, RemoteOperationsClient, RemoteSdkClient, signEditorialPreviewToken, OperationsSdk, executeSdkOperation, findDispatchCapability, planKnowledgeHubLaunch, derivePlatformOperationNavigation, deriveProjectHostBindingsView, isPlatformOperationTerminal, normalizeProjectLaunchHostBindings, normalizePlatformContentInput as normalizeRepositoryContentInput, normalizePlatformRelationArray as normalizeRepositoryRelationArray, platformContentRelationPolicy as repositoryContentRelationPolicy, normalizeTemplateLaunchRequirements, normalizeTemplateId, planProjectHostBindingOperation, resolveProjectLaunchHostBindings, slugifyPlatformContent as slugifyRepositoryContent, } from '@treeseed/sdk';
-import { runHostingAudit } from '@treeseed/sdk/workflow-support';
-import { createApiApp as createSdkApiApp, D1AuthProvider as DatabaseAuthProvider, loadTemplateCatalog, resolveApiConfig, } from '@treeseed/sdk/api';
-import { MarketControlPlaneStore, validateProjectSlug } from '../../../persistence/store.js';
-import { createClientEncryptedEscrowService } from '../../../support/client-encrypted-escrow.ts';
-import { createGitHubAppAdapter } from '../../../reconciliation/github-app-adapter.ts';
-import { createGitHubActionsSecretEnclave } from '../../../configuration/github-actions-secret-enclave.ts';
-import { bearerTokenFromRequest } from '../../../accounts/request-auth.ts';
-import { createTreeDxCredentialBridge } from '../../../treedx/repositories/treedx-credential-bridge.ts';
-import { createMarketPostgresDatabase } from '../../../support/market-postgres.js';
-import { installProjectDeploymentRoutes } from '../../../projects/deployments/project-deployment-routes.js';
-import { installCapacityRoutes } from '../../../capacity/routes/index.ts';
-import { createCapacityControlPlane } from '../../../capacity/control-plane.ts';
-import { deleteTeamCapacityAggregate } from '../../../capacity/services/teams/team-deletion-service.ts';
-import { readCapacityRequestObject } from '../../../capacity/routes/support/request-json.ts';
-import { createStripeConnectService, resolveStripeEnvironment, stripeAccountToConnectedAccountPatch } from '../../../commerce/commerce-core/stripe-connect.js';
-import { applySeedWithStore, exportSeedWithStore, planSeedWithStore } from '../../../../market/seeds/apply.js';
-import { buildGovernanceApprovalProjection, buildGovernanceProjection } from '../../../../market/projects/projects-core/governance-projection.js';
-import { buildInfrastructureProjection } from '../../../../market/projects/hosting/infrastructure-projection.js';
-import { loadInfrastructureSeedState } from '../../../../market/seeds/infrastructure-seeds.js';
-import { buildKnowledgeArtifactProjection, buildKnowledgeProjection } from '../../../../market/projects/knowledge/knowledge-projection.js';
-import { buildWorkdayProjection } from '../../../../market/capacity/workdays/workday-projection.js';
-import { loadKnowledgeContentEntries } from '../../../../view-models/knowledge-content.js';
-import { listManagedHostsFromConfig, managedCloudflareConfigMissing, resolveManagedCloudflareHostConfigFromConfig, } from '../../../../market/hosting/managed-hosts.js';
-import { decryptHostConfig } from '../../../../crypto/host-crypto.ts';
-import { getSiteAuthConfig } from '../../../../auth/config.ts';
-import { accountDeletionConfirmationMatches } from '../../../../auth/account.ts';
-import { validateUsername as validatePublicUsername } from '../../../../auth/profile-validation.ts';
-import { authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, sendAuthEmail } from '../../../../auth/email.ts';
-import { recordContentNotificationEvent } from '../../../../notifications/service.ts';
-import { sendEmailConfirmation } from '../../../../auth/email-confirmation.ts';
-import { sendWelcomeEmail } from '../../../../auth/welcome-email.ts';
-import { createCipheriv, createDecipheriv, createHash, createHmac, createPublicKey, createVerify, pbkdf2Sync, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { resolve, relative } from 'node:path';
-import { parse as parseYaml } from 'yaml';
-import { contentRelationPolicy } from '../../../../market/content/content-relations.js';
-import { NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, isValidPersonalThemeDraft, normalizeNotificationPreferences, } from '@treeseed/sdk/account-contracts';
-import { POSTGRES_AUTH_PROVIDER_ID, AUTH_PROVIDERS, consumeReauthentication, loadNotificationPreferences, verifyProviderIdToken, resolveLaunchTemplateRequirements, projectHostBindingMetadata, sourceFromProjectDetails, repositoryInventoryWithPlatform, loadProjectHostBindingContext, projectHostResponsePayload, hostBindingRequiresUnlock, hostKindForBinding, createProjectHostCredentialSessions, persistProjectHostBindingOperationMetadata, PLAINTEXT_HOST_CREDENTIAL_FIELD_NAMES, plaintextHostCredentialFieldPaths, rejectPlaintextHostCredentialFields, rejectProjectSecretUnlockMaterial, markdownToPlainProjectSummary, shouldExposeNonProductionAuthDiagnostics, AGENT_PROMOTION_APPROVAL_DECISIONS, normalizeEmail, requestSessionMetadata, webSessionData, validateMarketPassword, hashMarketPassword, verifyMarketPassword, MARKET_EMAIL_CONFIRMATION_PREFIX, marketAuthContext, shouldBypassAcceptanceAuthEmailDelivery, marketEmailTokenHash, exposeAuthTokenForTests, authTokenTimestampSeconds, authTokenTimestampMillis, passwordResetUrlFor, sendTeamInviteEmail, createMarketEmailConfirmation, serializeUserEmailAddress, backfillUserEmailAddresses, listUserEmailAddresses, getUserEmailAddress, verifiedEmailCount, setPrimaryEmailAddress, syncPrimaryEmailCaches, createOrResendUserEmailAddress, createMarketWebSession, webAuthPayload, normalizeAppearancePreference, normalizeDomainName, normalizeProjectDomainInput, inferZoneNameForDomain, domainInZone, LOCAL_CONTENT_COLLECTIONS, LOCAL_WORK_CONTENT_COLLECTIONS, LOCAL_DECISION_TYPE_VALUES, PROPOSAL_VERDICT_DECISION_TYPES, PLATFORM_OPERATION_SCOPES, LOCAL_CONTENT_DEFAULTS, slugifyContent, serializeFrontmatter, normalizeRelationArray, uniqueRelationArray, addRelationValue, normalizeLocalContentInput, writeLocalContentRecord, localContentRoot, localContentPath, readLocalContentRecord, writeParsedLocalContentRecord, createRelatedLocalContentRecord, createDecisionFromProposals, resolveAuthApprovalBaseUrl, encryptedHostPayloadLooksValid, decryptedHostConfigSummary, credentialSessionSecret, credentialSessionKey, encryptCredentialSessionPayload, decryptCredentialSessionPayload, HOST_KIND_SESSION_KEYS, normalizeAuditHostKinds, collectHostingAuditCredentialOverlay, nonSecretLaunchJobInput, decryptTeamHostForLaunch, buildLaunchCredentialOverlay, patchLaunchIntentForCredentialOverlay, appendLaunchDeploymentEvent, sanitizeLaunchResultForStorage, cloudflareErrorMessage, cloudflareRequestForLaunchPreflight, resolveCloudflareZoneForLaunchPreflight, verifyCloudflareDnsWriteForLaunch, projectDeletionConfirmationMatches, projectDeletionBlockerRows, cloudflareRequestForProjectDeletion, githubRequestForProjectDeletion, projectDeletionOperation, cloudflareDeletionAuthenticationMessage, hasRecordedCloudflareRuntimeResources, canSkipCloudflareCleanupAfterFailedLaunch, projectDeletionHostname, normalizedCloudflareKvNamespaceReference, uniqueCloudflareKvNamespaceReferences, cloudflareProjectDeletionResourceNames, resolveProjectDeletionCloudflareZone, deleteCloudflareDnsRecordsForProject, listCloudflareNamedResources, deleteCloudflareProjectResources, appendProjectDeletionProgress, cloudflareDnsDomainsForHostValidation, validateTeamHostCredentialPayload, runProjectLaunchApiBootstrap, runProjectDeletionApiDestroy, retryApiLaunchBootstrapFromRequest, operationTokenSecret, signOperationToken, verifyOperationToken, normalizeCiEnvironment, ciOperationForAction, normalizeRepositorySlug, projectAllowedCiRepositories, validateCiRefForEnvironment, principalHasPermission, principalIsSeedAdmin, isTeamApiPrincipal, isLocalAcceptanceServicePrincipal, localAcceptanceAuthEnabled, decorateJob, safePlatformOperationOutput, decoratePlatformOperation, resolvePlatformRunnerSecret, platformOperationMutationError, requirePlatformRunner, resolvePlatformRepositoryDescriptor, launchPlannerRepositoryTopology, launchCapabilityPreset, resourceRowsFromLaunch, ensurePrincipal, resolveUiProjectionContext, resolvePublicTreeDxTeam, enqueueTreeDxProvisionOperation, principalHasGlobalPlatformRole, requireTeamAccess, requireProjectAccess, FEEDBACK_TYPES, FEEDBACK_SCREENSHOT_TYPES, MAX_FEEDBACK_MESSAGE_LENGTH, MAX_FEEDBACK_SCREENSHOT_BYTES, cleanFeedbackString, safeFeedbackContext, safeFeedbackClient, safeFeedbackScreenshot, validateFeedbackAccess, recordFeedbackSubmission, normalizeSeedEnvironments, seedActor, seedExistingTeamIds, seedCreatesMissingTeams, requireSeedPlanAccess, requireSeedApplyAccess, requireProjectRunner, commerceErrorResponse, stripeConfiguredError, stripeVendorApprovalError, stripeAccountMissingError, stripeCommerceUrl, requireCommerceVendorForStripe, refreshCommerceStripeAccount, STRIPE_PRODUCT_MIRROR_OFFER_MODES, STRIPE_PRICE_MIRROR_OFFER_MODES, stripeMetadataValue, buildCommerceStripeMetadata, commerceStripeProductParams, commerceStripeLookupKey, commerceStripePriceParams, stripePriceTermsDrift, commerceStripeSyncContext, syncCommerceOfferStripeProduct, syncCommercePriceStripePrice, CHECKOUT_OFFER_MODES, CHECKOUT_COMMERCIAL_OFFER_MODES, CHECKOUT_SUBSCRIPTION_OFFER_MODES, resolveStripePublishableKey, resolveStripeWebhookSecret, commerceCheckoutError, normalizeCheckoutQuantity, stripeClientSecret, paymentGroupStatusFromPaymentIntent, orderStatusFromPaymentGroup, subscriptionStatusFromStripe, entitlementRenewalStateFromSubscription, stripeTimestampToIso, subscriptionClientSecret, publicPaymentGroups, buildCommerceCheckoutMetadata, resolveCommerceCheckoutItem, checkoutGroupKind, checkoutGroupKey, checkoutGroupStatus, grantCommerceEntitlementsForOrder, requireSellerTeamAccess, requireServiceParticipantAccess, redactCommerceServiceRequestForBuyer, requireCommerceCapacityListingAccess, requireCommerceCapacityInquiryAccess, stripeRefundStatus, applyCommerceRefundState, createCommerceCheckoutRun, createCommerceCheckoutRunForServiceContract, ensureCommerceStripeCustomer, refreshCommercePaymentGroupState, updateCheckoutCompletionFromGroup, syncCommerceSubscriptionFromStripe, handleCommercePaymentIntentWebhook, handleCommerceSubscriptionWebhook, handleCommerceInvoiceWebhook, processCommerceStripeWebhook, requireCommerceProductAccess, principalCanManageCommerceProduct, redactCommerceOwnershipWorkflow, requireCommerceOfferAccess, requireConnectedProjectRuntime, projectAppHref, unwrapLaunchOperationOutput, appendLaunchPhaseProjection, updateLaunchDeployments, hubRepositoryPolicies, applyHubLaunchResult, applyHubLaunchFailure, unwrapOperationPayload, applyContentPublishResult, projectApiConnection, createProjectInternalClient, executeProjectApi, jsonError, jsonThrownError, providerConfigFor, parseBooleanEnvValue, redactedRequestTarget, normalizeUsername, parseJsonObject, normalizeBaseUrl, normalizeMarketProfile, normalizeProviderCredentialConfig, mergeStringConfig, parseBase64urlJson, safeTokenEquals, requireConfiguredServiceCredential, safePrivateKnowledgeSlug, requireServiceBuyerAccess, requireServiceSellerAccess, requireCatalogItemAccess, defaultConfig, personalThemeFromRow, accountDeletionBlockers, base64Url, shouldLogApiRequests, SENSITIVE_QUERY_PARAM_PATTERN, installApiRequestLogger, readJsonOrFormBody, trimmedHeaderValue, requestClientIp, ensureMarketCredentialSchema, sanitizedReturnTo, confirmationUrlFor, teamInviteAcceptUrlFor, optionalTrimmedString, enumValue, unknownKeys, yamlScalar, yamlLines, isLoopbackUrl, findById, resolveAgentArtifactBucket, centralMarketProfile, scheduleBackgroundBootstrap, GITHUB_ACTIONS_OIDC_ISSUER, githubOidcJwksCache, base64urlJson, loadGitHubOidcJwks, verifyGitHubOidcToken, fallbackRemoteCapability, marketProfilesForTeams, artifactDownloadPayload, localAcceptanceAdminToken, mergeCapability, canonicalArchitectureTopology, decodeRouteParam, uiRuntimeLocals, privateKnowledgeAuditPayload, recordPrivateKnowledgeAudit, AGENT_TASK_SIGNATURES, resolveAgentTaskSignature, requireVendorOrderManager, remainingRefundableAmount, resolveOrderItemForRefund, resolveFulfillmentArtifact, executeInline, selectDispatchTarget, createApiExtension } from '../index.ts';
+import { createHash } from 'node:crypto';
+import { verifyProviderIdToken } from '../index.ts';
 export const availabilityAttempts = new Map();
 export const providerJwksCache = new Map();
 export function availabilityRateLimit(c, kind, value) {
@@ -75,41 +36,4 @@ export async function exchangeProviderIdentity(provider, configured, code, redir
         return { subject: String(user.id), email: user.mail ?? user.userPrincipalName, emailVerified: true, displayName: user.displayName };
     }
     return { subject: String(claims.sub ?? ''), email: claims.email, emailVerified: claims.email_verified === true || claims.email_verified === 'true', displayName: claims.name ?? claims.email };
-}
-export function providerCredentialValuesForAudit(hostKind, payload) {
-    const config = payload?.config && typeof payload.config === 'object' ? payload.config : {};
-    if (hostKind === 'repository_host') {
-        const token = config.TREESEED_GITHUB_TOKEN ?? config.token ?? null;
-        const owner = config.organizationOrOwner ?? config.owner ?? null;
-        return {
-            ...(typeof token === 'string' ? { TREESEED_GITHUB_TOKEN: token } : {}),
-            ...(typeof owner === 'string' ? {
-                TREESEED_HOSTED_HUBS_GITHUB_OWNER: owner,
-            } : {}),
-        };
-    }
-    if (hostKind === 'web_host') {
-        return {
-            ...(typeof config.TREESEED_CLOUDFLARE_API_TOKEN === 'string' ? { TREESEED_CLOUDFLARE_API_TOKEN: config.TREESEED_CLOUDFLARE_API_TOKEN } : {}),
-            ...(typeof config.TREESEED_CLOUDFLARE_ACCOUNT_ID === 'string' ? { TREESEED_CLOUDFLARE_ACCOUNT_ID: config.TREESEED_CLOUDFLARE_ACCOUNT_ID } : {}),
-        };
-    }
-    if (hostKind === 'capacity_provider_host') {
-        return {
-            ...(typeof config.TREESEED_RAILWAY_API_TOKEN === 'string' ? { TREESEED_RAILWAY_API_TOKEN: config.TREESEED_RAILWAY_API_TOKEN } : {}),
-            ...(typeof config.TREESEED_RAILWAY_WORKSPACE === 'string' ? { TREESEED_RAILWAY_WORKSPACE: config.TREESEED_RAILWAY_WORKSPACE } : {}),
-        };
-    }
-    if (hostKind === 'email_host') {
-        return {
-            ...(typeof config.SMTP_HOST === 'string' ? { SMTP_HOST: config.SMTP_HOST } : {}),
-            ...(typeof config.SMTP_PORT === 'string' ? { SMTP_PORT: config.SMTP_PORT } : {}),
-            ...(typeof config.SMTP_USERNAME === 'string' ? { SMTP_USERNAME: config.SMTP_USERNAME } : {}),
-            ...(typeof config.SMTP_PASSWORD === 'string' ? { SMTP_PASSWORD: config.SMTP_PASSWORD } : {}),
-            ...(typeof config.SMTP_FROM_EMAIL === 'string' ? { SMTP_FROM: config.SMTP_FROM_EMAIL } : {}),
-            ...(typeof config.SMTP_REPLY_TO === 'string' ? { SMTP_REPLY_TO: config.SMTP_REPLY_TO } : {}),
-            ...(typeof config.SMTP_SECURE === 'string' ? { TREESEED_SMTP_SECURE: config.SMTP_SECURE } : {}),
-        };
-    }
-    return {};
 }

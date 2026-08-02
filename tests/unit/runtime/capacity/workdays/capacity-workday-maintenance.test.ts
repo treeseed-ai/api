@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import {
-	CapacityWorkdayMaintenanceScheduler,
-	runCapacityWorkdayMaintenance,
+CapacityWorkdayMaintenanceScheduler,
+runCapacityWorkdayMaintenance,
 } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.ts';
 
 describe('capacity workday maintenance', () => {
@@ -20,12 +20,14 @@ describe('capacity workday maintenance', () => {
 				calls.push(`retention:${now}`);
 				return { expiredAccessTokens: 5, expiredAvailabilitySessions: 4, expiredRegistrationRequests: 3, deletedProofNonces: 2, deletedRateLimitBuckets: 1 };
 			},
+			async tickDueCapacityWorkdaySchedules(now: string) { calls.push(`schedules:${now}`); return { considered: 1, created: 1, failures: [] }; },
 		};
 		const result = await runCapacityWorkdayMaintenance(store, '2026-07-17T04:00:00.000Z');
 		expect(calls).toEqual([
 			'workdays:2026-07-17T04:00:00.000Z',
 			'assignments:2026-07-17T04:00:00.000Z',
 			'retention:2026-07-17T04:00:00.000Z',
+			'schedules:2026-07-17T04:00:00.000Z',
 		]);
 		expect(result).toEqual({
 			ranAt: '2026-07-17T04:00:00.000Z',
@@ -41,6 +43,9 @@ describe('capacity workday maintenance', () => {
 			expiredRegistrationRequests: 3,
 			deletedProofNonces: 2,
 			deletedRateLimitBuckets: 1,
+			schedulesConsidered: 1,
+			scheduledWorkdaysCreated: 1,
+			scheduleTickFailures: 0,
 		});
 	});
 
@@ -54,6 +59,7 @@ describe('capacity workday maintenance', () => {
 			}),
 			recoverExpiredProviderAssignments: vi.fn(async () => ({ recovered: 0, safeRetries: 0, terminalFailures: 0, completed: 0, operatorActions: 0 })),
 			maintainCapacityRuntimeRetention: vi.fn(async () => ({ expiredAccessTokens: 0, expiredAvailabilitySessions: 0, expiredRegistrationRequests: 0, deletedProofNonces: 0, deletedRateLimitBuckets: 0 })),
+			tickDueCapacityWorkdaySchedules: vi.fn(async () => ({ considered: 0, created: 0, failures: [] })),
 		};
 		const scheduler = new CapacityWorkdayMaintenanceScheduler(store, 30_000);
 		const now = new Date('2026-07-17T04:00:00.000Z');
@@ -72,6 +78,7 @@ describe('capacity workday maintenance', () => {
 			maintainCapacityWorkdayRuns: vi.fn(async () => { throw failure; }),
 			recoverExpiredProviderAssignments: vi.fn(async () => ({ recovered: 0, safeRetries: 0, terminalFailures: 0, completed: 0, operatorActions: 0 })),
 			maintainCapacityRuntimeRetention: vi.fn(async () => ({ expiredAccessTokens: 0, expiredAvailabilitySessions: 0, expiredRegistrationRequests: 0, deletedProofNonces: 0, deletedRateLimitBuckets: 0 })),
+			tickDueCapacityWorkdaySchedules: vi.fn(async () => ({ considered: 0, created: 0, failures: [] })),
 		};
 		await expect(runCapacityWorkdayMaintenance(store, '2026-07-17T04:00:00.000Z')).rejects.toBe(failure);
 	});

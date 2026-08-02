@@ -1,22 +1,20 @@
 import type { MarketControlPlaneStore } from '../../persistence/store.ts';
-import { setArtifactBucketMethod } from '../support/updates/set-artifact-bucket.ts';
 import { principalCanAccessCatalogItemMethod } from '../commerce/catalog/contracts/principal-can-access-catalog-item.ts';
-import { createSeedRunMethod } from '../seeds/creation/create-seed-run.ts';
-import { updateSeedRunMethod } from '../seeds/updates/update-seed-run.ts';
-import { getSeedRunMethod } from '../seeds/queries/get-seed-run.ts';
-import { listSeedRunsMethod } from '../seeds/queries/list-seed-runs.ts';
 import { upsertCatalogItemMethod } from '../commerce/catalog/creation/upsert-catalog-item.ts';
-import { getCatalogItemMethod } from '../commerce/catalog/queries/catalog/get-catalog-item.ts';
 import { getCatalogItemBySlugMethod } from '../commerce/catalog/queries/catalog/get-catalog-item-by-slug.ts';
+import { getCatalogItemMethod } from '../commerce/catalog/queries/catalog/get-catalog-item.ts';
 import { listCatalogItemsMethod } from '../commerce/catalog/queries/catalog/list-catalog-items.ts';
 import { upsertCatalogArtifactVersionMethod } from '../commerce/orders/creation/upsert-catalog-artifact-version.ts';
-import { listCatalogArtifactVersionsMethod } from '../commerce/orders/queries/list-catalog-artifact-versions.ts';
-import { getCatalogArtifactVersionMethod } from '../commerce/orders/queries/get-catalog-artifact-version.ts';
 import { getCatalogArtifactVersionByIdMethod } from '../commerce/orders/queries/get-catalog-artifact-version-by-id.ts';
-import { uploadRuntimeArtifactMethod } from '../runtime/creation/upload-runtime-artifact.ts';
+import { getCatalogArtifactVersionMethod } from '../commerce/orders/queries/get-catalog-artifact-version.ts';
+import { listCatalogArtifactVersionsMethod } from '../commerce/orders/queries/list-catalog-artifact-versions.ts';
 import { readRuntimeArtifactContentMethod } from '../content/queries/read-runtime-artifact-content.ts';
-import { createKnowledgePackMethod } from '../content/creation/create-knowledge-pack.ts';
-import { listKnowledgePacksMethod } from '../content/queries/list-knowledge-packs.ts';
+import { uploadRuntimeArtifactMethod } from '../runtime/creation/upload-runtime-artifact.ts';
+import { createSeedRunMethod } from '../seeds/creation/create-seed-run.ts';
+import { getSeedRunMethod } from '../seeds/queries/get-seed-run.ts';
+import { listSeedRunsMethod } from '../seeds/queries/list-seed-runs.ts';
+import { updateSeedRunMethod } from '../seeds/updates/update-seed-run.ts';
+import { setArtifactBucketMethod } from '../support/updates/set-artifact-bucket.ts';
 
 export function installCatalogStoreMethods(prototype: MarketControlPlaneStore) {
 	prototype.setArtifactBucket = setArtifactBucketMethod;
@@ -35,6 +33,4 @@ export function installCatalogStoreMethods(prototype: MarketControlPlaneStore) {
 	prototype.getCatalogArtifactVersionById = getCatalogArtifactVersionByIdMethod;
 	prototype.uploadRuntimeArtifact = uploadRuntimeArtifactMethod;
 	prototype.readRuntimeArtifactContent = readRuntimeArtifactContentMethod;
-	prototype.createKnowledgePack = createKnowledgePackMethod;
-	prototype.listKnowledgePacks = listKnowledgePacksMethod;
 }

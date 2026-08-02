@@ -1,5 +1,5 @@
-import { API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.ts';
-import { expectedForDescriptor, matchesCaseFilter, loadExpectedStatuses } from '../index.js';
+import { API_ROUTE_DESCRIPTORS,SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.ts';
+import { expectedForDescriptor,loadExpectedStatuses,matchesCaseFilter } from '../index.js';
 
 export function sdkArgsForMethod(method) {
     const stamp = 'acc-${runNonce}';
@@ -52,7 +52,6 @@ export function sdkArgsForMethod(method) {
         createProject: ['${fixtures.team.id}', { slug: 'acceptance-${runNonce}-sdk-project', name: 'Acceptance SDK Project' }],
         deleteProject: ['missing-project', { confirmation: 'DELETE missing-project' }],
         projectDeletionBlockers: ['${fixtures.project.id}'],
-        upsertProjectConnection: ['${fixtures.project.id}', { mode: 'hybrid', executionOwner: 'project_runner' }],
         importProjectRepository: ['${fixtures.team.id}', {
                 repository: {
                     provider: 'github',
@@ -75,41 +74,7 @@ export function sdkArgsForMethod(method) {
                 },
             }],
         projectAccess: ['${fixtures.project.id}'],
-        projectDeploymentState: ['${fixtures.project.id}'],
-        projectHosts: ['${fixtures.project.id}'],
-        projectSecretEscrowRecords: ['${fixtures.project.id}'],
-        createProjectSecretEscrow: ['${fixtures.project.id}', {}],
-        projectSecretEscrow: ['${fixtures.project.id}', 'missing-escrow'],
-        updateProjectSecretEscrow: ['${fixtures.project.id}', 'missing-escrow', { status: 'active' }],
-        migrateProjectSecretEscrow: ['${fixtures.project.id}', 'missing-escrow', { target: 'acceptance' }],
-        tombstoneProjectSecretEscrow: ['${fixtures.project.id}', 'missing-escrow'],
-        projectGitHubActionsSecretPublicKey: ['${fixtures.project.id}', {
-                repository: 'treeseed-acceptance/acceptance',
-                scope: 'environment',
-                environment: '${environment}',
-            }],
-        deployProjectGitHubActionsSecret: ['${fixtures.project.id}', {
-                repository: 'treeseed-acceptance/acceptance',
-                scope: 'environment',
-                environment: '${environment}',
-                secretName: 'ACCEPTANCE_SECRET',
-                encryptedValue: 'redacted-acceptance-secret',
-                keyId: 'acceptance-key',
-            }],
-        dispatchProjectWorkflowOperation: ['${fixtures.project.id}', 'missing-operation', {}],
         initializeProjectRepository: ['${fixtures.project.id}', 'software', {}],
-        auditProjectHosts: ['${fixtures.project.id}', {}],
-        replaceProjectHost: ['${fixtures.project.id}', 'publicWeb', {}],
-        resyncProjectHost: ['${fixtures.project.id}', 'publicWeb', {}],
-        rotateProjectHost: ['${fixtures.project.id}', 'publicWeb', {}],
-        projectDeployments: ['${fixtures.project.id}'],
-        projectDeploymentById: ['${fixtures.deployment.id}'],
-        projectDeployment: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
-        projectDeploymentEvents: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
-        createProjectWebDeployment: ['${fixtures.project.id}'],
-        retryProjectDeployment: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
-        resumeProjectDeployment: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
-        cancelProjectDeployment: ['${fixtures.project.id}', '${fixtures.deployment.id}'],
         teamCapacityRegistrationKey: ['${fixtures.team.id}'],
         revealTeamCapacityRegistrationKey: ['${fixtures.team.id}'],
         rotateTeamCapacityRegistrationKey: ['${fixtures.team.id}', 'acceptance-${runNonce}-registration-rotate'],

@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { readdirSync,readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import pg, { type Pool, type PoolClient, type QueryResultRow } from 'pg';
+import { dirname,join,resolve } from 'node:path';
+import pg,{ type Pool,type PoolClient,type QueryResultRow } from 'pg';
 import { splitPostgresSqlStatements } from '../persistence/postgres-sql-statements.ts';
 
 const { Pool: PgPool } = pg;
@@ -19,7 +19,7 @@ function attachPostgresPoolErrorLogger(pool: Pool) {
 }
 
 type PostgresQueryable = Pick<Pool | PoolClient, 'query'>;
-type PreparedResult = { success: true; results: QueryResultRow[]; meta: Record<string, never> };
+type PreparedResult = { success: true; results: QueryResultRow[]; meta: { changes: number } };
 
 const replaceConflictTargets = new Map([
 	['permissions', ['key']],
@@ -233,10 +233,10 @@ class MarketPostgresPreparedStatement {
 				`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1 LIMIT 1`,
 				[tableName],
 			);
-			if (existing.rows.length > 0) return { success: true, results: [], meta: {} };
+			if (existing.rows.length > 0) return { success: true, results: [], meta: { changes: 0 } };
 		}
-		await this.database.pool.query(translateMarketSqlToPostgres(this.query), this.bindings);
-		return { success: true, results: [], meta: {} };
+		const result = await this.database.pool.query(translateMarketSqlToPostgres(this.query), this.bindings);
+		return { success: true, results: [], meta: { changes: Number(result.rowCount ?? 0) } };
 	}
 
 	async all(): Promise<PreparedResult> {

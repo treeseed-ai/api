@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
+import { MarketControlPlaneStore,validateProjectSlug } from '../../../src/api/persistence/store.js';
 import { createPlatformApiApp } from '../../../src/api/support/app.js';
 import { createMarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
-import { ACCEPTANCE_ACTORS, API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
-import { MarketControlPlaneStore, validateProjectSlug } from '../../../src/api/persistence/store.js';
+import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS,SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
 import { main as runMarketOperationsRunner } from '../../../src/operations-runner/entrypoint.js';
 
 function createNoopStore() {

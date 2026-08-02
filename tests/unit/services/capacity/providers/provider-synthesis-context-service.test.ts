@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { resolveProviderSynthesisContext } from '../../../../../src/api/capacity/services/capacity/providers/provider-synthesis-context-service.ts';
 

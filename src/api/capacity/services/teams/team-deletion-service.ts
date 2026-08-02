@@ -10,6 +10,7 @@ import type { CapacityGovernanceDatabase } from '../../database.ts';
  */
 export async function deleteTeamCapacityAggregate(
 	database: CapacityGovernanceDatabase & {
+		getTeam(teamId: string): Promise<{ name?: string } | null>;
 		prepareTeamDeletion(teamId: string, confirmation: string): Promise<{
 			ok: boolean;
 			team?: unknown;
@@ -18,8 +19,22 @@ export async function deleteTeamCapacityAggregate(
 	},
 	teamId: string,
 	confirmation: string,
+	options: { localAcceptanceCleanup?: boolean } = {},
 ) {
-	const prepared = await database.prepareTeamDeletion(teamId, confirmation);
+	let prepared;
+	if (options.localAcceptanceCleanup === true) {
+		const team = await database.getTeam(teamId);
+		const name = String(team?.name ?? '');
+		if (!team || !/^capacity-live-(?:acceptance|governance)-/u.test(name)) {
+			return { ok: false, code: 'invalid_acceptance_scope', message: 'Only isolated local acceptance teams can use aggregate cleanup.' };
+		}
+		if (confirmation !== `DELETE ${name}`) {
+			return { ok: false, code: 'confirmation', message: `Type DELETE ${name} to confirm.` };
+		}
+		prepared = { ok: true, team };
+	} else {
+		prepared = await database.prepareTeamDeletion(teamId, confirmation);
+	}
 	if (!prepared.ok) return prepared;
 	const providerRows = await database.all<{ capacity_provider_id: string }>(
 		`SELECT DISTINCT capacity_provider_id

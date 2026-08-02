@@ -1,5 +1,5 @@
-import * as extractedMethods from '../store/methods.ts';
 import '../store/interface.ts';
+import * as extractedMethods from '../store/methods.ts';
 export * from '../store/support/index.ts';
 
 export class MarketControlPlaneStore {

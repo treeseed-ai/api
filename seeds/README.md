@@ -24,11 +24,11 @@ idempotent:
 trsd seed treeseed --environments local --apply
 ```
 
-Local apply creates or updates seeded teams, projects, repository hosts,
-capacity providers, execution providers, capacity grants, work policies,
-products, catalog artifacts, project hosting records, and project repository
-bindings. It can attach an existing authenticated or bootstrap user as a
-`team_owner`, but seed manifests do not create user accounts.
+Local apply creates or updates the non-secret teams, projects, products,
+catalog artifacts, content bindings, and operation recipes declared by the
+manifest. It can attach an existing authenticated or bootstrap user as a
+`team_owner`, but seed manifests do not create user accounts, service
+connections, vault grants, credential envelopes, or provider resources.
 
 Production apply is guarded by approval records. A production apply without a
 matching approved request creates or returns the approval requirement instead

@@ -1,10 +1,10 @@
-import type { ProjectAgentClass, ProjectAgentClassStatus } from '@treeseed/sdk/agent-capacity';
+import type { ProjectAgentClass,ProjectAgentClassStatus } from '@treeseed/sdk/agent-capacity';
 import type { CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { ProjectAgentClassRepository } from '../../../repositories/projects/agents/project-agent-class.ts';
 import { CapacityOperationReceiptRepository } from '../../../repositories/operations/operation-receipt.ts';
+import { ProjectAgentClassRepository } from '../../../repositories/projects/agents/project-agent-class.ts';
 import { validateProjectAgentActivityRefs } from '../projects-core/project-agent-activity-refs.ts';
 
 type JsonRecord = Record<string, unknown>;

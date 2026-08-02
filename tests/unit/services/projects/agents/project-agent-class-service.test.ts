@@ -1,12 +1,12 @@
+import { Hono } from 'hono';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DataType, newDb } from 'pg-mem';
-import { describe, expect, it } from 'vitest';
-import { Hono } from 'hono';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
-import { ProjectAgentClassService } from '../../../../../src/api/capacity/services/projects/agents/project-agent-class-service.ts';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { installProjectAgentOperatorRoutes } from '../../../../../src/api/capacity/routes/projects/projects-core/project-agent-operator.ts';
+import { ProjectAgentClassService } from '../../../../../src/api/capacity/services/projects/agents/project-agent-class-service.ts';
+import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
+import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
 
 const packageRoot = process.cwd();
 const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market')) ? resolve(packageRoot, '../sdk/drizzle/market') : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');

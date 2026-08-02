@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe,expect,it } from 'vitest';
 import { verifyTreeDxWorkspace } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-proxy-token-service.ts';
-import { MAX_TREEDX_RESPONSE_BYTES, readBoundedTreeDxJson } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-response.ts';
+import { MAX_TREEDX_RESPONSE_BYTES,readBoundedTreeDxJson } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-response.ts';
 
 describe('bounded TreeDX responses', () => {
 	it('rejects oversized declared responses before reading them', async () => {

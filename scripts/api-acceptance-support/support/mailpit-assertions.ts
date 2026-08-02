@@ -1,4 +1,3 @@
-import { resolve } from 'node:path';
 import { fetchWithTimeout } from '../index.js';
 
 export function mailpitMessages(value) {

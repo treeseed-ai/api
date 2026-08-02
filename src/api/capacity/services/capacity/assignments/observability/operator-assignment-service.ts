@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
-import { CapacityWorkdayDemandRepository, serializeCapacityWorkdayDemandRow } from '../../../../repositories/capacity/workdays/workday-demand.ts';
+import { CapacityWorkdayDemandRepository,serializeCapacityWorkdayDemandRow } from '../../../../repositories/capacity/workdays/workday-demand.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
 
 function id(value: string) { return `demand_${createHash('sha256').update(value).digest('base64url').slice(0, 32)}`; }

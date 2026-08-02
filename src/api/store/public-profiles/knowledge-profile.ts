@@ -40,18 +40,6 @@ function publicCatalogItem(item: any, latest: any = null) {
 	};
 }
 
-function publicPack(pack: any) {
-	return {
-		id: pack.id,
-		kind: 'knowledge_pack',
-		slug: pack.slug,
-		title: pack.name,
-		summary: pack.summary ?? null,
-		href: `/market/knowledge-packs/${encodeURIComponent(pack.slug)}/`,
-		updatedAt: pack.updatedAt ?? pack.createdAt,
-	};
-}
-
 function trailEntry(item: any, source: 'catalog' | 'knowledge' | 'project') {
 	const type = source === 'project' ? 'project' : item.kind === 'template' ? 'template' : 'knowledge_pack';
 	return {
@@ -71,24 +59,18 @@ export async function publicTeamKnowledgeProfile(store: any, teamId: string) {
 		const latest = (await store.listCatalogArtifactVersions(item.id))[0] ?? null;
 		return publicCatalogItem(item, latest);
 	}));
-	const knowledgePacks = (await store.listKnowledgePacks(null))
-		.filter((pack: any) => pack.teamId === teamId)
-		.map(publicPack);
+	const knowledgePacks = catalog.filter((item: any) => item.kind === 'knowledge_pack');
 	const projects = (await store.listTeamProjects(teamId)).map(publicProject).filter(Boolean);
 	const trail = [
 		...catalog.map((item: any) => trailEntry(item, 'catalog')),
-		...knowledgePacks.map((item: any) => trailEntry(item, 'knowledge')),
 		...projects.map((item: any) => trailEntry({ ...item, title: item.name }, 'project')),
 	].filter((item) => item.occurredAt).sort((left, right) => String(right.occurredAt).localeCompare(String(left.occurredAt))).slice(0, 24);
 	return {
 		stats: {
 			templates: catalog.filter((item: any) => item.kind === 'template').length,
-			knowledgePacks: new Set([
-				...catalog.filter((item: any) => item.kind === 'knowledge_pack').map((item: any) => item.slug),
-				...knowledgePacks.map((item: any) => item.slug),
-			]).size,
+			knowledgePacks: knowledgePacks.length,
 			projects: projects.length,
-			publications: catalog.length + knowledgePacks.length,
+			publications: catalog.length,
 		},
 		catalog,
 		knowledgePacks,

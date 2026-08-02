@@ -1,7 +1,7 @@
-import { AgentSdk, ApiTestOptions, DataType, MarketControlPlaneStore, MarketPostgresDatabase, PlatformRunnerClient, afterEach, authorizeApp, createPlatformApiApp, createDeploymentReadyProject, createRunnerRepoFixture, createServer, createTeam, createTeamAndProject, createTestApp, createTestPostgresDatabase, createTestStore, describe, encryptHostConfig, encryptedHostEnvelope, encryptedTestHostEnvelope, execFileSync, existsSync, expect, getApiMocks, git, it, json, listManagedHostsFromConfig, mkdirSync, mkdtempSync, mockCloudflareDnsPreflight, newDb, resolve, rmSync, runOnceWithClient, tmpdir, Core, unsignedTestJwt, vi, waitForCondition, withEnv, withHttpMarketApp, writeFileSync } from '../../../../support/api-harness.ts';
+import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
 describe('market api', () => {
-it('persists canonical repository topology project architecture in project details', async () => {
+it('returns and updates the canonical TreeDX repository topology without conflating project architecture', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		const app = createTestApp({ db, store });
@@ -32,14 +32,6 @@ it('persists canonical repository topology project architecture in project detai
 			defaultBranch: 'main',
 			status: 'active',
 		});
-		await store.upsertHubWorkspaceLink(project.id, {
-			teamId: team.id,
-			parentOwner: 'acme',
-			parentName: 'software',
-			parentUrl: 'https://github.com/acme/software',
-			parentBranch: 'main',
-			softwareSubmodulePath: 'docs',
-		});
 		await store.upsertTeamTreeDx(team.id, {
 			baseUrl: 'https://treedx.team.example',
 			status: 'active',
@@ -52,48 +44,34 @@ it('persists canonical repository topology project architecture in project detai
 		}));
 		expect(binding.payload.contentRepositoryUrl).toBe('https://github.com/acme/hub-one-content');
 
-		const architecturePayload = {
-			topology: 'single_repository_site',
-			rootPath: '.',
-			sitePath: 'docs',
-			contentPath: 'docs/src/content',
-			contentRuntimeSource: 'treedx_snapshot',
-			localContentMaterialization: 'none',
-			contentPublishTarget: {
-				kind: 'cloudflare_r2',
-				prefix: 'hub-one',
-			},
-		};
+		const topology = await json(await app.request(`/v1/projects/${project.id}/repository-topology`, {
+			headers: { authorization: `Bearer ${token}` },
+		}));
+		expect(topology.payload).toMatchObject({
+			contentRepository: { accessMode: 'treedx', contentPath: 'src/content', remote: null,
+				treeDx: { repositoryId: 'repo_hub_one', libraryId: 'acme/hub-one' } },
+			siteRepository: { accessMode: 'filesystem', name: 'hub-one-site' },
+		});
+
 		const updated = await json(await app.request(`/v1/projects/${project.id}/repository-topology`, {
 			method: 'PUT',
 			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-			body: JSON.stringify(architecturePayload),
+			body: JSON.stringify({ ...topology.payload,
+				contentRepository: { ...topology.payload.contentRepository, contentPath: 'docs/src/content' } }),
 		}));
-		expect(updated.payload).toMatchObject(architecturePayload);
+		expect(updated.payload.contentRepository.contentPath).toBe('docs/src/content');
 
-		const architecture = await json(await app.request(`/v1/projects/${project.id}/repository-topology`, {
+		const persisted = await json(await app.request(`/v1/projects/${project.id}/repository-topology`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		expect(architecture.payload).toMatchObject(architecturePayload);
-
-		const rejectedLegacy = await app.request(`/v1/projects/${project.id}/repository-topology`, {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-			body: JSON.stringify({ topology: 'split_software_content', sitePath: 'docs' }),
-		});
-		expect(rejectedLegacy.status).toBe(400);
-		expect(await json(rejectedLegacy)).toMatchObject({ code: 'legacy_project_topology_rejected' });
+		expect(persisted.payload.contentRepository.contentPath).toBe('docs/src/content');
 
 		const rejectedSecret = await app.request(`/v1/projects/${project.id}/repository-topology`, {
 			method: 'PUT',
 			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-			body: JSON.stringify({ ...architecturePayload, token: 'ghp_should-not-persist' }),
+			body: JSON.stringify({ ...topology.payload, accessToken: 'ghp_should-not-persist' }),
 		});
 		expect(rejectedSecret.status).toBe(400);
-		expect(await json(rejectedSecret)).toMatchObject({ code: 'project_architecture_secret_material_rejected' });
-
-		const details = await store.getProjectDetails(project.id);
-		expect(details?.architecture).toMatchObject(architecturePayload);
-		expect(details?.contentSource?.metadata?.projectArchitecture).toMatchObject(architecturePayload);
+		expect(await json(rejectedSecret)).toMatchObject({ code: 'repository_topology_secret_material_rejected' });
 	});
 });

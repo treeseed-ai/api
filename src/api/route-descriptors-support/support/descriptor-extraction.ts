@@ -1,9 +1,16 @@
 import { readFileSync } from 'node:fs';
-import { authClass, mutability, fixtureRequirements, endpointGuarantee, safeProduction, acceptancePolicy, appSourcePath, projectDeploymentRoutesSourcePath, capacityRouteSourcePaths, SDK_METHOD_ROUTE_MAP, routeId, ownerDomain, applicationRouteSourcePaths } from '../index.js';
+import { authClass } from '../accounts/authorization-policy.js';
+import { safeProduction } from '../commerce/catalog/production-safety.js';
+import { ownerDomain,routeId } from '../commerce/ownership/route-ownership.js';
+import { endpointGuarantee } from '../guarantees/guarantee-coverage.js';
+import { fixtureRequirements } from '../testing/fixture-requirements.js';
+import { acceptancePolicy } from './acceptance-policy.js';
+import { mutability } from './mutability-policy.js';
+import { applicationRouteSourcePaths,appSourcePath,capacityRouteSourcePaths } from './route-source-discovery.js';
+import { SDK_METHOD_ROUTE_MAP } from './sdk-route-map.js';
 
 export function extractActiveApiRoutes(source = [
     appSourcePath,
-    projectDeploymentRoutesSourcePath,
     ...applicationRouteSourcePaths(),
     ...capacityRouteSourcePaths(),
 ].map((path) => readFileSync(path, 'utf8')).join('\n')) {

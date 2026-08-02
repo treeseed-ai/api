@@ -1,4 +1,4 @@
-import type { Context, MiddlewareHandler } from 'hono';
+import type { Context,MiddlewareHandler } from 'hono';
 
 interface CapacityProviderAccessAuthenticator {
 	authenticateAccessToken(accessToken: string): Promise<unknown>;

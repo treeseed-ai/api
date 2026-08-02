@@ -1,4 +1,5 @@
-import { API_ROUTE_DESCRIPTORS, SDK_METHOD_ROUTE_MAP } from '../index.js';
+import { API_ROUTE_DESCRIPTORS } from './descriptor-extraction.js';
+import { SDK_METHOD_ROUTE_MAP } from './sdk-route-map.js';
 
 export function descriptorsForSdkMethods() {
     const byId = new Map(API_ROUTE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor]));

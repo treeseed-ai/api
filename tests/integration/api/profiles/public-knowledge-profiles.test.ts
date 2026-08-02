@@ -1,4 +1,4 @@
-import { createTestPostgresDatabase, createTestStore, describe, expect, it } from '../../../support/api-harness.ts';
+import { createTestPostgresDatabase,createTestStore,describe,expect,it } from '../../../support/api-harness.ts';
 
 describe('public knowledge profiles', () => {
 	it('publishes explicit knowledge while redacting memberships and private work', async () => {

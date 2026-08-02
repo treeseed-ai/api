@@ -1,4 +1,4 @@
-import { createTestApp, describe, it } from '../../../../support/api-harness.ts';
+import { createTestApp,describe,it } from '../../../../support/api-harness.ts';
 import { verifyCommerceCatalogPublication } from '../../../../support/commerce-catalog-publication.ts';
 import { verifyCommerceGovernanceSetup } from '../../../../support/commerce-governance.ts';
 

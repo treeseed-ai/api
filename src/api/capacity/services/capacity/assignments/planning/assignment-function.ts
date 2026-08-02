@@ -1,20 +1,20 @@
 import { createHash } from "node:crypto";
 import type { CapacityGovernanceDatabase } from "../../../../database.ts";
 import { CapacityGovernanceError } from "../../../../database.ts";
-import { CapacityAuditRepository } from "../../../../repositories/support/audit.ts";
 import type { DurableProviderAssignment } from "../../../../repositories/capacity/assignments/assignment.ts";
 import { CapacityWorkdayDemandRepository } from "../../../../repositories/capacity/workdays/workday-demand.ts";
 import { CapacityWorkdayParticipationRepository } from "../../../../repositories/capacity/workdays/workday-participation.ts";
 import {
-  CapacityWorkdayRunRepository,
-  type DurableCapacityWorkdayRun,
+CapacityWorkdayRunRepository,
+type DurableCapacityWorkdayRun,
 } from "../../../../repositories/capacity/workdays/workday-run.ts";
-import { admitSynthesizedProviderAssignment } from "../admission/assignment-admission-service.ts";
+import { CapacityAuditRepository } from "../../../../repositories/support/audit.ts";
 import type { ProviderLeasePrincipal } from "../../../accounts/lease-authority-service.ts";
-import { workdayTreeDxWorkspaceId } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
-import type { ConfiguredWorkspaceInput } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
-import { evaluateDurableWorkdayContinuation } from "../../workdays/lifecycle/workday-continuation-service.ts";
 import type { ProviderSynthesisExecutionProvider } from "../../providers/provider-synthesis-context-service.ts";
+import { evaluateDurableWorkdayContinuation } from "../../workdays/lifecycle/workday-continuation-service.ts";
+import type { ConfiguredWorkspaceInput } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
+import { workdayTreeDxWorkspaceId } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
+import { admitSynthesizedProviderAssignment } from "../admission/assignment-admission-service.ts";
 
 type JsonRecord = Record<string, unknown>;
 interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
@@ -43,6 +43,22 @@ function text(value: unknown, fallback = ""): string {
 }
 function assignmentId(demandId: string): string {
   return `assignment_${createHash("sha256").update(demandId).digest("base64url").slice(0, 32)}`;
+}
+export function resolveAssignmentContentPathScope(payload: JsonRecord, access: 'read' | 'write', contentRoot: string, fallback: string[]): string[] {
+  const configured = record(record(payload.contentAccess)[access]).paths;
+  if (!Array.isArray(configured) || configured.length === 0) return fallback;
+  const root = contentRoot.replace(/\\/gu, '/').replace(/\/+$/u, '');
+  const paths = configured.map(String).map((value) => value.trim().replace(/\\/gu, '/').replace(/^\.\//u, '')).filter(Boolean);
+  const invalid = paths.filter((value) => value.startsWith('/') || value.split('/').includes('..') || (value !== root && !value.startsWith(`${root}/`)));
+  if (invalid.length) {
+    throw new CapacityGovernanceError(
+      'capacity_workday_content_path_scope_invalid',
+      'Agent content access contains a path outside the project content root.',
+      500,
+      { contentRoot, access, invalid },
+    );
+  }
+  return [...new Set(paths)];
 }
 export function resolveAssignmentContentBaseRef(payload: JsonRecord): string {
   const intent = record(payload.intent);
@@ -102,9 +118,9 @@ function assignmentInput(
       { demandId: demand.id, requiredCapabilities },
     );
   }
-  const allowedReadPaths = ["**"];
+  const allowedReadPaths = resolveAssignmentContentPathScope(payload, 'read', contentRoot, ["**"]);
   const allowedWritePaths = planning
-    ? [contentRoot, `${contentRoot}/**`]
+    ? resolveAssignmentContentPathScope(payload, 'write', contentRoot, [contentRoot, `${contentRoot}/**`])
     : ["**"];
   const workspaceId = workdayTreeDxWorkspaceId(id);
   const expiresAt = new Date(Date.parse(now) + 3_600_000).toISOString();
@@ -242,6 +258,7 @@ function assignmentInput(
       demandId: demand.id,
       activityType: demand.activityType,
       contentRoot,
+      agentContentPath: text(payload.agentContentPath),
       workdayRunId: demand.workdayRunId,
       workspaceProvisioning: true,
       allowPlanningContentArtifacts: planning,
@@ -300,9 +317,14 @@ async function recordDenial(
   store: AssignmentFunctionStore,
   principal: ProviderLeasePrincipal,
   demandId: string,
-  code: string,
+  error: unknown,
   now: string,
 ) {
+  const code = errorCode(error);
+  const details = error && typeof error === "object" && "details" in error
+    && error.details && typeof error.details === "object" && !Array.isArray(error.details)
+    ? error.details as JsonRecord
+    : {};
   await new CapacityAuditRepository(store).record({
     id: `audit:${demandId}:${code}`,
     teamId: principal.teamId,
@@ -314,7 +336,11 @@ async function recordDenial(
     resourceType: "capacity-workday-demand",
     resourceId: demandId,
     idempotencyKey: `${demandId}:${code}`,
-    metadata: { reasons: [code] },
+    metadata: {
+      reasons: [code],
+      message: error instanceof Error ? error.message : String(error),
+      details,
+    },
     now,
   });
 }
@@ -356,7 +382,7 @@ export async function assignNextCompiledDemand(
     input = assignmentInput(demand, principal, sessionId, executionProviders, now);
   } catch (error) {
     await demands.releaseClaim(demand.id, demand.claimToken!, now);
-    await recordDenial(store, principal, demand.id, errorCode(error), now);
+    await recordDenial(store, principal, demand.id, error, now);
     return null;
   }
   let assignment: DurableProviderAssignment | null;
@@ -368,7 +394,7 @@ export async function assignNextCompiledDemand(
     );
   } catch (error) {
     await demands.releaseClaim(demand.id, demand.claimToken!, now);
-    await recordDenial(store, principal, demand.id, errorCode(error), now);
+    await recordDenial(store, principal, demand.id, error, now);
     return null;
   }
   if (!assignment) {

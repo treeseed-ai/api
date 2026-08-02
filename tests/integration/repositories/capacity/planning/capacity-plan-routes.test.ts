@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { describe, expect, it, vi } from 'vitest';
-import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
+import { describe,expect,it,vi } from 'vitest';
+import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { installCapacityPlanRoutes } from '../../../../../src/api/capacity/routes/capacity/planning/capacity-plans.ts';
 
 function appWith(store: Record<string, unknown>, permissions: string[] = []) {

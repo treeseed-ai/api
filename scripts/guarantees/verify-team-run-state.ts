@@ -1,23 +1,12 @@
 import assert from 'node:assert/strict';
-
-type RunValue = {
-	kind?: string;
-	value?: Record<string, unknown>;
-	device?: string;
-};
+import { invitationStateForDevice, teamsForPhase, type TeamRunValue } from './support/team-run-state.ts';
 
 const phase = process.argv[2] ?? '';
 const apiBaseUrl = process.env.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000';
 const serviceId = process.env.TREESEED_ACCEPTANCE_SERVICE_ID ?? 'web';
 const serviceSecret = process.env.TREESEED_ACCEPTANCE_SERVICE_SECRET ?? 'treeseed-web-service-dev-secret';
-const runState = JSON.parse(process.env.TREESEED_GUARANTEE_RUN_STATE ?? '{}') as Record<string, RunValue>;
-const teams = Object.entries(runState)
-	.filter(([key, entry]) => key.startsWith('team.primary@') && entry.value?.name)
-	.map(([key, entry]) => ({
-		device: entry.device ?? key.split('@').at(-1) ?? 'unknown',
-		name: String(entry.value!.name),
-		displayName: String(entry.value!.displayName ?? ''),
-	}));
+const runState = JSON.parse(process.env.TREESEED_GUARANTEE_RUN_STATE ?? '{}') as Record<string, TeamRunValue>;
+const teams = teamsForPhase(runState, phase);
 
 assert.ok(teams.length > 0, 'Run state contains no UI-created team identifiers.');
 
@@ -39,15 +28,10 @@ function hasAudit(state: any, eventType: string) {
 
 for (const expected of teams) {
 	const state = await json(`/v1/acceptance/guarantees/team-state?name=${encodeURIComponent(expected.name)}`);
-	const recipient = Object.values(runState)
-		.find((entry) => String(entry.value?.recipient ?? '').includes(expected.device.replaceAll('_', '-')))
-		?.value?.recipient;
-	const existingRecipient = Object.values(runState)
-		.find((entry) => entry.value?.existingRecipient)
-		?.value?.existingRecipient;
-	const revokedRecipient = Object.values(runState)
-		.find((entry) => String(entry.value?.revokedRecipient ?? '').includes(expected.device.replaceAll('_', '-')))
-		?.value?.revokedRecipient;
+	const invitationState = invitationStateForDevice(runState, expected.device);
+	const recipient = invitationState?.recipient;
+	const existingRecipient = invitationState?.existingRecipient;
+	const revokedRecipient = invitationState?.revokedRecipient;
 	switch (phase) {
 		case 'create':
 			assert.equal(state.team?.name, expected.name);

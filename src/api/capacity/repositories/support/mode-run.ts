@@ -1,13 +1,13 @@
-import { randomUUID } from 'node:crypto';
-import type { AgentModeRun, ProviderAssignment } from '@treeseed/sdk/agent-capacity';
+import type { AgentModeRun,ProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import { validateAgentModeRun } from '@treeseed/sdk/agent-capacity';
 import {
-	encodeCapacityPageCursor,
-	normalizeCapacityPageLimit,
-	type CapacityPage,
-	type CapacityPageCursor,
+encodeCapacityPageCursor,
+normalizeCapacityPageLimit,
+type CapacityPage,
+type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
-import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../database.ts';
+import { randomUUID } from 'node:crypto';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 
 type JsonRecord = Record<string, unknown>;
@@ -196,7 +196,7 @@ export async function persistAgentModeRun(
 			selected_input_json = EXCLUDED.selected_input_json,
 			capacity_envelope_json = EXCLUDED.capacity_envelope_json,
 			outputs_json = EXCLUDED.outputs_json,
-			trace_refs_json = EXCLUDED.trace_refs_json,
+			trace_refs_json = (agent_mode_runs.trace_refs_json::jsonb || EXCLUDED.trace_refs_json::jsonb)::text,
 			usage_actual_json = EXCLUDED.usage_actual_json,
 			validation_json = EXCLUDED.validation_json,
 			fallback_reason = EXCLUDED.fallback_reason,

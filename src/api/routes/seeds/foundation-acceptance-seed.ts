@@ -24,7 +24,7 @@ interface AcceptanceSeedRequest {
 }
 
 export function installFoundationAcceptanceSeedRoutes(context: any) {
-	const { AGENT_PROMOTION_APPROVAL_DECISIONS, AGENT_TASK_SIGNATURES, AUTH_PROVIDERS, AgentSdk, CHECKOUT_COMMERCIAL_OFFER_MODES, CHECKOUT_OFFER_MODES, CHECKOUT_SUBSCRIPTION_OFFER_MODES, DatabaseAuthProvider, FEEDBACK_SCREENSHOT_TYPES, FEEDBACK_TYPES, GITHUB_ACTIONS_OIDC_ISSUER, HOST_KIND_SESSION_KEYS, LOCAL_CONTENT_COLLECTIONS, LOCAL_CONTENT_DEFAULTS, LOCAL_DECISION_TYPE_VALUES, LOCAL_WORK_CONTENT_COLLECTIONS, MARKET_EMAIL_CONFIRMATION_PREFIX, MAX_FEEDBACK_MESSAGE_LENGTH, MAX_FEEDBACK_SCREENSHOT_BYTES, MarketControlPlaneStore, NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, PLAINTEXT_HOST_CREDENTIAL_FIELD_NAMES, PLATFORM_OPERATION_SCOPES, POSTGRES_AUTH_PROVIDER_ID, PROPOSAL_VERDICT_DECISION_TYPES, RemoteClient, RemoteOperationsClient, RemoteSdkClient, SENSITIVE_QUERY_PARAM_PATTERN, STRIPE_PRICE_MIRROR_OFFER_MODES, STRIPE_PRODUCT_MIRROR_OFFER_MODES, OperationsSdk, accountDeletionBlockers, accountDeletionConfirmationMatches, addRelationValue, apiDatabaseUrl, app, appendLaunchDeploymentEvent, appendLaunchPhaseProjection, appendProjectDeletionProgress, applyCommerceRefundState, applyContentPublishResult, applyHubLaunchFailure, applyHubLaunchResult, applySeedWithStore, artifactDownloadPayload, authConfig, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authProviderId, authTokenTimestampMillis, authTokenTimestampSeconds, availabilityAttempts, availabilityRateLimit, backfillUserEmailAddresses, base64Url, base64urlJson, bearerTokenFromRequest, buildCommerceCheckoutMetadata, buildCommerceStripeMetadata, buildGovernanceApprovalProjection, buildGovernanceProjection, buildInfrastructureProjection, buildKnowledgeArtifactProjection, buildKnowledgeProjection, buildLaunchCredentialOverlay, buildWorkdayProjection, canSkipCloudflareCleanupAfterFailedLaunch, canonicalArchitectureTopology, capacity, centralMarketProfile, checkoutGroupKey, checkoutGroupKind, checkoutGroupStatus, ciOperationForAction, cleanFeedbackString, cloudflareDeletionAuthenticationMessage, cloudflareDnsDomainsForHostValidation, cloudflareErrorMessage, cloudflareProjectDeletionResourceNames, cloudflareRequestForLaunchPreflight, cloudflareRequestForProjectDeletion, collectHostingAuditCredentialOverlay, commerceCheckoutError, commerceErrorResponse, commerceStripeLookupKey, commerceStripePriceParams, commerceStripeProductParams, commerceStripeSyncContext, config, configuredAuthProviderId, confirmationUrlFor, consumeReauthentication, contentRelationPolicy, createApiExtension, createCapacityControlPlane, createCipheriv, createClientEncryptedEscrowService, createCommerceCheckoutRun, createCommerceCheckoutRunForServiceContract, createDecipheriv, createDecisionFromProposals, createGitHubActionsSecretEnclave, createGitHubAppAdapter, createHash, createHmac, createMarketEmailConfirmation, createMarketPostgresDatabase, createMarketWebSession, createOrResendUserEmailAddress, createProjectHostCredentialSessions, createProjectInternalClient, createPublicKey, createRelatedLocalContentRecord, createStripeConnectService, createTreeDxCredentialBridge, createVerify, credentialSessionKey, credentialSessionSecret, db, decodeRouteParam, decorateJob, decoratePlatformOperation, decryptCredentialSessionPayload, decryptHostConfig, decryptTeamHostForLaunch, decryptedHostConfigSummary, defaultConfig, deleteCloudflareDnsRecordsForProject, deleteCloudflareProjectResources, deleteTeamCapacityAggregate, derivePlatformOperationNavigation, deriveProjectHostBindingsView, domainInZone, encryptCredentialSessionPayload, encryptedHostPayloadLooksValid, enqueueTreeDxProvisionOperation, ensureCommerceStripeCustomer, ensureMarketCredentialSchema, ensurePrincipal, entitlementRenewalStateFromSubscription, enumValue, exchangeProviderIdentity, executeInline, executeProjectApi, executeSdkOperation, existsSync, exportSeedWithStore, exposeAuthTokenForTests, fallbackRemoteCapability, findById, findDispatchCapability, getSiteAuthConfig, getUserEmailAddress, githubOidcJwksCache, githubRequestForProjectDeletion, grantCommerceEntitlementsForOrder, handleCommerceInvoiceWebhook, handleCommercePaymentIntentWebhook, handleCommerceSubscriptionWebhook, hasRecordedCloudflareRuntimeResources, hashMarketPassword, hostBindingRequiresUnlock, hostKindForBinding, hubRepositoryPolicies, inferZoneNameForDomain, installApiRequestLogger, installCapacityRoutes, installProjectDeploymentRoutes, isLocalAcceptanceServicePrincipal, isLoopbackUrl, isPlatformOperationTerminal, isTeamApiPrincipal, isValidPersonalThemeDraft, jsonError, jsonThrownError, launchCapabilityPreset, launchPlannerRepositoryTopology, listCloudflareNamedResources, listManagedHostsFromConfig, listUserEmailAddresses, loadGitHubOidcJwks, loadInfrastructureSeedState, loadKnowledgeContentEntries, loadNotificationPreferences, loadProjectHostBindingContext, loadTemplateCatalog, localAcceptanceAdminToken, localAcceptanceAuthEnabled, localContentPath, localContentRoot, logRequests, managedCloudflareConfigMissing, markdownToPlainProjectSummary, marketAuthContext, marketEmailTokenHash, marketProfilesForTeams, mergeCapability, mergeStringConfig, mkdir, nonSecretLaunchJobInput, normalizeAppearancePreference, normalizeAuditHostKinds, normalizeBaseUrl, normalizeCheckoutQuantity, normalizeCiEnvironment, normalizeDomainName, normalizeEmail, normalizeLocalContentInput, normalizeMarketProfile, normalizeNotificationPreferences, normalizeProjectDomainInput, normalizeProjectLaunchHostBindings, normalizeProviderCredentialConfig, normalizeRelationArray, normalizeRepositoryContentInput, normalizeRepositoryRelationArray, normalizeRepositorySlug, normalizeSeedEnvironments, normalizeTemplateLaunchRequirements, normalizeTemplateId, normalizeUsername, normalizedCloudflareKvNamespaceReference, operationTokenSecret, optionalTrimmedString, orderStatusFromPaymentGroup, parseBase64urlJson, parseBooleanEnvValue, parseJsonObject, parseYaml, passwordResetUrlFor, patchLaunchIntentForCredentialOverlay, paymentGroupStatusFromPaymentIntent, pbkdf2Sync, persistProjectHostBindingOperationMetadata, personalThemeFromRow, plaintextHostCredentialFieldPaths, planKnowledgeHubLaunch, planProjectHostBindingOperation, planSeedWithStore, platformOperationMutationError, principalCanManageCommerceProduct, principalHasGlobalPlatformRole, principalHasPermission, principalIsSeedAdmin, privateKnowledgeAuditPayload, processCommerceStripeWebhook, projectAllowedCiRepositories, projectApiConnection, projectAppHref, projectDeletionBlockerRows, projectDeletionConfirmationMatches, projectDeletionHostname, projectDeletionOperation, projectHostBindingMetadata, projectHostResponsePayload, providerConfigFor, providerCredentialValuesForAudit, providerJwksCache, publicPaymentGroups, randomBytes, randomUUID, readCapacityRequestObject, readFile, readJsonOrFormBody, readLocalContentRecord, recordContentNotificationEvent, recordFeedbackSubmission, recordPrivateKnowledgeAudit, redactCommerceOwnershipWorkflow, redactCommerceServiceRequestForBuyer, redactedRequestTarget, refreshCommercePaymentGroupState, refreshCommerceStripeAccount, rejectPlaintextHostCredentialFields, rejectProjectSecretUnlockMaterial, relative, remainingRefundableAmount, repositoryContentRelationPolicy, repositoryInventoryWithPlatform, requestClientIp, requestSessionMetadata, requireCatalogItemAccess, requireCommerceCapacityInquiryAccess, requireCommerceCapacityListingAccess, requireCommerceOfferAccess, requireCommerceProductAccess, requireCommerceVendorForStripe, requireConfiguredServiceCredential, requireConnectedProjectRuntime, requirePlatformRunner, requireProjectAccess, requireProjectRunner, requireSeedApplyAccess, requireSeedPlanAccess, requireSellerTeamAccess, requireServiceBuyerAccess, requireServiceParticipantAccess, requireServiceSellerAccess, requireTeamAccess, requireVendorOrderManager, resolve, resolveAgentArtifactBucket, resolveAgentTaskSignature, resolveApiConfig, resolveAuthApprovalBaseUrl, resolveCloudflareZoneForLaunchPreflight, resolveCommerceCheckoutItem, resolveFulfillmentArtifact, resolveLaunchTemplateRequirements, resolveOrderItemForRefund, resolvePlatformRepositoryDescriptor, resolvePlatformRunnerSecret, resolveProjectDeletionCloudflareZone, resolveProjectLaunchHostBindings, resolvePublicTreeDxTeam, resolveStripeEnvironment, resolveStripePublishableKey, resolveStripeWebhookSecret, resolveManagedCloudflareHostConfigFromConfig, resolveUiProjectionContext, resourceRowsFromLaunch, retryApiLaunchBootstrapFromRequest, rm, runProjectDeletionApiDestroy, runProjectLaunchApiBootstrap, runHostingAudit, runtime, runtimeMarketAuthProvider, runtimeProviders, safeFeedbackClient, safeFeedbackContext, safeFeedbackScreenshot, safePlatformOperationOutput, safePrivateKnowledgeSlug, safeTokenEquals, sanitizeLaunchResultForStorage, sanitizedReturnTo, scheduleBackgroundBootstrap, seedActor, seedCreatesMissingTeams, seedExistingTeamIds, selectDispatchTarget, sendAuthEmail, sendEmailConfirmation, sendTeamInviteEmail, sendWelcomeEmail, serializeFrontmatter, serializeUserEmailAddress, setPrimaryEmailAddress, sharedSdk, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, shouldLogApiRequests, signEditorialPreviewToken, signOperationToken, slugifyContent, slugifyRepositoryContent, sourceFromProjectDetails, store, stripeAccountMissingError, stripeAccountToConnectedAccountPatch, stripeClientSecret, stripeCommerceUrl, stripeConfiguredError, stripeConnectService, stripeMetadataValue, stripePriceTermsDrift, stripeRefundStatus, stripeTimestampToIso, stripeVendorApprovalError, subscriptionClientSecret, subscriptionStatusFromStripe, syncCommerceOfferStripeProduct, syncCommercePriceStripePrice, syncCommerceSubscriptionFromStripe, syncPrimaryEmailCaches, teamInviteAcceptUrlFor, timingSafeEqual, trimmedHeaderValue, uiRuntimeLocals, uniqueCloudflareKvNamespaceReferences, uniqueRelationArray, unknownKeys, unwrapLaunchOperationOutput, unwrapOperationPayload, updateCheckoutCompletionFromGroup, updateLaunchDeployments, validateCiRefForEnvironment, validateFeedbackAccess, validateMarketPassword, validateProjectSlug, validatePublicUsername, validateTeamHostCredentialPayload, verifiedEmailCount, verifyCloudflareDnsWriteForLaunch, verifyGitHubOidcToken, verifyMarketPassword, verifyOperationToken, verifyProviderIdToken, webAuthPayload, webSessionData, writeFile, writeLocalContentRecord, writeParsedLocalContentRecord, yamlLines, yamlScalar } = context;
+	const { app, capacity, config, createHash, createMarketWebSession, ensureMarketCredentialSchema, hashMarketPassword, normalizeEmail, normalizeUsername, optionalTrimmedString, randomUUID, requireConfiguredServiceCredential, resolve, resolvePlatformRunnerSecret, runtime, runtimeMarketAuthProvider, store } = context;
 	app.post('/v1/acceptance/seed', async (c) => {
 					const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
 					if (service.response) return service.response;
@@ -185,113 +185,6 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 						url: `https://github.com/treeseed-acceptance/${projectSlug}`,
 						defaultBranch: 'staging',
 						status: 'ready',
-						metadata: { acceptance: true, namespace, workflowFile: 'deploy-web.yml' },
-					}).catch(() => null);
-					const acceptanceWebHostId = `web-host-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
-					const existingWebHost = await store.getTeamWebHost?.(team.id, acceptanceWebHostId).catch(() => null);
-					if (!existingWebHost) {
-						await store.createTeamWebHost(team.id, {
-							id: acceptanceWebHostId,
-							provider: 'cloudflare',
-							ownership: 'team_owned',
-							name: `Acceptance ${namespace} Web`,
-							accountLabel: 'Acceptance Cloudflare',
-							allowedEnvironments: ['staging', 'prod'],
-							status: 'active',
-							encryptedPayload: {
-								version: 1,
-								algorithm: 'acceptance-redacted',
-								kdf: {},
-								salt: 'acceptance',
-								nonce: 'acceptance',
-								ciphertext: 'redacted',
-							},
-							metadata: { acceptance: true, namespace },
-							createdById: owner?.userId,
-						}).catch(() => null);
-					}
-					const acceptanceLaunchRequirements = await resolveLaunchTemplateRequirements({
-						store,
-						principal: { id: owner?.userId ?? 'acceptance', roles: ['platform_admin'] },
-						config: runtime.resolved.config,
-						sourceKind: 'template',
-						sourceRef: 'research',
-						requireKnownTemplate: true,
-					});
-					const acceptanceManagedHosts = (await listManagedHostsFromConfig(team.id, runtime).catch(() => []))
-						.map((host) => host.id === 'treeseed-managed-web'
-							? {
-								...host,
-								status: 'active',
-								metadata: {
-									...(host.metadata ?? {}),
-									configured: true,
-									missingConfigKeys: [],
-								},
-							}
-							: host);
-					const acceptanceHostBindingResolution = resolveProjectLaunchHostBindings({
-						hostBindings: normalizeProjectLaunchHostBindings({
-							hostBindings: {
-								sourceRepository: {
-									requirementKind: 'host',
-									type: 'repository',
-									provider: 'github',
-									hostId: 'platform:github:hosted-hubs',
-									mode: 'treeseed_managed',
-								},
-								publicWeb: {
-									requirementKind: 'host',
-									type: 'web',
-									provider: 'cloudflare',
-									managedHostKey: 'treeseed-managed-web',
-									mode: 'treeseed_managed',
-								},
-								transactionalEmail: {
-									requirementKind: 'host',
-									type: 'email',
-									provider: 'smtp',
-									managedHostKey: 'treeseed-managed-email',
-									mode: 'treeseed_managed',
-								},
-							},
-						}),
-						launchRequirements: acceptanceLaunchRequirements,
-						repositoryHosts: repositoryInventoryWithPlatform([], 'treeseed-acceptance'),
-						teamHosts: [],
-						managedHosts: acceptanceManagedHosts,
-						defaultHosts: team?.metadata?.defaultHosts && typeof team.metadata.defaultHosts === 'object' ? team.metadata.defaultHosts : {},
-						projectSlug,
-						projectName: project.name,
-						standardProjectLaunch: true,
-					});
-					project = await store.updateProject(project.id, {
-						metadata: {
-							...(project.metadata ?? {}),
-							acceptance: true,
-							namespace,
-							architecture: acceptanceProjectArchitecture,
-							sourceKind: 'template',
-							sourceRef: 'research',
-							hostBindings: acceptanceHostBindingResolution.hostBindings,
-							hostBindingPlans: {
-								configWrites: acceptanceHostBindingResolution.configWritePlan,
-								secretDeployment: acceptanceHostBindingResolution.secretDeploymentPlan,
-							},
-						},
-					}) ?? project;
-					await store.upsertProjectEnvironment(project.id, {
-						environment: 'staging',
-						deploymentProfile: 'hosted_project',
-						baseUrl: `https://${projectSlug}.staging.example.test`,
-						pagesProjectName: projectSlug,
-						metadata: { acceptance: true, namespace },
-					}).catch(() => null);
-					await store.upsertProjectEnvironment(project.id, {
-						environment: 'prod',
-						deploymentProfile: 'hosted_project',
-						baseUrl: `https://${projectSlug}.example.test`,
-						pagesProjectName: projectSlug,
 						metadata: { acceptance: true, namespace },
 					}).catch(() => null);
 					const workday = await capacity.createWorkdayCapacityEnvelope({
@@ -431,8 +324,6 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 								approvalRequest: { id: approvalRequest?.id ?? `approval-${namespace}` },
 								decision: { id: decisionPlanningStatus?.decisionId ?? decisionId },
 								passwordReset: { token: resetToken },
-								host: { id: acceptanceWebHostId },
-								environment: { id: 'staging' },
 							},
 						},
 					});

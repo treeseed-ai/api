@@ -1,5 +1,5 @@
 import type { StructuredAgentEstimateRecord } from '@treeseed/sdk/agent-capacity';
-import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../database.ts';
+import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 
 type JsonRecord = Record<string, unknown>;

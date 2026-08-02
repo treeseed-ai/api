@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../../database.ts';
-import { CapacityGovernanceError } from '../../../database.ts';
 import { isUniqueConstraintViolation } from '../../../database-errors.ts';
-import type { CapacityUsageActualInput } from './usage-actual-input.ts';
+import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
+import { CapacityGovernanceError } from '../../../database.ts';
 import { durableRealEquals } from '../../support/durable-number.ts';
+import type { CapacityUsageActualInput } from './usage-actual-input.ts';
 
 export interface CapacityUsageReportRequest {
 	teamId: string;

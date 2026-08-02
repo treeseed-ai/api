@@ -1,6 +1,8 @@
 import { CapacityWorkdayMaintenanceScheduler } from '../../../api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.js';
 import { drainNotificationEmailOutbox } from '../../../notifications/service.js';
-import { registerAndHeartbeat, runOnceWithClient, startHealthServer, parseRunnerOptions, packageVersion, loadConfig, loadHealthConfig, createClient, createDeploymentStore } from '../index.js';
+import { runSecretOperationExecutor } from '../../security/secret-operation-executor.js';
+import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
+import { createClient,createControlPlaneStore,loadConfig,loadHealthConfig,packageVersion,parseRunnerOptions,registerAndHeartbeat,runOnceWithClient,startHealthServer } from '../index.js';
 
 export async function runLoop() {
     const healthState = { ready: false, status: 'booting', error: null };
@@ -12,8 +14,9 @@ export async function runLoop() {
     process.once('SIGTERM', () => { stopping = true; });
     let client = null;
     let config = null;
-    let deploymentStore = null;
+    let controlPlaneStore = null;
     let capacityWorkdayMaintenance = null;
+	let feedbackRetention = null;
     while (!stopping) {
         try {
             if (!config) {
@@ -21,19 +24,23 @@ export async function runLoop() {
             }
             if (!client) {
                 client = await createClient(config);
-                deploymentStore = createDeploymentStore(config);
-                capacityWorkdayMaintenance = deploymentStore
-                    ? new CapacityWorkdayMaintenanceScheduler(deploymentStore, config.capacityWorkdayMaintenanceIntervalMs)
+                controlPlaneStore = createControlPlaneStore(config);
+                capacityWorkdayMaintenance = controlPlaneStore
+                    ? new CapacityWorkdayMaintenanceScheduler(controlPlaneStore, config.capacityWorkdayMaintenanceIntervalMs)
                     : null;
-                await registerAndHeartbeat(client, config, version, { ...options, deploymentStore });
+				feedbackRetention = controlPlaneStore ? new FeedbackRetentionScheduler(controlPlaneStore, config.feedbackRetentionIntervalMs) : null;
+                await registerAndHeartbeat(client, config, version, { ...options, controlPlaneStore });
             }
             healthState.ready = true;
             healthState.status = 'running';
             healthState.error = null;
-            await runOnceWithClient(config, client, version, { ...options, deploymentStore });
-            if (deploymentStore)
-                await drainNotificationEmailOutbox(deploymentStore);
+            await runOnceWithClient(config, client, version, { ...options, controlPlaneStore });
+            if (controlPlaneStore)
+                await runSecretOperationExecutor(controlPlaneStore);
+            if (controlPlaneStore)
+                await drainNotificationEmailOutbox(controlPlaneStore);
             await capacityWorkdayMaintenance?.runIfDue();
+			await feedbackRetention?.runIfDue();
         }
         catch (error) {
             healthState.ready = false;
@@ -46,10 +53,11 @@ export async function runLoop() {
             if (client?.close) {
                 await client.close().catch(() => { });
             }
-            await deploymentStore?.db?.close?.().catch?.(() => { });
+            await controlPlaneStore?.db?.close?.().catch?.(() => { });
             client = null;
-            deploymentStore = null;
+            controlPlaneStore = null;
             capacityWorkdayMaintenance = null;
+			feedbackRetention = null;
         }
         await new Promise((resolveSleep) => setTimeout(resolveSleep, options.pollIntervalMs));
     }
@@ -62,6 +70,6 @@ export async function runLoop() {
             activeJobCount: 0,
         }).catch(() => { });
         await client.close?.();
-        await deploymentStore?.db?.close?.();
+        await controlPlaneStore?.db?.close?.();
     }
 }

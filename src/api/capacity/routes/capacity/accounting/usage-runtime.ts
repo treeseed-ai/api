@@ -1,10 +1,10 @@
 import type { Hono } from 'hono';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { settleCapacityReservationExactlyOnce, type CapacitySettlementRequest } from '../../../services/capacity/accounting/settlement-service.ts';
+import { settleCapacityReservationExactlyOnce,type CapacitySettlementRequest } from '../../../services/capacity/accounting/settlement-service.ts';
 import { reportCapacityUsage } from '../../../services/capacity/accounting/usage-report-service.ts';
-import { requireProviderPrincipal } from '../providers/provider-auth.ts';
+import { capacityRuntimeFailure,requireCapacityIdempotencyKey,type CapacityRuntimeRouteOptions } from '../../runtime/runtime-route-support.ts';
 import { readCapacityRequestObject } from '../../support/request-json.ts';
-import { capacityRuntimeFailure, requireCapacityIdempotencyKey, type CapacityRuntimeRouteOptions } from '../../runtime/runtime-route-support.ts';
+import { requireProviderPrincipal } from '../providers/provider-auth.ts';
 
 async function ownedAssignment(options: CapacityRuntimeRouteOptions, assignmentId: string, teamId: string, membershipId: string) {
 	const assignment = await options.store.first(`SELECT * FROM capacity_provider_assignments WHERE id = ? AND team_id = ? AND membership_id = ? LIMIT 1`, [assignmentId, teamId, membershipId]);

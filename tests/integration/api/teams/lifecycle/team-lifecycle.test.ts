@@ -1,12 +1,12 @@
 import {
-	authorizeApp,
-	createTestApp,
-	createTestPostgresDatabase,
-	createTestStore,
-	describe,
-	expect,
-	it,
-	json,
+authorizeApp,
+createTestApp,
+createTestPostgresDatabase,
+createTestStore,
+describe,
+expect,
+it,
+json,
 } from '../../../../support/api-harness.ts';
 
 describe('team lifecycle visibility', () => {
@@ -112,7 +112,7 @@ describe('team lifecycle visibility', () => {
 		expect(JSON.stringify(memberProfile.payload)).not.toMatch(/membership|email|role/iu);
 	});
 
-	it('reports owned host obligations with canonical resolution links', async () => {
+	it('reports connected services with their canonical resolution link', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
 		const app = createTestApp({ db, store });
@@ -123,11 +123,13 @@ describe('team lifecycle visibility', () => {
 			body: JSON.stringify({ name: 'blocker-team', displayName: 'Blocker Team' }),
 		}));
 		const now = new Date().toISOString();
-		await store.run(`INSERT INTO team_web_hosts
-			(id, team_id, provider, ownership, name, status, allowed_environments_json, created_at, updated_at)
-			VALUES (?, ?, 'cloudflare', 'managed', 'blocker.example.test', 'active', '[]', ?, ?)`, [
-			'host-blocker',
+		await store.run(`INSERT INTO team_service_connections
+			(id, team_id, provider_id, display_name, non_secret_config_json, status, version, created_by_user_id, updated_by_user_id, created_at, updated_at)
+			VALUES (?, ?, 'cloudflare', 'Blocker service', '{}', 'active', 1, ?, ?, ?, ?)`, [
+			'service-blocker',
 			created.payload.id,
+			'blocker-owner',
+			'blocker-owner',
 			now,
 			now,
 		]);
@@ -136,9 +138,9 @@ describe('team lifecycle visibility', () => {
 		}));
 		expect(eligibility).toMatchObject({ ok: true, ready: false });
 		expect(eligibility.blockers).toContainEqual(expect.objectContaining({
-			code: 'host',
-			id: 'host-blocker',
-			href: '/app/hosts',
+			code: 'service_connection',
+			id: 'service-blocker',
+			href: '/app/services',
 		}));
 	});
 

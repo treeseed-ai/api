@@ -10,10 +10,12 @@ export const API_ENDPOINT_GUARANTEE_FAMILIES = [
     'capacity-and-provider-control-plane',
     'agent-graphs-and-workdays',
     'treedx-and-content-proxy',
+    'knowledge-collaboration',
     'dx-repository-workspaces',
-    'hosting-and-secrets',
+    'services-and-vaults',
+    'feedback-management',
     'commerce-marketplace',
-    'catalog-templates-and-knowledge-packs',
+    'catalog-templates-and-seeds',
     'ui-projection-endpoints',
     'internal-webhooks-and-federation',
 ];
@@ -25,7 +27,9 @@ export function endpointGuaranteeFamily(path) {
         return 'auth-and-sessions';
     if (path.startsWith('/v1/ui/'))
         return 'ui-projection-endpoints';
-    if (path.startsWith('/v1/internal/') || path.startsWith('/v1/acceptance/') || path === '/v1/feedback')
+    if (path.startsWith('/v1/admin/feedback') || path === '/v1/feedback')
+        return 'feedback-management';
+    if (path.startsWith('/v1/internal/') || path.startsWith('/v1/acceptance/'))
         return 'internal-webhooks-and-federation';
     if (path.startsWith('/v1/platform/') || path.startsWith('/v1/jobs/') || path.startsWith('/v1/approval-requests/'))
         return 'platform-operations-and-runners';
@@ -37,17 +41,19 @@ export function endpointGuaranteeFamily(path) {
         return 'dx-repository-workspaces';
     if (path.includes('/treedx') || path.includes('/local-content') || path.includes('/content-previews'))
         return 'treedx-and-content-proxy';
-    if (path.includes('/hosts') || path.includes('/hosting') || path.includes('/secrets') || path.includes('/environments') || path.includes('/resources') || path.includes('/workflow-operations') || path.includes('/repositories/'))
-        return 'hosting-and-secrets';
+    if (path.startsWith('/v1/knowledge/') || path.includes('/knowledge/'))
+        return 'knowledge-collaboration';
+    if (path.includes('/services') || path.includes('/vault') || path.includes('/credential-profiles') || path.includes('/operation-leases') || path.includes('/external-vault'))
+        return 'services-and-vaults';
     if (path.startsWith('/v1/commerce/'))
         return 'commerce-marketplace';
-    if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates') || path.startsWith('/v1/knowledge-packs') || path.startsWith('/v1/seeds/'))
-        return 'catalog-templates-and-knowledge-packs';
+    if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates') || path.startsWith('/v1/seeds/'))
+		return 'catalog-templates-and-seeds';
     if (path.startsWith('/v1/commons/') || path.includes('/governance') || path.includes('/proposals') || path.includes('/decisions') || path.includes('/approvals'))
         return 'governance-and-decisions';
     if (path.startsWith('/v1/teams/') || path === '/v1/teams' || path.startsWith('/v1/users/'))
         return 'teams-and-members';
-    if (path.startsWith('/v1/projects') || path.startsWith('/v1/project-deployments'))
+    if (path.startsWith('/v1/projects'))
         return 'projects-and-workstreams';
     return 'health-and-markets';
 }

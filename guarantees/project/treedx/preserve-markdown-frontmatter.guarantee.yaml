@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.project.treedx.preserve-markdown-frontmatter.730
+journeyIndex: 730
+type: project
+subtype: treedx
+journey: Preserve Markdown Frontmatter Through TreeDX
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Preserve complete structured Markdown and MDX frontmatter consistently through TreeDX repository and graph operations.
+status: planned
+dependencies: { journeys: [], guarantees: [] }
+actors: { allowed: [authenticated_user, project_manager], forbidden: [unauthorized_user] }
+devices: { required: [desktop_chromium] }
+gates: [core, security, release]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: false, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit: { required: false, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [guarantee_report, treedx_content_ref] }
+notes: ["TreeDX package tests are authoritative until an integrated API verifier is registered."]

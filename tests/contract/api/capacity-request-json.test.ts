@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../src/api/capacity/database.ts';
+import { describe,expect,it } from 'vitest';
+import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../src/api/capacity/database.ts';
+import { installCapacityRoutes } from '../../../src/api/capacity/routes/index.ts';
 import { installCapacityOperatorRoutes } from '../../../src/api/capacity/routes/support/operator.ts';
 import { readCapacityRequestObject } from '../../../src/api/capacity/routes/support/request-json.ts';
-import { installCapacityRoutes } from '../../../src/api/capacity/routes/index.ts';
 
 function decoderApp(optional = false) {
 	const app = new Hono();

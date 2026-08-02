@@ -1,6 +1,5 @@
+import { deployRailwayServiceInstance,ensureRailwayEnvironment,ensureRailwayGeneratedServiceDomain,ensureRailwayProject,ensureRailwayService,ensureRailwayServiceInstanceConfiguration,ensureRailwayServiceVolume,listRailwayVariables,normalizeRailwayEnvironmentName,upsertRailwayVariables } from '@treeseed/sdk';
 import { randomBytes } from 'node:crypto';
-import { deployRailwayServiceInstance, ensureRailwayEnvironment, ensureRailwayGeneratedServiceDomain, ensureRailwayProject, ensureRailwayService, ensureRailwayServiceInstanceConfiguration, ensureRailwayServiceVolume, listRailwayVariables, normalizeRailwayEnvironmentName, upsertRailwayVariables } from '@treeseed/sdk';
-import { env } from '../../index.js';
 
 export function treeDxSlug(value, fallback = 'treedx') {
     const slug = String(value ?? '')

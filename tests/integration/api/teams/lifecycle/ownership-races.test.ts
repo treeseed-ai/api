@@ -1,9 +1,9 @@
 import {
-	createTestPostgresDatabase,
-	createTestStore,
-	describe,
-	expect,
-	it,
+createTestPostgresDatabase,
+createTestStore,
+describe,
+expect,
+it,
 } from '../../../../support/api-harness.ts';
 
 async function teamWithTwoOwners() {
@@ -39,7 +39,15 @@ async function teamWithTwoOwners() {
 			params: ['race-binding-b', 'race-membership-b', await store.roleIdForKey('team_owner'), timestamp],
 		},
 	]);
-	return { store, teamId: team.id, firstId: first.id, secondId: 'race-membership-b' };
+	const members = await store.listTeamMembers(team.id);
+	return {
+		store,
+		teamId: team.id,
+		firstId: first.id,
+		firstVersion: members.find((member) => member.id === first.id)!.updatedAt,
+		secondId: 'race-membership-b',
+		secondVersion: members.find((member) => member.id === 'race-membership-b')!.updatedAt,
+	};
 }
 
 describe('transactional last-owner protection', () => {
@@ -65,8 +73,8 @@ describe('transactional last-owner protection', () => {
 	it('prevents concurrent owner demotions from leaving a team without an owner', async () => {
 		const fixture = await teamWithTwoOwners();
 		const results = await Promise.all([
-			fixture.store.updateTeamMemberRole(fixture.teamId, fixture.firstId, 'contributor'),
-			fixture.store.updateTeamMemberRole(fixture.teamId, fixture.secondId, 'contributor'),
+			fixture.store.updateTeamMemberRole(fixture.teamId, fixture.firstId, 'contributor', fixture.firstVersion),
+			fixture.store.updateTeamMemberRole(fixture.teamId, fixture.secondId, 'contributor', fixture.secondVersion),
 		]);
 		const owners = (await fixture.store.listTeamMembers(fixture.teamId))
 			.filter((member) => member.roles.includes('team_owner'));
@@ -78,8 +86,8 @@ describe('transactional last-owner protection', () => {
 	it('prevents concurrent owner removals from leaving a team without an owner', async () => {
 		const fixture = await teamWithTwoOwners();
 		const results = await Promise.all([
-			fixture.store.removeTeamMember(fixture.teamId, fixture.firstId),
-			fixture.store.removeTeamMember(fixture.teamId, fixture.secondId),
+			fixture.store.removeTeamMember(fixture.teamId, fixture.firstId, fixture.firstVersion),
+			fixture.store.removeTeamMember(fixture.teamId, fixture.secondId, fixture.secondVersion),
 		]);
 		const owners = (await fixture.store.listTeamMembers(fixture.teamId))
 			.filter((member) => member.roles.includes('team_owner'));

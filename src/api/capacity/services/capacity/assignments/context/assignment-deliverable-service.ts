@@ -1,4 +1,4 @@
-import type { AgentArtifactManifest, DecisionAssignmentGraphRecord, DeliverableContractRecord, DeliverableManifestRecord } from '@treeseed/sdk/agent-capacity';
+import type { AgentArtifactManifest,DecisionAssignmentGraphRecord,DeliverableContractRecord,DeliverableManifestRecord } from '@treeseed/sdk/agent-capacity';
 import { validateAgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';

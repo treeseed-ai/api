@@ -1,5 +1,5 @@
 import YAML from 'yaml';
-import { createLocalSeedStore, slugKey, generatedKey, seededKey, exportMetadata, maybeAssign, pruneNullish, sortBy, normalizeExportEnvironments } from '../index.js';
+import { createLocalSeedStore,exportMetadata,generatedKey,maybeAssign,normalizeExportEnvironments,pruneNullish,seededKey,slugKey,sortBy } from '../index.js';
 
 export async function exportSeedWithStore(input) {
     const diagnostics = [];
@@ -40,43 +40,12 @@ export async function exportSeedWithStore(input) {
                     ...(team.profileSummary ? { profileSummary: team.profileSummary } : {}),
                     ...(exportMetadata(team.metadata) ? { metadata: exportMetadata(team.metadata) } : {}),
                 }],
-            repositoryHosts: [],
             projects: [],
             hubRepositories: [],
             products: [],
             catalogArtifacts: [],
         },
     };
-    const repositoryHostKeyById = new Map();
-    for (const host of (await input.store.listRepositoryHosts(team.id, { includePlatform: false })).sort(sortBy((host) => host.provider, (host) => host.name))) {
-        const key = seededKey(host.metadata, generatedKey('repository-host', team.slug, host.provider, host.name));
-        repositoryHostKeyById.set(host.id, key);
-        const resource: Record<string, unknown> = {
-            key,
-            team: teamKey,
-            provider: host.provider,
-            name: host.name,
-            ownership: host.ownership,
-            organizationOrOwner: host.organizationOrOwner,
-            defaultVisibility: host.defaultVisibility,
-            status: host.status,
-        };
-        maybeAssign(resource, 'accountLabel', host.accountLabel);
-        maybeAssign(resource, 'softwareRepositoryNameTemplate', host.softwareRepositoryNameTemplate);
-        maybeAssign(resource, 'contentRepositoryNameTemplate', host.contentRepositoryNameTemplate);
-        if (Object.keys(host.branchPolicy ?? {}).length > 0)
-            resource.branchPolicy = host.branchPolicy;
-        if (Object.keys(host.workflowPolicy ?? {}).length > 0)
-            resource.workflowPolicy = host.workflowPolicy;
-        if ((host.allowedProjectKinds ?? []).length > 0)
-            resource.allowedProjectKinds = host.allowedProjectKinds;
-        if (typeof host.metadata?.credentialRef === 'string')
-            resource.credentialRef = host.metadata.credentialRef;
-        const metadata = exportMetadata(host.metadata);
-        if (metadata)
-            resource.metadata = metadata;
-        manifest.resources.repositoryHosts.push(resource);
-    }
     const projects = (await input.store.listTeamProjects(team.id)).sort(sortBy((project) => project.slug));
     const projectKeyById = new Map();
     const chosenRepositoryRoleByProjectId = new Map();
@@ -133,8 +102,6 @@ export async function exportSeedWithStore(input) {
                 currentBranch: repository.currentBranch ?? undefined,
                 status: repository.status ?? undefined,
             };
-            if (repository.repositoryHostId && repositoryHostKeyById.has(repository.repositoryHostId))
-                resource.repositoryHost = repositoryHostKeyById.get(repository.repositoryHostId);
             maybeAssign(resource, 'submodulePath', repository.submodulePath);
             if (Object.keys(repository.accessPolicy ?? {}).length > 0)
                 resource.accessPolicy = repository.accessPolicy;

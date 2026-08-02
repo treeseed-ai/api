@@ -1,11 +1,11 @@
 import {
-	type DecisionExecutionInput,
-	type DecisionExecutionInputRecord,
-	type DecisionExecutionInputStatus,
-	type DecisionExecutionReadinessStatus,
-	type DecisionPlanningStatus,
-	type PlanningInputRequest,
-	type PlanningInputRequestStatus,
+type DecisionExecutionInput,
+type DecisionExecutionInputRecord,
+type DecisionExecutionInputStatus,
+type DecisionExecutionReadinessStatus,
+type DecisionPlanningStatus,
+type PlanningInputRequest,
+type PlanningInputRequestStatus,
 } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe,expect,it,vi } from 'vitest';
 import { CapacityOperationsQueryService } from '../../../../../src/api/capacity/services/capacity/capacity-core/capacity-operations-query-service.ts';
 
 function page<T>(items: T[]) {

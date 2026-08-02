@@ -1,6 +1,6 @@
 import { resolveApiDatabaseUrl } from '@treeseed/sdk/api';
-import { createMarketPostgresDatabase } from '../../../../api/support/market-postgres.js';
 import { MarketControlPlaneStore } from '../../../../api/persistence/store.js';
+import { createMarketPostgresDatabase } from '../../../../api/support/market-postgres.js';
 
 export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
     const localEnv: Record<string, string | undefined> = {
@@ -27,7 +27,7 @@ export async function createLocalSeedStore(projectRoot, env = process.env) {
         repoRoot: projectRoot,
         projectId: localEnv.TREESEED_PROJECT_ID ?? 'treeseed-market',
         authSecret: localEnv.TREESEED_AUTH_SECRET ?? localEnv.TREESEED_API_AUTH_SECRET ?? localEnv.TREESEED_BETTER_AUTH_SECRET ?? 'treeseed-local-seed-auth-secret',
-        assertionSecret: localEnv.TREESEED_WEB_ASSERTION_SECRET ?? localEnv.TREESEED_API_WEB_ASSERTION_SECRET ?? 'treeseed-local-seed-assertion-secret',
+		assertionSecret: localEnv.TREESEED_API_WEB_ASSERTION_SECRET ?? localEnv.TREESEED_WEB_ASSERTION_SECRET ?? 'treeseed-local-seed-assertion-secret',
         serviceId: localEnv.TREESEED_WEB_SERVICE_ID ?? localEnv.TREESEED_API_SERVICE_ID ?? 'web',
         serviceSecret: localEnv.TREESEED_WEB_SERVICE_SECRET ?? localEnv.TREESEED_API_WEB_SERVICE_SECRET ?? localEnv.TREESEED_API_SERVICE_SECRET ?? 'treeseed-local-seed-service-secret',
     }, db);

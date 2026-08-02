@@ -24,33 +24,14 @@ export function teamCurrentPayload(action, team) {
     };
 }
 
-export function repositoryHostCurrentPayload(action, host) {
-    if (!host)
-        return null;
-    return {
-        teamKey: action.payload.teamKey,
-        provider: host.provider,
-        name: host.name,
-        ownership: host.ownership,
-        accountLabel: host.accountLabel ?? null,
-        organizationOrOwner: host.organizationOrOwner,
-        defaultVisibility: host.defaultVisibility ?? 'private',
-        softwareRepositoryNameTemplate: host.softwareRepositoryNameTemplate ?? null,
-        contentRepositoryNameTemplate: host.contentRepositoryNameTemplate ?? null,
-        branchPolicy: emptyObjectAsNull(host.branchPolicy),
-        workflowPolicy: emptyObjectAsNull(host.workflowPolicy),
-        allowedProjectKinds: host.allowedProjectKinds?.length ? host.allowedProjectKinds : null,
-        status: host.status ?? 'active',
-        credentialRef: host.metadata?.credentialRef ?? action.payload.credentialRef ?? null,
-        metadata: action.payload.metadata,
-    };
-}
-
 export async function projectCurrentPayload(store, action, project) {
     if (!project)
         return null;
     const repository = action.payload.repository;
     const hubRepository = (await store.listHubRepositories(project.id)).find((entry) => entry.role === repository.role) ?? null;
+    const knowledgeBinding = await store.getProjectTreeDxLibrary(project.id);
+    if (!knowledgeBinding?.repositoryId)
+        return null;
     return {
         teamKey: action.payload.teamKey,
         slug: project.slug,
@@ -80,7 +61,6 @@ export function hubRepositoryCurrentPayload(action, repository) {
         return null;
     return {
         projectKey: action.payload.projectKey,
-        repositoryHostKey: action.payload.repositoryHostKey ?? null,
         role: repository.role,
         provider: repository.provider,
         owner: repository.owner,

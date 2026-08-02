@@ -1,7 +1,7 @@
-import { DataType, newDb } from 'pg-mem';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
 import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.js';
 import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.js';
 import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
@@ -62,7 +62,7 @@ describe('seeded team visibility reconciliation', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 1,
-				unchanged: 19,
+				unchanged: 15,
 				skip: 0,
 			});
 			expect((await store.getTeamBySlug('treeseed'))?.metadata?.visibility).toBe('public');

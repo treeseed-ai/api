@@ -1,5 +1,5 @@
-import { type GovernanceBundle, type GovernanceDecisionOption, type GovernanceReviewItem } from '../projects/projects-core/governance-projection.js';
-import { safeArray, compact, latestDate, titleFromKind, describeState, toneForSeverity, objectValue } from './index.js';
+import { type GovernanceBundle,type GovernanceDecisionOption,type GovernanceReviewItem } from '../projects/projects-core/governance-projection.js';
+import { compact,describeState,latestDate,objectValue,safeArray,titleFromKind,toneForSeverity } from './index.js';
 
 export function approvalItem(bundle: GovernanceBundle, approval: any): GovernanceReviewItem {
     const id = compact(approval?.id, 'approval');

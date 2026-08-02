@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import type { StructuredAgentEstimateRecord, StructuredAgentEstimateStatus } from '@treeseed/sdk/agent-capacity';
+import type { StructuredAgentEstimateRecord,StructuredAgentEstimateStatus } from '@treeseed/sdk/agent-capacity';
 import { validateStructuredAgentEstimate } from '@treeseed/sdk/agent-capacity';
+import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { StructuredAgentEstimateRepository } from '../../repositories/support/structured-estimate.ts';

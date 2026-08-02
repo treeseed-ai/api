@@ -1,12 +1,12 @@
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { decodeDurableJsonObject } from '../../durable-json.ts';
 import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
-import type { CapacityWorkdayAgent } from '../capacity/workdays/policy/workday-agent-policy.ts';
-import { listCapacityWorkdayContentArtifactRefs, type CapacityWorkdayResolvedIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
-import type { WorkdayProject } from '../capacity/workdays/policy/workday-project-policy.ts';
-import { listTreeDxPlanningDemandSources, type TreeDxPlanningDemandSource } from '../capacity/workdays/content/workday-content-demand-source.ts';
-import type { WorkdayTreeDxConnectionStore } from '../capacity/workdays/treedx/workday-treedx-connection.ts';
 import { serializeResearchWorkflowRow } from '../../repositories/operations/research-workflow.ts';
+import { listCapacityWorkdayContentArtifactRefs,type CapacityWorkdayResolvedIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
+import { listTreeDxPlanningDemandSources,type TreeDxPlanningDemandSource } from '../capacity/workdays/content/workday-content-demand-source.ts';
+import type { CapacityWorkdayAgent } from '../capacity/workdays/policy/workday-agent-policy.ts';
+import type { WorkdayProject } from '../capacity/workdays/policy/workday-project-policy.ts';
+import type { WorkdayTreeDxConnectionStore } from '../capacity/workdays/treedx/workday-treedx-connection.ts';
 
 export interface PlanningDemandSource {
 	sourceType: 'objective' | 'question' | 'proposal' | 'decision-review' | 'knowledge-gap' | 'release-readiness'

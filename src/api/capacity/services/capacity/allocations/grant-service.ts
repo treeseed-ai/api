@@ -1,11 +1,11 @@
+import { validateCapacityGrantV2,type CapacityGrantStatus,type CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import { decodeCapacityPageCursor,encodeCapacityPageCursor,normalizeCapacityPageLimit,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { randomUUID } from 'node:crypto';
-import { validateCapacityGrantV2, type CapacityGrantV2, type CapacityGrantStatus } from '@treeseed/sdk/agent-capacity/allocation';
-import { decodeCapacityPageCursor, encodeCapacityPageCursor, normalizeCapacityPageLimit, type CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { decodeDurableJsonArray } from '../../../durable-json.ts';
 import { serializeCapacityGrantRow } from '../../../repositories/capacity/allocations/grant.ts';
 import { CapacityOperationReceiptRepository } from '../../../repositories/operations/operation-receipt.ts';
-import { decodeDurableJsonArray } from '../../../durable-json.ts';
 
 export class CapacityGrantService {
 	private readonly operationReceipts: CapacityOperationReceiptRepository;

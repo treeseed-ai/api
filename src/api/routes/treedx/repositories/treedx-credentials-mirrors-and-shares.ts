@@ -1,7 +1,90 @@
+import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { resolveGitHubCredentialAuthority } from '../../../../security/provider-credential-authority.ts';
+
+function sameSecret(left: string, right: string) {
+	const a = Buffer.from(left);
+	const b = Buffer.from(right);
+	return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function deliveryAssociatedData(input: { deliveryId: string; operation: string; allowedHost: string; refspecDigest: string; nodeId: string }) {
+	return Buffer.from([input.deliveryId, input.operation, input.allowedHost, input.refspecDigest, input.nodeId].join('\n'));
+}
+
+export function deliveryScopeMatches(delivery: any, requested: any) {
+	return requested.allowedHost === delivery.allowed_host
+		&& requested.refspecDigest === delivery.refspec_digest
+		&& requested.operation === delivery.operation_kind;
+}
+
+export function sealCredential(nodePublicKey: string, credential: Record<string, unknown>, scope: {
+	deliveryId: string; operation: string; allowedHost: string; refspecDigest: string; nodeId: string;
+}) {
+	const rawNodeKey = Buffer.from(nodePublicKey, 'base64');
+	if (rawNodeKey.length !== 32) throw new Error('TreeDX supplied an invalid ephemeral encryption key.');
+	const nodeKey = createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b656e032100', 'hex'), rawNodeKey]), format: 'der', type: 'spki' });
+	const ephemeral = generateKeyPairSync('x25519');
+	const shared = diffieHellman({ privateKey: ephemeral.privateKey, publicKey: nodeKey });
+	const key = Buffer.from(hkdfSync('sha256', shared, Buffer.from(scope.deliveryId), Buffer.from('treedx-credential-delivery-v1'), 32));
+	const nonce = randomBytes(12); const aad = deliveryAssociatedData(scope); const plaintext = JSON.stringify(credential);
+	const cipher = createCipheriv('chacha20-poly1305', key, nonce, { authTagLength: 16 });
+	cipher.setAAD(aad, { plaintextLength: Buffer.byteLength(plaintext) });
+	const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+	const ephemeralDer = ephemeral.publicKey.export({ format: 'der', type: 'spki' });
+	key.fill(0); shared.fill(0);
+	return { algorithm: 'x25519-hkdf-sha256-chacha20-poly1305/v1',
+		ephemeralPublicKey: Buffer.from(ephemeralDer).subarray(-32).toString('base64'), nonce: nonce.toString('base64'),
+		ciphertext: ciphertext.toString('base64'), tag: cipher.getAuthTag().toString('base64') };
+}
+
 export function installTreedxCredentialsMirrorsAndSharesRoutes(context: any) {
-	const { AGENT_PROMOTION_APPROVAL_DECISIONS, AGENT_TASK_SIGNATURES, AUTH_PROVIDERS, AgentSdk, CHECKOUT_COMMERCIAL_OFFER_MODES, CHECKOUT_OFFER_MODES, CHECKOUT_SUBSCRIPTION_OFFER_MODES, DatabaseAuthProvider, FEEDBACK_SCREENSHOT_TYPES, FEEDBACK_TYPES, GITHUB_ACTIONS_OIDC_ISSUER, HOST_KIND_SESSION_KEYS, LOCAL_CONTENT_COLLECTIONS, LOCAL_CONTENT_DEFAULTS, LOCAL_DECISION_TYPE_VALUES, LOCAL_WORK_CONTENT_COLLECTIONS, MARKET_EMAIL_CONFIRMATION_PREFIX, MAX_FEEDBACK_MESSAGE_LENGTH, MAX_FEEDBACK_SCREENSHOT_BYTES, MarketControlPlaneStore, NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, PLAINTEXT_HOST_CREDENTIAL_FIELD_NAMES, PLATFORM_OPERATION_SCOPES, POSTGRES_AUTH_PROVIDER_ID, PROPOSAL_VERDICT_DECISION_TYPES, RemoteClient, RemoteOperationsClient, RemoteSdkClient, SENSITIVE_QUERY_PARAM_PATTERN, STRIPE_PRICE_MIRROR_OFFER_MODES, STRIPE_PRODUCT_MIRROR_OFFER_MODES, OperationsSdk, accountDeletionBlockers, accountDeletionConfirmationMatches, addRelationValue, apiDatabaseUrl, app, appendLaunchDeploymentEvent, appendLaunchPhaseProjection, appendProjectDeletionProgress, applyCommerceRefundState, applyContentPublishResult, applyHubLaunchFailure, applyHubLaunchResult, applySeedWithStore, artifactDownloadPayload, authConfig, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authProviderId, authTokenTimestampMillis, authTokenTimestampSeconds, availabilityAttempts, availabilityRateLimit, backfillUserEmailAddresses, base64Url, base64urlJson, bearerTokenFromRequest, buildCommerceCheckoutMetadata, buildCommerceStripeMetadata, buildGovernanceApprovalProjection, buildGovernanceProjection, buildInfrastructureProjection, buildKnowledgeArtifactProjection, buildKnowledgeProjection, buildLaunchCredentialOverlay, buildWorkdayProjection, canSkipCloudflareCleanupAfterFailedLaunch, canonicalArchitectureTopology, capacity, centralMarketProfile, checkoutGroupKey, checkoutGroupKind, checkoutGroupStatus, ciOperationForAction, cleanFeedbackString, cloudflareDeletionAuthenticationMessage, cloudflareDnsDomainsForHostValidation, cloudflareErrorMessage, cloudflareProjectDeletionResourceNames, cloudflareRequestForLaunchPreflight, cloudflareRequestForProjectDeletion, collectHostingAuditCredentialOverlay, commerceCheckoutError, commerceErrorResponse, commerceStripeLookupKey, commerceStripePriceParams, commerceStripeProductParams, commerceStripeSyncContext, config, configuredAuthProviderId, confirmationUrlFor, consumeReauthentication, contentRelationPolicy, createApiExtension, createCapacityControlPlane, createCipheriv, createClientEncryptedEscrowService, createCommerceCheckoutRun, createCommerceCheckoutRunForServiceContract, createDecipheriv, createDecisionFromProposals, createGitHubActionsSecretEnclave, createGitHubAppAdapter, createHash, createHmac, createMarketEmailConfirmation, createMarketPostgresDatabase, createMarketWebSession, createOrResendUserEmailAddress, createProjectHostCredentialSessions, createProjectInternalClient, createPublicKey, createRelatedLocalContentRecord, createStripeConnectService, createTreeDxCredentialBridge, createVerify, credentialSessionKey, credentialSessionSecret, db, decodeRouteParam, decorateJob, decoratePlatformOperation, decryptCredentialSessionPayload, decryptHostConfig, decryptTeamHostForLaunch, decryptedHostConfigSummary, defaultConfig, deleteCloudflareDnsRecordsForProject, deleteCloudflareProjectResources, deleteTeamCapacityAggregate, derivePlatformOperationNavigation, deriveProjectHostBindingsView, domainInZone, encryptCredentialSessionPayload, encryptedHostPayloadLooksValid, enqueueTreeDxProvisionOperation, ensureCommerceStripeCustomer, ensureMarketCredentialSchema, ensurePrincipal, entitlementRenewalStateFromSubscription, enumValue, exchangeProviderIdentity, executeInline, executeProjectApi, executeSdkOperation, existsSync, exportSeedWithStore, exposeAuthTokenForTests, fallbackRemoteCapability, findById, findDispatchCapability, getSiteAuthConfig, getUserEmailAddress, githubOidcJwksCache, githubRequestForProjectDeletion, grantCommerceEntitlementsForOrder, handleCommerceInvoiceWebhook, handleCommercePaymentIntentWebhook, handleCommerceSubscriptionWebhook, hasRecordedCloudflareRuntimeResources, hashMarketPassword, hostBindingRequiresUnlock, hostKindForBinding, hubRepositoryPolicies, inferZoneNameForDomain, installApiRequestLogger, installCapacityRoutes, installProjectDeploymentRoutes, isLocalAcceptanceServicePrincipal, isLoopbackUrl, isPlatformOperationTerminal, isTeamApiPrincipal, isValidPersonalThemeDraft, jsonError, jsonThrownError, launchCapabilityPreset, launchPlannerRepositoryTopology, listCloudflareNamedResources, listManagedHostsFromConfig, listUserEmailAddresses, loadGitHubOidcJwks, loadInfrastructureSeedState, loadKnowledgeContentEntries, loadNotificationPreferences, loadProjectHostBindingContext, loadTemplateCatalog, localAcceptanceAdminToken, localAcceptanceAuthEnabled, localContentPath, localContentRoot, logRequests, managedCloudflareConfigMissing, markdownToPlainProjectSummary, marketAuthContext, marketEmailTokenHash, marketProfilesForTeams, mergeCapability, mergeStringConfig, mkdir, nonSecretLaunchJobInput, normalizeAppearancePreference, normalizeAuditHostKinds, normalizeBaseUrl, normalizeCheckoutQuantity, normalizeCiEnvironment, normalizeDomainName, normalizeEmail, normalizeLocalContentInput, normalizeMarketProfile, normalizeNotificationPreferences, normalizeProjectDomainInput, normalizeProjectLaunchHostBindings, normalizeProviderCredentialConfig, normalizeRelationArray, normalizeRepositoryContentInput, normalizeRepositoryRelationArray, normalizeRepositorySlug, normalizeSeedEnvironments, normalizeTemplateLaunchRequirements, normalizeTemplateId, normalizeUsername, normalizedCloudflareKvNamespaceReference, operationTokenSecret, optionalTrimmedString, orderStatusFromPaymentGroup, parseBase64urlJson, parseBooleanEnvValue, parseJsonObject, parseYaml, passwordResetUrlFor, patchLaunchIntentForCredentialOverlay, paymentGroupStatusFromPaymentIntent, pbkdf2Sync, persistProjectHostBindingOperationMetadata, personalThemeFromRow, plaintextHostCredentialFieldPaths, planKnowledgeHubLaunch, planProjectHostBindingOperation, planSeedWithStore, platformOperationMutationError, principalCanManageCommerceProduct, principalHasGlobalPlatformRole, principalHasPermission, principalIsSeedAdmin, privateKnowledgeAuditPayload, processCommerceStripeWebhook, projectAllowedCiRepositories, projectApiConnection, projectAppHref, projectDeletionBlockerRows, projectDeletionConfirmationMatches, projectDeletionHostname, projectDeletionOperation, projectHostBindingMetadata, projectHostResponsePayload, providerConfigFor, providerCredentialValuesForAudit, providerJwksCache, publicPaymentGroups, randomBytes, randomUUID, readCapacityRequestObject, readFile, readJsonOrFormBody, readLocalContentRecord, recordContentNotificationEvent, recordFeedbackSubmission, recordPrivateKnowledgeAudit, redactCommerceOwnershipWorkflow, redactCommerceServiceRequestForBuyer, redactedRequestTarget, refreshCommercePaymentGroupState, refreshCommerceStripeAccount, rejectPlaintextHostCredentialFields, rejectProjectSecretUnlockMaterial, relative, remainingRefundableAmount, repositoryContentRelationPolicy, repositoryInventoryWithPlatform, requestClientIp, requestSessionMetadata, requireCatalogItemAccess, requireCommerceCapacityInquiryAccess, requireCommerceCapacityListingAccess, requireCommerceOfferAccess, requireCommerceProductAccess, requireCommerceVendorForStripe, requireConfiguredServiceCredential, requireConnectedProjectRuntime, requirePlatformRunner, requireProjectAccess, requireProjectRunner, requireSeedApplyAccess, requireSeedPlanAccess, requireSellerTeamAccess, requireServiceBuyerAccess, requireServiceParticipantAccess, requireServiceSellerAccess, requireTeamAccess, requireVendorOrderManager, resolve, resolveAgentArtifactBucket, resolveAgentTaskSignature, resolveApiConfig, resolveAuthApprovalBaseUrl, resolveCloudflareZoneForLaunchPreflight, resolveCommerceCheckoutItem, resolveFulfillmentArtifact, resolveLaunchTemplateRequirements, resolveOrderItemForRefund, resolvePlatformRepositoryDescriptor, resolvePlatformRunnerSecret, resolveProjectDeletionCloudflareZone, resolveProjectLaunchHostBindings, resolvePublicTreeDxTeam, resolveStripeEnvironment, resolveStripePublishableKey, resolveStripeWebhookSecret, resolveManagedCloudflareHostConfigFromConfig, resolveUiProjectionContext, resourceRowsFromLaunch, retryApiLaunchBootstrapFromRequest, rm, runProjectDeletionApiDestroy, runProjectLaunchApiBootstrap, runHostingAudit, runtime, runtimeMarketAuthProvider, runtimeProviders, safeFeedbackClient, safeFeedbackContext, safeFeedbackScreenshot, safePlatformOperationOutput, safePrivateKnowledgeSlug, safeTokenEquals, sanitizeLaunchResultForStorage, sanitizedReturnTo, scheduleBackgroundBootstrap, seedActor, seedCreatesMissingTeams, seedExistingTeamIds, selectDispatchTarget, sendAuthEmail, sendEmailConfirmation, sendTeamInviteEmail, sendWelcomeEmail, serializeFrontmatter, serializeUserEmailAddress, setPrimaryEmailAddress, sharedSdk, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, shouldLogApiRequests, signEditorialPreviewToken, signOperationToken, slugifyContent, slugifyRepositoryContent, sourceFromProjectDetails, store, stripeAccountMissingError, stripeAccountToConnectedAccountPatch, stripeClientSecret, stripeCommerceUrl, stripeConfiguredError, stripeConnectService, stripeMetadataValue, stripePriceTermsDrift, stripeRefundStatus, stripeTimestampToIso, stripeVendorApprovalError, subscriptionClientSecret, subscriptionStatusFromStripe, syncCommerceOfferStripeProduct, syncCommercePriceStripePrice, syncCommerceSubscriptionFromStripe, syncPrimaryEmailCaches, teamInviteAcceptUrlFor, timingSafeEqual, trimmedHeaderValue, uiRuntimeLocals, uniqueCloudflareKvNamespaceReferences, uniqueRelationArray, unknownKeys, unwrapLaunchOperationOutput, unwrapOperationPayload, updateCheckoutCompletionFromGroup, updateLaunchDeployments, validateCiRefForEnvironment, validateFeedbackAccess, validateMarketPassword, validateProjectSlug, validatePublicUsername, validateTeamHostCredentialPayload, verifiedEmailCount, verifyCloudflareDnsWriteForLaunch, verifyGitHubOidcToken, verifyMarketPassword, verifyOperationToken, verifyProviderIdToken, webAuthPayload, webSessionData, writeFile, writeLocalContentRecord, writeParsedLocalContentRecord, yamlLines, yamlScalar } = context;
-	const { issueTreeDxGitHubCredential } = context;
-	app.post('/v1/internal/treedx/credentials/github', issueTreeDxGitHubCredential);
+	const { app, jsonError, requireTeamAccess, store, runtime } = context;
+	app.post('/v1/internal/credential-deliveries/consume', async (c: any) => {
+		const expected = String(runtime?.resolved?.config?.TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION
+			?? process.env.TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION ?? '');
+		const authorization = String(c.req.header('authorization') ?? '');
+		const assertion = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+		if (!expected || !sameSecret(assertion, expected)) return jsonError(c, 401, 'Credential delivery authorization failed.');
+		const nodeId = String(c.req.header('x-treedx-node-id') ?? '');
+		const body = await c.req.json().catch(() => ({}));
+		const deliveryId = String(body.deliveryId ?? '');
+		const delivery = await store.first(
+			`SELECT d.*, g.credential_authority_id, g.repository_binding_id
+			 FROM remote_credential_deliveries d JOIN remote_git_operation_grants g ON g.id = d.grant_id
+			 WHERE d.id = ?`, [deliveryId],
+		);
+		if (!delivery || delivery.node_id !== nodeId || delivery.status !== 'ready' || delivery.delivery_mode !== 'sealed'
+			|| Date.parse(delivery.expires_at) <= Date.now()) return jsonError(c, 404, 'Credential delivery is unavailable.');
+		if (delivery.allowed_host !== 'github.com') return jsonError(c, 403, 'Credential delivery host is not permitted.');
+		if (!deliveryScopeMatches(delivery, body)) return jsonError(c, 403, 'Credential delivery scope does not match the Git operation.');
+		const now = new Date().toISOString();
+		const consumed: any = await store.run(
+			`UPDATE remote_credential_deliveries SET status = 'consumed', consumed_at = ?, updated_at = ?
+			 WHERE id = ? AND node_id = ? AND status = 'ready' AND expires_at > ?`,
+			[now, now, deliveryId, nodeId, now],
+		);
+		if (Number(consumed?.meta?.changes ?? 0) !== 1) return jsonError(c, 409, 'Credential delivery was already consumed.');
+		try {
+			const credential = await resolveGitHubCredentialAuthority({
+				store, authorityId: delivery.credential_authority_id,
+				repositoryBindingId: delivery.repository_binding_id, capability: 'repository-hosting',
+				fetchImpl: runtime?.resolved?.config?.fetchImpl,
+			});
+			await store.run(`UPDATE remote_git_operation_grants SET status = 'consumed', updated_at = ? WHERE id = ?`, [now, delivery.grant_id]);
+			await store.recordAuditEvent({ eventType: 'provider.credential.delivered', actorType: 'service', actorId: nodeId,
+				targetType: 'remote_credential_delivery', targetId: deliveryId,
+				data: { operationId: delivery.operation_id, repositoryBindingId: delivery.repository_binding_id,
+					authorityScheme: credential.authorityScheme, expiresAt: credential.expiresAt } });
+			c.header('cache-control', 'private, no-store');
+			return c.json({ ok: true, payload: sealCredential(String(body.nodePublicKey ?? ''),
+				{ type: 'token', username: credential.username, token: credential.token, expiresAt: credential.expiresAt },
+				{ deliveryId, operation: body.operation, allowedHost: body.allowedHost, refspecDigest: body.refspecDigest, nodeId }) });
+		} catch (error) {
+			await store.run(`UPDATE remote_credential_deliveries SET status = 'failed', updated_at = ? WHERE id = ?`, [now, deliveryId]);
+			await store.run(`UPDATE remote_git_operation_grants SET status = 'failed', updated_at = ? WHERE id = ?`, [now, delivery.grant_id]);
+			return jsonError(c, 409, error instanceof Error ? error.message : 'Credential authority failed.');
+		}
+	});
 	
 	app.get('/v1/teams/:teamId/treedx/mirrors', async (c) => {
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');

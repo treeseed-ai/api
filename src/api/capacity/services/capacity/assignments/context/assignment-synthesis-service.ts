@@ -1,13 +1,13 @@
+import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import type { WorkdayProject } from '../../workdays/policy/workday-project-policy.ts';
-import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
-import { assignNextCompiledDemand } from '../planning/assignment-function.ts';
-import { compileProviderWorkdayDemand } from '../../../build/demand-compiler.ts';
 import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
+import { compileProviderWorkdayDemand } from '../../../build/demand-compiler.ts';
 import { resolveProviderSynthesisContext } from '../../providers/provider-synthesis-context-service.ts';
+import type { WorkdayProject } from '../../workdays/policy/workday-project-policy.ts';
 import type { ConfiguredWorkspaceInput } from '../../workdays/treedx/workday-treedx-workspace-service.ts';
+import { assignNextCompiledDemand } from '../planning/assignment-function.ts';
 
 export interface ProviderSynthesisRequest extends Record<string, unknown> {
 	sessionId?: string | null;

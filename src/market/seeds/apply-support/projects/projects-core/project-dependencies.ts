@@ -1,6 +1,7 @@
 import { mergeSeedMetadata } from '../../index.js';
+import { ensureProjectKnowledgeBinding } from './project-knowledge-binding.js';
 
-export async function ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt }) {
+export async function ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt, env, localOnly, dependencyState }) {
     if (action.kind !== 'project')
         return [];
     const projectId = ids.projects.get(action.key) ?? action.existing?.id;
@@ -28,38 +29,16 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
         });
         repairs.push({ kind: 'hubRepository', projectId, role: repository.role });
     }
-    const hosting = await store.getProjectHosting(projectId);
-    const connection = await store.getProjectConnection(projectId);
-    if (!hosting) {
-        await store.upsertProjectHosting(projectId, {
-            kind: 'self_hosted_project',
-            registration: 'optional',
-            sourceRepoOwner: repository.owner,
-            sourceRepoName: repository.name,
-            sourceRepoUrl: repository.gitUrl,
-            sourceRepoWorkflowPath: '.github/workflows/deploy.yml',
-            executionOwner: 'project_runner',
-            metadata: {
-                ...metadata,
-                source: 'seed',
-                seededConnection: true,
-            },
-        });
-        repairs.push({ kind: 'projectHosting', projectId });
-    }
-    else if (!connection) {
-        await store.upsertProjectHosting(projectId, {
-            kind: hosting.kind,
-            registration: hosting.registration,
-            marketBaseUrl: hosting.marketBaseUrl,
-            sourceRepoOwner: hosting.sourceRepoOwner,
-            sourceRepoName: hosting.sourceRepoName,
-            sourceRepoUrl: hosting.sourceRepoUrl,
-            sourceRepoWorkflowPath: hosting.sourceRepoWorkflowPath,
-            executionOwner: hosting.metadata?.executionOwner ?? 'project_runner',
-            metadata: hosting.metadata,
-        });
-        repairs.push({ kind: 'projectConnection', projectId });
+    if (localOnly === true) {
+        repairs.push(await ensureProjectKnowledgeBinding({
+            store,
+            projectId,
+            teamId,
+            projectSlug: action.payload.slug,
+            contentPath: action.payload.architecture?.contentPath,
+            env,
+            dependencyState,
+        }));
     }
     return repairs;
 }

@@ -1,15 +1,15 @@
 import type { WorkdayCapacityEnvelopeRecord } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
+import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../database.ts';
 import { decodeDurableJsonObject } from '../../../durable-json.ts';
-import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../database.ts';
-import { CapacityOperationReceiptRepository } from '../../operations/operation-receipt.ts';
 import {
-	assertCapacityWorkdayParametersSafe,
-	assertCapacityWorkdayTransition,
-	capacityWorkdayStatus,
-	capacityWorkdayTimestampField,
-	type CapacityWorkdayStatus,
+assertCapacityWorkdayParametersSafe,
+assertCapacityWorkdayTransition,
+capacityWorkdayStatus,
+capacityWorkdayTimestampField,
+type CapacityWorkdayStatus,
 } from '../../../services/capacity/workdays/lifecycle/workday-lifecycle-service.ts';
+import { CapacityOperationReceiptRepository } from '../../operations/operation-receipt.ts';
 
 type JsonRecord = Record<string, unknown>;
 type Row = Record<string, unknown>;

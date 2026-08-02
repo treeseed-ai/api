@@ -1,12 +1,12 @@
-import { randomUUID } from 'node:crypto';
 import type {
-	CapacityWorkdayDemandRecord,
-	CapacityWorkdayDemandSource,
-	CapacityWorkdayDemandStatus,
+CapacityWorkdayDemandRecord,
+CapacityWorkdayDemandSource,
+CapacityWorkdayDemandStatus,
 } from '@treeseed/sdk/agent-capacity';
-import { decodeDurableJsonObject } from '../../../durable-json.ts';
+import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { decodeDurableJsonObject } from '../../../durable-json.ts';
 
 type Row = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;

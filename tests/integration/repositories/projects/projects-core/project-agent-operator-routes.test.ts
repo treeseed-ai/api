@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { Hono } from 'hono';
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { Hono } from 'hono';
+import { describe,expect,it } from 'vitest';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { installProjectAgentOperatorRoutes } from '../../../../../src/api/capacity/routes/projects/projects-core/project-agent-operator.ts';
 
@@ -44,6 +44,32 @@ describe('project agent operator routes', () => {
 		const response = await app.request('/v1/projects/project-a/agent-mode-runs?limit=201');
 		expect(response.status).toBe(400);
 		expect(await response.json()).toMatchObject({ ok: false, code: 'capacity_page_invalid' });
+	});
+
+	it('projects activity without repeated execution context and preserves agent messages', async () => {
+		const app = new Hono();
+		const store = {
+			async listAgentModeRunsPage() {
+				return {
+					items: [{
+						id: 'message-a', status: 'running', selectedInput: { repeated: 'large context' },
+						outputs: { status: 'message_recorded', metadata: {
+							message: { payload: { item: { type: 'agent_message', text: 'Live editorial update' } } },
+							workPackage: { instructions: 'write', context: { coreObjective: 'objective', treeDxEvidence: [{ body: 'omit me' }] } },
+						} },
+					}],
+					page: { limit: 200, hasMore: false, nextCursor: null },
+				};
+			},
+		} as unknown as CapacityGovernanceDatabase;
+		installProjectAgentOperatorRoutes(app, { store, async requireProjectAccess() { return {}; } });
+		const response = await app.request('/v1/projects/project-a/agent-mode-runs?projection=activity');
+		expect(response.status).toBe(200);
+		const body = await response.json() as { payload: { items: Array<Record<string, unknown>> } };
+		expect(body.payload.items[0]).not.toHaveProperty('selectedInput');
+		expect(body.payload.items[0]).not.toHaveProperty('outputs.metadata.workPackage.context.treeDxEvidence');
+		expect(body.payload.items[0]).toHaveProperty('outputs.metadata.message.payload.item.text', 'Live editorial update');
+		expect(body.payload.items[0]).toHaveProperty('outputs.metadata.workPackage.context.coreObjective', 'objective');
 	});
 
 	it('pages assignment timeline telemetry without embedding the full mode-run history', async () => {

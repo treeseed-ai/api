@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { describe, expect, it } from 'vitest';
-import { installProjectDiagnosticsRoutes } from '../../../../../src/api/capacity/routes/projects/projects-core/project-diagnostics.ts';
+import { describe,expect,it } from 'vitest';
 import type { CapacityProviderAccessEnv } from '../../../../../src/api/capacity/provider-access-middleware.ts';
+import { installProjectDiagnosticsRoutes } from '../../../../../src/api/capacity/routes/projects/projects-core/project-diagnostics.ts';
 
 function application(store: Record<string, unknown>, access = async () => ({ response: null })) {
 	const app = new Hono();

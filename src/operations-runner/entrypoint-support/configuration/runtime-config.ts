@@ -1,6 +1,6 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { resolveApiDatabaseUrl } from '@treeseed/sdk/api';
+import { mkdir,readFile,rm,writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { readArg } from '../index.js';
 
 export function env(name, fallback = null) {
@@ -47,6 +47,7 @@ export async function loadConfig({ requireSecrets = true }: any = {}) {
         environment: env('TREESEED_PLATFORM_RUNNER_ENVIRONMENT', marketId === 'prod' ? 'production' : marketId),
         port: Number(env('PORT', '0')),
         capacityWorkdayMaintenanceIntervalMs: Math.max(1000, Number(env('TREESEED_CAPACITY_WORKDAY_MAINTENANCE_INTERVAL_MS', '30000')) || 30000),
+		feedbackRetentionIntervalMs: Math.max(60_000, Number(env('TREESEED_FEEDBACK_RETENTION_INTERVAL_MS', '3600000')) || 3600000),
     };
     if (requireSecrets) {
         const missing = config.apiDatabaseUrl
@@ -69,6 +70,7 @@ export async function loadConfig({ requireSecrets = true }: any = {}) {
 export function loadHealthConfig() {
     return {
         port: Number(env('PORT', '0')),
+        runnerSecret: env('TREESEED_PLATFORM_RUNNER_SECRET'),
         dataDir: env('TREESEED_PLATFORM_RUNNER_DATA_DIR', resolve(process.cwd(), '.treeseed/operations-runner')),
     };
 }

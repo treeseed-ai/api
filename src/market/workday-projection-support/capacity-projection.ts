@@ -1,5 +1,5 @@
-import { compact, safeArray } from '../operations/operational-artifacts.js';
-import { workdayRef, numberValue, numberOrNull } from './index.js';
+import { compact,safeArray } from '../operations/operational-artifacts.js';
+import { numberOrNull,numberValue,workdayRef } from './index.js';
 
 export function capacityProjection(bundle: any) {
     const ledgerEntries = safeArray(bundle.ledgerEntries);

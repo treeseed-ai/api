@@ -1,14 +1,14 @@
-import { randomUUID } from 'node:crypto';
 import {
-	validateCapacityAllocationSetV2,
-	type CapacityAllocationSetV2,
+validateCapacityAllocationSetV2,
+type CapacityAllocationSetV2,
 } from '@treeseed/sdk/agent-capacity/allocation';
 import type { CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { decodeDurableJsonArray } from '../../../durable-json.ts';
 import { CapacityAllocationSetRepository } from '../../../repositories/capacity/allocations/allocation-set.ts';
 import { CapacityOperationReceiptRepository } from '../../../repositories/operations/operation-receipt.ts';
-import { decodeDurableJsonArray } from '../../../durable-json.ts';
 
 export class CapacityAllocationPolicyError extends Error {
 	constructor(

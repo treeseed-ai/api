@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { CapacityProviderIdentityRepository, serializeCapacityProviderMembershipView } from '../../../../../src/api/capacity/repositories/capacity/providers/provider-identity.ts';
+import { describe,expect,it } from 'vitest';
+import { CapacityProviderIdentityRepository,serializeCapacityProviderMembershipView } from '../../../../../src/api/capacity/repositories/capacity/providers/provider-identity.ts';
 
 function row(overrides: Record<string, unknown> = {}) {
 	return {

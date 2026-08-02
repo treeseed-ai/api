@@ -409,7 +409,7 @@ cases:
       envelope: { ok: true }
 
   - id: agent.graph.compile-decision-assignment-graph
-    actor: siteAdmin
+    actor: teamOwner
     method: POST
     path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs/compile
     body:
@@ -450,7 +450,7 @@ cases:
     method: GET
     path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs
     expect:
-      status: 200
+      status: 201
       envelope: { ok: true }
 
   - id: agent.graph.release-downstream-after-deliverable-approval
@@ -598,7 +598,7 @@ cases:
       envelope: { ok: true }
 
   - id: project.treedx.verify-treedx-access
-    actor: siteAdmin
+    actor: teamOwner
     method: GET
     path: ${apiVersionPath}/projects/${fixtures.project.id}/treedx-library
     expect:

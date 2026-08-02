@@ -1,14 +1,11 @@
-import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
-import { DataType, newDb } from 'pg-mem';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
-import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
-import { CapacityGrantService } from '../../../../../src/api/capacity/services/capacity/allocations/grant-service.ts';
-import { aggregateNativeReservationDebits } from '../../../../../src/api/capacity/services/capacity/accounting/native-reservation-aggregation-service.ts';
 import { decodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { DataType,newDb } from 'pg-mem';
+import { describe,expect,it } from 'vitest';
+import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
+import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
+import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
 const packageRoot = process.cwd();
 const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
     ? resolve(packageRoot, '../sdk/drizzle/market')

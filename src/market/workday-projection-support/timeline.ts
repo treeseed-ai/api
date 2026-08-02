@@ -1,6 +1,6 @@
-import { compact, compareDatesAsc, describeState, latestDate, safeArray, titleFromKind, toneForState, type OperationalArtifact } from '../operations/operational-artifacts.js';
 import { type OperationalTimelineEvent } from '../capacity/workdays/workday-projection.js';
-import { modeRunArtifactRefs, phaseForEvent, phaseForAssignment, categoryForPhase } from './index.js';
+import { compact,compareDatesAsc,describeState,latestDate,safeArray,titleFromKind,toneForState,type OperationalArtifact } from '../operations/operational-artifacts.js';
+import { categoryForPhase,modeRunArtifactRefs,phaseForAssignment,phaseForEvent } from './index.js';
 
 export function assignmentTimelineEvents(entry: any): OperationalTimelineEvent[] {
     const assignment = entry.assignment;

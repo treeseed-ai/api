@@ -1,22 +1,22 @@
 import type {
-	ProviderAssignmentExplanation,
-	ProviderAssignmentLifecycleRequest,
+ProviderAssignmentExplanation,
+ProviderAssignmentLifecycleRequest,
 } from '@treeseed/sdk/agent-capacity';
 import { classifyCapacityFailure } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import type { AgentFallbackOutputWrite } from '../../../../repositories/runtime/runtime-evidence.ts';
-import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
-import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
 import {
-	evaluateProviderAssignmentLeaseAuthority,
-	type ProviderLeasePrincipal,
+evaluateProviderAssignmentLeaseAuthority,
+type ProviderLeasePrincipal,
 } from '../../../accounts/lease-authority-service.ts';
+import { projectCompletedResearchWorkflow,type ResearchWorkflowProjectionStore } from '../../../projects/projects-core/research-workflow-projection-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../accounting/settlement-service.ts';
-import { projectCompletedAssignmentDeliverable, type AssignmentDeliverableStore } from '../context/assignment-deliverable-service.ts';
-import { projectCompletedResearchWorkflow, type ResearchWorkflowProjectionStore } from '../../../projects/projects-core/research-workflow-projection-service.ts';
-import { projectCompletedPlanningOutputs, type AssignmentPlanningOutputStore } from '../planning/assignment-planning-output-service.ts';
+import { projectCompletedAssignmentDeliverable,type AssignmentDeliverableStore } from '../context/assignment-deliverable-service.ts';
+import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
+import { projectCompletedPlanningOutputs,type AssignmentPlanningOutputStore } from '../planning/assignment-planning-output-service.ts';
+import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
 
 type JsonRecord = Record<string, unknown>;
 
