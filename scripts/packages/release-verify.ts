@@ -1,8 +1,9 @@
 import { spawn,spawnSync } from 'node:child_process';
-import { existsSync,readFileSync,readdirSync } from 'node:fs';
+import { existsSync,mkdtempSync,readFileSync,readdirSync,rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname,join,relative,resolve } from 'node:path';
 import { Readable } from 'node:stream';
+import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { DataType,newDb } from 'pg-mem';
 import { createPlatformApiApp } from '../../src/api/support/app.js';
@@ -202,8 +203,10 @@ async function runAcceptanceIfConfigured() {
 	}
 	console.log('Starting isolated local API acceptance target.');
 	const server = await startLocalAcceptanceApi();
+	const reportDirectory = mkdtempSync(join(tmpdir(), 'treeseed-api-acceptance-'));
+	const reportPath = join(reportDirectory, 'report.json');
 	try {
-		await runAsync('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', server.baseUrl], {
+		await runAsync('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', server.baseUrl, '--report-json', reportPath], {
 			TREESEED_ACCEPTANCE_SERVICE_ID: 'web',
 			TREESEED_ACCEPTANCE_SERVICE_SECRET: 'web-test-secret',
 			TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS: '1',
@@ -214,8 +217,16 @@ async function runAcceptanceIfConfigured() {
 			CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN ?? 'acceptance-cloudflare-token',
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? 'acceptance-cloudflare-account',
 		});
+	} catch (error) {
+		if (existsSync(reportPath)) {
+			const report = JSON.parse(readFileSync(reportPath, 'utf8')) as { results?: Array<{ id?: string; status?: number | null; failures?: string[] }> };
+			const failures = (report.results ?? []).filter((result) => (result.failures?.length ?? 0) > 0);
+			console.error(`Acceptance failures (${failures.length}): ${JSON.stringify(failures)}`);
+		}
+		throw error;
 	} finally {
 		await server.close();
+		rmSync(reportDirectory, { recursive: true, force: true });
 	}
 }
 

@@ -167,7 +167,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 						});
 							project = details.project ?? details;
 						}
-						await store.upsertProjectTreeDxLibrary(project.id, {
+						const projectTreeDxLibrary = await store.upsertProjectTreeDxLibrary(project.id, {
 							contentPath: 'src/content',
 							metadata: {
 								acceptance: true,
@@ -306,9 +306,14 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 							namespace,
 							password,
 							actors,
-							fixtures: {
+								fixtures: {
 									team: { id: team.id, slug: team.slug ?? teamSlug },
 									project: { id: project.id, slug: project.slug ?? projectSlug },
+									projectTreeDxLibrary: {
+										instanceId: projectTreeDxLibrary?.instanceId ?? null,
+										libraryId: projectTreeDxLibrary?.libraryId ?? null,
+										repositoryId: projectTreeDxLibrary?.repositoryId ?? null,
+									},
 									treeDx: { id: treeDx?.instance?.id ?? null, mirrorCount: treeDx?.mirrors?.length ?? 0 },
 								membership: { id: ownerMembership?.id ?? null },
 								memberships: membershipFixtures,
