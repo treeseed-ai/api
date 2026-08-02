@@ -15,6 +15,19 @@ function context(principal: Record<string, unknown>) {
 }
 
 describe('local acceptance team access', () => {
+	it('allows a platform administrator to inspect team-scoped operational state', async () => {
+		const principal = { id: 'admin-a', roles: ['platform_admin'] };
+		const principalCanAccessTeam = vi.fn(async () => false);
+
+		await expect(requireTeamAccess(
+			context(principal) as never,
+			{ principalCanAccessTeam } as never,
+			'team-a',
+			'projects:read:team',
+		)).resolves.toEqual({ principal });
+		expect(principalCanAccessTeam).not.toHaveBeenCalled();
+	});
+
 	it('allows the isolated live-acceptance service to manage its run-created team', async () => {
 		const principal = {
 			id: 'team-key:local-capacity-acceptance',

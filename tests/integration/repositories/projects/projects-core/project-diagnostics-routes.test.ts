@@ -20,16 +20,15 @@ describe('project capacity diagnostics routes', () => {
 		expect(environment).toBe('local');
 	});
 
-	it('allows a project runner and preserves the requested environment', async () => {
+	it('requires project authorization and preserves the requested environment', async () => {
 		let accessCalls = 0;
 		let environment = '';
 		const response = await application({
-			async authenticateRunner(_projectId: string, token: string) { return token === 'runner-a' ? {} : null; },
 			async getProjectCapacityDiagnostics(_projectId: string, selected: string) { environment = selected; return { ready: true }; },
-		}, async () => { accessCalls += 1; return { response: null }; }).request('/v1/projects/project-a/capacity-diagnostics?environment=local', { headers: { authorization: 'Bearer runner-a' } });
+		}, async () => { accessCalls += 1; return { response: null }; }).request('/v1/projects/project-a/capacity-diagnostics?environment=local');
 		expect(response.status).toBe(200);
 		expect(environment).toBe('local');
-		expect(accessCalls).toBe(0);
+		expect(accessCalls).toBe(1);
 	});
 
 	it('allows only a same-team provider principal with assignment read scope', async () => {

@@ -8,6 +8,9 @@ export async function requireTeamAccess(c, store, teamId, permission = null) {
     if (isLocalAcceptanceServicePrincipal(c, principal)) {
         return { principal };
     }
+    if (principalIsSeedAdmin(principal)) {
+        return { principal };
+    }
     if (!(await store.principalCanAccessTeam(principal, teamId))) {
         return {
             response: jsonError(c, 403, 'Permission denied.', { teamId }),

@@ -1,9 +1,7 @@
 import type { Context,Hono } from 'hono';
-import { bearerTokenFromRequest } from '../../../../accounts/request-auth.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 
 interface DiagnosticsStore extends CapacityGovernanceDatabase {
-	authenticateRunner(projectId: string, token: string): Promise<unknown | null>;
 	getProjectCapacityDiagnostics(projectId: string, environment: string): Promise<Record<string, unknown> | null>;
 	getProjectCapacitySummary(projectId: string, environment: string): Promise<Record<string, unknown> | null>;
 	getProjectCapacityRuntimeDiagnostics(projectId: string, teamId: string): Promise<Record<string, unknown> | null>;
@@ -35,12 +33,8 @@ export function installProjectDiagnosticsRoutes(app: Hono, options: ProjectDiagn
 
 	app.get('/v1/projects/:projectId/capacity-diagnostics', async (c) => {
 		const projectId = c.req.param('projectId');
-		const token = bearerTokenFromRequest(c.req.raw);
-		const runner = token ? await store.authenticateRunner(projectId, token) : null;
-		if (!runner) {
-			const access = await options.requireProjectAccess(c, options.store, projectId, 'projects:read:team');
-			if (access.response) return access.response;
-		}
+		const access = await options.requireProjectAccess(c, options.store, projectId, 'projects:read:team');
+		if (access.response) return access.response;
 		const environment = c.req.query('environment')?.trim() || 'staging';
 		const payload = await store.getProjectCapacityDiagnostics(projectId, environment);
 		return payload ? c.json({ ok: true, payload }) : notFound(c, 'Unknown project.');
