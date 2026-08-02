@@ -450,7 +450,7 @@ cases:
     method: GET
     path: ${apiVersionPath}/decisions/${fixtures.decision.id}/assignment-graphs
     expect:
-      status: 201
+      status: 200
       envelope: { ok: true }
 
   - id: agent.graph.release-downstream-after-deliverable-approval
