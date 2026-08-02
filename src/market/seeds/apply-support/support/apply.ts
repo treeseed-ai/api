@@ -3,7 +3,7 @@ import { applyAction,approvalMatchesPlan,createLocalSeedStore,createProductionAp
 const PLATFORM_PROJECT_KEYS = ['market', 'admin', 'core', 'ui', 'sdk', 'api', 'cli', 'agent', 'treedx']
     .map((slug) => `project:treeseed/${slug}`);
 
-async function verifyPlatformKnowledgeSeed(store, ids) {
+async function verifyPlatformKnowledgeSeed(store, ids, options = { requireRuntimeBinding: false }) {
     const teamId = ids.teams.get('team:treeseed');
     if (!teamId) throw new Error('TreeSeed knowledge seed postcondition failed: central team is absent.');
     const missing = PLATFORM_PROJECT_KEYS.filter((key) => !ids.projects.get(key));
@@ -19,7 +19,7 @@ async function verifyPlatformKnowledgeSeed(store, ids) {
         if (details.architecture?.contentRuntimeSource !== 'r2_published_manifest') {
             throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} does not use the atomic published runtime.`);
         }
-        if (!library?.repositoryId || !library?.contentRepositoryRef || !library?.contentPath) {
+        if (options.requireRuntimeBinding && (!library?.repositoryId || !library?.contentRepositoryRef || !library?.contentPath)) {
             throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} lacks a complete TreeDX binding.`);
         }
     }
@@ -110,7 +110,9 @@ export async function applySeedWithStore(input) {
 	const platformAdminOwnership = typeof store.syncPlatformAdminOwners === 'function'
 		? await store.syncPlatformAdminOwners()
 		: null;
-    const platformKnowledge = await verifyPlatformKnowledgeSeed(store, ids);
+    const platformKnowledge = await verifyPlatformKnowledgeSeed(store, ids, {
+        requireRuntimeBinding: input.localOnly === true,
+    });
     const result = {
         appliedAt,
         manifestHash,

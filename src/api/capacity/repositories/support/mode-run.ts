@@ -196,7 +196,10 @@ export async function persistAgentModeRun(
 			selected_input_json = EXCLUDED.selected_input_json,
 			capacity_envelope_json = EXCLUDED.capacity_envelope_json,
 			outputs_json = EXCLUDED.outputs_json,
-			trace_refs_json = (agent_mode_runs.trace_refs_json::jsonb || EXCLUDED.trace_refs_json::jsonb)::text,
+			trace_refs_json = CASE
+				WHEN EXCLUDED.trace_refs_json = '{}' THEN agent_mode_runs.trace_refs_json
+				ELSE (agent_mode_runs.trace_refs_json::jsonb || EXCLUDED.trace_refs_json::jsonb)::text
+			END,
 			usage_actual_json = EXCLUDED.usage_actual_json,
 			validation_json = EXCLUDED.validation_json,
 			fallback_reason = EXCLUDED.fallback_reason,

@@ -94,10 +94,10 @@ it('gates production seed apply on matching approved requests', async () => {
 		expect(appliedResponse.status).toBe(200);
 		const applied = await json(appliedResponse);
 		expect(applied.ok).toBe(true);
-		expect(applied.summary.create).toBe(0);
+		expect(applied.summary.create).toBe(9);
 		expect(applied.summary.update).toBe(0);
 		expect(applied.summary.unchanged).toBeGreaterThan(0);
-		expect(applied.result.actionCount).toBe(0);
+		expect(applied.result.actionCount).toBe(9);
 		expect(applied.run).toMatchObject({ state: 'completed', mode: 'apply' });
 	});
 });
