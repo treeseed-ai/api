@@ -36,9 +36,9 @@ it('tracks platform repository claims with runner ownership and safe release met
 		const claimRows = await store.all(`SELECT * FROM platform_repository_claims`);
 		expect(claimRows).toHaveLength(1);
 		expect(claimRows[0]).toMatchObject({
-			repository_key: 'local-treeseed-market',
+			repository_key: 'local/tmp/market',
 			runner_id: 'treeseed-ops-runner-01',
-			workspace_path: '/data/repositories/local-treeseed-market/repo',
+			workspace_path: `/data/operations/${operation!.id}/checkout`,
 			branch: 'staging',
 			claim_state: 'active',
 		});
@@ -74,6 +74,7 @@ it('tracks platform repository claims with runner ownership and safe release met
 				owner: 'treeseed',
 				name: 'market',
 				defaultBranch: 'staging',
+				cloneUrl: '/tmp/market',
 			},
 			workspaceRoot: '/data',
 		});

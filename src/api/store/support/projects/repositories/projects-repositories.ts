@@ -1,4 +1,5 @@
 import { parseJson } from '../../foundation.ts';
+import { resolveRepositoryIdentity } from '@treeseed/sdk';
 
 export function serializeHubRepository(row) {
     if (!row)
@@ -44,6 +45,9 @@ export function serializePlatformRepositoryClaim(row) {
 }
 
 export function platformRepositoryKey(repository: any = {}) {
+	if (typeof repository.cloneUrl === 'string' && repository.cloneUrl.trim()) {
+		return resolveRepositoryIdentity(repository.cloneUrl).canonicalKey;
+	}
     return [repository.provider ?? 'git', repository.owner ?? 'local', repository.name ?? 'repository']
         .join('-')
         .toLowerCase()
@@ -51,7 +55,13 @@ export function platformRepositoryKey(repository: any = {}) {
         .replace(/^-+|-+$/gu, '') || 'repository';
 }
 
-export function platformRepositoryWorkspacePath(workspaceRoot, repository: any = {}) {
+export function platformRepositoryWorkspacePath(workspaceRoot, repository: any = {}, operationId?: string) {
     const root = String(workspaceRoot ?? '/data').replace(/\/+$/u, '') || '/data';
-    return `${root}/repositories/${platformRepositoryKey(repository)}/repo`;
+	if (operationId) {
+		const safeOperationId = operationId.replace(/[^A-Za-z0-9_.-]+/gu, '-').replace(/^-+|-+$/gu, '');
+		if (!safeOperationId) throw new Error('Platform repository operation id is invalid.');
+		return `${root}/operations/${safeOperationId}/checkout`;
+	}
+	const storageKey = platformRepositoryKey(repository).replace(/[^a-z0-9.-]+/giu, '-').toLowerCase();
+	return `${root}/repositories/${storageKey}/repo`;
 }

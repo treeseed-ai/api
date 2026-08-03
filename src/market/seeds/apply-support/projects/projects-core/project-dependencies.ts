@@ -1,4 +1,4 @@
-import { mergeSeedMetadata } from '../../index.js';
+import { mergeSeedMetadata,projectSeedMetadata } from '../../index.js';
 import { ensureProjectKnowledgeBinding } from './project-knowledge-binding.js';
 
 export async function ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt, env, localOnly, dependencyState }) {
@@ -10,7 +10,7 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
     if (!projectId || !teamId || !repository)
         return [];
     const repairs = [];
-    const metadata = mergeSeedMetadata(action.existing?.metadata, action.payload.metadata, action, manifestHash, appliedAt);
+	const metadata = mergeSeedMetadata(projectSeedMetadata(action.existing?.metadata), action.payload.metadata, action, manifestHash, appliedAt);
     const repositories = await store.listHubRepositories(projectId);
     const existingRepository = repositories.find((entry) => entry.role === repository.role);
     if (!existingRepository) {

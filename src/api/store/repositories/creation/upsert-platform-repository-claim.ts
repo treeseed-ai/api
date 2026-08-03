@@ -19,7 +19,9 @@ export async function upsertPlatformRepositoryClaimMethod(this: MarketControlPla
                AND claim_state = 'active'
                AND lease_expires_at IS NOT NULL
                AND lease_expires_at <= ?`, [timestamp, repositoryKey, timestamp]);
-    const existing = await this.first(`SELECT * FROM platform_repository_claims
+    const existing = input.id
+		? await this.first(`SELECT * FROM platform_repository_claims WHERE id = ? AND claim_state = 'active' LIMIT 1`, [input.id])
+		: await this.first(`SELECT * FROM platform_repository_claims
 			 WHERE repository_key = ? AND runner_id = ? AND claim_state = 'active'
 			 LIMIT 1`, [repositoryKey, runnerId]);
     if (existing) {
@@ -49,7 +51,7 @@ export async function upsertPlatformRepositoryClaimMethod(this: MarketControlPla
         id,
         repositoryKey,
         runnerId,
-        input.workspacePath ?? platformRepositoryWorkspacePath(input.workspaceRoot ?? '/data', repository),
+        input.workspacePath ?? platformRepositoryWorkspacePath(input.workspaceRoot ?? '/data', repository, input.operationId),
         input.branch ?? repository.defaultBranch ?? null,
         input.commitSha ?? null,
         leaseExpiresAt,

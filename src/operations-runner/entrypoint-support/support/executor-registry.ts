@@ -43,6 +43,7 @@ export function createExecutorsForOptions(options: any = {}) {
             const result = await executePlatformRepositoryOperation(operation, input, {
                 workspaceRoot: context.workspaceRoot,
                 environment: context.environment,
+				operationId: context.operationId,
             }).catch(async (error) => {
                 if (error?.verification) {
                     await context.emit({

@@ -1,4 +1,4 @@
-import { emptyObjectAsNull } from '../index.js';
+import { emptyObjectAsNull,projectSeedMetadata } from '../index.js';
 
 function managedMetadata(desired, actual) {
     const desiredRecord = desired && typeof desired === 'object' && !Array.isArray(desired) ? desired : {};
@@ -49,7 +49,7 @@ export async function projectCurrentPayload(store, action, project) {
             }
             : null,
         architecture: project.metadata?.architecture,
-        metadata: action.payload.metadata,
+		metadata: managedMetadata(action.payload.metadata, projectSeedMetadata(project.metadata)),
     };
 }
 

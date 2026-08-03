@@ -1,4 +1,4 @@
-import { mergeSeedMetadata } from '../index.js';
+import { mergeSeedMetadata,projectSeedMetadata } from '../index.js';
 
 export async function applyAction({ action, store, ids, manifestHash, appliedAt, plan }) {
     if (action.action === 'skip' || action.action === 'unchanged')
@@ -25,12 +25,12 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
         ids.teams.set(action.key, team.id);
         return team;
     }
-    if (action.kind === 'project') {
+	if (action.kind === 'project') {
         const teamId = ids.teams.get(action.payload.teamKey);
         if (!teamId)
             throw new Error(`Missing team for ${action.key}.`);
-        const projectMetadata = {
-            metadata,
+		const projectMetadata = {
+			metadata: mergeSeedMetadata(projectSeedMetadata(action.existing?.metadata), action.payload.metadata, action, manifestHash, appliedAt),
             kind: action.payload.kind,
             repository: action.payload.repository,
             architecture: action.payload.architecture,

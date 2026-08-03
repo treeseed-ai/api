@@ -1,4 +1,4 @@
-import { actionIsUnchanged,catalogArtifactCurrentPayload,hubRepositoryCurrentPayload,productCurrentPayload,projectCurrentPayload,teamCurrentPayload } from '../index.js';
+import { actionIsUnchanged,catalogArtifactCurrentPayload,hubRepositoryCurrentPayload,productCurrentPayload,projectCurrentPayload,projectSeedMetadataRequiresMigration,teamCurrentPayload } from '../index.js';
 
 export function selectedActions(plan) {
     return plan.actions.filter((action) => action.action !== 'skip' && action.environments.some((environment) => plan.environments.includes(environment)));
@@ -51,9 +51,13 @@ export async function reconcilePlanWithStore(plan, store) {
             existing = productId ? await store.getCatalogArtifactVersion(productId, action.payload.version) : null;
             currentPayload = catalogArtifactCurrentPayload(action, existing);
         }
-        nextActions.push({
-            ...action,
-            action: currentPayload ? actionIsUnchanged(action, currentPayload) ? 'unchanged' : 'update' : 'create',
+		nextActions.push({
+			...action,
+			action: currentPayload
+				? action.kind === 'project' && projectSeedMetadataRequiresMigration(existing?.metadata)
+					? 'update'
+					: actionIsUnchanged(action, currentPayload) ? 'unchanged' : 'update'
+				: 'create',
             existing,
         });
     }

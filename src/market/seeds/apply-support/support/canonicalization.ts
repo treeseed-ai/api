@@ -62,6 +62,21 @@ export function mergeSeedMetadata(existingMetadata, desiredMetadata, action, man
     };
 }
 
+export function projectSeedMetadata(value) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	const { metadata,kind: _kind,repository: _repository,architecture: _architecture,...own } = value;
+	return {
+		...projectSeedMetadata(metadata),
+		...own,
+	};
+}
+
+export function projectSeedMetadataRequiresMigration(value) {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value)
+		&& value.metadata && typeof value.metadata === 'object' && !Array.isArray(value.metadata)
+		&& value.metadata.metadata && typeof value.metadata.metadata === 'object' && !Array.isArray(value.metadata.metadata));
+}
+
 export function slugKey(value) {
     return String(value ?? '')
         .trim()
