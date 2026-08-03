@@ -69,7 +69,7 @@ export async function proxyTreeDxJson(input: {
 			const grantResponse = await (input.fetchImpl ?? fetch)(`${baseUrl}/api/v1/policy/grants`, {
 				method: 'POST',
 				headers: { accept: 'application/json', authorization: `Bearer ${grantToken ?? token}`, 'content-type': 'application/json' },
-				body: JSON.stringify({ actorId: treeDxProxyActorId(env), tenantId: treeDxProxyTenantId(env), repoIds: [repoId], capabilities: ['repos:read', 'repos:write', 'files:read', 'files:write', 'files:search', 'graph:query', 'graph:refresh', 'workspace:create', 'git:read', 'git:diff', 'git:commit'], refs: ['*'], paths: ['**'] }),
+				body: JSON.stringify({ actorId: treeDxProxyActorId(env), tenantId: treeDxProxyTenantId(env), repoIds: [repoId], capabilities: ['repos:read', 'repos:write', 'files:read', 'files:write', 'files:search', 'graph:query', 'graph:refresh', 'workspace:create', 'git:read', 'git:diff', 'git:commit', 'git:fetch'], refs: ['*'], paths: ['**'] }),
 			});
 			const grantPayload = await readBoundedTreeDxJson(grantResponse);
 			if (!grantResponse.ok) throw new CapacityGovernanceError('treedx_repository_grant_failed', 'TreeDX repository was created but proxy capability grant failed.', grantResponse.status, { repositoryId: repoId, details: record(grantPayload).error ?? grantPayload });

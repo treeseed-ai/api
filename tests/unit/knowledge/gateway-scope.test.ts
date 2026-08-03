@@ -47,4 +47,23 @@ describe('knowledge gateway scope', () => {
 			'workspace:create', 'files:write', 'files:delete', 'git:commit',
 		]));
 	});
+
+	it('grants fetch only to exact refs used by the publication runner', async () => {
+		const store = {
+			config: { TREESEED_TREEDX_JWT_HS256_SECRET: 'test-secret-at-least-thirty-two-bytes' },
+			async getProjectTreeDxLibrary() {
+				return {
+					repositoryId: 'repo-one', contentPath: 'docs/src/content', contentRepositoryRef: 'refs/heads/main',
+					topology: { contentRepository: { treeDx: { baseUrl: 'http://127.0.0.1:4000' } } },
+				};
+			},
+		};
+		const connection = await resolveKnowledgeGatewayConnection(store, {
+			projectId: 'project-one', write: false, publishRefs: ['refs/heads/staging'],
+		});
+		const payload = tokenPayload((connection?.client as any).options.token);
+		expect(payload.treedx_refs).toEqual(['refs/heads/main', 'refs/heads/staging']);
+		expect(payload.treedx_capabilities).toEqual(expect.arrayContaining(['git:fetch', 'git:push']));
+		expect(payload.treedx_capabilities).not.toContain('files:write');
+	});
 });

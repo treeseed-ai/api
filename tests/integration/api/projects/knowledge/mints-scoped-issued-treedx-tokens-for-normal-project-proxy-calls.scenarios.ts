@@ -1,7 +1,7 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,vi,withEnv } from '../../../../support/api-harness.ts';
 
 describe('market api', () => {
-it('mints scoped TreeSeed-issued TreeDX tokens for normal project proxy calls', async () => {
+	it('mints scoped TreeSeed-issued TreeDX tokens for normal project proxy calls', async () => {
 		await withEnv({
 			TREESEED_TREEDX_JWT_HS256_SECRET: 'test-treedx-signing-secret',
 			TREEDX_JWT_HS256_SECRET: undefined,
@@ -58,6 +58,32 @@ it('mints scoped TreeSeed-issued TreeDX tokens for normal project proxy calls', 
 			});
 			expect(payload.treedx_repo_ids).not.toContain('*');
 			expect(payload.treedx_capabilities).not.toContain('policy:write');
+			fetchSpy.mockRestore();
+		});
+	});
+
+	it('grants repository fetch capability when the control plane creates a TreeDX repository', async () => {
+		await withEnv({ TREESEED_TREEDX_JWT_HS256_SECRET: 'test-treedx-signing-secret' }, async () => {
+			const db = createTestPostgresDatabase();
+			const store = createTestStore(db);
+			const app = createTestApp({ db, store });
+			const token = await authorizeApp(app);
+			const { team, project } = await createTeamAndProject(app, token, { slug: 'dx-create', name: 'DX Create' });
+			await store.upsertTeamTreeDx(team.id, { baseUrl: 'http://127.0.0.1:4012', status: 'active' });
+			await store.upsertProjectTreeDxLibrary(project.id, { libraryId: 'team-one/dx-create', repositoryId: 'repo_existing' });
+			const bodies: Record<string, unknown>[] = [];
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init = {}) => {
+				bodies.push(JSON.parse(String(init.body)));
+				const payload = String(input).endsWith('/api/v1/repos')
+					? { repo: { repoId: 'repo_new' } }
+					: { ok: true };
+				return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } });
+			});
+			const response = await app.request(`/v1/dx/projects/${project.id}/repos`, {
+				method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: '{}',
+			});
+			expect(response.status).toBe(200);
+			expect(bodies[1]).toMatchObject({ capabilities: expect.arrayContaining(['git:fetch']) });
 			fetchSpy.mockRestore();
 		});
 	});

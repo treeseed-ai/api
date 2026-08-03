@@ -68,9 +68,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		tenantId: text(store.config.TREESEED_TREEDX_PROXY_TENANT_ID, process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
 		repoIds: [repositoryId],
 		capabilities: input.maintenanceRefs?.length
-			? ['repos:read', 'files:read', 'git:read', 'git:diff', 'git:push', 'policy:write']
+			? ['repos:read', 'files:read', 'git:read', 'git:diff', 'git:fetch', 'git:push', 'policy:write']
 			: input.publishRefs?.length
-			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:push', 'graph:query', 'graph:refresh']
+			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:fetch', 'git:push', 'graph:query', 'graph:refresh']
 			: input.write
 			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit']
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query'],
