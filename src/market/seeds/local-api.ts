@@ -109,6 +109,7 @@ function planFromPayload(payload) {
 		environments: Array.isArray(payload.environments) ? payload.environments : [],
 		summary: payload.summary,
 		actions: Array.isArray(payload.actions) ? payload.actions : [],
+		recipes: Array.isArray(payload.recipes) ? payload.recipes : [],
 		diagnostics: Array.isArray(payload.diagnostics) ? payload.diagnostics : [],
 		manifestPath: '',
 	};
