@@ -68,7 +68,9 @@ async function registerProposalArtifacts(
 		projectId: assignment.projectId, runId: assignment.workDayId, capabilities: ['repos:read','files:read'],
 	});
 	if (!connection) throw new CapacityGovernanceError('assignment_proposal_treedx_unavailable', 'Proposal output could not be read through the project TreeDX binding.', 503, { assignmentId: assignment.id });
-	const client = new TreeDxClient({ ...connection, repoId: connection.repositoryId, timeoutMs: 15_000, fetch: connection.fetchImpl });
+	// Completion projects immutable agent output into governance. Under concurrent
+	// report collection, repository reads can exceed the interactive proxy timeout.
+	const client = new TreeDxClient({ ...connection, repoId: connection.repositoryId, timeoutMs: 60_000, fetch: connection.fetchImpl });
 	const workday = await store.getCapacityWorkdayRun(assignment.teamId, assignment.workDayId);
 	const registered: unknown[] = [];
 	for (const reference of proposalReferences) {
