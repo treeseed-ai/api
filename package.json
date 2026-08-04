@@ -94,7 +94,7 @@
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#33d84a8c44016021b07a1f40958c19ca7e5f6bda",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#a06163cdba88542aa8cb5b267e03b05ae60ba618",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.8.2",
     "libsodium-wrappers": "^0.7.16",

@@ -44,4 +44,19 @@ describe('assignment planning output projection', () => {
 		await expect(projectCompletedPlanningOutputs(store as never, proposalAssignment as never, { output: { metadata: { structuredEstimate: { ...proposalEstimate, proposalId: 'proposal-b' } } } }))
 			.rejects.toMatchObject({ code: 'assignment_planning_estimate_scope_invalid' });
 	});
+
+	it('keeps objective-linked discovery questions out of proposal feedback registration', async () => {
+		const discoveryAssignment = { ...assignment, decisionId: null, projectAgentClassId: 'project-a:evidence', decisionInput: { input: {} } };
+		const store = { getGovernanceProposal: vi.fn(), getStructuredAgentEstimate: vi.fn(), createStructuredAgentEstimate: vi.fn(), run: vi.fn() };
+		const artifactManifest = {
+			schemaVersion: 1, assignmentId: 'assignment-a', modeRunId: 'mode-a', teamId: 'team-a', projectId: 'project-a',
+			providerId: 'provider-a', mode: 'planning', agentClassId: 'project-a:evidence', agentId: 'engineer', handlerId: 'writer',
+			activityType: 'planning', status: 'completed', summary: 'Recorded a bounded evidence gap.', toolEvents: [],
+			contentReferences: [{ model: 'question', contentPath: 'src/content/questions/evidence-gap.mdx', receiptId: 'receipt-a', toolEventId: 'tool-a',
+				subjectId: 'objective-a', subjectField: 'relatedObjectives', artifactKind: 'planning_question', commitSha: 'commit-a' }],
+			verification: [], citations: [], signals: [], usage: [], diagnostics: [], createdAt: '2026-08-04T00:00:00.000Z',
+		};
+		await expect(projectCompletedPlanningOutputs(store as never, discoveryAssignment as never, { output: { artifactManifest } })).resolves.toBeNull();
+		expect(store.getGovernanceProposal).not.toHaveBeenCalled();
+	});
 });

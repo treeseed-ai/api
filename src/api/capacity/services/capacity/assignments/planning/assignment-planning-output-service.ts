@@ -61,7 +61,7 @@ async function registerProposalArtifacts(
 	if (!manifest) return [];
 	const proposalReferences = manifest.contentReferences.filter((reference) => reference.model === 'proposal' || reference.artifactKind === 'planning_proposal');
 	const feedbackReferences = manifest.contentReferences.filter((reference) => reference.artifactKind === 'proposal_feedback_note'
-		|| (reference.model === 'question' && Boolean(reference.subjectId)));
+		|| (reference.model === 'question' && reference.subjectField === 'relatedProposals' && Boolean(reference.subjectId)));
 	if (!proposalReferences.length && !feedbackReferences.length) return [];
 	if (!assignment.workDayId) throw new CapacityGovernanceError('assignment_proposal_workday_missing', 'Proposal output requires durable workday provenance.', 409, { assignmentId: assignment.id });
 	const connection = await resolveWorkdayTreeDxConnection(store, {
