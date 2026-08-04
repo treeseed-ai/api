@@ -99,12 +99,11 @@ function installRegistrationKeyRoutes(app: Hono, service: CapacityRegistrationSe
 }
 
 export function installCapacityGovernanceRoutes(app: Hono, options: CapacityGovernanceRouteOptions) {
+	const environment = String(options.config.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local');
 	const secretSource = options.config.capacityGovernanceSecret
 		?? options.config.TREESEED_CAPACITY_GOVERNANCE_SECRET
-		?? options.config.authSecret
 		?? process.env.TREESEED_CAPACITY_GOVERNANCE_SECRET
-		?? process.env.TREESEED_AUTH_SECRET;
-	const environment = String(options.config.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local');
+		?? (['local', 'test'].includes(environment) ? 'treeseed-local-capacity-governance-secret' : options.config.authSecret ?? process.env.TREESEED_AUTH_SECRET);
 	if (!secretSource && !['local', 'test'].includes(environment)) throw new Error('TREESEED_CAPACITY_GOVERNANCE_SECRET is required outside local/test environments.');
 	const rawSecret = String(secretSource ?? 'treeseed-local-capacity-governance-secret');
 	if (rawSecret.trim().length < 24 && !['local', 'test'].includes(environment)) throw new Error('TREESEED_CAPACITY_GOVERNANCE_SECRET must contain at least 24 characters.');
