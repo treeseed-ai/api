@@ -4,6 +4,7 @@ import { canonicalArtifactManifestReferences } from "../../../../domain/artifact
 import type { DurableCapacityWorkdayRun } from "../../../../repositories/capacity/workdays/workday-run.ts";
 import {
 compileCapacityWorkdayAssignmentIntent,
+capacityWorkdayRequiredArtifacts,
 type CapacityWorkdayAgent,
 type CapacityWorkdayAssignmentIntent,
 } from "../policy/workday-agent-policy.ts";
@@ -37,6 +38,10 @@ function array(value: unknown): unknown[] {
 
 function text(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function artifactKind(value: unknown): string {
+  return text(value).replace(/-/gu, "_");
 }
 
 function selectedObjective(run: DurableCapacityWorkdayRun): string {
@@ -193,20 +198,35 @@ export async function resolveCapacityWorkdayAssignmentIntent(
       ? `Workday purpose: ${workdayPurpose}\n\nAgent responsibility: ${configuredIntent.objective}`
       : configuredIntent.objective,
   };
-  if (intent.includeWorkdayArtifacts) {
-    const artifacts = await listCapacityWorkdayContentArtifactRefs(
+  const requiredArtifactKinds = capacityWorkdayRequiredArtifacts(agent);
+  const needsArtifacts = intent.includeWorkdayArtifacts
+    || requiredArtifactKinds.length > 0
+    || (intent.subjectModel === "proposal" && !intent.subjectId);
+  const artifacts = needsArtifacts
+    ? await listCapacityWorkdayContentArtifactRefs(
       store,
       run,
       project.id,
+    )
+    : [];
+  const requiredArtifacts = requiredArtifactKinds.length
+    ? artifacts.filter((artifact) => requiredArtifactKinds.includes(artifactKind(artifact.artifactKind)))
+    : [];
+  if (requiredArtifactKinds.some((kind) => !requiredArtifacts.some((artifact) => artifactKind(artifact.artifactKind) === kind))) {
+    throw new CapacityGovernanceError(
+      "capacity_workday_required_artifact_missing",
+      "A planning assignment became eligible without every required upstream artifact.",
+      409,
+      { projectId: project.id, workdayRunId: run.id, agentId: agent.slug, requiredArtifactKinds },
     );
-    return { ...intent, relatedArtifacts: artifacts.slice(0, 24) };
+  }
+  if (intent.includeWorkdayArtifacts || requiredArtifacts.length) {
+    const relatedArtifacts = intent.includeWorkdayArtifacts
+      ? artifacts.slice(0, 24)
+      : requiredArtifacts.slice(0, 24);
+    if (intent.subjectModel !== "proposal" || intent.subjectId) return { ...intent, relatedArtifacts };
   }
   if (intent.subjectModel !== "proposal" || intent.subjectId) return intent;
-  const artifacts = await listCapacityWorkdayContentArtifactRefs(
-    store,
-    run,
-    project.id,
-  );
   const proposal =
     artifacts.find((artifact) => artifact.model === "proposal") ??
     artifacts.find((artifact) => artifact.artifactKind === "planning_proposal");
@@ -228,5 +248,6 @@ export async function resolveCapacityWorkdayAssignmentIntent(
     subjectId: proposalId,
     subjectPath: proposal.contentPath,
     relatedArtifact: proposal,
+    relatedArtifacts: requiredArtifacts.length ? requiredArtifacts.slice(0, 24) : [proposal],
   };
 }
