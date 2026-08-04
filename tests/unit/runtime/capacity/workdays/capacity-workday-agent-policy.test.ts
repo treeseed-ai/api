@@ -93,6 +93,30 @@ describe('capacity workday agent policy', () => {
 		});
 	});
 
+	it('normalizes serialized null proposal subjects for workday artifact handoff', () => {
+		const intent = compileCapacityWorkdayAssignmentIntent({
+			slug: 'steward', contentPath: null, handler: 'estimate', projectAgentClassId: 'class', projectAgentClassSlug: 'steward',
+			purpose: 'Estimate the preceding proposal.', promptTask: 'estimating', outputContract: {},
+			planningIntent: { subjectModel: 'proposal', subjectId: 'null', artifactKind: 'agent_estimate' },
+			branchPolicy: {}, contentAccess: {}, planningPriority: null, planningAllocationPercent: null, activityType: 'estimating',
+		});
+		expect(intent.subjectId).toBeNull();
+	});
+
+	it('retains every enabled planning-compatible profile for one agent', () => {
+		const agents = capacityWorkdayAgentsFromClasses([{
+			id: 'review', slug: 'review', allowedModes: ['planning'], handlerRefs: { agents: [{ slug: 'reviewer', activities: {
+				planning: { handler: 'writer' }, reviewing: { handler: 'writer' }, reporting: { handler: 'reporter' },
+			} }] },
+		}]);
+		expect(agents.map((agent) => `${agent.slug}:${agent.activityType}`)).toEqual([
+			'reviewer:planning', 'reviewer:reporting', 'reviewer:reviewing',
+		]);
+		expect(compileCapacityWorkdayAssignmentIntent(agents.find((agent) => agent.activityType === 'reviewing')!)).toMatchObject({
+			includeWorkdayArtifacts: true,
+		});
+	});
+
 	it('excludes inactive and acting-only classes from planning participation', () => {
 		expect(capacityWorkdayAgentsFromClasses([
 			{ id: 'acting', status: 'active', allowedModes: ['acting'], handlerRefs: { agents: [{ slug: 'engineer', activities: { acting: { handler: 'actor' } } }] } },

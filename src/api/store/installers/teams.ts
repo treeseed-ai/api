@@ -9,6 +9,7 @@ import { roleIdForKeyMethod } from '../teams/contracts/role-id-for-key.ts';
 import { seedTeamRolesMethod } from '../teams/contracts/seed-team-roles.ts';
 import { teamIdsForPrincipalMethod } from '../teams/contracts/team-ids-for-principal.ts';
 import { syncPlatformAdminOwnersMethod } from '../teams/contracts/administration/sync-platform-admin-owners.ts';
+import { claimSeedTeamMembershipsForVerifiedEmailMethod,getSeedTeamMembershipClaimMethod,reconcileSeedTeamMembershipClaimMethod,retireUndeclaredSeedTeamMembershipClaimsMethod } from '../teams/contracts/seeding/seed-membership-claims.ts';
 import { teamPublicNameExistsMethod } from '../teams/contracts/team-public-name-exists.ts';
 import { createTeamApiKeyMethod } from '../teams/creation/create-team-api-key.ts';
 import { createTeamInviteMethod } from '../teams/creation/create-team-invite.ts';
@@ -87,6 +88,10 @@ import { updateTeamSettingsMethod } from '../teams/updates/update-team-settings.
 export function installTeamsStoreMethods(prototype: MarketControlPlaneStore) {
 	prototype.seedTeamRoles = seedTeamRolesMethod;
 	prototype.syncPlatformAdminOwners = syncPlatformAdminOwnersMethod;
+	prototype.getSeedTeamMembershipClaim = getSeedTeamMembershipClaimMethod;
+	prototype.reconcileSeedTeamMembershipClaim = reconcileSeedTeamMembershipClaimMethod;
+	prototype.claimSeedTeamMembershipsForVerifiedEmail = claimSeedTeamMembershipsForVerifiedEmailMethod;
+	prototype.retireUndeclaredSeedTeamMembershipClaims = retireUndeclaredSeedTeamMembershipClaimsMethod;
 	prototype.roleIdForKey = roleIdForKeyMethod;
 	prototype.bindRoleToMembership = bindRoleToMembershipMethod;
 	prototype.listRoleKeysForMembership = listRoleKeysForMembershipMethod;

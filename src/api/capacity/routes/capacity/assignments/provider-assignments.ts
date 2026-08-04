@@ -6,6 +6,7 @@ import { requireProviderPrincipal,type CapacityProviderAccessPrincipal } from '.
 import { observeWorkflowRun, queueRun, serializeWorkflowOperation,
 	serializeWorkflowOperationRun } from '../../../../routes/projects/operations/workflow-operations.ts';
 import { modeRunActivityEvent } from '../../../services/capacity/workdays/content/mode-run-activity-event.ts';
+import { redactTranscriptValue } from '../../support/workday-activity.ts';
 
 interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
 	leaseNextProviderAssignment(principal: CapacityProviderAccessPrincipal, input: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -35,6 +36,30 @@ function assertProviderOwnsAssignment(assignment: Record<string, unknown> | null
 
 function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function providerEventInput(assignment: Record<string, unknown>, body: Record<string, unknown>) {
+	const id = typeof body.id === 'string' ? body.id.trim() : '';
+	const eventType = typeof body.eventType === 'string' ? body.eventType.trim() : '';
+	const component = typeof body.component === 'string' ? body.component.trim() : '';
+	const message = typeof body.message === 'string' ? body.message.trim() : '';
+	const status = typeof body.status === 'string' ? body.status : 'recorded';
+	if (!/^[a-z0-9][a-z0-9_.:-]{0,159}$/u.test(id)) throw new CapacityGovernanceError('provider_runtime_event_id_invalid', 'Provider runtime event id is invalid.', 400);
+	if (!/^provider\.[a-z0-9_.-]{1,120}$/u.test(eventType)) throw new CapacityGovernanceError('provider_runtime_event_type_invalid', 'Provider runtime event type is invalid.', 400);
+	if (!['provider-manager', 'provider-runner', 'lease', 'execution-provider', 'recovery'].includes(component)) throw new CapacityGovernanceError('provider_runtime_event_component_invalid', 'Provider runtime event component is invalid.', 400);
+	if (!['recorded', 'active', 'completed', 'warning', 'error', 'failed'].includes(status)) throw new CapacityGovernanceError('provider_runtime_event_status_invalid', 'Provider runtime event status is invalid.', 400);
+	if (!message || message.length > 4_000) throw new CapacityGovernanceError('provider_runtime_event_message_invalid', 'Provider runtime event message must contain at most 4,000 characters.', 400);
+	const sanitized = redactTranscriptValue({ context: body.context, refs: body.refs, metrics: body.metrics }) as Record<string, unknown>;
+	if (JSON.stringify(sanitized).length > 262_144) throw new CapacityGovernanceError('provider_runtime_event_payload_too_large', 'Provider runtime event evidence exceeds 256 KiB.', 413);
+	return {
+		id: `provider-runtime:${String(assignment.id)}:${id}`, eventType, status,
+		title: eventType, message, assignmentId: assignment.id, projectId: assignment.projectId,
+		workdayId: assignment.workDayId, createdAt: body.createdAt,
+		context: { ...record(sanitized.context), component, agentId: assignment.agentId, agentClassId: assignment.projectAgentClassId,
+			handlerId: assignment.handlerId, capacityProviderId: assignment.capacityProviderId, runnerId: assignment.runnerId,
+			executionProviderId: assignment.executionProviderId, activityType: record(assignment.decisionInput).activityType },
+		refs: record(sanitized.refs), metadata: { severity: status === 'failed' || status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'info', metrics: record(sanitized.metrics), redactionStatus: 'sanitized' },
+	};
 }
 
 function workflowHandles(assignment: Record<string, unknown>) {
@@ -127,6 +152,19 @@ export function installProviderAssignmentRoutes(app: Hono, options: { store: Cap
 				await store.createCapacityWorkdayEvent(principal.teamId, workdayRunId, modeRunActivityEvent({ assignment, modeRun }));
 			}
 			return c.json({ ok: true, payload: modeRun }, { status: 201 });
+		} catch (error) { return errorResponse(c, error); }
+	});
+
+	app.post('/v1/provider/assignments/:assignmentId/events', async (c) => {
+		try {
+			const principal = requireProviderPrincipal(c, ['provider:assignments:write']);
+			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(principal.teamId, c.req.param('assignmentId')), principal, 'report runtime events for');
+			const workdayRunId = record(assignment.metadata).workdayRunId;
+			if (typeof workdayRunId !== 'string' || !workdayRunId || !store.createCapacityWorkdayEvent) {
+				throw new CapacityGovernanceError('provider_runtime_event_workday_required', 'Provider runtime events require a durable workday assignment.', 409);
+			}
+			const event = await store.createCapacityWorkdayEvent(principal.teamId, workdayRunId, providerEventInput(assignment, await readCapacityRequestObject(c)));
+			return c.json({ ok: true, payload: event }, { status: 201 });
 		} catch (error) { return errorResponse(c, error); }
 	});
 

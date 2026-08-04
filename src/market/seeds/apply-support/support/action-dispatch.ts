@@ -25,6 +25,15 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
         ids.teams.set(action.key, team.id);
         return team;
     }
+	if (action.kind === 'teamMembership') {
+		const teamId = ids.teams.get(action.payload.teamKey);
+		if (!teamId) throw new Error(`Missing team for ${action.key}.`);
+		const seed = action.payload.metadata?.seed ?? {};
+		return store.reconcileSeedTeamMembershipClaim({
+			seedName: String(seed.name ?? plan.seed), resourceKey: action.key, teamId,
+			email: action.payload.email, roles: action.payload.roles,
+		});
+	}
 	if (action.kind === 'project') {
         const teamId = ids.teams.get(action.payload.teamKey);
         if (!teamId)

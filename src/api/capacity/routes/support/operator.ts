@@ -12,6 +12,7 @@ import { CapacityOverrunService } from '../../services/capacity/accounting/overr
 import { CapacityOperatorEvidenceService } from '../../services/support/operator-evidence-service.ts';
 import { readCapacityRequestObject } from './request-json.ts';
 import { installOperatorActivityRoutes, installOperatorWorkdayRoutes } from './operator-workdays.ts';
+import { installOperatorAgentLabRoutes } from './operator-agent-lab.ts';
 
 export interface CapacityOperatorStore extends CapacityGovernanceDatabase {
 	listCapacityWorkdayRunsPage(teamId: string, filters: Record<string, unknown> & { limit: number; cursor: CapacityPageCursor | null }): Promise<CapacityPage<Record<string, unknown>>>;
@@ -40,6 +41,8 @@ export interface CapacityOperatorStore extends CapacityGovernanceDatabase {
 interface CapacityOperatorRouteOptions {
 	store: CapacityGovernanceDatabase;
 	requireTeamAccess(c: Context, store: CapacityGovernanceDatabase, teamId: string, permission: string): Promise<{ response?: Response | null; principal?: { id?: string } }>;
+	runtimeMarketAuthProvider?: { createServiceToken(input: { serviceId: string; name: string; roles?: string[]; permissions?: string[] }): Promise<{ id: string; serviceId: string; secret: string }> };
+	config?: { environment?: string };
 }
 
 function query(c: Context, name: string) {
@@ -104,10 +107,13 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 	const manage = (c: Context) => options.requireTeamAccess(c, options.store, c.req.param('teamId'), 'teams:manage:team');
 	const workdayDependencies = {
 		store, read, manage, query, page, notFound, operatorError,
+		runtimeMarketAuthProvider: options.runtimeMarketAuthProvider,
+		environment: options.config?.environment,
 		requireTeamAccess: (c: Context, teamId: string) => options.requireTeamAccess(c, options.store, teamId, 'projects:read:team'),
 	};
 	installOperatorWorkdayRoutes(app, workdayDependencies);
 	installOperatorActivityRoutes(app, workdayDependencies);
+	installOperatorAgentLabRoutes(app, workdayDependencies);
 
 	app.get('/v1/teams/:teamId/capacity/availability-sessions', async (c) => {
 		const access = await read(c); if (access.response) return access.response;

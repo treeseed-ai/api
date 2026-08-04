@@ -2,6 +2,7 @@ import {
 normalizeCapacityPageLimit,
 type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
+import { logicalModeRunSql } from '../../../../repositories/support/mode-run.ts';
 
 interface WorkdaySummaryDatabase {
 	first(query: string, values?: unknown[]): Promise<Record<string, unknown> | null>;
@@ -117,7 +118,7 @@ export async function aggregateWorkdaySummary(
 			   ON task_usage.assignment_id = assignment.id
 			 LEFT JOIN (
 				SELECT DISTINCT provider_assignment_id FROM agent_mode_runs
-				 WHERE usage_actual_json IS NOT NULL AND usage_actual_json <> '{}'
+				 WHERE usage_actual_json IS NOT NULL AND usage_actual_json <> '{}' AND ${logicalModeRunSql()}
 			 ) mode_usage ON mode_usage.provider_assignment_id = assignment.id
 			 WHERE assignment.work_day_id = ? AND assignment.status = 'completed'
 			   AND task_usage.assignment_id IS NULL AND mode_usage.provider_assignment_id IS NULL`,
@@ -132,7 +133,7 @@ export async function aggregateWorkdaySummary(
 				COALESCE(SUM(CASE WHEN mode_run.usage_actual_json IS NOT NULL AND mode_run.usage_actual_json <> '{}' THEN 1 ELSE 0 END), 0) AS usage_reported
 			 FROM agent_mode_runs mode_run
 			 JOIN capacity_provider_assignments assignment ON assignment.id = mode_run.provider_assignment_id
-			 WHERE assignment.work_day_id = ?`,
+			 WHERE assignment.work_day_id = ? AND ${logicalModeRunSql('mode_run')}`,
 			[input.workDayId],
 		),
 		database.first(
@@ -188,7 +189,7 @@ export async function aggregateWorkdaySummary(
 			   ON task_usage.assignment_id = assignment.id
 			 LEFT JOIN (
 				SELECT DISTINCT provider_assignment_id FROM agent_mode_runs
-				 WHERE usage_actual_json IS NOT NULL AND usage_actual_json <> '{}'
+				 WHERE usage_actual_json IS NOT NULL AND usage_actual_json <> '{}' AND ${logicalModeRunSql()}
 			 ) mode_usage ON mode_usage.provider_assignment_id = assignment.id
 			 WHERE assignment.work_day_id = ? AND assignment.status = 'completed'
 			   AND task_usage.assignment_id IS NULL AND mode_usage.provider_assignment_id IS NULL

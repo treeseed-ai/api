@@ -7,8 +7,8 @@ import { CapacityWorkdayDemandRepository } from '../../repositories/capacity/wor
 import { CapacityWorkdayParticipationRepository } from '../../repositories/capacity/workdays/workday-participation.ts';
 import { CapacityWorkdayRunRepository,type DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderLeasePrincipal } from '../accounts/lease-authority-service.ts';
-import { resolveCapacityWorkdayAssignmentIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
-import { capacityWorkdayAgentsFromClasses } from '../capacity/workdays/policy/workday-agent-policy.ts';
+import { listCapacityWorkdayProducedArtifactKinds,listCapacityWorkdaySignalCodes,resolveCapacityWorkdayAssignmentIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
+import { capacityWorkdayAgentsFromClasses,capacityWorkdayPlanningStage,capacityWorkdayRequiredArtifacts,capacityWorkdayRequiredSignals,type CapacityWorkdayPlanningStage } from '../capacity/workdays/policy/workday-agent-policy.ts';
 import {
 capacityWorkdayContentRoot,
 capacityWorkdayRepositoryId,
@@ -32,6 +32,29 @@ function text(value: unknown): string {
 }
 function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+const PROFILE_ORDER = ['planning', 'estimating', 'reviewing', 'reporting'];
+const PLANNING_STAGE_ORDER: CapacityWorkdayPlanningStage[] = ['discovery', 'synthesis', 'evaluation', 'closeout'];
+export function workdayProfileStageReady(activityType: string, configured: string[], completed: string[]) {
+	const position = PROFILE_ORDER.indexOf(activityType);
+	if (position < 1) return true;
+	const prior = [...configured].filter((profile) => PROFILE_ORDER.indexOf(profile) < position).sort((left, right) => PROFILE_ORDER.indexOf(right) - PROFILE_ORDER.indexOf(left))[0];
+	return !prior || completed.includes(prior);
+}
+export function workdayPlanningStageReady(stage: CapacityWorkdayPlanningStage, entries: Array<{ status: string; metadata: unknown }>) {
+	const position = PLANNING_STAGE_ORDER.indexOf(stage);
+	if (position < 1) return true;
+	return entries.filter((entry) => {
+		const candidate = PLANNING_STAGE_ORDER.indexOf(text(record(entry.metadata).planningStage) as CapacityWorkdayPlanningStage);
+		return candidate >= 0 && candidate < position;
+	}).every((entry) => entry.status === 'completed');
+}
+export function workdayReportingStageReady(activityType: string, entries: Array<{ status: string; metadata: unknown }>, actingActive: boolean) {
+	if (activityType !== 'reporting') return true;
+	const otherProfilesComplete = entries
+		.filter((entry) => text(record(entry.metadata).activityType) !== 'reporting')
+		.every((entry) => entry.status === 'completed');
+	return otherProfilesComplete && !actingActive;
 }
 export function capacityWorkdayContentBaseRef(environment: string, branchPolicy: Record<string, unknown>): string {
 	if (environment === 'local') return 'refs/heads/main';
@@ -81,20 +104,47 @@ async function compilePlanningDemands(
 	const { cycle, entries } = await participation.ensureOpenCycle({
 		teamId: run.teamId, projectId: project.id, workdayRunId: run.id, now,
 		agents: agents.map((agent) => ({
-			agentId: agent.slug, projectAgentClassId: agent.projectAgentClassId,
+			agentId: `${agent.slug}:${agent.activityType}`, projectAgentClassId: agent.projectAgentClassId,
 			eligible: Boolean(agent.projectAgentClassId && agent.handler),
 			reasonCode: agent.projectAgentClassId && agent.handler ? null : 'agent_activity_profile_invalid',
-			metadata: { activityType: agent.activityType, handlerId: agent.handler },
+			metadata: { agentId: agent.slug, activityType: agent.activityType, handlerId: agent.handler, planningStage: capacityWorkdayPlanningStage(agent) },
 		})),
 	});
 	const demandRepository = new CapacityWorkdayDemandRepository(store);
 	let created = 0;
+	let actingActive: boolean | null = null;
+	let artifactKinds: Set<string> | null = null;
+	let signalCodes: Set<string> | null = null;
 	for (const entry of entries.filter((value) => value.status === 'pending' && !value.demandId)) {
-		const agent = agents.find((candidate) => candidate.slug === entry.agentId);
+		const participationAgentId = text(record(entry.metadata).agentId) || entry.agentId;
+		const participationActivity = text(record(entry.metadata).activityType);
+		const agent = agents.find((candidate) => candidate.slug === participationAgentId && candidate.activityType === participationActivity);
 		if (!agent) continue;
+		const planningStage = capacityWorkdayPlanningStage(agent);
+		const configured = agents.filter((candidate) => candidate.slug === agent.slug).map((candidate) => candidate.activityType);
+		const completed = entries.filter((candidate) => candidate.status === 'completed' && text(record(candidate.metadata).agentId) === agent.slug).map((candidate) => text(record(candidate.metadata).activityType));
+		if (!workdayPlanningStageReady(planningStage, entries)) continue;
+		if (!workdayProfileStageReady(agent.activityType, configured, completed)) continue;
+		const requiredArtifacts = capacityWorkdayRequiredArtifacts(agent);
+		if (requiredArtifacts.length) {
+			artifactKinds ??= new Set(await listCapacityWorkdayProducedArtifactKinds(store,run,project.id));
+			if (requiredArtifacts.some((kind) => !artifactKinds?.has(kind))) continue;
+		}
+		const requiredSignals = capacityWorkdayRequiredSignals(agent);
+		if (requiredSignals.length) {
+			signalCodes ??= new Set(await listCapacityWorkdaySignalCodes(store,run,project.id));
+			if (requiredSignals.some((code) => !signalCodes?.has(code))) continue;
+		}
+		if (agent.activityType === 'reporting') {
+			if (actingActive === null) {
+				const row = await store.first(`SELECT COUNT(*) AS total FROM capacity_workday_demands WHERE workday_id = ? AND mode = 'acting' AND status NOT IN ('completed', 'failed', 'cancelled', 'blocked')`, [workdayId]);
+				actingActive = Number(row?.total ?? 0) > 0;
+			}
+			if (!workdayReportingStageReady(agent.activityType, entries, actingActive)) continue;
+		}
 		const intent = await resolveCapacityWorkdayAssignmentIntent(store, run, project, agent);
 		const source = await resolvePlanningDemandSource(store, run, project, agent, intent);
-		const idempotencyKey = `workday:${run.id}:${project.id}:cycle:${cycle.cycleNumber}:agent:${agent.slug}`;
+		const idempotencyKey = `workday:${run.id}:${project.id}:cycle:${cycle.cycleNumber}:agent:${agent.slug}:profile:${agent.activityType}`;
 		const demand = await demandRepository.create({
 			id: id('demand', idempotencyKey), teamId: run.teamId, projectId: project.id, workdayRunId: run.id, workdayId,
 			sourceType: source.sourceType, sourceId: source.sourceId, mode: 'planning',
@@ -107,9 +157,11 @@ async function compilePlanningDemands(
 				contentBaseRef: capacityWorkdayContentBaseRef(run.environment, agent.branchPolicy),
 				contentBranchPolicy: agent.branchPolicy,
 				contentAccess: agent.contentAccess,
+				inputContract: agent.inputContract,
+				outputContract: agent.outputContract,
 				cycle: cycle.cycleNumber,
 			},
-			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment }, availableAt: now, now,
+			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment, planningStage }, availableAt: now, now,
 		});
 		await participation.bindDemand(entry.id, demand.id, now);
 		created += 1;
@@ -160,7 +212,7 @@ export async function compileProviderWorkdayDemand(
 			const workdayId = await activeEnvelope(store, run, project.id);
 			if (!workdayId) continue;
 			compiledDemands += await compilePlanningDemands(store, run, project, workdayId, now);
-			compiledDemands += await compileActingDemands(store, run, project, workdayId, now);
+			if (run.parameters.planningOnly !== true) compiledDemands += await compileActingDemands(store, run, project, workdayId, now);
 		}
 	}
 	return { consideredRuns: runs.length, compiledDemands };

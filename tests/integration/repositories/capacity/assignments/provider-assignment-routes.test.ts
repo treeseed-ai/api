@@ -90,4 +90,28 @@ describe('provider assignment routes', () => {
 		expect(response.status).toBe(403);
 		expect(failed).toBe(false);
 	});
+
+	it('persists sanitized provider runtime events against the owning workday', async () => {
+		const events: Record<string, unknown>[] = [];
+		const response = await application({
+			async getProviderAssignment() { return {
+				id: 'assignment-a', teamId: 'team-a', projectId: 'project-a', capacityProviderId: 'provider-a',
+				workDayId: 'workday-a', agentId: 'guide-steward', projectAgentClassId: 'class-a', handlerId: 'writer',
+				decisionInput: { activityType: 'planning' }, metadata: { workdayRunId: 'run-a' },
+			}; },
+			async createCapacityWorkdayEvent(teamId: string, runId: string, input: Record<string, unknown>) {
+				events.push({ teamId, runId, input }); return input;
+			},
+		}).request('/v1/provider/assignments/assignment-a/events', {
+			method: 'POST', headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ id: 'lease-failed-1', eventType: 'provider.assignment.lease_renew_failed', status: 'failed', component: 'lease', message: 'Renewal rejected.', context: { accessToken: 'secret', attempt: 2 } }),
+		});
+		expect(response.status).toBe(201);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatchObject({ teamId: 'team-a', runId: 'run-a', input: {
+			id: 'provider-runtime:assignment-a:lease-failed-1', assignmentId: 'assignment-a',
+			eventType: 'provider.assignment.lease_renew_failed', status: 'failed',
+			context: { component: 'lease', accessToken: '<redacted>', attempt: 2 },
+		} });
+	});
 });

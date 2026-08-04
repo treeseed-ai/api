@@ -26,6 +26,18 @@ export async function reconcilePlanWithStore(plan, store) {
                 teamIds.set(action.key, existing.id);
             currentPayload = teamCurrentPayload(action, existing);
         }
+		if (action.kind === 'teamMembership') {
+			const seed = action.payload.metadata?.seed ?? {};
+			existing = await store.getSeedTeamMembershipClaim(seed.name, action.key);
+			currentPayload = existing ? {
+				teamKey: action.payload.teamKey,
+				email: existing.normalized_email,
+				roles: JSON.parse(existing.roles_json ?? '[]'),
+				missingUser: 'defer',
+				metadata: action.payload.metadata,
+			} : null;
+			if (existing?.status === 'removed') currentPayload = null;
+		}
         if (action.kind === 'project') {
             const teamId = teamIds.get(action.payload.teamKey);
             existing = teamId ? await store.getProjectByTeamAndSlug(teamId, action.payload.slug) : null;

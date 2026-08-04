@@ -1,4 +1,5 @@
 import { simulationEvidence } from '../../../store/governance/policy/support/simulation-evidence.ts';
+import { createProposalDiscussionContent } from './proposal-discussion-content.ts';
 
 export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 	const { app, isTeamApiPrincipal, jsonError, jsonThrownError, optionalTrimmedString, readJsonOrFormBody, requireProjectAccess, store } = context;
@@ -39,6 +40,7 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 						...proposal,
 						votes: await store.listGovernanceProposalVotes(proposal.id),
 						events: await store.listGovernanceEvents({ proposalId: proposal.id, limit: 100 }),
+						readiness: await store.governanceProposalReadiness(proposal.id),
 						decision: proposal.decisionId ? await store.getGovernanceDecision(proposal.decisionId) : null,
 					} });
 				});
@@ -89,10 +91,24 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 					if (Number.isFinite(expectedVersion) && expectedVersion > 0 && expectedVersion !== proposal.activeVersion) return jsonError(c, 409, 'Proposal changed after it was inspected.');
 					const kind = optionalTrimmedString(body.kind);
 					const message = optionalTrimmedString(body.message);
+					const resolvesEventId = optionalTrimmedString(body.resolvesEventId);
 					if (!kind || !['question', 'concern', 'support', 'response'].includes(kind)) {
 						return jsonError(c, 400, 'Discussion kind must be question, concern, support, or response.');
 					}
 					if (!message) return jsonError(c, 400, 'Discussion message is required.');
+					if (resolvesEventId) {
+						if (kind !== 'response') return jsonError(c, 400, 'Only a response may resolve a proposal question or concern.');
+						const resolved = await store.first(`SELECT id, evidence_json FROM governance_events WHERE id = ? AND proposal_id = ? AND event_type = 'proposal.discussion' LIMIT 1`, [resolvesEventId, proposal.id]);
+						let evidence = {};
+						try { evidence = JSON.parse(String(resolved?.evidence_json ?? '{}')); } catch { return jsonError(c, 409, 'The discussion being resolved has invalid evidence.'); }
+						if (!resolved || !['question', 'concern'].includes(String(evidence.kind ?? ''))) return jsonError(c, 409, 'The referenced discussion is not a blocking question or concern.');
+					}
+					let contentReference;
+					try {
+						contentReference = await createProposalDiscussionContent({ store, proposal, principal: access.principal, kind, message, idempotencyKey: c.req.header('Idempotency-Key') || crypto.randomUUID(), contributorRef: optionalTrimmedString(body.contentContributorRef) });
+					} catch (error) {
+						return jsonError(c, 503, error instanceof Error ? error.message : 'TreeDX could not preserve the proposal discussion.', { code: 'proposal_discussion_content_unavailable' });
+					}
 					return c.json({ ok: true, payload: await store.recordGovernanceEvent({
 						eventType: 'proposal.discussion',
 						actorType: isTeamApiPrincipal(access.principal) ? 'team_api_key' : c.get('actorType') === 'service' ? 'service' : 'user',
@@ -102,7 +118,7 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 						proposalId: proposal.id,
 						proposalVersion: proposal.activeVersion,
 						message,
-						evidence: { kind, automatedEvolutionTest: body.automatedEvolutionTest === true, ...simulationEvidence(body, access.principal.id) },
+						evidence: { kind, contentReference, ...(resolvesEventId ? { resolvesEventId } : {}), automatedEvolutionTest: body.automatedEvolutionTest === true, ...simulationEvidence(body, access.principal.id) },
 					}) }, { status: 201 });
 				});
 	

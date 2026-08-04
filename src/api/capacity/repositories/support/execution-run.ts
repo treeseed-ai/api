@@ -7,7 +7,7 @@ type CapacityPageCursor,
 import type { CapacityGovernanceDatabase } from "../../database.ts";
 import { CapacityGovernanceError } from "../../database.ts";
 import { canonicalArtifactManifestReferences } from "../../domain/artifact-manifest-evidence.ts";
-import { serializeAgentModeRunRow } from "./mode-run.ts";
+import { logicalModeRunSql,serializeAgentModeRunRow } from "./mode-run.ts";
 
 type Row = Record<string, unknown>;
 
@@ -201,7 +201,7 @@ export async function listExecutionRunsForTeamPage(
   filters: ExecutionRunListFilters = {},
 ): Promise<CapacityPage<Row>> {
   await database.ensureInitialized();
-  const clauses = ["a.team_id = ?"];
+  const clauses = ["a.team_id = ?", logicalModeRunSql('m')];
   const values: unknown[] = [teamId];
   if (filters.projectId) {
     clauses.push("a.project_id = ?");

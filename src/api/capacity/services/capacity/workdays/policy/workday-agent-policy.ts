@@ -13,6 +13,7 @@ export type CapacityWorkdayAgent = {
 	purpose: string;
 	promptTask: string;
 	outputContract: UnknownRecord;
+	inputContract?: UnknownRecord;
 	planningIntent: UnknownRecord;
 	branchPolicy: UnknownRecord;
 	contentAccess: UnknownRecord;
@@ -28,6 +29,9 @@ export type CapacityWorkdayAssignmentIntent = {
 	subjectId: string | null;
 	includeWorkdayArtifacts: boolean;
 };
+
+export type CapacityWorkdayPlanningStage = 'discovery' | 'synthesis' | 'evaluation' | 'closeout';
+const PLANNING_STAGES = new Set<CapacityWorkdayPlanningStage>(['discovery', 'synthesis', 'evaluation', 'closeout']);
 
 function record(value: unknown): UnknownRecord {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {};
@@ -52,6 +56,25 @@ export function capacityWorkdayRuntimeHandler(agent: Pick<CapacityWorkdayAgent, 
 	return handler(agent.handler);
 }
 
+export function capacityWorkdayPlanningStage(agent: CapacityWorkdayAgent): CapacityWorkdayPlanningStage {
+	const configured = text(record(agent.planningIntent).stage) as CapacityWorkdayPlanningStage;
+	if (PLANNING_STAGES.has(configured)) return configured;
+	if (agent.activityType === 'reporting') return 'closeout';
+	if (agent.activityType === 'estimating' || agent.activityType === 'reviewing') return 'evaluation';
+	return 'discovery';
+}
+
+export function capacityWorkdayRequiredArtifacts(agent: CapacityWorkdayAgent): string[] {
+	return [...new Set([
+		...array(record(agent.planningIntent).requiresArtifactKinds),
+		...array(record(agent.inputContract).artifactContracts),
+	].map((value) => text(value).replace(/-/gu, '_')).filter(Boolean))];
+}
+
+export function capacityWorkdayRequiredSignals(agent: CapacityWorkdayAgent): string[] {
+	return [...new Set(array(record(agent.inputContract).signalContracts).map((value) => text(value)).filter(Boolean))];
+}
+
 export function compileCapacityWorkdayAssignmentIntent(agent: CapacityWorkdayAgent): CapacityWorkdayAssignmentIntent {
 	const configured = record(agent.planningIntent);
 	const mutations = array(agent.outputContract.modelMutations).map((value) => text(value)).filter(Boolean);
@@ -73,12 +96,15 @@ export function compileCapacityWorkdayAssignmentIntent(agent: CapacityWorkdayAge
 		!agent.promptTask || agent.promptTask.toLowerCase() === 'planning' ? agent.purpose : agent.promptTask,
 	);
 	const subjectModel = text(configured.subjectModel, mutationModel === 'proposal_feedback' ? 'proposal' : 'objective');
+	const configuredSubjectId = text(configured.subjectId);
 	return {
 		objective,
 		artifactKind: text(configured.artifactKind, requiredArtifacts[0] ?? derivedArtifactKind),
 		subjectModel,
-		subjectId: configured.subjectId === null ? null : text(configured.subjectId, subjectModel === 'objective' ? 'core' : '') || null,
-		includeWorkdayArtifacts: configured.includeWorkdayArtifacts === true || mutationModel === 'workday_report',
+		subjectId: configured.subjectId === null || configuredSubjectId.toLowerCase() === 'null'
+			? null
+			: configuredSubjectId || (subjectModel === 'objective' ? 'core' : null),
+		includeWorkdayArtifacts: configured.includeWorkdayArtifacts === true || mutationModel === 'workday_report' || agent.activityType === 'reviewing',
 	};
 }
 
@@ -97,11 +123,11 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				?? Number.NaN,
 		);
 		const handlerRefs = agentClass.handlerRefs ?? agentClass.handler_refs;
-		const selectedByAgent = new Map<string, ProjectAgentActivityRef>();
+		const selectedProfiles = new Map<string, ProjectAgentActivityRef>();
 		for (const activityType of ['planning', 'reporting', 'reviewing', 'estimating'] as const) {
-			for (const ref of projectAgentActivityRefs(handlerRefs, activityType)) if (!selectedByAgent.has(ref.agentId)) selectedByAgent.set(ref.agentId, ref);
+			for (const ref of projectAgentActivityRefs(handlerRefs, activityType)) selectedProfiles.set(`${ref.agentId}:${ref.activityType}`, ref);
 		}
-		for (const selectedActivity of selectedByAgent.values()) {
+		for (const selectedActivity of selectedProfiles.values()) {
 			const slug = selectedActivity.agentId;
 			const profile = selectedActivity.profile;
 			const configuredHandler = handler(selectedActivity.handlerId);
@@ -116,6 +142,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				purpose: text(profile.purpose, `Perform configured planning work as ${slug}.`),
 				promptTask: text(record(profile.prompt).task),
 				outputContract: record(profile.outputs),
+				inputContract: record(profile.inputs),
 				planningIntent: record(profile.planningIntent),
 				branchPolicy: record(profile.branchPolicy),
 				contentAccess: record(profile.contentAccess),
@@ -132,8 +159,9 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 	);
 	const seen = new Set<string>();
 	const unique = ordered.filter((agent) => {
-		if (seen.has(agent.slug)) return false;
-		seen.add(agent.slug);
+		const key = `${agent.slug}:${agent.activityType}`;
+		if (seen.has(key)) return false;
+		seen.add(key);
 		return true;
 	});
 	return selectWorkdayAgents(unique, selection);

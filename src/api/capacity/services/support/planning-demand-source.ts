@@ -19,6 +19,10 @@ export interface PlanningDemandSource {
 	payload: Record<string, unknown>;
 }
 
+function record(value: unknown): Record<string, unknown> {
+	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function isTreeDxStore(value: CapacityGovernanceDatabase): value is CapacityGovernanceDatabase & WorkdayTreeDxConnectionStore {
 	const candidate = value as Partial<WorkdayTreeDxConnectionStore>;
 	return Boolean(candidate.config && typeof candidate.getProjectTreeDxLibrary === 'function');
@@ -168,12 +172,15 @@ export async function resolvePlanningDemandSource(
 		});
 		const requestedAgent = text(metadata.agentId ?? metadata.agentSlug);
 		if (requestedAgent && requestedAgent !== agent.slug) continue;
+		const requestedActivity = text(metadata.activityType);
+		if (requestedActivity && requestedActivity !== agent.activityType) continue;
+		const assignmentInput = record(metadata.assignmentInput);
 		return {
 			sourceType: 'planning-input', sourceId: String(row.id), decisionId: text(row.decision_id),
 			priority: Number.isFinite(Number(metadata.priority)) ? Number(metadata.priority) : 50,
 			requestedCredits: positive(metadata.reservedCredits, 1),
 			payload: {
-				intent, prompt: text(row.prompt), planningInputRequestId: String(row.id), scopeHash: row.scope_hash ?? null,
+				...assignmentInput, intent: { ...intent, ...assignmentInput }, prompt: text(row.prompt), planningInputRequestId: String(row.id), scopeHash: row.scope_hash ?? null,
 				planningSource: metadata.planningSource ?? 'planning-input',
 				...(text(metadata.objectiveId) ? { objectiveId: text(metadata.objectiveId) } : {}),
 			},
@@ -185,7 +192,7 @@ export async function resolvePlanningDemandSource(
 		const content = preferredContentSource(agent, await listTreeDxPlanningDemandSources(database, run, project));
 		if (content) return {
 			sourceType: content.sourceType, sourceId: content.sourceId, decisionId: null, priority: content.priority,
-			requestedCredits: 1, payload: { intent, ...content.payload },
+			requestedCredits: 1, payload: { intent, ...content.payload, subjectPath: content.payload.contentPath },
 		};
 	}
 	return {

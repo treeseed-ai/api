@@ -178,6 +178,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						 WHERE id = ?`,
 						[now, now, emailAddress.id],
 					);
+					await store.claimSeedTeamMembershipsForVerifiedEmail(emailAddress.user_id, email);
 					if (Number(emailAddress.is_primary ?? 0) === 1 || firstVerified) {
 						await setPrimaryEmailAddress(store, emailAddress.user_id, emailAddress.id);
 					}
@@ -243,6 +244,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						 WHERE id = ?`,
 						[now, now, emailAddress.id],
 					);
+					await store.claimSeedTeamMembershipsForVerifiedEmail(emailAddress.user_id, email);
 					if (Number(emailAddress.is_primary ?? 0) === 1 || firstVerified) {
 						await setPrimaryEmailAddress(store, emailAddress.user_id, emailAddress.id);
 					}

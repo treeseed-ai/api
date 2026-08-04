@@ -7,6 +7,7 @@ import { CapacityGovernanceError } from "../../../database.ts";
 import { canonicalArtifactManifestReferences } from "../../../domain/artifact-manifest-evidence.ts";
 import { decodeDurableJsonObject } from "../../../durable-json.ts";
 import { serializeCapacityWorkdayRunRow } from "./workday-run.ts";
+import { logicalModeRunSql } from "../../support/mode-run.ts";
 
 type Row = Record<string, unknown>;
 export interface WorkdayModeRunEvidence {
@@ -72,7 +73,7 @@ export class CapacityWorkdayRecoveryRepository {
 			COALESCE(SUM(CASE WHEN amr.status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_mode_runs
 			FROM agent_mode_runs amr JOIN capacity_provider_assignments pa ON pa.id = amr.provider_assignment_id AND pa.team_id = amr.team_id
 			JOIN capacity_workday_demands demand ON demand.assignment_id = pa.id
-			WHERE pa.team_id = ? AND demand.workday_run_id = ?`,
+			WHERE pa.team_id = ? AND demand.workday_run_id = ? AND ${logicalModeRunSql('amr')}`,
       [teamId, runId],
     );
     const references = new Set<string>();
@@ -82,7 +83,7 @@ export class CapacityWorkdayRecoveryRepository {
         `SELECT amr.id, amr.outputs_json FROM agent_mode_runs amr
 				JOIN capacity_provider_assignments pa ON pa.id = amr.provider_assignment_id AND pa.team_id = amr.team_id
 				JOIN capacity_workday_demands demand ON demand.assignment_id = pa.id
-				WHERE pa.team_id = ? AND demand.workday_run_id = ? AND amr.status = 'succeeded' AND amr.id > ?
+				WHERE pa.team_id = ? AND demand.workday_run_id = ? AND amr.status = 'succeeded' AND ${logicalModeRunSql('amr')} AND amr.id > ?
 				ORDER BY amr.id ASC LIMIT ?`,
         [teamId, runId, cursor, MAX_CAPACITY_PAGE_LIMIT],
       );

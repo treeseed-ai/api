@@ -2,6 +2,7 @@ import { MAX_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
+import { logicalModeRunSql } from '../../../../repositories/support/mode-run.ts';
 
 interface TerminalAssignmentRow extends Record<string, unknown> {
 	id: string;
@@ -131,7 +132,7 @@ export async function terminalizeCapacityWorkdayAssignments(
 				     fallback_reason = COALESCE(fallback_reason, ?),
 				     failed_at = COALESCE(failed_at, ?),
 				     updated_at = ?
-				 WHERE team_id = ? AND status IN ('queued', 'running')
+				 WHERE team_id = ? AND status IN ('queued', 'running') AND ${logicalModeRunSql()}
 				   AND provider_assignment_id IN (
 				     SELECT id FROM capacity_provider_assignments
 				      WHERE team_id = ? AND state_version = ? AND id IN (${ids})

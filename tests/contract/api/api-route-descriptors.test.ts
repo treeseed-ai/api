@@ -72,6 +72,7 @@ describe('API route descriptors', () => {
 		const descriptorIds = new Set(API_ROUTE_DESCRIPTORS.map((route) => route.id));
 		for (const id of [
 			'post.v1.provider.assignments.next',
+			'post.v1.provider.assignments.assignmentId.events',
 			'post.v1.provider.assignments.assignmentId.mode-runs',
 			'post.v1.decisions.decisionId.estimates',
 			'post.v1.structured-agent-estimates.estimateId.accept',
@@ -121,6 +122,7 @@ describe('API route descriptors', () => {
 		}
 		expect(byId.get('post.v1.provider.assignments.next')?.authClass).toBe('provider-access-token');
 		expect(byId.get('post.v1.provider.assignments.next')?.acceptance.successActors).toEqual(['providerAccessToken']);
+		expect(byId.get('post.v1.provider.assignments.assignmentId.events')?.authClass).toBe('provider-access-token');
 	});
 
 	it('attaches executable acceptance metadata to every active route', () => {

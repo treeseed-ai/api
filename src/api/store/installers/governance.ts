@@ -33,6 +33,7 @@ import { adminDecideGovernanceProposalMethod } from '../governance/policy/contra
 import { ensureDefaultTeamGovernancePolicyMethod } from '../governance/policy/contracts/ensure-default-team-governance-policy.ts';
 import { evaluateGovernanceProposalMethod } from '../governance/policy/contracts/evaluate-governance-proposal.ts';
 import { governanceEligibleVotersMethod } from '../governance/policy/contracts/governance-eligible-voters.ts';
+import { governanceProposalReadinessMethod } from '../governance/policy/contracts/governance-proposal-readiness.ts';
 import { snapshotGovernanceElectorateMethod } from '../governance/policy/contracts/snapshot-governance-electorate.ts';
 import { createGovernanceDecisionFromProposalMethod } from '../governance/policy/creation/create-governance-decision-from-proposal.ts';
 import { createGovernanceDelegationMethod } from '../governance/policy/creation/create-governance-delegation.ts';
@@ -75,6 +76,7 @@ export function installGovernanceStoreMethods(prototype: MarketControlPlaneStore
 	prototype.setProjectGovernancePolicy = setProjectGovernancePolicyMethod;
 	prototype.resolveGovernancePolicy = resolveGovernancePolicyMethod;
 	prototype.createGovernanceProposal = createGovernanceProposalMethod;
+	prototype.governanceProposalReadiness = governanceProposalReadinessMethod;
 	prototype.getGovernanceProposal = getGovernanceProposalMethod;
 	prototype.listGovernanceProposals = listGovernanceProposalsMethod;
 	prototype.updateGovernanceProposalDraft = updateGovernanceProposalDraftMethod;

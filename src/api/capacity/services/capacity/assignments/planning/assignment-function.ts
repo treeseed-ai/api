@@ -63,9 +63,15 @@ export function resolveAssignmentContentPathScope(payload: JsonRecord, access: '
 export function resolveAssignmentContentBaseRef(payload: JsonRecord): string {
   const intent = record(payload.intent);
   const relatedArtifact = record(intent.relatedArtifact);
+  const relatedArtifacts = Array.isArray(intent.relatedArtifacts)
+    ? intent.relatedArtifacts.map(record)
+    : [];
   return text(
     relatedArtifact.commitSha,
-    text(payload.contentBaseRef, "refs/heads/main"),
+    text(
+      relatedArtifacts.find((artifact) => text(artifact.commitSha))?.commitSha,
+      text(payload.contentBaseRef, "refs/heads/main"),
+    ),
   );
 }
 function errorCode(error: unknown): string {
@@ -75,6 +81,24 @@ function errorCode(error: unknown): string {
     typeof error.code === "string"
     ? error.code
     : "capacity_admission_denied";
+}
+export function compilePlanningAssignmentInput(
+  payload: JsonRecord,
+  intent: JsonRecord,
+  activityType: string,
+) {
+  const subjectModel = text(intent.subjectModel);
+  const subjectId = text(intent.subjectId);
+  return {
+    ...payload,
+    ...intent,
+    activityType,
+    subjectModel: subjectModel || null,
+    subjectId: subjectId || null,
+    ...(subjectModel === "proposal" && subjectId
+      ? { proposalId: subjectId }
+      : {}),
+  };
 }
 function assignmentInput(
   demand: Awaited<ReturnType<CapacityWorkdayDemandRepository["claimNext"]>>,
@@ -188,17 +212,7 @@ function assignmentInput(
           agentId: demand.agentId,
           handlerId: demand.handlerId,
           mode: demand.mode,
-          input: {
-            ...payload,
-            activityType: demand.activityType,
-            objective: text(intent.objective),
-            artifactKind: intent.artifactKind ?? null,
-            subjectModel: planningSubjectModel || null,
-            subjectId: planningSubjectId || null,
-            ...(planningSubjectModel === "proposal" && planningSubjectId
-              ? { proposalId: planningSubjectId }
-              : {}),
-          },
+          input: compilePlanningAssignmentInput(payload, intent, demand.activityType),
           metadata: {
             source: "workday-demand",
             demandId: demand.id,
@@ -241,8 +255,10 @@ function assignmentInput(
     capacityEnvelope,
     decisionInput,
     allowedOutputs: planning
-      ? { paths: allowedWritePaths, types: planningOutputTypes }
-      : {},
+      ? { paths: allowedWritePaths, types: planningOutputTypes,
+          artifactContracts: Array.isArray(record(payload.outputContract).artifactContracts) ? record(payload.outputContract).artifactContracts : [],
+          signalContracts: Array.isArray(record(payload.outputContract).signalContracts) ? record(payload.outputContract).signalContracts : [] }
+      : record(payload.allowedOutputs),
     workspaceContext: {
       workspaceAccessMode: "workspace_write",
       treedxProxyHandle,

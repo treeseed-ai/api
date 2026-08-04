@@ -1,5 +1,6 @@
 import { isoNow,MarketControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
+import { assertGovernanceProposalReady } from '../contracts/governance-proposal-readiness.ts';
 export async function startGovernanceProposalVotingMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
@@ -11,6 +12,7 @@ export async function startGovernanceProposalVotingMethod(this: MarketControlPla
         error.status = 409;
         throw error;
     }
+	await assertGovernanceProposalReady.call(this, proposalId, 'voting');
     const snapshot = await this.snapshotGovernanceElectorate(proposalId);
     const timestamp = isoNow();
     const votingEndsAt = optionalStringValue(input.votingEndsAt) ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();

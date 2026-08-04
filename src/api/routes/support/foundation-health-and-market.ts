@@ -1,5 +1,5 @@
 export function installFoundationHealthAndMarketRoutes(context: any) {
-	const { app, bearerTokenFromRequest, capacity, centralMarketProfile, config, installCapacityRoutes, localAcceptanceAdminToken, localAcceptanceAuthEnabled, requireProjectAccess, requireTeamAccess, runtime, store } = context;
+	const { app, bearerTokenFromRequest, capacity, centralMarketProfile, config, installCapacityRoutes, localAcceptanceAdminToken, localAcceptanceAuthEnabled, requireProjectAccess, requireTeamAccess, runtime, runtimeMarketAuthProvider, store } = context;
 	app.get('/healthz/deep', async (c: any) => {
 		try {
 			await store.ensureInitialized();
@@ -33,6 +33,6 @@ export function installFoundationHealthAndMarketRoutes(context: any) {
 		}
 		await next();
 	});
-	installCapacityRoutes(app, { store: capacity, requireTeamAccess, requireProjectAccess, runtime, config: { ...config, ...runtime.resolved.config } });
+	installCapacityRoutes(app, { store: capacity, requireTeamAccess, requireProjectAccess, runtime, runtimeMarketAuthProvider, config: { ...config, ...runtime.resolved.config } });
 	app.get('/v1/markets/current', async (c: any) => c.json({ ok: true, payload: centralMarketProfile(runtime.resolved.config.baseUrl) }));
 }

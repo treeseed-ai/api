@@ -8,6 +8,10 @@ declare module '../persistence/store.ts' {
 		ensureInitialized: OmitThisParameter<typeof import('./support/contracts/ensure-initialized.ts').ensureInitializedMethod>;
 		seedTeamRoles: OmitThisParameter<typeof import('./teams/contracts/seed-team-roles.ts').seedTeamRolesMethod>;
 		syncPlatformAdminOwners: OmitThisParameter<typeof import('./teams/contracts/administration/sync-platform-admin-owners.ts').syncPlatformAdminOwnersMethod>;
+		getSeedTeamMembershipClaim: OmitThisParameter<typeof import('./teams/contracts/seeding/seed-membership-claims.ts').getSeedTeamMembershipClaimMethod>;
+		reconcileSeedTeamMembershipClaim: OmitThisParameter<typeof import('./teams/contracts/seeding/seed-membership-claims.ts').reconcileSeedTeamMembershipClaimMethod>;
+		claimSeedTeamMembershipsForVerifiedEmail: OmitThisParameter<typeof import('./teams/contracts/seeding/seed-membership-claims.ts').claimSeedTeamMembershipsForVerifiedEmailMethod>;
+		retireUndeclaredSeedTeamMembershipClaims: OmitThisParameter<typeof import('./teams/contracts/seeding/seed-membership-claims.ts').retireUndeclaredSeedTeamMembershipClaimsMethod>;
 		roleIdForKey: OmitThisParameter<typeof import('./teams/contracts/role-id-for-key.ts').roleIdForKeyMethod>;
 		bindRoleToMembership: OmitThisParameter<typeof import('./teams/updates/bind-role-to-membership.ts').bindRoleToMembershipMethod>;
 		listRoleKeysForMembership: OmitThisParameter<typeof import('./teams/queries/members/list-role-keys-for-membership.ts').listRoleKeysForMembershipMethod>;
@@ -65,6 +69,7 @@ declare module '../persistence/store.ts' {
 		setProjectGovernancePolicy: OmitThisParameter<typeof import('./projects/projects-core/updates/set-project-governance-policy.ts').setProjectGovernancePolicyMethod>;
 		resolveGovernancePolicy: OmitThisParameter<typeof import('./governance/policy/queries/policy/resolve-governance-policy.ts').resolveGovernancePolicyMethod>;
 		createGovernanceProposal: OmitThisParameter<typeof import('./governance/policy/creation/create-governance-proposal.ts').createGovernanceProposalMethod>;
+		governanceProposalReadiness: OmitThisParameter<typeof import('./governance/policy/contracts/governance-proposal-readiness.ts').governanceProposalReadinessMethod>;
 		getGovernanceProposal: OmitThisParameter<typeof import('./governance/policy/queries/proposals/get-governance-proposal.ts').getGovernanceProposalMethod>;
 		listGovernanceProposals: OmitThisParameter<typeof import('./governance/policy/queries/proposals/list-governance-proposals.ts').listGovernanceProposalsMethod>;
 		updateGovernanceProposalDraft: OmitThisParameter<typeof import('./governance/policy/updates/update-governance-proposal-draft.ts').updateGovernanceProposalDraftMethod>;

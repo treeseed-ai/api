@@ -5,6 +5,7 @@ import { createKnowledgePublicationExecutor } from '../../knowledge/publication-
 import { createKnowledgePackCleanupExecutor, createKnowledgePackExecutor } from '../../knowledge/pack-executor.ts';
 import { createGitHubWorkflowExecutor } from '../../workflows/github-workflow-executor.ts';
 import { createGitHubConfigurationExecutor } from '../../workflows/github-configuration-executor.ts';
+import { createAgentLabSimulationExecutor } from '../../agent-lab/simulation-executor.ts';
 
 export function createExecutors() {
     return createExecutorsForOptions({});
@@ -355,5 +356,6 @@ export function createExecutorsForOptions(options: any = {}) {
 		createKnowledgePackCleanupExecutor(options),
 		workflowExecutor,
 		workflowConfigurationExecutor,
+		createAgentLabSimulationExecutor(options),
     ].filter((executor) => !options.operationKey || `${executor.namespace}:${executor.operation}` === options.operationKey);
 }

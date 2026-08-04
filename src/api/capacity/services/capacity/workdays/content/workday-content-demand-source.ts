@@ -44,6 +44,8 @@ export async function listTreeDxPlanningDemandSources(
 	if (!connection) return [];
 	const client = new TreeDxClient({ ...connection, repoId: connection.repositoryId, timeoutMs: 15_000, fetch: connection.fetchImpl });
 	const root = capacityWorkdayContentRoot(project).replace(/\/+$/u, '');
+	const selectedObjectives = new Set((Array.isArray(run.parameters.objectiveRefs) ? run.parameters.objectiveRefs : [])
+		.map((value) => text(value).replace(/^objective:/u, '')).filter(Boolean));
 	const sources: TreeDxPlanningDemandSource[] = [];
 	try {
 		for (const model of MODELS) {
@@ -56,6 +58,7 @@ export async function listTreeDxPlanningDemandSources(
 				const status = text(frontmatter.status).toLowerCase();
 				if (CLOSED.has(status)) continue;
 				const path = text(file.path); if (!path) continue;
+				if (model.model === 'objective' && selectedObjectives.size && !selectedObjectives.has(id(path))) continue;
 				const sourceType = model.model === 'question' && ['gap', 'knowledge-gap', 'research-gap'].includes(text(frontmatter.question_type ?? frontmatter.questionType).toLowerCase())
 					? 'knowledge-gap' : model.type;
 				sources.push({

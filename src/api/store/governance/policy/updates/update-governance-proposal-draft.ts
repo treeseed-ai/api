@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { normalizeGovernanceProposalPlan } from '@treeseed/sdk';
 import { governanceContentHash,isoNow,MarketControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
 export async function updateGovernanceProposalDraftMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
     await this.ensureInitialized();
@@ -14,7 +15,12 @@ export async function updateGovernanceProposalDraftMethod(this: MarketControlPla
     const summary = optionalStringValue(input.summary, existing.summary);
     const body = optionalStringValue(input.body, existing.body);
     const proposalType = optionalStringValue(input.proposalType, existing.proposalType);
-    const nextHash = governanceContentHash({ title, summary, body, proposalType });
+    const metadata = { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) };
+    if (input.relatedObjectives !== undefined) metadata.relatedObjectives = input.relatedObjectives;
+    if (input.evidenceRefs !== undefined) metadata.evidenceRefs = input.evidenceRefs;
+    if (input.contentProvenance !== undefined) metadata.contentProvenance = input.contentProvenance;
+    if (input.plan !== undefined) metadata.plan = normalizeGovernanceProposalPlan(input.plan);
+    const nextHash = governanceContentHash({ title, summary, body, proposalType, ...metadata });
     const materialChange = nextHash !== existing.activeContentHash;
     const timestamp = isoNow();
     const nextVersion = existing.status === 'voting' && materialChange ? existing.activeVersion + 1 : existing.activeVersion;
@@ -26,10 +32,10 @@ export async function updateGovernanceProposalDraftMethod(this: MarketControlPla
 				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'user', ?, ?)`, [randomUUID(), proposalId, nextVersion, title, summary, body, nextHash, optionalStringValue(input.changeReason, 'Material edit reset voting.'), principal?.id ?? null, timestamp]);
     }
     await this.run(`UPDATE governance_proposals
-			 SET title = ?, summary = ?, body = ?, proposal_type = ?, status = ?, active_version = ?,
+			 SET title = ?, summary = ?, body = ?, proposal_type = ?, metadata_json = ?, status = ?, active_version = ?,
 				 active_content_hash = ?, voting_starts_at = CASE WHEN ? = 1 THEN NULL ELSE voting_starts_at END,
 				 voting_ends_at = CASE WHEN ? = 1 THEN NULL ELSE voting_ends_at END, updated_at = ?
-			 WHERE id = ?`, [title, summary, body, proposalType, nextStatus, nextVersion, nextHash, nextVersion !== existing.activeVersion ? 1 : 0, nextVersion !== existing.activeVersion ? 1 : 0, timestamp, proposalId]);
+			 WHERE id = ?`, [title, summary, body, proposalType, JSON.stringify(metadata), nextStatus, nextVersion, nextHash, nextVersion !== existing.activeVersion ? 1 : 0, nextVersion !== existing.activeVersion ? 1 : 0, timestamp, proposalId]);
     await this.recordGovernanceEvent({
         eventType: nextVersion !== existing.activeVersion ? 'proposal.version_reset_voting' : 'proposal.updated',
         actorType: 'user',

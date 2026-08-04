@@ -27,7 +27,22 @@ function executionProvenance(assignment: DurableProviderAssignment) {
 }
 
 function assignmentBaseRef(assignment: DurableProviderAssignment) {
-	return text(record(record(assignment.decisionInput).input).exactBaseRef);
+	const input = record(record(assignment.decisionInput).input);
+	return text(input.exactBaseRef, input.immutableContentRef, input.subjectRef);
+}
+
+function verificationOutputRef(assignment: DurableProviderAssignment, manifest: AgentArtifactManifest, requiredTypes: string[]) {
+	if (!requiredTypes.includes('release_readiness') || !manifest.verification.some((entry) => entry.status === 'passed')) return null;
+	const input = record(record(assignment.decisionInput).input);
+	const path = text(input.subjectPath, input.targetPath, record(input.approvedChange).targetPath);
+	if (!path) return null;
+	return {
+		model: text(input.subjectModel, record(input.approvedChange).model, 'knowledge') as never,
+		collection: path.split('/').at(-2) ?? 'knowledge',
+		slug: path.split('/').at(-1)?.replace(/\.(?:md|mdx)$/iu, '') ?? path,
+		path,
+		id: text(input.subjectId) || undefined,
+	};
 }
 
 export function assignmentArtifactManifest(input: JsonRecord): AgentArtifactManifest | null {
@@ -77,7 +92,17 @@ export async function projectCompletedAssignmentDeliverable(
 			subjectId: reference.subjectId ?? undefined,
 			subjectField: reference.subjectField ?? undefined,
 		}));
-	if (!producedRefs.length) throw new CapacityGovernanceError('assignment_deliverable_output_missing', 'Artifact manifest does not satisfy the graph node output contract.', 409, { assignmentId: assignment.id, contractId, requiredTypes });
+	const verificationRef = verificationOutputRef(assignment, manifest, requiredTypes);
+	if (verificationRef) producedRefs.push(verificationRef);
+	if (!producedRefs.length) {
+		const producedTypes = [...new Set(manifest.contentReferences.map((reference) => reference.artifactKind).filter((kind): kind is string => Boolean(kind)))];
+		throw new CapacityGovernanceError(
+			'assignment_deliverable_output_missing',
+			`Artifact manifest produced ${producedTypes.join(', ') || 'no typed content'} but the graph node requires ${requiredTypes.join(', ') || 'a typed output'}.`,
+			409,
+			{ assignmentId: assignment.id, contractId, requiredTypes, producedTypes },
+		);
+	}
 	const stage = text(node.metadata?.stage);
 	if (['test', 'implementation'].includes(stage) && !manifest.commit?.sha) throw new CapacityGovernanceError('assignment_source_commit_required', `${stage} completion requires an assignment checkpoint commit.`, 409, { assignmentId: assignment.id, contractId });
 	if (stage === 'verification' && !manifest.verification.some((entry) => entry.status === 'passed')) throw new CapacityGovernanceError('assignment_verification_evidence_required', 'Verification completion requires passing verification evidence.', 409, { assignmentId: assignment.id, contractId });
@@ -85,7 +110,7 @@ export async function projectCompletedAssignmentDeliverable(
 	if (stage === 'review' && !disposition) throw new CapacityGovernanceError('assignment_review_disposition_required', 'Review completion requires an explicit approved or rejected signal.', 409, { assignmentId: assignment.id, contractId });
 	if (contract.status !== 'submitted') {
 		const baseRef = assignmentBaseRef(assignment);
-		if (!baseRef) throw new CapacityGovernanceError('assignment_source_base_ref_required', 'Engineering assignment completion requires immutable source authority.', 409, { assignmentId: assignment.id, contractId });
+		if (!baseRef) throw new CapacityGovernanceError('assignment_source_base_ref_required', 'Acting assignment completion requires immutable source authority.', 409, { assignmentId: assignment.id, contractId });
 		const checkpointCommit = text(manifest.commit?.sha) || null;
 		const deliverableManifestId = `deliverable:${assignment.id}`;
 		await store.submitDeliverableManifest(contractId, {

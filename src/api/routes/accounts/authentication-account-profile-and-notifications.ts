@@ -277,27 +277,38 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 	app.get('/v1/auth/web/preferences', async (c) => {
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
-					const row = await store.first(`SELECT time_zone FROM user_preferences WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
-					return c.json({ ok: true, payload: { timeZone: row?.time_zone ?? 'UTC' } });
+					const row = await store.first(`SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
+					return c.json({ ok: true, payload: {
+						timeZone: row?.time_zone ?? 'UTC',
+						realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
+						realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(Number(row?.real_time_polling_interval_seconds)) ? Number(row?.real_time_polling_interval_seconds) : 5,
+					} });
 				});
 
 	app.patch('/v1/auth/web/preferences', async (c) => {
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const body = await readJsonOrFormBody(c);
-					const timeZone = optionalTrimmedString(body.timeZone);
-					if (!timeZone) return jsonError(c, 400, 'A time zone is required.', { code: 'invalid_time_zone' });
+					const existing = await store.first(`SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
+					const timeZone = optionalTrimmedString(body.timeZone) ?? String(existing?.time_zone ?? 'UTC');
 					try {
 						new Intl.DateTimeFormat('en', { timeZone }).format();
 					} catch {
 						return jsonError(c, 400, 'Select a valid IANA time zone.', { code: 'invalid_time_zone' });
 					}
+					const realTimeUpdates = body.realTimeUpdates === undefined
+						? existing ? Number(existing.real_time_updates) !== 0 : true
+						: body.realTimeUpdates === true || body.realTimeUpdates === 'true' || body.realTimeUpdates === '1';
+					const interval = body.realTimePollingIntervalSeconds === undefined
+						? Number(existing?.real_time_polling_interval_seconds ?? 5)
+						: Number(body.realTimePollingIntervalSeconds);
+					if (![2, 5, 15, 30].includes(interval)) return jsonError(c, 400, 'Select a supported real-time polling interval.', { code: 'invalid_realtime_polling_interval' });
 					const now = new Date().toISOString();
 					await store.run(
-						`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, created_at, updated_at)
-						 VALUES (?, 'fern', 'system', ?, ?, ?)
-						 ON CONFLICT (user_id) DO UPDATE SET time_zone = EXCLUDED.time_zone, updated_at = EXCLUDED.updated_at`,
-						[auth.principal.id, timeZone, now, now],
+						`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, created_at, updated_at)
+						 VALUES (?, 'fern', 'system', ?, ?, ?, ?, ?)
+						 ON CONFLICT (user_id) DO UPDATE SET time_zone = EXCLUDED.time_zone, real_time_updates = EXCLUDED.real_time_updates, real_time_polling_interval_seconds = EXCLUDED.real_time_polling_interval_seconds, updated_at = EXCLUDED.updated_at`,
+						[auth.principal.id, timeZone, realTimeUpdates ? 1 : 0, interval, now, now],
 					);
 					await store.recordAuditEvent({
 						actorType: 'user',
@@ -305,9 +316,9 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						eventType: 'account.preferences.updated',
 						targetType: 'user',
 						targetId: auth.principal.id,
-						data: { timeZone },
+						data: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval },
 					});
-					return c.json({ ok: true, payload: { timeZone } });
+					return c.json({ ok: true, payload: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
 				});
 	
 	app.get('/v1/auth/web/appearance', async (c) => {

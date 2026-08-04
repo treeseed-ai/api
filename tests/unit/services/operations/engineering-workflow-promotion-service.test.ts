@@ -182,6 +182,63 @@ describe('engineering workflow promotion service', () => {
 		}
 	});
 
+	it('uses immutable TreeDX content authority for a non-engineering acting deliverable', async () => {
+		let status = 'required';
+		let submitted: Record<string, unknown> | null = null;
+		const store = {
+			async getDecisionAssignmentGraph() { return { active: true, nodes: [{ id: 'content-node', outputRequirements: [{ outputType: 'agent_note', required: true }], metadata: { producesDeliverableContractId: 'content-contract' } }] }; },
+			async getDeliverableContract() { return { id: 'content-contract', status }; },
+			async submitDeliverableManifest(_id: string, value: Record<string, unknown>) { submitted = value; status = 'submitted'; return { id: 'content-contract', status }; },
+			async markDeliverableContractApproved() { status = 'approved'; return { id: 'content-contract', status }; },
+			async markDeliverableContractRejected() { throw new Error('not expected'); },
+		} as never;
+		const assignment = {
+			id: 'content-assignment', teamId: 'team-a', projectId: 'project-a', projectAgentClassId: 'project-a:guide-steward',
+			mode: 'acting', agentId: 'guide-steward', decisionInput: { workGraphNodeId: 'content-node', input: {
+				workGraphId: 'content-graph', workGraphNodeId: 'content-node', immutableContentRef: '0123456789abcdef',
+			} },
+		} as never;
+		const artifactManifest = {
+			schemaVersion: 1, assignmentId: 'content-assignment', modeRunId: 'content-mode-run', teamId: 'team-a', projectId: 'project-a',
+			providerId: 'provider-a', mode: 'acting', agentClassId: 'project-a:guide-steward', agentId: 'guide-steward', handlerId: 'writer', activityType: 'acting',
+			status: 'completed', summary: 'Created a governed Guide note.', toolEvents: [{ id: 'tool-1', toolId: 'treeseed.content.create', status: 'completed', derivedEventTypes: ['content_created'] }],
+			contentReferences: [{ model: 'note', contentPath: 'src/content/notes/editorial/result.mdx', receiptId: 'receipt-1', toolEventId: 'tool-1', subjectId: 'core', subjectField: 'relatedObjectives', artifactKind: 'agent_note' }],
+			verification: [], citations: [], signals: [], usage: [], diagnostics: [], createdAt: '2026-07-18T00:00:00.000Z',
+		};
+		await expect(projectCompletedAssignmentDeliverable(store, assignment, { output: { artifactManifest } })).resolves.toMatchObject({ status: 'approved' });
+		expect(submitted).toMatchObject({ sourceAuthority: { baseRef: '0123456789abcdef', effectiveRef: '0123456789abcdef', checkpointCommit: null } });
+	});
+
+	it('projects passing release-readiness verification against the exact assigned content ref', async () => {
+		let status = 'required';
+		let submitted: Record<string, unknown> | null = null;
+		const store = {
+			async getDecisionAssignmentGraph() { return { active: true, nodes: [{ id: 'release-node', outputRequirements: [{ outputType: 'release_readiness', required: true }], metadata: { producesDeliverableContractId: 'release-contract' } }] }; },
+			async getDeliverableContract() { return { id: 'release-contract', status }; },
+			async submitDeliverableManifest(_id: string, value: Record<string, unknown>) { submitted = value; status = 'submitted'; return { id: 'release-contract', status }; },
+			async markDeliverableContractApproved() { status = 'approved'; return { id: 'release-contract', status }; },
+			async markDeliverableContractRejected() { throw new Error('not expected'); },
+		} as never;
+		const assignment = {
+			id: 'release-assignment', teamId: 'team-a', projectId: 'project-a', projectAgentClassId: 'project-a:publication',
+			mode: 'acting', agentId: 'publication-steward', decisionInput: { workGraphNodeId: 'release-node', input: {
+				workGraphId: 'release-graph', workGraphNodeId: 'release-node', immutableContentRef: '0123456789abcdef',
+				subjectModel: 'knowledge', subjectId: 'guide.foundation.purpose', subjectPath: 'src/content/knowledge/treeseed-guide/foundation/purpose.md',
+			} },
+		} as never;
+		const artifactManifest = {
+			schemaVersion: 1, assignmentId: 'release-assignment', modeRunId: 'release-mode-run', teamId: 'team-a', projectId: 'project-a',
+			providerId: 'provider-a', mode: 'acting', agentClassId: 'project-a:publication', agentId: 'publication-steward', handlerId: 'releaser', activityType: 'acting',
+			status: 'completed', summary: 'Exact revision is verified but publication remains unauthorized.', toolEvents: [], contentReferences: [],
+			verification: [{ status: 'passed', summary: 'Exact revision checks passed.' }], citations: [], signals: [], usage: [], diagnostics: [], createdAt: '2026-07-18T00:00:00.000Z',
+		};
+		await expect(projectCompletedAssignmentDeliverable(store, assignment, { output: { artifactManifest } })).resolves.toMatchObject({ status: 'approved' });
+		expect(submitted).toMatchObject({
+			producedRefs: [{ model: 'knowledge', id: 'guide.foundation.purpose', path: 'src/content/knowledge/treeseed-guide/foundation/purpose.md' }],
+			sourceAuthority: { baseRef: '0123456789abcdef', effectiveRef: '0123456789abcdef', checkpointCommit: null },
+		});
+	});
+
 	it('promotes through an idempotent workday tick before compiling the ready acting demand', async () => {
 		const { database, store } = harness();
 		try {

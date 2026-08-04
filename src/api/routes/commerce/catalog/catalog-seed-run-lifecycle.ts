@@ -59,6 +59,7 @@ export function installCatalogSeedRunLifecycleRoutes(context: any) {
 						environments: planned.plan.environments,
 						summary: planned.plan.summary,
 						actions: planned.plan.actions,
+						runtime: planned.plan.runtime,
 						diagnostics: planned.plan.diagnostics,
 						run,
 					});
@@ -108,6 +109,7 @@ export function installCatalogSeedRunLifecycleRoutes(context: any) {
 						mode: 'apply',
 						environments: applied.plan.environments,
 						summary: applied.plan.summary,
+						runtime: applied.plan.runtime,
 						actions: applied.plan.actions,
 						diagnostics: applied.plan.diagnostics,
 						run: applied.run,

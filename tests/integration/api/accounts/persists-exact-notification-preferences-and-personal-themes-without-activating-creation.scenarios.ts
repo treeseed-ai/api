@@ -12,10 +12,13 @@ it('persists exact notification preferences and personal themes without activati
 		expect(initial.payload).toMatchObject({ emailCadence: 'daily', globalContentTypes: [], projectOverrides: [] });
 		const accountPreferences = await json(await app.request('/v1/auth/web/preferences', {
 			method: 'PATCH', headers,
-			body: JSON.stringify({ timeZone: 'America/New_York' }),
+			body: JSON.stringify({ timeZone: 'America/New_York', realTimeUpdates: false, realTimePollingIntervalSeconds: 15 }),
 		}));
-		expect(accountPreferences.payload).toEqual({ timeZone: 'America/New_York' });
-		expect((await json(await app.request('/v1/auth/web/preferences', { headers }))).payload).toEqual({ timeZone: 'America/New_York' });
+		const expectedPreferences = { timeZone: 'America/New_York', realTimeUpdates: false, realTimePollingIntervalSeconds: 15 };
+		expect(accountPreferences.payload).toEqual(expectedPreferences);
+		expect((await json(await app.request('/v1/auth/web/preferences', { headers }))).payload).toEqual(expectedPreferences);
+		const invalidCadence = await json(await app.request('/v1/auth/web/preferences', { method: 'PATCH', headers, body: JSON.stringify({ realTimePollingIntervalSeconds: 3 }) }));
+		expect(invalidCadence).toMatchObject({ ok: false, code: 'invalid_realtime_polling_interval' });
 		const invalidPreferences = await json(await app.request('/v1/auth/web/preferences', {
 			method: 'PATCH', headers,
 			body: JSON.stringify({ timeZone: 'Not/A_Time_Zone' }),

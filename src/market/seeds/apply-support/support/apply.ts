@@ -82,7 +82,7 @@ export async function applySeedWithStore(input) {
     const ids = { teams: new Map(), projects: new Map(), products: new Map(), productTeams: new Map() };
     const repairs = [];
     const dependencyState = {};
-    for (const action of selectedActions(planned.plan)) {
+	for (const action of selectedActions(planned.plan)) {
         if (action.existing?.id) {
             if (action.kind === 'team')
                 ids.teams.set(action.key, action.existing.id);
@@ -94,10 +94,17 @@ export async function applySeedWithStore(input) {
             }
         }
         await applyAction({ action, store, ids, manifestHash, appliedAt, plan: planned.plan });
-        repairs.push(...await ensureProjectSeedDependencies({
+		repairs.push(...await ensureProjectSeedDependencies({
             action, store, ids, manifestHash, appliedAt, env: input.env, localOnly: input.localOnly, dependencyState,
-        }));
-    }
+		}));
+	}
+	const membershipClaims = {
+		declared: selectedActions(planned.plan).filter((action) => action.kind === 'teamMembership').map((action) => action.key),
+		removed: await store.retireUndeclaredSeedTeamMembershipClaims(
+			planned.plan.seed,
+			selectedActions(planned.plan).filter((action) => action.kind === 'teamMembership').map((action) => action.key),
+		),
+	};
     const localTeamMemberships = input.localOnly === true
         ? await ensureLocalSeedTeamMemberships({
             store,
@@ -117,7 +124,8 @@ export async function applySeedWithStore(input) {
         appliedAt,
         manifestHash,
         actionCount: mutationActions(planned.plan).length,
-        repairs,
+		repairs,
+		membershipClaims,
         localTeamMemberships,
 		platformAdminOwnership,
 		platformKnowledge,

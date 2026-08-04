@@ -1,4 +1,4 @@
-import { governanceVotingProvider } from '@treeseed/sdk';
+import { governanceVotingProvider,normalizeGovernanceProposalPlan } from '@treeseed/sdk';
 import { randomUUID } from 'node:crypto';
 import { COMMONS_TEAM_SLUG,governanceContentHash,governanceSlug,isoNow,MarketControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
 export async function createGovernanceProposalMethod(this: MarketControlPlaneStore, principal, input: any = {}) {
@@ -19,7 +19,8 @@ export async function createGovernanceProposalMethod(this: MarketControlPlaneSto
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();
     const proposalType = optionalStringValue(input.proposalType ?? input.decisionType, 'implementation');
-    const contentHash = governanceContentHash({ title, summary, body, proposalType });
+    const metadata = { ...(input.metadata ?? {}), relatedObjectives: input.relatedObjectives ?? input.metadata?.relatedObjectives ?? [], evidenceRefs: input.evidenceRefs ?? input.metadata?.evidenceRefs ?? [], plan: normalizeGovernanceProposalPlan(input.plan ?? input.metadata?.plan), contentProvenance: input.contentProvenance ?? input.metadata?.contentProvenance ?? null };
+    const contentHash = governanceContentHash({ title, summary, body, proposalType, ...metadata });
     const contentProposalSlug = optionalStringValue(input.contentProposalSlug) ?? governanceSlug(title, 'proposal');
     await this.run(`INSERT INTO governance_proposals (
 				id, team_id, project_id, scope, status, title, summary, body, proposal_type,
@@ -44,7 +45,7 @@ export async function createGovernanceProposalMethod(this: MarketControlPlaneSto
         policy?.id ?? null,
         input.createdByType ?? 'user',
         input.createdById ?? principal?.id ?? null,
-        JSON.stringify(input.metadata ?? {}),
+        JSON.stringify(metadata),
         timestamp,
         timestamp,
     ]);

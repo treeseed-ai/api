@@ -11,6 +11,9 @@ export function governanceContentHash(input: any = {}) {
         relatedQuestions: arrayValue(input.relatedQuestions ?? input.related_questions).map(String).sort(),
         relatedNotes: arrayValue(input.relatedNotes ?? input.related_notes).map(String).sort(),
         relatedBooks: arrayValue(input.relatedBooks ?? input.related_books).map(String).sort(),
+        evidenceRefs: arrayValue(input.evidenceRefs ?? input.evidence_refs).map(String).sort(),
+        plan: input.plan ?? null,
+        contentProvenance: input.contentProvenance ?? input.content_provenance ?? null,
     };
     return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }

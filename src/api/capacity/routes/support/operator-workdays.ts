@@ -1,4 +1,4 @@
-import { normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
+import { decodeCapacityPageCursor,encodeCapacityPageCursor,normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
 import type { Context, Hono } from 'hono';
 import { CapacityGovernanceError } from '../../database.ts';
 import type { CapacityOperatorStore } from './operator.ts';
@@ -16,6 +16,8 @@ export interface WorkdayRouteDependencies {
 	notFound(c: Context, message: string): Response;
 	operatorError(error: unknown): Response;
 	requireTeamAccess(c: Context, teamId: string): Promise<Access>;
+	runtimeMarketAuthProvider?: { createServiceToken(input: { serviceId: string; name: string; roles?: string[]; permissions?: string[] }): Promise<{ id: string; serviceId: string; secret: string }> };
+	environment?: string;
 }
 
 export function installOperatorWorkdayRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
@@ -133,10 +135,11 @@ export function installOperatorActivityRoutes(app: Hono, dependencies: WorkdayRo
 		const access = await dependencies.requireTeamAccess(c, String(run.team_id));
 		if (access.response) return access.response;
 		const limit = normalizeCapacityPageLimit(query(c, 'limit'));
-		const after = query(c, 'after');
-		const rows = await store.all(`SELECT * FROM agent_mode_runs WHERE team_id = ? AND provider_assignment_id = ?${after ? ' AND created_at > ?' : ''} ORDER BY created_at ASC, id ASC LIMIT ?`,
-			after ? [run.team_id, run.provider_assignment_id, after, limit + 1] : [run.team_id, run.provider_assignment_id, limit + 1]);
+		const cursor = decodeCapacityPageCursor(query(c, 'cursor'));
+		const rows = await store.all(`SELECT * FROM agent_mode_runs WHERE team_id = ? AND provider_assignment_id = ?${cursor ? ' AND (created_at > ? OR (created_at = ? AND id > ?))' : ''} ORDER BY created_at ASC, id ASC LIMIT ?`,
+			cursor ? [run.team_id, run.provider_assignment_id, cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [run.team_id, run.provider_assignment_id, limit + 1]);
 		const selected = rows.slice(0, limit);
-		return c.json({ ok: true, payload: { executionRunId: c.req.param('runId'), redactionStatus: 'sanitized', entries: redactTranscriptValue(selected), page: { limit, hasMore: rows.length > limit, nextAfter: rows.length > limit ? selected.at(-1)?.created_at ?? null : null } } });
+		const last = selected.at(-1);
+		return c.json({ ok: true, payload: { executionRunId: c.req.param('runId'), redactionStatus: 'sanitized', entries: redactTranscriptValue(selected), page: { limit, hasMore: rows.length > limit, nextCursor: rows.length > limit && last ? encodeCapacityPageCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null } } });
 	});
 }

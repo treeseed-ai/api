@@ -33,4 +33,15 @@ describe('assignment planning output projection', () => {
 		await expect(projectCompletedPlanningOutputs(store as never, assignment, { output: { metadata: { structuredEstimate: { ...estimate, projectId: 'project-b' } } } }))
 			.rejects.toMatchObject({ code: 'assignment_planning_estimate_scope_invalid' });
 	});
+
+	it('accepts a proposal-scoped pre-governance estimate without projecting it into decision planning', async () => {
+		const proposalAssignment = { ...assignment, decisionId: null, decisionInput: { input: { proposalId: 'proposal-a', intent: { subjectId: 'proposal-a' } } } };
+		const proposalEstimate = { ...estimate, decisionId: null };
+		const store = { run: vi.fn(async () => undefined), getStructuredAgentEstimate: vi.fn(), createStructuredAgentEstimate: vi.fn() };
+		await expect(projectCompletedPlanningOutputs(store as never, proposalAssignment as never, { output: { metadata: { structuredEstimate: proposalEstimate } } }))
+			.resolves.toMatchObject({ id: 'estimate-a', proposalId: 'proposal-a' });
+		expect(store.createStructuredAgentEstimate).not.toHaveBeenCalled();
+		await expect(projectCompletedPlanningOutputs(store as never, proposalAssignment as never, { output: { metadata: { structuredEstimate: { ...proposalEstimate, proposalId: 'proposal-b' } } } }))
+			.rejects.toMatchObject({ code: 'assignment_planning_estimate_scope_invalid' });
+	});
 });

@@ -9,7 +9,7 @@ import { projectAgentActivityRefs } from '../projects/projects-core/project-agen
 export interface ActingDemandSource {
 	sourceType: 'capacity-plan'; sourceId: string; decisionId: string; capacityPlanId: string;
 	projectAgentClassId: string; agentId: string | null; handlerId: string; activityType: string;
-	priority: number; requestedCredits: number; requiredCapabilities: string[]; payload: Record<string, unknown>;
+	priority: number; requestedCredits: number; requiredCapabilities: string[]; agentContentPath: string | null; payload: Record<string, unknown>;
 }
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
@@ -49,8 +49,10 @@ async function readyGraphNode(input: {
 		if (!await database.first(`SELECT id FROM deliverable_contracts WHERE id = ? AND status = 'approved' LIMIT 1`, [contractId])) return null;
 	}
 	const authority = await resolveEngineeringNodeAuthority({ database, graphId: String(row.id), graph, node });
+	const outputRequirements = Array.isArray(node.outputRequirements) ? node.outputRequirements.map(record) : [];
 	return {
 		graphId: String(row.id), nodeId: workGraphNodeId,
+		outputRequirements,
 		...authority,
 	};
 }
@@ -61,9 +63,8 @@ async function classAuthorizesActing(database: CapacityGovernanceDatabase, proje
 	const modes = decodeDurableJsonArray<string>(row.allowed_modes_json, { owner: 'project agent class', ownerId: classId, column: 'allowed_modes_json' });
 	if (!modes.includes('acting')) return null;
 	const refs = decodeDurableJsonObject(row.handler_refs_json, { owner: 'project agent class', ownerId: classId, column: 'handler_refs_json' });
-	return projectAgentActivityRefs(refs, 'acting').some((agent) => agent.handlerId === handlerId && (!agentId || agent.agentId === agentId))
-		? { slug: text(row.slug) ?? classId }
-		: null;
+	const activity = projectAgentActivityRefs(refs, 'acting').find((agent) => agent.handlerId === handlerId && (!agentId || agent.agentId === agentId));
+	return activity ? { slug: text(row.slug) ?? classId, contentPath: activity.contentPath } : null;
 }
 
 export async function listActingDemandSources(
@@ -116,22 +117,35 @@ export async function listActingDemandSources(
 			const capacityPlanId = String(row.id);
 			const capacityPlanStatus = String(row.status);
 			const decisionInput = decodeDurableJsonObject(JSON.stringify(record(unit.decisionInput)), { owner: 'capacity plan work unit', ownerId: sourceId, column: 'decisionInput' });
-			const governedInput = graphNode.exactBaseRef
-				? {
-					...record(decisionInput.input), exactBaseRef: graphNode.exactBaseRef,
+			const governedInput = {
+				...record(decisionInput.input),
+				workGraphId: graphNode.graphId,
+				workGraphNodeId: graphNode.nodeId,
+				...(text(graphNode.outputRequirements.find((requirement) => requirement.required !== false)?.outputType
+					?? graphNode.outputRequirements[0]?.outputType) ? {
+					artifactKind: text(graphNode.outputRequirements.find((requirement) => requirement.required !== false)?.outputType
+						?? graphNode.outputRequirements[0]?.outputType),
+				} : {}),
+				...(graphNode.exactBaseRef ? {
+					exactBaseRef: graphNode.exactBaseRef,
 					governedPredecessorEvidence: graphNode.predecessorEvidence,
 					...(graphNode.reviewPolicy ? { governedReviewPolicy: graphNode.reviewPolicy } : {}),
-				}
-				: record(decisionInput.input);
+				} : {}),
+			};
 			sources.push({
 				sourceType: 'capacity-plan', sourceId, decisionId, capacityPlanId, projectAgentClassId,
 				agentId, handlerId,
 				activityType: text(unit.activityType) ?? 'acting', priority: Number(record(unit.metadata).priority ?? 100),
-				requestedCredits, requiredCapabilities,
+				requestedCredits, requiredCapabilities, agentContentPath: authorizedClass.contentPath,
 				payload: {
+					agentContentPath: authorizedClass.contentPath,
 					decisionInput: { ...decisionInput, input: governedInput, metadata: { ...record(decisionInput.metadata), capacityPlanId, capacityPlanStatus, synthesizedFrom: 'capacity_plan', readiness: { executionReadiness: row.execution_readiness, planningInputsStatus: row.planning_inputs_status } } },
 					capacityEnvelope: { ...record(unit.capacityEnvelope), metadata: { ...record(record(unit.capacityEnvelope).metadata), capacityPlanId, capacityPlanStatus, synthesizedFrom: 'capacity_plan' } }, requiredCapabilities,
 					executionReadiness: row.execution_readiness, planningInputsStatus: row.planning_inputs_status,
+					allowedOutputs: {
+						types: ['content_artifact_refs'],
+						artifactKinds: graphNode.outputRequirements.map((requirement) => text(requirement.outputType)).filter(Boolean),
+					},
 					decisionExecutionInputId: unit.decisionExecutionInputId ?? null, ...graphNode,
 				},
 			});

@@ -192,18 +192,30 @@ it('commits reservation and assignment together, enforces counters, and settles 
             id: 'mode-run-a',
             outputs: { status: 'replayed_telemetry' },
         });
+        await store.createAgentModeRun({
+            id: 'telemetry-assignment-a-message-1',
+            teamId: 'team-a',
+            providerAssignmentId: 'assignment-a',
+            status: 'running',
+            outputs: { status: 'message_recorded' },
+            metadata: { recordKind: 'telemetry', source: 'provider_runner_message' },
+        });
         expect(await store.listAgentModeRunsPage('project-a', { assignmentId: 'assignment-a', limit: 1 })).toMatchObject({
             items: [{ id: 'mode-run-a', teamId: 'team-a', providerAssignmentId: 'assignment-a' }],
             page: { limit: 1, hasMore: false, nextCursor: null },
         });
-        expect(await store.listExecutionRunsForTeamPage('team-a', { assignmentId: 'assignment-a', limit: 1 })).toMatchObject({
+        const executionProjection = await store.listExecutionRunsForTeamPage('team-a', { assignmentId: 'assignment-a', limit: 1 });
+        expect(executionProjection).toMatchObject({
             items: [{
                     id: 'mode-run-a',
                     assignment: { id: 'assignment-a' },
-                    modeRuns: [{ id: 'mode-run-a', assignmentId: 'assignment-a' }],
                 }],
             page: { limit: 1, hasMore: false, nextCursor: null },
         });
+        expect(executionProjection.items[0]?.modeRuns).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: 'mode-run-a', assignmentId: 'assignment-a' }),
+            expect.objectContaining({ id: 'telemetry-assignment-a-message-1', assignmentId: 'assignment-a' }),
+        ]));
         const summary = await store.getWorkdayCapacitySummary('workday-a');
         expect(summary).toMatchObject({
             payload: {

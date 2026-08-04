@@ -59,6 +59,12 @@ export interface AgentModeRunWrite {
 	capacityUsageActualId?: string | null;
 }
 
+export function logicalModeRunSql(alias = 'agent_mode_runs'): string {
+	const metadata = `${alias}.metadata_json::jsonb`;
+	const source = `${metadata} ->> 'source'`;
+	return `COALESCE(${metadata} ->> 'recordKind', CASE WHEN COALESCE(${source}, '') LIKE 'provider_runner_%' OR COALESCE(${source}, '') LIKE 'execution_provider_%' THEN 'telemetry' ELSE 'mode-run' END) = 'mode-run'`;
+}
+
 function record(value: unknown, field: string, modeRunId: string): JsonRecord {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as JsonRecord;
 	throw new CapacityGovernanceError('agent_mode_run_json_invalid', `Mode run ${modeRunId} has invalid ${field}.`, 500, { modeRunId, field });
@@ -136,7 +142,7 @@ export async function listAgentModeRunsPage(
 	filters: AgentModeRunListFilters = {},
 ): Promise<CapacityPage<AgentModeRun>> {
 	await database.ensureInitialized();
-	const clauses = ['project_id = ?'];
+	const clauses = ['project_id = ?', logicalModeRunSql()];
 	const values: unknown[] = [projectId];
 	if (filters.mode) { clauses.push('mode = ?'); values.push(filters.mode); }
 	if (filters.assignmentId) { clauses.push('provider_assignment_id = ?'); values.push(filters.assignmentId); }

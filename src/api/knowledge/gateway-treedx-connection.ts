@@ -30,6 +30,7 @@ export interface KnowledgeGatewayConnection {
 	contentPath: string;
 	allowedPaths: string[];
 	nodeId: string;
+	authoringBranch: string;
 }
 
 export async function resolveKnowledgeGatewayConnection(store: any, input: {
@@ -40,6 +41,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	readRefs?: string[];
 	workspaceRefs?: string[];
 	relationPaths?: boolean;
+	authoringPaths?: boolean;
 }): Promise<KnowledgeGatewayConnection | null> {
 	const library = await store.getProjectTreeDxLibrary(input.projectId);
 	if (!library) return null;
@@ -59,7 +61,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	const contentPath = normalizedContentPath(library.contentPath);
 	const allowedPaths = [`${contentPath}/books/**`, `${contentPath}/knowledge/**`, `${contentPath}/assets/**`,
 		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people']
-			.map((collection) => `${contentPath}/${collection}/**`) : [])];
+			.map((collection) => `${contentPath}/${collection}/**`) : []),
+		...(input.authoringPaths ? [`${contentPath}/agents/**`, '.treeseed/agents/**', '.treeseed/seeds/**', 'scenes/**'] : [])];
+	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const token = mintTreeDxHs256Token({
 		secret,
 		issuer: text(store.config.TREESEED_TREEDX_JWT_ISSUER, process.env.TREESEED_TREEDX_JWT_ISSUER) || 'https://api.treeseed.local/treedx',
@@ -75,6 +79,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit']
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query'],
 		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
+			authoringBranch,
 			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []),
 			...(input.workspaceRefs ?? [])])],
 		paths: allowedPaths,
@@ -88,5 +93,6 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		contentPath,
 		allowedPaths,
 		nodeId: text(library.instanceId, treeDx.instanceId),
+		authoringBranch,
 	};
 }
