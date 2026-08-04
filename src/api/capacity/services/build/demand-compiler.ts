@@ -79,6 +79,19 @@ async function activeEnvelope(database: CapacityGovernanceDatabase, run: Durable
 	return rows[0]?.id ? String(rows[0].id) : null;
 }
 
+async function completedEquivalentPlanningDemand(
+	store: CapacityGovernanceDatabase,
+	input: { runId: string; projectId: string; agentId: string; activityType: string; sourceType: string; sourceId: string },
+) {
+	return Boolean(await store.first(
+		`SELECT id FROM capacity_workday_demands
+		 WHERE workday_run_id = ? AND project_id = ? AND agent_id = ? AND activity_type = ?
+		   AND source_type = ? AND source_id = ? AND status = 'completed'
+		 LIMIT 1`,
+		[input.runId, input.projectId, input.agentId, input.activityType, input.sourceType, input.sourceId],
+	));
+}
+
 async function compilePlanningDemands(
 	store: DemandCompilerStore,
 	run: DurableCapacityWorkdayRun,
@@ -144,6 +157,14 @@ async function compilePlanningDemands(
 		}
 		const intent = await resolveCapacityWorkdayAssignmentIntent(store, run, project, agent);
 		const source = await resolvePlanningDemandSource(store, run, project, agent, intent);
+		if (await completedEquivalentPlanningDemand(store, {
+			runId: run.id,
+			projectId: project.id,
+			agentId: agent.slug,
+			activityType: agent.activityType,
+			sourceType: source.sourceType,
+			sourceId: source.sourceId,
+		})) continue;
 		const idempotencyKey = `workday:${run.id}:${project.id}:cycle:${cycle.cycleNumber}:agent:${agent.slug}:profile:${agent.activityType}`;
 		const demand = await demandRepository.create({
 			id: id('demand', idempotencyKey), teamId: run.teamId, projectId: project.id, workdayRunId: run.id, workdayId,

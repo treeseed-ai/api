@@ -386,9 +386,15 @@ it('compiles configured planning into one durable demand instead of creating an 
             { source_type: 'idle-intent', mode: 'planning', status: 'pending', agent_id: 'architect', requested_credits: 1 },
         ]);
         expect(await store.all(`SELECT status, agent_id, demand_id FROM capacity_workday_participation_entries`)).toEqual([
-            { status: 'assigned', agent_id: 'architect', demand_id: expect.any(String) },
+            { status: 'assigned', agent_id: 'architect:planning', demand_id: expect.any(String) },
         ]);
         expect(await store.all(`SELECT id FROM capacity_provider_assignments`)).toEqual([]);
+		await store.run(`UPDATE capacity_workday_demands SET status = 'completed'`);
+		await store.run(`UPDATE capacity_workday_participation_entries SET status = 'completed', covered_at = ?`, [now]);
+		await expect(compileProviderWorkdayDemand(controlPlane, {
+			teamId: 'team-a', capacityProviderId: 'provider-a', membershipId: 'membership-a',
+		}, now)).resolves.toEqual({ consideredRuns: 1, compiledDemands: 0 });
+		expect(await store.all(`SELECT id FROM capacity_workday_demands`)).toHaveLength(1);
     }
     finally {
         await database.close();
