@@ -22,7 +22,7 @@ export async function listProjectDeletionBlockers(store: DeletionBlockerStore, p
 			[projectId],
 		),
 		store.all(
-			`SELECT id, state, reserved_credits, consumed_credits FROM capacity_reservations
+			`SELECT id, state, reserved_seconds, active_seconds FROM capacity_reservations
 			 WHERE project_id = ? AND state IN ('reserved', 'consuming', 'overran_pending_approval')
 			 ORDER BY created_at DESC LIMIT 20`,
 			[projectId],
@@ -37,7 +37,7 @@ export async function listProjectDeletionBlockers(store: DeletionBlockerStore, p
 	return [
 		...jobs.map((row) => ({ code: 'active_job', id: row.id, label: `${row.namespace}:${row.operation} ${row.status}`, href: '/app/work/objectives' })),
 		...workdays.map((row) => ({ code: 'active_workday', id: row.id, label: `Workday ${row.id} ${row.status}`, href: `/app/work/objectives#work-${row.id}` })),
-		...reservations.map((row) => ({ code: 'capacity_reservation', id: row.id, label: `${row.state} ${row.reserved_credits ?? 0} credits`, href: '/app/capacity' })),
+		...reservations.map((row) => ({ code: 'capacity_reservation', id: row.id, label: `${row.state} ${row.reserved_seconds ?? 0}s reserved / ${row.active_seconds ?? 0}s active`, href: '/app/capacity' })),
 		...approvals.map((row) => ({ code: 'pending_approval', id: row.id, label: row.title ?? row.kind, href: `/app/work/decisions#approval-${row.id}` })),
 	];
 }

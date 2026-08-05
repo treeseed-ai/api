@@ -112,7 +112,7 @@ export function sdkArgsForMethod(method) {
         capacityUsage: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
         capacityLedger: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
         executionRuns: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
-        admitCapacityAssignment: ['${fixtures.team.id}', { providerId: 'missing-provider', membershipId: 'missing-membership', projectId: '${fixtures.project.id}', projectAgentClassId: 'missing-agent-class', agentId: 'acceptance-agent', mode: 'planning', environment: 'local', requestedCredits: 1 }, 'acceptance-${runNonce}-admission'],
+        admitCapacityAssignment: ['${fixtures.team.id}', { providerId: 'missing-provider', membershipId: 'missing-membership', projectId: '${fixtures.project.id}', projectAgentClassId: 'missing-agent-class', agentId: 'acceptance-agent', mode: 'planning', environment: 'local', requestedSeconds: 300 }, 'acceptance-${runNonce}-admission'],
         createProviderAssignment: ['${fixtures.team.id}', {
                 projectId: '${fixtures.project.id}',
                 capacityProviderId: '${fixtures.provider.id}',

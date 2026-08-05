@@ -1,10 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { MAX_CAPACITY_PAGE_LIMIT, type CapacityPage } from '@treeseed/sdk/capacity-pagination';
-import { normalizeWorkdayAgentSelection, type CapacityWorkdayRunRecord, type CapacityWorkdayScheduleRecord } from '@treeseed/sdk/agent-capacity';
+import { randomUUID } from 'node:crypto';
+import { normalizeWorkdayAgentSelection, validateWorkdayTimePolicy, type CapacityWorkdayRunRecord, type CapacityWorkdayScheduleRecord } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { WorkdayProject } from '../policy/workday-project-policy.ts';
-import { capacityWorkdayAgentsFromClasses } from '../policy/workday-agent-policy.ts';
 
 type Row = Record<string, unknown>;
 type Status = CapacityWorkdayScheduleRecord['status'];
@@ -21,13 +19,20 @@ function publicationPolicy(value: unknown): CapacityWorkdayScheduleRecord['publi
 		requireTechnicalReview: input.requireTechnicalReview !== false, requireAudienceReview: input.requireAudienceReview !== false,
 		requireGraphReviewWhenStructural: input.requireGraphReviewWhenStructural !== false, simulatedHumanApproval: input.simulatedHumanApproval === true };
 }
+function timePolicy(value: unknown, planningOnly: boolean) {
+	const candidate = value && typeof value === 'object' && !Array.isArray(value) ? value : { cooperativePlanningPercent: planningOnly ? 90 : 25, governedExecutionPercent: planningOnly ? 0 : 65, reservePercent: 10 };
+	const validation = validateWorkdayTimePolicy(candidate);
+	if (!validation.ok || !validation.value) throw new CapacityGovernanceError('capacity_workday_time_policy_invalid', 'Workday time policy must contain Plan, Execute, and Reserve percentages totaling 100.', 400, { diagnostics: validation.diagnostics });
+	if (planningOnly && validation.value.governedExecutionPercent !== 0) throw new CapacityGovernanceError('capacity_workday_planning_only_execution_invalid', 'Planning-only schedules require zero governed execution time.', 400);
+	return validation.value;
+}
 export function serializeWorkdaySchedule(row: Row | null): CapacityWorkdayScheduleRecord | null {
 	if (!row) return null; const status = String(row.status) as Status;
 	if (!SCHEDULE_STATUSES.has(status)) throw new CapacityGovernanceError('capacity_workday_schedule_corrupt', 'Schedule status is invalid.', 500);
 	return { id: String(row.id), teamId: String(row.team_id), projectIds: json(row.project_ids_json, []), status, purpose: String(row.purpose),
 		capacityProviderId: String(row.capacity_provider_id), agentSelection: normalizeWorkdayAgentSelection(json(row.agent_selection_json, {})),
 		cadenceSeconds: Number(row.cadence_seconds), durationSeconds: Number(row.duration_seconds), maxActiveAssignments: Number(row.max_active_assignments),
-		availableCredits: Number(row.available_credits), planningOnly: Number(row.planning_only) === 1,
+		availableSeconds: Number(row.available_seconds), timePolicy: timePolicy(json(row.time_policy_json, {}), Number(row.planning_only) === 1), planningOnly: Number(row.planning_only) === 1,
 		publicationPolicy: publicationPolicy(json(row.publication_policy_json, {})), lastRunId: row.last_run_id ? String(row.last_run_id) : null,
 		nextRunAt: String(row.next_run_at), stateVersion: Number(row.state_version), createdAt: String(row.created_at), updatedAt: String(row.updated_at) };
 }
@@ -36,7 +41,6 @@ interface ScheduleStore extends CapacityGovernanceDatabase {
 	getCapacityWorkdayRun(teamId: string, runId: string): Promise<CapacityWorkdayRunRecord | null>;
 	createCapacityWorkdayRun(teamId: string, input: Row): Promise<CapacityWorkdayRunRecord>;
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
-	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
 }
 
 export class CapacityWorkdayScheduleService {
@@ -46,10 +50,12 @@ export class CapacityWorkdayScheduleService {
 	async create(teamId: string, input: Row) {
 		await this.store.ensureInitialized(); const now = new Date().toISOString(); const projectIds = strings(input.projectIds);
 		if (!projectIds.length) throw new CapacityGovernanceError('capacity_workday_schedule_projects_required', 'A schedule requires at least one project id.', 400);
-		const availableCredits = Number(input.availableCredits ?? 100); if (!Number.isFinite(availableCredits) || availableCredits <= 0) throw new CapacityGovernanceError('capacity_workday_schedule_credits_invalid', 'Available credits must be positive.', 400);
+		if (input.availableCredits !== undefined) throw new CapacityGovernanceError('capacity_workday_schedule_legacy_credits_rejected', 'Recurring schedules use agent time, not credits.', 409);
+		const durationSeconds = integer(input.durationSeconds, 1800, 60); const maxActiveAssignments = integer(input.maxActiveAssignments, 3, 1);
+		const availableSeconds = integer(input.availableSeconds, durationSeconds * maxActiveAssignments, 1); const planningOnly = input.planningOnly !== false; const policy = timePolicy(input.timePolicy, planningOnly);
 		const id = text(input.id, randomUUID()); const nextRunAt = text(input.nextRunAt, now); if (!Number.isFinite(Date.parse(nextRunAt))) throw new CapacityGovernanceError('capacity_workday_schedule_time_invalid', 'nextRunAt must be a valid ISO timestamp.', 400);
-		await this.store.run(`INSERT INTO capacity_workday_schedules (id, team_id, capacity_provider_id, status, purpose, project_ids_json, agent_selection_json, cadence_seconds, duration_seconds, max_active_assignments, available_credits, planning_only, publication_policy_json, last_run_id, next_run_at, state_version, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, ?, ?)`,
-			[id, teamId, text(input.capacityProviderId), text(input.purpose, 'Recurring editorial workday'), JSON.stringify(projectIds), JSON.stringify(normalizeWorkdayAgentSelection(input.agentSelection)), integer(input.cadenceSeconds, 3600, 60), integer(input.durationSeconds, 1800, 60), integer(input.maxActiveAssignments, 3, 1), availableCredits, input.planningOnly === false ? 0 : 1, JSON.stringify(publicationPolicy(input.publicationPolicy)), nextRunAt, now, now]);
+		await this.store.run(`INSERT INTO capacity_workday_schedules (id, team_id, capacity_provider_id, status, purpose, project_ids_json, agent_selection_json, cadence_seconds, duration_seconds, max_active_assignments, available_seconds, time_policy_json, planning_only, publication_policy_json, last_run_id, next_run_at, state_version, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, ?, ?)`,
+			[id, teamId, text(input.capacityProviderId), text(input.purpose, 'Recurring editorial workday'), JSON.stringify(projectIds), JSON.stringify(normalizeWorkdayAgentSelection(input.agentSelection)), integer(input.cadenceSeconds, 3600, 60), durationSeconds, maxActiveAssignments, availableSeconds, JSON.stringify(policy), planningOnly ? 1 : 0, JSON.stringify(publicationPolicy(input.publicationPolicy)), nextRunAt, now, now]);
 		return this.get(teamId, id);
 	}
 	async update(teamId: string, id: string, input: Row) {
@@ -59,22 +65,14 @@ export class CapacityWorkdayScheduleService {
 		const next = { ...current, status, purpose: text(input.purpose, current.purpose), projectIds: input.projectIds ? strings(input.projectIds) : current.projectIds,
 			agentSelection: input.agentSelection ? normalizeWorkdayAgentSelection(input.agentSelection) : current.agentSelection,
 			cadenceSeconds: integer(input.cadenceSeconds, current.cadenceSeconds, 60), durationSeconds: integer(input.durationSeconds, current.durationSeconds, 60),
-			maxActiveAssignments: integer(input.maxActiveAssignments, current.maxActiveAssignments, 1), availableCredits: Number(input.availableCredits ?? current.availableCredits),
+			maxActiveAssignments: integer(input.maxActiveAssignments, current.maxActiveAssignments, 1), availableSeconds: integer(input.availableSeconds, current.availableSeconds, 1),
 			planningOnly: input.planningOnly === undefined ? current.planningOnly : input.planningOnly === true,
 			publicationPolicy: input.publicationPolicy ? publicationPolicy(input.publicationPolicy) : current.publicationPolicy,
 			nextRunAt: text(input.nextRunAt, current.nextRunAt), stateVersion: current.stateVersion + 1, updatedAt: new Date().toISOString() };
-		await this.store.run(`UPDATE capacity_workday_schedules SET status = ?, purpose = ?, project_ids_json = ?, agent_selection_json = ?, cadence_seconds = ?, duration_seconds = ?, max_active_assignments = ?, available_credits = ?, planning_only = ?, publication_policy_json = ?, next_run_at = ?, state_version = ?, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ?`,
-			[next.status, next.purpose, JSON.stringify(next.projectIds), JSON.stringify(next.agentSelection), next.cadenceSeconds, next.durationSeconds, next.maxActiveAssignments, next.availableCredits, next.planningOnly ? 1 : 0, JSON.stringify(next.publicationPolicy), next.nextRunAt, next.stateVersion, next.updatedAt, id, teamId, current.stateVersion]);
+		const nextTimePolicy = timePolicy(input.timePolicy ?? current.timePolicy, next.planningOnly);
+		await this.store.run(`UPDATE capacity_workday_schedules SET status = ?, purpose = ?, project_ids_json = ?, agent_selection_json = ?, cadence_seconds = ?, duration_seconds = ?, max_active_assignments = ?, available_seconds = ?, time_policy_json = ?, planning_only = ?, publication_policy_json = ?, next_run_at = ?, state_version = ?, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ?`,
+			[next.status, next.purpose, JSON.stringify(next.projectIds), JSON.stringify(next.agentSelection), next.cadenceSeconds, next.durationSeconds, next.maxActiveAssignments, next.availableSeconds, JSON.stringify(nextTimePolicy), next.planningOnly ? 1 : 0, JSON.stringify(next.publicationPolicy), next.nextRunAt, next.stateVersion, next.updatedAt, id, teamId, current.stateVersion]);
 		const updated = await this.get(teamId, id); if (updated?.stateVersion !== next.stateVersion) throw new CapacityGovernanceError('capacity_workday_schedule_version_stale', 'Schedule changed concurrently.', 409); return updated;
-	}
-	private async resolvedSelection(schedule: CapacityWorkdayScheduleRecord, projects: WorkdayProject[]) {
-		const entries = await Promise.all(projects.map(async (project) => {
-			const page = await this.store.listProjectAgentClassesPage(project.id, { limit: MAX_CAPACITY_PAGE_LIMIT });
-			if (page.page.hasMore) throw new CapacityGovernanceError('capacity_internal_collection_bound_exceeded', 'Project agent classes exceed the schedule snapshot bound.', 409);
-			const agents = capacityWorkdayAgentsFromClasses(page.items, schedule.agentSelection).map((agent) => ({ agentSlug: agent.slug, agentClassId: agent.projectAgentClassId, agentClassSlug: agent.projectAgentClassSlug, contentPath: agent.contentPath, activityType: agent.activityType, handler: agent.handler }));
-			if (!agents.length) throw new CapacityGovernanceError('capacity_workday_agent_selection_empty', 'Scheduled selection resolved no eligible agents.', 409, { scheduleId: schedule.id, projectId: project.id });
-			return [project.id, { projectId: project.id, projectSlug: project.slug ?? project.id, revision: createHash('sha256').update(JSON.stringify(agents)).digest('hex'), agents }] as const;
-		})); return Object.fromEntries(entries);
 	}
 	async tick(teamId: string, id: string, now = new Date().toISOString()) {
 		let schedule = await this.get(teamId, id); if (!schedule) return null; if (schedule.status !== 'active') return { schedule, run: null, action: 'inactive' };
@@ -102,7 +100,7 @@ export class CapacityWorkdayScheduleService {
 		const allProjects = await this.store.listTeamProjects(schedule.teamId); const projects = schedule.projectIds.map((id) => allProjects.find((project) => project.id === id)).filter((project): project is WorkdayProject => Boolean(project));
 		if (projects.length !== schedule.projectIds.length) throw new CapacityGovernanceError('capacity_workday_schedule_project_missing', 'A scheduled project is unavailable.', 409);
 		const run = await this.store.createCapacityWorkdayRun(schedule.teamId, { id: runId, capacityProviderId: schedule.capacityProviderId, scenarioId: schedule.purpose, status: 'running', environment: 'local', startedAt: now,
-			parameters: { purpose: schedule.purpose, projects: projects.map((project) => project.slug ?? project.id), durationSeconds: schedule.durationSeconds, maxActiveAssignments: schedule.maxActiveAssignments, availableCredits: schedule.availableCredits, planningOnly: schedule.planningOnly, agentSelection: schedule.agentSelection, resolvedAgentSelectionByProject: await this.resolvedSelection(schedule, projects), publicationPolicy: schedule.publicationPolicy, scheduleId: schedule.id } });
+			parameters: { purpose: schedule.purpose, projects: projects.map((project) => project.slug ?? project.id), durationSeconds: schedule.durationSeconds, maxActiveAssignments: schedule.maxActiveAssignments, availableSeconds: schedule.availableSeconds, timePolicy: schedule.timePolicy, planningOnly: schedule.planningOnly, agentSelection: schedule.agentSelection, publicationPolicy: schedule.publicationPolicy, scheduleId: schedule.id } });
 		return { schedule: await this.get(schedule.teamId, schedule.id), run, action: 'created' };
 	}
 }

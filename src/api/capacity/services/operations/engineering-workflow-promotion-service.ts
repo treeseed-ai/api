@@ -111,7 +111,7 @@ async function graphFor(
 			graph = await store.createDecisionAssignmentGraph(config.decisionId, {
 				id: graphId, projectId: config.projectId, workflowKind: 'engineering-test-first', exactBaseRef: config.exactBaseRef,
 				roles: config.roles, includeResearch: config.includeResearch === true, includeArchitecture: config.includeArchitecture === true,
-				credits: config.credits ?? {}, metadata: {
+				seconds: config.seconds ?? {}, metadata: {
 					...(config.metadata ?? {}), workflowPromotionId: config.id, workdayRunId: run.id, objectiveId: config.objectiveId,
 					requireRevisionCycle: config.requireRevisionCycle === true,
 				},
@@ -171,7 +171,7 @@ async function createNodeInputs(input: {
 					objectiveId: input.config.objectiveId, decisionId: input.config.decisionId, proposalId: estimate.proposalId ?? null,
 					workGraphId: input.graph.id, workGraphNodeId: node.id, exactBaseRef: input.config.exactBaseRef,
 					artifactKind: node.outputRequirements.find((requirement) => requirement.required !== false)?.outputType ?? node.outputRequirements[0]?.outputType,
-					estimate: { expectedCredits: node.capacity.expectedCredits, highCredits: node.capacity.maxCredits },
+					estimate: { expectedSeconds: node.capacity.expectedSeconds, highSeconds: node.capacity.maxSeconds },
 					requiredCapabilities: node.requiredCapabilities, dependencies, expectedOutputs: node.outputRequirements,
 				},
 				metadata: { workflowPromotionId: input.config.id, workdayRunId: input.run.id, graphId: input.graph.id, graphNodeId: node.id, estimateId: estimate.id },

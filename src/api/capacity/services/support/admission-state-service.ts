@@ -15,7 +15,7 @@ export interface CapacityAdmissionStateRequest {
 	projectAgentClassId: string;
 	mode: 'planning' | 'acting';
 	workDayId: string;
-	requestedCredits: number;
+	requestedSeconds: number;
 	executionProviderId?: string | null;
 	laneId?: string | null;
 	providerSessionId?: string | null;
@@ -65,8 +65,8 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	if (!selectedGrant) throw new CapacityGovernanceError('capacity_workday_grant_invalid', 'Capacity workday grant provenance is not active for this membership, project, and environment.', 409, { workDayId: request.workDayId, grantId });
 	const selectedAllocation = serializeCapacityAllocationSetRow(allocationRow);
 	const workdayEnvelope = decodeDurableJsonObject(workday.envelope_json, workdayContext('envelope_json'));
-	const totalCredits = numeric(workdayEnvelope.totalCredits, workdayEnvelope.availableCredits);
-	if (totalCredits == null || totalCredits <= 0) throw new CapacityGovernanceError('capacity_workday_budget_invalid', 'Capacity workday must declare a positive total credit budget.', 409);
+	const totalSeconds = numeric(workdayEnvelope.availableSeconds);
+	if (totalSeconds == null || totalSeconds <= 0) throw new CapacityGovernanceError('capacity_workday_budget_invalid', 'Capacity workday must declare a positive agent-time budget.', 409);
 	if (!selectedAllocation) throw new CapacityGovernanceError('capacity_allocation_not_found', 'Capacity workday does not reference an available allocation set.', 409, { workDayId: request.workDayId, allocationSetId: allocationSetId || null });
 	const allocationSliceIds = resolveCapacityAllocationPath(selectedAllocation, request);
 	const dailyKey = selectedGrant ? `grant-daily:${selectedGrant.id}:${now.slice(0, 10)}` : '';
@@ -75,16 +75,16 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const workdayKey = `workday:${request.workDayId}:lifetime`;
 	const allSliceIds = selectedAllocation.slices.map((slice) => slice.id);
 	const borrowingRuleIds = selectedAllocation.borrowingRules.map((rule) => rule.id);
-	const [dailyCredits, monthlyCredits, activeAssignments, workdayCredits, reserveCommittedCredits, ...allocationCounters] = await Promise.all([
+	const [dailyAgentSeconds, monthlyAgentSeconds, activeAssignments, workdaySeconds, reserveCommittedSeconds, ...allocationCounters] = await Promise.all([
 		counterAmount(database, dailyKey), counterAmount(database, monthlyKey), counterAmount(database, concurrencyKey), counterAmount(database, workdayKey),
 		counterAmount(database, `allocation-reserve:${selectedAllocation.id}:${request.workDayId}`),
 		...allSliceIds.map((sliceId) => counterAmount(database, `allocation-slice:${selectedAllocation.id}:${sliceId}:${request.workDayId}`)),
 		...borrowingRuleIds.map((ruleId) => counterAmount(database, `allocation-borrow:${selectedAllocation.id}:${ruleId}:${request.workDayId}`)),
 	]);
-	const sliceCredits = allocationCounters.slice(0, allSliceIds.length);
-	const borrowedCredits = allocationCounters.slice(allSliceIds.length);
-	const committedCreditsBySlice = Object.fromEntries(allSliceIds.map((sliceId, index) => [sliceId, sliceCredits[index] ?? 0]));
-	const committedBorrowedCreditsByRule = Object.fromEntries(borrowingRuleIds.map((ruleId, index) => [ruleId, borrowedCredits[index] ?? 0]));
+	const sliceSeconds = allocationCounters.slice(0, allSliceIds.length);
+	const borrowedSeconds = allocationCounters.slice(allSliceIds.length);
+	const committedSecondsBySlice = Object.fromEntries(allSliceIds.map((sliceId, index) => [sliceId, sliceSeconds[index] ?? 0]));
+	const committedBorrowedSecondsByRule = Object.fromEntries(borrowingRuleIds.map((ruleId, index) => [ruleId, borrowedSeconds[index] ?? 0]));
 	const sessionContext = (column: string) => ({ owner: 'provider availability session', ownerId: sessionRow ? String(sessionRow.id ?? '') : null, column });
 	const nativeLimits = sessionRow ? decodeDurableJsonObject(sessionRow.native_limits_json, sessionContext('native_limits_json')) : {};
 	const providerCapabilities = sessionRow ? decodeDurableJsonArray<string>(sessionRow.capabilities_json, sessionContext('capabilities_json')) : [];
@@ -92,10 +92,10 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const constraints = sessionRow ? decodeDurableJsonObject(sessionRow.constraints_json, sessionContext('constraints_json')) : {};
 	const maxConcurrent = numeric(runnerPressure.maxConcurrentRunners, nativeLimits.maxConcurrentRunners) ?? 0;
 	const activeRunners = numeric(runnerPressure.activeRunners, runnerPressure.activeAssignments) ?? 0;
-	const availableCredits = numeric(nativeLimits.availableCredits, nativeLimits.creditLimit) ?? 0;
+	const availableAgentSeconds = numeric(nativeLimits.availableAgentSeconds) ?? totalSeconds;
 	const localMaxConcurrent = numeric(constraints.maxConcurrentRunners, maxConcurrent) ?? 0;
 	const localActive = numeric(constraints.activeRunners, activeRunners) ?? 0;
-	const localCredits = numeric(constraints.availableCredits, availableCredits) ?? 0;
+	const localAgentSeconds = numeric(constraints.availableAgentSeconds, availableAgentSeconds) ?? totalSeconds;
 	let acting: CapacityAdmissionInput['acting'];
 	if (request.mode === 'acting') {
 		const [readiness, capacityPlan] = request.decisionId ? await Promise.all([
@@ -106,20 +106,20 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	}
 	return {
 		now,
-		request: { teamId: request.teamId, providerId: request.providerId, membershipId: request.membershipId, projectId: request.projectId, environment: request.environment, agentClassId: request.projectAgentClassId, mode: request.mode, executionProviderId: request.executionProviderId ?? null, laneId: request.laneId ?? null, requiredCapabilities: [...new Set([...decodeDurableJsonArray<string>(agentClass.required_capabilities_json, { owner: 'project agent class', ownerId: request.projectAgentClassId, column: 'required_capabilities_json' }), ...(request.requiredCapabilities ?? [])])], requestedCredits: request.requestedCredits },
+		request: { teamId: request.teamId, providerId: request.providerId, membershipId: request.membershipId, projectId: request.projectId, environment: request.environment, agentClassId: request.projectAgentClassId, mode: request.mode, executionProviderId: request.executionProviderId ?? null, laneId: request.laneId ?? null, requiredCapabilities: [...new Set([...decodeDurableJsonArray<string>(agentClass.required_capabilities_json, { owner: 'project agent class', ownerId: request.projectAgentClassId, column: 'required_capabilities_json' }), ...(request.requiredCapabilities ?? [])])], requestedSeconds: request.requestedSeconds },
 		membership: { id: String(membership.id), teamId: String(membership.team_id), providerId: String(membership.capacity_provider_id), status: String(membership.status) as CapacityAdmissionInput['membership']['status'] },
 		availability: { status: String(sessionRow?.status ?? 'closed') as CapacityAdmissionInput['availability']['status'], availableFrom: String(sessionRow?.available_from ?? sessionRow?.opened_at ?? now), availableUntil: sessionRow?.available_until || sessionRow?.expires_at ? String(sessionRow.available_until ?? sessionRow.expires_at) : null },
 		grant: selectedGrant,
-		workday: { id: request.workDayId, status: String(workday.status) as CapacityAdmissionInput['workday']['status'], totalCredits, committedCredits: workdayCredits },
+		workday: { id: request.workDayId, status: String(workday.status) as CapacityAdmissionInput['workday']['status'], totalSeconds, committedSeconds: workdaySeconds },
 		allocationSet: selectedAllocation,
 		allocationSliceIds,
-		committedCreditsBySlice,
-		committedBorrowedCreditsByRule,
-		reserveCommittedCredits,
+		committedSecondsBySlice,
+		committedBorrowedSecondsByRule,
+		reserveCommittedSeconds,
 		approvedBorrowingRuleIds: Array.isArray(workdayMetadata.approvedBorrowingRuleIds) ? workdayMetadata.approvedBorrowingRuleIds.map(String) : [],
-		providerCapacity: { availableCredits, availableConcurrentAssignments: Math.max(0, maxConcurrent - activeRunners), capabilities: providerCapabilities },
-		providerLocalLimits: { availableCredits: localCredits, availableConcurrentAssignments: Math.max(0, localMaxConcurrent - localActive) },
-		grantCommitted: { dailyCredits, monthlyCredits, activeAssignments },
+		providerCapacity: { availableAgentSeconds, availableConcurrentAssignments: Math.max(0, maxConcurrent - activeRunners), capabilities: providerCapabilities },
+		providerLocalLimits: { availableAgentSeconds: localAgentSeconds, availableConcurrentAssignments: Math.max(0, localMaxConcurrent - localActive) },
+		grantCommitted: { dailyAgentSeconds, monthlyAgentSeconds, activeAssignments },
 		acting,
 	};
 }

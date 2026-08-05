@@ -53,10 +53,10 @@ function context(id: string, column: string) {
 export function serializeAgentCapacityPlanRow(row: Row | null): AgentCapacityPlanRecord | null {
 	if (!row) return null;
 	const id = text(row.id);
-	const expectedCredits = finiteAmount(row.expected_credits, 'expected_credits', id);
-	const highCredits = finiteAmount(row.high_credits, 'high_credits', id);
-	if (highCredits < expectedCredits) {
-		throw new CapacityGovernanceError('agent_capacity_plan_amount_invalid', `Agent capacity plan ${id} high credits are below expected credits.`, 500, { planId: id });
+	const expectedSeconds = finiteAmount(row.expected_seconds, 'expected_seconds', id);
+	const highSeconds = finiteAmount(row.high_seconds, 'high_seconds', id);
+	if (highSeconds < expectedSeconds) {
+		throw new CapacityGovernanceError('agent_capacity_plan_amount_invalid', `Agent capacity plan ${id} high time is below expected time.`, 500, { planId: id });
 	}
 	for (const [field, value] of [['teamId', row.team_id], ['projectId', row.project_id], ['decisionId', row.decision_id], ['scopeHash', row.scope_hash]] as const) {
 		if (!text(value)) throw new CapacityGovernanceError('agent_capacity_plan_field_invalid', `Agent capacity plan ${id || '(unknown)'} requires ${field}.`, 500, { planId: id || null, field });
@@ -70,8 +70,8 @@ export function serializeAgentCapacityPlanRow(row: Row | null): AgentCapacityPla
 		scopeHash: text(row.scope_hash),
 		allocationSetId: nullableText(row.allocation_set_id),
 		workDayId: nullableText(row.work_day_id),
-		expectedCredits,
-		highCredits,
+		expectedSeconds,
+		highSeconds,
 		workUnits: decodeDurableJsonArray<AgentCapacityPlanWorkUnit>(row.work_units_json, context(id, 'work_units_json')),
 		capabilityNeeds: decodeDurableJsonArray<string>(row.capability_needs_json, context(id, 'capability_needs_json')),
 		environmentNeeds: decodeDurableJsonArray<string>(row.environment_needs_json, context(id, 'environment_needs_json')),
@@ -97,7 +97,7 @@ export class AgentCapacityPlanRepository {
 		await this.database.run(
 			`INSERT INTO agent_capacity_plans (
 				id, team_id, project_id, decision_id, status, scope_hash, allocation_set_id, work_day_id,
-				expected_credits, high_credits, work_units_json, capability_needs_json, environment_needs_json,
+				expected_seconds, high_seconds, work_units_json, capability_needs_json, environment_needs_json,
 				reserves_json, blockers_json, priority_rationale, review_json, metadata_json,
 				accepted_at, scheduled_at, superseded_at, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -105,7 +105,7 @@ export class AgentCapacityPlanRepository {
 				team_id = EXCLUDED.team_id, project_id = EXCLUDED.project_id, decision_id = EXCLUDED.decision_id,
 				status = EXCLUDED.status, scope_hash = EXCLUDED.scope_hash,
 				allocation_set_id = EXCLUDED.allocation_set_id, work_day_id = EXCLUDED.work_day_id,
-				expected_credits = EXCLUDED.expected_credits, high_credits = EXCLUDED.high_credits,
+				expected_seconds = EXCLUDED.expected_seconds, high_seconds = EXCLUDED.high_seconds,
 				work_units_json = EXCLUDED.work_units_json, capability_needs_json = EXCLUDED.capability_needs_json,
 				environment_needs_json = EXCLUDED.environment_needs_json, reserves_json = EXCLUDED.reserves_json,
 				blockers_json = EXCLUDED.blockers_json, priority_rationale = EXCLUDED.priority_rationale,
@@ -114,7 +114,7 @@ export class AgentCapacityPlanRepository {
 				superseded_at = EXCLUDED.superseded_at, updated_at = EXCLUDED.updated_at`,
 			[
 				plan.id, plan.teamId, plan.projectId, plan.decisionId, status(plan.status), plan.scopeHash,
-				plan.allocationSetId ?? null, plan.workDayId ?? null, plan.expectedCredits, plan.highCredits,
+				plan.allocationSetId ?? null, plan.workDayId ?? null, plan.expectedSeconds, plan.highSeconds,
 				JSON.stringify(plan.workUnits), JSON.stringify(plan.capabilityNeeds), JSON.stringify(plan.environmentNeeds),
 				JSON.stringify(plan.reserves), JSON.stringify(plan.blockers), plan.priorityRationale ?? null,
 				JSON.stringify(review), JSON.stringify(plan.metadata ?? {}), plan.acceptedAt ?? null,

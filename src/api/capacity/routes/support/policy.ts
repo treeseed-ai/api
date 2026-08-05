@@ -158,7 +158,7 @@ export function installCapacityPolicyRoutes(app: Hono, options: CapacityPolicyRo
 				projectAgentClassId: String(body.projectAgentClassId ?? ''),
 				mode: body.mode === 'acting' ? 'acting' : 'planning',
 				workDayId: String(body.workDayId ?? ''),
-				requestedCredits: Number(body.requestedCredits),
+				requestedSeconds: Number(body.requestedSeconds),
 				executionProviderId: typeof body.executionProviderId === 'string' ? body.executionProviderId : null,
 				laneId: typeof body.laneId === 'string' ? body.laneId : null,
 				providerSessionId: typeof body.providerSessionId === 'string' ? body.providerSessionId : null,

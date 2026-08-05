@@ -9,7 +9,7 @@ import { projectAgentActivityRefs } from '../projects/projects-core/project-agen
 export interface ActingDemandSource {
 	sourceType: 'capacity-plan'; sourceId: string; decisionId: string; capacityPlanId: string;
 	projectAgentClassId: string; agentId: string | null; handlerId: string; activityType: string;
-	priority: number; requestedCredits: number; requiredCapabilities: string[]; agentContentPath: string | null; payload: Record<string, unknown>;
+	priority: number; requestedSeconds: number; requiredCapabilities: string[]; agentContentPath: string | null; payload: Record<string, unknown>;
 }
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
@@ -97,8 +97,8 @@ export async function listActingDemandSources(
 			if (Array.isArray(unit.blockers) && unit.blockers.length > 0) continue;
 			const projectAgentClassId = text(unit.projectAgentClassId);
 			const handlerId = text(unit.handlerId ?? record(unit.decisionInput).handlerId);
-			const requestedCredits = Number(unit.highCredits ?? unit.expectedCredits ?? 0);
-			if (!projectAgentClassId || !handlerId || !Number.isFinite(requestedCredits) || requestedCredits <= 0) throw new CapacityGovernanceError(
+			const requestedSeconds = Number(unit.highSeconds ?? unit.expectedSeconds ?? 0);
+			if (!projectAgentClassId || !handlerId || !Number.isInteger(requestedSeconds) || requestedSeconds <= 0) throw new CapacityGovernanceError(
 				'capacity_workday_acting_demand_invalid', `Capacity plan ${String(row.id)} has an invalid acting work unit.`, 500,
 				{ capacityPlanId: String(row.id), workUnitIndex: index },
 			);
@@ -136,7 +136,7 @@ export async function listActingDemandSources(
 				sourceType: 'capacity-plan', sourceId, decisionId, capacityPlanId, projectAgentClassId,
 				agentId, handlerId,
 				activityType: text(unit.activityType) ?? 'acting', priority: Number(record(unit.metadata).priority ?? 100),
-				requestedCredits, requiredCapabilities, agentContentPath: authorizedClass.contentPath,
+				requestedSeconds, requiredCapabilities, agentContentPath: authorizedClass.contentPath,
 				payload: {
 					agentContentPath: authorizedClass.contentPath,
 					decisionInput: { ...decisionInput, input: governedInput, metadata: { ...record(decisionInput.metadata), capacityPlanId, capacityPlanStatus, synthesizedFrom: 'capacity_plan', readiness: { executionReadiness: row.execution_readiness, planningInputsStatus: row.planning_inputs_status } } },

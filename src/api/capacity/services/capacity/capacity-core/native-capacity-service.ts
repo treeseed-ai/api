@@ -1,16 +1,15 @@
-import type { CapacityReservation,DerivedCapacityAvailability,DerivedCapacityInput,DerivedCapacitySummary } from '@treeseed/sdk';
+import type { CapacityReservation,NativeCapacityAvailability,NativeCapacityInput,NativeCapacitySummary } from '@treeseed/sdk';
 import type {
 CapacityExecutionProvider,
 CapacityProviderMembershipView,
 } from '@treeseed/sdk/capacity-provider/contracts';
-import { deriveAvailableCredits,resolveNativeAccountingWindow } from '@treeseed/sdk/capacity-usage';
+import { deriveNativeCapacity,resolveNativeAccountingWindow } from '@treeseed/sdk/native-capacity';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { listCapacityExecutionProviders } from '../../../repositories/capacity/providers/execution-provider.ts';
 import { CapacityProviderIdentityRepository } from '../../../repositories/capacity/providers/provider-identity.ts';
-import { CreditConversionProfileRepository } from '../../../repositories/packages/credit-conversion-profile.ts';
 import { aggregateNativeReservationDebits } from '../accounting/native-reservation-aggregation-service.ts';
 
-export interface DerivedCapacityOptions {
+export interface NativeCapacityOptions {
 	executionProviders?: CapacityExecutionProvider[];
 	providers?: CapacityProviderMembershipView[];
 	activeReservations?: CapacityReservation[];
@@ -22,52 +21,35 @@ function eligible(provider: CapacityProviderMembershipView): boolean {
 	return provider.identityStatus === 'active' && provider.membershipStatus === 'approved';
 }
 
-export function summarizeDerivedCapacity(entries: DerivedCapacityAvailability[]): DerivedCapacitySummary {
+export function summarizeNativeCapacity(entries: NativeCapacityAvailability[]): NativeCapacitySummary {
 	const availableNativeByUnit: Record<string, number> = {};
-	let totalDerivedAvailableCredits = 0;
-	let derivedEntryCount = 0;
-	let learningEntryCount = 0;
 	for (const entry of entries) {
 		availableNativeByUnit[entry.nativeUnit] = (availableNativeByUnit[entry.nativeUnit] ?? 0) + entry.availableNativeAmount;
-		if (entry.derivedAvailableCredits == null) learningEntryCount += 1;
-		else {
-			totalDerivedAvailableCredits += entry.derivedAvailableCredits;
-			derivedEntryCount += 1;
-		}
 	}
-	return {
-		entries,
-		totalDerivedAvailableCredits: Math.floor(totalDerivedAvailableCredits * 100) / 100,
-		derivedEntryCount,
-		learningEntryCount,
-		availableNativeByUnit,
-	};
+	return { entries, availableNativeByUnit };
 }
 
-export class DerivedCapacityService {
+export class NativeCapacityService {
 	private readonly identities: CapacityProviderIdentityRepository;
-	private readonly profiles: CreditConversionProfileRepository;
 
 	constructor(private readonly database: CapacityGovernanceDatabase) {
 		this.identities = new CapacityProviderIdentityRepository(database);
-		this.profiles = new CreditConversionProfileRepository(database);
 	}
 
-	async provider(teamId: string, providerId: string, options: DerivedCapacityOptions = {}): Promise<DerivedCapacitySummary> {
+	async provider(teamId: string, providerId: string, options: NativeCapacityOptions = {}): Promise<NativeCapacitySummary> {
 		await this.database.ensureInitialized();
 		const membership = await this.identities.getTeamMembership(teamId, providerId);
-		if (!membership || !eligible(membership)) return summarizeDerivedCapacity([]);
+		if (!membership || !eligible(membership)) return summarizeNativeCapacity([]);
 		const executionProviders = options.executionProviders ?? await listCapacityExecutionProviders(this.database, providerId);
 		const calculatedAt = options.now ?? new Date().toISOString();
-		const entries: DerivedCapacityAvailability[] = [];
+		const entries: NativeCapacityAvailability[] = [];
 		for (const executionProvider of executionProviders) {
 			const limits = executionProvider.nativeLimits.length > 0
 				? executionProvider.nativeLimits
 				: [null];
 			for (const limit of limits) {
 				const nativeUnit = limit?.nativeUnit ?? executionProvider.nativeUnit;
-				const conversionProfile = await this.profiles.best(executionProvider.adapter, nativeUnit);
-				const accountingInput: DerivedCapacityInput = {
+				const accountingInput: NativeCapacityInput = {
 					executionProvider, nativeLimit: limit, latestObservation: executionProvider.latestObservation ?? null,
 					scope: limit?.scope ?? null, nativeUnit, now: calculatedAt,
 				};
@@ -77,15 +59,15 @@ export class DerivedCapacityService {
 					providerNativeUnit: executionProvider.nativeUnit, projectId: options.projectId ?? null,
 					windowStartAt: accountingWindow.startAt, windowEndAt: accountingWindow.endAt,
 				});
-				entries.push(deriveAvailableCredits({
-					...accountingInput, activeReservations: options.activeReservations, reservationDebits, conversionProfile,
+				entries.push(deriveNativeCapacity({
+					...accountingInput, activeReservations: options.activeReservations, reservationDebits,
 				}));
 			}
 		}
-		return summarizeDerivedCapacity(entries);
+		return summarizeNativeCapacity(entries);
 	}
 
-	async team(teamId: string, options: DerivedCapacityOptions = {}): Promise<DerivedCapacitySummary> {
+	async team(teamId: string, options: NativeCapacityOptions = {}): Promise<NativeCapacitySummary> {
 		await this.database.ensureInitialized();
 		const providers = (options.providers ?? await this.identities.listTeamMemberships(teamId)).filter(eligible);
 		const summaries = await Promise.all(providers.map(async (provider) => ({
@@ -95,6 +77,6 @@ export class DerivedCapacityService {
 				projectId: options.projectId, now: options.now,
 			}),
 		})));
-		return { ...summarizeDerivedCapacity(summaries.flatMap((summary) => summary.entries ?? [])), providers: summaries };
+		return { ...summarizeNativeCapacity(summaries.flatMap((summary) => summary.entries ?? [])), providers: summaries };
 	}
 }

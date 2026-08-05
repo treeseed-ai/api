@@ -1,4 +1,4 @@
-import { validateAgentActivityProfilesConfiguration,validateAgentArtifactContract } from '@treeseed/sdk/agent-capacity';
+import { validateAgentActivityProfilesConfiguration,validateAgentSignalContract,validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parseFrontmatterDocument } from '@treeseed/sdk/frontmatter';
 import { parse as parseYaml } from 'yaml';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
@@ -35,17 +35,17 @@ function definition(path: string, source: string) {
 	}
 	let parsed: Row = {};
 	try { parsed = object(parseYaml(source)); } catch { parsed = {}; }
-	const contract = path.includes('/agents/artifacts/') || path.includes('/agents/signals/');
+	const contract = path.includes('/agents/signals/');
 	const kind = path.startsWith('scenes/') ? 'simulation' as const
-		: path.startsWith('.treeseed/seeds/') ? 'seed' as const
-			: contract && parsed.kind === 'signal' ? 'signal' as const : 'artifact-contract' as const;
-	const validation = contract ? validateAgentArtifactContract(parsed) : null;
+		: path.startsWith('seeds/') ? 'seed' as const
+			: path.includes('/governance/proposal-types/') ? 'proposal-type' as const : 'signal' as const;
+	const validation = contract ? validateAgentSignalContract(parsed) : kind === 'proposal-type' ? validateProposalTypeContract(parsed) : null;
 	return {
 		kind,
 		definition: parsed,
 		contractId: text(parsed.id),
 		contractKind: text(parsed.kind),
-		status: validation?.ok ? 'validated contract' : contract ? 'contract needs attention' : 'repository definition',
+		status: validation?.ok ? 'validated contract' : validation ? 'contract needs attention' : 'repository definition',
 		diagnostics: validation?.diagnostics ?? [],
 		activities: {},
 	};
@@ -62,7 +62,7 @@ export async function agentLabRepositoryDefinitions(dependencies: WorkdayRouteDe
 		const listed = await connection.client.listRepositoryPaths({
 			repoId: connection.repositoryId,
 			ref: connection.baseRef,
-			paths: ['src/content/agents/**', 'scenes/**', '.treeseed/seeds/**', '.treeseed/agents/artifacts/**', '.treeseed/agents/signals/**'],
+			paths: ['src/content/agents/**', 'scenes/**', 'seeds/**', '.treeseed/agents/signals/**', '.treeseed/governance/proposal-types/**'],
 			kinds: ['blob'], extensions: ['md', 'mdx', 'yaml', 'yml'], limit: 400, allowProtected: true,
 		}).catch(() => ({ entries: [] }));
 		const paths = (listed.entries ?? []).map((candidate: unknown) => text(object(candidate).path)).filter(Boolean);
@@ -85,7 +85,7 @@ export async function agentLabRepositoryDefinitions(dependencies: WorkdayRouteDe
 				data: {
 					projectId, path, ref: text(read.resolvedRef, listed.resolvedRef, connection.baseRef),
 					source: 'treedx', contractId: parsed.contractId, contractKind: parsed.contractKind,
-					activities: parsed.activities, diagnostics: parsed.diagnostics,
+					activities: parsed.activities, diagnostics: parsed.diagnostics, definition: parsed.definition,
 				},
 			};
 		});
@@ -105,14 +105,16 @@ export function matchesAgentDefinition(agent: Row, candidate: Row) {
 export function validateAgentDefinitionSource(source: string) {
 	let frontmatter: Row;
 	try { frontmatter = parseFrontmatterDocument(source).frontmatter; }
-	catch (error) { return { ok: false, diagnostics: [{ code: 'agent_frontmatter_invalid', path: 'frontmatter', message: error instanceof Error ? error.message : 'The MDX frontmatter is invalid.' }], references: [] as Array<{ id: string; kind: 'artifact' | 'signal' }> }; }
+	catch (error) { return { ok: false, diagnostics: [{ code: 'agent_frontmatter_invalid', path: 'frontmatter', message: error instanceof Error ? error.message : 'The MDX frontmatter is invalid.' }], references: [] as Array<{ id: string; kind: 'signal' }> }; }
 	const diagnostics = validateAgentActivityProfilesConfiguration(frontmatter.activityProfiles).diagnostics;
 	for (const field of ['id','slug','title','agentClass']) if (!text(frontmatter[field])) diagnostics.push({ code: 'agent_identity_required', path: field, message: `${field} is required.` });
-	const references: Array<{ id: string; kind: 'artifact' | 'signal' }> = [];
-	for (const profile of Object.values(object(frontmatter.activityProfiles)).map(object)) for (const direction of ['inputs','outputs']) {
-		const contracts = object(profile[direction]);
-		for (const id of Array.isArray(contracts.artifactContracts) ? contracts.artifactContracts : []) if (text(id)) references.push({ id: text(id), kind: 'artifact' });
-		for (const id of Array.isArray(contracts.signalContracts) ? contracts.signalContracts : []) if (text(id)) references.push({ id: text(id), kind: 'signal' });
+	const references: Array<{ id: string; kind: 'signal' }> = [];
+	for (const profile of Object.values(object(frontmatter.activityProfiles)).map(object)) {
+		const signals = object(profile.signals);
+		for (const entry of Array.isArray(signals.subscribesTo) ? signals.subscribesTo : []) {
+			const id = text(object(entry).contract); if (id) references.push({ id, kind: 'signal' });
+		}
+		for (const id of Array.isArray(signals.publishes) ? signals.publishes : []) if (text(id)) references.push({ id: text(id), kind: 'signal' });
 	}
 	const unique = new Map(references.map((reference) => [`${reference.kind}:${reference.id}`, reference]));
 	return { ok: diagnostics.length === 0, diagnostics, references: [...unique.values()] };

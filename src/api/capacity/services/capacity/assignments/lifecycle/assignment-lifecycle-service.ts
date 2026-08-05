@@ -21,7 +21,8 @@ import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-serv
 type JsonRecord = Record<string, unknown>;
 
 export interface ExtendedProviderAssignmentLifecycleRequest extends ProviderAssignmentLifecycleRequest {
-	actualCredits?: number | null;
+	activeSeconds?: number | null;
+	elapsedSeconds?: number | null;
 	actualUsd?: number | null;
 	providerUnits?: number | null;
 	usage?: JsonRecord | null;
@@ -84,6 +85,16 @@ function optionalFiniteNumber(value: unknown, field: string): number | null {
 		400,
 		{ field },
 	);
+}
+
+async function assertRequiredSignals(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment) {
+	const required = Array.isArray(record(assignment.allowedOutputs).publishedSignals)
+		? [...new Set((record(assignment.allowedOutputs).publishedSignals as unknown[]).map(String).map((value) => value.replace(/_/gu, '-')).filter(Boolean))] : [];
+	if (!required.length) return;
+	const rows = await database.all(`SELECT DISTINCT contract_id FROM agent_signals WHERE assignment_id = ?`, [assignment.id]);
+	const published = new Set(rows.map((row) => String(row.contract_id).replace(/_/gu, '-')));
+	const missing = required.filter((contractId) => !published.has(contractId));
+	if (missing.length) throw new CapacityGovernanceError('provider_assignment_signal_evidence_missing', 'Assignment cannot complete before all declared signal publications are durably validated.', 409, { assignmentId: assignment.id, missingContractIds: missing });
 }
 
 function activeLeaseOwnedBy(
@@ -267,6 +278,7 @@ export class ProviderAssignmentLifecycleService {
 			);
 			if (!reservation || reservation.state !== 'consumed') return null;
 		}
+		await assertRequiredSignals(this.store, assignment);
 		await projectCompletedPlanningOutputs(this.store, assignment, input as JsonRecord);
 		await projectCompletedResearchWorkflow(this.store, assignment, input as JsonRecord);
 		await projectCompletedAssignmentDeliverable(this.store, assignment, input as JsonRecord);
@@ -305,7 +317,8 @@ export class ProviderAssignmentLifecycleService {
 				membershipId: principal.membershipId,
 				reservationId: assignment.reservationId,
 				assignmentId: assignment.id,
-				actualCredits: Math.max(0, Number(input.actualCredits ?? usage.actualCredits ?? 0)),
+				activeSeconds: Math.max(0, Number(input.activeSeconds ?? usage.activeSeconds ?? 0)),
+				elapsedSeconds: Math.max(0, Number(input.elapsedSeconds ?? usage.elapsedSeconds ?? 0)),
 				providerUnits: optionalFiniteNumber(input.providerUnits ?? usage.providerUnits, 'providerUnits'),
 				usd: optionalFiniteNumber(input.actualUsd ?? usage.actualUsd, 'actualUsd'),
 				modeRunId: input.modeRunId ?? null,

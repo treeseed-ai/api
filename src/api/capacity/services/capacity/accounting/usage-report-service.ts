@@ -14,7 +14,8 @@ export interface CapacityUsageReportRequest {
 	assignmentAttempt?: number | null;
 	usageDimension: string;
 	accountingMode?: 'informational' | 'incremental' | 'aggregate';
-	actualCredits: number;
+	activeSeconds: number;
+	elapsedSeconds: number;
 	providerUnits?: number | null;
 	usd?: number | null;
 	modeRunId?: string | null;
@@ -56,28 +57,30 @@ export function assertCapacityUsageMatches(row: Record<string, unknown>, input: 
 		&& Number(row.assignment_attempt) === identity.assignmentAttempt
 		&& String(row.usage_dimension ?? '') === identity.usageDimension
 		&& String(row.accounting_mode ?? '') === String(input.accountingMode ?? 'informational')
-		&& durableRealEquals(row.actual_credits, input.actualCredits)
+		&& durableRealEquals(row.active_seconds, input.activeSeconds)
+		&& durableRealEquals(row.elapsed_seconds, input.elapsedSeconds)
 		&& durableRealEquals(metadata.providerUnits, input.providerUnits)
 		&& durableRealEquals(row.actual_usd, input.usd);
 	if (!matches) throw new CapacityGovernanceError('capacity_usage_idempotency_conflict', 'Usage identity is already bound to a different report.', 409, { assignmentId: input.assignmentId, usageActualId: identity.id });
 }
 
 export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, reservation: Record<string, unknown>, identity: CapacityUsageIdentity, guard: { column: 'usage_report_token' | 'settlement_token'; token: string }, now: string): CapacityDatabaseOperation {
-	positiveOrZero(input.actualCredits, 'capacity_actual_credits');
+	positiveOrZero(input.activeSeconds, 'capacity_active_seconds');
+	positiveOrZero(input.elapsedSeconds, 'capacity_elapsed_seconds');
 	const accountingMode = input.accountingMode ?? 'informational';
-	if (accountingMode === 'informational' && input.actualCredits !== 0) throw new CapacityGovernanceError('capacity_usage_informational_credits_invalid', 'Informational usage dimensions cannot carry billable credits.', 400);
+	if (accountingMode === 'informational' && (input.activeSeconds !== 0 || input.elapsedSeconds !== 0)) throw new CapacityGovernanceError('capacity_usage_informational_time_invalid', 'Informational usage dimensions cannot settle agent time.', 400);
 	const usage = input.usageActual ?? {};
 	return {
 		query: `INSERT INTO capacity_usage_actuals (
 			id, idempotency_key, task_id, work_day_id, project_id, task_signature, execution_profile_id, assignment_id, assignment_attempt, usage_dimension, accounting_mode, mode_run_id, mode,
 			capacity_provider_id, execution_provider_id, lane_id, business_model, model_name, input_tokens, output_tokens,
-			cached_input_tokens, quota_minutes, wall_minutes, files_opened, files_changed, diff_lines_added,
-			diff_lines_removed, test_runs, retry_count, actual_credits, actual_usd, credit_formula_version,
-			actual_credit_source, native_usage_json, metadata_json, created_at
+			cached_input_tokens, reasoning_tokens, quota_minutes, wall_minutes, files_opened, files_changed, diff_lines_added,
+			diff_lines_removed, test_runs, retry_count, active_seconds, elapsed_seconds, actual_usd,
+			native_usage_json, metadata_json, created_at
 		) SELECT ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL),
+			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL),
 			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER),
-			CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL), ?, ?, ?, ?, ?
+			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), ?, ?, ?
 		  WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND ${guard.column} = ?)
 		  ON CONFLICT (id) DO NOTHING`,
 		params: [identity.id, identity.idempotencyKey, reservation.task_id ?? null, reservation.work_day_id ?? null, reservation.project_id,
@@ -85,10 +88,10 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 			usage.executionProfileId ?? 'standard-code-model', input.assignmentId, identity.assignmentAttempt, identity.usageDimension, accountingMode,
 			input.modeRunId ?? null, reservation.mode ?? null, reservation.capacity_provider_id,
 			usage.executionProviderId ?? reservation.execution_provider_id ?? null, reservation.lane_id ?? null,
-			usage.businessModel ?? 'credit', usage.modelName ?? null, usage.inputTokens ?? null, usage.outputTokens ?? null,
-			usage.cachedInputTokens ?? null, usage.quotaMinutes ?? null, usage.wallMinutes ?? null, usage.filesOpened ?? null,
+			usage.businessModel ?? 'provider-native', usage.modelName ?? null, usage.inputTokens ?? null, usage.outputTokens ?? null,
+			usage.cachedInputTokens ?? null, usage.reasoningTokens ?? null, usage.quotaMinutes ?? null, usage.wallMinutes ?? null, usage.filesOpened ?? null,
 			usage.filesChanged ?? null, usage.diffLinesAdded ?? null, usage.diffLinesRemoved ?? null, usage.testRuns ?? null,
-			usage.retryCount ?? null, input.actualCredits, input.usd ?? null, 'treeseed.provider-usage.v1', input.source,
+			usage.retryCount ?? null, input.activeSeconds, input.elapsedSeconds, input.usd ?? null,
 			JSON.stringify(usage.nativeUsage ?? {}), JSON.stringify({ ...(input.metadata ?? {}), providerUnits: input.providerUnits ?? null }), now,
 			input.reservationId, input.teamId, guard.token],
 	};

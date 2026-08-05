@@ -2,14 +2,14 @@ import type {
 CapacityExecutionProvider,
 CapacityProviderMembershipView,
 CapacityReservation,
-DerivedCapacitySummary,
+NativeCapacitySummary,
 ProjectCapacityDiagnostics,
 ProjectEnvironmentName,
 } from '@treeseed/sdk';
 import type { CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
 import { MAX_CAPACITY_PAGE_LIMIT,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { CapacityGovernanceError } from '../../../database.ts';
-import type { CapacityCreditReservationTotals } from '../accounting/credit-reservation-aggregation-service.ts';
+import type { CapacityTimeReservationTotals } from '../accounting/agent-time-reservation-aggregation-service.ts';
 
 export type ProjectCapacityEnvironment = ProjectEnvironmentName | 'local';
 
@@ -28,14 +28,14 @@ export interface ProjectCapacityDiagnosticsStore {
 		projectId: string,
 		filters: { states: Array<'reserved' | 'consuming'>; limit: number },
 	): Promise<CapacityPage<CapacityReservation>>;
-	getTeamDerivedCapacity(
+	getTeamNativeCapacity(
 		teamId: string,
 		options: { providers: CapacityProviderMembershipView[]; projectId: string },
-	): Promise<DerivedCapacitySummary>;
-	getCapacityCreditReservationTotals(
+	): Promise<NativeCapacitySummary>;
+	getCapacityTimeReservationTotals(
 		teamId: string,
 		options: { projectId: string },
-	): Promise<CapacityCreditReservationTotals>;
+	): Promise<CapacityTimeReservationTotals>;
 }
 
 function finite(value: unknown): number | null {
@@ -137,13 +137,13 @@ export async function buildProjectCapacityDiagnostics(
 	await store.ensureInitialized();
 	const project = await store.getProject(projectId);
 	if (!project) return null;
-	const [grantPage, activeReservationPage, creditTotals] = await Promise.all([
+	const [grantPage, activeReservationPage, timeTotals] = await Promise.all([
 		store.listCapacityGrantsPage(project.teamId, { projectId, environment, status: 'active', limit: MAX_CAPACITY_PAGE_LIMIT }),
 		store.listCapacityReservationsForProjectPage(projectId, {
 			states: ['reserved', 'consuming'],
 			limit: MAX_CAPACITY_PAGE_LIMIT,
 		}),
-		store.getCapacityCreditReservationTotals(project.teamId, { projectId }),
+		store.getCapacityTimeReservationTotals(project.teamId, { projectId }),
 	]);
 	if (activeReservationPage.page.hasMore) {
 		throw new CapacityGovernanceError(
@@ -182,8 +182,8 @@ export async function buildProjectCapacityDiagnostics(
 				),
 			},
 		}));
-	const dailyCredits = sum(grants.map((grant) => grant.dailyCreditLimit));
-	const monthlyCredits = sum(grants.map((grant) => grant.monthlyCreditLimit));
+	const dailyAgentSeconds = sum(grants.map((grant) => grant.dailyAgentSecondsLimit));
+	const monthlyAgentSeconds = sum(grants.map((grant) => grant.monthlyAgentSecondsLimit));
 	return {
 		projectId,
 		teamId: project.teamId,
@@ -192,10 +192,10 @@ export async function buildProjectCapacityDiagnostics(
 		executionProviders,
 		grants,
 		activeReservations,
-		derivedCapacity: await store.getTeamDerivedCapacity(project.teamId, { providers, projectId }),
+		nativeCapacity: await store.getTeamNativeCapacity(project.teamId, { providers, projectId }),
 		remaining: {
-			dailyCredits: dailyCredits > 0 ? Math.max(0, dailyCredits - creditTotals.dailyCommittedCredits) : null,
-			monthlyCredits: monthlyCredits || null,
+			dailyAgentSeconds: dailyAgentSeconds > 0 ? Math.max(0, dailyAgentSeconds - timeTotals.dailyCommittedSeconds) : null,
+			monthlyAgentSeconds: monthlyAgentSeconds || null,
 		},
 	};
 }

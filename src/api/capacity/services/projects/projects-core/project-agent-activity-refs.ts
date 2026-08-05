@@ -20,7 +20,9 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 	const refs = record(handlerRefs);
 	const agents = Array.isArray(refs.agents) ? refs.agents.map(record) : [];
 	return agents.flatMap((agent) => {
+		if (agent.enabled === false) return [];
 		const profile = record(record(agent.activities)[activityType]);
+		if (profile.enabled === false) return [];
 		const agentId = text(agent.slug ?? agent.agentId);
 		const handlerId = text(profile.handler);
 		return agentId && handlerId ? [{ agentId, contentPath: text(agent.contentPath), activityType, handlerId, profile }] : [];

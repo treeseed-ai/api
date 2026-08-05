@@ -68,7 +68,7 @@ export class DecisionWorkGraphService {
 				id: text(input.id) || `dag_${idPart(decisionId, 'decision')}_v${version}`,
 				teamId: project.teamId, projectId: project.id, decisionId, version, exactBaseRef: text(input.exactBaseRef), roles,
 				includeResearch: input.includeResearch === true, includeArchitecture: input.includeArchitecture === true,
-				credits: record(input.credits), compiledAt: now,
+				seconds: record(input.seconds), compiledAt: now,
 			});
 		} else {
 			const estimateStatus = (input.estimateStatus ?? 'accepted') as StructuredAgentEstimateStatus;

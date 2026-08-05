@@ -4,7 +4,6 @@ import { canonicalArtifactManifestReferences } from "../../../../domain/artifact
 import type { DurableCapacityWorkdayRun } from "../../../../repositories/capacity/workdays/workday-run.ts";
 import {
 compileCapacityWorkdayAssignmentIntent,
-capacityWorkdayRequiredArtifacts,
 type CapacityWorkdayAgent,
 type CapacityWorkdayAssignmentIntent,
 } from "../policy/workday-agent-policy.ts";
@@ -23,7 +22,16 @@ export interface CapacityWorkdayArtifactRef extends JsonRecord {
 export interface CapacityWorkdayResolvedIntent extends CapacityWorkdayAssignmentIntent {
   relatedArtifact?: CapacityWorkdayArtifactRef | null;
   relatedArtifacts?: CapacityWorkdayArtifactRef[];
+  upstreamEvidence?: CapacityWorkdayGraphInput[];
   subjectPath?: string | null;
+}
+
+export interface CapacityWorkdayGraphInput extends JsonRecord {
+  producerNodeId: string;
+  kind: 'signal';
+  contractId: string;
+  recordId: string;
+  metadata: JsonRecord;
 }
 
 function record(value: unknown): JsonRecord {
@@ -38,10 +46,6 @@ function array(value: unknown): unknown[] {
 
 function text(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function artifactKind(value: unknown): string {
-  return text(value).replace(/-/gu, "_");
 }
 
 function selectedObjective(run: DurableCapacityWorkdayRun): string {
@@ -135,58 +139,12 @@ export async function listCapacityWorkdayContentArtifactRefs(
   });
 }
 
-export async function listCapacityWorkdaySignalCodes(
-  store: CapacityGovernanceDatabase,
-  run: DurableCapacityWorkdayRun,
-  projectId: string,
-): Promise<string[]> {
-  const rows = await store.all(
-    `SELECT assignment.id, assignment.lifecycle_output_json AS outputs_json
-       FROM capacity_provider_assignments assignment
-       JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
-      WHERE assignment.team_id = ? AND assignment.project_id = ? AND demand.workday_run_id = ?
-        AND assignment.status = 'completed'
-      ORDER BY assignment.completed_at DESC, assignment.id ASC LIMIT 500`,
-    [run.teamId, projectId, run.id],
-  );
-  const codes = rows.flatMap((row) => {
-    const output = persistedObject(row.outputs_json, `assignment ${String(row.id)} lifecycle output`);
-    const manifest = record(output.artifactManifest);
-    return array(manifest.signals).map((value) => text(record(value).code)).filter(Boolean);
-  });
-  return [...new Set(codes)];
-}
-
-export async function listCapacityWorkdayProducedArtifactKinds(
-  store: CapacityGovernanceDatabase,
-  run: DurableCapacityWorkdayRun,
-  projectId: string,
-): Promise<string[]> {
-  const rows = await store.all(
-    `SELECT assignment.id, assignment.lifecycle_output_json AS outputs_json
-       FROM capacity_provider_assignments assignment
-       JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
-      WHERE assignment.team_id = ? AND assignment.project_id = ? AND demand.workday_run_id = ?
-        AND assignment.status = 'completed'
-      ORDER BY assignment.completed_at DESC, assignment.id ASC LIMIT 500`,
-    [run.teamId, projectId, run.id],
-  );
-  const kinds = rows.flatMap((row) => {
-    const output = persistedObject(row.outputs_json, `assignment ${String(row.id)} lifecycle output`);
-    const manifest = record(output.artifactManifest);
-    return [
-      ...array(manifest.contentReferences).map((value) => text(record(value).artifactKind)),
-      ...array(manifest.controlPlaneReferences).map((value) => text(record(value).kind)),
-    ].filter(Boolean).map((value) => value.replace(/-/gu, '_'));
-  });
-  return [...new Set(kinds)];
-}
-
 export async function resolveCapacityWorkdayAssignmentIntent(
   store: CapacityGovernanceDatabase,
   run: DurableCapacityWorkdayRun,
   project: WorkdayProject,
   agent: CapacityWorkdayAgent,
+  graphInputs: CapacityWorkdayGraphInput[] = [],
 ): Promise<CapacityWorkdayResolvedIntent> {
   const configuredIntent = compileCapacityWorkdayAssignmentIntent(agent);
   const workdayPurpose = text(run.scenarioId);
@@ -198,35 +156,28 @@ export async function resolveCapacityWorkdayAssignmentIntent(
       ? `Workday purpose: ${workdayPurpose}\n\nAgent responsibility: ${configuredIntent.objective}`
       : configuredIntent.objective,
   };
-  const requiredArtifactKinds = capacityWorkdayRequiredArtifacts(agent);
   const needsArtifacts = intent.includeWorkdayArtifacts
-    || requiredArtifactKinds.length > 0
     || (intent.subjectModel === "proposal" && !intent.subjectId);
-  const artifacts = needsArtifacts
+  const signalArtifacts = graphInputs.flatMap((input) => {
+    const value = { ...record(input.payload), ...record(input.metadata) };
+    const paths = [value.contentPath, ...array(value.changedPaths), ...array(value.evidenceRefs).map((entry) => typeof entry === 'string' ? entry : record(entry).contentPath)].map((entry) => text(entry)).filter(Boolean);
+    return paths.map((contentPath) => ({
+      ...value, contentPath, model: text(value.model), artifactKind: text(value.artifactKind ?? value.kind),
+      subjectId: text(value.subjectId ?? input.subjectId), producedByAgent: text(value.producedByAgent ?? value.agentId),
+    } satisfies CapacityWorkdayArtifactRef));
+  });
+  const artifacts = signalArtifacts.length ? signalArtifacts : needsArtifacts
     ? await listCapacityWorkdayContentArtifactRefs(
       store,
       run,
       project.id,
     )
     : [];
-  const requiredArtifacts = requiredArtifactKinds.length
-    ? artifacts.filter((artifact) => requiredArtifactKinds.includes(artifactKind(artifact.artifactKind)))
-    : [];
-  if (requiredArtifactKinds.some((kind) => !requiredArtifacts.some((artifact) => artifactKind(artifact.artifactKind) === kind))) {
-    throw new CapacityGovernanceError(
-      "capacity_workday_required_artifact_missing",
-      "A planning assignment became eligible without every required upstream artifact.",
-      409,
-      { projectId: project.id, workdayRunId: run.id, agentId: agent.slug, requiredArtifactKinds },
-    );
+  if (intent.includeWorkdayArtifacts || signalArtifacts.length) {
+    const relatedArtifacts = artifacts.slice(0, 24);
+    if (intent.subjectModel !== "proposal" || intent.subjectId) return { ...intent, relatedArtifacts, upstreamEvidence: graphInputs };
   }
-  if (intent.includeWorkdayArtifacts || requiredArtifacts.length) {
-    const relatedArtifacts = intent.includeWorkdayArtifacts
-      ? artifacts.slice(0, 24)
-      : requiredArtifacts.slice(0, 24);
-    if (intent.subjectModel !== "proposal" || intent.subjectId) return { ...intent, relatedArtifacts };
-  }
-  if (intent.subjectModel !== "proposal" || intent.subjectId) return intent;
+  if (intent.subjectModel !== "proposal" || intent.subjectId) return { ...intent, upstreamEvidence: graphInputs };
   const proposal =
     artifacts.find((artifact) => artifact.model === "proposal") ??
     artifacts.find((artifact) => artifact.artifactKind === "planning_proposal");
@@ -248,6 +199,7 @@ export async function resolveCapacityWorkdayAssignmentIntent(
     subjectId: proposalId,
     subjectPath: proposal.contentPath,
     relatedArtifact: proposal,
-    relatedArtifacts: requiredArtifacts.length ? requiredArtifacts.slice(0, 24) : [proposal],
+    relatedArtifacts: signalArtifacts.length ? signalArtifacts.slice(0, 24) : [proposal],
+    upstreamEvidence: graphInputs,
   };
 }

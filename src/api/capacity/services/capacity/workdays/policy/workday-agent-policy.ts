@@ -5,6 +5,7 @@ import { projectAgentActivityRefs,type ProjectAgentActivityRef } from '../../../
 type UnknownRecord = Record<string, unknown>;
 
 export type CapacityWorkdayAgent = {
+	nodeId: string;
 	slug: string;
 	contentPath: string | null;
 	handler: EngineeringHandlerKind;
@@ -13,10 +14,11 @@ export type CapacityWorkdayAgent = {
 	purpose: string;
 	promptTask: string;
 	outputContract: UnknownRecord;
-	inputContract?: UnknownRecord;
+	signalPolicy: UnknownRecord;
 	planningIntent: UnknownRecord;
 	branchPolicy: UnknownRecord;
 	contentAccess: UnknownRecord;
+	execution: UnknownRecord;
 	planningPriority: number | null;
 	planningAllocationPercent: number | null;
 	activityType: 'planning' | 'estimating' | 'reviewing' | 'reporting';
@@ -30,8 +32,8 @@ export type CapacityWorkdayAssignmentIntent = {
 	includeWorkdayArtifacts: boolean;
 };
 
-export type CapacityWorkdayPlanningStage = 'discovery' | 'synthesis' | 'evaluation' | 'closeout';
-const PLANNING_STAGES = new Set<CapacityWorkdayPlanningStage>(['discovery', 'synthesis', 'evaluation', 'closeout']);
+export type CapacityWorkdayPlanningStage = 'discovery' | 'synthesis' | 'deliberation' | 'evaluation' | 'revision' | 'closeout';
+const PLANNING_STAGES = new Set<CapacityWorkdayPlanningStage>(['discovery', 'synthesis', 'deliberation', 'evaluation', 'revision', 'closeout']);
 
 function record(value: unknown): UnknownRecord {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {};
@@ -64,15 +66,14 @@ export function capacityWorkdayPlanningStage(agent: CapacityWorkdayAgent): Capac
 	return 'discovery';
 }
 
-export function capacityWorkdayRequiredArtifacts(agent: CapacityWorkdayAgent): string[] {
-	return [...new Set([
-		...array(record(agent.planningIntent).requiresArtifactKinds),
-		...array(record(agent.inputContract).artifactContracts),
-	].map((value) => text(value).replace(/-/gu, '_')).filter(Boolean))];
+function planningStageVariants(profile: UnknownRecord) {
+	const intent = record(profile.planningIntent);
+	const configured = array(intent.stages).map(record).filter((value) => PLANNING_STAGES.has(text(value.stage) as CapacityWorkdayPlanningStage));
+	return configured.length ? configured : [{ stage: text(intent.stage) || null }];
 }
 
 export function capacityWorkdayRequiredSignals(agent: CapacityWorkdayAgent): string[] {
-	return [...new Set(array(record(agent.inputContract).signalContracts).map((value) => text(value)).filter(Boolean))];
+	return [...new Set(array(record(agent.signalPolicy).subscribesTo).map((value) => text(record(value).contract)).filter(Boolean))];
 }
 
 export function compileCapacityWorkdayAssignmentIntent(agent: CapacityWorkdayAgent): CapacityWorkdayAssignmentIntent {
@@ -133,19 +134,21 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 			const configuredHandler = handler(selectedActivity.handlerId);
 			if (!configuredHandler) continue;
 			const priority = Number(profile.planningPriority);
-			agents.push({
+			for (const stage of planningStageVariants(profile)) agents.push({
+				nodeId: `${slug}:${selectedActivity.activityType}:${text(stage.stage, 'discovery')}`,
 				slug,
 				contentPath: selectedActivity.contentPath,
 				handler: configuredHandler,
 				projectAgentClassId: text(agentClass.id),
 				projectAgentClassSlug: text(agentClass.slug, 'planning'),
 				purpose: text(profile.purpose, `Perform configured planning work as ${slug}.`),
-				promptTask: text(record(profile.prompt).task),
+				promptTask: text(stage.promptTask, text(record(profile.prompt).task)),
 				outputContract: record(profile.outputs),
-				inputContract: record(profile.inputs),
-				planningIntent: record(profile.planningIntent),
+				signalPolicy: Object.keys(record(stage.signals)).length ? record(stage.signals) : record(profile.signals),
+				planningIntent: { ...record(profile.planningIntent), stage: stage.stage },
 				branchPolicy: record(profile.branchPolicy),
 				contentAccess: record(profile.contentAccess),
+				execution: record(profile.execution),
 				planningPriority: Number.isFinite(priority) ? priority : null,
 				planningAllocationPercent: Number.isFinite(allocation) && allocation > 0 ? allocation : null,
 				activityType: selectedActivity.activityType as CapacityWorkdayAgent['activityType'],
@@ -159,7 +162,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 	);
 	const seen = new Set<string>();
 	const unique = ordered.filter((agent) => {
-		const key = `${agent.slug}:${agent.activityType}`;
+		const key = agent.nodeId;
 		if (seen.has(key)) return false;
 		seen.add(key);
 		return true;

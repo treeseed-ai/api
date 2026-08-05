@@ -14,6 +14,7 @@ type TreeDxProxyRuntime,
 type TreeDxProxyScope,
 } from './treedx-proxy-token-service.ts';
 import { readBoundedTreeDxJson } from './treedx-response.ts';
+import { projectTreeDxCommitSignals } from './treedx-change-projector.ts';
 
 interface ProxyStore extends CapacityGovernanceDatabase {
 	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
@@ -92,5 +93,26 @@ export async function proxyTreeDxJson(input: {
 		resultStatus: 'proxied',
 		metadata: { tokenScope: input.tokenScope, providerAssignmentScoped: access.actorType === 'capacity_provider' },
 	});
+	if (input.method === 'POST' && input.path.endsWith('/commit')) {
+		const commit = record(record(payload).commit ?? payload);
+		const assignmentDecision = record(access.assignment?.decisionInput);
+		const commitSha = String(commit.commitSha ?? commit.commit_sha ?? '');
+		const changedPaths = Array.isArray(commit.changedPaths ?? commit.changed_paths) ? (commit.changedPaths ?? commit.changed_paths) as string[] : [];
+		if (commitSha && changedPaths.length) await projectTreeDxCommitSignals(store, {
+			projectId: input.projectId, commitSha, immutableRef: String(commit.branchName ?? commit.branch_name ?? commitSha), changedPaths,
+			changeSummary: typeof record(input.body).message === 'string' ? String(record(input.body).message) : 'Committed TreeDX content changes.',
+			assignmentId: access.assignment?.id ?? null, workdayRunId: access.assignment ? String(record(access.assignment.metadata).workdayRunId ?? '') || null : null,
+			agentId: access.assignment ? String(access.assignment.agentId ?? '') || null : null,
+			activityType: access.assignment ? String(
+				assignmentDecision.activityType
+				?? record(assignmentDecision.metadata).activityType
+				?? record(assignmentDecision.input).activityType
+				?? record(access.assignment.metadata).activityType
+				?? '',
+			) || null : null,
+			capacityProviderId: access.actorType === 'capacity_provider' ? (access.principal as { capacityProviderId: string }).capacityProviderId : null,
+			actorType: access.actorType === 'capacity_provider' ? 'capacity_provider' : 'user', actorId: access.actorType === 'capacity_provider' ? (access.principal as { capacityProviderId: string }).capacityProviderId : String((access.principal as Record<string, unknown>).id ?? '') || null,
+		});
+	}
 	return input.c.json({ ok: true, payload, proxy: { projectId: input.projectId, actorType: access.actorType, treeDxBaseUrl: baseUrl } });
 }

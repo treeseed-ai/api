@@ -56,24 +56,24 @@ export interface WorkdaySummaryAggregate {
 		failed: number;
 		usageReported: number;
 	};
-	reservation: { total: number; reservedCredits: number; consumedCredits: number };
+	reservation: { total: number; requestedSeconds: number; reservedSeconds: number; activeSeconds: number; elapsedSeconds: number; releasedSeconds: number; overrunSeconds: number };
 	usage: {
 		total: number;
 		assignmentTotal: number;
-		negativeCount: number;
 		inputTokens: number;
 		outputTokens: number;
 		cachedInputTokens: number;
+		reasoningTokens: number;
 		quotaMinutes: number;
 		wallMinutes: number;
-		actualCredits: number;
+		activeSeconds: number;
+		elapsedSeconds: number;
 		actualUsd: number;
 	};
-	ledger: { total: number; consumedCredits: number; refundedCredits: number };
+	ledger: { total: number; activeSeconds: number; elapsedSeconds: number };
 	warningSamples: {
 		missingSettlementAssignmentIds: string[];
 		missingUsageAssignmentIds: string[];
-		negativeUsageActualIds: string[];
 	};
 }
 
@@ -138,8 +138,12 @@ export async function aggregateWorkdaySummary(
 		),
 		database.first(
 			`SELECT COUNT(*) AS total,
-				COALESCE(SUM(reservation.reserved_credits), 0) AS reserved_credits,
-				COALESCE(SUM(reservation.consumed_credits), 0) AS consumed_credits
+				COALESCE(SUM(reservation.requested_seconds), 0) AS requested_seconds,
+				COALESCE(SUM(reservation.reserved_seconds), 0) AS reserved_seconds,
+				COALESCE(SUM(reservation.active_seconds), 0) AS active_seconds,
+				COALESCE(SUM(reservation.elapsed_seconds), 0) AS elapsed_seconds,
+				COALESCE(SUM(reservation.released_seconds), 0) AS released_seconds,
+				COALESCE(SUM(reservation.overrun_seconds), 0) AS overrun_seconds
 			 FROM capacity_reservations reservation
 			 WHERE reservation.work_day_id = ?`,
 			[input.workDayId],
@@ -147,13 +151,14 @@ export async function aggregateWorkdaySummary(
 		database.first(
 			`SELECT COUNT(*) AS total,
 				COUNT(DISTINCT usage.assignment_id) AS assignment_total,
-				COALESCE(SUM(CASE WHEN usage.actual_credits < 0 THEN 1 ELSE 0 END), 0) AS negative_count,
 				COALESCE(SUM(CASE WHEN usage.usage_dimension = 'aggregate' OR aggregate_usage.assignment_id IS NULL THEN usage.input_tokens ELSE 0 END), 0) AS input_tokens,
 				COALESCE(SUM(CASE WHEN usage.usage_dimension = 'aggregate' OR aggregate_usage.assignment_id IS NULL THEN usage.output_tokens ELSE 0 END), 0) AS output_tokens,
 				COALESCE(SUM(CASE WHEN usage.usage_dimension = 'aggregate' OR aggregate_usage.assignment_id IS NULL THEN usage.cached_input_tokens ELSE 0 END), 0) AS cached_input_tokens,
+				COALESCE(SUM(CASE WHEN usage.usage_dimension = 'aggregate' OR aggregate_usage.assignment_id IS NULL THEN usage.reasoning_tokens ELSE 0 END), 0) AS reasoning_tokens,
 				COALESCE(SUM(CASE WHEN usage.usage_dimension = 'aggregate' OR aggregate_usage.assignment_id IS NULL THEN usage.quota_minutes ELSE 0 END), 0) AS quota_minutes,
 				COALESCE(SUM(CASE WHEN usage.usage_dimension = 'aggregate' OR aggregate_usage.assignment_id IS NULL THEN usage.wall_minutes ELSE 0 END), 0) AS wall_minutes,
-				COALESCE(SUM(CASE WHEN usage.accounting_mode = 'aggregate' OR aggregate_usage.assignment_id IS NULL AND usage.accounting_mode = 'incremental' THEN usage.actual_credits ELSE 0 END), 0) AS actual_credits,
+				COALESCE(SUM(CASE WHEN usage.accounting_mode = 'aggregate' OR aggregate_usage.assignment_id IS NULL AND usage.accounting_mode = 'incremental' THEN usage.active_seconds ELSE 0 END), 0) AS active_seconds,
+				COALESCE(SUM(CASE WHEN usage.accounting_mode = 'aggregate' OR aggregate_usage.assignment_id IS NULL AND usage.accounting_mode = 'incremental' THEN usage.elapsed_seconds ELSE 0 END), 0) AS elapsed_seconds,
 				COALESCE(SUM(CASE WHEN usage.accounting_mode = 'aggregate' OR aggregate_usage.assignment_id IS NULL AND usage.accounting_mode = 'incremental' THEN usage.actual_usd ELSE 0 END), 0) AS actual_usd
 			 FROM capacity_usage_actuals usage
 			 LEFT JOIN (SELECT assignment_id, assignment_attempt FROM capacity_usage_actuals WHERE usage_dimension = 'aggregate' GROUP BY assignment_id, assignment_attempt) aggregate_usage
@@ -163,15 +168,15 @@ export async function aggregateWorkdaySummary(
 		),
 		database.first(
 			`SELECT COUNT(*) AS total,
-				COALESCE(SUM(CASE WHEN phase = 'task_completed_actual_settlement' THEN credits ELSE 0 END), 0) AS consumed_credits,
-				COALESCE(SUM(CASE WHEN phase LIKE '%refund%' THEN credits ELSE 0 END), 0) AS refunded_credits
+				COALESCE(SUM(CASE WHEN phase = 'task_completed_actual_settlement' THEN active_seconds ELSE 0 END), 0) AS active_seconds,
+				COALESCE(SUM(CASE WHEN phase = 'task_completed_actual_settlement' THEN elapsed_seconds ELSE 0 END), 0) AS elapsed_seconds
 			 FROM capacity_ledger_entries
 			 WHERE work_day_id = ?`,
 			[input.workDayId],
 		),
 	]);
 	const sampleLimit = Math.max(1, Math.min(Number(input.warningSampleLimit ?? 20), 100));
-	const [missingSettlementRows, missingUsageRows, negativeUsageRows] = await Promise.all([
+	const [missingSettlementRows, missingUsageRows] = await Promise.all([
 		database.all(
 			`SELECT assignment.id FROM capacity_provider_assignments assignment
 			 LEFT JOIN (
@@ -196,10 +201,6 @@ export async function aggregateWorkdaySummary(
 			 ORDER BY assignment.created_at ASC, assignment.id ASC LIMIT ?`,
 			[input.workDayId, sampleLimit],
 		),
-		database.all(
-			`SELECT id FROM capacity_usage_actuals WHERE work_day_id = ? AND actual_credits < 0 ORDER BY created_at ASC, id ASC LIMIT ?`,
-			[input.workDayId, sampleLimit],
-		),
 	]);
 	return {
 		assignment: {
@@ -212,18 +213,18 @@ export async function aggregateWorkdaySummary(
 			total: count(modeRun, 'total'), queued: count(modeRun, 'queued'), running: count(modeRun, 'running'),
 			succeeded: count(modeRun, 'succeeded'), failed: count(modeRun, 'failed'), usageReported: count(modeRun, 'usage_reported'),
 		},
-		reservation: { total: count(reservation, 'total'), reservedCredits: count(reservation, 'reserved_credits'), consumedCredits: count(reservation, 'consumed_credits') },
+		reservation: { total: count(reservation, 'total'), requestedSeconds: count(reservation, 'requested_seconds'), reservedSeconds: count(reservation, 'reserved_seconds'), activeSeconds: count(reservation, 'active_seconds'), elapsedSeconds: count(reservation, 'elapsed_seconds'), releasedSeconds: count(reservation, 'released_seconds'), overrunSeconds: count(reservation, 'overrun_seconds') },
 		usage: {
-			total: count(usage, 'total'), assignmentTotal: count(usage, 'assignment_total'), negativeCount: count(usage, 'negative_count'), inputTokens: count(usage, 'input_tokens'),
+			total: count(usage, 'total'), assignmentTotal: count(usage, 'assignment_total'), inputTokens: count(usage, 'input_tokens'),
 			outputTokens: count(usage, 'output_tokens'), cachedInputTokens: count(usage, 'cached_input_tokens'),
+			reasoningTokens: count(usage, 'reasoning_tokens'),
 			quotaMinutes: count(usage, 'quota_minutes'), wallMinutes: count(usage, 'wall_minutes'),
-			actualCredits: count(usage, 'actual_credits'), actualUsd: count(usage, 'actual_usd'),
+			activeSeconds: count(usage, 'active_seconds'), elapsedSeconds: count(usage, 'elapsed_seconds'), actualUsd: count(usage, 'actual_usd'),
 		},
-		ledger: { total: count(ledger, 'total'), consumedCredits: count(ledger, 'consumed_credits'), refundedCredits: count(ledger, 'refunded_credits') },
+		ledger: { total: count(ledger, 'total'), activeSeconds: count(ledger, 'active_seconds'), elapsedSeconds: count(ledger, 'elapsed_seconds') },
 		warningSamples: {
 			missingSettlementAssignmentIds: rowIds(missingSettlementRows),
 			missingUsageAssignmentIds: rowIds(missingUsageRows),
-			negativeUsageActualIds: rowIds(negativeUsageRows),
 		},
 	};
 }
@@ -274,11 +275,8 @@ export async function buildWorkdayCapacitySummary(
 	if (aggregate.assignment.missingUsageCount > 0) {
 		warnings.push(`${aggregate.assignment.missingUsageCount} completed assignments have no durable native usage; sample: ${aggregate.warningSamples.missingUsageAssignmentIds.join(', ') || 'unavailable'}`);
 	}
-	if (aggregate.usage.negativeCount > 0) {
-		warnings.push(`${aggregate.usage.negativeCount} usage actuals report negative credits; sample: ${aggregate.warningSamples.negativeUsageActualIds.join(', ') || 'unavailable'}`);
-	}
-	if (Math.abs(aggregate.reservation.consumedCredits - aggregate.ledger.consumedCredits) > 0.000001) {
-		warnings.push(`reservation consumed credits ${aggregate.reservation.consumedCredits} do not match settlement ledger credits ${aggregate.ledger.consumedCredits}`);
+	if (aggregate.reservation.activeSeconds !== aggregate.ledger.activeSeconds) {
+		warnings.push(`reservation active time ${aggregate.reservation.activeSeconds}s does not match settlement ledger active time ${aggregate.ledger.activeSeconds}s`);
 	}
 	return {
 		ok: true as const,
@@ -311,19 +309,23 @@ export async function buildWorkdayCapacitySummary(
 				projectId: envelope.projectId,
 				workDayId: envelope.id,
 				allocationSetId: envelope.allocationSetId ?? null,
-				reservedCredits: aggregate.reservation.reservedCredits,
-				consumedCredits: aggregate.ledger.consumedCredits,
-				releasedCredits: Math.max(0, aggregate.reservation.reservedCredits - aggregate.ledger.consumedCredits),
-				refundedCredits: aggregate.ledger.refundedCredits,
+				requestedSeconds: aggregate.reservation.requestedSeconds,
+				reservedSeconds: aggregate.reservation.reservedSeconds,
+				activeSeconds: aggregate.ledger.activeSeconds,
+				elapsedSeconds: aggregate.ledger.elapsedSeconds,
+				releasedSeconds: aggregate.reservation.releasedSeconds,
+				overrunSeconds: aggregate.reservation.overrunSeconds,
 				nativeUsage: {
 					taskActualCount: aggregate.usage.assignmentTotal,
 					modeRunUsageCount: aggregate.modeRun.usageReported,
 					inputTokens: aggregate.usage.inputTokens,
 					outputTokens: aggregate.usage.outputTokens,
 					cachedInputTokens: aggregate.usage.cachedInputTokens,
+					reasoningTokens: aggregate.usage.reasoningTokens,
 					quotaMinutes: aggregate.usage.quotaMinutes,
 					wallMinutes: aggregate.usage.wallMinutes,
-					actualCredits: aggregate.usage.actualCredits,
+					activeSeconds: aggregate.usage.activeSeconds,
+					elapsedSeconds: aggregate.usage.elapsedSeconds,
 					actualUsd: aggregate.usage.actualUsd,
 				},
 				providerConfidence: warnings.length ? 'medium' : 'high',

@@ -2,21 +2,24 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
 import { agentLabMetricKeys, type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
+import { parseSceneManifest } from '@treeseed/sdk/scenes';
+import { validateSeedSource } from '@treeseed/sdk/seeds';
 import type { Context, Hono } from 'hono';
+import { parse as parseYaml } from 'yaml';
 import { AgentLabProjectionService } from '../../services/capacity/observability/agent-lab-projection-service.ts';
 import { AgentLabCommandService } from '../../services/capacity/observability/agent-lab-command-service.ts';
 import type { WorkdayRouteDependencies } from './operator-workdays.ts';
 import { readCapacityRequestObject } from './request-json.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
-import { validateAgentArtifactContract } from '@treeseed/sdk/agent-capacity';
-import { parse as parseYaml } from 'yaml';
 import { searchRelations } from '../../../routes/knowledge/relation-search.ts';
 import { CapacityAllocationService } from '../../services/capacity/allocations/allocation-service.ts';
-import { agentLabRepositoryDefinitions,matchesAgentDefinition,validateAgentDefinitionSource } from './agent-lab-repository-definitions.ts';
+import { agentLabRepositoryDefinitions,matchesAgentDefinition } from './agent-lab-repository-definitions.ts';
+import { agentLabInboxQuestions } from './agent-lab-inbox-questions.ts';
+import { installOperatorAgentLabAuthoringRoutes } from './operator-agent-lab-authoring.ts';
 
 const entityKinds = new Set<AgentLabEntityKind>(['agents', 'workdays', 'events', 'assignments', 'executions', 'artifacts']);
 const commandSurfaces = new Set(['inbox', 'decisions', 'build', 'direction', 'results', 'find']);
-const commandKinds = new Set(['proposal', 'decision', 'question', 'artifact', 'error', 'agent', 'artifact-contract', 'signal', 'assignment', 'execution', 'simulation', 'seed', 'workday', 'note']);
+const commandKinds = new Set(['proposal', 'decision', 'question', 'artifact', 'error', 'agent', 'signal', 'proposal-type', 'assignment', 'execution', 'simulation', 'seed', 'workday', 'note']);
 
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function jsonObject(value: unknown) { if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return object(value); }
@@ -44,10 +47,10 @@ async function knowledgeConversation(dependencies: WorkdayRouteDependencies, pro
 	if (!projectId || !subjectId) return [];
 	const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId, write: false, relationPaths: true }).catch(() => null);
 	if (!connection) return [];
-	const matches = await searchRelations(connection, subjectId, new Set(['notes', 'questions'])).catch(() => []);
+	const matches = await searchRelations(connection, subjectId, new Set()).catch(() => []);
 	return matches.filter((entry: Record<string, unknown>) => text(entry.id) !== subjectId).map((entry: Record<string, unknown>) => ({
 		id: `treedx:${projectId}:${text(entry.kind)}:${text(entry.id)}`,
-		kind: text(entry.kind).replace(/s$/u, ''),
+		kind: ['notes','questions'].includes(text(entry.kind)) ? text(entry.kind).replace(/s$/u, '') : 'artifact',
 		title: text(entry.title, 'Related conversation'),
 		description: text(entry.summary, 'Repository-linked context'),
 		status: 'indexed', projectId, occurredAt: text(entry.occurredAt) || null,
@@ -80,7 +83,7 @@ async function viewState(dependencies: WorkdayRouteDependencies, userId: string 
 
 function withViewState<T extends { items: Array<Record<string, unknown>>; secondaryItems?: Array<Record<string, unknown>> }>(payload: T, rows: Array<Record<string, unknown>>) {
 	const states = new Map(rows.map((row) => [`${row.entity_kind}:${row.entity_id}`, row]));
-	const apply = (item: Record<string, unknown>) => { const state = states.get(`${item.kind}:${item.id}`); return state ? { ...item, pinned: Number(state.pinned) === 1, hidden: Number(state.hidden) === 1, resolved: Number(state.resolved) === 1, viewStateVersion: Number(state.version ?? 1) } : item; };
+	const apply = (item: Record<string, unknown>) => { const state = states.get(`${item.kind}:${item.id}`); if (!state) return item; let layout = {}; try { layout = JSON.parse(String(state.layout_json ?? '{}')); } catch { layout = {}; } return { ...item, pinned: Number(state.pinned) === 1, hidden: Number(state.hidden) === 1, resolved: Number(state.resolved) === 1, viewStateVersion: Number(state.version ?? 1), data: { ...object(item.data), layout } }; };
 	return { ...payload, items: payload.items.map(apply), secondaryItems: payload.secondaryItems?.map(apply) };
 }
 
@@ -100,15 +103,27 @@ async function allocationSnapshot(dependencies: WorkdayRouteDependencies, teamId
 	const equalProjects = snapshot.rows.projects.length ? 100 / snapshot.rows.projects.length : 0;
 	const projects = snapshot.rows.projects.map((project) => { const id = text(project.id); const slice = slices.find((item) => item.scope === 'project' && item.targetId === id); return { id, name: text(project.name, project.slug, 'Project'), percentage: slice?.policy.targetPercent ?? equalProjects }; });
 	const classes = snapshot.rows.classes.map((agentClass) => { const id = text(agentClass.id); const projectId = text(agentClass.project_id); const siblings = snapshot.rows.classes.filter((item) => text(item.project_id) === projectId); const slice = slices.find((item) => item.scope === 'agent-class' && item.targetId === id); return { id, projectId, name: text(agentClass.name, agentClass.slug, 'Agent class'), percentage: slice?.policy.targetPercent ?? (siblings.length ? 100 / siblings.length : 0) }; });
-	const requested = snapshot.rows.demands.reduce((sum, row) => sum + Number(row.requested_credits ?? 0), 0);
+	const requestedSeconds = snapshot.rows.demands.reduce((sum, row) => sum + Number(row.requested_seconds ?? 0), 0);
 	const activeReservations = snapshot.rows.reservations.filter((row) => ['reserved', 'consuming'].includes(text(row.state)));
-	const reserved = activeReservations.reduce((sum, row) => sum + Number(row.reserved_credits ?? 0), 0);
+	const reservedSeconds = activeReservations.reduce((sum, row) => sum + Number(row.reserved_seconds ?? 0), 0);
+	const activeSeconds = snapshot.rows.reservations.reduce((sum, row) => sum + Number(row.active_seconds ?? 0), 0);
+	const releasedSeconds = snapshot.rows.reservations.reduce((sum, row) => sum + Number(row.released_seconds ?? 0), 0);
+	const reservationOverrun = snapshot.rows.reservations.reduce((sum, row) => sum + Number(row.overrun_seconds ?? 0), 0);
 	const aggregateUsage = new Set(snapshot.rows.usage.filter((row) => text(row.usage_dimension) === 'aggregate').map((row) => `${text(row.assignment_id)}:${Number(row.assignment_attempt ?? 1)}`));
-	const reported = snapshot.rows.usage.filter((row) => text(row.accounting_mode) === 'aggregate' || (text(row.accounting_mode) === 'incremental' && !aggregateUsage.has(`${text(row.assignment_id)}:${Number(row.assignment_attempt ?? 1)}`))).reduce((sum, row) => sum + Number(row.actual_credits ?? 0), 0);
-	const spent = snapshot.rows.ledger.filter((row) => text(row.phase) === 'task_completed_actual_settlement').reduce((sum, row) => sum + Number(row.credits ?? 0), 0);
-	const overrun = snapshot.rows.ledger.filter((row) => text(row.phase) === 'overrun_hold').reduce((sum, row) => sum + Number(row.credits ?? 0), 0);
-	const budget = snapshot.rows.workdays.reduce((sum, row) => sum + Number(object(row.parameters_json).availableCredits ?? object(row.parameters_json).available_credits ?? 0), 0);
-	return { revision: snapshot.overview.revision, generatedAt: snapshot.overview.generatedAt, canManage, activeAllocationSetId: active?.id ?? null, credits: { budget: budget || null, requested, reserved, committed: reserved + spent, reported, spent, remaining: budget ? Math.max(0, budget - reserved - spent) : null, overrun }, projects, agentClasses: classes };
+	const elapsedSeconds = snapshot.rows.usage.filter((row) => text(row.accounting_mode) === 'aggregate' || (text(row.accounting_mode) === 'incremental' && !aggregateUsage.has(`${text(row.assignment_id)}:${Number(row.assignment_attempt ?? 1)}`))).reduce((sum, row) => sum + Number(row.elapsed_seconds ?? 0), 0);
+	const settledSeconds = snapshot.rows.ledger.filter((row) => text(row.phase) === 'task_completed_actual_settlement').reduce((sum, row) => sum + Number(row.active_seconds ?? 0), 0);
+	const ledgerOverrun = snapshot.rows.ledger.filter((row) => text(row.phase) === 'overrun_hold').reduce((sum, row) => sum + Number(row.active_seconds ?? 0), 0);
+	const availableSeconds = snapshot.rows.workdays.reduce((sum, row) => sum + Number(jsonObject(row.parameters_json).availableSeconds ?? 0), 0);
+	const selected = snapshot.rows.workdays.find((row) => text(row.id) === snapshot.overview.workdayContext.selectedWorkdayId) ?? snapshot.rows.workdays[0];
+	const policy = object(jsonObject(selected?.parameters_json).timePolicy);
+	const workdayTime = [
+		{ id: 'cooperative-planning', name: 'Planning', percentage: Number(policy.cooperativePlanningPercent ?? 90) },
+		{ id: 'governed-execution', name: 'Execution', percentage: Number(policy.governedExecutionPercent ?? 0) },
+		{ id: 'reserve', name: 'Reserve', percentage: Number(policy.reservePercent ?? 10) },
+	];
+	return { revision: snapshot.overview.revision, generatedAt: snapshot.overview.generatedAt, canManage, activeAllocationSetId: active?.id ?? null,
+		time: { availableSeconds: availableSeconds || null, requestedSeconds, reservedSeconds, activeSeconds: Math.max(activeSeconds, settledSeconds), elapsedSeconds, releasedSeconds, remainingSeconds: availableSeconds ? Math.max(0, availableSeconds - reservedSeconds - settledSeconds) : null, overrunSeconds: Math.max(reservationOverrun, ledgerOverrun) },
+		projects, agentClasses: classes, workdayTime };
 }
 
 function pageCursor(value: string | null) {
@@ -136,6 +151,7 @@ function encodeDeltaCursor(revision: string, ids: string[]) {
 }
 
 export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
+	installOperatorAgentLabAuthoringRoutes(app, dependencies);
 	app.get('/v1/teams/:teamId/agent-lab/workday-context', async (c) => {
 		const context = await projectionContext(c, dependencies); if (context.response) return context.response;
 		const { snapshot } = context as Exclude<typeof context, { response: Response }>;
@@ -183,6 +199,20 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		const { snapshot } = context as Exclude<typeof context, { response: Response }>; const body = await readCapacityRequestObject(c);
 		const percentages = (value: unknown) => Array.isArray(value) ? value.flatMap((entry) => { const item = object(entry); const percentage = Number(item.percentage); return text(item.id) && Number.isFinite(percentage) && percentage >= 0 ? [{ id: text(item.id), percentage }] : []; }) : [];
 		const scope = text(body.scope); const projectId = text(body.projectId); const values = percentages(body.slices); const total = values.reduce((sum, item) => sum + item.percentage, 0);
+		if (scope === 'workday-time') {
+			const expected = new Set(['cooperative-planning', 'governed-execution', 'reserve']);
+			if (values.length !== expected.size || values.some((item) => !expected.has(item.id)) || Math.abs(total - 100) > .001) return c.json({ ok: false, code: 'agent_lab_workday_time_invalid', error: 'Plan, Execute, and Reserve must all be present and total exactly 100%.' }, 422);
+			const workdayId = snapshot.overview.workdayContext.selectedWorkdayId; const row = snapshot.rows.workdays.find((item) => text(item.id) === workdayId);
+			if (!row) return c.json({ ok: false, code: 'agent_lab_workday_required', error: 'Select a workday before changing its time policy.' }, 409);
+			const parameters = jsonObject(row.parameters_json); const timePolicy = { cooperativePlanningPercent: values.find((item) => item.id === 'cooperative-planning')!.percentage, governedExecutionPercent: values.find((item) => item.id === 'governed-execution')!.percentage, reservePercent: values.find((item) => item.id === 'reserve')!.percentage };
+			if (parameters.planningOnly === true && timePolicy.governedExecutionPercent !== 0) return c.json({ ok: false, code: 'agent_lab_planning_only_execution_forbidden', error: 'A planning-only workday must allocate zero time to governed execution.' }, 409);
+			const next = { ...parameters, timePolicy }; const updatedAt = new Date().toISOString();
+			await dependencies.store.run('UPDATE capacity_workday_runs SET parameters_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND updated_at = ?', [JSON.stringify(next), updatedAt, workdayId, c.req.param('teamId'), row.updated_at]);
+			const changed = await dependencies.store.first('SELECT id FROM capacity_workday_runs WHERE id = ? AND team_id = ? AND updated_at = ?', [workdayId, c.req.param('teamId'), updatedAt]);
+			if (!changed) return c.json({ ok: false, code: 'agent_lab_workday_time_conflict', error: 'The workday changed while this allocation was being saved. Refresh and review the current policy.' }, 409);
+			row.parameters_json = JSON.stringify(next); row.updated_at = updatedAt;
+			return response(c, await allocationSnapshot(dependencies, c.req.param('teamId'), snapshot, true), `${snapshot.overview.revision}:time:${updatedAt}`);
+		}
 		const projectIds = new Set(snapshot.rows.projects.map((row) => text(row.id))); const classIds = new Set(snapshot.rows.classes.filter((row) => text(row.project_id) === projectId).map((row) => text(row.id)));
 		const eligible = scope === 'portfolio' ? projectIds : scope === 'agent-class' && projectIds.has(projectId) ? classIds : null;
 		if (!eligible || values.length !== eligible.size || values.some((item) => !eligible.has(item.id)) || Math.abs(total - 100) > .001) return c.json({ ok: false, code: 'agent_lab_allocation_invalid', error: 'The selected allocation scope must contain every eligible entry and total exactly 100%.' }, 422);
@@ -222,6 +252,12 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		const { snapshot, access } = context as Exclude<typeof context, { response: Response }>;
 		const query = (c.req.query('q') ?? '').trim();
 		const service = new AgentLabCommandService(dependencies.store); const payload = await service.surface(surface as 'inbox' | 'decisions' | 'build' | 'direction' | 'results' | 'find', snapshot, query);
+		if (surface === 'inbox') {
+			const questions = await agentLabInboxQuestions(dependencies,snapshot.rows.projects);
+			payload.items = [...payload.items.filter((item) => item.kind === 'proposal' || item.kind === 'error'),...questions] as typeof payload.items;
+			payload.unreadCount = payload.items.filter((item) => item.actionable).length; payload.page.total = payload.items.length;
+			payload.metrics = [{ label:'Proposals',value:payload.items.filter((item) => item.kind === 'proposal').length,detail:'Ready for member action' },{ label:'Questions',value:questions.length,detail:'Awaiting an answer' },{ label:'Issues',value:payload.items.filter((item) => item.kind === 'error').length,detail:'Warnings, errors, and failures' }];
+		}
 		if (surface === 'build') {
 			const definitions = await agentLabRepositoryDefinitions(dependencies, snapshot.rows.projects);
 			const repositoryAgents = definitions.filter((item) => item.kind === 'agent');
@@ -236,13 +272,16 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 				const agentData = jsonObject(agent.data); const repository = jsonObject(agentData.definition); const repositoryActivities = jsonObject(repository.activities);
 				const refs = jsonObject(agentData.handler_refs_json); const configuredAgents = Object.keys(repositoryActivities).length ? [{ activities: repositoryActivities }] : Array.isArray(refs.agents) ? refs.agents.map(object) : [];
 				for (const configured of configuredAgents) for (const [profileId,profileValue] of Object.entries(object(configured.activities))) {
-					const profile = object(profileValue); for (const [direction,owner] of [['input',object(profile.inputs)],['output',object(profile.outputs)]] as const) for (const field of ['artifactContracts','signalContracts']) for (const contractId of Array.isArray(owner[field]) ? owner[field].map(text) : []) {
+					const signals = object(object(profileValue).signals);
+					const subscriptions = Array.isArray(signals.subscribesTo) ? signals.subscribesTo.map(object).map((entry) => text(entry.contract)).filter(Boolean) : [];
+					const publications = Array.isArray(signals.publishes) ? signals.publishes.map(text).filter(Boolean) : [];
+					for (const [direction, contractIds] of [['input', subscriptions], ['output', publications]] as const) for (const contractId of contractIds) {
 						const contract = byContract.get(contractId); if (!contract) continue; const from = direction === 'input' ? contract.id : agent.id; const to = direction === 'input' ? agent.id : contract.id;
 						payload.relations = [...(payload.relations ?? []), { id: `${agent.id}:${profileId}:${direction}:${contractId}`, from, to, label: `${profileId} ${direction}`, tone: direction }];
 					}
 				}
 			}
-			payload.metrics = [...(payload.metrics ?? []), { label: 'Repository contracts', value: definitions.length, detail: 'Scenes, seeds, artifacts, and signals' }];
+			payload.metrics = [...(payload.metrics ?? []), { label: 'Repository contracts', value: definitions.length, detail: 'Agents, signals, proposal types, scenes, and seeds' }];
 		}
 		if (surface === 'find') {
 			const repositoryItems = await relationResults(dependencies, snapshot.rows.projects, query);
@@ -273,31 +312,6 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		return c.json({ ok: true, payload: { kind, id: entityId, ...values, layout: JSON.parse(values.layout), version } });
 	});
 
-	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring', async (c) => {
-		const access = await dependencies.manage(c); if (access.response) return access.response;
-		const body = await readCapacityRequestObject(c); const projectId = typeof body.projectId === 'string' ? body.projectId : ''; const path = typeof body.path === 'string' ? body.path.replace(/^\/+|\/+$/gu, '') : ''; const source = typeof body.source === 'string' ? body.source : '';
-		const project = projectId ? await dependencies.store.first(`SELECT id, name FROM projects WHERE id = ? AND team_id = ? LIMIT 1`, [projectId, c.req.param('teamId')]) : null;
-		if (!project) return c.json({ ok: false, code: 'agent_lab_authoring_project_invalid', error: 'Choose a project in this team.' }, 422);
-		const allowed = /^(?:src\/content\/agents\/[^/]+(?:\/[^/]+)*\.mdx|\.treeseed\/agents\/artifacts\/[^/]+\.ya?ml|\.treeseed\/seeds\/[^/]+\.ya?ml|scenes\/[^/]+(?:\/[^/]+)*\.ya?ml)$/u;
-		if (!allowed.test(path)) return c.json({ ok: false, code: 'agent_lab_authoring_path_invalid', error: 'Choose an agent, artifact contract, seed, or scene path.' }, 422);
-		if (!source.trim()) return c.json({ ok: false, code: 'agent_lab_authoring_source_required', error: 'Source cannot be empty.' }, 422);
-		const agentValidation = path.endsWith('.mdx') ? validateAgentDefinitionSource(source) : null;
-		if (agentValidation && !agentValidation.ok) return c.json({ ok: false, code: 'agent_definition_invalid', error: 'The agent definition is invalid.', diagnostics: agentValidation.diagnostics }, 422);
-		if (/\.ya?ml$/u.test(path)) { try { const parsed = parseYaml(source); if (path.includes('/artifacts/')) { const validation = validateAgentArtifactContract(parsed); if (!validation.ok) return c.json({ ok: false, code: 'agent_artifact_invalid', error: 'The artifact contract is invalid.', diagnostics: validation.diagnostics }, 422); } else if (!parsed || typeof parsed !== 'object') return c.json({ ok: false, code: 'agent_lab_yaml_invalid', error: 'The definition must be a YAML object.' }, 422); } catch (error) { return c.json({ ok: false, code: 'agent_lab_yaml_invalid', error: error instanceof Error ? error.message : 'The YAML is invalid.' }, 422); } }
-		const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId, write: true, authoringPaths: true });
-		if (!connection) return c.json({ ok: false, code: 'agent_lab_treedx_unavailable', error: 'The project TreeDX repository is unavailable.' }, 503);
-		const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`; const workspace = await connection.client.createWorkspace({ repoId: connection.repositoryId, baseRef: branchName, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 600 });
-		if (typeof body.expectedBase === 'string' && body.expectedBase && body.expectedBase !== workspace.baseCommitSha) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_lab_authoring_conflict', error: 'The authoring branch changed. Compare against the current source before saving.', currentBase: workspace.baseCommitSha }, 409); }
-		if (agentValidation?.references.length) {
-			const paths = [...new Set(agentValidation.references.map((reference) => `.treeseed/agents/artifacts/${reference.id}.yaml`))];
-			const existing = await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: workspace.baseCommitSha, paths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch(() => ({ files: [] }));
-			const found = new Map((existing.files ?? []).map((file: unknown) => [text(object(file).path), text(object(file).content)])); const diagnostics: Array<{ path: string; message: string }> = [];
-			for (const reference of agentValidation.references) { const contractPath = `.treeseed/agents/artifacts/${reference.id}.yaml`; const content = found.get(contractPath); if (!content) { diagnostics.push({ path: contractPath, message: `Missing ${reference.kind} contract ${reference.id}.` }); continue; } try { const parsed = object(parseYaml(content)); const validation = validateAgentArtifactContract(parsed); if (!validation.ok || text(parsed.kind) !== reference.kind) diagnostics.push({ path: contractPath, message: `${reference.id} must be a valid ${reference.kind} contract.` }); } catch { diagnostics.push({ path: contractPath, message: `${reference.id} is not valid YAML.` }); } }
-			if (diagnostics.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_contract_reference_invalid', error: 'The agent references missing or incompatible artifact/signal contracts.', diagnostics }, 422); }
-		}
-		try { await connection.client.writeFile({ workspaceId: workspace.workspaceId, path, content: source, encoding: 'utf8', ...(typeof body.expectedSha === 'string' && body.expectedSha ? { expectedSha: body.expectedSha } : {}) }); const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `agent-lab: update ${path}`, author: { name: access.principal?.name ?? access.principal?.id ?? 'Agent Lab operator', email: access.principal?.email ?? 'agent-lab@users.treeseed.local' } }); await dependencies.store.run(`INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.authoring.committed', 'project', ?, ?, ?)`, [randomUUID(), access.principal?.id ?? null, projectId, JSON.stringify({ path, commitSha: commit.commitSha, branchName: commit.branchName }), new Date().toISOString()]); return c.json({ ok: true, payload: { commit: commit.commitSha, branch: commit.branchName, changedPaths: commit.changedPaths } }); } catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_lab_authoring_failed', error: error instanceof Error ? error.message : 'TreeDX could not commit the definition.' }, 409); }
-	});
-
 	app.post('/v1/teams/:teamId/agent-lab/service-principal/reconcile', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response;
 		const localRuntime = dependencies.environment === 'local'
@@ -314,12 +328,15 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		metadata.agentLab = { ...object(metadata.agentLab), servicePrincipalId: serviceId, servicePrincipalResourceKey: resourceKey };
 		const now = new Date().toISOString(); await dependencies.store.run(`UPDATE teams SET metadata_json = ?, updated_at = ? WHERE id = ?`, [JSON.stringify(metadata), now, c.req.param('teamId')]);
 		await dependencies.store.run(`INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.service_principal.reconciled', 'team', ?, ?, ?)`, [randomUUID(), access.principal?.id ?? null, c.req.param('teamId'), JSON.stringify({ resourceKey, serviceId, membershipId: membership?.id ?? null, credentialId: credential.id }), now]);
-		return c.json({ ok: true, payload: { serviceId, credentialId: credential.id, credential: credential.secret, membershipId: membership?.id ?? null, roles: ['team_owner'] } });
+		const bearer=c.req.header('authorization')?.replace(/^Bearer\s+/iu,'').trim();
+		const localOperatorToken=process.env.TREESEED_CAPACITY_ACCEPTANCE_ADMIN_TOKEN?.trim();
+		return c.json({ ok: true, payload: { serviceId, credentialId: credential.id, membershipId: membership?.id ?? null, roles: ['team_owner'], credentialStored: true, ...(bearer && localOperatorToken && bearer === localOperatorToken ? { credential: credential.secret } : {}) } });
 	});
 
 	app.post('/v1/teams/:teamId/agent-lab/simulations', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response;
-		const body = await readCapacityRequestObject(c); const scenePath = typeof body.scenePath === 'string' ? body.scenePath : ''; const immutableRef = typeof body.immutableRef === 'string' ? body.immutableRef : '';
+		const body = await readCapacityRequestObject(c); const scenePath = typeof body.scenePath === 'string' ? body.scenePath : ''; const immutableRef = typeof body.immutableRef === 'string' ? body.immutableRef : ''; const requestId = text(body.requestId, randomUUID());
+		if (!/^[a-zA-Z0-9._:-]{8,160}$/u.test(requestId)) return c.json({ ok: false, code: 'agent_lab_simulation_request_id_invalid', error: 'The launch request identifier is invalid.' }, 422);
 		if (!/^scenes\/[a-z0-9._/-]+\.ya?ml$/iu.test(scenePath) || !/^[a-f0-9]{40,64}$/iu.test(immutableRef)) return c.json({ ok: false, code: 'agent_lab_simulation_definition_invalid', error: 'Choose a repository scene and its immutable commit SHA.' }, 422);
 		const requestedProjectId = typeof body.projectId === 'string' ? body.projectId : '';
 		const project = requestedProjectId
@@ -328,20 +345,24 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		if (!project) return c.json({ ok: false, code: 'agent_lab_simulation_project_invalid', error: 'Choose a repository-backed project in this team.' }, 422);
 		const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId: text(project.id), write: false, readRefs: [immutableRef], authoringPaths: true });
 		if (!connection) return c.json({ ok: false, code: 'agent_lab_simulation_treedx_unavailable', error: 'The project TreeDX repository is unavailable.' }, 503);
-		let sceneSource = '';
+		let sceneSource = ''; let seedSources: Array<{ name: string; path: string; source: string }> = [];
 		try {
 			const read = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: immutableRef, path: scenePath, encoding: 'utf8', maxBytes: 196_608, allowProtected: true });
 			sceneSource = text(object(read.file).content);
-			const parsed = parseYaml(sceneSource);
-			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('The scene is not a YAML object.');
-			if (text(object(parsed).schemaVersion) !== 'treeseed.scene/v1') throw new Error('The scene must use treeseed.scene/v1.');
+			const parsed = parseYaml(sceneSource); const diagnostics: Parameters<typeof parseSceneManifest>[1] = []; const scene = parseSceneManifest(parsed, diagnostics);
+			const errors = diagnostics.filter((item) => item.severity === 'error'); if (!scene || errors.length) throw new Error(errors.map((item) => item.message).join(' ') || 'The scene is invalid.');
+			if (scene.runtime.mode !== 'demo' || scene.mode.test || !scene.mode.demo) throw new Error('Browser simulations must explicitly use demo mode and test: false.');
+			if (scene.agentLab?.scope.kind !== 'team') throw new Error('Browser simulations must use the retained team scope.');
+			seedSources = await Promise.all((scene.setup.seeds ?? []).map(async (seed) => { const path = `seeds/${seed.name}.yaml`; const seedRead = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: immutableRef, path, encoding: 'utf8', maxBytes: 393_216, allowProtected: true }); const source = text(object(seedRead.file).content); const validation = validateSeedSource(source); if (!validation.ok) throw new Error(`Seed ${seed.name} is invalid: ${validation.diagnostics.map((item) => item.message).join(' ')}`); return { name: seed.name, path, source }; }));
 		} catch (error) {
 			return c.json({ ok: false, code: 'agent_lab_simulation_ref_invalid', error: error instanceof Error ? error.message : 'TreeDX could not read the scene at that commit.' }, 422);
 		}
 		const team = await dependencies.store.first(`SELECT metadata_json FROM teams WHERE id = ? LIMIT 1`, [c.req.param('teamId')]); const servicePrincipalId = text(object(object(typeof team?.metadata_json === 'string' ? (() => { try { return JSON.parse(team.metadata_json); } catch { return {}; } })() : {}).agentLab).servicePrincipalId);
 		if (!servicePrincipalId) return c.json({ ok: false, code: 'agent_lab_service_principal_missing', error: 'Apply the team seed to reconcile the local Agent Lab service principal before launching simulations.' }, 409);
-		const id = randomUUID(); const now = new Date().toISOString(); const input = { teamId: c.req.param('teamId'), projectId: text(project.id), scenePath, sceneSource, immutableRef, environment: 'local', initiatingUserId: access.principal?.id ?? null, executingServicePrincipalId: servicePrincipalId };
-		await dependencies.store.run(`INSERT INTO platform_operations (id, namespace, operation, status, target, idempotency_key, input_json, output_json, error_json, requested_by_type, requested_by_id, assigned_runner_id, lease_expires_at, created_at, updated_at, started_at, finished_at, cancelled_at) VALUES (?, 'agent-lab', 'run-scene', 'queued', 'market_operations_runner', ?, ?, NULL, NULL, 'user', ?, NULL, NULL, ?, ?, NULL, NULL, NULL)`, [id, `agent-lab:${c.req.param('teamId')}:${immutableRef}:${scenePath}`, JSON.stringify(input), access.principal?.id ?? null, now, now]);
+		const prior = await dependencies.store.first("SELECT id, status, input_json FROM platform_operations WHERE namespace = 'agent-lab' AND operation = 'run-scene' AND idempotency_key = ? LIMIT 1", [`agent-lab:${c.req.param('teamId')}:${requestId}`]);
+		if (prior) return c.json({ ok: true, payload: { id: prior.id, status: prior.status, replayed: true, scenePath, immutableRef } }, 200);
+		const id = randomUUID(); const now = new Date().toISOString(); const input = { teamId: c.req.param('teamId'), projectId: text(project.id), scenePath, sceneSource, seedSources, immutableRef, requestId, environment: 'local', initiatingUserId: access.principal?.id ?? null, executingServicePrincipalId: servicePrincipalId };
+		await dependencies.store.run(`INSERT INTO platform_operations (id, namespace, operation, status, target, idempotency_key, input_json, output_json, error_json, requested_by_type, requested_by_id, assigned_runner_id, lease_expires_at, created_at, updated_at, started_at, finished_at, cancelled_at) VALUES (?, 'agent-lab', 'run-scene', 'queued', 'market_operations_runner', ?, ?, NULL, NULL, 'user', ?, NULL, NULL, ?, ?, NULL, NULL, NULL)`, [id, `agent-lab:${c.req.param('teamId')}:${requestId}`, JSON.stringify(input), access.principal?.id ?? null, now, now]);
 		await dependencies.store.run(`INSERT INTO platform_operation_events (id, operation_id, seq, kind, data_json, created_at) VALUES (?, ?, 1, 'created', ?, ?)`, [randomUUID(), id, JSON.stringify({ namespace: 'agent-lab', operation: 'run-scene', initiatingUserId: access.principal?.id ?? null, executingServicePrincipalId: servicePrincipalId }), now]);
 		return c.json({ ok: true, payload: { id, status: 'queued', scenePath, immutableRef, initiatingUserId: access.principal?.id ?? null, executingServicePrincipalId: servicePrincipalId } }, 202);
 	});
@@ -361,7 +382,7 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		if (!operation || text(object(JSON.parse(text(operation.input_json) || '{}')).teamId) !== c.req.param('teamId')) return dependencies.notFound(c, 'Unknown simulation report.');
 		const reportPath = text(object(JSON.parse(text(operation.output_json) || '{}')).reportPath);
 		if (!reportPath) return c.json({ ok: false, code: 'agent_lab_report_pending', error: `The report is not available while the simulation is ${text(operation.status, 'pending')}.` }, 409);
-		const reportRoot = resolve(dependencies.store.config.repoRoot ?? process.cwd(), '.treeseed/scenes/runs'); const absolute = resolve(reportPath); const local = relative(reportRoot, absolute);
+		const reportRoot = resolve(dependencies.store.config.repoRoot ?? process.cwd(), '.treeseed'); const absolute = resolve(reportPath); const local = relative(reportRoot, absolute);
 		if (!local || local.startsWith('../') || local.startsWith('..\\') || !absolute.endsWith('/report.html')) return c.json({ ok: false, code: 'agent_lab_report_path_invalid', error: 'The retained report path is invalid.' }, 500);
 		try { return new Response(await readFile(absolute, 'utf8'), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'" } }); }
 		catch { return dependencies.notFound(c, 'The retained simulation report is no longer available.'); }
@@ -392,11 +413,16 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 			if (!match) return dependencies.notFound(c, 'Unknown TreeDX relationship.');
 			const read = connection && text(match.path) ? await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: connection.baseRef, path: text(match.path), encoding: 'utf8', maxBytes: 196_608 }).catch(() => null) : null;
 			const content = repositoryBody(text(object(read?.file).content, match.summary));
-			const payload = { id: entityId, kind, title: text(match.title, 'Repository content'), description: text(match.summary), status: 'indexed', projectId, projectName: text(project.name), occurredAt: text(match.occurredAt) || null, primary: { actor: { label: kind === 'question' ? 'Asked by' : kind === 'note' ? 'Noted by' : 'Published by', name: text(match.author, 'Repository contributor'), detail: 'content author' }, postedAt: text(match.occurredAt) || null, content: { label: kind === 'question' ? 'Question' : kind === 'note' ? 'Note' : 'Content', body: content, classification: text(match.kind, kind), missing: !content }, facts: [{ label: 'Project', value: text(project.name) }, { label: 'Collection', value: text(match.kind) }] }, permissions: { note: true, question: true }, metrics: [{ label: 'TreeDX score', value: Number(match.score ?? 0) }], sections: [{ id: 'repository', title: 'Repository relationship', fields: [{ label: 'Collection', value: match.kind }, { label: 'Canonical identity', value: match.id }, { label: 'Path', value: match.path }, { label: 'Why it matched', value: match.summary }, { label: 'Complete source', value: object(read?.file).content }] }], timeline: [], related: await knowledgeConversation(dependencies, projectId, identity.join(':')), data: { ...match, content: object(read?.file).content } };
+			const payload = { id: entityId, kind, title: text(match.title, 'Repository content'), description: text(match.summary), status: 'indexed', projectId, projectName: text(project.name), occurredAt: text(match.occurredAt) || null, primary: { actor: { label: kind === 'question' ? 'Asked by' : kind === 'note' ? 'Noted by' : 'Published by', name: text(match.author, 'Repository contributor'), detail: 'content author' }, postedAt: text(match.occurredAt) || null, content: { label: kind === 'question' ? 'Question' : kind === 'note' ? 'Note' : 'Content', body: content, classification: text(match.kind, kind), missing: !content }, facts: [{ label: 'Project', value: text(project.name) }, { label: 'Collection', value: text(match.kind) }] }, permissions: { note: true, question: true, answer: kind === 'question' }, metrics: [{ label: 'TreeDX score', value: Number(match.score ?? 0) }], sections: [{ id: 'repository', title: 'Repository relationship', fields: [{ label: 'Collection', value: match.kind }, { label: 'Canonical identity', value: match.id }, { label: 'Path', value: match.path }, { label: 'Why it matched', value: match.summary }, { label: 'Complete source', value: object(read?.file).content }] }], timeline: [], related: await knowledgeConversation(dependencies, projectId, identity.join(':')), data: { ...match, expectedBase: text(read?.resolvedRef,connection?.baseRef), content: object(read?.file).content } };
 			return response(c, payload, new AgentLabCommandService(dependencies.store).revision(payload));
 		}
 		const service = new AgentLabCommandService(dependencies.store); const payload = await service.detail(kind as Parameters<AgentLabCommandService['detail']>[0], entityId, snapshot);
 		if (!payload) return dependencies.notFound(c, 'Unknown Agent Lab record.');
+		const management = await dependencies.manage(c); const canManage = !management.response;
+		if (kind === 'proposal') {
+			const status = text(payload.status); const mutable = ['draft','open','voting'].includes(status);
+			payload.permissions = { ...(payload.permissions ?? {}),edit:canManage && ['draft','open'].includes(status),vote:status === 'voting',open:canManage && status === 'draft',startVoting:canManage && ['draft','open'].includes(status),decide:canManage && ['open','voting'].includes(status),withdraw:canManage && mutable,supersede:canManage && mutable,resolve:false };
+		}
 		if (kind === 'agent') {
 			const definitions = await agentLabRepositoryDefinitions(dependencies, snapshot.rows.projects);
 			const definition = definitions.find((candidate) => matchesAgentDefinition(payload, candidate));
@@ -405,10 +431,14 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 				const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId: text(payload.projectId), write: false, authoringPaths: true }).catch(() => null);
 				const read = connection && path ? await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: connection.baseRef, path, encoding: 'utf8', maxBytes: 393_216, allowProtected: true }).catch(() => null) : null;
 				const source = text(object(read?.file).content); const activities = object(definitionData.activities); const contractIds = new Set<string>();
-				for (const profile of Object.values(activities).map(object)) for (const direction of ['inputs','outputs']) for (const field of ['artifactContracts','signalContracts']) for (const contractId of Array.isArray(object(profile[direction])[field]) ? object(profile[direction])[field] as unknown[] : []) if (text(contractId)) contractIds.add(text(contractId));
+				for (const profile of Object.values(activities).map(object)) {
+					const signals = object(profile.signals);
+					for (const entry of Array.isArray(signals.subscribesTo) ? signals.subscribesTo : []) { const id = text(object(entry).contract); if (id) contractIds.add(id); }
+					for (const id of Array.isArray(signals.publishes) ? signals.publishes : []) if (text(id)) contractIds.add(text(id));
+				}
 				payload.permissions = { ...(payload.permissions ?? {}), edit: Boolean(source) };
 				payload.data = { ...object(payload.data), definition: definitionData, authoring: source ? { source, path, language: 'mdx', expectedBase: text(read?.resolvedRef, connection?.baseRef), projectId: payload.projectId, projectName: payload.projectName } : null };
-				payload.sections = [{ id: 'profiles', title: 'Activity profile contracts', fields: Object.entries(activities).map(([profileId, profile]) => ({ label: profileId, value: { handler: object(profile).handler, stage: object(object(profile).planningIntent).stage, inputs: object(profile).inputs, outputs: object(profile).outputs } })) }, ...(payload.sections ?? [])];
+				payload.sections = [{ id: 'profiles', title: 'Activity profile signal flow', fields: Object.entries(activities).map(([profileId, profile]) => ({ label: profileId, value: { handler: object(profile).handler, stage: object(object(profile).planningIntent).stage, signals: object(profile).signals, outputs: object(profile).outputs } })) }, ...(payload.sections ?? [])];
 				payload.related = [...definitions.filter((candidate) => contractIds.has(text(object(candidate.data).contractId))), ...(payload.related ?? [])] as typeof payload.related;
 			}
 		}

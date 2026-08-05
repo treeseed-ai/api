@@ -198,7 +198,7 @@ function assertReplayMatchesRequest(
 		['mode', reservation.mode, request.mode],
 		['workDayId', reservation.workDayId, input.assignment.workDayId ?? input.admission.workday.id],
 		['projectAgentClassId', reservation.projectAgentClassId, input.assignment.projectAgentClassId],
-		['requestedCredits', Number(reservation.reservedCredits), Number(request.requestedCredits)],
+		['requestedSeconds', Number(reservation.reservedSeconds), Number(request.requestedSeconds)],
 	].filter(([, committedValue, requestedValue]) => committedValue !== requestedValue);
 	if (mismatches.length > 0) {
 		throw new CapacityGovernanceError(
@@ -282,7 +282,12 @@ export async function commitCapacityAdmission(database: CapacityGovernanceDataba
 		capacityProviderId: request.providerId,
 		executionProviderId: request.executionProviderId ?? null,
 		reservationId,
-		reservedCredits: request.requestedCredits,
+		requestedSeconds: request.requestedSeconds,
+		reservedSeconds: request.requestedSeconds,
+		activeSeconds: 0,
+		elapsedSeconds: 0,
+		releasedSeconds: 0,
+		overrunSeconds: 0,
 	};
 	const suppliedDecisionInput = record(input.assignment.decisionInput);
 	const decisionInput = {
@@ -300,8 +305,8 @@ export async function commitCapacityAdmission(database: CapacityGovernanceDataba
 	};
 	const operations = counterInitializationOperations(input, decision, now);
 	operations.push({
-		query: `INSERT OR IGNORE INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, execution_provider_id, lane_id, allocation_set_id, allocation_version, allocation_slice_ids_json, policy_snapshot_json, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, task_id, state, reserved_credits, consumed_credits, expires_at, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, 0, ?, '{}', ?, ?)`,
-		params: [reservationId, idempotencyKey, admissionToken, request.membershipId, grantId, request.providerId, request.executionProviderId ?? null, request.laneId ?? null, allocationSetId, decision.allocationVersion, JSON.stringify(input.admission.allocationSliceIds), JSON.stringify(decision.policySnapshot), input.assignment.projectAgentClassId, assignmentId, request.mode, request.teamId, request.projectId, workDayId, taskId, request.requestedCredits, input.expiresAt ?? null, now, now],
+		query: `INSERT OR IGNORE INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, execution_provider_id, lane_id, allocation_set_id, allocation_version, allocation_slice_ids_json, policy_snapshot_json, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, task_id, state, requested_seconds, reserved_seconds, active_seconds, elapsed_seconds, released_seconds, overrun_seconds, expires_at, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?, 0, 0, 0, 0, ?, '{}', ?, ?)`,
+		params: [reservationId, idempotencyKey, admissionToken, request.membershipId, grantId, request.providerId, request.executionProviderId ?? null, request.laneId ?? null, allocationSetId, decision.allocationVersion, JSON.stringify(input.admission.allocationSliceIds), JSON.stringify(decision.policySnapshot), input.assignment.projectAgentClassId, assignmentId, request.mode, request.teamId, request.projectId, workDayId, taskId, request.requestedSeconds, request.requestedSeconds, input.expiresAt ?? null, now, now],
 	});
 	operations.push(...counterClaimOperations(input, decision, reservationId, admissionToken, now));
 	operations.push({

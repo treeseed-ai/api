@@ -190,7 +190,12 @@ function assignmentInput(
     capacityProviderId: principal.capacityProviderId,
     executionProviderId: executionProvider.id,
     mode: demand.mode,
-    reservedCredits: demand.requestedCredits,
+		requestedSeconds: demand.requestedSeconds,
+		reservedSeconds: demand.requestedSeconds,
+		activeSeconds: 0,
+		elapsedSeconds: 0,
+		releasedSeconds: 0,
+		overrunSeconds: 0,
     metadata: {
       ...record(record(payload.capacityEnvelope).metadata),
       source: "workday-demand",
@@ -218,6 +223,7 @@ function assignmentInput(
             demandId: demand.id,
             sourceType: demand.sourceType,
             activityType: demand.activityType,
+            planningGraph: record(payload.planningGraph),
           },
         }
       : {
@@ -245,7 +251,7 @@ function assignmentInput(
     projectAgentClassId: demand.projectAgentClassId,
     mode: demand.mode,
     workDayId: demand.workdayId,
-    requestedCredits: demand.requestedCredits,
+		requestedSeconds: demand.requestedSeconds,
     decisionId: demand.decisionId,
     proposalId:
       planningSubjectModel === "proposal" ? planningSubjectId || null : null,
@@ -256,8 +262,7 @@ function assignmentInput(
     decisionInput,
     allowedOutputs: planning
       ? { paths: allowedWritePaths, types: planningOutputTypes,
-          artifactContracts: Array.isArray(record(payload.outputContract).artifactContracts) ? record(payload.outputContract).artifactContracts : [],
-          signalContracts: Array.isArray(record(payload.outputContract).signalContracts) ? record(payload.outputContract).signalContracts : [] }
+          publishedSignals: Array.isArray(record(payload.signalPolicy).publishes) ? record(payload.signalPolicy).publishes : [] }
       : record(payload.allowedOutputs),
     workspaceContext: {
       workspaceAccessMode: "workspace_write",
@@ -269,10 +274,12 @@ function assignmentInput(
       demandId: demand.id,
       sourceType: demand.sourceType,
       sourceId: demand.sourceId,
+      planningGraph: planning ? record(payload.planningGraph) : undefined,
     },
     metadata: {
       demandId: demand.id,
       activityType: demand.activityType,
+		agentClassSlug: text(demand.metadata.agentClassSlug),
       contentRoot,
       agentContentPath: text(payload.agentContentPath),
       workdayRunId: demand.workdayRunId,

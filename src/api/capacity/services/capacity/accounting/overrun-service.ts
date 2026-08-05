@@ -42,7 +42,8 @@ export class CapacityOverrunService {
 			'capacity_overrun_state_conflict', `Reservation in ${String(reservation.state)} state cannot receive an overrun decision.`, 409,
 		);
 		const holdMetadata = metadata(hold);
-		const actualCredits = decision === 'approved' ? finite(holdMetadata.actualCredits ?? hold.credits, 'actualCredits') ?? 0 : 0;
+		const activeSeconds = decision === 'approved' ? finite(holdMetadata.activeSeconds ?? hold.active_seconds, 'activeSeconds') ?? 0 : 0;
+		const elapsedSeconds = decision === 'approved' ? finite(holdMetadata.elapsedSeconds ?? hold.elapsed_seconds, 'elapsedSeconds') ?? 0 : 0;
 		const result = await settleCapacityReservationExactlyOnce(this.database, {
 			settlementKey: `overrun-${decision}:${reservationId}:${idempotencyKey}`,
 			usageIdempotencyKey: `overrun-${decision}:${reservationId}:${idempotencyKey}`,
@@ -51,7 +52,8 @@ export class CapacityOverrunService {
 			reservationId,
 			assignmentId: String(reservation.assignment_id),
 			assignmentAttempt: Number(reservation.assignment_attempt ?? 0),
-			actualCredits,
+			activeSeconds,
+			elapsedSeconds,
 			providerUnits: decision === 'approved' ? finite(hold.provider_units, 'providerUnits') : null,
 			usd: decision === 'approved' ? finite(hold.usd, 'usd') : null,
 			source: `team_overrun_${decision}`,
@@ -64,7 +66,7 @@ export class CapacityOverrunService {
 		await new CapacityAuditRepository(this.database).record({
 			id: auditId, teamId, providerId: String(reservation.capacity_provider_id), membershipId: String(reservation.membership_id),
 			actorType: 'team-principal', actorId, action: `capacity-overrun.${decision}`, resourceType: 'capacity-reservation',
-			resourceId: reservationId, idempotencyKey, metadata: { actualCredits, settlementKey: result.entry.settlement_key }, now,
+			resourceId: reservationId, idempotencyKey, metadata: { activeSeconds, elapsedSeconds, settlementKey: result.entry.settlement_key }, now,
 		});
 		return { decision, reservationId, settlement: result };
 	}

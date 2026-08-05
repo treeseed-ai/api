@@ -18,17 +18,19 @@ export async function createGovernanceProposalMethod(this: MarketControlPlaneSto
     const provider = governanceVotingProvider(policy?.providerId);
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();
-    const proposalType = optionalStringValue(input.proposalType ?? input.decisionType, 'implementation');
-    const metadata = { ...(input.metadata ?? {}), relatedObjectives: input.relatedObjectives ?? input.metadata?.relatedObjectives ?? [], evidenceRefs: input.evidenceRefs ?? input.metadata?.evidenceRefs ?? [], plan: normalizeGovernanceProposalPlan(input.plan ?? input.metadata?.plan), contentProvenance: input.contentProvenance ?? input.metadata?.contentProvenance ?? null };
+    const proposalTypes = [...new Set((Array.isArray(input.proposalTypes) ? input.proposalTypes : [input.proposalType ?? input.decisionType]).map(String).map((value) => value.trim()).filter(Boolean))];
+    const proposalType = proposalTypes[0] ?? 'implementation';
+    const normalizedTypes = proposalTypes.length ? proposalTypes : [proposalType];
+    const metadata = { ...(input.metadata ?? {}), proposalTypes: normalizedTypes, relatedObjectives: input.relatedObjectives ?? input.metadata?.relatedObjectives ?? [], evidenceRefs: input.evidenceRefs ?? input.metadata?.evidenceRefs ?? [], plan: normalizeGovernanceProposalPlan(input.plan ?? input.metadata?.plan), contentProvenance: input.contentProvenance ?? input.metadata?.contentProvenance ?? null };
     const contentHash = governanceContentHash({ title, summary, body, proposalType, ...metadata });
     const contentProposalSlug = optionalStringValue(input.contentProposalSlug) ?? governanceSlug(title, 'proposal');
     await this.run(`INSERT INTO governance_proposals (
-				id, team_id, project_id, scope, status, title, summary, body, proposal_type,
+				id, team_id, project_id, scope, status, title, summary, body, proposal_type, proposal_types_json,
 				content_proposal_slug, content_decision_slug, active_version, active_content_hash,
 				governance_provider_id, governance_provider_version, governance_policy_id, decision_id,
 				voting_starts_at, voting_ends_at, closed_at, closed_reason, created_by_type, created_by_id,
 				metadata_json, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)`, [
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 1, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?)`, [
         id,
         teamId,
         project?.id ?? input.projectId ?? null,
@@ -38,6 +40,7 @@ export async function createGovernanceProposalMethod(this: MarketControlPlaneSto
         summary,
         body,
         proposalType,
+        JSON.stringify(normalizedTypes),
         contentProposalSlug,
         contentHash,
         provider.id,

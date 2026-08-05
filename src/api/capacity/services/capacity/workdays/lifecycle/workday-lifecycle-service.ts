@@ -42,7 +42,8 @@ function secretPath(value: unknown, path = 'parameters'): string | null {
 		const nextPath = `${path}.${key}`;
 		const normalized = normalizedKey(key);
 		const protectedReference = normalized.endsWith('_ref') && typeof item === 'string' && /^[a-z][a-z0-9+.-]*:\/\//iu.test(item);
-		if (SECRET_KEY.test(normalized) && !protectedReference) return nextPath;
+		const numericTokenMetric = normalized.includes('token') && typeof item === 'number' && Number.isFinite(item);
+		if (SECRET_KEY.test(normalized) && !protectedReference && !numericTokenMetric) return nextPath;
 		const found = secretPath(item, nextPath);
 		if (found) return found;
 	}
