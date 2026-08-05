@@ -129,7 +129,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 				: remote?.push ?? remote?.promotion;
 			if (push?.rejectedRefs?.length) throw new Error('The publication ref changed after review. Rebase and review the knowledge again.');
 			const graph = publicationAlreadyApplied ? undefined : await completedGraphRefresh(connection.client,
-				{ repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths, forceFull: true });
+				{ repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths });
 			const search = publicationAlreadyApplied ? undefined : await connection.client.refreshSearchIndex({ repoId: connection.repositoryId,
 				ref: publication.published_ref, paths: workspace.allowedPaths });
 			if (!publicationAlreadyApplied) requireIndexedSourceClosure({ projectId: workspace.projectId,
@@ -141,10 +141,19 @@ export function createKnowledgePublicationExecutor(options: any) {
 				auditPrevious = previous?.previousRevision
 					? await publicationStorage.readRevision(workspace.teamId, previous.previousRevision) : null;
 			} else {
-				const snapshots = await loadSnapshots(store, { teamId: workspace.teamId });
+				const teamProjects = await store.listTeamProjects(workspace.teamId);
+				const snapshots = await loadSnapshots(store, { teamId: workspace.teamId,
+					...(previous ? { projectIds: new Set([workspace.projectId]) } : {}) });
 				const graphRevisions: Record<string, string> = {};
 				const refs: Record<string, string> = {};
 				for (const snapshot of snapshots) {
+					if (snapshot.projectId === workspace.projectId && graph && search) {
+						requireIndexedSourceClosure({ projectId: snapshot.projectId, commitSha: snapshot.commitSha,
+							graph, search });
+						graphRevisions[snapshot.projectId] = String(graph.graphVersion ?? search.graphVersion ?? search.indexVersion);
+						refs[snapshot.projectId] = publication.published_ref;
+						continue;
+					}
 					const observed = await resolveConnection(store, { projectId: snapshot.projectId, write: false });
 					if (!observed) throw new Error(`TreeDX repository is unavailable for project ${snapshot.projectId}.`);
 					const snapshotConnection = await resolveConnection(store, { projectId: snapshot.projectId,
@@ -152,7 +161,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 					if (!snapshotConnection) throw new Error(`TreeDX repository is unavailable for project ${snapshot.projectId}.`);
 					const refreshedGraph = await completedGraphRefresh(snapshotConnection.client, {
 						repoId: snapshot.repositoryId, ref: snapshotConnection.baseRef,
-						paths: snapshotConnection.allowedPaths, forceFull: true,
+						paths: snapshotConnection.allowedPaths,
 					});
 					const status = await snapshotConnection.client.refreshSearchIndex({ repoId: snapshot.repositoryId,
 						ref: snapshotConnection.baseRef, paths: snapshotConnection.allowedPaths });
@@ -162,7 +171,8 @@ export function createKnowledgePublicationExecutor(options: any) {
 					refs[snapshot.projectId] = snapshotConnection.baseRef;
 				}
 				const built = buildKnowledgePublication({ teamId: workspace.teamId, generatedAt: publication.created_at,
-					previousRevision: previous?.revision, projects: snapshots, graphRevisions, refs });
+					previousRevision: previous?.revision, previousManifest: previous, projects: snapshots, graphRevisions, refs,
+					retainedProjectIds: new Set(teamProjects.map((project: any) => project.id)) });
 				await publicationStorage.publish({ manifest: built.manifest, objects: built.objects,
 					expectedRevision: previous?.revision });
 				manifest = built.manifest;

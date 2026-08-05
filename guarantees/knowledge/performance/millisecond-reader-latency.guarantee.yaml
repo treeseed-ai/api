@@ -1,0 +1,19 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.knowledge.performance.millisecond-reader-latency.742
+journeyIndex: 742
+type: knowledge
+subtype: performance
+journey: Millisecond Public Knowledge Reader Latency
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Public knowledge readers use compact atomic publications and remain within explicit p99 latency and throughput budgets under production-shaped load.
+status: planned
+actors: { allowed: [anonymous_reader, authenticated_reader], forbidden: [unauthorized_project_reader] }
+devices: { required: [desktop_chromium] }
+gates: [core, release]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [Requires a production-shaped TreeDX publication corpus and ten-minute load profile.] }
+api: { required: true, verifierRefs: [] }
+audit: { required: false, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [api_acceptance_report, treedx_report, guarantee_report] }
+notes: [Keep planned until repeatable API reader and TreeDX profiler evidence proves the p99 and throughput budgets.]

@@ -2,6 +2,7 @@ import {
 	knowledgePageSummary,
 	resolveKnowledgePage,
 	type KnowledgePageDefinition,
+	type KnowledgeNavigationEntry,
 	type KnowledgeVisibility,
 } from '@treeseed/sdk/knowledge';
 import { createHash } from 'node:crypto';
@@ -41,17 +42,36 @@ function versionedResponse(c: any, revision: string | undefined, payload: Record
 
 async function canRead(context: any, c: any, page: Pick<FederatedKnowledgePage, 'status' | 'visibility' | 'source'>) {
 	if (page.status !== 'published' || page.visibility === 'public') return page.status === 'published';
-	const auth = await context.ensurePrincipal(c);
-	if (auth.response) return false;
-	if (page.visibility === 'authenticated') return true;
-	if (page.visibility === 'admin') return context.principalHasGlobalPlatformRole(auth.principal);
-	if (page.visibility === 'team') {
-		return !(await context.requireTeamAccess(c, context.store, page.source.teamId, 'knowledge:read')).response;
-	}
-	if (page.visibility === 'project') {
-		return !(await context.requireProjectAccess(c, context.store, page.source.projectId, 'knowledge:read')).response;
-	}
-	return false;
+	const decisions: Map<string, Promise<boolean>> = c.get('knowledgeReadDecisions') ?? new Map();
+	if (!c.get('knowledgeReadDecisions')) c.set('knowledgeReadDecisions', decisions);
+	const owner = page.visibility === 'team' ? page.source.teamId : page.visibility === 'project' ? page.source.projectId : '';
+	const key = `${page.visibility}:${owner}`;
+	const existing = decisions.get(key);
+	if (existing) return existing;
+	const decision = (async () => {
+		const auth = await context.ensurePrincipal(c);
+		if (auth.response) return false;
+		if (page.visibility === 'authenticated') return true;
+		if (page.visibility === 'admin') return context.principalHasGlobalPlatformRole(auth.principal);
+		if (page.visibility === 'team') {
+			return !(await context.requireTeamAccess(c, context.store, page.source.teamId, 'knowledge:read')).response;
+		}
+		if (page.visibility === 'project') {
+			return !(await context.requireProjectAccess(c, context.store, page.source.projectId, 'knowledge:read')).response;
+		}
+		return false;
+	})();
+	decisions.set(key, decision);
+	return decision;
+}
+
+function navigationEntry(page: FederatedKnowledgePage): KnowledgeNavigationEntry {
+	return {
+		id: page.id, bookId: page.bookId, slug: page.slug, title: page.title, summary: page.summary,
+		visibility: page.visibility, status: page.status, audiences: page.audiences, updatedAt: page.updatedAt,
+		order: page.order, parentId: page.parentId, revision: page.revision,
+		canonicalPath: `/t/${encodeURIComponent(page.source.teamSlug)}/books/${encodeURIComponent(page.source.bookSlug ?? page.bookId)}/${page.slug.split('/').map(encodeURIComponent).join('/')}`,
+	};
 }
 
 async function readablePages(context: any, c: any, pages: FederatedKnowledgePage[]) {
@@ -97,7 +117,9 @@ export function installContextualKnowledgeRoutes(context: any) {
 	});
 
 	app.get('/v1/knowledge/reader', async (c: any) => {
+		const startedAt = performance.now();
 		const catalog = await loadFederatedKnowledgeCatalog(context, c).catch(() => null);
+		const catalogLoadedAt = performance.now();
 		if (!catalog) return jsonError(c, 503, 'Knowledge is unavailable.', { code: 'knowledge_runtime_unavailable' });
 		if (catalog.response) return catalog.response;
 		const teamSlug = String(c.req.query('teamSlug') ?? '');
@@ -111,7 +133,9 @@ export function installContextualKnowledgeRoutes(context: any) {
 			.sort((left: any, right: any) => left.order - right.order || left.title.localeCompare(right.title));
 		const page = pageSlug ? pages.find((candidate: any) => candidate.slug === pageSlug) : undefined;
 		if (pageSlug && !page) return jsonError(c, 404, 'Knowledge page not found.', { code: 'knowledge_page_not_found' });
-		return versionedResponse(c, page?.revision ?? catalogRevision(pages), { book, pages, page,
+		c.header('server-timing', `catalog;dur=${(catalogLoadedAt - startedAt).toFixed(1)}, authorize;dur=${(performance.now() - catalogLoadedAt).toFixed(1)}`);
+		return versionedResponse(c, page?.revision ?? catalogRevision(pages), { book,
+			navigation: pages.map(navigationEntry), page,
 			revision: page?.revision ?? catalogRevision(pages) });
 	});
 
