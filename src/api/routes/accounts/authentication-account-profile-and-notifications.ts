@@ -335,8 +335,9 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					if (auth.response) return auth.response;
 					const body = await readJsonOrFormBody(c);
 					const appearance = normalizeAppearancePreference(body);
-					if (appearance.scheme.startsWith('personal-')) {
-						const themeId = appearance.scheme.slice('personal-'.length);
+					for (const selectedScheme of new Set([appearance.scheme, appearance.workspace.scheme])) {
+						if (!selectedScheme.startsWith('personal-')) continue;
+						const themeId = selectedScheme.slice('personal-'.length);
 						const owned = await store.first(`SELECT id FROM user_personal_themes WHERE id = ? AND user_id = ? LIMIT 1`, [themeId, auth.principal.id]);
 						if (!owned) return jsonError(c, 404, 'Personal theme was not found.');
 					}
@@ -400,7 +401,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					if (!existing) return jsonError(c, 404, 'Personal theme was not found.');
 					const user = await store.first(`SELECT metadata_json FROM users WHERE id = ? LIMIT 1`, [auth.principal.id]);
 					const appearance = normalizeAppearancePreference(parseJsonObject(user?.metadata_json).appearance ?? {});
-					if (appearance.scheme === `personal-${themeId}`) return jsonError(c, 409, 'Switch themes from the theme selector before deleting the active theme.', { code: 'active_theme' });
+					if (appearance.scheme === `personal-${themeId}` || appearance.workspace.scheme === `personal-${themeId}`) return jsonError(c, 409, 'Switch themes from the theme selector before deleting a theme used by the application or content workspace.', { code: 'active_theme' });
 					await store.run(`DELETE FROM user_personal_themes WHERE id = ? AND user_id = ?`, [themeId, auth.principal.id]);
 					return c.json({ ok: true, payload: { id: themeId, deleted: true } });
 				});

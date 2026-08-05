@@ -120,9 +120,18 @@ export function webAuthPayload(session) {
 export function normalizeAppearancePreference(input: any = {}) {
     const scheme = optionalTrimmedString(input.colorScheme ?? input.scheme) ?? 'fern';
     const mode = optionalTrimmedString(input.themeMode ?? input.mode) ?? 'system';
+    const workspace = input.workspace && typeof input.workspace === 'object' ? input.workspace : {};
+    const workspaceScheme = optionalTrimmedString(input.contentThemeOverlayScheme ?? workspace.scheme) ?? scheme;
+    const workspaceMode = optionalTrimmedString(input.contentThemeOverlayMode ?? workspace.mode) ?? 'inherit';
+    const enabledValue = input.contentThemeOverlayEnabled ?? workspace.enabled;
     return {
         scheme,
         mode: ['light', 'dark', 'system'].includes(mode) ? mode : 'system',
+        workspace: {
+            enabled: enabledValue === true || enabledValue === 'true' || enabledValue === '1',
+            scheme: workspaceScheme,
+            mode: ['inherit', 'light', 'dark', 'system'].includes(workspaceMode) ? workspaceMode : 'inherit',
+        },
     };
 }
 export function resolveAuthApprovalBaseUrl(config) {
