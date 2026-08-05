@@ -1,4 +1,5 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
+import { bindGovernanceTreeDx,completeGovernanceProposalInput } from '../../../../support/governance-proposal.ts';
 
 describe('market api', () => {
 it('lets isolated agent stand-ins question, debate, vote, and create a decision', async () => {
@@ -9,6 +10,7 @@ it('lets isolated agent stand-ins question, debate, vote, and create a decision'
 	const proposerToken = await authorizeApp(app, { principalId: 'evolution-proposer-agent', displayName: 'Proposer Agent' });
 	const reviewerToken = await authorizeApp(app, { principalId: 'evolution-reviewer-agent', displayName: 'Reviewer Agent' });
 	const { team, project } = await createTeamAndProject(app, ownerToken, { slug: 'automated-evolution', name: 'Automated Evolution Test' });
+	await bindGovernanceTreeDx(store, team.id, project.id);
 	await store.upsertTeamMember(team.id, 'evolution-proposer-agent', 'project_lead');
 	await store.upsertTeamMember(team.id, 'evolution-reviewer-agent', 'reviewer');
 	const headers = (token: string) => ({ authorization: `Bearer ${token}`, 'content-type': 'application/json' });
@@ -22,27 +24,33 @@ it('lets isolated agent stand-ins question, debate, vote, and create a decision'
 	expect(policy.payload.providerId).toBe('absolute_threshold_v1');
 
 	const proposal = await json(await app.request(`/v1/projects/${project.id}/proposals`, {
-		method: 'POST', headers: headers(proposerToken), body: JSON.stringify({
+		method: 'POST', headers: headers(proposerToken), body: JSON.stringify(completeGovernanceProposalInput({
 			title: 'Pilot autonomous Guide evolution',
 			summary: 'Exercise isolated editorial governance without granting publication authority.',
-			body: 'Agent stand-ins may deliberate and decide inside this acceptance project only.',
+			body: 'Agent stand-ins may deliberate and decide inside this acceptance project only. The scenario cannot publish content or grant production authority, and all evidence remains isolated to this project.',
 			proposalType: 'editorial-test',
 			metadata: { automatedEvolutionTest: true, productionAuthority: false },
-		}),
+		})),
 	}));
 	expect(proposal.payload.status).toBe('draft');
 
 	const question = await json(await app.request(`/v1/projects/${project.id}/proposals/${proposal.payload.id}/discussion`, {
 		method: 'POST', headers: headers(reviewerToken), body: JSON.stringify({
-			kind: 'question', message: 'How is this prevented from approving production publication?', automatedEvolutionTest: true,
+			kind: 'question', message: 'How is this prevented from approving production publication?', contentContributorRef: 'person:evolution-reviewer-agent', automatedEvolutionTest: true,
 		}),
 	}));
 	const response = await json(await app.request(`/v1/projects/${project.id}/proposals/${proposal.payload.id}/discussion`, {
 		method: 'POST', headers: headers(proposerToken), body: JSON.stringify({
-			kind: 'response', message: 'The test project has no production publication grant and human chapter gates remain mandatory.', automatedEvolutionTest: true,
+			kind: 'response', message: 'The test project has no production publication grant and human chapter gates remain mandatory.', resolvesEventId: question.payload.id, automatedEvolutionTest: true,
 		}),
 	}));
 	expect([question.payload.evidence.kind, response.payload.evidence.kind]).toEqual(['question', 'response']);
+	const review = await json(await app.request(`/v1/projects/${project.id}/proposals/${proposal.payload.id}/discussion`, {
+		method: 'POST', headers: headers(reviewerToken), body: JSON.stringify({
+			kind: 'support', message: 'Independent review confirms the scenario is bounded to this project and cannot publish.', automatedEvolutionTest: true,
+		}),
+	}));
+	expect(review.payload.evidence.kind).toBe('support');
 
 	await app.request(`/v1/projects/${project.id}/proposals/${proposal.payload.id}/open`, { method: 'POST', headers: headers(proposerToken), body: '{}' });
 	await app.request(`/v1/projects/${project.id}/proposals/${proposal.payload.id}/start-voting`, { method: 'POST', headers: headers(proposerToken), body: '{}' });
@@ -55,6 +63,6 @@ it('lets isolated agent stand-ins question, debate, vote, and create a decision'
 	const resolved = await json(await app.request(`/v1/projects/${project.id}/proposals/${proposal.payload.id}`, { headers: headers(ownerToken) }));
 	expect(resolved.payload.status).toBe('accepted');
 	expect(resolved.payload.decision).toMatchObject({ status: 'accepted', governanceProviderId: 'absolute_threshold_v1' });
-	expect(resolved.payload.events.filter((event: { eventType: string }) => event.eventType === 'proposal.discussion')).toHaveLength(2);
+	expect(resolved.payload.events.filter((event: { eventType: string }) => event.eventType === 'proposal.discussion')).toHaveLength(3);
 });
 });

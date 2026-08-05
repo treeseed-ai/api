@@ -1,5 +1,5 @@
 import { evaluateGovernanceProposalReadiness } from '@treeseed/sdk';
-import type { AgentArtifactManifest,StructuredAgentEstimateRecord } from '@treeseed/sdk/agent-capacity';
+import type { AgentArtifactManifest,CapacityWorkdayRunRecord,StructuredAgentEstimateRecord } from '@treeseed/sdk/agent-capacity';
 import { validateAgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
 import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { createHash } from 'node:crypto';
@@ -13,10 +13,10 @@ type JsonRecord = Record<string, unknown>;
 export interface AssignmentPlanningOutputStore extends CapacityGovernanceDatabase,WorkdayTreeDxConnectionStore {
 	getStructuredAgentEstimate(id: string): Promise<StructuredAgentEstimateRecord | null>;
 	createStructuredAgentEstimate(decisionId: string, input: JsonRecord): Promise<StructuredAgentEstimateRecord | null>;
-	getGovernanceProposal(id: string): Promise<any | null>;
-	createGovernanceProposal(principal: unknown, input: JsonRecord): Promise<any | null>;
-	getCapacityWorkdayRun(teamId: string, runId: string): Promise<any | null>;
-	recordGovernanceEvent(input: JsonRecord): Promise<any | null>;
+	getGovernanceProposal(id: string): Promise<JsonRecord | null>;
+	createGovernanceProposal(principal: unknown, input: JsonRecord): Promise<JsonRecord | null>;
+	getCapacityWorkdayRun(teamId: string, runId: string): Promise<CapacityWorkdayRunRecord | null>;
+	recordGovernanceEvent(input: JsonRecord): Promise<JsonRecord | null>;
 }
 
 function record(value: unknown): JsonRecord {

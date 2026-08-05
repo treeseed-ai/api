@@ -5,6 +5,7 @@ import { describe,expect,it } from 'vitest';
 import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.js';
 import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.js';
 import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
+import { seedTreeDxFetch } from '../../../support/seed-treedx.js';
 
 const projectRoot = process.cwd();
 const migrationRoot = existsSync(resolve(projectRoot, '../sdk/drizzle/market'))
@@ -28,6 +29,7 @@ function createStore() {
 		assertionSecret: 'test-assertion-secret',
 		serviceId: 'web',
 		serviceSecret: 'test-service-secret',
+		fetchImpl: seedTreeDxFetch,
 	}, db);
 	return { db, store };
 }

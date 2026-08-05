@@ -135,7 +135,7 @@ function encodeDeltaCursor(revision: string, ids: string[]) {
 	return Buffer.from(JSON.stringify({ revision, ids }), 'utf8').toString('base64url');
 }
 
-export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
+function installProjectionRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/workday-context', async (c) => {
 		const context = await projectionContext(c, dependencies); if (context.response) return context.response;
 		const { snapshot } = context as Exclude<typeof context, { response: Response }>;
@@ -199,7 +199,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		try { await service.create(c.req.param('teamId'), input, access.principal?.id ?? null, `agent-lab-allocation:create:${requestId}`); await service.supersede(c.req.param('teamId'), allocationId, typeof body.expectedActiveAllocationSetId === 'string' ? body.expectedActiveAllocationSetId : null, `agent-lab-allocation:activate:${requestId}`); return response(c, await allocationSnapshot(dependencies, c.req.param('teamId'), snapshot, true), `${snapshot.overview.revision}:${allocationId}`); }
 		catch (error) { const value = error as { status?: number; code?: string; message?: string; diagnostics?: unknown }; return c.json({ ok: false, code: value.code ?? 'agent_lab_allocation_failed', error: value.message ?? 'Allocation could not be applied.', diagnostics: value.diagnostics }, (value.status ?? 409) as 400); }
 	});
+}
 
+function installEntityRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/entities', async (c) => {
 		const kind = c.req.query('kind') as AgentLabEntityKind;
 		if (!entityKinds.has(kind)) return c.json({ ok: false, code: 'agent_lab_entity_kind_invalid', error: 'Select a supported Agent Lab entity kind.' }, 400);
@@ -214,7 +216,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		const selected = items.slice(start, start + limit); const hasMore = start + limit < items.length;
 		return response(c, { kind, items: selected, page: { limit, hasMore, nextCursor: hasMore ? nextCursor(selected.at(-1)?.id) : null }, total: items.length }, snapshot.overview.revision);
 	});
+}
 
+function installSurfaceRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/surfaces/:surface', async (c) => {
 		const surface = c.req.param('surface');
 		if (!commandSurfaces.has(surface)) return c.json({ ok: false, code: 'agent_lab_surface_invalid', error: 'Select a supported Agent Lab surface.' }, 400);
@@ -253,7 +257,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		const projected = withViewState(payload, await viewState(dependencies, access.principal?.id, c.req.param('teamId'))); const revision = service.revision(projected);
 		return notModified(c, revision) ?? response(c, projected, revision);
 	});
+}
 
+function installViewStateRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/view-state', async (c) => {
 		const access = await dependencies.read(c); if (access.response) return access.response;
 		const rows = await viewState(dependencies, access.principal?.id, c.req.param('teamId'), c.req.query('namespace') ?? 'command');
@@ -272,7 +278,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		else await dependencies.store.run(`INSERT INTO agent_lab_view_state (id, user_id, team_id, namespace, entity_kind, entity_id, pinned, hidden, resolved, layout_json, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), access.principal.id, c.req.param('teamId'), namespace, kind, entityId, values.pinned, values.hidden, values.resolved, values.layout, version, now, now]);
 		return c.json({ ok: true, payload: { kind, id: entityId, ...values, layout: JSON.parse(values.layout), version } });
 	});
+}
 
+function installAuthoringRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response;
 		const body = await readCapacityRequestObject(c); const projectId = typeof body.projectId === 'string' ? body.projectId : ''; const path = typeof body.path === 'string' ? body.path.replace(/^\/+|\/+$/gu, '') : ''; const source = typeof body.source === 'string' ? body.source : '';
@@ -297,7 +305,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		}
 		try { await connection.client.writeFile({ workspaceId: workspace.workspaceId, path, content: source, encoding: 'utf8', ...(typeof body.expectedSha === 'string' && body.expectedSha ? { expectedSha: body.expectedSha } : {}) }); const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `agent-lab: update ${path}`, author: { name: access.principal?.name ?? access.principal?.id ?? 'Agent Lab operator', email: access.principal?.email ?? 'agent-lab@users.treeseed.local' } }); await dependencies.store.run(`INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.authoring.committed', 'project', ?, ?, ?)`, [randomUUID(), access.principal?.id ?? null, projectId, JSON.stringify({ path, commitSha: commit.commitSha, branchName: commit.branchName }), new Date().toISOString()]); return c.json({ ok: true, payload: { commit: commit.commitSha, branch: commit.branchName, changedPaths: commit.changedPaths } }); } catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_lab_authoring_failed', error: error instanceof Error ? error.message : 'TreeDX could not commit the definition.' }, 409); }
 	});
+}
 
+function installServicePrincipalRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.post('/v1/teams/:teamId/agent-lab/service-principal/reconcile', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response;
 		const localRuntime = dependencies.environment === 'local'
@@ -316,7 +326,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		await dependencies.store.run(`INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.service_principal.reconciled', 'team', ?, ?, ?)`, [randomUUID(), access.principal?.id ?? null, c.req.param('teamId'), JSON.stringify({ resourceKey, serviceId, membershipId: membership?.id ?? null, credentialId: credential.id }), now]);
 		return c.json({ ok: true, payload: { serviceId, credentialId: credential.id, credential: credential.secret, membershipId: membership?.id ?? null, roles: ['team_owner'] } });
 	});
+}
 
+function installSimulationRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.post('/v1/teams/:teamId/agent-lab/simulations', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response;
 		const body = await readCapacityRequestObject(c); const scenePath = typeof body.scenePath === 'string' ? body.scenePath : ''; const immutableRef = typeof body.immutableRef === 'string' ? body.immutableRef : '';
@@ -366,7 +378,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		try { return new Response(await readFile(absolute, 'utf8'), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'" } }); }
 		catch { return dependencies.notFound(c, 'The retained simulation report is no longer available.'); }
 	});
+}
 
+function installDetailRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/details/:kind/:entityId', async (c) => {
 		const kind = c.req.param('kind');
 		if (!commandKinds.has(kind)) return c.json({ ok: false, code: 'agent_lab_detail_kind_invalid', error: 'Select a supported Agent Lab record type.' }, 400);
@@ -416,7 +430,9 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		payload.related = [...conversation, ...(payload.related ?? [])] as typeof payload.related;
 		return notModified(c, service.revision(payload)) ?? response(c, payload, service.revision(payload));
 	});
+}
 
+function installTargetRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.patch('/v1/teams/:teamId/agent-lab/targets', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response;
 		const body = await readCapacityRequestObject(c, { optional: true }); const requested = body.targets;
@@ -440,4 +456,16 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 		await dependencies.store.run(`INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.metric_targets.updated', 'team', ?, ?, ?)`, [randomUUID(), access.principal?.id ?? null, c.req.param('teamId'), JSON.stringify({ metricKeys: Object.keys(targets) }), now]);
 		return c.json({ ok: true, payload: { targets, revision: now } });
 	});
+}
+
+export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
+	installProjectionRoutes(app, dependencies);
+	installEntityRoutes(app, dependencies);
+	installSurfaceRoutes(app, dependencies);
+	installViewStateRoutes(app, dependencies);
+	installAuthoringRoutes(app, dependencies);
+	installServicePrincipalRoutes(app, dependencies);
+	installSimulationRoutes(app, dependencies);
+	installDetailRoutes(app, dependencies);
+	installTargetRoutes(app, dependencies);
 }

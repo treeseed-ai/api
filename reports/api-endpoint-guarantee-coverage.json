@@ -1,7 +1,7 @@
 {
-  "routeCount": 565,
-  "descriptorCount": 565,
-  "coveredByGuarantee": 565,
+  "routeCount": 567,
+  "descriptorCount": 567,
+  "coveredByGuarantee": 567,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -80,6 +80,7 @@
       "get.v1.teams.by-name.name.profile",
       "get.v1.teams.teamId.access",
       "get.v1.teams.teamId.agent-lab.activity",
+      "get.v1.teams.teamId.agent-lab.allocation",
       "get.v1.teams.teamId.agent-lab.details.kind.entityId",
       "get.v1.teams.teamId.agent-lab.entities",
       "get.v1.teams.teamId.agent-lab.metric-series",
@@ -105,6 +106,7 @@
       "patch.v1.teams.teamId.agent-lab.view-state",
       "patch.v1.teams.teamId.members.membershipId",
       "post.v1.teams",
+      "post.v1.teams.teamId.agent-lab.allocation",
       "post.v1.teams.teamId.agent-lab.service-principal.reconcile",
       "post.v1.teams.teamId.agent-lab.simulations",
       "post.v1.teams.teamId.agent-lab.simulations.operationId.cancel",
