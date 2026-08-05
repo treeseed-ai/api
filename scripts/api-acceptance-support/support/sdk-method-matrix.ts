@@ -136,6 +136,12 @@ export function sdkArgsForMethod(method) {
         updateProjectAgentClass: ['${fixtures.project.id}', 'missing-agent-class', { name: 'Missing Agent Class' }],
         projectAgentModeRuns: ['${fixtures.project.id}'],
         projectAgentFallbackOutputs: ['${fixtures.project.id}'],
+		agentLabWorkdayContext: ['${fixtures.team.id}'],
+		agentLabOverview: ['${fixtures.team.id}'],
+		agentLabActivity: ['${fixtures.team.id}'],
+		agentLabMetricSeries: ['${fixtures.team.id}'],
+		agentLabEntities: ['${fixtures.team.id}', { kind: 'assignments', limit: 25 }],
+		updateAgentLabTargets: ['${fixtures.team.id}', {}],
         projectTreeDxProxyAudit: ['${fixtures.project.id}'],
         decisionPlanningStatus: ['missing-decision'],
         createPlanningInputRequest: ['${fixtures.decision.id}', {
