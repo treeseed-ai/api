@@ -64,7 +64,7 @@ describe('seeded team visibility reconciliation', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 1,
-				unchanged: 15,
+				unchanged: 16,
 				skip: 0,
 			});
 			expect((await store.getTeamBySlug('treeseed'))?.metadata?.visibility).toBe('public');

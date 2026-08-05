@@ -7,10 +7,11 @@ import { MarketPostgresDatabase } from '../../../../src/api/support/market-postg
 import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
 import { seedTreeDxFetch } from '../../../support/seed-treedx.js';
 
-const projectRoot = resolve(process.cwd(), '../..');
-const migrationRoot = existsSync(resolve(projectRoot, 'packages/sdk/drizzle/market'))
-	? resolve(projectRoot, 'packages/sdk/drizzle/market')
-	: resolve(process.cwd(), 'node_modules/@treeseed/sdk/drizzle/market');
+const packageRoot = process.cwd();
+const projectRoot = packageRoot;
+const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
+	? resolve(packageRoot, '../sdk/drizzle/market')
+	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 
 function fixture() {
 	const memory = newDb();
