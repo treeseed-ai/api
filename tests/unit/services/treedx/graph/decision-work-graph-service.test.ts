@@ -27,7 +27,7 @@ async function seed(store: ReturnType<typeof harness>['store']) {
 }
 async function acceptedEstimate(store: ReturnType<typeof harness>['store'], id = 'estimate-a') {
 	return store.createStructuredAgentEstimate('decision-a', {
-		id, projectId: 'project-a', status: 'accepted', agentClass: 'engineer', minCredits: 1, expectedCredits: 2, maxCredits: 3,
+		id, projectId: 'project-a', status: 'accepted', agentClass: 'engineer', minSeconds: 1, expectedSeconds: 2, maxSeconds: 3,
 		dependencies: [{ id: 'test-proof', type: 'artifact', requiredBefore: 'start', deliverableType: 'test-proof', agentClass: 'tester', summary: 'A failing regression test' }],
 		expectedOutputs: [{ outputType: 'implementation', required: true }], acceptanceCriteria: ['tests pass'],
 	});

@@ -25,10 +25,10 @@ describe('capacity request JSON', () => {
 	it('accepts exactly one JSON object and preserves its values', async () => {
 		const response = await decoderApp().request('/decode', {
 			method: 'POST',
-			body: JSON.stringify({ projectId: 'project-a', credits: 2 }),
+			body: JSON.stringify({ projectId: 'project-a', seconds: 2 }),
 		});
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ ok: true, payload: { projectId: 'project-a', credits: 2 } });
+		expect(await response.json()).toEqual({ ok: true, payload: { projectId: 'project-a', seconds: 2 } });
 	});
 
 	it('distinguishes an optional empty body from a required body', async () => {

@@ -130,12 +130,12 @@ it('runs registration through governed admission and exactly-once settlement as 
                     adapter: 'codex',
                     capabilities: ['engineering'],
                     maxConcurrentRunners: 1,
-                    nativeLimits: { availableCredits: 10 },
-                    lanes: [{ id: 'engineering-lane', maxConcurrentRunners: 1, capabilities: ['engineering'], nativeLimits: { availableCredits: 10 } }],
+                    nativeLimits: { availableAgentSeconds: 10 },
+                    lanes: [{ id: 'engineering-lane', maxConcurrentRunners: 1, capabilities: ['engineering'], nativeLimits: { availableAgentSeconds: 10 } }],
                 }],
-            nativeLimits: { availableCredits: 10, maxConcurrentRunners: 1 },
+            nativeLimits: { availableAgentSeconds: 10, maxConcurrentRunners: 1 },
             runnerPressure: { activeRunners: 0, maxConcurrentRunners: 1 },
-            constraints: { availableCredits: 10, activeRunners: 0, maxConcurrentRunners: 1 },
+            constraints: { availableAgentSeconds: 10, activeRunners: 0, maxConcurrentRunners: 1 },
         });
         expect(await store.all(`SELECT id, capacity_provider_id FROM capacity_execution_providers WHERE capacity_provider_id = ?`, [request.providerId])).toEqual([
             expect.objectContaining({ id: 'codex', capacity_provider_id: request.providerId }),
@@ -144,10 +144,10 @@ it('runs registration through governed admission and exactly-once settlement as 
             expect.objectContaining({ id: 'engineering-lane', capacity_provider_id: request.providerId, execution_provider_id: 'codex' }),
         ]);
         const grantService = new CapacityGrantService(store);
-        const plannedGrant = await grantService.create('team-workflow', { id: 'grant-workflow', membershipId: approved.membershipId, projectId: 'project-workflow', environment: 'local', executionProviderIds: ['codex'], laneIds: ['engineering-lane'], capabilities: ['engineering'], allowedModes: ['planning'], dailyCreditLimit: 10, monthlyCreditLimit: 20, maxConcurrentAssignments: 1 }, 'workflow-grant-create');
+        const plannedGrant = await grantService.create('team-workflow', { id: 'grant-workflow', membershipId: approved.membershipId, projectId: 'project-workflow', environment: 'local', executionProviderIds: ['codex'], laneIds: ['engineering-lane'], capabilities: ['engineering'], allowedModes: ['planning'], dailyAgentSecondsLimit: 10, monthlyAgentSecondsLimit: 20, maxConcurrentAssignments: 1 }, 'workflow-grant-create');
         const grant = await grantService.transition('team-workflow', plannedGrant!.id, 'active', 'workflow-grant-activate');
-        await store.createWorkdayCapacityEnvelope({ id: 'workday-workflow', projectId: 'project-workflow', allocationSetId: allocationId, status: 'active', availableCredits: 10, metadata: { source: 'service_workflow', grantId: grant!.id } });
-        const admission = await loadCapacityAdmissionState(store, { teamId: 'team-workflow', providerId: request.providerId, membershipId: approved.membershipId!, projectId: 'project-workflow', environment: 'local', projectAgentClassId: 'class-workflow', mode: 'planning', workDayId: 'workday-workflow', requestedCredits: 6, executionProviderId: 'codex', laneId: 'engineering-lane', providerSessionId: session.id, requiredCapabilities: ['engineering'] });
+        await store.createWorkdayCapacityEnvelope({ id: 'workday-workflow', projectId: 'project-workflow', allocationSetId: allocationId, status: 'active', availableSeconds: 10, metadata: { source: 'service_workflow', grantId: grant!.id } });
+        const admission = await loadCapacityAdmissionState(store, { teamId: 'team-workflow', providerId: request.providerId, membershipId: approved.membershipId!, projectId: 'project-workflow', environment: 'local', projectAgentClassId: 'class-workflow', mode: 'planning', workDayId: 'workday-workflow', requestedSeconds: 6, executionProviderId: 'codex', laneId: 'engineering-lane', providerSessionId: session.id, requiredCapabilities: ['engineering'] });
         expect(evaluateCapacityAdmission(admission)).toMatchObject({ allowed: true, reasonCodes: [] });
         const assignment = await store.admitSynthesizedProviderAssignment(principal, {
             assignmentId: 'assignment-workflow',
@@ -160,7 +160,7 @@ it('runs registration through governed admission and exactly-once settlement as 
             projectAgentClassId: 'class-workflow',
             mode: 'planning',
             workDayId: 'workday-workflow',
-            requestedCredits: 6,
+            requestedSeconds: 6,
             executionProviderId: 'codex',
             laneId: 'engineering-lane',
             requiredCapabilities: ['engineering'],
@@ -168,8 +168,8 @@ it('runs registration through governed admission and exactly-once settlement as 
         expect(assignment).toMatchObject({ membershipId: approved.membershipId, reservationId: 'reservation-workflow', laneId: 'engineering-lane' });
         expect(await store.first(`SELECT lane_id FROM capacity_reservations WHERE id = ?`, ['reservation-workflow'])).toMatchObject({ lane_id: 'engineering-lane' });
         expect(grant).toMatchObject({ membershipId: approved.membershipId, status: 'active' });
-        const settled = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'workflow-settle', teamId: 'team-workflow', membershipId: approved.membershipId!, reservationId: 'reservation-workflow', assignmentId: 'assignment-workflow', actualCredits: 4, source: 'service_workflow' });
-        const replay = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'workflow-settle', teamId: 'team-workflow', membershipId: approved.membershipId!, reservationId: 'reservation-workflow', assignmentId: 'assignment-workflow', actualCredits: 4, source: 'service_workflow' });
+        const settled = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'workflow-settle', teamId: 'team-workflow', membershipId: approved.membershipId!, reservationId: 'reservation-workflow', assignmentId: 'assignment-workflow', activeSeconds: 4, elapsedSeconds: 4, source: 'service_workflow' });
+        const replay = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'workflow-settle', teamId: 'team-workflow', membershipId: approved.membershipId!, reservationId: 'reservation-workflow', assignmentId: 'assignment-workflow', activeSeconds: 4, elapsedSeconds: 4, source: 'service_workflow' });
         expect(settled.replayed).toBe(false);
         expect(replay.replayed).toBe(true);
         expect(await store.all(`SELECT lane_id FROM capacity_usage_actuals WHERE assignment_id = ?`, ['assignment-workflow'])).toEqual([

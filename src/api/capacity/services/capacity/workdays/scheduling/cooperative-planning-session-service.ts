@@ -73,7 +73,7 @@ export async function currentCooperativePlanningWave(database: CapacityGovernanc
 			const failure = { code: 'planning_wave_no_eligible_assignments', waveId: wave.id, round: Number(wave.round), nodeIds: expectedNodes, missingNodeIds: missingNodes, observedAt: now };
 			await database.run(`UPDATE workday_planning_waves SET status = 'failed',completed_at = ?,updated_at = ? WHERE id = ? AND status = 'running'`, [now, now, wave.id]);
 			await database.run(`UPDATE workday_planning_sessions SET status = 'failed',metadata_json = ?,completed_at = ?,updated_at = ? WHERE id = ? AND status = 'running'`, [JSON.stringify({ ...parsed(session.metadata_json), failure }), now, now, session.id]);
-			throw new CapacityGovernanceError('capacity_planning_wave_blocked', 'A cooperative planning wave could not instantiate any assignment from its required signals.', 409, failure);
+			throw new CapacityGovernanceError('capacity_planning_wave_blocked', 'A cooperative planning wave could not instantiate an assignment from its required signals.', 409, failure);
 		}
 		if (demands.length > 0 && terminal === demands.length) {
 			await database.run(`UPDATE workday_planning_waves SET status = 'completed',completed_at = ?,updated_at = ? WHERE id = ? AND status = 'running'`, [now, now, wave.id]);
