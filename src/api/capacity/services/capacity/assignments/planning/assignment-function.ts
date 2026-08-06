@@ -147,7 +147,7 @@ function assignmentInput(
     ? resolveAssignmentContentPathScope(payload, 'write', contentRoot, [contentRoot, `${contentRoot}/**`])
     : ["**"];
   const workspaceId = workdayTreeDxWorkspaceId(id);
-  const expiresAt = new Date(Date.parse(now) + 3_600_000).toISOString();
+  const expiresAt = new Date(Date.parse(now) + demand.requestedSeconds * 1_000).toISOString();
   const treedxProxyHandle = {
     id: `tdx_${id}`,
     teamId: demand.teamId,
@@ -183,6 +183,19 @@ function assignmentInput(
       workdayRunId: demand.workdayRunId,
     },
   };
+  const configuredBudget = record(record(payload.capacityEnvelope).budget);
+  const configuredTokens = record(configuredBudget.tokens);
+  const capacityBudget = {
+    schemaVersion: 'treeseed.capacity-budget/v2',
+    ...configuredBudget,
+    time: { ...record(configuredBudget.time), requestedSeconds: demand.requestedSeconds, reservedSeconds: demand.requestedSeconds, activeSeconds: 0, elapsedSeconds: 0, releasedSeconds: 0, overrunSeconds: 0, hardDeadlineAt: expiresAt, remainingSeconds: demand.requestedSeconds },
+    tokens: { inputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0, outputTokens: 0, hardLimitTokens: configuredTokens.hardLimitTokens ?? null, warningTokens: configuredTokens.warningTokens ?? null, hardLimitEnforceable: configuredTokens.hardLimitEnforceable === true },
+    maxAttempts: Math.max(1, Number(configuredBudget.maxAttempts ?? 1)),
+    maxConcurrency: 1,
+    deadline: expiresAt,
+    pricingGeneration: configuredBudget.pricingGeneration ?? null,
+    enforcementConfidence: configuredBudget.enforcementConfidence ?? 'bounded',
+  };
   const capacityEnvelope = {
     ...record(payload.capacityEnvelope),
     workDayId: demand.workdayId,
@@ -196,6 +209,7 @@ function assignmentInput(
 		elapsedSeconds: 0,
 		releasedSeconds: 0,
 		overrunSeconds: 0,
+    budget: capacityBudget,
     metadata: {
       ...record(record(payload.capacityEnvelope).metadata),
       source: "workday-demand",
@@ -252,6 +266,7 @@ function assignmentInput(
     mode: demand.mode,
     workDayId: demand.workdayId,
 		requestedSeconds: demand.requestedSeconds,
+    budget: capacityBudget,
     decisionId: demand.decisionId,
     proposalId:
       planningSubjectModel === "proposal" ? planningSubjectId || null : null,

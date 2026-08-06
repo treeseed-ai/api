@@ -288,6 +288,11 @@ export async function commitCapacityAdmission(database: CapacityGovernanceDataba
 		elapsedSeconds: 0,
 		releasedSeconds: 0,
 		overrunSeconds: 0,
+		budget: request.budget ? {
+			...request.budget,
+			time: { ...request.budget.time, requestedSeconds: request.requestedSeconds, reservedSeconds: request.requestedSeconds, activeSeconds: 0, elapsedSeconds: 0, releasedSeconds: 0, overrunSeconds: 0, hardDeadlineAt: request.budget.time.hardDeadlineAt ?? request.budget.deadline },
+			deadline: request.budget.deadline,
+		} : null,
 	};
 	const suppliedDecisionInput = record(input.assignment.decisionInput);
 	const decisionInput = {

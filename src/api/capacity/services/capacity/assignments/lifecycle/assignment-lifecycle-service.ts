@@ -87,6 +87,25 @@ function optionalFiniteNumber(value: unknown, field: string): number | null {
 	);
 }
 
+function assertCompletionEvidence(input: ExtendedProviderAssignmentLifecycleRequest) {
+	const completion = record(input.completion);
+	if (completion.disposition !== 'completed_early') return;
+	const checks = Array.isArray(completion.acceptanceChecks) ? completion.acceptanceChecks.map(record) : [];
+	const artifacts = Array.isArray(completion.durableArtifactRefs) ? completion.durableArtifactRefs.map(String).filter(Boolean) : [];
+	if (completion.noUsefulScopedWorkRemaining !== true || !String(completion.completionReason ?? '').trim() || !checks.length || checks.some((check) => check.passed !== true) || !artifacts.length || !Object.keys(record(completion.remainingBudget)).length) {
+		throw new CapacityGovernanceError('provider_assignment_early_completion_evidence_invalid', 'Early completion requires passed acceptance checks, durable artifacts, remaining budget, a reason, and noUsefulScopedWorkRemaining.', 409);
+	}
+}
+
+function failureDisposition(input: ExtendedProviderAssignmentLifecycleRequest) {
+	const value = `${String(input.code ?? '')} ${String(input.reason ?? input.message ?? '')}`.toLowerCase();
+	if (/deadline|timeout/u.test(value)) return 'deadline_exhausted';
+	if (/budget|quota|token|cost|capacity/u.test(value)) return 'budget_exhausted';
+	if (/cancel|abort/u.test(value)) return 'cancelled';
+	if (/block|authority|credential|dependency|evidence/u.test(value)) return 'blocked';
+	return 'failed';
+}
+
 async function assertRequiredSignals(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment) {
 	const required = Array.isArray(record(assignment.allowedOutputs).publishedSignals)
 		? [...new Set((record(assignment.allowedOutputs).publishedSignals as unknown[]).map(String).map((value) => value.replace(/_/gu, '-')).filter(Boolean))] : [];
@@ -170,7 +189,10 @@ export class ProviderAssignmentLifecycleService {
 			await recordFailure('lease_expired', { leaseExpiresAt: assignment.leaseExpiresAt, evaluatedAt: now });
 			return null;
 		}
-		const leaseExpiresAt = new Date(Date.parse(now) + leaseSeconds * 1000).toISOString();
+		const budget = record(record(assignment.capacityEnvelope).budget);
+		const hardDeadline = Date.parse(String(budget.deadline ?? record(budget.time).hardDeadlineAt ?? ''));
+		if (Number.isFinite(hardDeadline) && hardDeadline <= Date.parse(now)) { await recordFailure('assignment_hard_deadline_exhausted', { hardDeadlineAt: new Date(hardDeadline).toISOString() }); return null; }
+		const leaseExpiresAt = new Date(Math.min(Date.parse(now) + leaseSeconds * 1000, Number.isFinite(hardDeadline) ? hardDeadline : Number.POSITIVE_INFINITY)).toISOString();
 		await this.store.run(
 			`UPDATE capacity_provider_assignments
 			 SET lease_expires_at = ?, lease_renewed_at = ?, runner_id = COALESCE(?, runner_id),
@@ -207,6 +229,9 @@ export class ProviderAssignmentLifecycleService {
 		const now = new Date().toISOString();
 		const assignment = await this.store.getProviderAssignment(principal.teamId, assignmentId);
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
+		const completionInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: 'completed' } };
+		assertCompletionEvidence(completionInput);
+		assertCompletionEvidence(input);
 		const assignmentMetadata = record(assignment.metadata);
 		const envelopeMetadata = record(record(assignment.capacityEnvelope).metadata);
 		const configuredMaxAttempts = Number(
@@ -253,7 +278,7 @@ export class ProviderAssignmentLifecycleService {
 				at: now,
 			},
 		};
-		return this.transition(principal, assignment, input, now, {
+		return this.transition(principal, assignment, completionInput, now, {
 			status: 'returned',
 			timestampColumn: 'returned_at',
 			defaultCode: 'provider_assignment_returned',
@@ -271,6 +296,7 @@ export class ProviderAssignmentLifecycleService {
 		const now = new Date().toISOString();
 		const assignment = await this.store.getProviderAssignment(principal.teamId, assignmentId);
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
+		const terminalInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: failureDisposition(input) } };
 		if (assignment.reservationId) {
 			const reservation = await this.store.first(
 				`SELECT state FROM capacity_reservations WHERE id = ? AND team_id = ? AND membership_id = ? AND assignment_id = ? LIMIT 1`,
@@ -282,7 +308,7 @@ export class ProviderAssignmentLifecycleService {
 		await projectCompletedPlanningOutputs(this.store, assignment, input as JsonRecord);
 		await projectCompletedResearchWorkflow(this.store, assignment, input as JsonRecord);
 		await projectCompletedAssignmentDeliverable(this.store, assignment, input as JsonRecord);
-		return this.transition(principal, assignment, input, now, {
+		return this.transition(principal, assignment, terminalInput, now, {
 			status: 'completed',
 			timestampColumn: 'completed_at',
 			defaultCode: 'provider_assignment_completed',
@@ -364,7 +390,7 @@ export class ProviderAssignmentLifecycleService {
 			now,
 			input.reason ?? input.message ?? options.defaultReason,
 			input.code ?? options.defaultCode,
-			JSON.stringify(record(input.output ?? input.summary)),
+			JSON.stringify({ ...record(input.output ?? input.summary), completion: input.completion ?? null }),
 		];
 		if (options.metadata) params.push(JSON.stringify(options.metadata));
 		params.push(

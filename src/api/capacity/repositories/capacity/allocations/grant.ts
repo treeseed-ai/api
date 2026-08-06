@@ -3,6 +3,7 @@ import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable
 
 export function serializeCapacityGrantRow(row: Record<string, unknown>): CapacityGrantV2 {
 	const context = (column: string) => ({ owner: 'capacity grant', ownerId: String(row.id ?? ''), column });
+	const metadata = decodeDurableJsonObject(row.metadata_json, context('metadata_json'));
 	return {
 		schemaVersion: 2,
 		id: String(row.id), membershipId: String(row.membership_id), teamId: String(row.team_id), providerId: String(row.capacity_provider_id), projectId: String(row.project_id), environment: String(row.environment),
@@ -13,6 +14,7 @@ export function serializeCapacityGrantRow(row: Record<string, unknown>): Capacit
 		allowedModes: decodeDurableJsonArray<CapacityGrantV2['allowedModes'][number]>(row.allowed_modes_json, context('allowed_modes_json')),
 		dailyAgentSecondsLimit: row.daily_agent_seconds_limit == null ? null : Number(row.daily_agent_seconds_limit), monthlyAgentSecondsLimit: row.monthly_agent_seconds_limit == null ? null : Number(row.monthly_agent_seconds_limit), maxConcurrentAssignments: row.max_concurrent_assignments == null ? null : Number(row.max_concurrent_assignments),
 		unmetered: Number(row.unmetered ?? 0) === 1, expiresAt: row.expires_at ? String(row.expires_at) : null,
-		metadata: decodeDurableJsonObject(row.metadata_json, context('metadata_json')),
+		budgetLimits: metadata.budgetLimits && typeof metadata.budgetLimits === 'object' ? metadata.budgetLimits as CapacityGrantV2['budgetLimits'] : null,
+		metadata,
 	};
 }

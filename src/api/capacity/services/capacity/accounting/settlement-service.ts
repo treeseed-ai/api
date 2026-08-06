@@ -144,10 +144,17 @@ function prepareCapacitySettlement(
 		query: `UPDATE capacity_reservations SET settlement_token = NULL, updated_at = ? WHERE id = ? AND team_id = ? AND settlement_token = ? AND EXISTS (SELECT 1 FROM (SELECT COALESCE(SUM(active_seconds), 0) AS seconds FROM capacity_usage_actuals WHERE assignment_id = ? AND assignment_attempt = ? AND accounting_mode = 'incremental') incremental_total WHERE incremental_total.seconds > CAST(? AS REAL))`,
 		params: [now, input.reservationId, input.teamId, settlementToken, input.assignmentId, usageIdentityValue.assignmentAttempt, activeSeconds],
 	});
+	const tokenActual = Number(input.usageActual?.inputTokens ?? 0) + Number(input.usageActual?.outputTokens ?? 0) + Number(input.usageActual?.reasoningTokens ?? 0);
+	const nativeUsage = input.usageActual?.nativeUsage ?? {};
 	for (const claim of claims) {
 		const reservedAmount = Number(claim.reserved_amount ?? 0);
 		const isConcurrency = claim.release_policy === 'assignment-terminal';
-		const desiredAmount = isConcurrency ? 0 : activeSeconds;
+		const scope = String(claim.scope ?? '');
+		const desiredAmount = isConcurrency ? 0
+			: scope.includes('token') ? tokenActual
+				: scope.includes('cost') ? Number(input.usd ?? 0)
+					: scope.includes('native') ? Number(nativeUsage[String(claim.period_key ?? '')] ?? input.providerUnits ?? 0)
+						: activeSeconds;
 		const adjustment = desiredAmount - reservedAmount;
 		if (input.approvedOverrun === true && adjustment > 0) operations.push({
 			query: `UPDATE capacity_admission_counters SET hard_limit = CASE WHEN hard_limit < committed_amount + ? THEN committed_amount + ? ELSE hard_limit END, state_version = state_version + 1, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) AND NOT EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = ?)`,

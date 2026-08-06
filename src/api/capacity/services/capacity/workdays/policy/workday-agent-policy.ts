@@ -21,7 +21,7 @@ export type CapacityWorkdayAgent = {
 	execution: UnknownRecord;
 	planningPriority: number | null;
 	planningAllocationPercent: number | null;
-	activityType: 'planning' | 'estimating' | 'reviewing' | 'reporting';
+	activityType: 'planning' | 'estimating' | 'reviewing' | 'reporting' | 'chat';
 };
 
 export type CapacityWorkdayAssignmentIntent = {
@@ -125,7 +125,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		);
 		const handlerRefs = agentClass.handlerRefs ?? agentClass.handler_refs;
 		const selectedProfiles = new Map<string, ProjectAgentActivityRef>();
-		for (const activityType of ['planning', 'reporting', 'reviewing', 'estimating'] as const) {
+		for (const activityType of ['planning', 'reporting', 'reviewing', 'estimating', 'chat'] as const) {
 			for (const ref of projectAgentActivityRefs(handlerRefs, activityType)) selectedProfiles.set(`${ref.agentId}:${ref.activityType}`, ref);
 		}
 		for (const selectedActivity of selectedProfiles.values()) {

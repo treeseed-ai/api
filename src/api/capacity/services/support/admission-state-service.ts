@@ -21,6 +21,7 @@ export interface CapacityAdmissionStateRequest {
 	providerSessionId?: string | null;
 	decisionId?: string | null;
 	requiredCapabilities?: string[];
+	budget?: CapacityAdmissionInput['request']['budget'];
 }
 
 function numeric(...values: unknown[]) {
@@ -75,12 +76,18 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const workdayKey = `workday:${request.workDayId}:lifetime`;
 	const allSliceIds = selectedAllocation.slices.map((slice) => slice.id);
 	const borrowingRuleIds = selectedAllocation.borrowingRules.map((rule) => rule.id);
-	const [dailyAgentSeconds, monthlyAgentSeconds, activeAssignments, workdaySeconds, reserveCommittedSeconds, ...allocationCounters] = await Promise.all([
+	const tokenKey = selectedGrant ? `grant-token:${selectedGrant.id}:lifetime` : '';
+	const costKey = selectedGrant ? `grant-cost:${selectedGrant.id}:${selectedGrant.budgetLimits?.cost?.currency ?? 'USD'}` : '';
+	const nativeKeys = (selectedGrant?.budgetLimits?.native ?? []).map((entry) => `grant-native:${selectedGrant.id}:${entry.unit}`);
+	const [dailyAgentSeconds, monthlyAgentSeconds, activeAssignments, workdaySeconds, reserveCommittedSeconds, committedTokens, committedCost, ...remainingCounters] = await Promise.all([
 		counterAmount(database, dailyKey), counterAmount(database, monthlyKey), counterAmount(database, concurrencyKey), counterAmount(database, workdayKey),
 		counterAmount(database, `allocation-reserve:${selectedAllocation.id}:${request.workDayId}`),
+		counterAmount(database, tokenKey), counterAmount(database, costKey), ...nativeKeys.map((key) => counterAmount(database, key)),
 		...allSliceIds.map((sliceId) => counterAmount(database, `allocation-slice:${selectedAllocation.id}:${sliceId}:${request.workDayId}`)),
 		...borrowingRuleIds.map((ruleId) => counterAmount(database, `allocation-borrow:${selectedAllocation.id}:${ruleId}:${request.workDayId}`)),
 	]);
+	const committedNativeValues = remainingCounters.slice(0, nativeKeys.length);
+	const allocationCounters = remainingCounters.slice(nativeKeys.length);
 	const sliceSeconds = allocationCounters.slice(0, allSliceIds.length);
 	const borrowedSeconds = allocationCounters.slice(allSliceIds.length);
 	const committedSecondsBySlice = Object.fromEntries(allSliceIds.map((sliceId, index) => [sliceId, sliceSeconds[index] ?? 0]));
@@ -106,7 +113,7 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	}
 	return {
 		now,
-		request: { teamId: request.teamId, providerId: request.providerId, membershipId: request.membershipId, projectId: request.projectId, environment: request.environment, agentClassId: request.projectAgentClassId, mode: request.mode, executionProviderId: request.executionProviderId ?? null, laneId: request.laneId ?? null, requiredCapabilities: [...new Set([...decodeDurableJsonArray<string>(agentClass.required_capabilities_json, { owner: 'project agent class', ownerId: request.projectAgentClassId, column: 'required_capabilities_json' }), ...(request.requiredCapabilities ?? [])])], requestedSeconds: request.requestedSeconds },
+		request: { teamId: request.teamId, providerId: request.providerId, membershipId: request.membershipId, projectId: request.projectId, environment: request.environment, agentClassId: request.projectAgentClassId, mode: request.mode, executionProviderId: request.executionProviderId ?? null, laneId: request.laneId ?? null, requiredCapabilities: [...new Set([...decodeDurableJsonArray<string>(agentClass.required_capabilities_json, { owner: 'project agent class', ownerId: request.projectAgentClassId, column: 'required_capabilities_json' }), ...(request.requiredCapabilities ?? [])])], requestedSeconds: request.requestedSeconds, budget: request.budget ?? null },
 		membership: { id: String(membership.id), teamId: String(membership.team_id), providerId: String(membership.capacity_provider_id), status: String(membership.status) as CapacityAdmissionInput['membership']['status'] },
 		availability: { status: String(sessionRow?.status ?? 'closed') as CapacityAdmissionInput['availability']['status'], availableFrom: String(sessionRow?.available_from ?? sessionRow?.opened_at ?? now), availableUntil: sessionRow?.available_until || sessionRow?.expires_at ? String(sessionRow.available_until ?? sessionRow.expires_at) : null },
 		grant: selectedGrant,
@@ -117,9 +124,9 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 		committedBorrowedSecondsByRule,
 		reserveCommittedSeconds,
 		approvedBorrowingRuleIds: Array.isArray(workdayMetadata.approvedBorrowingRuleIds) ? workdayMetadata.approvedBorrowingRuleIds.map(String) : [],
-		providerCapacity: { availableAgentSeconds, availableConcurrentAssignments: Math.max(0, maxConcurrent - activeRunners), capabilities: providerCapabilities },
-		providerLocalLimits: { availableAgentSeconds: localAgentSeconds, availableConcurrentAssignments: Math.max(0, localMaxConcurrent - localActive) },
-		grantCommitted: { dailyAgentSeconds, monthlyAgentSeconds, activeAssignments },
+		providerCapacity: { availableAgentSeconds, availableConcurrentAssignments: Math.max(0, maxConcurrent - activeRunners), capabilities: providerCapabilities, availableTokens: numeric(nativeLimits.availableTokens), availableCost: numeric(nativeLimits.availableCost), availableNative: decodeDurableJsonObject(nativeLimits.availableNative, { owner: 'provider native limits', column: 'availableNative' }) as Record<string, number> },
+		providerLocalLimits: { availableAgentSeconds: localAgentSeconds, availableConcurrentAssignments: Math.max(0, localMaxConcurrent - localActive), availableTokens: numeric(constraints.availableTokens), availableCost: numeric(constraints.availableCost), availableNative: decodeDurableJsonObject(constraints.availableNative, { owner: 'provider local constraints', column: 'availableNative' }) as Record<string, number> },
+		grantCommitted: { dailyAgentSeconds, monthlyAgentSeconds, activeAssignments, tokens: committedTokens, cost: committedCost, native: Object.fromEntries((selectedGrant?.budgetLimits?.native ?? []).map((entry, index) => [entry.unit, committedNativeValues[index] ?? 0])) },
 		acting,
 	};
 }

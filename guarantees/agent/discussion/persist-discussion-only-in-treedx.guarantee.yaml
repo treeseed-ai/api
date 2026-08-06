@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.discussion.persist-discussion-only-in-treedx.744
+journeyIndex: 744
+type: agent
+subtype: discussion
+journey: Persist Discussion only in TreeDX
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Commit sessions, messages, and append-only events to project Git through TreeDX before assignment dispatch.
+status: planned
+dependencies: { journeys: [], guarantees: [] }
+actors: { allowed: [authenticated_user, team_owner], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [desktop_chromium], optional: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: true, verifierRefs: [] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: [{ id: unavailable-treedx-blocks-dispatch, actor: authenticated_user, verifierRefs: [] }]
+evidence: { required: [guarantee_report, verifier_evidence] }
+notes: ["PostgreSQL retains only generic operational records and Discussion references."]

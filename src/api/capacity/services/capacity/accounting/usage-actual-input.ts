@@ -8,6 +8,7 @@ export interface CapacityUsageActualInput {
 	inputTokens?: number | null;
 	outputTokens?: number | null;
 	cachedInputTokens?: number | null;
+	reasoningTokens?: number | null;
 	quotaMinutes?: number | null;
 	wallMinutes?: number | null;
 	filesOpened?: number | null;
