@@ -12,7 +12,7 @@ import { CapacityOverrunService } from '../../services/capacity/accounting/overr
 import { CapacityOperatorEvidenceService } from '../../services/support/operator-evidence-service.ts';
 import { readCapacityRequestObject } from './request-json.ts';
 import { installOperatorActivityRoutes, installOperatorWorkdayRoutes } from './operator-workdays.ts';
-import { installOperatorAgentLabRoutes } from './operator-agent-lab.ts';
+import { installOperatorAgentLabRoutes } from './agent-lab/operator-agent-lab.ts';
 
 export interface CapacityOperatorStore extends CapacityGovernanceDatabase {
 	listCapacityWorkdayRunsPage(teamId: string, filters: Record<string, unknown> & { limit: number; cursor: CapacityPageCursor | null }): Promise<CapacityPage<Record<string, unknown>>>;

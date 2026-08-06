@@ -5,12 +5,12 @@ import { parseSceneManifest } from '@treeseed/sdk/scenes';
 import { validateSeedSource } from '@treeseed/sdk/seeds';
 import { parseFrontmatterDocument } from '@treeseed/sdk/frontmatter';
 import type { Context, Hono } from 'hono';
-import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
-import { ProjectAgentClassService } from '../../services/projects/agents/project-agent-class-service.ts';
-import { projectTreeDxCommitSignals } from '../../services/treedx/repositories/treedx-change-projector.ts';
-import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from './agent-lab-repository-definitions.ts';
-import type { WorkdayRouteDependencies } from './operator-workdays.ts';
-import { readCapacityRequestObject } from './request-json.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import { ProjectAgentClassService } from '../../../services/projects/agents/project-agent-class-service.ts';
+import { projectTreeDxCommitSignals } from '../../../services/treedx/repositories/treedx-change-projector.ts';
+import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from './repository-definitions.ts';
+import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
+import { readCapacityRequestObject } from '../request-json.ts';
 
 type Row = Record<string, unknown>;
 const PATH = /^(?:src\/content\/agents\/[^/]+(?:\/[^/]+)*\.mdx|\.treeseed\/agents\/signals\/[^/]+\.ya?ml|\.treeseed\/governance\/proposal-types\/[^/]+\.ya?ml|seeds\/[^/]+\.ya?ml|scenes\/[^/]+(?:\/[^/]+)*\.ya?ml)$/u;
