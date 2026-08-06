@@ -155,6 +155,16 @@ export async function resolvePlanningDemandSource(
 	agent: CapacityWorkdayAgent,
 	intent: CapacityWorkdayResolvedIntent,
 ): Promise<PlanningDemandSource> {
+	const discussion = record(run.parameters.discussion);
+	if (agent.activityType === 'chat' && text(discussion.discussionId) && text(discussion.messageId)) return {
+		sourceType: 'planning-input', sourceId: `discussion-message:${text(discussion.messageId)}`, decisionId: text(discussion.decisionId), priority: 110,
+		payload: {
+			intent: { ...intent, discussionIntent: text(discussion.intent) ?? 'discuss' }, planningSource: 'discussion-message',
+			discussionId: text(discussion.discussionId), discussionMessageId: text(discussion.messageId),
+			subjectPath: text(discussion.messagePath), contentBaseRef: text(discussion.commitSha),
+			contextPack: { digest: text(discussion.snapshotDigest), refs: [text(discussion.messagePath)].filter(Boolean) },
+		},
+	};
 	const research = await researchWorkflowSource(database, project, agent, intent);
 	if (research) return research;
 	const rows = await database.all(

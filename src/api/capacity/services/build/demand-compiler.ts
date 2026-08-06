@@ -35,6 +35,17 @@ function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 function jsonRecord(value: unknown) { if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return record(value); }
+function profileCapacityEnvelope(agent: { execution: Record<string, unknown> }) {
+	const execution = record(agent.execution); const totalTokens = Number(execution.maxTotalTokens); const warningTokens = Number(execution.warningTokens); const maxCost = Number(execution.maxCostAmount);
+	return { budget: {
+		schemaVersion: 'treeseed.capacity-budget/v2',
+		tokens: { hardLimitTokens: Number.isFinite(totalTokens) && totalTokens > 0 ? totalTokens : 136_000, warningTokens: Number.isFinite(warningTokens) && warningTokens > 0 ? warningTokens : 100_000, hardLimitEnforceable: true },
+		...(Number.isFinite(maxCost) && maxCost >= 0 ? { cost: { amount: 0, currency: text(execution.costCurrency) || 'USD', hardLimitAmount: maxCost, hardLimitEnforceable: execution.enforcementConfidence === 'exact' } } : {}),
+		native: Array.isArray(execution.nativeLimits) ? execution.nativeLimits.map((entry) => { const limit = record(entry); return { unit: text(limit.unit), observed: 0, cap: Number(limit.amount), capEnforceable: limit.enforceable === true }; }).filter((entry) => entry.unit && Number.isFinite(entry.cap)) : [],
+		pricingGeneration: text(execution.pricingGeneration) || null, enforcementConfidence: text(execution.enforcementConfidence) || 'bounded',
+		maxAttempts: Math.max(1, Number(execution.maxRetries ?? 0) + 1), maxConcurrency: 1,
+	} };
+}
 export function capacityWorkdayContentBaseRef(environment: string, branchPolicy: Record<string, unknown>): string {
 	if (environment === 'local') return 'refs/heads/main';
 	const base = text(branchPolicy.base);
@@ -59,16 +70,20 @@ export async function estimateRequestedAgentSeconds(store: CapacityGovernanceDat
 	const providerPreferences = Array.isArray(agent.execution.providerPreference) ? agent.execution.providerPreference : [];
 	const provider = text(agent.execution.executionProviderId ?? agent.execution.provider ?? providerPreferences[0]);
 	const targetContextBytes = Number(payload.contextSizeBytes ?? payload.contextBytes) || nestedNumber(payload, 'contextPack', 'totalBytes');
-	const rows = await store.all(`SELECT usage.active_seconds,usage.execution_provider_id,usage.model_name,usage.metadata_json,run.selected_input_json FROM capacity_usage_actuals usage
+	const rows = await store.all(`SELECT usage.active_seconds,usage.input_tokens,usage.output_tokens,usage.cached_input_tokens,usage.reasoning_tokens,usage.usd,usage.execution_provider_id,usage.model_name,usage.metadata_json,run.selected_input_json FROM capacity_usage_actuals usage
 		JOIN capacity_workday_demands demand ON demand.assignment_id = usage.assignment_id
 		LEFT JOIN agent_mode_runs run ON run.id = usage.mode_run_id
 		WHERE demand.activity_type = ? AND usage.active_seconds > 0 ORDER BY usage.created_at DESC LIMIT 200`, [agent.activityType]);
 	const samples = rows.filter((row) => (!model || text(row.model_name) === model) && (!provider || text(row.execution_provider_id) === provider)).filter((row) => {
 		if (!targetContextBytes) return true; const metadata = jsonRecord(row.metadata_json); const selected = jsonRecord(row.selected_input_json); const observed = Number(metadata.contextSizeBytes ?? metadata.contextBytes) || nestedNumber(selected, 'contextPack', 'totalBytes'); return observed > 0 && observed >= targetContextBytes * .5 && observed <= targetContextBytes * 2;
-	}).map((row) => Number(row.active_seconds)).filter((value) => Number.isInteger(value) && value > 0).sort((left, right) => left - right);
-	if (samples.length >= 5) return { seconds: samples[Math.min(samples.length - 1, Math.ceil(samples.length * 0.9) - 1)], method: 'historical-p90', sampleSize: samples.length, model: model || null, executionProviderId: provider || null, contextSizeBytes: targetContextBytes || null };
+	});
+	const percentile = (values: number[], quantile: number) => { const sorted = values.filter((value) => Number.isFinite(value) && value >= 0).sort((left, right) => left - right); return sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * quantile) - 1)] : null; };
+	const seconds = samples.map((row) => Number(row.active_seconds)).filter((value) => Number.isInteger(value) && value > 0);
+	const tokenTotals = samples.map((row) => Number(row.input_tokens ?? 0) + Number(row.output_tokens ?? 0) + Number(row.reasoning_tokens ?? 0));
+	const costs = samples.map((row) => Number(row.usd)).filter((value) => Number.isFinite(value) && value >= 0);
+	if (samples.length >= 5) return { seconds: percentile(seconds, .9)!, method: 'historical-p90', sampleSize: samples.length, model: model || null, executionProviderId: provider || null, contextSizeBytes: targetContextBytes || null, recommendations: { p50Seconds: percentile(seconds, .5), p90Seconds: percentile(seconds, .9), p50Tokens: percentile(tokenTotals, .5), p90Tokens: percentile(tokenTotals, .9), p50Cost: percentile(costs, .5), p90Cost: percentile(costs, .9) } };
 	const configured = Number(agent.execution.maxRuntimeSeconds);
-	return { seconds: Number.isInteger(configured) && configured > 0 ? configured : 900, method: configured > 0 ? 'conservative-profile-default' : 'conservative-system-default', sampleSize: samples.length };
+	return { seconds: Number.isInteger(configured) && configured > 0 ? configured : 900, method: configured > 0 ? 'conservative-profile-default' : 'conservative-system-default', sampleSize: samples.length, recommendations: null };
 }
 
 async function activeEnvelope(database: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, projectId: string) {
@@ -159,6 +174,7 @@ async function compilePlanningDemands(
 			requestedSeconds, idempotencyKey,
 			payload: {
 				...source.payload, stageInstructions: agent.promptTask, repositoryId: capacityWorkdayRepositoryId(project, run.parameters),
+				capacityEnvelope: profileCapacityEnvelope(agent),
 				contentRoot: capacityWorkdayContentRoot(project), agentContentPath: agent.contentPath,
 				contentBaseRef: capacityWorkdayContentBaseRef(run.environment, agent.branchPolicy),
 				contentBranchPolicy: agent.branchPolicy,

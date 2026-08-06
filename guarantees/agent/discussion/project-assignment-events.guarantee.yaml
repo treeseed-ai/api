@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.discussion.project-assignment-events.745
+journeyIndex: 745
+type: agent
+subtype: discussion
+journey: Project assignment events into Discussion
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Preserve receipt, lease, provider, mode-run, output, usage, settlement, failure, and recovery evidence as immutable Discussion events.
+status: planned
+dependencies: { journeys: [744], guarantees: [guarantee.agent.discussion.persist-discussion-only-in-treedx.744] }
+actors: { allowed: [authenticated_user, capacity_operator], forbidden: [unauthorized_user] }
+devices: { required: [desktop_chromium], optional: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: true, verifierRefs: [] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [guarantee_report, verifier_evidence] }
+notes: ["Event projection is append-only and tied to the committed Discussion snapshot."]

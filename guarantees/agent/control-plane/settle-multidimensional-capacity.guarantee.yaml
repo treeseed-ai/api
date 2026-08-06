@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.control-plane.settle-multidimensional-capacity.748
+journeyIndex: 748
+type: agent
+subtype: control-plane
+journey: Settle multidimensional capacity exactly once
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Reserve and settle time, token classes, native units, cost, concurrency, and attempts without extending the hard deadline.
+status: planned
+dependencies: { journeys: [176], guarantees: [guarantee.agent.control-plane.settle-capacity-ledger-once.176] }
+actors: { allowed: [capacity_operator, team_owner], forbidden: [unauthorized_user] }
+devices: { required: [desktop_chromium], optional: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: true, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: [{ id: uncertain-overrun-held, actor: capacity_operator, verifierRefs: [] }]
+evidence: { required: [guarantee_report, verifier_evidence] }
+notes: ["Unused reservations are released immediately for workday reuse."]

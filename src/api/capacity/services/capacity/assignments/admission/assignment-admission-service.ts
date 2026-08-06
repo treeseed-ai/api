@@ -21,6 +21,7 @@ export interface SynthesizedProviderAssignmentInput {
 	mode: AgentExecutionMode;
 	workDayId: string | null;
 	requestedSeconds: number;
+	budget?: import('@treeseed/sdk/agent-capacity').CapacityBudgetV2 | null;
 	executionProviderId?: string | null;
 	laneId?: string | null;
 	decisionId?: string | null;
@@ -80,6 +81,7 @@ export async function admitSynthesizedProviderAssignment(
 		mode: input.mode,
 		workDayId: input.workDayId,
 		requestedSeconds: input.requestedSeconds,
+		budget: input.budget ?? (record(input.capacityEnvelope).budget as import('@treeseed/sdk/agent-capacity').CapacityBudgetV2 | undefined) ?? null,
 		executionProviderId: input.executionProviderId ?? null,
 		laneId: input.laneId ?? null,
 		providerSessionId: input.providerSessionId ?? null,

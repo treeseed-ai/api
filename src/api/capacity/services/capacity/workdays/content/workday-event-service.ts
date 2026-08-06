@@ -8,6 +8,7 @@ CapacityWorkdayEventRepository,
 parseCapacityWorkdayEventStatus,
 } from '../../../../repositories/capacity/workdays/workday-event.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
+import { appendDiscussionEvent } from '../../../../../discussions/content.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,7 +25,8 @@ export class CapacityWorkdayEventService {
 	}
 
 	async create(teamId: string, runId: string, input: JsonRecord): Promise<CapacityWorkdayEventRecord | null> {
-		if (!await this.runs.get(teamId, runId)) return null;
+		const run = await this.runs.get(teamId, runId);
+		if (!run) return null;
 		const eventType = nullable(input.eventType ?? input.type);
 		if (!eventType) throw new CapacityGovernanceError('capacity_workday_event_type_required', 'Capacity workday events require eventType.', 400);
 		const id = nullable(input.id) ?? randomUUID();
@@ -37,6 +39,11 @@ export class CapacityWorkdayEventService {
 			createdAt: nullable(input.createdAt) ?? new Date().toISOString(),
 		});
 		if (!event) throw new CapacityGovernanceError('capacity_workday_event_conflict', 'Capacity workday event could not be persisted because its id is owned by another run or the run changed concurrently.', 409, { teamId, runId, eventId: id });
+		const discussion = object(run.parameters.discussion);
+		const discussionId = nullable(discussion.discussionId);
+		if (discussionId && event.projectId) {
+			await appendDiscussionEvent({ store: this.database, projectId: event.projectId, discussionId, event: event as unknown as JsonRecord });
+		}
 		return event;
 	}
 
