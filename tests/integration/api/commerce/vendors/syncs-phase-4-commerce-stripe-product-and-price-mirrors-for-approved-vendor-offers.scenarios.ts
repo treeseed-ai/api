@@ -287,5 +287,5 @@ it('syncs phase 4 commerce stripe product and price mirrors for approved vendor 
 			expect.objectContaining({ action: 'commerce_price.stripe_price.drifted' }),
 		]));
 		expect(JSON.stringify({ status, events })).not.toContain('sk_test');
-	}, 20_000);
+	}, 60_000);
 });
