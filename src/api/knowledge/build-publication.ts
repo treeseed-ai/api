@@ -23,7 +23,7 @@ export function buildKnowledgePublication(input: { teamId: string; generatedAt: 
 				const body = `${canonicalKnowledgePublicationValue({ definition, sourceMarkdown, source: { teamId: project.teamId, projectId: project.projectId,
 					repositoryId: project.repositoryId, commitSha: project.commitSha } })}\n`;
 				const digest = hash(body);
-				const key = `teams/${input.teamId}/objects/${digest}.json`;
+				const key = `teams/${input.teamId}/objects/sha256/${digest}`;
 				objects.push({ key, body });
 				const page = kind === 'page' ? project.pages.find((candidate) => candidate.definition.id === definition.id) : undefined;
 				entries.push({ kind, id: definition.id, ...(kind === 'page' ? { bookId: definition.bookId } : {}),

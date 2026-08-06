@@ -1,22 +1,34 @@
 import { randomUUID } from 'node:crypto';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { validateAgentSignalContract, validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
+import { compileAgentDefinition, validateAgentSignalContract, validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
+import type { AgentAuthoringIntent } from '@treeseed/sdk/agent-capacity';
 import { parseSceneManifest } from '@treeseed/sdk/scenes';
 import { validateSeedSource } from '@treeseed/sdk/seeds';
 import { parseFrontmatterDocument } from '@treeseed/sdk/frontmatter';
 import type { Context, Hono } from 'hono';
-import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
-import { ProjectAgentClassService } from '../../services/projects/agents/project-agent-class-service.ts';
-import { projectTreeDxCommitSignals } from '../../services/treedx/repositories/treedx-change-projector.ts';
-import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from './agent-lab-repository-definitions.ts';
-import type { WorkdayRouteDependencies } from './operator-workdays.ts';
-import { readCapacityRequestObject } from './request-json.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import { ProjectAgentClassService } from '../../../services/projects/agents/project-agent-class-service.ts';
+import { projectTreeDxCommitSignals } from '../../../services/treedx/repositories/treedx-change-projector.ts';
+import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from '../agent-lab-repository-definitions.ts';
+import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
+import { readCapacityRequestObject } from '../request-json.ts';
+import { applyTextChangeset } from '../../../../knowledge/changesets/apply-text-changeset.ts';
 
 type Row = Record<string, unknown>;
 const PATH = /^(?:src\/content\/agents\/[^/]+(?:\/[^/]+)*\.mdx|\.treeseed\/agents\/signals\/[^/]+\.ya?ml|\.treeseed\/governance\/proposal-types\/[^/]+\.ya?ml|seeds\/[^/]+\.ya?ml|scenes\/[^/]+(?:\/[^/]+)*\.ya?ml)$/u;
 function object(value: unknown): Row { return value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}; }
 function text(...values: unknown[]) { return String(values.find((value) => typeof value === 'string' && value) ?? ''); }
 function strings(value: unknown) { return Array.isArray(value) ? [...new Set(value.map(text).filter(Boolean))] : []; }
+
+function compileIntentRequest(body: Row) {
+	if (!body.intent || typeof body.intent !== 'object' || Array.isArray(body.intent)) return body;
+	const currentSource = text(body.source); const parsed = currentSource ? parseFrontmatterDocument(currentSource) : { frontmatter: {}, body: '' };
+	const current = object(parsed.frontmatter); const requestedPath = text(body.path);
+	const existingSlug = text(current.slug); const existing = existingSlug ? { identity: { id: text(current.id, `agent:${existingSlug}`), slug: existingSlug, path: requestedPath, createdFromTemplate: text(current.template) || undefined }, frontmatter: current } : undefined;
+	const compiled = compileAgentDefinition({ intent: body.intent as unknown as AgentAuthoringIntent, projectId: text(body.projectId), existing });
+	const source = `---\n${stringifyYaml(compiled.frontmatter, { lineWidth: 0 }).trim()}\n---\n${text(parsed.body, body.contentBody, `\n${text(object(body.intent).name)} participates through declared activity profiles and durable outputs.\n`)}`;
+	return { ...body, path: compiled.identity.path, source, generated: compiled.generated };
+}
 
 function validateSource(path: string, source: string) {
 	if (path.endsWith('.mdx')) return validateAgentDefinitionSource(source);
@@ -73,12 +85,14 @@ async function commitBundle(c: Context, dependencies: WorkdayRouteDependencies, 
 	if (text(body.expectedBase) && text(body.expectedBase) !== workspace.baseCommitSha) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_lab_authoring_conflict', error: 'The authoring branch changed. Compare and rebase before saving.', currentBase: workspace.baseCommitSha }, 409); }
 	const referenceDiagnostics = await verifyReferences(dependencies, connection, workspace.baseCommitSha, files); if (referenceDiagnostics.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_contract_reference_invalid', error: 'The bundle references missing or invalid signal contracts.', diagnostics: referenceDiagnostics }, 422); }
 	try {
-		for (const file of files) await connection.client.writeFile({ workspaceId: workspace.workspaceId, path: file.path, content: file.source, encoding: 'utf8' });
+		const existing = await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: workspace.baseCommitSha, paths: files.map((file) => file.path), encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch(() => ({ files: [] }));
+		const beforeByPath = new Map((existing.files ?? []).map((file: unknown) => [text(object(file).path), text(object(file).content)]));
+		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: files.map((file) => ({ path: file.path, before: beforeByPath.get(file.path) ?? null, after: file.source })) });
 		const access = await dependencies.manage(c); const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: text(body.changeSummary, `agent-lab: update ${files.length} definition${files.length === 1 ? '' : 's'}`), author: { name: access.principal?.name ?? access.principal?.id ?? 'Agent Lab operator', email: access.principal?.email ?? 'agent-lab@users.treeseed.local' } });
 		await projectTreeDxCommitSignals(dependencies.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(body.changeSummary, 'Agent Lab definition update'), actorType: 'user', actorId: access.principal?.id });
 		if (files.some((file) => file.path.startsWith('src/content/agents/') || file.path.includes('/agents/signals/') || file.path.includes('/proposal-types/'))) await reconcileAgents(dependencies, project, commit.commitSha);
 		await dependencies.store.run("INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.authoring.committed', 'project', ?, ?, ?)", [randomUUID(), access.principal?.id ?? null, projectId, JSON.stringify({ changedPaths: commit.changedPaths, commitSha: commit.commitSha }), new Date().toISOString()]);
-		return c.json({ ok: true, payload: { commit: commit.commitSha, branch: commit.branchName, changedPaths: commit.changedPaths } });
+		return c.json({ ok: true, payload: { commit: commit.commitSha, branch: commit.branchName, changedPaths: commit.changedPaths, changeset: { ...changeset, resultCommitSha: commit.commitSha } } });
 	} catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_lab_authoring_failed', error: error instanceof Error ? error.message : 'TreeDX could not commit the definitions.' }, 409); }
 }
 
@@ -101,13 +115,13 @@ async function draft(dependencies: WorkdayRouteDependencies, teamId: string, sel
 
 export function installOperatorAgentLabAuthoringRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/surfaces/build/draft', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return c.json({ ok: true, payload: await draft(dependencies, c.req.param('teamId'), c.req.query('project')) }); });
-	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return commitBundle(c, dependencies, await readCapacityRequestObject(c)); });
+	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return commitBundle(c, dependencies, compileIntentRequest(await readCapacityRequestObject(c))); });
 	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring-bundle', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return commitBundle(c, dependencies, await readCapacityRequestObject(c)); });
 	app.post('/v1/teams/:teamId/agent-lab/questions/answer', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response; const body = await readCapacityRequestObject(c); const projectId = text(body.projectId); const path = text(body.path).replace(/^\/+|\/+$/gu,''); const answer = text(body.answer).trim();
 		const project = await dependencies.store.first('SELECT id FROM projects WHERE id = ? AND team_id = ? LIMIT 1',[projectId,c.req.param('teamId')]); if(!project || !answer) return c.json({ok:false,code:'agent_lab_question_answer_invalid',error:'Choose a team question and provide an answer.'},422);
 		const connection = await resolveKnowledgeGatewayConnection(dependencies.store,{projectId,write:true,relationPaths:true}); if(!connection || !path.startsWith(`${connection.contentPath}/questions/`)) return c.json({ok:false,code:'agent_lab_question_path_invalid',error:'The question is outside this project’s canonical question collection.'},422);
 		const branchName=`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`; const workspace=await connection.client.createWorkspace({repoId:connection.repositoryId,baseRef:branchName,branchName,mode:'writable',allowedPaths:connection.allowedPaths,ttlSeconds:600}); if(text(body.expectedBase)&&text(body.expectedBase)!==workspace.baseCommitSha){await connection.client.closeWorkspace(workspace.workspaceId).catch(()=>{});return c.json({ok:false,code:'agent_lab_question_conflict',error:'The question changed before this answer was submitted.',currentBase:workspace.baseCommitSha},409);}
-		try { const read=await connection.client.readRepositoryFile({repoId:connection.repositoryId,ref:workspace.baseCommitSha,path,encoding:'utf8',maxBytes:196_608}); const parsed=parseFrontmatterDocument(text(object(read.file).content)); const now=new Date().toISOString(); const source=`---\n${stringifyYaml({...object(parsed.frontmatter),status:'answered',answer,answeredAt:now,answeredBy:access.principal?.id ?? 'team-owner'},{lineWidth:0}).trim()}\n---\n${parsed.body}`; await connection.client.writeFile({workspaceId:workspace.workspaceId,path,content:source,encoding:'utf8'}); const commit=await connection.client.commit({workspaceId:workspace.workspaceId,message:`agent-lab: answer ${path}`,author:{name:access.principal?.name ?? 'Agent Lab operator',email:access.principal?.email ?? 'agent-lab@users.treeseed.local'}}); await projectTreeDxCommitSignals(dependencies.store,{projectId,commitSha:commit.commitSha,immutableRef:commit.branchName,changedPaths:commit.changedPaths,changeSummary:'Answer team question',actorType:'user',actorId:access.principal?.id}); return c.json({ok:true,payload:{commit:commit.commitSha,status:'answered'}}); } catch(error){await connection.client.closeWorkspace(workspace.workspaceId).catch(()=>{});return c.json({ok:false,code:'agent_lab_question_answer_failed',error:error instanceof Error?error.message:'The answer could not be committed.'},409);}
+		try { const read=await connection.client.readRepositoryFile({repoId:connection.repositoryId,ref:workspace.baseCommitSha,path,encoding:'utf8',maxBytes:196_608}); const before=text(object(read.file).content); const parsed=parseFrontmatterDocument(before); const now=new Date().toISOString(); const source=`---\n${stringifyYaml({...object(parsed.frontmatter),status:'answered',answer,answeredAt:now,answeredBy:access.principal?.id ?? 'team-owner'},{lineWidth:0}).trim()}\n---\n${parsed.body}`; const changeset=await applyTextChangeset({client:connection.client,workspace,changes:[{path,before,after:source}]}); const commit=await connection.client.commit({workspaceId:workspace.workspaceId,message:`agent-lab: answer ${path}`,author:{name:access.principal?.name ?? 'Agent Lab operator',email:access.principal?.email ?? 'agent-lab@users.treeseed.local'}}); await projectTreeDxCommitSignals(dependencies.store,{projectId,commitSha:commit.commitSha,immutableRef:commit.branchName,changedPaths:commit.changedPaths,changeSummary:'Answer team question',actorType:'user',actorId:access.principal?.id}); return c.json({ok:true,payload:{commit:commit.commitSha,status:'answered',changeset:{...changeset,resultCommitSha:commit.commitSha}}}); } catch(error){await connection.client.closeWorkspace(workspace.workspaceId).catch(()=>{});return c.json({ok:false,code:'agent_lab_question_answer_failed',error:error instanceof Error?error.message:'The answer could not be committed.'},409);}
 	});
 }

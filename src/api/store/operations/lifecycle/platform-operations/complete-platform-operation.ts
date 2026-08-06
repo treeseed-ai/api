@@ -12,11 +12,5 @@ export async function completePlatformOperationMethod(this: MarketControlPlaneSt
 			     finished_at = ?
 			 WHERE id = ?`, [JSON.stringify(input.output ?? null), timestamp, timestamp, operationId]);
     await this.appendPlatformOperationEvent(operationId, input.event?.kind ?? 'completed', input.event?.data ?? {});
-    const output = input.output && typeof input.output === 'object' ? input.output : {};
-    await this.releasePlatformRepositoryClaimsForRunner(input.runnerId, {
-        branch: output.operationBranch ?? output.branch ?? null,
-        commitSha: output.commitSha ?? null,
-        metadata: { operationId, status: 'succeeded' },
-    });
     return this.findPlatformOperationById(operationId);
 }

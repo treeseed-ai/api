@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { writeFile, commit, projectSignals } = vi.hoisted(() => ({
-	writeFile: vi.fn(),
+const { applyChangeset, commit, projectSignals } = vi.hoisted(() => ({
+	applyChangeset: vi.fn(),
 	commit: vi.fn(),
 	projectSignals: vi.fn(),
 }));
@@ -14,8 +14,8 @@ vi.mock('../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
 		authoringBranch: 'main',
 		allowedPaths: ['src/content/**'],
 		client: {
-			createWorkspace: vi.fn(async () => ({ workspaceId: 'workspace-1' })),
-			writeFile,
+			createWorkspace: vi.fn(async () => ({ workspaceId: 'workspace-1', baseCommitSha: 'base123', baseRef: 'refs/heads/main' })),
+			applyChangeset,
 			commit,
 			closeWorkspace: vi.fn(),
 		},
@@ -30,7 +30,7 @@ import { commitDiscussionMessage, mentionedAgentSlugs } from '../../../src/api/d
 
 describe('TreeDX Discussion content', () => {
 	beforeEach(() => {
-		writeFile.mockReset().mockResolvedValue({});
+		applyChangeset.mockReset().mockResolvedValue({ changedPaths: [] });
 		commit.mockReset().mockResolvedValue({ commitSha: 'abc123', branchName: 'refs/heads/main', changedPaths: [] });
 		projectSignals.mockReset().mockResolvedValue({});
 	});
@@ -49,12 +49,12 @@ describe('TreeDX Discussion content', () => {
 		});
 
 		expect(authored.mentions).toEqual(['reviewer']);
-		expect(writeFile).toHaveBeenCalledTimes(3);
-		expect(writeFile.mock.calls.map(([input]) => input.path)).toEqual(expect.arrayContaining([
-			expect.stringContaining('/discussions/'),
-			expect.stringContaining('/discussion-messages/'),
-			expect.stringContaining('/discussion-events/'),
-		]));
+		expect(applyChangeset).toHaveBeenCalledOnce();
+		const request = applyChangeset.mock.calls[0]![0];
+		expect(request.contract).toBe('treedx.changeset/v1');
+		expect(request.patch).toContain('/discussions/');
+		expect(request.patch).toContain('/discussion-messages/');
+		expect(request.patch).toContain('/discussion-events/');
 		expect(commit).toHaveBeenCalledOnce();
 		expect(projectSignals).toHaveBeenCalledWith({}, expect.objectContaining({ projectId: 'project-1', commitSha: 'abc123' }));
 	});

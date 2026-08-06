@@ -16,16 +16,16 @@ it('creates platform operations and lets the Treeseed operations runner claim an
 				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
-				namespace: 'repository',
-				operation: 'write_content_record',
+				namespace: 'diagnostic',
+				operation: 'smoke',
 				idempotencyKey: 'platform-op-one',
 				input: { collection: 'notes', slug: 'hello' },
 			}),
 		}));
 		expect(created.ok).toBe(true);
 		expect(created.operation).toMatchObject({
-			namespace: 'repository',
-			operation: 'write_content_record',
+			namespace: 'diagnostic',
+			operation: 'smoke',
 			status: 'queued',
 			target: 'market_operations_runner',
 		});
@@ -73,7 +73,7 @@ it('creates platform operations and lets the Treeseed operations runner claim an
 			body: JSON.stringify({
 				runnerId: 'treeseed-ops-test-1',
 				environment: 'staging',
-				capabilities: ['repository:write_content_record'],
+				capabilities: ['diagnostic:smoke'],
 			}),
 		}));
 		expect(registered.runner).toMatchObject({
@@ -140,7 +140,7 @@ it('creates platform operations and lets the Treeseed operations runner claim an
 			},
 			body: JSON.stringify({
 				runnerId: 'treeseed-ops-test-1',
-				output: { changedPaths: ['src/content/notes/hello.mdx'] },
+				output: { check: 'healthy' },
 			}),
 		}));
 		expect(completed.operation.status).toBe('succeeded');

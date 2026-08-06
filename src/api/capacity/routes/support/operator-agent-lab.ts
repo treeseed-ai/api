@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
-import { agentLabMetricKeys, type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
+import { agentLabMetricKeys, deriveAgentRuntimeStatus, type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
 import { parseSceneManifest } from '@treeseed/sdk/scenes';
 import { validateSeedSource } from '@treeseed/sdk/seeds';
 import type { Context, Hono } from 'hono';
@@ -15,7 +15,7 @@ import { searchRelations } from '../../../routes/knowledge/relation-search.ts';
 import { CapacityAllocationService } from '../../services/capacity/allocations/allocation-service.ts';
 import { agentLabRepositoryDefinitions,matchesAgentDefinition } from './agent-lab-repository-definitions.ts';
 import { agentLabInboxQuestions } from './agent-lab-inbox-questions.ts';
-import { installOperatorAgentLabAuthoringRoutes } from './operator-agent-lab-authoring.ts';
+import { installOperatorAgentLabAuthoringRoutes } from './agent-lab/authoring.ts';
 
 const entityKinds = new Set<AgentLabEntityKind>(['agents', 'workdays', 'events', 'assignments', 'executions', 'artifacts']);
 const commandSurfaces = new Set(['inbox', 'decisions', 'build', 'direction', 'results', 'find']);
@@ -264,7 +264,12 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 			payload.items = payload.items.map((item) => {
 				if (item.kind !== 'agent') return item;
 				const definition = repositoryAgents.find((candidate) => matchesAgentDefinition(item, candidate));
-				return definition ? { ...item, status: definition.status, tags: [...(item.tags ?? []), 'TreeDX definition'], data: { ...object(item.data), definition: definition.data } } : item;
+				if (!definition) return item;
+				const repository = object(definition.data); const authored = object(repository.definition); const projectId = text(item.projectId); const agentSlug = text(authored.slug, authored.id).replace(/^agent:/u,'');
+				const runs = snapshot.rows.executions.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug); const assignments = snapshot.rows.assignments.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug);
+				const activeRun = [...runs].reverse().find((row) => ['running','waiting','retrying','awaiting_human','awaiting_external'].includes(text(row.status))); const activeAssignment = [...assignments].reverse().find((row) => ['pending','admitted','leased','queued'].includes(text(row.status)));
+				const runtimeStatus = deriveAgentRuntimeStatus({ enabled: authored.enabled !== false, valid: !Array.isArray(repository.diagnostics) || repository.diagnostics.length === 0, activeRunStatus: text(activeRun?.status) || null, assignmentStatus: text(activeAssignment?.status) || null, latestTerminalStatus: text(runs.at(-1)?.status) || null });
+				return { ...item, status: runtimeStatus, tags: [...(item.tags ?? []), 'TreeDX definition'], data: { ...object(item.data), definition: definition.data, runtimeStatus } };
 			});
 			payload.items.push(...definitions.filter((item) => item.kind !== 'agent') as typeof payload.items); payload.page.total = payload.items.length;
 			const byContract = new Map(definitions.map((item) => [text(item.data.contractId),item]));
@@ -431,13 +436,18 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 				const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId: text(payload.projectId), write: false, authoringPaths: true }).catch(() => null);
 				const read = connection && path ? await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: connection.baseRef, path, encoding: 'utf8', maxBytes: 393_216, allowProtected: true }).catch(() => null) : null;
 				const source = text(object(read?.file).content); const activities = object(definitionData.activities); const contractIds = new Set<string>();
+				const frontmatterMatch = source.match(/^---\s*\n([\s\S]*?)\n---/u); const authored = frontmatterMatch ? object(parseYaml(frontmatterMatch[1] ?? '')) : {};
+				const agentSlug = text(authored.slug, authored.id).replace(/^agent:/u,''); const projectId = text(payload.projectId);
+				const runs = snapshot.rows.executions.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug); const assignments = snapshot.rows.assignments.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug);
+				const activeRun = [...runs].reverse().find((row) => ['running','waiting','retrying','awaiting_human','awaiting_external'].includes(text(row.status))); const activeAssignment = [...assignments].reverse().find((row) => ['pending','admitted','leased','queued'].includes(text(row.status))); const latestRun = runs.at(-1);
+				payload.status = deriveAgentRuntimeStatus({ enabled: authored.enabled !== false, valid: Boolean(source) && (!Array.isArray(definitionData.diagnostics) || definitionData.diagnostics.length === 0), activeRunStatus: text(activeRun?.status) || null, assignmentStatus: text(activeAssignment?.status) || null, latestTerminalStatus: text(latestRun?.status) || null });
 				for (const profile of Object.values(activities).map(object)) {
 					const signals = object(profile.signals);
 					for (const entry of Array.isArray(signals.subscribesTo) ? signals.subscribesTo : []) { const id = text(object(entry).contract); if (id) contractIds.add(id); }
 					for (const id of Array.isArray(signals.publishes) ? signals.publishes : []) if (text(id)) contractIds.add(text(id));
 				}
 				payload.permissions = { ...(payload.permissions ?? {}), edit: Boolean(source) };
-				payload.data = { ...object(payload.data), definition: definitionData, authoring: source ? { source, path, language: 'mdx', expectedBase: text(read?.resolvedRef, connection?.baseRef), projectId: payload.projectId, projectName: payload.projectName } : null };
+				payload.data = { ...object(payload.data), definition: definitionData, runtimeStatus: payload.status, authoring: source ? { source, path, language: 'mdx', expectedBase: text(read?.resolvedRef, connection?.baseRef), projectId: payload.projectId, projectName: payload.projectName } : null };
 				payload.sections = [{ id: 'profiles', title: 'Activity profile signal flow', fields: Object.entries(activities).map(([profileId, profile]) => ({ label: profileId, value: { handler: object(profile).handler, stage: object(object(profile).planningIntent).stage, signals: object(profile).signals, outputs: object(profile).outputs } })) }, ...(payload.sections ?? [])];
 				payload.related = [...definitions.filter((candidate) => contractIds.has(text(object(candidate.data).contractId))), ...(payload.related ?? [])] as typeof payload.related;
 			}

@@ -42,10 +42,10 @@ async function json(path: string) {
 export function createLocalKnowledgePublicationStorage(): KnowledgePublicationStorage {
 	const root = localRoot();
 	return {
-		async readCurrent(teamId) { return json(inside(root, `teams/${safeSegment(teamId)}/current.json`)); },
-		async readRevision(teamId, revision) { return json(inside(root, `teams/${safeSegment(teamId)}/revisions/${safeSegment(revision)}.json`)); },
+		async readCurrent(teamId) { return json(inside(root, `teams/${safeSegment(teamId)}/published/common.json`)); },
+		async readRevision(teamId, revision) { return json(inside(root, `teams/${safeSegment(teamId)}/published/manifests/${safeSegment(revision)}.json`)); },
 		async listRevisions(teamId) {
-			const revisionRoot = inside(root, `teams/${safeSegment(teamId)}/revisions`);
+			const revisionRoot = inside(root, `teams/${safeSegment(teamId)}/published/manifests`);
 			const files = await readdir(revisionRoot).catch(() => []);
 			const manifests = await Promise.all(files.filter((entry) => entry.endsWith('.json'))
 				.map((entry) => json(resolve(revisionRoot, entry))));
@@ -60,7 +60,7 @@ export function createLocalKnowledgePublicationStorage(): KnowledgePublicationSt
 			try { lock = await open(lockPath, 'wx', 0o600); }
 			catch { throw new Error('Another knowledge publication is currently being promoted.'); }
 			try {
-				const current = await json(resolve(teamRoot, 'current.json'));
+				const current = await json(resolve(teamRoot, 'published/common.json'));
 				if ((current?.revision ?? undefined) !== expectedRevision) {
 					throw new Error('The published knowledge revision changed while this publication was being built.');
 				}
@@ -71,7 +71,7 @@ export function createLocalKnowledgePublicationStorage(): KnowledgePublicationSt
 						if (error?.code !== 'EEXIST' || await readFile(path, 'utf8') !== object.body) throw error;
 					});
 				}
-				const revisionPath = resolve(teamRoot, `revisions/${safeSegment(manifest.revision)}.json`);
+				const revisionPath = resolve(teamRoot, `published/manifests/${safeSegment(manifest.revision)}.json`);
 				await mkdir(dirname(revisionPath), { recursive: true, mode: 0o700 });
 				const body = `${JSON.stringify(manifest, null, 2)}\n`;
 				await writeFile(revisionPath, body, { flag: 'wx', mode: 0o600 }).catch(async (error: any) => {
@@ -79,7 +79,8 @@ export function createLocalKnowledgePublicationStorage(): KnowledgePublicationSt
 				});
 				const pending = resolve(teamRoot, `current.pending-${safeSegment(manifest.revision)}`);
 				await writeFile(pending, body, { mode: 0o600 });
-				await rename(pending, resolve(teamRoot, 'current.json'));
+				await mkdir(resolve(teamRoot, 'published'), { recursive: true, mode: 0o700 });
+				await rename(pending, resolve(teamRoot, 'published/common.json'));
 			} finally {
 				await lock?.close();
 				await rm(lockPath, { force: true });
@@ -100,7 +101,7 @@ export function createLocalKnowledgePublicationStorage(): KnowledgePublicationSt
 			try { lock = await open(lockPath, 'wx', 0o600); }
 			catch { throw new Error('Another knowledge publication is currently being promoted.'); }
 			try {
-				const current = await json(resolve(teamRoot, 'current.json'));
+				const current = await json(resolve(teamRoot, 'published/common.json'));
 				if (current?.revision !== expectedCurrentRevision) {
 					throw new Error('The published knowledge revision changed before revision retirement.');
 				}
@@ -109,7 +110,7 @@ export function createLocalKnowledgePublicationStorage(): KnowledgePublicationSt
 				if (current.previousRevision && requested.has(current.previousRevision)) {
 					throw new Error('The current knowledge rollback pointer cannot be retired.');
 				}
-				const revisionRoot = resolve(teamRoot, 'revisions');
+				const revisionRoot = resolve(teamRoot, 'published/manifests');
 				const files = await readdir(revisionRoot).catch(() => []);
 				const retainedObjects = objectKeys(current);
 				const retiring: Array<{ revision: string; manifest: KnowledgePublicationManifest }> = [];

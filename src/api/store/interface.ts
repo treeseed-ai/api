@@ -384,9 +384,6 @@ declare module '../persistence/store.ts' {
 		upsertMarketOperationRunner: OmitThisParameter<typeof import('./operations/creation/upsert-market-operation-runner.ts').upsertMarketOperationRunnerMethod>;
 		findMarketOperationRunnerById: OmitThisParameter<typeof import('./operations/queries/runners/find-market-operation-runner-by-id.ts').findMarketOperationRunnerByIdMethod>;
 		listMarketOperationRunners: OmitThisParameter<typeof import('./operations/queries/runners/list-market-operation-runners.ts').listMarketOperationRunnersMethod>;
-		upsertPlatformRepositoryClaim: OmitThisParameter<typeof import('./repositories/creation/upsert-platform-repository-claim.ts').upsertPlatformRepositoryClaimMethod>;
-		renewPlatformRepositoryClaimsForRunner: OmitThisParameter<typeof import('./operations/lifecycle/claims/renew-platform-repository-claims-for-runner.ts').renewPlatformRepositoryClaimsForRunnerMethod>;
-		releasePlatformRepositoryClaimsForRunner: OmitThisParameter<typeof import('./operations/lifecycle/claims/release-platform-repository-claims-for-runner.ts').releasePlatformRepositoryClaimsForRunnerMethod>;
 		claimPlatformOperation: OmitThisParameter<typeof import('./operations/lifecycle/claims/claim-platform-operation.ts').claimPlatformOperationMethod>;
 		renewPlatformOperationLease: OmitThisParameter<typeof import('./operations/lifecycle/claims/renew-platform-operation-lease.ts').renewPlatformOperationLeaseMethod>;
 		checkpointPlatformOperation: OmitThisParameter<typeof import('./operations/contracts/checkpoint-platform-operation.ts').checkpointPlatformOperationMethod>;

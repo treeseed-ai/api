@@ -39,29 +39,5 @@ export async function claimPlatformOperationMethod(this: MarketControlPlaneStore
         runnerId,
         leaseExpiresAt,
     });
-    const operation = await this.findPlatformOperationById(row.id);
-    if (operation?.input?.repository && typeof operation.input.repository === 'object') {
-        const runner = await this.findMarketOperationRunnerById(runnerId);
-        const workspaceRoot = runner?.metadata?.dataDir ?? '/data';
-        const claim = await this.upsertPlatformRepositoryClaim({
-			id: operation.id,
-            runnerId,
-            repository: operation.input.repository,
-            workspaceRoot,
-            branch: operation.input.repository.defaultBranch,
-            leaseSeconds,
-			operationId: operation.id,
-            metadata: {
-                operationId: operation.id,
-                namespace: operation.namespace,
-                operation: operation.operation,
-            },
-        });
-        await this.appendPlatformOperationEvent(row.id, 'repository.claimed', {
-            repositoryKey: claim.repositoryKey,
-            runnerId,
-            workspaceRoot: claim.workspacePath.startsWith('/data/') ? '/data' : null,
-        });
-    }
-    return operation;
+    return this.findPlatformOperationById(row.id);
 }

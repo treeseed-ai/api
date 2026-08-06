@@ -57,7 +57,7 @@ describe('atomic federated knowledge publication', () => {
 		writeFileSync(join(root, built.objects[0]!.key), 'corrupt');
 		await expect(loadPublishedTeamCatalog({ storage, manifest: built.manifest, teamSlug: 'team-a',
 			projectIds: new Set(['project-a']) })).rejects.toThrow(/missing or corrupt/u);
-		expect(JSON.parse(readFileSync(join(root, 'teams/team-a/current.json'), 'utf8')).revision).toBe(built.manifest.revision);
+		expect(JSON.parse(readFileSync(join(root, 'teams/team-a/published/common.json'), 'utf8')).revision).toBe(built.manifest.revision);
 	});
 
 	it('retires only non-current exact revisions and their unreferenced objects', async () => {

@@ -106,16 +106,18 @@ export async function authorizeTreeDxProxy(input: {
 	const repositoryIds = input.scope.repoIds.filter((value) => value !== '*');
 	const paths = input.scope.paths.filter((value) => value !== '**');
 	const workspaceMatch = new URL(input.c.req.url).pathname.match(/\/workspaces\/([^/]+)/u);
-	const evaluated = evaluateTreeDxProxyHandleAccess(handle, {
-		teamId: principal.teamId,
-		projectId: input.projectId,
-		assignmentId,
-		repositoryId: repositoryIds[0] ?? null,
-		workspaceId: workspaceMatch?.[1] ? decodeURIComponent(workspaceMatch[1]) : null,
-		operation: input.scope.capabilities.find(Boolean) ?? null,
-		path: paths.length === 1 ? paths[0] : null,
-		token: presentedToken,
-	});
-	if (!evaluated.ok) return deny(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
+	for (const path of paths.length ? paths : [null]) {
+		const evaluated = evaluateTreeDxProxyHandleAccess(handle, {
+			teamId: principal.teamId,
+			projectId: input.projectId,
+			assignmentId,
+			repositoryId: repositoryIds[0] ?? null,
+			workspaceId: workspaceMatch?.[1] ? decodeURIComponent(workspaceMatch[1]) : null,
+			operation: input.scope.capabilities.find(Boolean) ?? null,
+			path,
+			token: presentedToken,
+		});
+		if (!evaluated.ok) return deny(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
+	}
 	return { actorType: 'capacity_provider', principal, details, assignment, handle };
 }

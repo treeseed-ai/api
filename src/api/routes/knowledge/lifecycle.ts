@@ -2,6 +2,7 @@ import { parseBook, parseKnowledgePage, serializeBookDraft, serializeKnowledgePa
 import { loadFederatedKnowledgeCatalog } from '../../knowledge/federated-catalog.ts';
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspace-identity.ts';
+import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const requestId = (value: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(text(value))
@@ -102,8 +103,9 @@ export function installKnowledgeLifecycleRoutes(context: any) {
 			baseRef: writeConnection.baseRef, branchName, mode: 'writable', allowedPaths: writeConnection.allowedPaths, ttlSeconds: 86_400 });
 		let written = false;
 		try {
-			await writeConnection.client.writeFile({ workspaceId: remote.workspaceId, path: item.path,
-				content: lifecycleDocument(item, targetStatus), expectedSha: text(body.expectedSha) || item.expectedSha });
+			await applyTextChangeset({ client: writeConnection.client, workspace: remote, changes: [{
+				path: item.path, before: item.source, after: lifecycleDocument(item, targetStatus),
+			}], idempotencyKey: `knowledge-lifecycle-${id}` });
 			written = true;
 			const workspace = await store.createKnowledgeWorkspaceRecord({ id, teamId: item.details.project.teamId,
 				projectId: item.details.project.id, repositoryId: writeConnection.repositoryId,

@@ -7,9 +7,7 @@ import { createJobMethod } from '../operations/creation/create-job.ts';
 import { createPlatformOperationMethod } from '../operations/creation/create-platform-operation.ts';
 import { upsertMarketOperationRunnerMethod } from '../operations/creation/upsert-market-operation-runner.ts';
 import { claimPlatformOperationMethod } from '../operations/lifecycle/claims/claim-platform-operation.ts';
-import { releasePlatformRepositoryClaimsForRunnerMethod } from '../operations/lifecycle/claims/release-platform-repository-claims-for-runner.ts';
 import { renewPlatformOperationLeaseMethod } from '../operations/lifecycle/claims/renew-platform-operation-lease.ts';
-import { renewPlatformRepositoryClaimsForRunnerMethod } from '../operations/lifecycle/claims/renew-platform-repository-claims-for-runner.ts';
 import { completeJobMethod } from '../operations/lifecycle/jobs/complete-job.ts';
 import { failJobMethod } from '../operations/lifecycle/jobs/fail-job.ts';
 import { pullJobsForRunnerMethod } from '../operations/lifecycle/jobs/pull-jobs-for-runner.ts';
@@ -27,7 +25,6 @@ import { listMarketOperationRunnersMethod } from '../operations/queries/runners/
 import { cancelJobMethod } from '../operations/retirement/cancel-job.ts';
 import { cancelPlatformOperationMethod } from '../operations/retirement/cancel-platform-operation.ts';
 import { recordJobProgressMethod } from '../operations/updates/record-job-progress.ts';
-import { upsertPlatformRepositoryClaimMethod } from '../repositories/creation/upsert-platform-repository-claim.ts';
 
 export function installOperationsStoreMethods(prototype: MarketControlPlaneStore) {
 	prototype.appendPlatformOperationEvent = appendPlatformOperationEventMethod;
@@ -41,9 +38,6 @@ export function installOperationsStoreMethods(prototype: MarketControlPlaneStore
 	prototype.upsertMarketOperationRunner = upsertMarketOperationRunnerMethod;
 	prototype.findMarketOperationRunnerById = findMarketOperationRunnerByIdMethod;
 	prototype.listMarketOperationRunners = listMarketOperationRunnersMethod;
-	prototype.upsertPlatformRepositoryClaim = upsertPlatformRepositoryClaimMethod;
-	prototype.renewPlatformRepositoryClaimsForRunner = renewPlatformRepositoryClaimsForRunnerMethod;
-	prototype.releasePlatformRepositoryClaimsForRunner = releasePlatformRepositoryClaimsForRunnerMethod;
 	prototype.claimPlatformOperation = claimPlatformOperationMethod;
 	prototype.renewPlatformOperationLease = renewPlatformOperationLeaseMethod;
 	prototype.checkpointPlatformOperation = checkpointPlatformOperationMethod;

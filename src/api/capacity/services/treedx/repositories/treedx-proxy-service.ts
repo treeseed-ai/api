@@ -1,3 +1,4 @@
+import { gzipSync } from 'node:zlib';
 import type { Context } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
@@ -48,10 +49,15 @@ export async function proxyTreeDxJson(input: {
 	if (!token) throw new CapacityGovernanceError('treedx_proxy_token_unavailable', 'TreeDX proxy token is not configured for this project.', 503, { projectId: input.projectId });
 	let response: Response;
 	try {
+		const serialized = input.body === undefined ? undefined : JSON.stringify(input.body);
+		const gzip = input.path.endsWith('/changesets') && serialized !== undefined
+			&& Buffer.byteLength(serialized, 'utf8') >= 1_024;
 		response = await (input.fetchImpl ?? fetch)(`${baseUrl}${input.path}`, {
 			method: input.method,
-			headers: { accept: 'application/json', authorization: `Bearer ${token}`, ...(input.body === undefined ? {} : { 'content-type': 'application/json' }) },
-			body: input.body === undefined ? undefined : JSON.stringify(input.body),
+			headers: { accept: 'application/json', authorization: `Bearer ${token}`,
+				...(input.body === undefined ? {} : { 'content-type': 'application/json' }),
+				...(gzip ? { 'content-encoding': 'gzip' } : {}) },
+			body: serialized === undefined ? undefined : gzip ? gzipSync(serialized) : serialized,
 		});
 	} catch (error) {
 		throw new CapacityGovernanceError('treedx_runtime_unavailable', 'TreeDX runtime is unavailable for this project.', 503, { projectId: input.projectId, details: error instanceof Error ? error.message : String(error) });

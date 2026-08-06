@@ -6,6 +6,7 @@ import { editorialReviewGate, editorialSubmissionRequirements, requiredRevisionR
 import { relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
 import { allowedWorkspacePath, assertSimulatedProductionPolicy, authorizedCatalog, bookDocument, list, pageDocument, parseBook, parseKnowledgePage, requestId, text, workspaceAccess } from './authoring-support.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 export { reviewPathsMatch, searchRelations } from './relation-search.ts';
 
 export function installKnowledgeAuthoringRoutes(context: any) {
@@ -158,6 +159,7 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 		const body = await c.req.json().catch(() => ({}));
 		if (Number(body.version) !== access.workspace.version) return jsonError(c, 409, 'The draft changed. Reload before saving.', { code: 'stale_workspace', workspace: access.workspace });
 		let content: string;
+		let before: string | null = null;
 		try {
 			let status: 'published' | 'archived' = 'published';
 			if (text(body.sourcePath)) {
@@ -166,6 +168,7 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 				if (!readConnection) return jsonError(c, 503, 'The project knowledge repository is unavailable.');
 				const current = await readConnection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId,
 					path: text(body.sourcePath) });
+				before = current.content;
 				const definition = body.kind === 'book' ? parseBook({ path: text(body.sourcePath), raw: current.content })
 					: parseKnowledgePage({ path: text(body.sourcePath), raw: current.content });
 				status = definition.status === 'archived' ? 'archived' : 'published';
@@ -183,8 +186,11 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 		const path = text(body.sourcePath) || derivedPath;
 		if (!allowedWorkspacePath(access.workspace, path)) return jsonError(c, 422, 'The knowledge path is outside this workspace.', { code: 'knowledge_path_invalid' });
 		if (text(body.sourcePath) && path !== derivedPath) return jsonError(c, 422, 'Changing a knowledge path requires an explicit move operation.', { code: 'knowledge_path_move_required' });
-		const result = await connection.client.writeFile({ workspaceId: access.workspace.treeDxWorkspaceId, path, content,
-			...(text(body.expectedSha) ? { expectedSha: text(body.expectedSha) } : {}) });
+		const result = await applyTextChangeset({ client: connection.client, workspace: {
+			workspaceId: access.workspace.treeDxWorkspaceId,
+			baseCommitSha: access.workspace.baseCommitSha,
+			baseRef: access.workspace.baseRef,
+		}, changes: [{ path, before, after: content }], idempotencyKey: `knowledge-content-${access.workspace.id}-${access.workspace.version}` });
 		const updated = await store.updateKnowledgeWorkspace(access.workspace.id, { version: access.workspace.version, status: 'draft' });
 		if (!updated.ok) return jsonError(c, 409, 'The draft changed. Reload before saving.', { code: 'stale_workspace', workspace: updated.workspace });
 		await store.recordAuditEvent({ eventType: body.kind === 'book' ? 'knowledge.book.updated' : 'knowledge.page.updated', actorType: 'user', actorId: access.principal.id,
