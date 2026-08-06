@@ -155,7 +155,7 @@ export async function resolvePlanningDemandSource(
 	agent: CapacityWorkdayAgent,
 	intent: CapacityWorkdayResolvedIntent,
 ): Promise<PlanningDemandSource> {
-	const discussion = record(run.parameters.discussion);
+	const discussion = record(record(run.parameters).discussion);
 	if (agent.activityType === 'chat' && text(discussion.discussionId) && text(discussion.messageId)) return {
 		sourceType: 'planning-input', sourceId: `discussion-message:${text(discussion.messageId)}`, decisionId: text(discussion.decisionId), priority: 110,
 		payload: {

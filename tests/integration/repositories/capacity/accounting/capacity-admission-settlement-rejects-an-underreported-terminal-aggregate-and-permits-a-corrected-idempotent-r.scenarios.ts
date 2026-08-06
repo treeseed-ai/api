@@ -34,9 +34,9 @@ it.each([
         expect(await store.first(`SELECT COUNT(*) AS count FROM capacity_audit_events WHERE resource_id = ? AND action = ?`, [`overrun-reservation-${decision}`, `capacity-overrun.${decision}`])).toEqual({ count: 1 });
         const counters = await store.all(`SELECT scope, hard_limit, committed_amount FROM capacity_admission_counters ORDER BY scope`);
         for (const counter of counters) {
-            const expected = counter.scope === 'grant-concurrency' ? 0 : activeSeconds;
+            const expected = String(counter.scope).includes('concurrency') ? 0 : activeSeconds;
             expect(Number(counter.committed_amount)).toBe(expected);
-            if (decision === 'approved' && counter.scope !== 'grant-concurrency')
+            if (decision === 'approved' && !String(counter.scope).includes('concurrency'))
                 expect(Number(counter.hard_limit)).toBeGreaterThanOrEqual(activeSeconds);
         }
     }
@@ -246,13 +246,21 @@ it('commits reservation and assignment together, enforces counters, and settles 
             },
         });
         const counters = await store.all(`SELECT scope, committed_amount FROM capacity_admission_counters ORDER BY scope ASC`);
-        expect(counters).toEqual([
-            { scope: 'allocation-slice', committed_amount: 4 },
-            { scope: 'grant-concurrency', committed_amount: 0 },
-            { scope: 'grant-daily', committed_amount: 4 },
-            { scope: 'grant-monthly', committed_amount: 4 },
-            { scope: 'workday', committed_amount: 4 },
-        ]);
+        const counterTotals = Object.fromEntries([...new Set(counters.map((row) => String(row.scope)))].map((scope) => [
+            scope,
+            counters.filter((row) => row.scope === scope).reduce((sum, row) => sum + Number(row.committed_amount), 0),
+        ]));
+        expect(counterTotals).toEqual({
+            'allocation-slice': 4,
+            'grant-concurrency': 0,
+            'grant-daily': 4,
+            'grant-monthly': 4,
+            'provider-concurrency': 0,
+            'provider-local-concurrency': 0,
+            'provider-local-time': 4,
+            'provider-time': 4,
+            workday: 4,
+        });
         await expect(commitCapacityAdmission(store, { idempotencyKey: 'admit-b', admission: admission(6, 4), assignment: { projectAgentClassId: 'class-a', workDayId: 'workday-a' }, reservationId: 'reservation-b', assignmentId: 'assignment-b' })).resolves.toMatchObject({ replayed: false });
         await expect(store.createAgentModeRun({
             id: 'mode-run-a',
@@ -313,6 +321,10 @@ it('serializes concurrent admission retries and reservation settlement exactly o
             ['grant-concurrency', 1],
             ['grant-daily', 6],
             ['grant-monthly', 6],
+            ['provider-concurrency', 1],
+            ['provider-local-concurrency', 1],
+            ['provider-local-time', 6],
+            ['provider-time', 6],
             ['workday', 6],
         ]);
         const settlement = (settlementKey: string) => settleCapacityReservationExactlyOnce(store, {
@@ -335,6 +347,10 @@ it('serializes concurrent admission retries and reservation settlement exactly o
             ['grant-concurrency', 0],
             ['grant-daily', 4],
             ['grant-monthly', 4],
+            ['provider-concurrency', 0],
+            ['provider-local-concurrency', 0],
+            ['provider-local-time', 4],
+            ['provider-time', 4],
             ['workday', 4],
         ]);
         const capacityRace = await Promise.allSettled(['three', 'four'].map((suffix) => commitCapacityAdmission(store, {

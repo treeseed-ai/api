@@ -1,10 +1,11 @@
 {
-  "routeCount": 571,
-  "descriptorCount": 571,
-  "coveredByGuarantee": 571,
+  "routeCount": 573,
+  "descriptorCount": 573,
+  "coveredByGuarantee": 573,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
+      "get.v1.discussions",
       "get.v1.execution-runs.runId.transcript",
       "get.v1.markets.current",
       "get.v1.me",
@@ -16,6 +17,7 @@
       "get.v1.workflow-operation-runs.runId",
       "get.v1.workflow-operation-runs.runId.artifacts",
       "get.v1.workflow-operation-runs.runId.artifacts.artifactId.download",
+      "post.v1.discussions",
       "post.v1.provider-connectors.github.kind.setup",
       "post.v1.provider-registrations",
       "post.v1.provider-registrations.requestId.credential",

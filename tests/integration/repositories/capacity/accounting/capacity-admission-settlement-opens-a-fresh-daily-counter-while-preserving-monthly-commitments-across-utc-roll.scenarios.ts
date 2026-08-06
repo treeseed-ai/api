@@ -39,9 +39,9 @@ it.each([
         expect(await store.first(`SELECT COUNT(*) AS count FROM capacity_audit_events WHERE resource_id = ? AND action = ?`, [`overrun-reservation-${decision}`, `capacity-overrun.${decision}`])).toEqual({ count: 1 });
         const counters = await store.all(`SELECT scope, hard_limit, committed_amount FROM capacity_admission_counters ORDER BY scope`);
         for (const counter of counters) {
-            const expected = counter.scope === 'grant-concurrency' ? 0 : activeSeconds;
+            const expected = String(counter.scope).includes('concurrency') ? 0 : activeSeconds;
             expect(Number(counter.committed_amount)).toBe(expected);
-            if (decision === 'approved' && counter.scope !== 'grant-concurrency')
+            if (decision === 'approved' && !String(counter.scope).includes('concurrency'))
                 expect(Number(counter.hard_limit)).toBeGreaterThanOrEqual(activeSeconds);
         }
     }
@@ -138,8 +138,21 @@ it('leases only admitted membership work with CAS and releases it when membershi
         await registration.updateMembership('team-a', 'membership-a', 'owner-a', 'suspended', 'suspend-membership-a');
         expect(await store.getProviderAssignment('team-a', 'lease-assignment-b')).toMatchObject({ status: 'failed', leaseState: 'released', stateVersion: 3, lifecycleCode: 'provider_membership_suspended' });
         const counters = await store.all(`SELECT scope, committed_amount FROM capacity_admission_counters`);
-        expect(counters.filter((row) => row.scope === 'grant-concurrency').every((row) => Number(row.committed_amount) === 0)).toBe(true);
-        expect(counters.filter((row) => row.scope !== 'grant-concurrency').every((row) => Number(row.committed_amount) === 4)).toBe(true);
+        const totals = Object.fromEntries([...new Set(counters.map((row) => String(row.scope)))].map((scope) => [
+            scope,
+            counters.filter((row) => row.scope === scope).reduce((sum, row) => sum + Number(row.committed_amount), 0),
+        ]));
+        expect(totals).toEqual({
+            'allocation-slice': 4,
+            'grant-concurrency': 0,
+            'grant-daily': 4,
+            'grant-monthly': 4,
+            'provider-concurrency': 0,
+            'provider-local-concurrency': 0,
+            'provider-local-time': 4,
+            'provider-time': 4,
+            workday: 4,
+        });
         expect(await store.renewProviderAssignmentLease(principal, 'lease-assignment-b', { leaseToken: secondLease.leaseToken, runnerId: 'runner-b' })).toBeNull();
     }
     finally {
