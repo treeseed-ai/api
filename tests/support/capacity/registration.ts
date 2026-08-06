@@ -18,6 +18,7 @@ export const capacityRegistrationAudience = 'https://api.example.test';
 
 export function createCapacityRegistrationTestHarness() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
