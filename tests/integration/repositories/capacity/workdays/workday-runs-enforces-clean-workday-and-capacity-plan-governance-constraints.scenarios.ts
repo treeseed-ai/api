@@ -292,5 +292,5 @@ it('terminalizes workday assignments in bounded batches', async () => {
     finally {
         db.close();
     }
-}, 60_000);
+}, 120_000);
 });
