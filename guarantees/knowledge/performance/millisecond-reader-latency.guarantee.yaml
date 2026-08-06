@@ -1,6 +1,6 @@
 schemaVersion: treeseed.guarantee/v1
-id: guarantee.knowledge.performance.millisecond-reader-latency.742
-journeyIndex: 742
+id: guarantee.knowledge.performance.millisecond-reader-latency.750
+journeyIndex: 750
 type: knowledge
 subtype: performance
 journey: Millisecond Public Knowledge Reader Latency
