@@ -39,7 +39,7 @@ export function endpointGuaranteeFamily(path) {
         return 'agent-graphs-and-workdays';
     if (path.startsWith('/v1/dx/') || path.includes('/repos/') || path.includes('/workspaces/'))
         return 'dx-repository-workspaces';
-    if (path.includes('/treedx') || path.includes('/local-content') || path.includes('/content-previews'))
+    if (path.includes('/treedx') || path.includes('/content-previews'))
         return 'treedx-and-content-proxy';
     if (path.startsWith('/v1/knowledge/') || path.includes('/knowledge/'))
         return 'knowledge-collaboration';

@@ -1,5 +1,5 @@
 export function installProjectsSettingsAndSummariesRoutes(context: any) {
-	const { app, decoratePlatformOperation, isTeamApiPrincipal, jsonError, markdownToPlainProjectSummary, normalizeRepositoryContentInput, principalHasPermission, recordPrivateKnowledgeAudit, requireProjectAccess, resolvePlatformRepositoryDescriptor, runtime, safePrivateKnowledgeSlug, store, validateProjectSlug } = context;
+	const { app, jsonError, markdownToPlainProjectSummary, principalHasPermission, recordPrivateKnowledgeAudit, requireProjectAccess, safePrivateKnowledgeSlug, store, validateProjectSlug } = context;
 	
 	app.get('/v1/projects/:projectId/access', async (c) => {
 					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
@@ -34,37 +34,10 @@ export function installProjectsSettingsAndSummariesRoutes(context: any) {
 						? access.details.project.metadata.coreObjective.trim()
 						: String(access.details.project.description ?? '').trim();
 					const shouldSyncCoreObjective = requestedCoreObjective != null && requestedCoreObjective !== existingCoreObjective;
-					let coreObjectiveRepository = null;
-					let coreObjectiveNormalized = null;
-					let coreObjectivePayload = null;
 					if (shouldSyncCoreObjective) {
-						coreObjectivePayload = {
-							title: 'Core Objective',
-							slug: 'core',
-							overwrite: true,
-							preserveFrontmatter: true,
-							summary: 'The enduring project objective used as shared planning context.',
-							description: 'The enduring project objective used as shared planning context.',
-							body: requestedCoreObjective,
-							status: 'live',
-							timeHorizon: 'long-term',
-							motivation: 'Maintained from project settings.',
-							repository: {
-								...(body.repository && typeof body.repository === 'object' && !Array.isArray(body.repository) ? body.repository : {}),
-								role: 'content',
-								writeMode: 'branch',
-								branchName: `treeseed/core-objective-${Date.now()}`,
-								push: true,
-							},
-						};
-						coreObjectiveRepository = resolvePlatformRepositoryDescriptor(runtime.resolved.config, access.details, coreObjectivePayload);
-						coreObjectiveNormalized = normalizeRepositoryContentInput('objectives', {
-							...coreObjectivePayload,
-							projectId: access.details.project.id,
-							teamId: access.details.project.teamId,
-							createdBy: access.principal.id,
+						return jsonError(c, 409, 'Core objective content must be updated through an atomic TreeDX changeset before project metadata is changed.', {
+							code: 'treedx_changeset_required',
 						});
-						if (coreObjectiveNormalized.error) return jsonError(c, 400, coreObjectiveNormalized.error);
 					}
 					const description = typeof body.description === 'string'
 						? body.description.trim() || null
@@ -81,41 +54,9 @@ export function installProjectsSettingsAndSummariesRoutes(context: any) {
 							...(requestedCoreObjective != null ? { coreObjective: requestedCoreObjective } : {}),
 						},
 					});
-					let coreObjectiveJob = null;
-					if (shouldSyncCoreObjective && coreObjectiveRepository && coreObjectiveNormalized && coreObjectivePayload) {
-						const approvalId = `project-settings:${updated.id}:core-objective:${Date.now()}`;
-						coreObjectiveJob = await store.createPlatformOperation({
-							namespace: 'repository',
-							operation: 'write_content_record',
-							target: 'market_operations_runner',
-							idempotencyKey: `project-settings:${updated.id}:core-objective:${updated.updatedAt ?? Date.now()}`,
-							requestedByType: isTeamApiPrincipal(access.principal) ? 'team_api_key' : c.get('actorType') === 'service' ? 'service' : 'user',
-							requestedById: access.principal.id,
-							input: {
-								projectId: updated.id,
-								teamId: access.details.project.teamId,
-								createdBy: access.principal.id,
-								repositoryRole: 'content',
-								repository: coreObjectiveRepository,
-								collection: 'objectives',
-								normalized: coreObjectiveNormalized,
-								payload: coreObjectivePayload,
-								commitMessage: `Update ${updated.name} core objective`,
-								approvalRequired: true,
-								approvalSatisfied: true,
-								approvalId,
-							},
-						});
-						await store.appendPlatformOperationEvent(coreObjectiveJob.id, 'project_settings.core_objective_sync_queued', {
-							projectId: updated.id,
-							collection: 'objectives',
-							slug: 'core',
-						}).catch(() => {});
-					}
 					return c.json({
 						ok: true,
 						payload: await store.getProjectDetails(updated.id),
-						coreObjectiveJob: coreObjectiveJob ? decoratePlatformOperation(runtime.resolved.config.baseUrl, coreObjectiveJob) : null,
 					});
 				});
 	

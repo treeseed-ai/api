@@ -2,14 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe,expect,it } from 'vitest';
 
 describe('API backend boundaries', () => {
-	it('keeps local content routes job-backed instead of filesystem-backed', () => {
-		const source = readFileSync('src/api/routes/projects/access/projects-content-mutations.ts', 'utf8');
-		const routeStart = source.indexOf("app.post('/v1/projects/:projectId/local-content/decisions/from-proposals'");
-		expect(routeStart).toBeGreaterThan(-1);
-		const routeBlock = source.slice(routeStart);
-		expect(routeBlock).toContain('createPlatformOperation');
-		expect(routeBlock).not.toMatch(/\bwriteLocalContentRecord\(|\bcreateRelatedLocalContentRecord\(|\bcreateDecisionFromProposals\(/u);
-		expect(routeBlock).not.toMatch(/\bwriteFile\(|process\.cwd\(\).*src.*content/u);
+	it('exposes content mutation only through the TreeDX changeset proxy', () => {
+		const source = readFileSync('src/api/capacity/routes/treedx/repositories/treedx-proxy.ts', 'utf8');
+		expect(source).toContain("app.post('/v1/dx/projects/:projectId/workspaces/:workspaceId/changesets'");
+		expect(source).not.toContain("app.put('/v1/dx/projects/:projectId/workspaces/:workspaceId/files'");
 	});
 
 	it('keeps migration ownership in the PostgreSQL adapter boundary', () => {

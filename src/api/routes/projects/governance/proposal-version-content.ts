@@ -4,6 +4,7 @@ import { validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parse as parseYaml } from 'yaml';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../../capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { applyTextChangeset } from '../../../knowledge/changesets/apply-text-changeset.ts';
 
 type Row = Record<string, unknown>;
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -29,9 +30,11 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const nextMetadata = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types, relatedObjectives: input.update.relatedObjectives ?? metadata.relatedObjectives ?? [], evidenceRefs: input.update.evidenceRefs ?? metadata.evidenceRefs ?? [], plan: input.update.plan ?? metadata.plan ?? {} };
 	const source = serializeFrontmatterDocument({ id: text(input.proposal.id), title, description: summary, summary, date: text(input.proposal.createdAt, input.proposal.created_at, new Date().toISOString()), status: 'in progress', draft: false, proposalTypes: types, relatedObjectives: nextMetadata.relatedObjectives, evidenceRefs: nextMetadata.evidenceRefs, plan: nextMetadata.plan }, `${body}\n`);
 	try {
-		await connection.client.writeFile({ workspaceId: workspace.workspaceId, path, content: source, encoding: 'utf8' });
+		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: workspace.baseCommitSha, path, encoding: 'utf8', parseFrontmatter: false }).catch(() => null);
+		const before = existing ? text(object(existing.file).content) : null;
+		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before, after: source }] });
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `governance: proposal ${text(input.proposal.id)} version ${version} — ${text(input.update.changeReason)}`, author: { name: text(input.principal.name, input.principal.id, 'Team member'), email: text(input.principal.email, 'governance@users.treeseed.local') } });
 		await projectTreeDxCommitSignals(input.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(input.update.changeReason), actorType: 'user', actorId: text(input.principal.id) });
-		return { receipt: { path, commitSha: commit.commitSha, branchName: commit.branchName, changedPaths: commit.changedPaths, digest: createHash('sha256').update(source).digest('hex'), proposalVersion: version }, update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata, contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: commit.commitSha, digest: createHash('sha256').update(source).digest('hex') } } };
+		return { receipt: { path, commitSha: commit.commitSha, branchName: commit.branchName, changedPaths: commit.changedPaths, digest: createHash('sha256').update(source).digest('hex'), proposalVersion: version, changeset: { ...changeset, resultCommitSha: commit.commitSha } }, update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata, contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: commit.commitSha, digest: createHash('sha256').update(source).digest('hex') } } };
 	} catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 }

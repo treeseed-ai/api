@@ -259,14 +259,9 @@ export function bodyFactoryFor(path, method) {
         return 'githubActionsSecretDeploy';
     if (path.startsWith('/v1/projects/:projectId/workflow-operations/') && path.endsWith('/dispatch'))
         return 'workflowOperationDispatch';
-    if (path.startsWith('/v1/projects/:projectId/repositories/') && path.endsWith('/initialize'))
-        return 'empty';
     if (path.startsWith('/v1/projects/:projectId'))
-        return path.endsWith('/local-content/:collection') ? 'localContentWrite'
-            : path.endsWith('/related') ? 'localContentRelated'
-                : path.endsWith('/decisions/from-proposals') ? 'decisionFromProposals'
-                    : path.includes('/approval') ? 'approvalDecision'
-                        : path.includes('/agent-classes') ? 'projectAgentClass'
+		return path.includes('/approval') ? 'approvalDecision'
+						: path.includes('/agent-classes') ? 'projectAgentClass'
                             : path.includes('/runner/') ? 'runnerProjectBody'
                                 : path.includes('/resources') ? 'projectResource'
                                         : path.includes('/hosting') || path.includes('/environments') ? 'projectEnvironment'

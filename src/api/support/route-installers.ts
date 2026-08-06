@@ -24,7 +24,6 @@ import { installKnowledgePackRoutes } from "../routes/knowledge/packs.ts";
 import { installKnowledgePublicationRoutes } from "../routes/knowledge/publication.ts";
 import { installKnowledgeLifecycleRoutes } from "../routes/knowledge/lifecycle.ts";
 import { installOperationsPlatformRunnersAndJobsRoutes } from "../routes/operations/operations-platform-runners-and-jobs.ts";
-import { installProjectsContentMutationRoutes } from "../routes/projects/access/projects-content-mutations.ts";
 import { installGovernanceProjectionRoutes } from "../routes/projects/governance/governance-projection.ts";
 import { installGovernanceProjectsItemApprovalsItemDecisionRoutes } from "../routes/projects/governance/governance-projects-item-approvals-item-decision.ts";
 import { installGovernanceTeamProjectDelegationsAndApprovalsRoutes } from "../routes/projects/governance/governance-team-project-delegations-and-approvals.ts";
@@ -93,7 +92,6 @@ export function installPlatformRoutes(context: any): void {
   installProjectsProposalsAndDecisionsRoutes(context);
   installGovernanceTeamProjectDelegationsAndApprovalsRoutes(context);
   installGovernanceProjectsItemApprovalsItemDecisionRoutes(context);
-  installProjectsContentMutationRoutes(context);
   installOperationsProjectJobsRoutes(context);
   installFoundationApprovalDecisionsRoutes(context);
   installGovernanceCommonsProposalsQuestionsAndVotesRoutes(context);

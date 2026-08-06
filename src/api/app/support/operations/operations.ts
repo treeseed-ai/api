@@ -1,9 +1,7 @@
 import { derivePlatformOperationNavigation,isPlatformOperationTerminal } from '@treeseed/sdk';
 import { createHmac,timingSafeEqual } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
 import { bearerTokenFromRequest } from '../../../accounts/request-auth.ts';
-import { base64urlJson,enumValue,jsonError,localContentPath,normalizeBaseUrl,normalizeRelationArray,optionalTrimmedString,parseBase64urlJson,readLocalContentRecord,requireTeamAccess,safeTokenEquals,slugifyContent,writeLocalContentRecord,writeParsedLocalContentRecord } from '../index.ts';
+import { base64urlJson,jsonError,normalizeBaseUrl,optionalTrimmedString,parseBase64urlJson,requireTeamAccess,safeTokenEquals } from '../index.ts';
 export const AGENT_PROMOTION_APPROVAL_DECISIONS = new Set([
     'approve',
     'approve_as_book_content',
@@ -14,8 +12,6 @@ export const AGENT_PROMOTION_APPROVAL_DECISIONS = new Set([
     'approve_release',
     'reject_release',
 ]);
-export const LOCAL_DECISION_TYPE_VALUES = ['approved', 'rejected', 'deferred', 'request_changes', 'superseded'];
-export const PROPOSAL_VERDICT_DECISION_TYPES = new Set(['approved', 'rejected', 'deferred', 'request_changes']);
 export const PLATFORM_OPERATION_SCOPES = [
     'platform:runners:register',
     'platform:runners:claim',
@@ -24,95 +20,9 @@ export const PLATFORM_OPERATION_SCOPES = [
     'platform:operations:read',
     'platform:operations:cancel',
     'platform:operations:retry',
-    'platform:repository:write',
     'platform:deploy:write',
     'platform:database:migrate',
 ];
-export async function createDecisionFromProposals(input) {
-    const proposalSlugs = [...new Set(normalizeRelationArray(input.proposalSlugs))];
-    if (proposalSlugs.length === 0)
-        return { error: 'Select at least one proposal.' };
-    for (const slug of proposalSlugs) {
-        if (!slug || slugifyContent(slug) !== slug)
-            return { error: 'Unsafe proposal slug.' };
-    }
-    const decisionType = enumValue(input.decisionType, [...PROPOSAL_VERDICT_DECISION_TYPES], null);
-    if (!decisionType)
-        return { error: 'Unsupported proposal verdict.' };
-    const reason = optionalTrimmedString(input.reason) ?? optionalTrimmedString(input.rationale);
-    if (!reason)
-        return { error: 'A decision reason is required.' };
-    const title = optionalTrimmedString(input.title) ?? `Decision for ${proposalSlugs.length === 1 ? proposalSlugs[0] : `${proposalSlugs.length} proposals`}`;
-    const decisionSlug = slugifyContent(input.slug || title);
-    if (!decisionSlug)
-        return { error: 'A safe decision slug is required.' };
-    const decisionTarget = localContentPath('decisions', decisionSlug, 'mdx');
-    if (!decisionTarget)
-        return { error: 'Unsafe decision path.' };
-    if (existsSync(decisionTarget))
-        return { error: 'A decision with that slug already exists.' };
-    const proposals = [];
-    for (const slug of proposalSlugs) {
-        const proposal = await readLocalContentRecord('proposals', slug);
-        if (proposal.error)
-            return { error: `Proposal ${slug} was not found.` };
-        proposals.push(proposal);
-    }
-    const proposalTitles = proposals.map((proposal) => proposal.frontmatter.title ?? proposal.slug);
-    const body = optionalTrimmedString(input.body)
-        ?? [
-            `## Verdict`,
-            decisionType.replace(/_/gu, ' '),
-            ``,
-            `## Reason`,
-            reason,
-            ``,
-            `## Proposals`,
-            ...proposalTitles.map((proposalTitle, index) => `- ${proposalTitle} (${proposalSlugs[index]})`),
-        ].join('\n');
-    const decisionPayload = await writeLocalContentRecord('decisions', {
-        ...input,
-        slug: decisionSlug,
-        title,
-        status: 'live',
-        decisionType,
-        description: optionalTrimmedString(input.description) ?? reason,
-        summary: optionalTrimmedString(input.summary) ?? reason,
-        rationale: reason,
-        relatedProposals: proposalSlugs,
-        body,
-    });
-    if ('error' in decisionPayload && decisionPayload.error)
-        return decisionPayload;
-    const writtenProposals = [];
-    const originalProposals = proposals.map((proposal) => ({
-        ...proposal,
-        frontmatter: { ...proposal.frontmatter },
-        body: proposal.body,
-    }));
-    try {
-        for (const proposal of proposals) {
-            proposal.frontmatter.decision = decisionSlug;
-            await writeParsedLocalContentRecord(proposal);
-            writtenProposals.push(proposal);
-        }
-    }
-    catch (error) {
-        await rm(decisionTarget, { force: true }).catch(() => { });
-        for (const original of originalProposals.slice(0, writtenProposals.length)) {
-            await writeParsedLocalContentRecord(original).catch(() => { });
-        }
-        return {
-            error: 'Decision content was created but proposals could not be linked; changes were rolled back.',
-            details: error instanceof Error ? error.message : String(error),
-        };
-    }
-    return {
-        decision: decisionPayload,
-        proposals: proposalSlugs.map((slug) => ({ collection: 'proposals', slug, href: `/app/work/proposals/${encodeURIComponent(slug)}` })),
-        href: 'href' in decisionPayload ? decisionPayload.href : null,
-    };
-}
 export function operationTokenSecret(runtime) {
     return runtime?.resolved?.config?.assertionSecret
         ?? runtime?.resolved?.config?.authSecret
@@ -197,19 +107,8 @@ export function safePlatformOperationOutput(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         return value ?? null;
     const output = { ...value };
-    if (typeof output.repositoryPath === 'string') {
-        output.repositoryPath = output.repositoryPath.includes('/repositories/') ? '/data/repositories/<repository>/repo' : '<runner-workspace>';
-    }
     if (typeof output.workspacePath === 'string') {
         output.workspacePath = output.workspacePath.includes('/data') ? '/data' : '<runner-workspace>';
-    }
-    if (output.repository && typeof output.repository === 'object' && !Array.isArray(output.repository)) {
-        output.repository = {
-            ...output.repository,
-            cloneUrl: typeof output.repository.cloneUrl === 'string' && output.repository.cloneUrl.startsWith('http')
-                ? output.repository.cloneUrl.replace(/\/\/[^/@]+@/u, '//<redacted>@')
-                : output.repository.cloneUrl,
-        };
     }
     return output;
 }

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { parseFrontmatterDocument, serializeFrontmatterDocument } from '@treeseed/sdk/frontmatter';
 import { resolveKnowledgeGatewayConnection } from '../knowledge/gateway-treedx-connection.ts';
+import { applyTextChangeset } from '../knowledge/changesets/apply-text-changeset.ts';
 import { projectTreeDxCommitSignals } from '../capacity/services/treedx/repositories/treedx-change-projector.ts';
 
 type Row = Record<string, unknown>;
@@ -57,12 +58,14 @@ export async function commitDiscussionMessage(input: {
 	const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const workspace = await connection.client.createWorkspace({ workspaceId: `discussion-${randomUUID()}`, repoId: connection.repositoryId, baseRef: branchName, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 600 });
 	try {
-		if (!input.discussionId) await connection.client.writeFile({ workspaceId: workspace.workspaceId, path: discussionPath, content: discussion, encoding: 'utf8' });
-		await connection.client.writeFile({ workspaceId: workspace.workspaceId, path: messagePath, content: message, encoding: 'utf8' });
-		await connection.client.writeFile({ workspaceId: workspace.workspaceId, path: eventPath, content: event, encoding: 'utf8' });
+		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [
+			...(!input.discussionId ? [{ path: discussionPath, before: null, after: discussion }] : []),
+			{ path: messagePath, before: null, after: message },
+			{ path: eventPath, before: null, after: event },
+		] });
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${topic}`, author: { name: authorName, email: text(input.principal.email, 'discussion@users.treeseed.local') } });
 		await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: 'user', actorId: authorId });
-		return { discussion: { id: discussionId, topic, path: discussionPath }, message: { id: messageId, authorLabel: authorName, body: input.body, path: messagePath }, event: { path: eventPath }, mentions, commitSha: commit.commitSha, snapshotDigest: createHash('sha256').update(commit.commitSha).digest('hex') };
+		return { discussion: { id: discussionId, topic, path: discussionPath }, message: { id: messageId, authorLabel: authorName, body: input.body, path: messagePath }, event: { path: eventPath }, mentions, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha }, snapshotDigest: createHash('sha256').update(commit.commitSha).digest('hex') };
 	} catch (error) {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
 		throw error;
@@ -101,11 +104,13 @@ export async function appendDiscussionEvent(input: {
 	const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const workspace = await connection.client.createWorkspace({ workspaceId: `discussion-event-${randomUUID()}`, repoId: connection.repositoryId, baseRef: branchName, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 600 });
 	try {
-		await connection.client.writeFile({ workspaceId: workspace.workspaceId, path, content: source, encoding: 'utf8' });
-		if (messagePath && messageSource) await connection.client.writeFile({ workspaceId: workspace.workspaceId, path: messagePath, content: messageSource, encoding: 'utf8' });
+		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [
+			{ path, before: null, after: source },
+			...(messagePath && messageSource ? [{ path: messagePath, before: null, after: messageSource }] : []),
+		] });
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${phase}`, author: { name: 'TreeSeed control plane', email: 'control-plane@services.treeseed.local' } });
 		await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion event: ${phase}`, actorType: 'service', actorId: 'discussion-projector' });
-		return { path, commitSha: commit.commitSha };
+		return { path, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha } };
 	} catch (error) {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
 		throw error;

@@ -1,4 +1,3 @@
-import { executePlatformRepositoryOperation } from '@treeseed/sdk';
 import { objectValue,treeDxRailway,treeDxRailwayNames,treeDxSecretBase } from '../index.js';
 import { createFeedbackExecutors } from '../../feedback/executors.ts';
 import { createKnowledgePublicationExecutor } from '../../knowledge/publication-executor.ts';
@@ -29,76 +28,6 @@ export function createExecutorsForOptions(options: any = {}) {
         ...noop,
         operation: 'diagnostic',
     };
-    const repositoryExecutor = (operation) => ({
-        namespace: 'repository',
-        operation,
-        async run(input, context) {
-            await context.checkpoint({
-                phase: 'repository.sync',
-                operation,
-                projectId: input?.projectId ?? null,
-            }, {
-                kind: 'repository.sync_started',
-                data: { operation, projectId: input?.projectId ?? null },
-            });
-            const result = await executePlatformRepositoryOperation(operation, input, {
-                workspaceRoot: context.workspaceRoot,
-                environment: context.environment,
-				operationId: context.operationId,
-            }).catch(async (error) => {
-                if (error?.verification) {
-                    await context.emit({
-                        kind: 'repository.verification_failed',
-                        data: {
-                            status: error.verification.status,
-                            commands: error.verification.commands?.map((command) => ({
-                                command: command.command,
-                                args: command.args,
-                                cwd: command.cwd,
-                                exitCode: command.exitCode,
-                            })) ?? [],
-                        },
-                    });
-                }
-                throw error;
-            });
-            await context.checkpoint({
-                phase: 'repository.written',
-                changedPaths: result.changedPaths,
-                branch: result.branch,
-                commitSha: result.commitSha,
-                verification: result.verification,
-            }, {
-                kind: 'repository.written',
-                data: {
-                    changedPaths: result.changedPaths,
-                    branch: result.branch,
-                    commitSha: result.commitSha,
-                    verificationStatus: result.verification?.status ?? 'skipped',
-                },
-            });
-            if (result.commitSha) {
-                await context.checkpoint({
-                    phase: 'repository.committed',
-                    branch: result.branch,
-                    commitSha: result.commitSha,
-                }, {
-                    kind: 'repository.committed',
-                    data: { branch: result.branch, commitSha: result.commitSha },
-                });
-            }
-            if (input?.repository?.push === true) {
-                await context.checkpoint({
-                    phase: 'repository.push_ready',
-                    branch: result.branch,
-                }, {
-                    kind: 'repository.push_ready',
-                    data: { branch: result.branch },
-                });
-            }
-            return result;
-        },
-    });
     const treeDxProvisionExecutor = {
         namespace: 'treedx',
         operation: 'provision',
@@ -345,10 +274,6 @@ export function createExecutorsForOptions(options: any = {}) {
     return [
         noop,
         diagnostic,
-        repositoryExecutor('initialize_linked_repository'),
-        repositoryExecutor('write_content_record'),
-        repositoryExecutor('create_related_content'),
-        repositoryExecutor('create_decision_from_proposals'),
 		treeDxProvisionExecutor,
 		...createFeedbackExecutors(options),
 		createKnowledgePublicationExecutor(options),

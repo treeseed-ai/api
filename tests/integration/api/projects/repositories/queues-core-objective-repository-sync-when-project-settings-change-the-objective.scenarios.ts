@@ -1,7 +1,7 @@
 import { authorizeApp,createTeamAndProject,createTestApp,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
 describe('market api', () => {
-it('queues core objective repository sync when project settings change the objective', async () => {
+it('requires a TreeDX changeset when project settings would mutate the core objective', async () => {
 		const app = createTestApp();
 		const token = await authorizeApp(app);
 		const { project } = await createTeamAndProject(app, token, {
@@ -26,33 +26,6 @@ it('queues core objective repository sync when project settings change the objec
 			}),
 		}));
 
-		expect(response.ok).toBe(true);
-		expect(response.payload.project.metadata.coreObjective).toContain('Updated objective');
-		expect(response.coreObjectiveJob).toMatchObject({
-			namespace: 'repository',
-			operation: 'write_content_record',
-			status: 'queued',
-			input: {
-				projectId: project.id,
-				repositoryRole: 'content',
-				collection: 'objectives',
-				normalized: expect.objectContaining({
-					slug: 'core',
-					body: '# Core Objective\n\nUpdated objective for repository sync.',
-				}),
-				payload: expect.objectContaining({
-					overwrite: true,
-					preserveFrontmatter: true,
-				}),
-				repository: expect.objectContaining({
-					writeMode: 'branch',
-					push: true,
-					branchName: expect.stringContaining('treeseed/core-objective-'),
-				}),
-				approvalRequired: true,
-				approvalSatisfied: true,
-				approvalId: expect.stringContaining(`project-settings:${project.id}:core-objective:`),
-			},
-		});
+		expect(response).toMatchObject({ ok: false, code: 'treedx_changeset_required' });
 	});
 });

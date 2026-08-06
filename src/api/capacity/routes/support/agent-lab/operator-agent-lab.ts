@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { relative, resolve } from 'node:path';
-import { agentLabMetricKeys, type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
+import { deriveAgentRuntimeStatus, type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
 import { parseSceneManifest } from '@treeseed/sdk/scenes';
 import { validateSeedSource } from '@treeseed/sdk/seeds';
 import type { Context, Hono } from 'hono';
@@ -16,6 +16,7 @@ import { CapacityAllocationService } from '../../../services/capacity/allocation
 import { agentLabRepositoryDefinitions,matchesAgentDefinition } from './repository-definitions.ts';
 import { agentLabInboxQuestions } from './inbox-questions.ts';
 import { installOperatorAgentLabAuthoringRoutes } from './authoring.ts';
+import { installAgentLabTargetRoutes } from './target-routes.ts';
 
 const entityKinds = new Set<AgentLabEntityKind>(['agents', 'workdays', 'events', 'assignments', 'executions', 'artifacts']);
 const commandSurfaces = new Set(['inbox', 'decisions', 'build', 'direction', 'results', 'find']);
@@ -267,7 +268,12 @@ function installSurfaceRoutes(app: Hono, dependencies: WorkdayRouteDependencies)
 			payload.items = payload.items.map((item) => {
 				if (item.kind !== 'agent') return item;
 				const definition = repositoryAgents.find((candidate) => matchesAgentDefinition(item, candidate));
-				return definition ? { ...item, status: definition.status, tags: [...(item.tags ?? []), 'TreeDX definition'], data: { ...object(item.data), definition: definition.data } } : item;
+				if (!definition) return item;
+				const repository = object(definition.data); const authored = object(repository.definition); const projectId = text(item.projectId); const agentSlug = text(authored.slug, authored.id).replace(/^agent:/u,'');
+				const runs = snapshot.rows.executions.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug); const assignments = snapshot.rows.assignments.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug);
+				const activeRun = [...runs].reverse().find((row) => ['running','waiting','retrying','awaiting_human','awaiting_external'].includes(text(row.status))); const activeAssignment = [...assignments].reverse().find((row) => ['pending','admitted','leased','queued'].includes(text(row.status)));
+				const runtimeStatus = deriveAgentRuntimeStatus({ enabled: authored.enabled !== false, valid: !Array.isArray(repository.diagnostics) || repository.diagnostics.length === 0, activeRunStatus: text(activeRun?.status) || null, assignmentStatus: text(activeAssignment?.status) || null, latestTerminalStatus: text(runs.at(-1)?.status) || null });
+				return { ...item, status: runtimeStatus, tags: [...(item.tags ?? []), 'TreeDX definition'], data: { ...object(item.data), definition: definition.data, runtimeStatus } };
 			});
 			payload.items.push(...definitions.filter((item) => item.kind !== 'agent') as typeof payload.items); payload.page.total = payload.items.length;
 			const byContract = new Map(definitions.map((item) => [text(item.data.contractId),item]));
@@ -442,13 +448,18 @@ function installDetailRoutes(app: Hono, dependencies: WorkdayRouteDependencies) 
 				const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId: text(payload.projectId), write: false, authoringPaths: true }).catch(() => null);
 				const read = connection && path ? await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: connection.baseRef, path, encoding: 'utf8', maxBytes: 393_216, allowProtected: true }).catch(() => null) : null;
 				const source = text(object(read?.file).content); const activities = object(definitionData.activities); const contractIds = new Set<string>();
+				const frontmatterMatch = source.match(/^---\s*\n([\s\S]*?)\n---/u); const authored = frontmatterMatch ? object(parseYaml(frontmatterMatch[1] ?? '')) : {};
+				const agentSlug = text(authored.slug, authored.id).replace(/^agent:/u,''); const projectId = text(payload.projectId);
+				const runs = snapshot.rows.executions.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug); const assignments = snapshot.rows.assignments.filter((row) => text(row.project_id) === projectId && text(row.agent_id, row.agent_slug) === agentSlug);
+				const activeRun = [...runs].reverse().find((row) => ['running','waiting','retrying','awaiting_human','awaiting_external'].includes(text(row.status))); const activeAssignment = [...assignments].reverse().find((row) => ['pending','admitted','leased','queued'].includes(text(row.status))); const latestRun = runs.at(-1);
+				payload.status = deriveAgentRuntimeStatus({ enabled: authored.enabled !== false, valid: Boolean(source) && (!Array.isArray(definitionData.diagnostics) || definitionData.diagnostics.length === 0), activeRunStatus: text(activeRun?.status) || null, assignmentStatus: text(activeAssignment?.status) || null, latestTerminalStatus: text(latestRun?.status) || null });
 				for (const profile of Object.values(activities).map(object)) {
 					const signals = object(profile.signals);
 					for (const entry of Array.isArray(signals.subscribesTo) ? signals.subscribesTo : []) { const id = text(object(entry).contract); if (id) contractIds.add(id); }
 					for (const id of Array.isArray(signals.publishes) ? signals.publishes : []) if (text(id)) contractIds.add(text(id));
 				}
 				payload.permissions = { ...(payload.permissions ?? {}), edit: Boolean(source) };
-				payload.data = { ...object(payload.data), definition: definitionData, authoring: source ? { source, path, language: 'mdx', expectedBase: text(read?.resolvedRef, connection?.baseRef), projectId: payload.projectId, projectName: payload.projectName } : null };
+				payload.data = { ...object(payload.data), definition: definitionData, runtimeStatus: payload.status, authoring: source ? { source, path, language: 'mdx', expectedBase: text(read?.resolvedRef, connection?.baseRef), projectId: payload.projectId, projectName: payload.projectName } : null };
 				payload.sections = [{ id: 'profiles', title: 'Activity profile signal flow', fields: Object.entries(activities).map(([profileId, profile]) => ({ label: profileId, value: { handler: object(profile).handler, stage: object(object(profile).planningIntent).stage, signals: object(profile).signals, outputs: object(profile).outputs } })) }, ...(payload.sections ?? [])];
 				payload.related = [...definitions.filter((candidate) => contractIds.has(text(object(candidate.data).contractId))), ...(payload.related ?? [])] as typeof payload.related;
 			}
@@ -456,32 +467,6 @@ function installDetailRoutes(app: Hono, dependencies: WorkdayRouteDependencies) 
 		const conversation = await knowledgeConversation(dependencies, text(payload.projectId), entityId);
 		payload.related = [...conversation, ...(payload.related ?? [])] as typeof payload.related;
 		return notModified(c, service.revision(payload)) ?? response(c, payload, service.revision(payload));
-	});
-}
-
-function installTargetRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
-	app.patch('/v1/teams/:teamId/agent-lab/targets', async (c) => {
-		const access = await dependencies.manage(c); if (access.response) return access.response;
-		const body = await readCapacityRequestObject(c, { optional: true }); const requested = body.targets;
-		if (!requested || typeof requested !== 'object' || Array.isArray(requested)) return c.json({ ok: false, code: 'agent_lab_targets_invalid', error: 'Provide metric targets as an object.' }, 400);
-		const team = await dependencies.store.first(`SELECT metadata_json, updated_at FROM teams WHERE id = ? LIMIT 1`, [c.req.param('teamId')]);
-		if (!team) return dependencies.notFound(c, 'Unknown team.');
-		if (typeof body.expectedRevision === 'string' && body.expectedRevision !== team.updated_at) return c.json({ ok: false, code: 'agent_lab_targets_stale', error: 'Metric targets changed. Reload before saving again.' }, 409);
-		const metadataValue = typeof team.metadata_json === 'string' ? (() => { try { return JSON.parse(team.metadata_json); } catch { return {}; } })() : {};
-		const metadata = metadataValue && typeof metadataValue === 'object' && !Array.isArray(metadataValue) ? metadataValue : {};
-		const prior = metadata.agentLab?.metricTargets && typeof metadata.agentLab.metricTargets === 'object' ? metadata.agentLab.metricTargets : {};
-		const targets: Record<string, number> = Object.fromEntries(Object.entries(prior).filter(([key, value]) => agentLabMetricKeys.includes(key as typeof agentLabMetricKeys[number]) && typeof value === 'number' && Number.isFinite(value) && value >= 0));
-		const input = requested as Record<string, unknown>;
-		for (const key of agentLabMetricKeys) {
-			if (!(key in input)) continue;
-			if (input[key] === null || input[key] === '') { delete targets[key]; continue; }
-			const value = Number(input[key]); if (!Number.isFinite(value) || value < 0) return c.json({ ok: false, code: 'agent_lab_target_invalid', error: `${key} target must be a nonnegative number.` }, 400);
-			targets[key] = value;
-		}
-		const now = new Date().toISOString(); metadata.agentLab = { ...(metadata.agentLab ?? {}), metricTargets: targets };
-		await dependencies.store.run(`UPDATE teams SET metadata_json = ?, updated_at = ? WHERE id = ?`, [JSON.stringify(metadata), now, c.req.param('teamId')]);
-		await dependencies.store.run(`INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.metric_targets.updated', 'team', ?, ?, ?)`, [randomUUID(), access.principal?.id ?? null, c.req.param('teamId'), JSON.stringify({ metricKeys: Object.keys(targets) }), now]);
-		return c.json({ ok: true, payload: { targets, revision: now } });
 	});
 }
 
@@ -494,5 +479,5 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 	installServicePrincipalRoutes(app, dependencies);
 	installSimulationRoutes(app, dependencies);
 	installDetailRoutes(app, dependencies);
-	installTargetRoutes(app, dependencies);
+	installAgentLabTargetRoutes(app, dependencies);
 }

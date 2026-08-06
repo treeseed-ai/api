@@ -4,6 +4,7 @@ import { CapacityGovernanceError } from '../../../database.ts';
 import { proxyTreeDxJson } from '../../../services/treedx/repositories/treedx-proxy-service.ts';
 import {
 treeDxPathScope,
+treeDxChangesetPaths,
 treeDxRepoScopedContextBody,
 treeDxTokenScope,
 verifyTreeDxWorkspace,
@@ -72,7 +73,7 @@ export function installTreeDxProxyRoutes(app: Hono, options: TreeDxProxyRouteOpt
 		} catch (error) { return errorResponse(c, error); }
 	});
 
-	const workspace = (method: 'GET' | 'POST' | 'PUT', operation: 'files' | 'search' | 'commit' | 'close') => async (c: Context) => {
+	const workspace = (method: 'GET' | 'POST', operation: 'files' | 'changesets' | 'search' | 'commit' | 'close') => async (c: Context) => {
 		try {
 			const projectId = c.req.param('projectId'); const workspaceId = c.req.param('workspaceId');
 			const library = await store.getProjectTreeDxLibrary(projectId);
@@ -82,19 +83,19 @@ export function installTreeDxProxyRoutes(app: Hono, options: TreeDxProxyRouteOpt
 			if (operation === 'files' && !filePath) throw new CapacityGovernanceError('treedx_file_path_required', 'TreeDX file path is required.', 400);
 			const body = method === 'GET' ? undefined : await readCapacityRequestObject(c, { optional: true });
 			const path = operation === 'files' ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/files?path=${encodeURIComponent(filePath!)}` : `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/${operation}`;
-			const capabilities = operation === 'files'
+			const capabilities = operation === 'files' || operation === 'changesets'
 				? [method === 'GET' ? 'files:read' : 'files:write']
 				: operation === 'search'
 					? ['files:search']
 					: operation === 'close'
 						? ['workspace:write', 'files:read']
 						: ['git:commit'];
-			const paths = operation === 'files' ? treeDxPathScope(filePath) : operation === 'search' && Array.isArray(body?.paths) ? body.paths : ['**'];
+			const paths = operation === 'files' ? treeDxPathScope(filePath) : operation === 'changesets' ? treeDxChangesetPaths(body) : operation === 'search' && Array.isArray(body?.paths) ? body.paths : ['**'];
 			return await execute({ c, projectId, permission: method === 'GET' || operation === 'search' ? 'projects:read:team' : 'projects:manage:team', method, path, body, tokenScope: treeDxTokenScope({ repoId, capabilities, paths }) });
 		} catch (error) { return errorResponse(c, error); }
 	};
 	app.get('/v1/dx/projects/:projectId/workspaces/:workspaceId/files', workspace('GET', 'files'));
-	app.put('/v1/dx/projects/:projectId/workspaces/:workspaceId/files', workspace('PUT', 'files'));
+	app.post('/v1/dx/projects/:projectId/workspaces/:workspaceId/changesets', workspace('POST', 'changesets'));
 	app.post('/v1/dx/projects/:projectId/workspaces/:workspaceId/search', workspace('POST', 'search'));
 	app.post('/v1/dx/projects/:projectId/workspaces/:workspaceId/commit', workspace('POST', 'commit'));
 	app.post('/v1/dx/projects/:projectId/workspaces/:workspaceId/close', workspace('POST', 'close'));

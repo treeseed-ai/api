@@ -61,12 +61,8 @@ export const routeDependencies: Record<string, any> = {
   ...support,
   contentRelationPolicy: contentRelations.contentRelationPolicy,
   DatabaseAuthProvider: sdkApi.D1AuthProvider,
-  normalizeRepositoryContentInput: sdk.normalizePlatformContentInput,
-  normalizeRepositoryRelationArray: sdk.normalizePlatformRelationArray,
   parseYaml,
-  repositoryContentRelationPolicy: sdk.platformContentRelationPolicy,
   resolve: path.resolve,
   relative: path.relative,
-  slugifyRepositoryContent: sdk.slugifyPlatformContent,
   validatePublicUsername,
 };

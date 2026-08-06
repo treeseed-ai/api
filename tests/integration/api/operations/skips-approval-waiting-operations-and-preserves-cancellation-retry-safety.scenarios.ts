@@ -15,12 +15,11 @@ it('skips approval-waiting operations and preserves cancellation/retry safety', 
 				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
-				namespace: 'repository',
-				operation: 'write_content_record',
+				namespace: 'diagnostic',
+				operation: 'smoke',
 				input: {
 					approvalRequired: true,
 					approvalId: 'approval-one',
-					collection: 'notes',
 				},
 			}),
 		}));

@@ -11,9 +11,5 @@ export async function failPlatformOperationMethod(this: MarketControlPlaneStore,
 			     finished_at = ?
 			 WHERE id = ?`, [JSON.stringify(input.error ?? { message: 'Platform operation failed.' }), timestamp, timestamp, operationId]);
     await this.appendPlatformOperationEvent(operationId, input.event?.kind ?? 'failed', input.event?.data ?? {});
-    await this.releasePlatformRepositoryClaimsForRunner(input.runnerId, {
-        claimState: 'released',
-        metadata: { operationId, status: 'failed' },
-    });
     return this.findPlatformOperationById(operationId);
 }

@@ -1,7 +1,7 @@
 {
-  "routeCount": 573,
-  "descriptorCount": 573,
-  "coveredByGuarantee": 573,
+  "routeCount": 570,
+  "descriptorCount": 570,
+  "coveredByGuarantee": 570,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -391,9 +391,6 @@
       "get.v1.teams.teamId.treedx",
       "get.v1.teams.teamId.treedx.mirrors",
       "get.v1.teams.teamId.treedx.shares",
-      "post.v1.projects.projectId.local-content.collection",
-      "post.v1.projects.projectId.local-content.collection.related",
-      "post.v1.projects.projectId.local-content.decisions.from-proposals",
       "post.v1.projects.projectId.treedx-library",
       "post.v1.teams.teamId.content-previews",
       "post.v1.teams.teamId.treedx.mirrors",
@@ -443,13 +440,13 @@
       "post.v1.dx.projects.projectId.repos.repoId.files.read",
       "post.v1.dx.projects.projectId.repos.repoId.paths.list",
       "post.v1.dx.projects.projectId.repos.repoId.workspaces",
+      "post.v1.dx.projects.projectId.workspaces.workspaceId.changesets",
       "post.v1.dx.projects.projectId.workspaces.workspaceId.close",
       "post.v1.dx.projects.projectId.workspaces.workspaceId.commit",
       "post.v1.dx.projects.projectId.workspaces.workspaceId.search",
       "post.v1.knowledge.workspaces.workspaceId.abandon",
       "post.v1.knowledge.workspaces.workspaceId.presence",
       "post.v1.knowledge.workspaces.workspaceId.submit",
-      "put.v1.dx.projects.projectId.workspaces.workspaceId.files",
       "put.v1.knowledge.workspaces.workspaceId.content"
     ],
     "services-and-vaults": [

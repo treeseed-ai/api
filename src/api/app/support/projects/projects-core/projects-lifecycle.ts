@@ -1,4 +1,8 @@
-import { ensurePrincipal,jsonError,normalizeRepositorySlug,requireTeamAccess } from '../../index.ts';
+import { ensurePrincipal,jsonError,requireTeamAccess } from '../../index.ts';
+function normalizeRepositorySlug(value) {
+    const text = String(value ?? '').trim().toLowerCase();
+    return text.includes('/') ? text : null;
+}
 export function markdownToPlainProjectSummary(markdown, fallback = null) {
     const text = String(markdown ?? '')
         .replace(/^---[\s\S]*?---/u, ' ')

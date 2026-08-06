@@ -60,6 +60,19 @@ export function treeDxPathScope(filePath: unknown): string[] {
 	return normalized ? [normalized] : [];
 }
 
+export function treeDxChangesetPaths(value: unknown): string[] {
+	const body = record(value);
+	const encoded = text(body.patch);
+	if (!encoded) throw new CapacityGovernanceError('treedx_changeset_paths_required', 'Changeset patch is required.', 400);
+	const patch = encoded;
+	const paths = [...patch.matchAll(/^\+\+\+ (?:b\/([^\t\r\n]+)|\/dev\/null)$/gmu)]
+		.map((match) => match[1]).filter((path): path is string => Boolean(path));
+	const deleted = [...patch.matchAll(/^--- a\/([^\t\r\n]+)$/gmu)].map((match) => match[1]!);
+	const all = [...new Set([...paths, ...deleted])];
+	if (!all.length) throw new CapacityGovernanceError('treedx_changeset_paths_required', 'Changeset file headers are required.', 400);
+	return all;
+}
+
 export function resolveTreeDxProxyBaseUrl(runtime: TreeDxProxyRuntime, library: Record<string, unknown> | null): string {
 	const env = treeDxRuntimeEnv(runtime);
 	const topology = record(library?.topology);

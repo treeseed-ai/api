@@ -10,6 +10,5 @@ export async function renewPlatformOperationLeaseMethod(this: MarketControlPlane
 			     updated_at = ?
 			 WHERE id = ?`, [leaseExpiresAt, timestamp, operationId]);
     await this.appendPlatformOperationEvent(operationId, input.event?.kind ?? 'runner.lease_renewed', input.event?.data ?? { runnerId: input.runnerId, leaseExpiresAt });
-    await this.renewPlatformRepositoryClaimsForRunner(input.runnerId, leaseSeconds);
     return this.findPlatformOperationById(operationId);
 }
