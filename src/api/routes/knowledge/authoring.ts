@@ -5,6 +5,7 @@ import { treeDxWorkspaceId } from '../../knowledge/workspace-identity.ts';
 import { editorialReviewGate, editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedEditorialContextTrace } from '../../knowledge/editorial-review.ts';
 import { relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
 import { allowedWorkspacePath, assertSimulatedProductionPolicy, authorizedCatalog, bookDocument, list, pageDocument, parseBook, parseKnowledgePage, requestId, text, workspaceAccess } from './authoring-support.ts';
+import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 export { reviewPathsMatch, searchRelations } from './relation-search.ts';
 
 export function installKnowledgeAuthoringRoutes(context: any) {
@@ -258,6 +259,7 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 				message: text(body.message) || 'Update knowledge', author: { name: text(access.principal.name) || access.principal.id,
 					email: text(access.principal.email) || `${access.principal.id}@users.treeseed.local` } });
 		const requiredReviewerIds = requiredRevisionReviewerIds(existingReview);
+		await projectTreeDxCommitSignals(store, { projectId: access.workspace.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: diff.changedPaths, changeSummary: text(body.message) || 'Update knowledge', actorType: 'user', actorId: access.principal.id });
 		const submitted = await store.submitKnowledgeWorkspace({ workspaceId: access.workspace.id,
 			workspaceVersion: access.workspace.version, submittedByUserId: access.principal.id,
 			notes: text(body.notes) || null, commitSha: commit.commitSha, changedPaths: diff.changedPaths,

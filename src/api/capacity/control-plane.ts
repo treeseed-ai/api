@@ -9,14 +9,14 @@ import type { DurableCapacityWorkdayRun } from './repositories/capacity/workdays
 import { CapacityWorkdayRunRepository } from './repositories/capacity/workdays/workday-run.ts';
 import { CapacityRuntimeEvidenceRepository } from './repositories/runtime/runtime-evidence.ts';
 import type { ProviderLeasePrincipal } from './services/accounts/lease-authority-service.ts';
-import { aggregateCapacityCreditReservations } from './services/capacity/accounting/credit-reservation-aggregation-service.ts';
+import { aggregateCapacityTimeReservations } from './services/capacity/accounting/agent-time-reservation-aggregation-service.ts';
 import type { ProviderSynthesisRequest } from './services/capacity/assignments/context/assignment-synthesis-service.ts';
 import { synthesizeProviderAssignments } from './services/capacity/assignments/context/assignment-synthesis-service.ts';
 import { recoverExpiredProviderAssignments as recoverExpiredAssignments } from './services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
 import { recordProviderAssignmentExplanation as persistProviderAssignmentExplanation } from './services/capacity/assignments/observability/assignment-explanation-service.ts';
 import { OperatorAssignmentService } from './services/capacity/assignments/observability/operator-assignment-service.ts';
 import { CapacityOperationsQueryService } from './services/capacity/capacity-core/capacity-operations-query-service.ts';
-import { DerivedCapacityService } from './services/capacity/capacity-core/derived-capacity-service.ts';
+import { NativeCapacityService } from './services/capacity/capacity-core/native-capacity-service.ts';
 import { CapacitySummaryService } from './services/capacity/observability/capacity-summary-service.ts';
 import { buildProjectCapacityDiagnostics } from './services/capacity/observability/project-capacity-diagnostics-service.ts';
 import { AgentCapacityPlanService } from './services/capacity/planning/agent-capacity-plan-service.ts';
@@ -289,11 +289,11 @@ class CapacityControlPlane {
 	async listTaskUsageActualsPage(projectId: string, filters: Parameters<typeof readTaskUsageActualsPage>[2] = {}) {
 			return readTaskUsageActualsPage(this.capacityContext, projectId, filters);
 		}
-	async getCapacityProviderDerivedCapacity(teamId: string, providerId: string, options: PageFilters = {}) {
-			return new DerivedCapacityService(this.capacityContext).provider(teamId, providerId, options);
-		}
-	async getTeamDerivedCapacity(teamId: string, options: PageFilters = {}) {
-			return new DerivedCapacityService(this.capacityContext).team(teamId, options);
+	async getCapacityProviderNativeCapacity(teamId: string, providerId: string, options: PageFilters = {}) {
+			return new NativeCapacityService(this.capacityContext).provider(teamId, providerId, options);
+	}
+	async getTeamNativeCapacity(teamId: string, options: PageFilters = {}) {
+			return new NativeCapacityService(this.capacityContext).team(teamId, options);
 		}
 	async listTaskUsageActualsForProject(projectId: string, limit: number = 50) {
 			return listRecentTaskUsageActuals(this.capacityContext, { projectId, limit });
@@ -307,9 +307,9 @@ class CapacityControlPlane {
 	async getTeamCapacitySummary(teamId: string, options: PageFilters = {}) {
 			return new CapacitySummaryService(this.capacityContext).team(teamId, options);
 		}
-	async getCapacityCreditReservationTotals(teamId: string, options: PageFilters = {}) {
+	async getCapacityTimeReservationTotals(teamId: string, options: PageFilters = {}) {
 			await this.ensureInitialized();
-			return aggregateCapacityCreditReservations(this.capacityContext, {
+			return aggregateCapacityTimeReservations(this.capacityContext, {
 				teamId,
 				projectId: options.projectId ?? null,
 				now: options.now,

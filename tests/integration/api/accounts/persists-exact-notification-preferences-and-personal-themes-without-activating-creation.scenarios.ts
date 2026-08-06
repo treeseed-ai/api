@@ -46,20 +46,31 @@ it('persists exact notification preferences and personal themes without activati
 
 		const activated = await json(await app.request('/v1/auth/web/appearance', {
 			method: 'PATCH', headers,
-			body: JSON.stringify({ colorScheme: created.payload.schemeId, themeMode: 'dark' }),
+			body: JSON.stringify({
+				colorScheme: created.payload.schemeId,
+				themeMode: 'dark',
+				contentThemeOverlayEnabled: true,
+				contentThemeOverlayScheme: 'tidepool',
+				contentThemeOverlayMode: 'light',
+			}),
 		}));
 		expect(activated).toMatchObject({
 			ok: true,
 			payload: {
 				scheme: created.payload.schemeId,
 				mode: 'dark',
-				principal: { metadata: { appearance: { scheme: created.payload.schemeId, mode: 'dark' } } },
+				principal: { metadata: { appearance: {
+					scheme: created.payload.schemeId,
+					mode: 'dark',
+					workspace: { enabled: true, scheme: 'tidepool', mode: 'light' },
+				} } },
 			},
 		});
 		const activatedHeaders = { authorization: `Bearer ${activated.payload.accessToken}` };
-		expect((await json(await app.request('/v1/auth/web/appearance', { headers: activatedHeaders }))).payload).toEqual({
+			expect((await json(await app.request('/v1/auth/web/appearance', { headers: activatedHeaders }))).payload).toEqual({
 			scheme: created.payload.schemeId,
 			mode: 'dark',
+			workspace: { enabled: true, scheme: 'tidepool', mode: 'light' },
 		});
 		expect(await json(await app.request('/v1/auth/web/appearance', {
 			method: 'PATCH', headers: { ...headers, authorization: `Bearer ${token}` },

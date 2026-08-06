@@ -11,6 +11,16 @@ function text(...values: unknown[]): string | null {
 	return null;
 }
 
+function assignmentActivityType(assignment: Row): string | null {
+	const decision = record(assignment.decisionInput);
+	return text(
+		decision.activityType,
+		record(decision.metadata).activityType,
+		record(decision.input).activityType,
+		record(assignment.metadata).activityType,
+	);
+}
+
 function severity(status: unknown, payload: Row) {
 	if (status === 'failed' || payload.error) return 'error';
 	if (status === 'warning') return 'warning';
@@ -49,7 +59,7 @@ export function modeRunActivityEvent(input: { assignment: Row; modeRun: Row }) {
 		context: {
 			agentId: text(modeRun.agentId, assignment.agentId),
 			agentClassId: text(modeRun.projectAgentClassId, assignment.projectAgentClassId),
-			activityType: text(record(assignment.decisionInput).activityType),
+			activityType: assignmentActivityType(assignment),
 			handlerId: text(modeRun.handlerId, assignment.handlerId),
 			capacityProviderId: text(modeRun.capacityProviderId, assignment.capacityProviderId),
 			providerManagerId: text(metadata.providerManagerId),

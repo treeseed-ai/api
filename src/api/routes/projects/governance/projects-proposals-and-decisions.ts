@@ -1,5 +1,6 @@
 import { simulationEvidence } from '../../../store/governance/policy/support/simulation-evidence.ts';
 import { createProposalDiscussionContent } from './proposal-discussion-content.ts';
+import { commitProposalVersionContent } from './proposal-version-content.ts';
 
 export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 	const { app, isTeamApiPrincipal, jsonError, jsonThrownError, optionalTrimmedString, readJsonOrFormBody, requireProjectAccess, store } = context;
@@ -51,9 +52,12 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 					const proposal = await store.getGovernanceProposal(c.req.param('proposalId'));
 					if (!proposal || proposal.projectId !== access.details.project.id) return jsonError(c, 404, 'Unknown governance proposal.');
 					const body = await readJsonOrFormBody(c);
+					let authored;
 					try {
-						return c.json({ ok: true, payload: await store.updateGovernanceProposalDraft(access.principal, proposal.id, body) });
+						authored = await commitProposalVersionContent({ store, proposal, principal: access.principal, update: body });
+						return c.json({ ok: true, payload: await store.updateGovernanceProposalDraft(access.principal, proposal.id, authored.update), authoringReceipt: authored.receipt });
 					} catch (error) {
+						if (authored?.receipt) return c.json({ ok: false, code: 'proposal_version_unbound', error: error instanceof Error ? error.message : 'Proposal governance changed after the TreeDX commit.', authoringReceipt: authored.receipt, currentProposal: await store.getGovernanceProposal(proposal.id) }, 409);
 						return jsonThrownError(c, error, 400);
 					}
 				});

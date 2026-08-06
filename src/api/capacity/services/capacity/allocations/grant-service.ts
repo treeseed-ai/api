@@ -34,8 +34,8 @@ export class CapacityGrantService {
 			laneIds: Array.isArray(input.laneIds) ? input.laneIds.map(String) : [],
 			capabilities: Array.isArray(input.capabilities) ? input.capabilities.map(String) : [],
 			allowedModes: Array.isArray(input.allowedModes) ? input.allowedModes.map(String).filter((mode): mode is 'planning' | 'acting' => mode === 'planning' || mode === 'acting') : [],
-			dailyCreditLimit: input.dailyCreditLimit == null ? null : Number(input.dailyCreditLimit),
-			monthlyCreditLimit: input.monthlyCreditLimit == null ? null : Number(input.monthlyCreditLimit),
+			dailyAgentSecondsLimit: input.dailyAgentSecondsLimit == null ? null : Number(input.dailyAgentSecondsLimit),
+			monthlyAgentSecondsLimit: input.monthlyAgentSecondsLimit == null ? null : Number(input.monthlyAgentSecondsLimit),
 			maxConcurrentAssignments: input.maxConcurrentAssignments == null ? null : Number(input.maxConcurrentAssignments),
 			unmetered: input.unmetered === true,
 			expiresAt: typeof input.expiresAt === 'string' ? input.expiresAt : null,
@@ -183,8 +183,8 @@ export class CapacityGrantService {
 		try {
 			await this.database.batch([
 				{
-					query: `INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, execution_provider_ids_json, lane_ids_json, capabilities_json, allowed_modes_json, daily_credit_limit, monthly_credit_limit, max_concurrent_assignments, unmetered, expires_at, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					params: [grant.id, grant.membershipId, grant.providerId, grant.teamId, grant.projectId, grant.environment, grant.status, JSON.stringify(grant.executionProviderIds), JSON.stringify(grant.laneIds), JSON.stringify(grant.capabilities), JSON.stringify(grant.allowedModes), grant.dailyCreditLimit ?? null, grant.monthlyCreditLimit ?? null, grant.maxConcurrentAssignments ?? null, grant.unmetered ? 1 : 0, grant.expiresAt ?? null, JSON.stringify(grant.metadata ?? {}), now, now],
+					query: `INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, execution_provider_ids_json, lane_ids_json, capabilities_json, allowed_modes_json, daily_agent_seconds_limit, monthly_agent_seconds_limit, max_concurrent_assignments, unmetered, expires_at, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					params: [grant.id, grant.membershipId, grant.providerId, grant.teamId, grant.projectId, grant.environment, grant.status, JSON.stringify(grant.executionProviderIds), JSON.stringify(grant.laneIds), JSON.stringify(grant.capabilities), JSON.stringify(grant.allowedModes), grant.dailyAgentSecondsLimit ?? null, grant.monthlyAgentSecondsLimit ?? null, grant.maxConcurrentAssignments ?? null, grant.unmetered ? 1 : 0, grant.expiresAt ?? null, JSON.stringify(grant.metadata ?? {}), now, now],
 				},
 				this.operationReceipts.insertOperation(operation, 'capacity-grant', grant.id, grant, now),
 			]);

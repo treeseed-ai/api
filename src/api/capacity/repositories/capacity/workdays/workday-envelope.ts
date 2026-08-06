@@ -32,9 +32,8 @@ export interface CreateWorkdayCapacityEnvelopeInput {
 	pausedAt?: string | null;
 	completedAt?: string | null;
 	environment?: string | null;
-	availableCredits?: number | null;
-	reservedCredits?: number | null;
-	consumedCredits?: number | null;
+	availableSeconds?: number | null;
+	timePolicy?: JsonRecord;
 	envelope?: JsonRecord;
 	metadata?: JsonRecord;
 }
@@ -106,8 +105,8 @@ export class WorkdayCapacityEnvelopeRepository {
 			teamId: text(project.team_id), projectId: text(project.id), workDayId: id,
 			environment: input.environment ?? null,
 			allocationSetId: input.allocationSetId ?? nullableText(suppliedEnvelope.allocationSetId),
-			availableCredits: amount(input.availableCredits, null), reservedCredits: amount(input.reservedCredits, 0),
-			consumedCredits: amount(input.consumedCredits, 0), metadata: object(suppliedEnvelope.metadata ?? metadata),
+			availableSeconds: amount(input.availableSeconds, null), timePolicy: object(input.timePolicy),
+			metadata: object(suppliedEnvelope.metadata ?? metadata),
 			...suppliedEnvelope,
 		};
 		assertCapacityWorkdayParametersSafe(envelope.metadata);

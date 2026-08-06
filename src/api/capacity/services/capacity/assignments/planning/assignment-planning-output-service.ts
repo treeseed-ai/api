@@ -36,6 +36,28 @@ function slug(value: string): string {
 	return value.replace(/^proposal:/u, '').replace(/^.*\//u, '').replace(/\.(?:md|mdx)$/iu, '');
 }
 
+function proposalParticipation(workday: unknown, projectId: string, proposalTypes: string[]) {
+	const snapshot = record(record(record(workday).parameters).planningGraphByProjectId)[projectId];
+	const agents = Array.isArray(record(snapshot).agents) ? record(snapshot).agents as unknown[] : [];
+	const contracts = record(record(snapshot).proposalTypeContracts);
+	const missingTypes = proposalTypes.filter((id) => !contracts[id]);
+	if (missingTypes.length) throw new CapacityGovernanceError('assignment_proposal_type_not_frozen', 'Agent proposal output contains a type outside the immutable workday contracts.', 409, { projectId, proposalTypes: missingTypes });
+	const requiredClasses = new Set(proposalTypes.flatMap((id) => strings(record(contracts[id]).requiredReviewerClasses)));
+	const subscriptionParticipants = agents.map(record).filter((agent) => {
+		const subscriptions = Array.isArray(record(agent.signalPolicy).subscribesTo) ? record(agent.signalPolicy).subscribesTo as unknown[] : [];
+		return subscriptions.map(record).some((subscription) => {
+			if (text(subscription.contract) !== 'proposal-ready') return false;
+			const accepted = strings(record(subscription.filters).proposalTypes);
+			return !accepted.length || accepted.some((type) => proposalTypes.includes(type));
+		});
+	}).map((agent) => text(agent.slug)).filter(Boolean);
+	const reviewerParticipants = agents.map(record).filter((agent) => requiredClasses.has(text(agent.projectAgentClassSlug)) && ['estimating','reviewing'].includes(text(agent.activityType))).map((agent) => text(agent.slug)).filter(Boolean);
+	const represented = new Set(agents.map(record).filter((agent) => reviewerParticipants.includes(text(agent.slug))).map((agent) => text(agent.projectAgentClassSlug)));
+	const missingReviewerClasses = [...requiredClasses].filter((id) => !represented.has(id));
+	if (missingReviewerClasses.length) throw new CapacityGovernanceError('assignment_proposal_reviewer_unavailable', 'The workday graph cannot satisfy the proposal type reviewer contract.', 409, { projectId, proposalTypes, missingReviewerClasses });
+	return { participantIds: [...new Set([...subscriptionParticipants,...reviewerParticipants])].sort(), requiredReviewerClasses: [...requiredClasses].sort() };
+}
+
 function repositoryFile(response: { files?: unknown[]; results?: unknown[]; file?: unknown }): JsonRecord {
 	return record(response.files?.[0] ?? response.results?.[0] ?? response.file);
 }
@@ -84,10 +106,13 @@ async function registerProposalArtifacts(
 		const proposalId = `proposal:${assignment.projectId}:${proposalSlug}`;
 		const digest = createHash('sha256').update(text(file.content) || JSON.stringify({ frontmatter,body })).digest('hex');
 		const objectives = strings(frontmatter.relatedObjectives ?? frontmatter.related_objectives);
+		const proposalTypes = strings(frontmatter.proposalTypes ?? frontmatter.proposal_types ?? [frontmatter.proposalType ?? frontmatter.proposal_type]);
 		const evidenceRefs = strings(frontmatter.evidenceRefs ?? frontmatter.evidence_refs);
 		const plan = record(frontmatter.plan);
 		const contentProvenance = { repositoryId: connection.repositoryId, contentPath: reference.contentPath, commitSha, digest };
-		const readiness = evaluateGovernanceProposalReadiness({ title: text(frontmatter.title), summary: text(frontmatter.summary,frontmatter.description), body, relatedObjectives: objectives, evidenceRefs, plan, contentProvenance });
+		const participation = proposalParticipation(workday, assignment.projectId, proposalTypes);
+		const requiredParticipantIds = participation.participantIds;
+		const readiness = evaluateGovernanceProposalReadiness({ title: text(frontmatter.title), summary: text(frontmatter.summary,frontmatter.description), body, relatedObjectives: objectives, proposalTypes, evidenceRefs, plan, contentProvenance });
 		if (!readiness.contentReady) throw new CapacityGovernanceError('assignment_proposal_plan_incomplete', 'Agent proposal output does not satisfy the governance planning contract.', 409, { assignmentId: assignment.id, contentPath: reference.contentPath, missingRequirements: readiness.missingContent });
 		const signature = JSON.stringify({ objectives: [...objectives].sort(), scope: strings(plan.scope).sort() });
 		const related = await store.all(`SELECT * FROM governance_proposals WHERE project_id = ? AND status NOT IN ('withdrawn','superseded','rejected','accepted') ORDER BY created_at ASC LIMIT 500`, [assignment.projectId]);
@@ -105,10 +130,10 @@ async function registerProposalArtifacts(
 		registered.push(await store.createGovernanceProposal(null, {
 			id: proposalId, teamId: assignment.teamId, projectId: assignment.projectId, scope: 'project', status: 'submitted',
 			title: text(frontmatter.title), summary: text(frontmatter.summary,frontmatter.description), body,
-			proposalType: text(frontmatter.proposalType,frontmatter.proposal_type) || 'implementation', contentProposalSlug: proposalSlug,
+			proposalType: proposalTypes[0], proposalTypes, contentProposalSlug: proposalSlug,
 			relatedObjectives: objectives, evidenceRefs, plan, contentProvenance, createdByType: 'agent', createdById: assignment.agentId,
 			metadata: { authorAgentId: assignment.agentId, assignmentId: assignment.id, workdayId: assignment.workDayId,
-				modeRunId: manifest.modeRunId, scene: record(workday?.metadata).scene ?? null, run: record(workday?.metadata).run ?? null },
+				modeRunId: manifest.modeRunId, requiredParticipantIds, requiredReviewerClasses: participation.requiredReviewerClasses, scene: record(workday?.metadata).scene ?? null, run: record(workday?.metadata).run ?? null },
 		}));
 	}
 	for (const reference of feedbackReferences) {

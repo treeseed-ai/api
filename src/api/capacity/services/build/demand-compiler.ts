@@ -1,5 +1,4 @@
-import { MAX_CAPACITY_PAGE_LIMIT,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
-import { workdayAgentSelectionActive, normalizeWorkdayAgentSelection } from '@treeseed/sdk/agent-capacity';
+import { evaluatePlanningGraphNodeInstances } from '@treeseed/sdk/agent-capacity';
 import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
@@ -7,8 +6,9 @@ import { CapacityWorkdayDemandRepository } from '../../repositories/capacity/wor
 import { CapacityWorkdayParticipationRepository } from '../../repositories/capacity/workdays/workday-participation.ts';
 import { CapacityWorkdayRunRepository,type DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderLeasePrincipal } from '../accounts/lease-authority-service.ts';
-import { listCapacityWorkdayProducedArtifactKinds,listCapacityWorkdaySignalCodes,resolveCapacityWorkdayAssignmentIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
-import { capacityWorkdayAgentsFromClasses,capacityWorkdayPlanningStage,capacityWorkdayRequiredArtifacts,capacityWorkdayRequiredSignals,type CapacityWorkdayPlanningStage } from '../capacity/workdays/policy/workday-agent-policy.ts';
+import { resolveCapacityWorkdayAssignmentIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
+import { capacityWorkdayPlanningStage,capacityWorkdayRequiredSignals } from '../capacity/workdays/policy/workday-agent-policy.ts';
+import { decodeWorkdayPlanningGraphSnapshot } from '../capacity/workdays/policy/workday-planning-graph-policy.ts';
 import {
 capacityWorkdayContentRoot,
 capacityWorkdayRepositoryId,
@@ -18,10 +18,11 @@ type WorkdayProject,
 } from '../capacity/workdays/policy/workday-project-policy.ts';
 import { listActingDemandSources } from '../support/acting-demand-source.ts';
 import { resolvePlanningDemandSource } from '../support/planning-demand-source.ts';
+import { loadPlanningGraphEvidence,selectedPlanningGraphInputs } from './planning-graph-evidence.ts';
+import { currentCooperativePlanningWave } from '../capacity/workdays/scheduling/cooperative-planning-session-service.ts';
 
 interface DemandCompilerStore extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
-	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
 }
 
 function id(prefix: string, value: string): string {
@@ -33,29 +34,7 @@ function text(value: unknown): string {
 function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
-const PROFILE_ORDER = ['planning', 'estimating', 'reviewing', 'reporting'];
-const PLANNING_STAGE_ORDER: CapacityWorkdayPlanningStage[] = ['discovery', 'synthesis', 'evaluation', 'closeout'];
-export function workdayProfileStageReady(activityType: string, configured: string[], completed: string[]) {
-	const position = PROFILE_ORDER.indexOf(activityType);
-	if (position < 1) return true;
-	const prior = [...configured].filter((profile) => PROFILE_ORDER.indexOf(profile) < position).sort((left, right) => PROFILE_ORDER.indexOf(right) - PROFILE_ORDER.indexOf(left))[0];
-	return !prior || completed.includes(prior);
-}
-export function workdayPlanningStageReady(stage: CapacityWorkdayPlanningStage, entries: Array<{ status: string; metadata: unknown }>) {
-	const position = PLANNING_STAGE_ORDER.indexOf(stage);
-	if (position < 1) return true;
-	return entries.filter((entry) => {
-		const candidate = PLANNING_STAGE_ORDER.indexOf(text(record(entry.metadata).planningStage) as CapacityWorkdayPlanningStage);
-		return candidate >= 0 && candidate < position;
-	}).every((entry) => entry.status === 'completed');
-}
-export function workdayReportingStageReady(activityType: string, entries: Array<{ status: string; metadata: unknown }>, actingActive: boolean) {
-	if (activityType !== 'reporting') return true;
-	const otherProfilesComplete = entries
-		.filter((entry) => text(record(entry.metadata).activityType) !== 'reporting')
-		.every((entry) => entry.status === 'completed');
-	return otherProfilesComplete && !actingActive;
-}
+function jsonRecord(value: unknown) { if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return record(value); }
 export function capacityWorkdayContentBaseRef(environment: string, branchPolicy: Record<string, unknown>): string {
 	if (environment === 'local') return 'refs/heads/main';
 	const base = text(branchPolicy.base);
@@ -68,6 +47,28 @@ function deadlineOpen(run: DurableCapacityWorkdayRun, now: string): boolean {
 	const parsed = Date.parse(String(configured));
 	if (!Number.isFinite(parsed)) throw new CapacityGovernanceError('capacity_workday_synthesis_parameter_invalid', 'Capacity workday deadlineAt is invalid.', 500, { runId: run.id, deadlineAt: configured });
 	return parsed > Date.parse(now);
+}
+
+function nestedNumber(value: unknown, ...keys: string[]) { let current: unknown = value; for (const key of keys) current = record(current)[key]; const parsed = Number(current); return Number.isFinite(parsed) && parsed > 0 ? parsed : 0; }
+export async function estimateRequestedAgentSeconds(store: CapacityGovernanceDatabase, agent: { activityType: string; execution: Record<string, unknown> }, payload: Record<string, unknown>) {
+	const override = Number(payload.requestedSeconds);
+	if (Number.isInteger(override) && override > 0) return { seconds: override, method: 'assignment-override', sampleSize: 0 };
+	const timebox = Number(agent.execution.timeboxSeconds);
+	if (Number.isInteger(timebox) && timebox > 0) return { seconds: timebox, method: 'activity-profile-timebox', sampleSize: 0 };
+	const model = text(agent.execution.model);
+	const providerPreferences = Array.isArray(agent.execution.providerPreference) ? agent.execution.providerPreference : [];
+	const provider = text(agent.execution.executionProviderId ?? agent.execution.provider ?? providerPreferences[0]);
+	const targetContextBytes = Number(payload.contextSizeBytes ?? payload.contextBytes) || nestedNumber(payload, 'contextPack', 'totalBytes');
+	const rows = await store.all(`SELECT usage.active_seconds,usage.execution_provider_id,usage.model_name,usage.metadata_json,run.selected_input_json FROM capacity_usage_actuals usage
+		JOIN capacity_workday_demands demand ON demand.assignment_id = usage.assignment_id
+		LEFT JOIN agent_mode_runs run ON run.id = usage.mode_run_id
+		WHERE demand.activity_type = ? AND usage.active_seconds > 0 ORDER BY usage.created_at DESC LIMIT 200`, [agent.activityType]);
+	const samples = rows.filter((row) => (!model || text(row.model_name) === model) && (!provider || text(row.execution_provider_id) === provider)).filter((row) => {
+		if (!targetContextBytes) return true; const metadata = jsonRecord(row.metadata_json); const selected = jsonRecord(row.selected_input_json); const observed = Number(metadata.contextSizeBytes ?? metadata.contextBytes) || nestedNumber(selected, 'contextPack', 'totalBytes'); return observed > 0 && observed >= targetContextBytes * .5 && observed <= targetContextBytes * 2;
+	}).map((row) => Number(row.active_seconds)).filter((value) => Number.isInteger(value) && value > 0).sort((left, right) => left - right);
+	if (samples.length >= 5) return { seconds: samples[Math.min(samples.length - 1, Math.ceil(samples.length * 0.9) - 1)], method: 'historical-p90', sampleSize: samples.length, model: model || null, executionProviderId: provider || null, contextSizeBytes: targetContextBytes || null };
+	const configured = Number(agent.execution.maxRuntimeSeconds);
+	return { seconds: Number.isInteger(configured) && configured > 0 ? configured : 900, method: configured > 0 ? 'conservative-profile-default' : 'conservative-system-default', sampleSize: samples.length };
 }
 
 async function activeEnvelope(database: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, projectId: string) {
@@ -98,65 +99,46 @@ async function compilePlanningDemands(
 	project: WorkdayProject,
 	workdayId: string,
 	now: string,
+	wave: { id: string; round: number; nodeIds: string[]; snapshotRef?: string; snapshot?: Record<string, unknown> } | null,
 ) {
-	const page = await store.listProjectAgentClassesPage(project.id, { limit: MAX_CAPACITY_PAGE_LIMIT });
-	if (page.page.hasMore) throw new CapacityGovernanceError('capacity_internal_collection_bound_exceeded', 'Workday agent classes exceed the processing bound.', 409, { projectId: project.id, limit: MAX_CAPACITY_PAGE_LIMIT });
-	const selectionSnapshot = record(record(run.parameters.resolvedAgentSelectionByProject)[project.id]);
-	const pinnedAgents = Array.isArray(selectionSnapshot.agents) ? selectionSnapshot.agents.map(record) : [];
-	const selection = pinnedAgents.length > 0 ? normalizeWorkdayAgentSelection({
-		classIds: pinnedAgents.map((agent) => text(agent.agentClassId)).filter(Boolean),
-		agentSlugs: pinnedAgents.map((agent) => text(agent.agentSlug)).filter(Boolean),
-		mode: 'intersection',
-	}) : normalizeWorkdayAgentSelection(run.parameters.agentSelection);
-	const agents = capacityWorkdayAgentsFromClasses(page.items, selection);
-	if (!agents.length && workdayAgentSelectionActive(selection)) {
-		throw new CapacityGovernanceError('capacity_workday_agent_selection_empty', 'Workday agent selection resolved no eligible agents.', 409, { runId: run.id, projectId: project.id, selection });
-	}
-	if (!agents.length) return 0;
+	const snapshot = decodeWorkdayPlanningGraphSnapshot(record(run.parameters.planningGraphByProjectId)[project.id], project.id);
+	const { agents, graph } = snapshot;
+	const graphEvidence = await loadPlanningGraphEvidence(store, run, project.id);
+	const instances = new Map(agents.flatMap((agent) => {
+		const graphNodeId = agent.nodeId;
+		if (wave && !wave.nodeIds.includes(`${project.id}:${graphNodeId}`)) return [];
+		return evaluatePlanningGraphNodeInstances(graph, graphNodeId, graphEvidence).map((instance) => {
+			const participationId = instance.instanceKey === 'single' ? graphNodeId : `${graphNodeId}@${id('instance', instance.instanceKey)}`;
+			return [participationId, { agent, graphNodeId, ...instance }] as const;
+		});
+	}));
 	const participation = new CapacityWorkdayParticipationRepository(store);
 	const { cycle, entries } = await participation.ensureOpenCycle({
 		teamId: run.teamId, projectId: project.id, workdayRunId: run.id, now,
-		agents: agents.map((agent) => ({
-			agentId: `${agent.slug}:${agent.activityType}`, projectAgentClassId: agent.projectAgentClassId,
-			eligible: Boolean(agent.projectAgentClassId && agent.handler),
-			reasonCode: agent.projectAgentClassId && agent.handler ? null : 'agent_activity_profile_invalid',
-			metadata: { agentId: agent.slug, activityType: agent.activityType, handlerId: agent.handler, planningStage: capacityWorkdayPlanningStage(agent) },
+		agents: [...instances.entries()].map(([participationId, instance]) => ({
+			agentId: participationId, projectAgentClassId: instance.agent.projectAgentClassId,
+			eligible: Boolean(instance.agent.projectAgentClassId && instance.agent.handler),
+			reasonCode: instance.agent.projectAgentClassId && instance.agent.handler ? null : 'agent_activity_profile_invalid',
+			metadata: { agentId: instance.agent.slug, activityType: instance.agent.activityType, handlerId: instance.agent.handler,
+				planningStage: capacityWorkdayPlanningStage(instance.agent), planningGraphNodeId: instance.graphNodeId, planningGraphInstanceKey: instance.instanceKey },
 		})),
 	});
 	const demandRepository = new CapacityWorkdayDemandRepository(store);
 	let created = 0;
-	let actingActive: boolean | null = null;
-	let artifactKinds: Set<string> | null = null;
-	let signalCodes: Set<string> | null = null;
 	for (const entry of entries.filter((value) => value.status === 'pending' && !value.demandId)) {
-		const participationAgentId = text(record(entry.metadata).agentId) || entry.agentId;
-		const participationActivity = text(record(entry.metadata).activityType);
-		const agent = agents.find((candidate) => candidate.slug === participationAgentId && candidate.activityType === participationActivity);
-		if (!agent) continue;
+		const instance = instances.get(entry.agentId);
+		if (!instance) continue;
+		const { agent, graphNodeId } = instance;
 		const planningStage = capacityWorkdayPlanningStage(agent);
-		const configured = agents.filter((candidate) => candidate.slug === agent.slug).map((candidate) => candidate.activityType);
-		const completed = entries.filter((candidate) => candidate.status === 'completed' && text(record(candidate.metadata).agentId) === agent.slug).map((candidate) => text(record(candidate.metadata).activityType));
-		if (!workdayPlanningStageReady(planningStage, entries)) continue;
-		if (!workdayProfileStageReady(agent.activityType, configured, completed)) continue;
-		const requiredArtifacts = capacityWorkdayRequiredArtifacts(agent);
-		if (requiredArtifacts.length) {
-			artifactKinds ??= new Set(await listCapacityWorkdayProducedArtifactKinds(store,run,project.id));
-			if (requiredArtifacts.some((kind) => !artifactKinds?.has(kind))) continue;
-		}
-		const requiredSignals = capacityWorkdayRequiredSignals(agent);
-		if (requiredSignals.length) {
-			signalCodes ??= new Set(await listCapacityWorkdaySignalCodes(store,run,project.id));
-			if (requiredSignals.some((code) => !signalCodes?.has(code))) continue;
-		}
-		if (agent.activityType === 'reporting') {
-			if (actingActive === null) {
-				const row = await store.first(`SELECT COUNT(*) AS total FROM capacity_workday_demands WHERE workday_id = ? AND mode = 'acting' AND status NOT IN ('completed', 'failed', 'cancelled', 'blocked')`, [workdayId]);
-				actingActive = Number(row?.total ?? 0) > 0;
-			}
-			if (!workdayReportingStageReady(agent.activityType, entries, actingActive)) continue;
-		}
-		const intent = await resolveCapacityWorkdayAssignmentIntent(store, run, project, agent);
-		const source = await resolvePlanningDemandSource(store, run, project, agent, intent);
+		const graphInputs = selectedPlanningGraphInputs(instance.matched);
+		const intent = await resolveCapacityWorkdayAssignmentIntent(store, run, project, agent, graphInputs);
+		const resolvedSource = await resolvePlanningDemandSource(store, run, project, agent, intent);
+		const source = instance.instanceKey === 'single' ? resolvedSource : {
+			...resolvedSource,
+			sourceType: 'handoff' as const,
+			sourceId: `planning-graph:${instance.instanceKey}`,
+			payload: { ...resolvedSource.payload, planningGraphInputRecordId: instance.instanceKey },
+		};
 		if (await completedEquivalentPlanningDemand(store, {
 			runId: run.id,
 			projectId: project.id,
@@ -165,24 +147,33 @@ async function compilePlanningDemands(
 			sourceType: source.sourceType,
 			sourceId: source.sourceId,
 		})) continue;
-		const idempotencyKey = `workday:${run.id}:${project.id}:cycle:${cycle.cycleNumber}:agent:${agent.slug}:profile:${agent.activityType}`;
+		const idempotencyKey = `workday:${run.id}:${project.id}:${wave ? `wave:${wave.id}` : `cycle:${cycle.cycleNumber}`}:node:${entry.agentId}`;
+		const sessionTimebox = Number(record(run.parameters.planningSession).assignmentTimeboxSeconds);
+		const estimate = await estimateRequestedAgentSeconds(store, agent, source.payload);
+		const requestedSeconds = Number.isInteger(sessionTimebox) && sessionTimebox > 0 ? Math.min(estimate.seconds, sessionTimebox) : estimate.seconds;
 		const demand = await demandRepository.create({
 			id: id('demand', idempotencyKey), teamId: run.teamId, projectId: project.id, workdayRunId: run.id, workdayId,
 			sourceType: source.sourceType, sourceId: source.sourceId, mode: 'planning',
 			projectAgentClassId: agent.projectAgentClassId, agentId: agent.slug, handlerId: agent.handler,
 			activityType: agent.activityType, decisionId: source.decisionId, priority: source.priority,
-			requestedCredits: source.requestedCredits, idempotencyKey,
+			requestedSeconds, idempotencyKey,
 			payload: {
-				...source.payload, repositoryId: capacityWorkdayRepositoryId(project, run.parameters),
+				...source.payload, stageInstructions: agent.promptTask, repositoryId: capacityWorkdayRepositoryId(project, run.parameters),
 				contentRoot: capacityWorkdayContentRoot(project), agentContentPath: agent.contentPath,
 				contentBaseRef: capacityWorkdayContentBaseRef(run.environment, agent.branchPolicy),
 				contentBranchPolicy: agent.branchPolicy,
 				contentAccess: agent.contentAccess,
-				inputContract: agent.inputContract,
+				signalPolicy: agent.signalPolicy,
+				signalContracts: Object.fromEntries([
+					...capacityWorkdayRequiredSignals(agent),
+					...(Array.isArray(record(agent.signalPolicy).publishes) ? record(agent.signalPolicy).publishes as string[] : []),
+				].map((contractId) => [contractId, snapshot.signalContracts[contractId]]).filter((entry) => Boolean(entry[1]))),
 				outputContract: agent.outputContract,
+				planningGraph: { revision: snapshot.revision, nodeId: graphNodeId, instanceKey: instance.instanceKey, predecessorNodeIds: instance.matched.map((value) => value.nodeId), inputs: graphInputs },
+				cooperativePlanning: wave ? { sessionWaveId: wave.id, round: wave.round, snapshotRef: wave.snapshotRef, snapshot: wave.snapshot } : null,
 				cycle: cycle.cycleNumber,
 			},
-			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment, planningStage }, availableAt: now, now,
+			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment, agentClassSlug: agent.projectAgentClassSlug, planningStage, planningGraphNodeId: graphNodeId, planningWaveId: wave?.id ?? null, planningRound: wave?.round ?? null, planningSnapshotRef: wave?.snapshotRef ?? null, admissionEstimate: { ...estimate, requestedSeconds, sessionCapSeconds: Number.isInteger(sessionTimebox) && sessionTimebox > 0 ? sessionTimebox : null } }, availableAt: now, now,
 		});
 		await participation.bindDemand(entry.id, demand.id, now);
 		created += 1;
@@ -206,7 +197,7 @@ async function compileActingDemands(
 			sourceType: source.sourceType, sourceId: source.sourceId, mode: 'acting',
 			projectAgentClassId: source.projectAgentClassId, agentId: source.agentId, handlerId: source.handlerId,
 			activityType: source.activityType, decisionId: source.decisionId, capacityPlanId: source.capacityPlanId,
-			priority: source.priority, requestedCredits: source.requestedCredits, idempotencyKey,
+			priority: source.priority, requestedSeconds: source.requestedSeconds, idempotencyKey,
 			payload: {
 				...source.payload, repositoryId: capacityWorkdayRepositoryId(project, run.parameters),
 				contentRoot: capacityWorkdayContentRoot(project),
@@ -228,11 +219,13 @@ export async function compileProviderWorkdayDemand(
 	let compiledDemands = 0;
 	for (const run of runs) {
 		if (!deadlineOpen(run, now)) continue;
+		const planningWave = await currentCooperativePlanningWave(store, run.id, now);
+		const cooperativePlanning = Object.keys(record(run.parameters.planningSession)).length > 0;
 		const projects = resolveCapacityWorkdayProjects(capacityWorkdayRequestedProjectSlugs(run.parameters), await store.listTeamProjects(run.teamId));
 		for (const project of projects) {
 			const workdayId = await activeEnvelope(store, run, project.id);
 			if (!workdayId) continue;
-			compiledDemands += await compilePlanningDemands(store, run, project, workdayId, now);
+			if (planningWave || !cooperativePlanning) compiledDemands += await compilePlanningDemands(store, run, project, workdayId, now, planningWave);
 			if (run.parameters.planningOnly !== true) compiledDemands += await compileActingDemands(store, run, project, workdayId, now);
 		}
 	}

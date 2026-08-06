@@ -20,7 +20,7 @@ export interface SynthesizedProviderAssignmentInput {
 	projectAgentClassId: string;
 	mode: AgentExecutionMode;
 	workDayId: string | null;
-	requestedCredits: number;
+	requestedSeconds: number;
 	executionProviderId?: string | null;
 	laneId?: string | null;
 	decisionId?: string | null;
@@ -79,7 +79,7 @@ export async function admitSynthesizedProviderAssignment(
 		projectAgentClassId: input.projectAgentClassId,
 		mode: input.mode,
 		workDayId: input.workDayId,
-		requestedCredits: input.requestedCredits,
+		requestedSeconds: input.requestedSeconds,
 		executionProviderId: input.executionProviderId ?? null,
 		laneId: input.laneId ?? null,
 		providerSessionId: input.providerSessionId ?? null,

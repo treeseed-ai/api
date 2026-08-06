@@ -323,7 +323,7 @@ export async function recordPrivateKnowledgeAudit(store, input: any = {}) {
 }
 export const AGENT_TASK_SIGNATURES = {
     'question.summarize': {
-        defaultCredits: 3,
+        defaultSeconds: 300,
         requiredCapabilities: ['agent_execution'],
         repositoryMutation: false,
         bindingWork: false,
@@ -331,7 +331,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'background',
     },
     'proposal.draft': {
-        defaultCredits: 5,
+        defaultSeconds: 600,
         requiredCapabilities: ['agent_execution'],
         repositoryMutation: false,
         bindingWork: false,
@@ -339,7 +339,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'interactive',
     },
     'proposal.compare': {
-        defaultCredits: 5,
+        defaultSeconds: 600,
         requiredCapabilities: ['agent_execution'],
         repositoryMutation: false,
         bindingWork: false,
@@ -347,7 +347,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'background',
     },
     'decision.summary': {
-        defaultCredits: 4,
+        defaultSeconds: 480,
         requiredCapabilities: ['agent_execution', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,
@@ -355,7 +355,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'background',
     },
     'release.summary': {
-        defaultCredits: 4,
+        defaultSeconds: 480,
         requiredCapabilities: ['agent_execution', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,
@@ -363,7 +363,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'background',
     },
     'market.description.draft': {
-        defaultCredits: 4,
+        defaultSeconds: 480,
         requiredCapabilities: ['agent_execution'],
         repositoryMutation: false,
         bindingWork: false,
@@ -371,7 +371,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'interactive',
     },
     'repository.change.apply': {
-        defaultCredits: 10,
+        defaultSeconds: 1200,
         requiredCapabilities: ['agent_execution', 'repository_work'],
         repositoryMutation: true,
         bindingWork: true,
@@ -379,7 +379,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'interactive',
     },
     'verification.run': {
-        defaultCredits: 6,
+        defaultSeconds: 900,
         requiredCapabilities: ['agent_execution', 'repository_work', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,
@@ -387,7 +387,7 @@ export const AGENT_TASK_SIGNATURES = {
         priorityClass: 'background',
     },
     'workday.report': {
-        defaultCredits: 2,
+        defaultSeconds: 300,
         requiredCapabilities: ['agent_execution', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,

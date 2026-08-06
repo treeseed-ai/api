@@ -48,8 +48,8 @@ export function serializeCapacityWorkdayDemandRow(row: Row | null): CapacityWork
 		'capacity_workday_demand_corrupt', 'Capacity workday demand has an unknown source, status, or mode.', 500,
 		{ demandId: String(row.id ?? ''), sourceType, status, mode },
 	);
-	const requestedCredits = finite(row, 'requested_credits');
-	if (requestedCredits <= 0) throw new CapacityGovernanceError('capacity_workday_demand_corrupt', 'Demand credits must be positive.', 500, { demandId: String(row.id ?? '') });
+	const requestedSeconds = finite(row, 'requested_seconds', true);
+	if (requestedSeconds <= 0) throw new CapacityGovernanceError('capacity_workday_demand_corrupt', 'Demand requested time must be positive.', 500, { demandId: String(row.id ?? '') });
 	return {
 		id: required(row, 'id'), teamId: required(row, 'team_id'), projectId: required(row, 'project_id'),
 		workdayRunId: required(row, 'workday_run_id'), workdayId: required(row, 'workday_id'), sourceType,
@@ -57,7 +57,7 @@ export function serializeCapacityWorkdayDemandRow(row: Row | null): CapacityWork
 		projectAgentClassId: required(row, 'project_agent_class_id'), agentId: nullable(row.agent_id),
 		handlerId: required(row, 'handler_id'), activityType: required(row, 'activity_type'),
 		decisionId: nullable(row.decision_id), capacityPlanId: nullable(row.capacity_plan_id), status,
-		priority: finite(row, 'priority', true), requestedCredits, idempotencyKey: required(row, 'idempotency_key'),
+		priority: finite(row, 'priority', true), requestedSeconds, idempotencyKey: required(row, 'idempotency_key'),
 		claimToken: nullable(row.claim_token), assignmentId: nullable(row.assignment_id),
 		payload: decodeDurableJsonObject(row.payload_json, { owner: 'capacity workday demand', ownerId: String(row.id ?? ''), column: 'payload_json' }),
 		metadata: decodeDurableJsonObject(row.metadata_json, { owner: 'capacity workday demand', ownerId: String(row.id ?? ''), column: 'metadata_json' }),
@@ -70,7 +70,7 @@ export interface CapacityWorkdayDemandWrite {
 	id: string; teamId: string; projectId: string; workdayRunId: string; workdayId: string;
 	sourceType: CapacityWorkdayDemandSource; sourceId: string; mode: 'planning' | 'acting';
 	projectAgentClassId: string; agentId: string | null; handlerId: string; activityType: string;
-	decisionId?: string | null; capacityPlanId?: string | null; priority: number; requestedCredits: number;
+	decisionId?: string | null; capacityPlanId?: string | null; priority: number; requestedSeconds: number;
 	idempotencyKey: string; payload: JsonRecord; metadata?: JsonRecord; availableAt: string; now: string;
 }
 
@@ -82,12 +82,12 @@ export class CapacityWorkdayDemandRepository {
 		await this.database.run(
 			`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id,
 			 mode, project_agent_class_id, agent_id, handler_id, activity_type, decision_id, capacity_plan_id, status, priority,
-			 requested_credits, idempotency_key, payload_json, metadata_json, available_at, created_at, updated_at)
+			 requested_seconds, idempotency_key, payload_json, metadata_json, available_at, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT (team_id, idempotency_key) DO NOTHING`,
 			[value.id, value.teamId, value.projectId, value.workdayRunId, value.workdayId, value.sourceType, value.sourceId,
 				value.mode, value.projectAgentClassId, value.agentId, value.handlerId, value.activityType, value.decisionId ?? null,
-				value.capacityPlanId ?? null, value.priority, value.requestedCredits, value.idempotencyKey,
+				value.capacityPlanId ?? null, value.priority, value.requestedSeconds, value.idempotencyKey,
 				JSON.stringify(value.payload), JSON.stringify(value.metadata ?? {}), value.availableAt, value.now, value.now],
 		);
 		const result = serializeCapacityWorkdayDemandRow(await this.database.first(

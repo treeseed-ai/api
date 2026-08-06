@@ -108,7 +108,7 @@ async function recoverOne(database: CapacityGovernanceDatabase, assignment: Dura
 	const observed = await evidence(database, assignment);
 	const result = decide(assignment, observed);
 	if (result.disposition === 'terminal-failure' && assignment.reservationId && !observed.settlement) {
-		await settleCapacityReservationExactlyOnce(database, { settlementKey: `expired-lease:${assignment.id}:${assignment.stateVersion}`, teamId: assignment.teamId, membershipId: assignment.membershipId, reservationId: assignment.reservationId, assignmentId: assignment.id, assignmentAttempt: assignment.attemptCount, actualCredits: 0, source: 'expired_lease_recovery', existingSettlementPolicy: 'replay', metadata: { recoveryReasonCode: result.reasonCode } });
+		await settleCapacityReservationExactlyOnce(database, { settlementKey: `expired-lease:${assignment.id}:${assignment.stateVersion}`, teamId: assignment.teamId, membershipId: assignment.membershipId, reservationId: assignment.reservationId, assignmentId: assignment.id, assignmentAttempt: assignment.attemptCount, activeSeconds: 0, elapsedSeconds: 0, source: 'expired_lease_recovery', existingSettlementPolicy: 'replay', metadata: { recoveryReasonCode: result.reasonCode } });
 	}
 	await database.batch(transitionOperations(assignment, result, now));
 	const recovered = await new ProviderAssignmentRepository(database).get(assignment.teamId, assignment.id);

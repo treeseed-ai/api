@@ -3,6 +3,7 @@ import {
 capacityWorkdayAgentsFromClasses,
 compileCapacityWorkdayAssignmentIntent,
 } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-policy.ts';
+import { compileWorkdayPlanningGraphSnapshot,decodeWorkdayPlanningGraphSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-planning-graph-policy.ts';
 
 describe('capacity workday agent policy', () => {
 	it('uses configured planning profile refs without slug-based behavior', () => {
@@ -132,5 +133,22 @@ describe('capacity workday agent policy', () => {
 		expect(capacityWorkdayAgentsFromClasses(classes, { classSlugs: ['guide-writing'] }).map((agent) => agent.slug)).toEqual(['writer']);
 		expect(capacityWorkdayAgentsFromClasses(classes, { classIds: ['project:evidence-research'], agentSlugs: ['researcher'] }).map((agent) => agent.slug)).toEqual(['researcher']);
 		expect(capacityWorkdayAgentsFromClasses(classes, { classSlugs: ['guide-writing'], agentSlugs: ['researcher'], mode: 'intersection' })).toEqual([]);
+	});
+
+	it('freezes the selected profile DAG and rejects changed snapshots', () => {
+		const snapshot = compileWorkdayPlanningGraphSnapshot([
+			{ id: 'research', slug: 'research', handlerRefs: { agents: [{ slug: 'researcher', activities: { planning: {
+				handler: 'writer', outputs: { artifactContracts: ['planning-note'], signalContracts: ['evidence-ready'] },
+			} } }] } },
+			{ id: 'steward', slug: 'steward', handlerRefs: { agents: [{ slug: 'steward', activities: { planning: {
+				handler: 'writer', inputs: { artifactContracts: ['planning-note'], signalContracts: ['evidence-ready'], producerPolicy: 'all' },
+				outputs: { artifactContracts: ['planning-proposal'] },
+			} } }] } },
+		], {});
+		expect(snapshot.graph.edges).toHaveLength(1);
+		expect(decodeWorkdayPlanningGraphSnapshot(JSON.parse(JSON.stringify(snapshot)), 'project-a').revision).toBe(snapshot.revision);
+		const changed = JSON.parse(JSON.stringify(snapshot));
+		changed.agents[0].outputContract.artifactContracts = ['other'];
+		expect(() => decodeWorkdayPlanningGraphSnapshot(changed, 'project-a')).toThrowError(expect.objectContaining({ code: 'capacity_workday_planning_graph_snapshot_invalid' }));
 	});
 });

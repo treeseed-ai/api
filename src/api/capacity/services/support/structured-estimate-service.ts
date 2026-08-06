@@ -37,14 +37,14 @@ export class StructuredAgentEstimateService {
 		if (!decisionId) throw new CapacityGovernanceError('decision_id_required', 'decisionId is required.', 400);
 		const now = new Date().toISOString();
 		const status = createStatus(input.status);
-		const minimum = Number(input.minCredits ?? 0);
-		const expected = Number(input.expectedCredits ?? input.minCredits ?? 0);
-		const maximum = Number(input.maxCredits ?? input.expectedCredits ?? input.minCredits ?? 0);
+		const minimum = Number(input.minSeconds ?? 0);
+		const expected = Number(input.expectedSeconds ?? input.minSeconds ?? 0);
+		const maximum = Number(input.maxSeconds ?? input.expectedSeconds ?? input.minSeconds ?? 0);
 		const estimate: StructuredAgentEstimateRecord = {
 			id: text(input.id) || randomUUID(), teamId: project.teamId, projectId: project.id, decisionId,
 			proposalId: text(input.proposalId) || null, workUnitId: text(input.workUnitId) || null,
 			agentClass: text(input.agentClass ?? input.projectAgentClassSlug ?? input.projectAgentClassId), agentId: text(input.agentId) || null,
-			minCredits: minimum, expectedCredits: expected, maxCredits: maximum,
+			minSeconds: minimum, expectedSeconds: expected, maxSeconds: maximum,
 			confidence: (input.confidence ?? 'medium') as StructuredAgentEstimateRecord['confidence'], riskLevel: (input.riskLevel ?? 'medium') as StructuredAgentEstimateRecord['riskLevel'],
 			assumptions: strings(input.assumptions), blockers: strings(input.blockers), dependencies: array(input.dependencies) as StructuredAgentEstimateRecord['dependencies'],
 			expectedOutputs: array(input.expectedOutputs) as StructuredAgentEstimateRecord['expectedOutputs'], acceptanceCriteria: strings(input.acceptanceCriteria), completionEvidence: strings(input.completionEvidence),

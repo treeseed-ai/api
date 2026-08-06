@@ -1,4 +1,6 @@
 import type { CapacityAllocationSetV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import { validateWorkdayTimePolicy } from '@treeseed/sdk/agent-capacity';
+import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type {
@@ -13,11 +15,15 @@ capacityWorkdayContentRoot,
 capacityWorkdayRequestedProjectSlugs,
 type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
+import { resolveWorkdayPlanningGraphSnapshot } from '../policy/workday-planning-graph-policy.ts';
+import { initializeCooperativePlanningSession } from './cooperative-planning-session-service.ts';
+import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 
 type JsonRecord = Record<string, unknown>;
 
 export interface WorkdayScheduleStore extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
+	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
 	getCapacityAllocationSet(teamId: string, allocationSetId: string): Promise<CapacityAllocationSetV2 | null>;
 	getActiveCapacityAllocationSet(teamId: string): Promise<CapacityAllocationSetV2 | null>;
 	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown } | null>;
@@ -31,22 +37,29 @@ function text(value: unknown, fallback = ''): string {
 	return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+function record(value: unknown): JsonRecord {
+	return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
 function safeIdPart(value: unknown, fallback = 'item'): string {
 	return String(value ?? fallback).trim().toLowerCase()
 		.replace(/[^a-z0-9_-]+/gu, '-').replace(/^-+|-+$/gu, '') || fallback;
 }
 
-function availableCredits(parameters: JsonRecord): number {
-	const value = Number(parameters.availableCredits ?? parameters.creditBudget ?? 100);
-	if (!Number.isFinite(value) || value < 0) {
-		throw new CapacityGovernanceError(
-			'capacity_workday_credit_budget_invalid',
-			'Workday available credits must be non-negative and finite.',
-			400,
-			{ value: parameters.availableCredits ?? parameters.creditBudget ?? null },
-		);
-	}
-	return value;
+function workdayTime(parameters: JsonRecord) {
+	if (parameters.availableCredits !== undefined || parameters.creditBudget !== undefined) throw new CapacityGovernanceError('capacity_workday_legacy_credits_rejected', 'Legacy credit budgets cannot schedule new work. Configure workday time policy.', 409);
+	const durationSeconds = Number(parameters.durationSeconds);
+	const concurrency = Number(parameters.maxActiveAssignments ?? 1);
+	if (!Number.isInteger(durationSeconds) || durationSeconds < 60 || !Number.isInteger(concurrency) || concurrency < 1) throw new CapacityGovernanceError('capacity_workday_time_budget_invalid', 'Workday duration and concurrency must define positive agent-time.', 400);
+	const policy = record(parameters.timePolicy);
+	const timePolicy = {
+		cooperativePlanningPercent: Number(policy.cooperativePlanningPercent ?? (parameters.planningOnly === true ? 90 : 20)),
+		governedExecutionPercent: Number(policy.governedExecutionPercent ?? (parameters.planningOnly === true ? 0 : 70)),
+		reservePercent: Number(policy.reservePercent ?? 10),
+	};
+	const validation = validateWorkdayTimePolicy(timePolicy);
+	if (!validation.ok || !validation.value || parameters.planningOnly === true && timePolicy.governedExecutionPercent !== 0) throw new CapacityGovernanceError('capacity_workday_time_policy_invalid', validation.diagnostics[0]?.message ?? 'Planning-only workdays must allocate zero governed-execution time.', 400);
+	return { availableSeconds: durationSeconds * concurrency, timePolicy: validation.value };
 }
 
 function errorEvidence(error: unknown): JsonRecord {
@@ -78,6 +91,8 @@ export async function scheduleCapacityWorkdayRun(
 	run: DurableCapacityWorkdayRun,
 ): Promise<{ projects: WorkdayProject[]; allocationSet: CapacityAllocationSetV2 }> {
 	await store.ensureInitialized();
+	const legacy = await store.first(`SELECT id FROM capacity_reservations WHERE team_id = ? AND state IN ('reserved','consuming','overran_pending_approval','continuation_required') AND requested_seconds IS NULL LIMIT 1`, [run.teamId]);
+	if (legacy) throw new CapacityGovernanceError('capacity_legacy_reservations_active', 'Time scheduling is blocked while a nonterminal legacy-credit reservation remains. Terminalize or recover legacy capacity before retrying.', 409, { reservationId: legacy.id, cleanupOperation: 'trsd capacity recover --legacy-reservations' });
 	const parameters = run.parameters;
 	const providerId = text(run.capacityProviderId ?? parameters.providerId);
 	if (!providerId) {
@@ -114,7 +129,9 @@ export async function scheduleCapacityWorkdayRun(
 	});
 	const { membership, projects, allocationSet, grantsByProjectId } = governed;
 	const contexts = new Map<string, { contentRoot: string; repositoryId: string }>();
+	const planningGraphs = new Map<string, Awaited<ReturnType<typeof resolveWorkdayPlanningGraphSnapshot>>>();
 	for (const project of projects) {
+		await reconcileTreeDxRefSignals(store, project.id, startedAt);
 		const library = await store.getProjectTreeDxLibrary(project.id);
 		const repositoryId = text(library?.repositoryId);
 		if (!repositoryId) {
@@ -126,15 +143,16 @@ export async function scheduleCapacityWorkdayRun(
 			);
 		}
 		contexts.set(project.id, { contentRoot: text(library?.contentPath, capacityWorkdayContentRoot(project)), repositoryId });
+		planningGraphs.set(project.id, await resolveWorkdayPlanningGraphSnapshot(store, project.id, parameters.agentSelection));
 	}
-	const credits = availableCredits(parameters);
+	const time = workdayTime(parameters);
 	for (const project of projects) {
 		const context = contexts.get(project.id)!;
 		const grant = grantsByProjectId.get(project.id)!;
 		const workdayId = safeIdPart(`workday-${run.id}-${project.slug ?? project.id}`);
 		const envelope = await store.createWorkdayCapacityEnvelope({
 			id: workdayId, workdayRunId: run.id, projectId: project.id, allocationSetId: allocationSet.id,
-			environment, status: 'active', startedAt, availableCredits: credits,
+			environment, status: 'active', startedAt, availableSeconds: time.availableSeconds, timePolicy: time.timePolicy,
 			metadata: {
 				source: 'workday_scheduler', runId: run.id, slug: project.slug,
 				deadlineAt: parameters.deadlineAt ?? null, durationSeconds: parameters.durationSeconds ?? null,
@@ -152,17 +170,41 @@ export async function scheduleCapacityWorkdayRun(
 		await recordRequiredEvent(store, run.teamId, run.id, {
 			eventType: 'workday.started', status: 'recorded', projectId: project.id, workdayId,
 			title: `Started API-scheduled workday for ${project.slug ?? project.id}`,
-			context: { ...context, allocationSetId: allocationSet.id, grantId: grant.id },
+			context: { ...context, allocationSetId: allocationSet.id, grantId: grant.id, planningGraphRevision: planningGraphs.get(project.id)!.revision },
 		});
+		await store.run(`INSERT INTO agent_signals
+			(id,contract_id,subject_kind,subject_id,team_id,project_id,workday_run_id,assignment_id,agent_id,activity_type,capacity_provider_id,causation_id,correlation_id,origin,changed_paths_json,change_summary,evidence_ref,payload_json,metadata_json,created_at)
+			VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,?,?,?,'deterministic-handler','[]',?,?,?, '{}',?) ON CONFLICT(id) DO NOTHING`, [
+			`signal:workday-started:${run.id}:${project.id}`, 'workday-started', 'workday', run.id, run.teamId, project.id, run.id,
+			providerId, `workday:${run.id}`, `workday:${run.id}`, 'Workday signal graph opened.', `workday-run:${run.id}`,
+			JSON.stringify({ workdayId, graphRevision: planningGraphs.get(project.id)!.revision, objectives: parameters.objectiveRefs ?? [] }), startedAt,
+		]);
 	}
+	const planningSeconds = Math.floor(time.availableSeconds * time.timePolicy.cooperativePlanningPercent / 100);
+	await store.run(`INSERT INTO workday_planning_sessions
+		(id,team_id,workday_run_id,graph_revision,status,agenda_json,objectives_json,proposal_ids_json,rounds,current_round,allocated_seconds,reserved_seconds,started_at,deadline,metadata_json,created_at,updated_at)
+		VALUES (?,?,?,?,'running',?,?, '[]',?,0,?,0,?,?,?, ?, ?) ON CONFLICT(workday_run_id) DO NOTHING`, [
+		`planning-session:${run.id}`, run.teamId, run.id,
+		[...planningGraphs.values()].map((entry) => entry.revision).sort().join(':'),
+		JSON.stringify(record(parameters.planningSession)), JSON.stringify(parameters.objectiveRefs ?? []),
+		Number(record(parameters.planningSession).rounds ?? 3), planningSeconds, startedAt, parameters.deadlineAt,
+		JSON.stringify({ projectIds: projects.map((project) => project.id), maxActiveAssignments: parameters.maxActiveAssignments ?? 1 }), startedAt, startedAt,
+	]);
+	await initializeCooperativePlanningSession({
+		database: store, teamId: run.teamId, runId: run.id, sessionId: `planning-session:${run.id}`,
+		snapshots: planningGraphs, rounds: Number(record(parameters.planningSession).rounds ?? 3),
+		maxConcurrentAssignments: Number(parameters.maxActiveAssignments ?? 1), allocatedSeconds: planningSeconds, now: startedAt,
+		assignmentTimeboxSeconds: Number(record(parameters.planningSession).assignmentTimeboxSeconds ?? 900),
+	});
 	const updated = await store.updateCapacityWorkdayRun(run.teamId, run.id, {
 		parameters: {
-			...parameters, allocationSetId: allocationSet.id,
+			...parameters, allocationSetId: allocationSet.id, availableSeconds: time.availableSeconds, timePolicy: time.timePolicy,
 			scheduledProjectIds: projects.map((project) => project.id),
 			scheduledProjectSlugs: projects.map((project) => project.slug ?? project.id),
 			repositoryIdsByProjectId: Object.fromEntries(
 				projects.map((project) => [project.id, contexts.get(project.id)!.repositoryId]),
 			),
+			planningGraphByProjectId: Object.fromEntries(projects.map((project) => [project.id, planningGraphs.get(project.id)])),
 		},
 	});
 	if (!updated) {

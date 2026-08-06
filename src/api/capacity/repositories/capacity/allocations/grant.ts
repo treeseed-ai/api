@@ -11,7 +11,7 @@ export function serializeCapacityGrantRow(row: Record<string, unknown>): Capacit
 		laneIds: decodeDurableJsonArray<string>(row.lane_ids_json, context('lane_ids_json')),
 		capabilities: decodeDurableJsonArray<string>(row.capabilities_json, context('capabilities_json')),
 		allowedModes: decodeDurableJsonArray<CapacityGrantV2['allowedModes'][number]>(row.allowed_modes_json, context('allowed_modes_json')),
-		dailyCreditLimit: row.daily_credit_limit == null ? null : Number(row.daily_credit_limit), monthlyCreditLimit: row.monthly_credit_limit == null ? null : Number(row.monthly_credit_limit), maxConcurrentAssignments: row.max_concurrent_assignments == null ? null : Number(row.max_concurrent_assignments),
+		dailyAgentSecondsLimit: row.daily_agent_seconds_limit == null ? null : Number(row.daily_agent_seconds_limit), monthlyAgentSecondsLimit: row.monthly_agent_seconds_limit == null ? null : Number(row.monthly_agent_seconds_limit), maxConcurrentAssignments: row.max_concurrent_assignments == null ? null : Number(row.max_concurrent_assignments),
 		unmetered: Number(row.unmetered ?? 0) === 1, expiresAt: row.expires_at ? String(row.expires_at) : null,
 		metadata: decodeDurableJsonObject(row.metadata_json, context('metadata_json')),
 	};

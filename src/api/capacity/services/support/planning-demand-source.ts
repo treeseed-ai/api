@@ -15,7 +15,6 @@ export interface PlanningDemandSource {
 	sourceId: string;
 	decisionId: string | null;
 	priority: number;
-	requestedCredits: number;
 	payload: Record<string, unknown>;
 }
 
@@ -86,7 +85,6 @@ async function researchWorkflowSource(
 		const latestReviewAttempt = reviewAttempts.length ? reviewAttempts.at(-1) : undefined;
 		return {
 			sourceType: 'research-workflow', sourceId: `${workflow.id}:${node.stage}`, decisionId: null, priority: 100,
-			requestedCredits: 1,
 			payload: {
 				intent: researchStageIntent(node.stage, intent, workflow.questionRef), planningSource: 'research-workflow', researchWorkflowId: workflow.id, researchWorkflowStateVersion: workflow.stateVersion,
 				researchStage: node.stage, objectiveRef: workflow.objectiveRef, questionRef: workflow.questionRef,
@@ -116,7 +114,7 @@ async function operationalSource(
 	);
 	if (failed && (identity.includes('review') || identity.includes('architect') || identity.includes('engineer'))) return {
 		sourceType: 'assignment-blockage', sourceId: `assignment:${String(failed.id)}`, decisionId: null, priority: 95,
-		requestedCredits: 1, payload: { planningSource: 'assignment-blockage', assignmentId: failed.id,
+		payload: { planningSource: 'assignment-blockage', assignmentId: failed.id,
 			lifecycleCode: failed.lifecycle_code ?? null, lifecycleReason: failed.lifecycle_reason ?? null },
 	};
 	const completed = await database.first(
@@ -126,11 +124,11 @@ async function operationalSource(
 	);
 	if (completed && identity.includes('review')) return {
 		sourceType: 'assignment-completion', sourceId: `assignment:${String(completed.id)}`, decisionId: null, priority: 90,
-		requestedCredits: 1, payload: { planningSource: 'assignment-completion', assignmentId: completed.id },
+		payload: { planningSource: 'assignment-completion', assignmentId: completed.id },
 	};
 	if (completed && identity.includes('release')) return {
 		sourceType: 'release-readiness', sourceId: `run:${run.id}:project:${project.id}`, decisionId: null, priority: 85,
-		requestedCredits: 1, payload: { planningSource: 'release-readiness', completedAssignmentId: completed.id },
+		payload: { planningSource: 'release-readiness', completedAssignmentId: completed.id },
 	};
 	if (completed && identity.includes('report')) return {
 		...(await listCapacityWorkdayContentArtifactRefs(database, run, project.id)).some((artifact) =>
@@ -139,7 +137,7 @@ async function operationalSource(
 				payload: { planningSource: 'handoff', completedAssignmentId: completed.id } }
 			: { sourceType: 'workday-summary' as const, sourceId: `run:${run.id}:project:${project.id}`, priority: 40,
 				payload: { planningSource: 'workday-summary', completedAssignmentId: completed.id } },
-		decisionId: null, requestedCredits: 1,
+		decisionId: null,
 	};
 	return null;
 }
@@ -178,7 +176,6 @@ export async function resolvePlanningDemandSource(
 		return {
 			sourceType: 'planning-input', sourceId: String(row.id), decisionId: text(row.decision_id),
 			priority: Number.isFinite(Number(metadata.priority)) ? Number(metadata.priority) : 50,
-			requestedCredits: positive(metadata.reservedCredits, 1),
 			payload: {
 				...assignmentInput, intent: { ...intent, ...assignmentInput }, prompt: text(row.prompt), planningInputRequestId: String(row.id), scopeHash: row.scope_hash ?? null,
 				planningSource: metadata.planningSource ?? 'planning-input',
@@ -192,12 +189,12 @@ export async function resolvePlanningDemandSource(
 		const content = preferredContentSource(agent, await listTreeDxPlanningDemandSources(database, run, project));
 		if (content) return {
 			sourceType: content.sourceType, sourceId: content.sourceId, decisionId: null, priority: content.priority,
-			requestedCredits: 1, payload: { intent, ...content.payload, subjectPath: content.payload.contentPath },
+			payload: { intent, ...content.payload, subjectPath: content.payload.contentPath },
 		};
 	}
 	return {
 		sourceType: 'idle-intent', sourceId: `${run.id}:${project.id}:${agent.slug}`,
-		decisionId: null, priority: agent.planningPriority ?? 0, requestedCredits: 1,
+		decisionId: null, priority: agent.planningPriority ?? 0,
 		payload: { intent, planningSource: 'configured-idle-intent' },
 	};
 }

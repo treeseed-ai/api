@@ -41,7 +41,7 @@ export class OperatorAssignmentService {
 		}
 		await releaseCapacityReservationsExactlyOnce(this.database, [{
 			settlementKey: `operator-cancel:${teamId}:${operationKey}`, teamId, membershipId: assignment.membershipId,
-			reservationId: assignment.reservationId, assignmentId, actualCredits: 0, source: 'operator_assignment_cancel',
+			reservationId: assignment.reservationId, assignmentId, activeSeconds: 0, elapsedSeconds: 0, source: 'operator_assignment_cancel',
 			existingSettlementPolicy: 'replay', metadata: { actorId: input.actorId ?? null, reason: input.reason ?? null },
 		}]);
 		await this.database.batch([
@@ -83,7 +83,7 @@ export class OperatorAssignmentService {
 			workdayId: original.workdayId, sourceType: original.sourceType, sourceId: original.sourceId,
 			mode: original.mode, projectAgentClassId: original.projectAgentClassId, agentId: original.agentId,
 			handlerId: original.handlerId, activityType: original.activityType, decisionId: original.decisionId,
-			capacityPlanId: original.capacityPlanId, priority: original.priority, requestedCredits: original.requestedCredits,
+			capacityPlanId: original.capacityPlanId, priority: original.priority, requestedSeconds: original.requestedSeconds,
 			idempotencyKey: retryKey, payload: original.payload,
 			metadata: { ...original.metadata, requeuedFromAssignmentId: assignmentId, actorId: input.actorId ?? null, reason: input.reason ?? null },
 			availableAt: now, now,

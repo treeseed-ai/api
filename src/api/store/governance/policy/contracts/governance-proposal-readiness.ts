@@ -18,13 +18,31 @@ export async function governanceProposalReadinessMethod(this: MarketControlPlane
 	const blockers = discussions.filter((row) => ['question', 'concern'].includes(text(row.evidence.kind)) && !resolved.has(text(row.id)));
 	const reviews = discussions.filter((row) => ['support', 'concern'].includes(text(row.evidence.kind)) && text(row.actor_id) !== text(proposal.createdById));
 	const modeRuns = proposal.projectId ? await this.all(`SELECT outputs_json FROM agent_mode_runs WHERE project_id = ? AND mode = 'planning' AND status = 'succeeded' ORDER BY created_at DESC LIMIT 500`, [proposal.projectId]) : [];
-	const estimates = modeRuns.map((row) => structuredEstimate(row.outputs_json)).filter((estimate) => text(estimate.proposalId) === proposalId || text(estimate.proposalId) === text(proposal.contentProposalSlug));
+	const signals = await this.all(`SELECT contract_id,agent_id,workday_run_id,payload_json,metadata_json FROM agent_signals WHERE subject_kind = 'proposal' AND subject_id IN (?,?) ORDER BY created_at ASC LIMIT 500`, [proposalId, text(proposal.contentProposalSlug)]);
+	const estimateSignals = signals.filter((row) => row.contract_id === 'proposal-estimated').map((row) => ({ ...record(row.payload_json), participant: text(record(row.payload_json).participant) || text(row.agent_id) }));
+	const reviewSignals = signals.filter((row) => row.contract_id === 'proposal-reviewed' && text(row.agent_id) !== text(proposal.createdById)).map((row) => ({ ...record(row.payload_json), producerClass: text(record(row.metadata_json).producerClass) }));
+	const estimates = [...modeRuns.map((row) => structuredEstimate(row.outputs_json)), ...estimateSignals].filter((estimate) => text(estimate.proposalId) === proposalId || text(estimate.proposalId) === text(proposal.contentProposalSlug));
 	const metadata = record(proposal.metadata);
+	let proposalTypes: unknown = proposal.proposalTypes;
+	if (!Array.isArray(proposalTypes)) try { proposalTypes = JSON.parse(String((proposal as Row).proposalTypesJson ?? (proposal as Row).proposal_types_json ?? '[]')); } catch { proposalTypes = []; }
+	const estimatedParticipants = [...new Set(estimates.map((estimate) => text(estimate.participant,estimate.agentId)).filter(Boolean))];
+	const requests = signals.filter((row) => row.contract_id === 'proposal-participant-requested').map((row) => ({ ...record(row.payload_json), workdayRunId: text(row.workday_run_id) }));
+	const directParticipants = requests.filter((request) => text(request.targetKind) === 'agent').map((request) => text(request.targetId)).filter(Boolean);
+	const classParticipants: string[] = [];
+	for (const request of requests.filter((entry) => text(entry.targetKind) === 'class')) {
+		const rows = await this.all(`SELECT DISTINCT participant.agent_id FROM workday_planning_participants participant JOIN workday_planning_sessions session ON session.id = participant.session_id WHERE session.workday_run_id = ? AND participant.project_agent_class_id = ?`, [request.workdayRunId, text(request.targetId)]);
+		classParticipants.push(...rows.map((row) => text(row.agent_id)).filter(Boolean));
+	}
+	const requiredParticipants = [...new Set([...((metadata.requiredParticipantIds as string[] | undefined) ?? []), ...directParticipants, ...classParticipants])];
+	const requiredReviewerClasses = Array.isArray(metadata.requiredReviewerClasses) ? metadata.requiredReviewerClasses.map(String) : [];
+	const reviewedReviewerClasses = [...new Set(reviewSignals.map((review) => text(review.producerClass)).filter(Boolean))];
 	return evaluateGovernanceProposalReadiness({
 		title: proposal.title, summary: proposal.summary, body: proposal.body,
-		relatedObjectives: metadata.relatedObjectives as string[], evidenceRefs: metadata.evidenceRefs as string[], plan: metadata.plan,
-		contentProvenance: metadata.contentProvenance, independentReviewCount: reviews.length, estimateCount: estimates.length,
-		unresolvedBlockerCount: blockers.length, requiresEstimate: ['implementation', 'editorial', 'structural'].includes(text(proposal.proposalType)),
+		relatedObjectives: metadata.relatedObjectives as string[], proposalTypes: proposalTypes as string[], evidenceRefs: metadata.evidenceRefs as string[], plan: metadata.plan,
+		contentProvenance: metadata.contentProvenance, independentReviewCount: reviews.length + reviewSignals.length, estimateCount: estimates.length,
+		unresolvedBlockerCount: blockers.length, requiresEstimate: proposal.projectId ? true : ['implementation', 'editorial', 'structural'].includes(text(proposal.proposalType)),
+		requiredParticipantIds: requiredParticipants, estimatedParticipantIds: estimatedParticipants,
+		requiredReviewerClasses, reviewedReviewerClasses,
 	});
 }
 
