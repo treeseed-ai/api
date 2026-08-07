@@ -57,6 +57,30 @@ it('plans and applies staging seeds with audit records, then reports unchanged',
 		expect(firstApply.result.actionCount).toBe(mutationActionCount);
 		expect(firstApply.result).not.toHaveProperty('capacityProviderKeys');
 
+		const resolvedResponse = await app.request('/v1/seeds/resources/resolve', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({ keys: ['team:treeseed', 'project:treeseed/market'] }),
+		});
+		expect(resolvedResponse.status).toBe(200);
+		const resolved = await json(resolvedResponse);
+		expect(resolved.payload).toEqual([
+			expect.objectContaining({ key: 'team:treeseed', kind: 'team', id: team.id }),
+			expect.objectContaining({ key: 'project:treeseed/market', kind: 'project', teamId: team.id }),
+		]);
+		const staleResolution = await app.request('/v1/seeds/resources/resolve', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({ keys: ['project:treeseed/missing'] }),
+		});
+		expect(staleResolution.status).toBe(409);
+
 		const runs = await json(await app.request('/v1/seeds/runs', {
 			headers: { authorization: `Bearer ${token}` },
 		}));

@@ -38,6 +38,7 @@ import { installProjectWorkflowConfigurationRoutes } from "../routes/projects/op
 import { installGitHubConnectorRoutes } from "../routes/providers/github-connectors.ts";
 import { installGitHubWebhookRoutes } from "../routes/providers/github-webhooks.ts";
 import { installFoundationAcceptanceSeedRoutes } from "../routes/seeds/foundation-acceptance-seed.ts";
+import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resource-resolution.ts";
 import { installContextualKnowledgeRoutes } from "../routes/support/contextual-knowledge.ts";
 import { installFoundationApprovalDecisionsRoutes } from "../routes/support/foundation-approval-decisions.ts";
 import { installFoundationCurrentUserMarketsRoutes } from "../routes/support/foundation-current-user-markets.ts";
@@ -64,6 +65,7 @@ export function installPlatformRoutes(context: any): void {
   installKnowledgePublicationRoutes(context);
   installKnowledgeLifecycleRoutes(context);
   installFoundationAcceptanceSeedRoutes(context);
+  installSeedResourceResolutionRoutes(context);
   installOperationsPlatformRunnersAndJobsRoutes(context);
   installAuthenticationDeviceSignupAndOauthRoutes(context);
   installAuthenticationAccountProfileAndNotificationsRoutes(context);
