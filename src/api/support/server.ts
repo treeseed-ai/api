@@ -15,6 +15,9 @@ function hasRequestBody(method) {
 async function honoNodeHandler(app, request, response) {
 	const req = request;
 	const res = response;
+	const requestController = new AbortController();
+	req.once('aborted', () => requestController.abort());
+	res.once('close', () => requestController.abort());
 	const origin = req.headers.host ? `http://${req.headers.host}` : 'http://127.0.0.1';
 	const url = new URL(req.url ?? '/', origin);
 	const requestInit: RequestInit & { duplex: 'half' } = {
@@ -22,6 +25,7 @@ async function honoNodeHandler(app, request, response) {
 		headers: req.headers,
 		body: hasRequestBody(req.method) ? req : undefined,
 		duplex: 'half',
+		signal: requestController.signal,
 	};
 	const webRequest = new Request(url, requestInit);
 
@@ -63,7 +67,12 @@ export async function createApiServer(options: any = {}): Promise<ApiServerInsta
 		db,
 	});
 	const server = createServer((req, res) => {
-		void honoNodeHandler(app, req, res);
+		void honoNodeHandler(app, req, res).catch((error) => {
+			if (req.aborted || res.destroyed) return;
+			console.error('[api] Unhandled request failure', error);
+			res.statusCode = 500;
+			res.end('Internal Server Error');
+		});
 	});
 
 	await new Promise<void>((resolvePromise) => {

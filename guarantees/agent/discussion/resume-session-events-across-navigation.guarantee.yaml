@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.discussion.resume-session-events-across-navigation.751
+journeyIndex: 751
+type: agent
+subtype: discussion
+journey: Resume Discussion events across navigation
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Authenticated team sessions resume ordered durable Discussion invalidations across page navigation, reconnects, and API replicas.
+status: planned
+dependencies: { journeys: [744], guarantees: [guarantee.agent.discussion.persist-discussion-only-in-treedx.744] }
+actors: { allowed: [authenticated_user, team_owner], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [desktop_chromium, mobile_chromium], optional: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: true, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: [{ id: another-team-events-remain-private, actor: unauthorized_user, verifierRefs: [] }]
+evidence: { required: [api_acceptance_report, guarantee_report] }
+notes: ["Astro persists the shell connection and Discussion surface; PostgreSQL stores cursors and fans out cross-replica notifications."]
