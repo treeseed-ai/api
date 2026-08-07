@@ -42,8 +42,13 @@ export async function bindGovernanceTreeDx(
 		if (init?.method === 'POST' && /\/api\/v1\/repos\/[^/]+\/workspaces$/u.test(url.pathname)) {
 			return Response.json({ ok: true, workspaceId: 'governance-workspace', baseCommitSha: 'a'.repeat(40), branchName: 'refs/heads/staging' });
 		}
-		if (init?.method === 'PUT' && url.pathname === '/api/v1/workspaces/governance-workspace/files') {
-			return Response.json({ ok: true, path: url.searchParams.get('path'), sha: 'c'.repeat(40) });
+		if (init?.method === 'POST' && url.pathname === '/api/v1/workspaces/governance-workspace/changesets') {
+			return Response.json({
+				ok: true, contract: 'treedx.changeset/v1', repositoryId: 'repo-governance', workspaceId: 'governance-workspace',
+				baseRef: 'refs/heads/staging', baseCommitSha: 'a'.repeat(40), resultCommitSha: null, branch: 'refs/heads/staging',
+				changedPaths: ['src/content/notes/governance.mdx'], files: [], patchSha256: 'c'.repeat(64),
+				idempotencyKey: 'governance-discussion', idempotentReplay: false, workspaceVersion: 'governance-v1',
+			});
 		}
 		if (init?.method === 'POST' && url.pathname === '/api/v1/workspaces/governance-workspace/commit') {
 			return Response.json({ ok: true, commitSha: 'd'.repeat(40), branchName: 'refs/heads/staging', changedPaths: ['src/content/notes/governance.mdx'] });

@@ -39,7 +39,6 @@ function row(overrides: Record<string, unknown> = {}) {
 		elapsed_seconds: 60,
 		reasoning_tokens: 3,
 		actual_usd: null,
-		active_seconds_source: 'treeseed.provider-settlement.v1',
 		active_seconds_source: 'provider_settlement',
 		native_usage_json: '{"wallMinutes":1}',
 		metadata_json: '{"settlementKey":"settlement-a"}',

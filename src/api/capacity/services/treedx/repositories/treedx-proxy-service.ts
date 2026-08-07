@@ -1,31 +1,20 @@
-import { gzipSync } from 'node:zlib';
 import type { Context } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { authorizeTreeDxProxy } from './treedx-proxy-access-service.ts';
 import {
-isLoopbackTreeDxBaseUrl,
 resolveTreeDxProxyBaseUrl,
 resolveTreeDxProxyToken,
-treeDxProxyActorId,
-treeDxProxyTenantId,
-treeDxRuntimeEnv,
-treeDxTokenScope,
 type TreeDxProxyRuntime,
 type TreeDxProxyScope,
 } from './treedx-proxy-token-service.ts';
-import { readBoundedTreeDxJson } from './treedx-response.ts';
-import { projectTreeDxCommitSignals } from './treedx-change-projector.ts';
-
-interface ProxyStore extends CapacityGovernanceDatabase {
-	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
-	getProject(projectId: string): Promise<{ teamId: string } | null>;
-	recordTreeDxProxyAudit(input: Record<string, unknown>): Promise<unknown>;
-}
-
-function record(value: unknown): Record<string, unknown> {
-	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
+import {
+	grantCreatedLoopbackRepository,
+	projectTreeDxProxyCommit,
+	recordTreeDxProxySuccess,
+	requestTreeDxJson,
+	type TreeDxProxyStore,
+} from './treedx-proxy-effects.ts';
 
 export async function proxyTreeDxJson(input: {
 	c: Context;
@@ -40,85 +29,18 @@ export async function proxyTreeDxJson(input: {
 	requireProjectAccess: Parameters<typeof authorizeTreeDxProxy>[0]['requireProjectAccess'];
 	fetchImpl?: typeof fetch;
 }) {
-	const store = input.store as ProxyStore;
+	const store = input.store as TreeDxProxyStore;
 	const access = await authorizeTreeDxProxy({ c: input.c, store: input.store, projectId: input.projectId, permission: input.permission, scope: input.tokenScope, requireProjectAccess: input.requireProjectAccess });
 	if ('response' in access) return access.response;
 	const library = await store.getProjectTreeDxLibrary(input.projectId);
 	const baseUrl = resolveTreeDxProxyBaseUrl(input.runtime, library);
 	const token = resolveTreeDxProxyToken(input.runtime, baseUrl, input.projectId, input.tokenScope);
 	if (!token) throw new CapacityGovernanceError('treedx_proxy_token_unavailable', 'TreeDX proxy token is not configured for this project.', 503, { projectId: input.projectId });
-	let response: Response;
-	try {
-		const serialized = input.body === undefined ? undefined : JSON.stringify(input.body);
-		const gzip = input.path.endsWith('/changesets') && serialized !== undefined
-			&& Buffer.byteLength(serialized, 'utf8') >= 1_024;
-		response = await (input.fetchImpl ?? fetch)(`${baseUrl}${input.path}`, {
-			method: input.method,
-			headers: { accept: 'application/json', authorization: `Bearer ${token}`,
-				...(input.body === undefined ? {} : { 'content-type': 'application/json' }),
-				...(gzip ? { 'content-encoding': 'gzip' } : {}) },
-			body: serialized === undefined ? undefined : gzip ? gzipSync(serialized) : serialized,
-		});
-	} catch (error) {
-		throw new CapacityGovernanceError('treedx_runtime_unavailable', 'TreeDX runtime is unavailable for this project.', 503, { projectId: input.projectId, details: error instanceof Error ? error.message : String(error) });
-	}
-	const payload = await readBoundedTreeDxJson(response);
-	if (!response.ok) throw new CapacityGovernanceError('treedx_proxy_request_failed', `TreeDX ${input.method} ${input.path} failed.`, response.status, { status: response.status, details: record(payload).error ?? payload });
-
-	if (input.method === 'POST' && input.path === '/api/v1/repos') {
-		const payloadRecord = record(payload);
-		const repo = record(payloadRecord.repo ?? payloadRecord.repository ?? payload);
-		const rawRepoId = repo.repoId ?? repo.id ?? null;
-		const repoId = typeof rawRepoId === 'string' ? rawRepoId : null;
-		if (repoId && isLoopbackTreeDxBaseUrl(baseUrl)) {
-			const env = treeDxRuntimeEnv(input.runtime);
-			const grantToken = resolveTreeDxProxyToken(input.runtime, baseUrl, input.projectId, treeDxTokenScope({ repoId, capabilities: ['policy:write'], paths: ['**'] }));
-			const grantResponse = await (input.fetchImpl ?? fetch)(`${baseUrl}/api/v1/policy/grants`, {
-				method: 'POST',
-				headers: { accept: 'application/json', authorization: `Bearer ${grantToken ?? token}`, 'content-type': 'application/json' },
-				body: JSON.stringify({ actorId: treeDxProxyActorId(env), tenantId: treeDxProxyTenantId(env), repoIds: [repoId], capabilities: ['repos:read', 'repos:write', 'files:read', 'files:write', 'files:search', 'graph:query', 'graph:refresh', 'workspace:create', 'git:read', 'git:diff', 'git:commit', 'git:fetch'], refs: ['*'], paths: ['**'] }),
-			});
-			const grantPayload = await readBoundedTreeDxJson(grantResponse);
-			if (!grantResponse.ok) throw new CapacityGovernanceError('treedx_repository_grant_failed', 'TreeDX repository was created but proxy capability grant failed.', grantResponse.status, { repositoryId: repoId, details: record(grantPayload).error ?? grantPayload });
-		}
-	}
-
-	const project = await store.getProject(input.projectId);
-	if (!project) throw new CapacityGovernanceError('project_not_found', `Unknown project "${input.projectId}".`, 404);
-	await store.recordTreeDxProxyAudit({
-		teamId: project.teamId,
-		projectId: input.projectId,
-		assignmentId: access.assignment?.id ?? input.c.req.header('x-treeseed-assignment-id') ?? input.c.req.query('assignmentId') ?? null,
-		actorType: access.actorType,
-		actorId: access.actorType === 'capacity_provider'
-			? (access.principal as { capacityProviderId: string }).capacityProviderId
-			: (access.principal as Record<string, unknown>).id ?? null,
-		method: input.method,
-		path: input.path,
-		handle: { ...(access.handle ?? {}), projectId: input.projectId, assignmentId: access.assignment?.id ?? null, scopes: input.tokenScope.capabilities },
-		resultStatus: 'proxied',
-		metadata: { tokenScope: input.tokenScope, providerAssignmentScoped: access.actorType === 'capacity_provider' },
-	});
-	if (input.method === 'POST' && input.path.endsWith('/commit')) {
-		const commit = record(record(payload).commit ?? payload);
-		const assignmentDecision = record(access.assignment?.decisionInput);
-		const commitSha = String(commit.commitSha ?? commit.commit_sha ?? '');
-		const changedPaths = Array.isArray(commit.changedPaths ?? commit.changed_paths) ? (commit.changedPaths ?? commit.changed_paths) as string[] : [];
-		if (commitSha && changedPaths.length) await projectTreeDxCommitSignals(store, {
-			projectId: input.projectId, commitSha, immutableRef: String(commit.branchName ?? commit.branch_name ?? commitSha), changedPaths,
-			changeSummary: typeof record(input.body).message === 'string' ? String(record(input.body).message) : 'Committed TreeDX content changes.',
-			assignmentId: access.assignment?.id ?? null, workdayRunId: access.assignment ? String(record(access.assignment.metadata).workdayRunId ?? '') || null : null,
-			agentId: access.assignment ? String(access.assignment.agentId ?? '') || null : null,
-			activityType: access.assignment ? String(
-				assignmentDecision.activityType
-				?? record(assignmentDecision.metadata).activityType
-				?? record(assignmentDecision.input).activityType
-				?? record(access.assignment.metadata).activityType
-				?? '',
-			) || null : null,
-			capacityProviderId: access.actorType === 'capacity_provider' ? (access.principal as { capacityProviderId: string }).capacityProviderId : null,
-			actorType: access.actorType === 'capacity_provider' ? 'capacity_provider' : 'user', actorId: access.actorType === 'capacity_provider' ? (access.principal as { capacityProviderId: string }).capacityProviderId : String((access.principal as Record<string, unknown>).id ?? '') || null,
-		});
-	}
+	const fetchImpl = input.fetchImpl ?? fetch;
+	const payload = await requestTreeDxJson({ baseUrl, token, projectId: input.projectId, method: input.method, path: input.path, body: input.body, fetchImpl });
+	await grantCreatedLoopbackRepository({ runtime: input.runtime, baseUrl, token, projectId: input.projectId, method: input.method, path: input.path, payload, fetchImpl });
+	const assignmentId = input.c.req.header('x-treeseed-assignment-id') ?? input.c.req.query('assignmentId') ?? null;
+	await recordTreeDxProxySuccess({ store, access, projectId: input.projectId, method: input.method, path: input.path, tokenScope: input.tokenScope, assignmentId });
+	await projectTreeDxProxyCommit({ store, access, projectId: input.projectId, method: input.method, path: input.path, body: input.body, payload });
 	return input.c.json({ ok: true, payload, proxy: { projectId: input.projectId, actorType: access.actorType, treeDxBaseUrl: baseUrl } });
 }
