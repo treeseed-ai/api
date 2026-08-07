@@ -1,7 +1,7 @@
 {
-  "routeCount": 570,
-  "descriptorCount": 570,
-  "coveredByGuarantee": 570,
+  "routeCount": 571,
+  "descriptorCount": 571,
+  "coveredByGuarantee": 571,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -590,7 +590,8 @@
       "get.v1.templates",
       "post.v1.catalog.itemId.artifacts",
       "post.v1.seeds.name.apply",
-      "post.v1.seeds.name.plan"
+      "post.v1.seeds.name.plan",
+      "post.v1.seeds.resources.resolve"
     ],
     "ui-projection-endpoints": [
       "get.v1.ui.governance",

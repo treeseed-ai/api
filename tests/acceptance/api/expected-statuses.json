@@ -5522,6 +5522,18 @@
       "providerAccessToken": 400,
       "platformRunner": 400
     },
+    "post.v1.seeds.resources.resolve": {
+      "anonymous": 401,
+      "siteAdmin": 400,
+      "marketSteward": 400,
+      "teamOwner": 403,
+      "teamOperator": 403,
+      "teamViewer": 403,
+      "nonMember": 403,
+      "providerOperator": 403,
+      "providerAccessToken": 401,
+      "platformRunner": 401
+    },
     "post.v1.team-invites.token.accept": {
       "anonymous": 401,
       "siteAdmin": 400,
