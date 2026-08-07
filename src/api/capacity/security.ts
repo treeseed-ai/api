@@ -84,9 +84,13 @@ export class CapacitySecretCodec {
 	decrypt(envelope: string) {
 		const [ivValue, tagValue, encryptedValue] = envelope.split('.');
 		if (!ivValue || !tagValue || !encryptedValue) throw new CapacityGovernanceError('registration_key_reveal_invalid', 'Registration key reveal envelope is invalid.', 500);
-		const decipher = createDecipheriv('aes-256-gcm', this.#encryptionKey, Buffer.from(ivValue, 'base64url'));
-		decipher.setAuthTag(Buffer.from(tagValue, 'base64url'));
-		return Buffer.concat([decipher.update(Buffer.from(encryptedValue, 'base64url')), decipher.final()]).toString('utf8');
+		try {
+			const decipher = createDecipheriv('aes-256-gcm', this.#encryptionKey, Buffer.from(ivValue, 'base64url'));
+			decipher.setAuthTag(Buffer.from(tagValue, 'base64url'));
+			return Buffer.concat([decipher.update(Buffer.from(encryptedValue, 'base64url')), decipher.final()]).toString('utf8');
+		} catch {
+			throw new CapacityGovernanceError('registration_key_reveal_invalid', 'Registration key reveal envelope cannot be authenticated by the active secret generation.', 500);
+		}
 	}
 }
 

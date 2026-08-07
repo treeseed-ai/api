@@ -1,4 +1,4 @@
-import { R2S3PublicationClient,type R2S3PublicationConfig } from '@treeseed/sdk/platform/published-content';
+import { createR2PublicationClient,type R2PublicationConfig } from '@treeseed/sdk/platform/published-content';
 import { parseKnowledgePublicationManifest,type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
 import type { KnowledgePublicationStorage } from './publication-storage.ts';
 
@@ -8,13 +8,15 @@ const safeSegment = (value: string) => {
 	return result;
 };
 
-function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): R2S3PublicationConfig {
-	const config = {
+function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): R2PublicationConfig {
+	const common = {
 		accountId: String(env.TREESEED_CLOUDFLARE_ACCOUNT_ID ?? ''),
-		accessKeyId: String(env.TREESEED_R2_ACCESS_KEY_ID ?? ''),
-		secretAccessKey: String(env.TREESEED_R2_SECRET_ACCESS_KEY ?? ''),
 		bucket: String(env.TREESEED_CONTENT_BUCKET_NAME ?? ''),
 	};
+	const apiToken = String(env.TREESEED_CLOUDFLARE_API_TOKEN ?? '');
+	const config: R2PublicationConfig = apiToken
+		? { ...common, authMode: 'api-token', apiToken }
+		: { ...common, authMode: 's3', accessKeyId: String(env.TREESEED_R2_ACCESS_KEY_ID ?? ''), secretAccessKey: String(env.TREESEED_R2_SECRET_ACCESS_KEY ?? '') };
 	const missing = Object.entries(config).filter(([, value]) => !value).map(([key]) => key);
 	if (missing.length) throw new Error(`R2 knowledge publication storage is missing: ${missing.join(', ')}.`);
 	return config;
@@ -23,7 +25,7 @@ function configFromEnvironment(env: NodeJS.ProcessEnv = process.env): R2S3Public
 const manifestObjects = (manifest: KnowledgePublicationManifest) => new Set(manifest.entries.map((entry) => entry.content.objectKey));
 
 export function createR2KnowledgePublicationStorage(options: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {}): KnowledgePublicationStorage {
-	const client = new R2S3PublicationClient(configFromEnvironment(options.env), options.fetchImpl ?? fetch);
+	const client = createR2PublicationClient(configFromEnvironment(options.env), options.fetchImpl ?? fetch);
 	const currentKey = (teamId: string) => `teams/${safeSegment(teamId)}/published/common.json`;
 	const revisionKey = (teamId: string, revision: string) => `teams/${safeSegment(teamId)}/published/manifests/${safeSegment(revision)}.json`;
 	const readManifest = async (objectKey: string) => {
