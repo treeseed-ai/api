@@ -8,7 +8,8 @@ function reservationRow(overrides: Record<string, unknown> = {}) {
 		execution_provider_id: 'codex', lane_id: 'default', allocation_set_id: 'allocation-a', allocation_version: 1,
 		allocation_slice_ids_json: '["project:one"]', policy_snapshot_json: '{"allowed":true}', project_agent_class_id: 'class-a',
 		assignment_id: 'assignment-a', mode: 'planning', team_id: 'team-a', project_id: 'project-a', work_day_id: 'workday-a', task_id: null,
-		state: 'reserved', reserved_credits: 2, consumed_credits: 0, native_unit: 'token', reserved_native_amount: 10,
+		state: 'reserved', requested_seconds: 2, reserved_seconds: 2, active_seconds: 0, elapsed_seconds: 0, released_seconds: 0, overrun_seconds: 0,
+		native_unit: 'token', reserved_native_amount: 10,
 		consumed_native_amount: null, reserved_provider_units: null, consumed_provider_units: null, reserved_usd: null, consumed_usd: null,
 		expires_at: null, metadata_json: '{}', created_at: '2026-07-18T00:00:00.000Z', updated_at: '2026-07-18T00:00:00.000Z', ...overrides,
 	};
@@ -18,7 +19,7 @@ function ledgerRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'ledger-a', settlement_key: 'settle:a', membership_id: 'membership-a', capacity_provider_id: 'provider-a', reservation_id: 'reservation-a',
 		assignment_id: 'assignment-a', mode_run_id: 'mode-a', mode: 'planning', team_id: 'team-a', project_id: 'project-a', work_day_id: 'workday-a',
-		task_id: null, phase: 'task_completed_actual_settlement', credits: 2, provider_units: null, usd: null, source: 'provider', metadata_json: '{}',
+		task_id: null, phase: 'task_completed_actual_settlement', active_seconds: 2, elapsed_seconds: 3, provider_units: null, usd: null, source: 'provider', metadata_json: '{}',
 		created_at: '2026-07-18T00:00:00.000Z', ...overrides,
 	};
 }
@@ -35,8 +36,8 @@ function database(rows: Record<string, unknown>[]) {
 
 describe('financial read repositories', () => {
 	it('strictly serializes canonical reservation and ledger records', () => {
-		expect(serializeCapacityReservationRow(reservationRow())).toMatchObject({ id: 'reservation-a', allocationVersion: 1, state: 'reserved', reservedCredits: 2 });
-		expect(serializeCapacityLedgerEntryRow(ledgerRow())).toMatchObject({ id: 'ledger-a', phase: 'task_completed_actual_settlement', credits: 2 });
+		expect(serializeCapacityReservationRow(reservationRow())).toMatchObject({ id: 'reservation-a', allocationVersion: 1, state: 'reserved', reservedSeconds: 2 });
+		expect(serializeCapacityLedgerEntryRow(ledgerRow())).toMatchObject({ id: 'ledger-a', phase: 'task_completed_actual_settlement', activeSeconds: 2, elapsedSeconds: 3 });
 	});
 
 	it('fails closed for malformed durable financial records', () => {

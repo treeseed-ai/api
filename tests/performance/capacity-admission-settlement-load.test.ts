@@ -69,27 +69,27 @@ describe('capacity admission and settlement bounded local load profile', () => {
 			await store.ensureInitialized();
 			const now = new Date().toISOString();
 			await seedCapacityAdmissionDependencies(store, now);
-			await store.run(`UPDATE capacity_grants SET daily_credit_limit = 100, monthly_credit_limit = 100, max_concurrent_assignments = ? WHERE id = 'grant-a'`, [CONCURRENCY]);
+			await store.run(`UPDATE capacity_grants SET daily_agent_seconds_limit = 100, monthly_agent_seconds_limit = 100, max_concurrent_assignments = ? WHERE id = 'grant-a'`, [CONCURRENCY]);
 			await store.run(`UPDATE capacity_execution_providers SET max_concurrent_runners = ? WHERE id = 'codex'`, [CONCURRENCY]);
 			await store.run(`UPDATE capacity_provider_lanes SET max_concurrent_runners = ? WHERE id = 'lane-a'`, [CONCURRENCY]);
-			await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-load', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableCredits":100,"totalCredits":100}', '{}', ?, ?)`, [now, now, now]);
+			await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-load', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableSeconds":100,"totalSeconds":100}', '{}', ?, ?)`, [now, now, now]);
 			await store.run(`INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, environment, status, sequence, opened_at, refreshed_at, expires_at, available_from, available_until, execution_providers_json, capabilities_json, native_limits_json, runner_pressure_json, constraints_json, metadata_json, created_at, updated_at) VALUES ('session-load', 'membership-a', 'team-a', 'provider-a', 'local', 'open', 1, ?, ?, ?, ?, ?, '[{"id":"codex","kind":"codex"}]', '["engineering"]', ?, ?, ?, '{}', ?, ?)`, [
 				now,
 				now,
 				new Date(Date.now() + 60_000).toISOString(),
 				now,
 				new Date(Date.now() + 60_000).toISOString(),
-				JSON.stringify({ availableCredits: 100, maxConcurrentRunners: CONCURRENCY }),
+				JSON.stringify({ availableAgentSeconds: 100, maxConcurrentRunners: CONCURRENCY }),
 				JSON.stringify({ activeRunners: 0, maxConcurrentRunners: CONCURRENCY }),
-				JSON.stringify({ availableCredits: 100, activeRunners: 0, maxConcurrentRunners: CONCURRENCY }),
+				JSON.stringify({ availableAgentSeconds: 100, activeRunners: 0, maxConcurrentRunners: CONCURRENCY }),
 				now,
 				now,
 			]);
 			const input = capacityAdmissionInput(1, 0, now);
-			input.grant = { ...input.grant!, dailyCreditLimit: 100, monthlyCreditLimit: 100, maxConcurrentAssignments: CONCURRENCY };
-			input.workday = { id: 'workday-load', status: 'active', totalCredits: 100, committedCredits: 0 };
-			input.providerCapacity = { availableCredits: 100, availableConcurrentAssignments: CONCURRENCY };
-			input.providerLocalLimits = { availableCredits: 100, availableConcurrentAssignments: CONCURRENCY };
+			input.grant = { ...input.grant!, dailyAgentSecondsLimit: 100, monthlyAgentSecondsLimit: 100, maxConcurrentAssignments: CONCURRENCY };
+			input.workday = { id: 'workday-load', status: 'active', totalSeconds: 100, committedSeconds: 0 };
+			input.providerCapacity = { availableAgentSeconds: 100, availableConcurrentAssignments: CONCURRENCY };
+			input.providerLocalLimits = { availableAgentSeconds: 100, availableConcurrentAssignments: CONCURRENCY };
 
 			const totalStarted = performance.now();
 			const admissions = await Promise.all(Array.from({ length: CONCURRENCY }, (_, index) => measured(() =>
@@ -123,7 +123,7 @@ describe('capacity admission and settlement bounded local load profile', () => {
 					membershipId: 'membership-a',
 					reservationId: String(value.reservation.id),
 					assignmentId: String(value.assignment.id),
-					actualCredits: 1,
+					activeSeconds: 1, elapsedSeconds: 1,
 					source: 'capacity_local_load_profile',
 				}))));
 			const totalMs = performance.now() - totalStarted;

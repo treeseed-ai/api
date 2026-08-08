@@ -5,6 +5,7 @@ import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../src/api/capacity/control-plane.ts';
 import { projectCompletedAssignmentDeliverable } from '../../../../src/api/capacity/services/capacity/assignments/context/assignment-deliverable-service.ts';
 import { tickCapacityWorkdayRun } from '../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-tick-service.ts';
+import { resolveWorkdayPlanningGraphSnapshot } from '../../../../src/api/capacity/services/capacity/workdays/policy/workday-planning-graph-policy.ts';
 import { promoteEngineeringWorkflows } from '../../../../src/api/capacity/services/operations/engineering-workflow-promotion-service.ts';
 import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.ts';
 import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.ts';
@@ -16,6 +17,7 @@ const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
 
 function harness() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
@@ -32,18 +34,19 @@ async function seed(store: ReturnType<typeof harness>['store']) {
 	await store.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES ('team-a', 'team-a', 'Team A', ?, ?)`, [now, now]);
 	await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', ?, ?)`, [now, now]);
 	for (const [slug, agent] of [['testing', 'tester'], ['engineering', 'engineer'], ['review', 'reviewer'], ['technical-writing', 'technical-writer'], ['release', 'releaser']] as const) {
-		await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES (?, 'team-a', 'project-a', ?, ?, 'active', '["planning","acting"]', '[]', '{}', '{}', ?, '{}', '{}', ?, ?)`, [`project-a:${slug}`, slug, slug, JSON.stringify({ agents: [{ slug: agent, activities: { acting: { handler: 'actor' } } }] }), now, now]);
+		await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES (?, 'team-a', 'project-a', ?, ?, 'active', '["planning","acting"]', '[]', '{}', '{}', ?, '{}', '{}', ?, ?)`, [`project-a:${slug}`, slug, slug, JSON.stringify({ agents: [{ slug: agent, activities: { planning: { handler: 'writer', purpose: `Plan ${slug} work.` }, acting: { handler: 'actor' } } }] }), now, now]);
 	}
+	const planningGraph = await resolveWorkdayPlanningGraphSnapshot(store, 'project-a', {});
 	await store.run(`INSERT INTO capacity_workday_runs (id, team_id, scenario_id, status, environment, parameters_json, summary_json, metrics_json, expected_json, actual_json, report_refs_json, error_json, started_at, created_at, updated_at) VALUES ('run-a', 'team-a', 'engineering', 'running', 'local', '{}', '{}', '{}', '{}', '{}', '{}', '{}', ?, ?, ?)`, [now, now, now]);
-	await store.createWorkdayCapacityEnvelope({ id: 'workday-a', workdayRunId: 'run-a', projectId: 'project-a', status: 'active', startedAt: now, availableCredits: 20 });
+	await store.createWorkdayCapacityEnvelope({ id: 'workday-a', workdayRunId: 'run-a', projectId: 'project-a', status: 'active', startedAt: now, availableSeconds: 20 });
 	await store.upsertDecisionPlanningStatus({ projectId: 'project-a', decisionId: 'decision-a', humanApprovalState: 'approved', executionReadiness: 'blocked', planningInputsStatus: 'complete', scopeHash: 'approved-decision-scope' });
 	await store.createStructuredAgentEstimate('decision-a', {
 		id: 'estimate-a', projectId: 'project-a', proposalId: 'proposal-a', status: 'accepted', agentClass: 'engineering', agentId: 'engineer',
-		minCredits: 1, expectedCredits: 2, maxCredits: 3, expectedOutputs: [{ outputType: 'implementation', required: true }], acceptanceCriteria: ['tests pass'],
+		minSeconds: 1, expectedSeconds: 2, maxSeconds: 3, expectedOutputs: [{ outputType: 'implementation', required: true }], acceptanceCriteria: ['tests pass'],
 	});
 	return {
 		id: 'run-a', teamId: 'team-a', capacityProviderId: null, scenarioId: 'engineering', status: 'running' as const, environment: 'local', requestedById: null,
-		parameters: { projects: ['project-a'], engineeringWorkflows: [{ schemaVersion: 1, id: 'engineering-a', projectId: 'project-a', decisionId: 'decision-a', objectiveId: 'objective-a', exactBaseRef: '0123456789abcdef', roles }] },
+		parameters: { projects: ['project-a'], planningGraphByProjectId: { 'project-a': planningGraph }, engineeringWorkflows: [{ schemaVersion: 1, id: 'engineering-a', projectId: 'project-a', decisionId: 'decision-a', objectiveId: 'objective-a', exactBaseRef: '0123456789abcdef', roles }] },
 		summary: {}, metrics: {}, expected: {}, actual: {}, reportRefs: {}, error: {}, startedAt: now, completedAt: null, createdAt: now, updatedAt: now,
 	};
 }

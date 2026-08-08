@@ -13,6 +13,7 @@ const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/mark
     : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 function createStore() {
     const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
     memory.public.registerFunction({
         name: 'md5',
         args: [DataType.text],
@@ -25,8 +26,9 @@ function createStore() {
         repoRoot: packageRoot,
         authSecret: 'test-auth-secret',
         assertionSecret: 'test-assertion-secret',
-        serviceId: 'web',
-        serviceSecret: 'test-service-secret',
+		serviceId: 'web',
+		serviceSecret: 'test-service-secret',
+		fetchImpl: async () => Response.json({ ok: true, results: [], resolvedRef: 'a'.repeat(40), page: { hasMore: false, nextCursor: null } }),
     }, db));
     return { db, store };
 }
@@ -59,15 +61,15 @@ it('schedules only from existing governance and preserves grants and allocations
             executionProviderIds: ['codex'], laneIds: [], capabilities: ['repo_read', 'agent_mode_run'], allowedModes: ['planning'], unmetered: true,
         }, 'governed-grant-create');
         await grantService.transition('team-governed', grant!.id, 'active', 'governed-grant-activate');
-        await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, ['class-native-accounting', 'team-governed', 'project-agent', 'native-accounting', 'Native Accounting', now, now]);
+        await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, allowed_modes_json, handler_refs_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '["planning"]', ?, ?, ?)`, ['class-native-accounting', 'team-governed', 'project-agent', 'native-accounting', 'Native Accounting', JSON.stringify({ agents: [{ slug: 'accountant', activities: { planning: { handler: 'writer', purpose: 'Plan native capacity accounting.' } } }] }), now, now]);
         await store.run(`INSERT INTO capacity_reservations (
 					id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, execution_provider_id,
 					allocation_set_id, allocation_version, project_agent_class_id, mode, team_id, project_id,
-					state, reserved_credits, consumed_credits, native_unit, reserved_native_amount,
+					state, requested_seconds, reserved_seconds, active_seconds, elapsed_seconds, native_unit, reserved_native_amount,
 					consumed_native_amount, created_at, updated_at
 				) VALUES
-					(?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'planning', ?, ?, 'reserved', 2, 0, 'wall_minute', 10, NULL, ?, ?),
-					(?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'planning', ?, ?, 'consumed', 2, 2, 'wall_minute', NULL, 15, ?, ?)`, [
+					(?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'planning', ?, ?, 'reserved', 2, 2, 0, 0, 'wall_minute', 10, NULL, ?, ?),
+					(?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'planning', ?, ?, 'consumed', 2, 2, 2, 2, 'wall_minute', NULL, 15, ?, ?)`, [
             'native-reserved', 'native-reserved', 'native-reserved-token', 'membership-governed', grant!.id, 'provider-governed', 'codex', allocation.id,
             'class-native-accounting', 'team-governed', 'project-agent', '2026-07-17T03:00:00.000Z', '2026-07-17T03:00:00.000Z',
             'native-consumed', 'native-consumed', 'native-consumed-token', 'membership-governed', grant!.id, 'provider-governed', 'codex', allocation.id,
@@ -79,10 +81,10 @@ it('schedules only from existing governance and preserves grants and allocations
             windowStartAt: '2026-07-17T00:00:00.000Z', windowEndAt: '2026-07-18T00:00:00.000Z',
         })).toEqual({ activeReservedNativeAmount: 10, activeConsumedNativeAmount: 15 });
         expect(await store.getTeamCapacitySummary('team-governed', { now: '2026-07-17T04:00:00.000Z' })).toMatchObject({
-            dailyUsedCredits: 2,
-            dailyReservedCredits: 4,
-            monthlyUsedCredits: 2,
-            monthlyReservedCredits: 4,
+            dailyActiveSeconds: 2,
+            dailyReservedSeconds: 4,
+            monthlyActiveSeconds: 2,
+            monthlyReservedSeconds: 4,
         });
         const before = {
             grants: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_grants WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
@@ -90,7 +92,7 @@ it('schedules only from existing governance and preserves grants and allocations
         };
         const run = await store.createCapacityWorkdayRun('team-governed', {
             id: 'run-governed', capacityProviderId: 'provider-governed', environment: 'local', status: 'running',
-            parameters: { projects: ['agent'], durationSeconds: 60, allocationSetId: allocation.id, availableCredits: 10 },
+            parameters: { projects: ['agent'], durationSeconds: 900, allocationSetId: allocation.id, availableSeconds: 900, planningSession: { rounds: 1, assignmentTimeboxSeconds: 60 } },
         });
         expect(run).toMatchObject({
             id: 'run-governed', status: 'running',

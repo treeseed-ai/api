@@ -2,6 +2,7 @@ import { parseBook, parseKnowledgePage, type BookDefinition, type KnowledgePageD
 import { resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
 import { createKnowledgePublicationStorage } from './publication-storage.ts';
 import { loadPublishedTeamCatalog } from './published-catalog.ts';
+import { listKnowledgeContentPaths } from './read-model/repository-paths.ts';
 
 type SourceContext = {
 	teamId: string;
@@ -50,15 +51,44 @@ export function mergeFederatedProjects(memberProjects: any[], publicProjects: an
 }
 
 async function contentPaths(connection: any, ref = connection.baseRef) {
-	const response = await connection.client.listRepositoryPaths({
-		repoId: connection.repositoryId, ref,
-		paths: [`${connection.contentPath}/books/**`, `${connection.contentPath}/knowledge/**`],
-		extensions: ['.md', '.mdx'], kinds: ['blob'], limit: 2_000,
-	});
+	const response = await listKnowledgeContentPaths(connection, ref);
 	return {
 		paths: (response.entries ?? []).map((entry: any) => String(entry.path ?? '')).filter(Boolean),
-		resolvedRef: String(response.resolvedRef ?? response.ref ?? connection.baseRef),
+		resolvedRef: response.resolvedRef,
 	};
+}
+
+async function loadLiveProjectCatalog(context: any, project: any) {
+	const observedConnection = await resolveKnowledgeGatewayConnection(context.store, { projectId: project.id, write: false });
+	if (!observedConnection) return { books: [] as FederatedBook[], pages: [] as FederatedKnowledgePage[] };
+	const [paths, team] = await Promise.all([contentPaths(observedConnection), context.store.getTeam(project.teamId)]);
+	const connection = await resolveKnowledgeGatewayConnection(context.store, {
+		projectId: project.id, write: false, readRefs: [paths.resolvedRef],
+	});
+	if (!connection || connection.repositoryId !== observedConnection.repositoryId
+		|| connection.contentPath !== observedConnection.contentPath) {
+		throw new Error('The knowledge repository binding changed while the catalog was loading.');
+	}
+	const bookRoot = `${connection.contentPath}/books/`;
+	const pageRoot = `${connection.contentPath}/knowledge/`;
+	const [bookDocuments, pageDocuments] = await Promise.all([
+		repositoryDocuments(connection, paths.resolvedRef, paths.paths.filter((path) => path.startsWith(bookRoot))),
+		repositoryDocuments(connection, paths.resolvedRef, paths.paths.filter((path) => path.startsWith(pageRoot))),
+	]);
+	const source = { teamId: project.teamId, teamSlug: team?.slug ?? team?.name ?? project.teamId,
+		projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef };
+	const books = bookDocuments.flatMap((document): FederatedBook[] => {
+		const raw = String(document.content ?? '');
+		if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
+		return raw ? [{ ...parseBook({ path: String(document.path), raw }), source: { ...source, path: String(document.path) } }] : [];
+	});
+	const pages = pageDocuments.flatMap((document): FederatedKnowledgePage[] => {
+		const raw = String(document.content ?? '');
+		if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
+		return raw ? [{ ...parseKnowledgePage({ path: String(document.path), raw, sourcePackage: project.id }),
+			source: { ...source, path: String(document.path) } }] : [];
+	});
+	return { books, pages };
 }
 
 export async function loadFederatedKnowledgeCatalog(context: any, c: any, projectId?: string) {
@@ -96,38 +126,8 @@ export async function loadFederatedKnowledgeCatalog(context: any, c: any, projec
 			liveProjects.push(...teamProjects.filter((project) => !publishedProjectIds.has(project.id)));
 		}
 	}
-	for (const project of liveProjects) {
-		const observedConnection = await resolveKnowledgeGatewayConnection(context.store, { projectId: project.id, write: false });
-		if (!observedConnection) continue;
-		const [paths, team] = await Promise.all([contentPaths(observedConnection), context.store.getTeam(project.teamId)]);
-		const connection = await resolveKnowledgeGatewayConnection(context.store, {
-			projectId: project.id, write: false, readRefs: [paths.resolvedRef],
-		});
-		if (!connection || connection.repositoryId !== observedConnection.repositoryId
-			|| connection.contentPath !== observedConnection.contentPath) {
-			throw new Error('The knowledge repository binding changed while the catalog was loading.');
-		}
-		const bookRoot = `${connection.contentPath}/books/`;
-		const pageRoot = `${connection.contentPath}/knowledge/`;
-		const bookPaths = paths.paths.filter((path) => path.startsWith(bookRoot));
-		const pagePaths = paths.paths.filter((path) => path.startsWith(pageRoot));
-		const [bookDocuments, pageDocuments] = await Promise.all([
-			repositoryDocuments(connection, paths.resolvedRef, bookPaths),
-			repositoryDocuments(connection, paths.resolvedRef, pagePaths),
-		]);
-		const source = { teamId: project.teamId, teamSlug: team?.slug ?? team?.name ?? project.teamId,
-			projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef };
-		for (const document of bookDocuments) {
-			const raw = String(document.content ?? '');
-			if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
-			if (raw) books.push({ ...parseBook({ path: String(document.path), raw }), source: { ...source, path: String(document.path) } });
-		}
-		for (const document of pageDocuments) {
-			const raw = String(document.content ?? '');
-			if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
-			if (raw) pages.push({ ...parseKnowledgePage({ path: String(document.path), raw, sourcePackage: project.id }), source: { ...source, path: String(document.path) } });
-		}
-	}
+	const liveCatalogs = await Promise.all(liveProjects.map((project) => loadLiveProjectCatalog(context, project)));
+	for (const catalog of liveCatalogs) { books.push(...catalog.books); pages.push(...catalog.pages); }
 	assertFederatedKnowledgeIdentity(books, pages);
 	const bookById = new Map(books.map((book) => [book.id, book]));
 	for (const page of pages) page.source = { ...page.source, bookSlug: bookById.get(page.bookId)?.slug ?? page.bookId };

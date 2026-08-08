@@ -13,6 +13,7 @@ const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
 
 function harness() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
@@ -43,9 +44,9 @@ describe('capacity grant governance', () => {
 			const created = await service.create('team-a', {
 				membershipId: 'membership-a', projectId: 'project-a', environment: 'local',
 				executionProviderIds: ['codex'], capabilities: ['engineering'], allowedModes: ['planning', 'acting'],
-				dailyCreditLimit: 100, monthlyCreditLimit: 1000, maxConcurrentAssignments: 2,
+				dailyAgentSecondsLimit: 100, monthlyAgentSecondsLimit: 1000, maxConcurrentAssignments: 2,
 			}, 'create-local');
-			expect(created).toMatchObject({ schemaVersion: 2, membershipId: 'membership-a', providerId: 'provider-a', projectId: 'project-a', status: 'planned', dailyCreditLimit: 100 });
+			expect(created).toMatchObject({ schemaVersion: 2, membershipId: 'membership-a', providerId: 'provider-a', projectId: 'project-a', status: 'planned', dailyAgentSecondsLimit: 100 });
 			expect(await service.transition('team-a', created!.id, 'active', 'activate-1')).toMatchObject({ status: 'active' });
 			expect(await service.transition('team-a', created!.id, 'paused', 'pause-1')).toMatchObject({ status: 'paused' });
 			expect(await service.transition('team-a', created!.id, 'active', 'activate-2')).toMatchObject({ status: 'active' });
@@ -68,10 +69,10 @@ describe('capacity grant governance', () => {
 		try {
 			await store.ensureInitialized();
 			await seedGrantOwnership(store, 'suspended');
-			await expect(service.create('team-a', { membershipId: 'membership-a', projectId: 'project-a', environment: 'local', dailyCreditLimit: 1 }, 'create-suspended')).rejects.toMatchObject({ code: 'capacity_grant_membership_not_approved' });
+			await expect(service.create('team-a', { membershipId: 'membership-a', projectId: 'project-a', environment: 'local', dailyAgentSecondsLimit: 1 }, 'create-suspended')).rejects.toMatchObject({ code: 'capacity_grant_membership_not_approved' });
 			await store.run(`UPDATE capacity_provider_team_memberships SET status = 'approved' WHERE id = ?`, ['membership-a']);
-			const denied = await service.create('team-a', { membershipId: 'membership-a', projectId: 'project-a', environment: 'local', executionProviderIds: ['codex'], allowedModes: ['planning'], dailyCreditLimit: 0, monthlyCreditLimit: 0, maxConcurrentAssignments: 0, unmetered: false }, 'create-denied');
-			expect(denied).toMatchObject({ status: 'planned', dailyCreditLimit: 0, maxConcurrentAssignments: 0 });
+			const denied = await service.create('team-a', { membershipId: 'membership-a', projectId: 'project-a', environment: 'local', executionProviderIds: ['codex'], allowedModes: ['planning'], dailyAgentSecondsLimit: 0, monthlyAgentSecondsLimit: 0, maxConcurrentAssignments: 0, unmetered: false }, 'create-denied');
+			expect(denied).toMatchObject({ status: 'planned', dailyAgentSecondsLimit: 0, maxConcurrentAssignments: 0 });
 			await expect(service.create('team-a', { membershipId: 'membership-a', projectId: 'project-a', environment: 'local', executionProviderIds: ['missing'], allowedModes: ['planning'], unmetered: true }, 'create-missing-provider')).rejects.toMatchObject({ code: 'capacity_grant_execution_provider_invalid' });
 			await expect(service.create('team-a', { membershipId: 'membership-a', projectId: 'project-a', environment: 'local', executionProviderIds: ['codex'], laneIds: ['missing'], allowedModes: ['planning'], unmetered: true }, 'create-missing-lane')).rejects.toMatchObject({ code: 'capacity_grant_lane_invalid' });
 			await expect(service.create('team-a', { membershipId: 'membership-a', projectId: 'project-a', environment: 'local', executionProviderIds: ['codex'], capabilities: ['research'], allowedModes: ['planning'], unmetered: true }, 'create-missing-capability')).rejects.toMatchObject({ code: 'capacity_grant_capability_invalid' });

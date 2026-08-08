@@ -13,6 +13,7 @@ const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/mark
 
 function createTestPostgresDatabase() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({
 		name: 'md5',
 		args: [DataType.text],

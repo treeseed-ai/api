@@ -35,10 +35,11 @@ function row(overrides: Record<string, unknown> = {}) {
 		diff_lines_removed: 1,
 		test_runs: 1,
 		retry_count: 0,
-		actual_credits: 1.5,
+		active_seconds: 45,
+		elapsed_seconds: 60,
+		reasoning_tokens: 3,
 		actual_usd: null,
-		credit_formula_version: 'treeseed.provider-settlement.v1',
-		actual_credit_source: 'provider_settlement',
+		active_seconds_source: 'provider_settlement',
 		native_usage_json: '{"wallMinutes":1}',
 		metadata_json: '{"settlementKey":"settlement-a"}',
 		created_at: '2026-07-17T12:00:00.000Z',
@@ -52,7 +53,7 @@ describe('task usage repository', () => {
 		const database = { ensureInitialized: vi.fn(), all } as never;
 		const page = await listTaskUsageActualsPage(database, 'project-a', { workDayId: 'workday-a', limit: 1 });
 		expect(page.items).toHaveLength(1);
-		expect(page.items[0]).toMatchObject({ id: 'usage-a', assignmentId: 'assignment-a', actualCredits: 1.5 });
+		expect(page.items[0]).toMatchObject({ id: 'usage-a', assignmentId: 'assignment-a', activeSeconds: 45, elapsedSeconds: 60 });
 		expect(page.page).toMatchObject({ limit: 1, hasMore: true });
 		expect(page.page.nextCursor).toEqual(expect.any(String));
 		expect(all.mock.calls[0]?.[0]).toContain('work_day_id = ?');
@@ -68,7 +69,7 @@ describe('task usage repository', () => {
 	it('fails closed for malformed durable usage evidence', () => {
 		expect(() => serializeTaskUsageActualRow(row({ metadata_json: '{' })))
 			.toThrowError(expect.objectContaining({ code: 'capacity_task_usage_corrupt' }));
-		expect(() => serializeTaskUsageActualRow(row({ actual_credits: -1 })))
+		expect(() => serializeTaskUsageActualRow(row({ active_seconds: -1 })))
 			.toThrowError(expect.objectContaining({ code: 'capacity_task_usage_corrupt' }));
 		expect(() => serializeTaskUsageActualRow(row({ execution_profile_id: null })))
 			.toThrowError(expect.objectContaining({ code: 'capacity_task_usage_corrupt' }));

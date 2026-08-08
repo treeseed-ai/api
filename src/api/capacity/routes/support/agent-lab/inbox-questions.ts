@@ -1,6 +1,6 @@
 import { parseFrontmatterDocument } from '@treeseed/sdk/frontmatter';
-import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
-import type { WorkdayRouteDependencies } from './operator-workdays.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
 
 type Row = Record<string, unknown>;
 function object(value: unknown): Row { return value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}; }

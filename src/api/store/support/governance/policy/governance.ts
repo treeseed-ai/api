@@ -247,6 +247,7 @@ export function serializeGovernanceProposal(row) {
         summary: row.summary,
         body: row.body,
         proposalType: row.proposal_type,
+        proposalTypes: parseJson(row.proposal_types_json, [row.proposal_type]).filter((value) => typeof value === 'string' && value),
         contentProposalSlug: row.content_proposal_slug,
         contentDecisionSlug: row.content_decision_slug,
         activeVersion: Number(row.active_version ?? 1),

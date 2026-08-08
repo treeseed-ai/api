@@ -8,7 +8,7 @@ const assignment = {
 
 const estimate = {
 	id: 'estimate-a', teamId: 'team-a', projectId: 'project-a', decisionId: 'decision-a', proposalId: 'proposal-a',
-	agentClass: 'engineering', agentId: 'engineer', minCredits: 1, expectedCredits: 2, maxCredits: 3,
+	agentClass: 'engineering', agentId: 'engineer', minSeconds: 1, expectedSeconds: 2, maxSeconds: 3,
 	confidence: 'medium', riskLevel: 'low', assumptions: [], blockers: [], dependencies: [],
 	expectedOutputs: [{ outputType: 'implementation', required: true }], acceptanceCriteria: ['tests pass'], completionEvidence: [],
 	createdAt: '2026-07-18T00:00:00.000Z', metadata: {},

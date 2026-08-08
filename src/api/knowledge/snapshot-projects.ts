@@ -1,6 +1,7 @@
 import { parseBook, parseKnowledgePage, validateKnowledgeCatalog } from '@treeseed/sdk/knowledge';
 import type { KnowledgeSnapshotProject } from '@treeseed/sdk/knowledge-packs';
 import { resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
+import { listKnowledgeContentPaths } from './read-model/repository-paths.ts';
 
 async function documents(connection: any, resolvedRef: string, paths: string[]) {
 	const files: any[] = [];
@@ -17,24 +18,21 @@ async function documents(connection: any, resolvedRef: string, paths: string[]) 
 }
 
 export async function loadKnowledgeSnapshotProjects(store: any, input: {
-	teamId: string;
+	teamId: string; projectIds?: Set<string>;
 }): Promise<KnowledgeSnapshotProject[]> {
 	// Publication is a team-level control-plane operation. Its source closure must
 	// not shrink because the requesting author's membership changes while the
 	// operation is running.
-	const projects = await store.listTeamProjects(input.teamId);
+	const projects = (await store.listTeamProjects(input.teamId))
+		.filter((project: any) => !input.projectIds || input.projectIds.has(project.id));
 	const snapshots: KnowledgeSnapshotProject[] = [];
 	for (const project of projects) {
 		const observedConnection = await resolveKnowledgeGatewayConnection(store, { projectId: project.id, write: false });
 		if (!observedConnection) {
 			throw new Error(`TreeDX repository is unavailable for team project ${project.id}; the federated publication was not changed.`);
 		}
-		const listed = await observedConnection.client.listRepositoryPaths({
-			repoId: observedConnection.repositoryId, ref: observedConnection.baseRef,
-			paths: [`${observedConnection.contentPath}/books/**`, `${observedConnection.contentPath}/knowledge/**`],
-			extensions: ['.md', '.mdx'], kinds: ['blob'], limit: 2_000,
-		});
-		const commitSha = String(listed.resolvedRef ?? listed.ref ?? '');
+		const listed = await listKnowledgeContentPaths(observedConnection);
+		const commitSha = listed.resolvedRef;
 		if (!commitSha) throw new Error(`TreeDX did not resolve an exact source commit for project ${project.id}.`);
 		const connection = await resolveKnowledgeGatewayConnection(store, {
 			projectId: project.id, write: false, readRefs: [commitSha],

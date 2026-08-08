@@ -7,13 +7,15 @@ describe('contextual knowledge API architecture', () => {
 	it('serves contextual help from federated TreeDX knowledge rather than a help filesystem', () => {
 		const routes = source('src/api/routes/support/contextual-knowledge.ts');
 		const catalog = source('src/api/knowledge/federated-catalog.ts');
+		const repositoryPaths = source('src/api/knowledge/read-model/repository-paths.ts');
 		expect(routes).toContain("'/v1/knowledge/context'");
 		expect(routes).toContain("'/v1/knowledge/pages/:pageId'");
 		expect(routes).toContain("'/v1/knowledge/search'");
 		expect(routes).toContain("'/v1/knowledge/library'");
 		expect(routes).toContain("'/v1/knowledge/reader'");
 		expect(routes).toContain('loadFederatedKnowledgeCatalog');
-		expect(catalog).toContain('listRepositoryPaths');
+		expect(repositoryPaths).toContain('listRepositoryPaths');
+		expect(repositoryPaths).toContain('nextCursor');
 		expect(catalog).toContain('readRepositoryFiles');
 		expect(catalog).toContain('parseFrontmatter: true');
 		expect(catalog).toContain('TreeDX did not parse frontmatter');
@@ -33,6 +35,14 @@ describe('contextual knowledge API architecture', () => {
 		expect(gateway).toContain('TREESEED_TREEDX_PROXY_ACTOR_ID');
 		expect(gateway).toContain("'treeseed-control-plane'");
 		expect(gateway).not.toContain('actorUserId');
+	});
+
+	it('returns one reader body with compact navigation metadata', () => {
+		const routes = source('src/api/routes/support/contextual-knowledge.ts');
+		expect(routes).toContain('navigation: pages.map(navigationEntry)');
+		expect(routes).toContain('page,');
+		expect(routes).toContain("c.header('server-timing'");
+		expect(routes).not.toContain('navigation: pages.map(responsePage)');
 	});
 
 	it('has removed the custom help model and API route implementation', () => {

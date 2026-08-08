@@ -17,6 +17,7 @@ import { installCommerceVendorOnboardingStripeAndCheckoutRoutes } from "../route
 import { installFeedbackAdministrationRoutes } from "../routes/feedback/administration.ts";
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installDiscussionRoutes } from "../routes/discussions/discussions.ts";
+import { installSessionEventRoutes } from "../routes/realtime/session-events.ts";
 import { installGovernanceCommonsProposalsQuestionsAndVotesRoutes } from "../routes/governance/commons/governance-commons-proposals-questions-and-votes.ts";
 import { installGovernanceCommonsReviewsDecisionsAndDelegationsRoutes } from "../routes/governance/commons/governance-commons-reviews-decisions-and-delegations.ts";
 import { installKnowledgeAuthoringRoutes } from "../routes/knowledge/authoring.ts";
@@ -58,6 +59,7 @@ export function installPlatformRoutes(context: any): void {
   installFoundationHealthAndMarketRoutes(context);
   installFeedbackSubmissionRoutes(context);
   installDiscussionRoutes(context);
+  installSessionEventRoutes(context);
   installFeedbackAdministrationRoutes(context);
   installContextualKnowledgeRoutes(context);
   installKnowledgeAuthoringRoutes(context);

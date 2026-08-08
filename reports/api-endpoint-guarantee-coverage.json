@@ -1,7 +1,7 @@
 {
-  "routeCount": 570,
-  "descriptorCount": 570,
-  "coveredByGuarantee": 570,
+  "routeCount": 572,
+  "descriptorCount": 572,
+  "coveredByGuarantee": 572,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -14,6 +14,7 @@
       "get.v1.provider-registrations.requestId",
       "get.v1.research-workflows.workflowId",
       "get.v1.service-providers",
+      "get.v1.session.events",
       "get.v1.workflow-operation-runs.runId",
       "get.v1.workflow-operation-runs.runId.artifacts",
       "get.v1.workflow-operation-runs.runId.artifacts.artifactId.download",
@@ -590,7 +591,8 @@
       "get.v1.templates",
       "post.v1.catalog.itemId.artifacts",
       "post.v1.seeds.name.apply",
-      "post.v1.seeds.name.plan"
+      "post.v1.seeds.name.plan",
+      "post.v1.seeds.resources.resolve"
     ],
     "ui-projection-endpoints": [
       "get.v1.ui.governance",

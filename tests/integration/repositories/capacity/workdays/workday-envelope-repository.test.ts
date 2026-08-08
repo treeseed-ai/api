@@ -12,6 +12,7 @@ const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market')) 
 
 function harness() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
@@ -71,7 +72,7 @@ describe('workday capacity envelope mutation idempotency', () => {
 			const now = new Date().toISOString();
 			await store.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES ('team-a', 'team-a', 'Team A', ?, ?)`, [now, now]);
 			await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', ?, ?)`, [now, now]);
-			const input = { id: 'workday-a', projectId: 'project-a', status: 'draft' as const, availableCredits: 10 };
+			const input = { id: 'workday-a', projectId: 'project-a', status: 'draft' as const, availableSeconds: 10 };
 			const [created, concurrentReplay] = await Promise.all([
 				repository.create(input, 'stable-workday-create'),
 				repository.create(input, 'stable-workday-create'),

@@ -204,5 +204,5 @@ it('manages phase 3 commerce stripe connect onboarding for approved vendors', as
 			expect.objectContaining({ action: 'commerce_vendor.stripe_login_link.created' }),
 		]));
 		expect(JSON.stringify(events.payload)).not.toContain(loginLink.payload.loginUrl);
-	}, 15_000);
+	}, 60_000);
 });

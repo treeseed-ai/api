@@ -5,6 +5,7 @@ import { describe,expect,it } from 'vitest';
 import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.js';
 import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.js';
 import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
+import { seedTreeDxFetch } from '../../../support/seed-treedx.js';
 
 const projectRoot = process.cwd();
 const migrationRoot = existsSync(resolve(projectRoot, '../sdk/drizzle/market'))
@@ -13,6 +14,7 @@ const migrationRoot = existsSync(resolve(projectRoot, '../sdk/drizzle/market'))
 
 function createStore() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({
 		name: 'md5',
 		args: [DataType.text],
@@ -28,6 +30,7 @@ function createStore() {
 		assertionSecret: 'test-assertion-secret',
 		serviceId: 'web',
 		serviceSecret: 'test-service-secret',
+		fetchImpl: seedTreeDxFetch,
 	}, db);
 	return { db, store };
 }
@@ -62,7 +65,7 @@ describe('seeded team visibility reconciliation', () => {
 			expect(repaired.plan.summary).toMatchObject({
 				create: 0,
 				update: 1,
-				unchanged: 15,
+				unchanged: 16,
 				skip: 0,
 			});
 			expect((await store.getTeamBySlug('treeseed'))?.metadata?.visibility).toBe('public');

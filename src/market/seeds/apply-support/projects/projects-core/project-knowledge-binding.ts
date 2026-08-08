@@ -29,7 +29,12 @@ export async function ensureProjectKnowledgeBinding(input: {
 		paths: ['**'],
 		ttlSeconds: 300,
 	});
-	const client = new TreeDxClient({ baseUrl: baseUrl.replace(/\/+$/u, ''), token, timeoutMs: 15_000 });
+	const client = new TreeDxClient({
+		baseUrl: baseUrl.replace(/\/+$/u, ''),
+		token,
+		timeoutMs: 15_000,
+		fetch: input.store.config?.fetchImpl,
+	});
 	const repositoryName = projectRepositoryName(input.projectSlug);
 	const repositories = input.dependencyState
 		? await (input.dependencyState.repositoryCatalog ??= client.listRepositories())

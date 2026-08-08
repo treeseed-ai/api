@@ -1,8 +1,8 @@
 import { validateAgentActivityProfilesConfiguration,validateAgentSignalContract,validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parseFrontmatterDocument } from '@treeseed/sdk/frontmatter';
 import { parse as parseYaml } from 'yaml';
-import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
-import type { WorkdayRouteDependencies } from './operator-workdays.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
 
 type Row = Record<string, unknown>;
 

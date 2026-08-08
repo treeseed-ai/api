@@ -21,6 +21,7 @@ import {
 import { createMarketPostgresDatabase } from "./market-postgres.js";
 import { routeDependencies } from "./route-dependencies.ts";
 import { installPlatformRoutes } from "./route-installers.ts";
+import { SessionEventService } from "../realtime/session-events.ts";
 
 export * from "../app/support/index.ts";
 
@@ -49,6 +50,7 @@ export function createPlatformApiApp(
       db,
     );
   const capacity = createCapacityControlPlane(store);
+  const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
   const configuredAuthProviderId =
     config.providers?.auth ?? POSTGRES_AUTH_PROVIDER_ID;
   const authProviderId =
@@ -131,6 +133,7 @@ export function createPlatformApiApp(
             runtimeMarketAuthProvider,
             runtimeProviders,
             sharedSdk,
+            sessionEvents,
             store,
             stripeConnectService,
           };

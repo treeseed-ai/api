@@ -9,7 +9,7 @@ describe('capacity workday schedules', () => {
 		const service = new CapacityWorkdayScheduleService(createCapacityControlPlane(host));
 		const created = await service.create('team-a', {
 			id: 'schedule-a', projectIds: ['project-a'], capacityProviderId: 'provider-a', cadenceSeconds: 300,
-			durationSeconds: 120, maxActiveAssignments: 3, availableCredits: 50,
+			durationSeconds: 120, maxActiveAssignments: 3, availableAgentSeconds: 50,
 			agentSelection: { classSlugs: ['guide-writing'], agentSlugs: ['writer'], mode: 'intersection' },
 			publicationPolicy: { bookIds: ['treeseed-guide'], target: 'staging', simulatedHumanApproval: true },
 		});

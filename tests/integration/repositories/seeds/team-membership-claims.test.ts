@@ -5,18 +5,21 @@ import { describe, expect, it } from 'vitest';
 import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.js';
 import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.js';
 import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
+import { seedTreeDxFetch } from '../../../support/seed-treedx.js';
 
-const projectRoot = resolve(process.cwd(), '../..');
-const migrationRoot = existsSync(resolve(projectRoot, 'packages/sdk/drizzle/market'))
-	? resolve(projectRoot, 'packages/sdk/drizzle/market')
-	: resolve(process.cwd(), 'node_modules/@treeseed/sdk/drizzle/market');
+const packageRoot = process.cwd();
+const projectRoot = packageRoot;
+const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
+	? resolve(packageRoot, '../sdk/drizzle/market')
+	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 
 function fixture() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const db = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-	return { db, store: new MarketControlPlaneStore({ repoRoot: projectRoot, projectId: 'membership-seed-test', authSecret: 'test', assertionSecret: 'test', serviceId: 'web', serviceSecret: 'test' }, db) };
+	return { db, store: new MarketControlPlaneStore({ repoRoot: projectRoot, projectId: 'membership-seed-test', authSecret: 'test', assertionSecret: 'test', serviceId: 'web', serviceSecret: 'test', fetchImpl: seedTreeDxFetch }, db) };
 }
 
 describe('seed team membership claims', () => {

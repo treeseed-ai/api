@@ -9,7 +9,7 @@ import type { Context, Hono } from 'hono';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import { ProjectAgentClassService } from '../../../services/projects/agents/project-agent-class-service.ts';
 import { projectTreeDxCommitSignals } from '../../../services/treedx/repositories/treedx-change-projector.ts';
-import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from '../agent-lab-repository-definitions.ts';
+import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from './repository-definitions.ts';
 import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
 import { applyTextChangeset } from '../../../../knowledge/changesets/apply-text-changeset.ts';

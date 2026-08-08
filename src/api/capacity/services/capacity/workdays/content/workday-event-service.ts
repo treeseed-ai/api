@@ -9,6 +9,7 @@ parseCapacityWorkdayEventStatus,
 } from '../../../../repositories/capacity/workdays/workday-event.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { appendDiscussionEvent } from '../../../../../discussions/content.ts';
+import { persistSessionEvent } from '../../../../../realtime/session-events.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -39,10 +40,14 @@ export class CapacityWorkdayEventService {
 			createdAt: nullable(input.createdAt) ?? new Date().toISOString(),
 		});
 		if (!event) throw new CapacityGovernanceError('capacity_workday_event_conflict', 'Capacity workday event could not be persisted because its id is owned by another run or the run changed concurrently.', 409, { teamId, runId, eventId: id });
+		await persistSessionEvent(this.database, {
+			eventType: 'resource.invalidated', teamId, projectId: event.projectId, resourceId: runId,
+			payload: { resource: 'workday', workdayId: runId, eventId: event.id, endpoints: [`/v1/teams/${teamId}/agent-lab`, `/v1/teams/${teamId}/workday-runs/${runId}`, `/v1/workdays/${runId}`] },
+		}).catch((error: unknown) => console.warn('[api] Workday session event degraded', { error: error instanceof Error ? error.message : String(error) }));
 		const discussion = object(run.parameters.discussion);
 		const discussionId = nullable(discussion.discussionId);
 		if (discussionId && event.projectId) {
-			await appendDiscussionEvent({ store: this.database, projectId: event.projectId, discussionId, event: event as unknown as JsonRecord });
+			await appendDiscussionEvent({ store: this.database, projectId: event.projectId, teamId, discussionId, event: event as unknown as JsonRecord });
 		}
 		return event;
 	}
