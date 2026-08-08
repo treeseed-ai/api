@@ -1,31 +1,22 @@
 import { applyAction,approvalMatchesPlan,createLocalSeedStore,createProductionApproval,createSeedRunIfAvailable,ensureLocalSeedTeamMemberships,ensureProjectSeedDependencies,isoNow,manifestHashFor,mutationActions,planSeedWithStore,redactSeedApplyResult,seedRunInput,selectedActions,updateSeedRunIfAvailable } from '../index.js';
 
-const PLATFORM_PROJECT_KEYS = ['market', 'admin', 'core', 'ui', 'sdk', 'api', 'cli', 'agent', 'treedx']
-    .map((slug) => `project:treeseed/${slug}`);
-
-async function verifyPlatformKnowledgeSeed(store, ids, options = { requireRuntimeBinding: false }) {
-    const teamId = ids.teams.get('team:treeseed');
-    if (!teamId) throw new Error('TreeSeed knowledge seed postcondition failed: central team is absent.');
-    const missing = PLATFORM_PROJECT_KEYS.filter((key) => !ids.projects.get(key));
-    if (missing.length) throw new Error(`TreeSeed knowledge seed postcondition failed: missing projects ${missing.join(', ')}.`);
-    for (const key of PLATFORM_PROJECT_KEYS) {
-        const projectId = ids.projects.get(key);
-        const [details, library] = await Promise.all([
-            store.getProjectDetails(projectId), store.getProjectTreeDxLibrary(projectId),
-        ]);
-        if (!details || details.project.teamId !== teamId) throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} has the wrong owner.`);
-        const declaredMetadata = details.project.metadata?.metadata ?? details.project.metadata ?? {};
-        if (declaredMetadata.visibility !== 'public') throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} is not public.`);
-        if (details.architecture?.contentRuntimeSource !== 'r2_published_manifest') {
-            throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} does not use the atomic published runtime.`);
-        }
-        if (options.requireRuntimeBinding && (!library?.repositoryId || !library?.contentRepositoryRef || !library?.contentPath)) {
-            throw new Error(`TreeSeed knowledge seed postcondition failed: ${key} lacks a complete TreeDX binding.`);
-        }
+async function verifyAppliedSeed(input, store) {
+    const observed = await planSeedWithStore({
+        projectRoot: input.projectRoot,
+        seedName: input.seedName,
+        environments: input.environments,
+        mode: 'plan',
+        store,
+        env: input.env,
+        manifestRef: input.manifestRef,
+        actor: input.actor,
+    });
+    if (!observed.plan) throw new Error(observed.diagnostics?.[0]?.message ?? 'Seed read-back verification failed.');
+    const drift = observed.plan.actions.filter((action) => ['create', 'update', 'delete', 'error'].includes(action.action));
+    if (drift.length) {
+        throw new Error(`Seed read-back verification found drift: ${drift.map((action) => `${action.action}:${action.key}`).join(', ')}.`);
     }
-    const collection = await store.first(`SELECT team_id, book_ids_json FROM book_collections WHERE id = ? LIMIT 1`, ['treeseed-platform-library']);
-    if (!collection || collection.team_id !== teamId) throw new Error('TreeSeed knowledge seed postcondition failed: managed platform library is absent.');
-    return { teamId, projectCount: PLATFORM_PROJECT_KEYS.length, collectionId: 'treeseed-platform-library' };
+    return { verified: true, manifestHash: observed.manifestHash, summary: observed.plan.summary };
 }
 
 export async function applySeedWithStore(input) {
@@ -117,9 +108,7 @@ export async function applySeedWithStore(input) {
 	const platformAdminOwnership = typeof store.syncPlatformAdminOwners === 'function'
 		? await store.syncPlatformAdminOwners()
 		: null;
-    const platformKnowledge = await verifyPlatformKnowledgeSeed(store, ids, {
-        requireRuntimeBinding: input.localOnly === true,
-    });
+    const verification = await verifyAppliedSeed(input, store);
     const result = {
         appliedAt,
         manifestHash,
@@ -128,7 +117,7 @@ export async function applySeedWithStore(input) {
 		membershipClaims,
         localTeamMemberships,
 		platformAdminOwnership,
-		platformKnowledge,
+		verification,
     };
     run = await updateSeedRunIfAvailable(store, run?.id, {
         state: 'completed',

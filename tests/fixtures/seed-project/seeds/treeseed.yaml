@@ -1,0 +1,47 @@
+name: treeseed
+version: 1
+description: Bounded API seed reconciliation fixture
+
+defaultEnvironments: [local]
+environments: [local]
+
+resources:
+  teams:
+    - key: team:treeseed
+      slug: treeseed
+      name: treeseed
+      displayName: TreeSeed
+      metadata:
+        visibility: public
+
+  teamMemberships:
+    - key: membership:treeseed/adrian-webb
+      team: team:treeseed
+      email: adrian.webb@knowledge.coop
+      roles: [team_owner]
+      missingUser: defer
+
+  projects:
+    - key: project:treeseed/market
+      team: team:treeseed
+      slug: market
+      name: TreeSeed Market
+      description: Seed reconciliation fixture project.
+      kind: market_app
+      repository:
+        role: primary
+        provider: github
+        owner: knowledge-coop
+        name: market
+        gitUrl: https://github.com/knowledge-coop/market.git
+        defaultBranch: main
+        checkoutPath: .
+      architecture:
+        topology: single_repository_site
+        rootPath: .
+        sitePath: .
+        contentPath: src/content
+        contentRuntimeSource: local_directory
+        localContentMaterialization: existing_path
+      metadata:
+        visibility: public

@@ -1,6 +1,8 @@
 # TreeSeed Seeds
 
-Seed manifests define named, declarative market portfolios that can be validated and planned with the Treeseed CLI.
+Seed manifests define named, declarative portfolios that can be validated and planned with the Treeseed CLI. This directory intentionally contains no tenant manifest: `@treeseed/api` applies seeds but does not own Market or customer topology.
+
+The integrated TreeSeed portfolio lives in the Market repository at `seeds/treeseed.yaml`. A standalone deployment supplies its tenant seed directory through `TREESEED_SEED_ROOT`; the resolved tenant repository root remains the compatibility fallback. Package tests use `tests/fixtures/seed-project` and do not represent a deployable portfolio.
 
 Seed ownership is split across packages:
 

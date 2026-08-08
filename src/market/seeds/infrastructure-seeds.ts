@@ -15,7 +15,7 @@ export async function loadInfrastructureSeedState(input: InfrastructureSeedInput
 		return emptySeedState('Team store is unavailable.');
 	}
 
-	const projectRoot = projectRootFor(input.locals);
+	const projectRoot = seedRootFor(input.locals);
 	const seedNames = discoverSeedNames(projectRoot);
 	const selectedSeed = selectedSeedName(input.url, seedNames);
 	const selectedEnvironments = selectedSeedEnvironment(input.url, input.locals);
@@ -88,7 +88,9 @@ function isLocalRuntime(locals: App.Locals | undefined) {
 		|| runtimeEnvValue(locals, 'TREESEED_LOCAL_DEV_MODE') === 'cloudflare';
 }
 
-function projectRootFor(locals: App.Locals | undefined) {
+function seedRootFor(locals: App.Locals | undefined) {
+	const configuredRoot = runtimeEnvValue(locals, 'TREESEED_SEED_ROOT');
+	if (configuredRoot) return resolve(configuredRoot);
 	const repoRoot = (locals as any)?.runtime?.resolved?.config?.repoRoot;
 	return typeof repoRoot === 'string' && repoRoot.trim() ? repoRoot : process.cwd();
 }

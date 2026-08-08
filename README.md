@@ -2,6 +2,8 @@
 
 `@treeseed/api` runs the Treeseed backend control plane: HTTP API, PostgreSQL-backed state, backend auth, operation lifecycle, migrations, seed application, route descriptors, operations runner, durable capacity coordination records, assignment APIs, ecommerce backend workflows, TreeSeed Commons governance APIs, and public TreeDX federation hosting.
 
+The package owns seed validation and application, not tenant topology. Set `TREESEED_SEED_ROOT` to the deployment-owned directory containing `seeds/*.yaml`; integrated Market development continues to resolve the Market repository root. No Market portfolio is bundled into the API repository.
+
 Use this package when you operate or develop the Treeseed backend. Ordinary admin users interact with it through the web/admin UI or CLI, not by importing this package.
 
 ## Who Needs This Package

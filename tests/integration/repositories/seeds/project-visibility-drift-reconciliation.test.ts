@@ -7,10 +7,11 @@ import { MarketPostgresDatabase } from '../../../../src/api/support/market-postg
 import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
 import { seedTreeDxFetch } from '../../../support/seed-treedx.js';
 
-const projectRoot = process.cwd();
-const migrationRoot = existsSync(resolve(projectRoot, '../sdk/drizzle/market'))
-	? resolve(projectRoot, '../sdk/drizzle/market')
-	: resolve(projectRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const packageRoot = process.cwd();
+const seedRoot = resolve(packageRoot, 'tests/fixtures/seed-project');
+const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
+	? resolve(packageRoot, '../sdk/drizzle/market')
+	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 
 function createStore() {
 	const memory = newDb();
@@ -19,7 +20,7 @@ function createStore() {
 		implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const db = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-	return { db, store: new MarketControlPlaneStore({ repoRoot: projectRoot, projectId: 'treeseed-market-test',
+	return { db, store: new MarketControlPlaneStore({ repoRoot: packageRoot, projectId: 'treeseed-market-test',
 		authSecret: 'test-auth-secret', assertionSecret: 'test-assertion-secret', serviceId: 'web',
 		serviceSecret: 'test-service-secret', fetchImpl: seedTreeDxFetch }, db) };
 }
@@ -28,14 +29,14 @@ describe('seeded project visibility reconciliation', () => {
 	it('detects and repairs project metadata drift before checking seed postconditions', async () => {
 		const { db,store } = createStore();
 		try {
-			await applyLocalSeedFromCli({ projectRoot, seedName: 'treeseed', environments: 'local', store });
+			await applyLocalSeedFromCli({ projectRoot: seedRoot, seedName: 'treeseed', environments: 'local', store });
 			const team = await store.getTeamBySlug('treeseed');
 			const project = await store.getProjectByTeamAndSlug(team!.id, 'market');
 			await store.run('UPDATE projects SET metadata_json = ? WHERE id = ?', [
 				JSON.stringify({ ...project!.metadata, metadata: { ...project!.metadata.metadata, visibility: 'private' } }), project!.id,
 			]);
 
-			const repaired = await applyLocalSeedFromCli({ projectRoot, seedName: 'treeseed', environments: 'local', store });
+			const repaired = await applyLocalSeedFromCli({ projectRoot: seedRoot, seedName: 'treeseed', environments: 'local', store });
 			expect(repaired.plan.actions).toEqual(expect.arrayContaining([
 				expect.objectContaining({ key: 'project:treeseed/market', action: 'update' }),
 			]));

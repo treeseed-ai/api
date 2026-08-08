@@ -7,10 +7,11 @@ import { MarketPostgresDatabase } from '../../../../src/api/support/market-postg
 import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
 import { seedTreeDxFetch } from '../../../support/seed-treedx.js';
 
-const projectRoot = process.cwd();
-const migrationRoot = existsSync(resolve(projectRoot, '../sdk/drizzle/market'))
-	? resolve(projectRoot, '../sdk/drizzle/market')
-	: resolve(projectRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const packageRoot = process.cwd();
+const seedRoot = resolve(packageRoot, 'tests/fixtures/seed-project');
+const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
+	? resolve(packageRoot, '../sdk/drizzle/market')
+	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 
 function createStore() {
 	const memory = newDb();
@@ -24,7 +25,7 @@ function createStore() {
 	const pg = memory.adapters.createPg();
 	const db = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
 	const store = new MarketControlPlaneStore({
-		repoRoot: projectRoot,
+		repoRoot: packageRoot,
 		projectId: 'treeseed-market-test',
 		authSecret: 'test-auth-secret',
 		assertionSecret: 'test-assertion-secret',
@@ -40,7 +41,7 @@ describe('seeded team visibility reconciliation', () => {
 		const { db, store } = createStore();
 		try {
 			await applyLocalSeedFromCli({
-				projectRoot,
+				projectRoot: seedRoot,
 				seedName: 'treeseed',
 				environments: 'local',
 				store,
@@ -57,17 +58,12 @@ describe('seeded team visibility reconciliation', () => {
 			expect(await store.loadTeamProfileByName('treeseed')).toBeNull();
 
 			const repaired = await applyLocalSeedFromCli({
-				projectRoot,
+				projectRoot: seedRoot,
 				seedName: 'treeseed',
 				environments: 'local',
 				store,
 			});
-			expect(repaired.plan.summary).toMatchObject({
-				create: 0,
-				update: 1,
-				unchanged: 16,
-				skip: 0,
-			});
+			expect(repaired.plan.summary).toMatchObject({ create: 0, update: 1, skip: 0 });
 			expect((await store.getTeamBySlug('treeseed'))?.metadata?.visibility).toBe('public');
 			expect(await store.loadTeamProfileByName('treeseed')).toEqual(expect.objectContaining({
 				team: expect.objectContaining({ name: 'treeseed' }),
