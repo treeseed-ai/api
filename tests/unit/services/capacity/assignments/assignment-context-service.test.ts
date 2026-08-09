@@ -23,4 +23,15 @@ describe('assignment project context', () => {
 		await expect(compileAssignmentProjectContext(contextStore as never, 'project-a'))
 			.rejects.toMatchObject({ code: 'capacity_project_team_not_found', details: { projectId: 'project-a', teamId: 'team-a' } });
 	});
+
+	it('derives agent locations only from the configured project content path', async () => {
+		await expect(compileAssignmentProjectContext(store({
+			getProjectArchitecture: vi.fn(async () => ({ topology: 'single_repository_site', contentPath: 'knowledge-models' })),
+		}) as never, 'project-a')).resolves.toMatchObject({
+			agentSpecs: { root: 'knowledge-models/agents', testsRoot: 'knowledge-models/agent-tests' },
+		});
+		await expect(compileAssignmentProjectContext(store() as never, 'project-a')).resolves.toMatchObject({
+			agentSpecs: { root: null, testsRoot: null },
+		});
+	});
 });
