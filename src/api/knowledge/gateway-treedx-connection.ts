@@ -16,9 +16,9 @@ function localAddress(value: string): boolean {
 }
 
 function normalizedContentPath(value: unknown): string {
-	const path = text(value, 'src/content').replace(/^\/+|\/+$/gu, '');
+	const path = text(value).replace(/^\/+|\/+$/gu, '');
 	if (!path || path.split('/').some((part) => !part || part === '.' || part === '..')) {
-		throw new Error('The project content path is unsafe.');
+		throw new Error('The project content path is missing or unsafe.');
 	}
 	return path;
 }
@@ -60,9 +60,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	if (!secret) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
 	const allowedPaths = [`${contentPath}/books/**`, `${contentPath}/knowledge/**`, `${contentPath}/assets/**`,
-		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people']
+		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
 			.map((collection) => `${contentPath}/${collection}/**`) : []),
-		...(input.authoringPaths ? [`${contentPath}/agents/**`, '.treeseed/agents/**', '.treeseed/seeds/**', 'scenes/**'] : [])];
+		...(input.authoringPaths ? [`${contentPath}/agents/**`, `${contentPath}/groups/**`, `${contentPath}/group-edges/**`, '.treeseed/agents/**', '.treeseed/seeds/**', 'scenes/**'] : [])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const token = mintTreeDxHs256Token({
 		secret,

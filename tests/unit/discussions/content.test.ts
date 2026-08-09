@@ -26,7 +26,7 @@ vi.mock('../../../src/api/capacity/services/treedx/repositories/treedx-change-pr
 	projectTreeDxCommitSignals: projectSignals,
 }));
 
-import { commitDiscussionMessage, mentionedAgentSlugs } from '../../../src/api/discussions/content.ts';
+import { commitDiscussionMessage, mentionedAgentSlugs, validateDiscussionContextRefs } from '../../../src/api/discussions/content.ts';
 
 describe('TreeDX Discussion content', () => {
 	beforeEach(() => {
@@ -46,6 +46,7 @@ describe('TreeDX Discussion content', () => {
 			principal: { id: 'user-1', displayName: 'Adrian', email: 'adrian@example.com' },
 			body: 'Please review src/example.ts with @reviewer.', intent: 'discuss',
 			fileRefs: [{ path: 'src/example.ts' }],
+			contextRefs: [{ kind: 'event', id: 'event-1', projectId: 'project-1', workdayId: 'run-1', eventSequence: 2 }],
 		});
 
 		expect(authored.mentions).toEqual(['reviewer']);
@@ -55,7 +56,21 @@ describe('TreeDX Discussion content', () => {
 		expect(request.patch).toContain('/discussions/');
 		expect(request.patch).toContain('/discussion-messages/');
 		expect(request.patch).toContain('/discussion-events/');
+		expect(request.patch).toContain('contextRefs');
 		expect(commit).toHaveBeenCalledOnce();
 		expect(projectSignals).toHaveBeenCalledWith({}, expect.objectContaining({ projectId: 'project-1', commitSha: 'abc123' }));
+	});
+
+	it('validates historical topology and exact event positions before Discussion attachment', async () => {
+		const topology = { projectId: 'project-1', immutableRef: 'commit-1', nodes: [{ id: 'agent:project-1:reviewer', kind: 'agent' }], edges: [] };
+		const store = { first: vi.fn(async (query: string) => query.includes('capacity_workday_runs')
+			? { id: 'run-1', parameters_json: JSON.stringify({ atlasTopologyByProjectId: { 'project-1': topology } }) }
+			: query.includes('capacity_workday_events') ? { id: 'event-1' } : null) };
+		const refs = await validateDiscussionContextRefs({ store, teamId: 'team-1', projectId: 'project-1', values: [
+			{ kind: 'agent', id: 'agent:project-1:reviewer', projectId: 'project-1', workdayId: 'run-1', immutableRef: 'commit-1' },
+			{ kind: 'event', id: 'event-1', projectId: 'project-1', workdayId: 'run-1', eventSequence: 2 },
+		] });
+		expect(refs).toHaveLength(2);
+		await expect(validateDiscussionContextRefs({ store, teamId: 'team-1', projectId: 'project-1', values: [{ kind: 'agent', id: 'agent:other', projectId: 'project-2' }] })).rejects.toMatchObject({ code: 'discussion_context_project_forbidden' });
 	});
 });

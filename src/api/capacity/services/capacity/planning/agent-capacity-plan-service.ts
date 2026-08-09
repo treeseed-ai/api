@@ -94,6 +94,15 @@ export class AgentCapacityPlanService {
 				{ decisionId, projectId: project.id, decisionExecutionInputId: actingWithoutGraphNode.id },
 			);
 		}
+		for (const entry of executionInputs.filter((candidate) => candidate.mode === 'acting')) {
+			const estimateId = typeof entry.input.estimateId === 'string' && entry.input.estimateId.trim()
+				? entry.input.estimateId.trim()
+				: typeof entry.metadata?.estimateId === 'string' ? entry.metadata.estimateId.trim() : '';
+			const estimate = estimateId ? await this.store.first(`SELECT id FROM structured_agent_estimates
+				WHERE id = ? AND team_id = ? AND project_id = ? AND decision_id = ? AND status = 'accepted' LIMIT 1`,
+				[estimateId, project.teamId, project.id, decisionId]) : null;
+			if (!estimate) throw new CapacityGovernanceError('agent_capacity_plan_accepted_estimate_required', 'Every acting execution input requires an accepted estimate for the same decision and project.', 409, { decisionId, projectId: project.id, decisionExecutionInputId: entry.id, estimateId: estimateId || null });
+		}
 		const now = new Date().toISOString();
 		const scopeHash = input.scopeHash ?? this.store.scopeHash({
 			decisionId,

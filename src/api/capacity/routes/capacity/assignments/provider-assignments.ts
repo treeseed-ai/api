@@ -7,8 +7,9 @@ import { observeWorkflowRun, queueRun, serializeWorkflowOperation,
 	serializeWorkflowOperationRun } from '../../../../routes/projects/operations/workflow-operations.ts';
 import { modeRunActivityEvent } from '../../../services/capacity/workdays/content/mode-run-activity-event.ts';
 import { redactTranscriptValue } from '../../support/workday-activity.ts';
+import { resolveEffectiveGroupMembership,type GroupMembershipSnapshot } from '@treeseed/sdk/agent-capacity';
 import { decodeWorkdayPlanningGraphSnapshot } from '../../../services/capacity/workdays/policy/workday-planning-graph-policy.ts';
-import { enforceProviderSignalContract } from './provider-signal-policy.ts';
+import { enforceProviderSignalContract,resolveSignalSubjectGroups } from './provider-signal-policy.ts';
 import { recordPlanningParticipantRequest,validatePlanningParticipantRequest } from '../../../services/capacity/workdays/scheduling/planning-participant-request-service.ts';
 
 interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
@@ -73,7 +74,7 @@ function providerEventInput(assignment: Record<string, unknown>, body: Record<st
 	};
 }
 
-function providerSignalInput(assignment: Record<string, unknown>, body: Record<string, unknown>, contract: import('@treeseed/sdk/agent-capacity').AgentSignalContract) {
+function providerSignalInput(assignment: Record<string, unknown>, body: Record<string, unknown>, contract: import('@treeseed/sdk/agent-capacity').AgentSignalContract, groupMembershipSnapshot: GroupMembershipSnapshot | null, groupMembershipSource: string) {
 	const contractId = typeof body.contractId === 'string' ? body.contractId.trim().replace(/_/gu, '-') : '';
 	const subjectKind = typeof body.subjectKind === 'string' ? body.subjectKind.trim() : '';
 	const subjectId = typeof body.subjectId === 'string' ? body.subjectId.trim() : '';
@@ -101,7 +102,7 @@ function providerSignalInput(assignment: Record<string, unknown>, body: Record<s
 		digest: typeof evidence.digest === 'string' ? evidence.digest : null,
 		changedPaths: Array.isArray(evidence.changedPaths) ? evidence.changedPaths.filter((entry) => typeof entry === 'string') : [],
 		evidenceRef: evidenceRef || null, payload: record(sanitized.payload),
-		metadata: { ...record(sanitized.metadata), producerClass: assignment.signalProducerClass ?? assignment.projectAgentClassId ?? null },
+		metadata: { ...record(sanitized.metadata), producerProfile: assignmentActivityType(assignment) ?? null, groupMembershipSnapshot, groupMembershipSource },
 		workdayRunId: typeof metadata.workdayRunId === 'string' ? metadata.workdayRunId : null,
 	};
 }
@@ -237,7 +238,19 @@ export function installProviderAssignmentRoutes(app: Hono, options: { store: Cap
 			).trim();
 			const selectedAgent = snapshot.agents.find((agent) => agent.slug === assignment.agentId && agent.activityType === activityType)
 				?? snapshot.agents.find((agent) => agent.slug === assignment.agentId);
-			const signal = providerSignalInput({ ...assignment, signalProducerClass: selectedAgent?.projectAgentClassSlug }, body, contract);
+			const evidence = record(body.evidence);
+			const knownGroupIds = new Set([...Object.keys(snapshot.groups), ...snapshot.agents.flatMap((agent) => agent.groupIds)]);
+			const subjectGroups = resolveSignalSubjectGroups(body, selectedAgent?.primaryGroupId ?? null, knownGroupIds);
+			const directGroupIds = subjectGroups.directGroupIds;
+			const membership = directGroupIds.length ? resolveEffectiveGroupMembership({ projectId: String(assignment.projectId), directGroupIds, edges: Object.values(snapshot.groupEdges) }) : null;
+			const groupMembershipSnapshot: GroupMembershipSnapshot | null = membership ? {
+				...membership,
+				projectId: String(assignment.projectId), graphRevision: snapshot.revision,
+				immutableRef: typeof evidence.immutableRef === 'string' ? evidence.immutableRef : String(evidence.commitSha ?? snapshot.revision),
+				digest: typeof evidence.digest === 'string' ? evidence.digest : snapshot.revision,
+				capturedAt: new Date().toISOString(),
+			} : null;
+			const signal = providerSignalInput(assignment, body, contract, groupMembershipSnapshot, subjectGroups.source);
 			let participantRequest: Awaited<ReturnType<typeof validatePlanningParticipantRequest>> | null = null;
 			if (contractId === 'proposal-participant-requested') {
 				try { participantRequest = await validatePlanningParticipantRequest({ database: store, assignment, snapshot, payload: record(body.payload) }); }

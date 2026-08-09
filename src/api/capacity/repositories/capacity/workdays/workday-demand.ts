@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonObject } from '../../../durable-json.ts';
+import { selectWorkdayDemandSupply } from './workday-demand-supply.ts';
 
 type Row = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -98,23 +99,43 @@ export class CapacityWorkdayDemandRepository {
 		return result;
 	}
 
-	async claimNext(teamId: string, providerId: string, now: string): Promise<CapacityWorkdayDemandRecord | null> {
+	async claimNext(teamId: string, providerId: string, now: string, membershipId?: string, providerSessionId?: string): Promise<CapacityWorkdayDemandRecord | null> {
 		await this.database.ensureInitialized();
-		const candidate = await this.database.first(
-			`SELECT demand.id FROM capacity_workday_demands demand
+		const candidates = await this.database.all(
+			`SELECT demand.*, run.capacity_provider_id AS primary_provider_id FROM capacity_workday_demands demand
 			 JOIN capacity_workday_runs run ON run.id = demand.workday_run_id
 			 JOIN workday_capacity_envelopes workday ON workday.id = demand.workday_id
-			 WHERE demand.team_id = ? AND run.capacity_provider_id = ? AND run.status = 'running'
+			 WHERE demand.team_id = ? AND run.status = 'running'
 			   AND workday.status = 'active' AND demand.status = 'pending' AND demand.available_at <= ?
-			 ORDER BY demand.priority DESC, demand.available_at ASC, demand.created_at ASC, demand.id ASC LIMIT 1`,
-			[teamId, providerId, now],
+			 ORDER BY demand.priority DESC, demand.available_at ASC, demand.created_at ASC, demand.id ASC LIMIT 25`,
+			[teamId, now],
 		);
+		let candidate: Row | null = null;
+		let supplySelection: Record<string, unknown> | null = null;
+		for (const pending of candidates) {
+			const selection = await selectWorkdayDemandSupply(this.database, pending, now);
+			if (selection.selected?.capacityProviderId === providerId
+				&& (!membershipId || selection.selected.membershipId === membershipId)
+				&& (!providerSessionId || selection.selected.providerSessionId === providerSessionId)) {
+				candidate = pending;
+				supplySelection = {
+					policyGeneration: selection.policy.generation,
+					capacityProviderId: selection.selected.capacityProviderId,
+					membershipId: selection.selected.membershipId,
+					providerSessionId: selection.selected.providerSessionId,
+					grantId: selection.selected.grantId,
+					executionProviderId: selection.selected.executionProviderId,
+				};
+				break;
+			}
+		}
 		if (!candidate?.id) return null;
 		const claimToken = randomUUID();
+		const metadata = decodeDurableJsonObject(candidate.metadata_json, { owner: 'capacity workday demand', ownerId: String(candidate.id), column: 'metadata_json' });
 		await this.database.run(
-			`UPDATE capacity_workday_demands SET status = 'claimed', claim_token = ?, claimed_at = ?, updated_at = ?
+			`UPDATE capacity_workday_demands SET status = 'claimed', claim_token = ?, metadata_json = ?, claimed_at = ?, updated_at = ?
 			 WHERE id = ? AND status = 'pending'`,
-			[claimToken, now, now, candidate.id],
+			[claimToken, JSON.stringify({ ...metadata, supplySelection }), now, now, candidate.id],
 		);
 		return serializeCapacityWorkdayDemandRow(await this.database.first(
 			`SELECT * FROM capacity_workday_demands WHERE claim_token = ? LIMIT 1`, [claimToken],

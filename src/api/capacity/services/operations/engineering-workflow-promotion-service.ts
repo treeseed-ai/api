@@ -162,7 +162,7 @@ async function createNodeInputs(input: {
 			id, projectId: input.config.projectId, projectAgentClassId: agentClass.id, mode: 'acting', status: 'accepted', scopeHash,
 			humanApprovalState: 'approved', planningInputsStatus: 'complete',
 			input: {
-				workGraphNodeId: node.id, taskId: node.id, workDayId: input.workdayId, agentId: selected.agentId, handlerId: selected.handlerId,
+				workGraphNodeId: node.id, estimateId: estimate.id, taskId: node.id, workDayId: input.workdayId, agentId: selected.agentId, handlerId: selected.handlerId,
 				capacity: {
 					teamId: input.run.teamId, projectId: input.config.projectId, workDayId: input.workdayId,
 					allocationSetId: input.allocationSetId, mode: 'acting', projectAgentClassId: agentClass.id,

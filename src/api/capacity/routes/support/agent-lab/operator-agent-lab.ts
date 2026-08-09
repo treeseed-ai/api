@@ -16,11 +16,12 @@ import { CapacityAllocationService } from '../../../services/capacity/allocation
 import { agentLabRepositoryDefinitions,matchesAgentDefinition } from './repository-definitions.ts';
 import { agentLabInboxQuestions } from './inbox-questions.ts';
 import { installOperatorAgentLabAuthoringRoutes } from './authoring.ts';
+import { installOperatorAgentAtlasRoutes } from './atlas.ts';
 import { installAgentLabTargetRoutes } from './target-routes.ts';
 
 const entityKinds = new Set<AgentLabEntityKind>(['agents', 'workdays', 'events', 'assignments', 'executions', 'artifacts']);
 const commandSurfaces = new Set(['inbox', 'decisions', 'build', 'direction', 'results', 'find']);
-const commandKinds = new Set(['proposal', 'decision', 'question', 'artifact', 'error', 'agent', 'signal', 'proposal-type', 'assignment', 'execution', 'simulation', 'seed', 'workday', 'note']);
+const commandKinds = new Set(['proposal', 'decision', 'question', 'artifact', 'error', 'agent', 'signal', 'proposal-type', 'assignment', 'execution', 'simulation', 'seed', 'workday', 'note', 'atlas-workspace']);
 
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function jsonObject(value: unknown) { if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return object(value); }
@@ -480,4 +481,5 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 	installSimulationRoutes(app, dependencies);
 	installDetailRoutes(app, dependencies);
 	installAgentLabTargetRoutes(app, dependencies);
+	installOperatorAgentAtlasRoutes(app, dependencies);
 }

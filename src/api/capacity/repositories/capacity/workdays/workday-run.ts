@@ -8,6 +8,7 @@ type CapacityPageCursor,
 } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { teamSupplyPolicy } from '../../../domain/supply-policy.ts';
 
 type JsonRecord = Record<string, unknown>;
 export type DurableCapacityWorkdayRun = CapacityWorkdayRunRecord;
@@ -99,20 +100,23 @@ export class CapacityWorkdayRunRepository {
 		));
 	}
 
-	async listActiveForProvider(
+	async listActiveForSupply(
 		teamId: string,
 		providerId: string,
 		limit = MAX_CAPACITY_PAGE_LIMIT,
 	): Promise<DurableCapacityWorkdayRun[]> {
 		await this.database.ensureInitialized();
 		const boundedLimit = normalizeCapacityPageLimit(limit);
+		const team = await this.database.first('SELECT metadata_json FROM teams WHERE id = ? LIMIT 1', [teamId]);
+		const policy = teamSupplyPolicy(team);
 		const rows = await this.database.all(
 			`SELECT * FROM capacity_workday_runs
-			 WHERE team_id = ? AND capacity_provider_id = ? AND status = 'running'
+			 WHERE team_id = ? AND status = 'running'
 			 ORDER BY started_at ASC, created_at ASC LIMIT ?`,
-			[teamId, providerId, boundedLimit + 1],
+			[teamId, boundedLimit + 1],
 		);
-		if (rows.length > boundedLimit) {
+		const selected = rows.filter((row) => row.capacity_provider_id === providerId || policy.allowPlanningFailover || policy.allowActingFailover);
+		if (selected.length > boundedLimit) {
 			throw new CapacityGovernanceError(
 				'capacity_active_workday_bound_exceeded',
 				`Provider ${providerId} has more than ${boundedLimit} active workday runs.`,
@@ -120,7 +124,7 @@ export class CapacityWorkdayRunRepository {
 				{ teamId, providerId, limit: boundedLimit },
 			);
 		}
-		return rows.map((row) => serializeCapacityWorkdayRunRow(row)!);
+		return selected.map((row) => serializeCapacityWorkdayRunRow(row)!);
 	}
 
 	async list(teamId: string, filters: {

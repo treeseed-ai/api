@@ -28,6 +28,9 @@ export async function compileAssignmentProjectContext(store: AssignmentContextSt
 	]);
 	if (!team) throw new CapacityGovernanceError('capacity_project_team_not_found', 'Capacity assignment project team does not exist.', 500, { projectId, teamId });
 	const metadata = object(project.metadata);
+	const resolvedArchitecture = architecture ?? object(metadata.architecture);
+	const contentPath = text(object(resolvedArchitecture).contentPath);
+	const configuredAgentSpecs = object(metadata.agentSpecs);
 	const configuredRepository = object(metadata.repository);
 	const repository = repositories.find((entry) => ['software', 'primary', 'package'].includes(String(entry.role))) ?? repositories[0] ?? {};
 	const slug = text(project.slug) ?? projectId;
@@ -36,10 +39,10 @@ export async function compileAssignmentProjectContext(store: AssignmentContextSt
 		id: projectId,
 		slug,
 		name: text(project.name) ?? slug,
-		architecture: architecture ?? object(metadata.architecture),
+		architecture: resolvedArchitecture,
 		agentSpecs: {
-			root: text(object(metadata.agentSpecs).root) ?? 'src/content/agents',
-			testsRoot: text(object(metadata.agentSpecs).testsRoot) ?? 'src/content/agent-tests',
+			root: text(configuredAgentSpecs.root) ?? (contentPath ? `${contentPath}/agents` : null),
+			testsRoot: text(configuredAgentSpecs.testsRoot) ?? (contentPath ? `${contentPath}/agent-tests` : null),
 		},
 		repository: {
 			provider: text(repository.provider, configuredRepository.provider) ?? 'github',

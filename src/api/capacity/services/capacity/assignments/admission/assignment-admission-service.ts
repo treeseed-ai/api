@@ -16,6 +16,7 @@ export interface SynthesizedProviderAssignmentInput {
 	synthesizedFrom?: string | null;
 	projectId: string;
 	environment?: string | null;
+	grantId?: string | null;
 	providerSessionId?: string | null;
 	projectAgentClassId: string;
 	mode: AgentExecutionMode;
@@ -77,6 +78,7 @@ export async function admitSynthesizedProviderAssignment(
 		membershipId: principal.membershipId,
 		projectId: input.projectId,
 		environment: input.environment ?? 'local',
+		grantId: input.grantId ?? null,
 		projectAgentClassId: input.projectAgentClassId,
 		mode: input.mode,
 		workDayId: input.workDayId,

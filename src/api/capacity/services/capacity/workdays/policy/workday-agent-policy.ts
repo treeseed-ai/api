@@ -7,6 +7,9 @@ type UnknownRecord = Record<string, unknown>;
 export type CapacityWorkdayAgent = {
 	nodeId: string;
 	slug: string;
+	displayName: string;
+	groupIds: string[];
+	primaryGroupId: string | null;
 	contentPath: string | null;
 	handler: EngineeringHandlerKind;
 	projectAgentClassId: string;
@@ -137,6 +140,9 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 			for (const stage of planningStageVariants(profile)) agents.push({
 				nodeId: `${slug}:${selectedActivity.activityType}:${text(stage.stage, 'discovery')}`,
 				slug,
+				displayName: selectedActivity.agentName,
+				groupIds: selectedActivity.groupIds,
+				primaryGroupId: selectedActivity.primaryGroupId,
 				contentPath: selectedActivity.contentPath,
 				handler: configuredHandler,
 				projectAgentClassId: text(agentClass.id),

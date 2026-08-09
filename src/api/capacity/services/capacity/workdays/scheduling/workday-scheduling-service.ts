@@ -16,6 +16,7 @@ capacityWorkdayRequestedProjectSlugs,
 type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
 import { resolveWorkdayPlanningGraphSnapshot } from '../policy/workday-planning-graph-policy.ts';
+import { compileWorkdayAtlasTopology } from '../policy/workday-atlas-topology-policy.ts';
 import { initializeCooperativePlanningSession } from './cooperative-planning-session-service.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 
@@ -26,7 +27,7 @@ export interface WorkdayScheduleStore extends CapacityGovernanceDatabase {
 	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
 	getCapacityAllocationSet(teamId: string, allocationSetId: string): Promise<CapacityAllocationSetV2 | null>;
 	getActiveCapacityAllocationSet(teamId: string): Promise<CapacityAllocationSetV2 | null>;
-	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown } | null>;
+	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown; contentRepositoryRef?: unknown } | null>;
 	createWorkdayCapacityEnvelope(input: CreateWorkdayCapacityEnvelopeInput, idempotencyKey?: string): Promise<DurableWorkdayCapacityEnvelope | null>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<DurableCapacityWorkdayRun | null>;
@@ -128,7 +129,7 @@ export async function scheduleCapacityWorkdayRun(
 		environment, allocationSetId: requestedAllocationSetId || null, at: startedAt,
 	});
 	const { membership, projects, allocationSet, grantsByProjectId } = governed;
-	const contexts = new Map<string, { contentRoot: string; repositoryId: string }>();
+	const contexts = new Map<string, { contentRoot: string; repositoryId: string; immutableRef: string }>();
 	const planningGraphs = new Map<string, Awaited<ReturnType<typeof resolveWorkdayPlanningGraphSnapshot>>>();
 	for (const project of projects) {
 		await reconcileTreeDxRefSignals(store, project.id, startedAt);
@@ -142,7 +143,8 @@ export async function scheduleCapacityWorkdayRun(
 				{ projectId: project.id },
 			);
 		}
-		contexts.set(project.id, { contentRoot: text(library?.contentPath, capacityWorkdayContentRoot(project)), repositoryId });
+		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
+		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef: text(library?.contentRepositoryRef, repositoryId) });
 		planningGraphs.set(project.id, await resolveWorkdayPlanningGraphSnapshot(store, project.id, parameters.agentSelection));
 	}
 	const time = workdayTime(parameters);
@@ -205,6 +207,9 @@ export async function scheduleCapacityWorkdayRun(
 				projects.map((project) => [project.id, contexts.get(project.id)!.repositoryId]),
 			),
 			planningGraphByProjectId: Object.fromEntries(projects.map((project) => [project.id, planningGraphs.get(project.id)])),
+			atlasTopologyByProjectId: Object.fromEntries(projects.map((project) => [project.id, compileWorkdayAtlasTopology({
+				project, planning: planningGraphs.get(project.id)!, immutableRef: contexts.get(project.id)!.immutableRef, capturedAt: startedAt,
+			})])),
 		},
 	});
 	if (!updated) {

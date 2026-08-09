@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { compileAgentDefinition, validateAgentSignalContract, validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
+import { compileAgentDefinition, compileGroupDefinition, validateAgentSignalContract, validateProposalTypeContract, validateGroupDefinition, validateGroupEdgeDefinition } from '@treeseed/sdk/agent-capacity';
 import type { AgentAuthoringIntent } from '@treeseed/sdk/agent-capacity';
 import { parseSceneManifest } from '@treeseed/sdk/scenes';
 import { validateSeedSource } from '@treeseed/sdk/seeds';
@@ -15,22 +15,35 @@ import { readCapacityRequestObject } from '../request-json.ts';
 import { applyTextChangeset } from '../../../../knowledge/changesets/apply-text-changeset.ts';
 
 type Row = Record<string, unknown>;
-const PATH = /^(?:src\/content\/agents\/[^/]+(?:\/[^/]+)*\.mdx|\.treeseed\/agents\/signals\/[^/]+\.ya?ml|\.treeseed\/governance\/proposal-types\/[^/]+\.ya?ml|seeds\/[^/]+\.ya?ml|scenes\/[^/]+(?:\/[^/]+)*\.ya?ml)$/u;
+const PORTABLE_PATH = /^(?:\.treeseed\/agents\/signals\/[^/]+\.ya?ml|\.treeseed\/governance\/proposal-types\/[^/]+\.ya?ml|seeds\/[^/]+\.ya?ml|scenes\/[^/]+(?:\/[^/]+)*\.ya?ml)$/u;
 function object(value: unknown): Row { return value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}; }
 function text(...values: unknown[]) { return String(values.find((value) => typeof value === 'string' && value) ?? ''); }
 function strings(value: unknown) { return Array.isArray(value) ? [...new Set(value.map(text).filter(Boolean))] : []; }
 
-function compileIntentRequest(body: Row) {
+async function configuredContentRoot(dependencies: WorkdayRouteDependencies, projectId: string) {
+	const library = await dependencies.store.first('SELECT content_path FROM treedx_project_libraries WHERE project_id = ? LIMIT 1', [projectId]);
+	return text(library?.content_path).trim().replace(/^\/+|\/+$/gu, '');
+}
+
+async function compileIntentRequest(dependencies: WorkdayRouteDependencies, body: Row) {
 	if (!body.intent || typeof body.intent !== 'object' || Array.isArray(body.intent)) return body;
 	const currentSource = text(body.source); const parsed = currentSource ? parseFrontmatterDocument(currentSource) : { frontmatter: {}, body: '' };
 	const current = object(parsed.frontmatter); const requestedPath = text(body.path);
 	const existingSlug = text(current.slug); const existing = existingSlug ? { identity: { id: text(current.id, `agent:${existingSlug}`), slug: existingSlug, path: requestedPath, createdFromTemplate: text(current.template) || undefined }, frontmatter: current } : undefined;
-	const compiled = compileAgentDefinition({ intent: body.intent as unknown as AgentAuthoringIntent, projectId: text(body.projectId), existing });
+	const projectId = text(body.projectId);
+	const modelBoundary = requestedPath.lastIndexOf('/agents/');
+	const contentRoot = existing && modelBoundary > 0 ? requestedPath.slice(0, modelBoundary) : await configuredContentRoot(dependencies, projectId);
+	if (!contentRoot) return { ...body, contentPathMissing: true };
+	const compiled = compileAgentDefinition({ intent: body.intent as unknown as AgentAuthoringIntent, projectId, contentRoot, existing });
 	const source = `---\n${stringifyYaml(compiled.frontmatter, { lineWidth: 0 }).trim()}\n---\n${text(parsed.body, body.contentBody, `\n${text(object(body.intent).name)} participates through declared activity profiles and durable outputs.\n`)}`;
 	return { ...body, path: compiled.identity.path, source, generated: compiled.generated };
 }
 
 function validateSource(path: string, source: string) {
+	if (path.includes('/groups/') || path.includes('/group-edges/')) {
+		try { const value = parseFrontmatterDocument(source).frontmatter; return path.includes('/group-edges/') ? validateGroupEdgeDefinition(value) : validateGroupDefinition(value); }
+		catch (error) { return { ok: false, diagnostics: [{ path, message: error instanceof Error ? error.message : 'Invalid group frontmatter.' }] }; }
+	}
 	if (path.endsWith('.mdx')) return validateAgentDefinitionSource(source);
 	let parsed: unknown; try { parsed = parseYaml(source); } catch (error) { return { ok: false, diagnostics: [{ path, message: error instanceof Error ? error.message : 'Invalid YAML.' }] }; }
 	if (path.includes('/agents/signals/')) return validateAgentSignalContract(parsed);
@@ -51,21 +64,23 @@ async function reconcileAgents(dependencies: WorkdayRouteDependencies, project: 
 	const agents = definitions.filter((item) => item.kind === 'agent');
 	const contracts = Object.fromEntries(definitions.filter((item) => item.kind === 'signal').map((item) => [text(object(item.data).contractId), object(object(item.data).definition)]));
 	const proposalTypes = Object.fromEntries(definitions.filter((item) => item.kind === 'proposal-type').map((item) => [text(object(item.data).contractId), object(object(item.data).definition)]));
-	const groups = new Map<string, Row[]>();
-	for (const agent of agents) { const definition = object(object(agent.data).definition); const classSlug = text(definition.projectAgentClassId, definition.agentClass); if (classSlug) groups.set(classSlug, [...(groups.get(classSlug) ?? []), agent]); }
+	const groupContracts = Object.fromEntries(definitions.filter((item) => item.kind === 'group').map((item) => [text(object(item.data).contractId), object(object(item.data).definition)]));
+	const groupEdgeContracts = Object.fromEntries(definitions.filter((item) => item.kind === 'group-edge').map((item) => [text(object(item.data).contractId), object(object(item.data).definition)]));
+	const capacityClasses = new Map<string, Row[]>();
+	for (const agent of agents) { const definition = object(object(agent.data).definition); const classSlug = text(definition.projectAgentClassId, definition.agentClass); if (classSlug) capacityClasses.set(classSlug, [...(capacityClasses.get(classSlug) ?? []), agent]); }
 	const service = new ProjectAgentClassService(dependencies.store as ConstructorParameters<typeof ProjectAgentClassService>[0]);
 	const existing = await service.listPage(text(project.id), { limit: 200, cursor: null });
-	for (const [classSlug, entries] of groups) {
-		const configured = entries.map((entry) => { const data = object(entry.data); const definition = object(data.definition); return { slug: text(definition.slug, definition.id), contentPath: text(data.path), enabled: definition.enabled !== false, activities: object(data.activities) }; });
+	for (const [classSlug, entries] of capacityClasses) {
+		const configured = entries.map((entry) => { const data = object(entry.data); const definition = object(data.definition); const groupIds = strings(definition.groupIds); return { slug: text(definition.slug, definition.id), name: text(definition.name, definition.title, definition.slug), groupIds, primaryGroupId: text(definition.primaryGroupId, groupIds[0]), contentPath: text(data.path), enabled: definition.enabled !== false, activities: object(data.activities) }; });
 		const allowedModes = [...new Set(configured.flatMap((agent) => Object.values(agent.activities).map((activity) => text(object(activity).activityType) === 'acting' ? 'acting' : 'planning')))] as Array<'planning' | 'acting'>;
 		const current = existing.items.find((item) => item.slug === classSlug || item.id === `${project.id}:${classSlug}`);
-		const value = { id: `${project.id}:${classSlug}`, slug: classSlug, name: text(object(object(entries[0].data).definition).agentClassTitle, classSlug), status: configured.some((agent) => agent.enabled) ? 'active' : 'paused', allowedModes, requiredCapabilities: [...new Set(configured.flatMap((agent) => activityCapabilities(agent.activities)))], handlerRefs: { agents: configured, signalContracts: contracts, proposalTypeContracts: proposalTypes }, metadata: { source: 'treedx_agent_lab_authoring', immutableRef: commit } };
+		const value = { id: `${project.id}:${classSlug}`, slug: classSlug, name: text(object(object(entries[0].data).definition).agentClassTitle, classSlug), status: configured.some((agent) => agent.enabled) ? 'active' : 'paused', allowedModes, requiredCapabilities: [...new Set(configured.flatMap((agent) => activityCapabilities(agent.activities)))], handlerRefs: { agents: configured, signalContracts: contracts, proposalTypeContracts: proposalTypes, groupContracts, groupEdgeContracts }, metadata: { source: 'treedx_agent_lab_authoring', immutableRef: commit } };
 		if (current) await service.update(text(project.id), current.id, value, `agent-lab-sync:${commit}:${classSlug}`); else await service.create(text(project.id), value, `agent-lab-sync:${commit}:${classSlug}`);
 	}
 }
 
 async function verifyReferences(dependencies: WorkdayRouteDependencies, connection: NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>, workspaceBase: string, files: Array<{ path: string; source: string }>) {
-	const references = files.flatMap((file) => file.path.endsWith('.mdx') ? validateAgentDefinitionSource(file.source).references : []);
+	const references = files.flatMap((file) => file.path.startsWith(`${connection.contentPath}/agents/`) ? validateAgentDefinitionSource(file.source).references : []);
 	const included = new Map(files.map((file) => [file.path, file.source])); const paths = [...new Set(references.map((reference) => `.treeseed/agents/signals/${reference.id}.yaml`))];
 	const missingPaths = paths.filter((path) => !included.has(path)); const read = missingPaths.length ? await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: workspaceBase, paths: missingPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch(() => ({ files: [] })) : { files: [] };
 	const available = new Map([...included, ...(read.files ?? []).map((file: unknown) => [text(object(file).path), text(object(file).content)] as const)]);
@@ -73,14 +88,16 @@ async function verifyReferences(dependencies: WorkdayRouteDependencies, connecti
 }
 
 async function commitBundle(c: Context, dependencies: WorkdayRouteDependencies, body: Row) {
+	if (body.contentPathMissing === true) return c.json({ ok: false, code: 'agent_lab_content_path_required', error: 'Configure the project content path before authoring Agent Lab definitions.' }, 409);
 	const projectId = text(body.projectId); const project = projectId ? await dependencies.store.first('SELECT id, name, slug FROM projects WHERE id = ? AND team_id = ? LIMIT 1', [projectId, c.req.param('teamId')]) : null;
 	if (!project) return c.json({ ok: false, code: 'agent_lab_authoring_project_invalid', error: 'Choose a project in this team.' }, 422);
-	const files = (Array.isArray(body.files) ? body.files : [{ path: body.path, source: body.source }]).map(object).map((file) => ({ path: text(file.path).replace(/^\/+|\/+$/gu, ''), source: text(file.source) }));
-	if (!files.length || files.some((file) => !PATH.test(file.path) || !file.source.trim()) || new Set(files.map((file) => file.path)).size !== files.length) return c.json({ ok: false, code: 'agent_lab_authoring_bundle_invalid', error: 'Every definition needs a unique allowed repository path and nonempty source.' }, 422);
-	const diagnostics = files.flatMap((file) => { const result = validateSource(file.path, file.source); return result.ok ? [] : result.diagnostics; });
-	if (diagnostics.length) return c.json({ ok: false, code: 'agent_lab_authoring_validation_failed', error: 'Correct the definition diagnostics before committing.', diagnostics }, 422);
 	const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId, write: true, authoringPaths: true });
 	if (!connection) return c.json({ ok: false, code: 'agent_lab_treedx_unavailable', error: 'The project TreeDX repository is unavailable.' }, 503);
+	const files = (Array.isArray(body.files) ? body.files : [{ path: body.path, source: body.source }]).map(object).map((file) => ({ path: text(file.path).replace(/^\/+|\/+$/gu, ''), source: text(file.source) }));
+	const modelPath = (path: string) => ['agents', 'groups', 'group-edges'].some((collection) => path.startsWith(`${connection.contentPath}/${collection}/`) && path.endsWith('.mdx'));
+	if (!files.length || files.some((file) => (!PORTABLE_PATH.test(file.path) && !modelPath(file.path)) || !file.source.trim()) || new Set(files.map((file) => file.path)).size !== files.length) return c.json({ ok: false, code: 'agent_lab_authoring_bundle_invalid', error: 'Every definition needs a unique allowed repository path and nonempty source.' }, 422);
+	const diagnostics = files.flatMap((file) => { const result = validateSource(file.path, file.source); return result.ok ? [] : result.diagnostics; });
+	if (diagnostics.length) return c.json({ ok: false, code: 'agent_lab_authoring_validation_failed', error: 'Correct the definition diagnostics before committing.', diagnostics }, 422);
 	const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`; const workspace = await connection.client.createWorkspace({ repoId: connection.repositoryId, baseRef: branchName, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 900 });
 	if (text(body.expectedBase) && text(body.expectedBase) !== workspace.baseCommitSha) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_lab_authoring_conflict', error: 'The authoring branch changed. Compare and rebase before saving.', currentBase: workspace.baseCommitSha }, 409); }
 	const referenceDiagnostics = await verifyReferences(dependencies, connection, workspace.baseCommitSha, files); if (referenceDiagnostics.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_contract_reference_invalid', error: 'The bundle references missing or invalid signal contracts.', diagnostics: referenceDiagnostics }, 422); }
@@ -90,10 +107,18 @@ async function commitBundle(c: Context, dependencies: WorkdayRouteDependencies, 
 		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: files.map((file) => ({ path: file.path, before: beforeByPath.get(file.path) ?? null, after: file.source })) });
 		const access = await dependencies.manage(c); const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: text(body.changeSummary, `agent-lab: update ${files.length} definition${files.length === 1 ? '' : 's'}`), author: { name: access.principal?.name ?? access.principal?.id ?? 'Agent Lab operator', email: access.principal?.email ?? 'agent-lab@users.treeseed.local' } });
 		await projectTreeDxCommitSignals(dependencies.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(body.changeSummary, 'Agent Lab definition update'), actorType: 'user', actorId: access.principal?.id });
-		if (files.some((file) => file.path.startsWith('src/content/agents/') || file.path.includes('/agents/signals/') || file.path.includes('/proposal-types/'))) await reconcileAgents(dependencies, project, commit.commitSha);
+		if (files.some((file) => modelPath(file.path) || file.path.includes('/agents/signals/') || file.path.includes('/proposal-types/'))) await reconcileAgents(dependencies, project, commit.commitSha);
 		await dependencies.store.run("INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.authoring.committed', 'project', ?, ?, ?)", [randomUUID(), access.principal?.id ?? null, projectId, JSON.stringify({ changedPaths: commit.changedPaths, commitSha: commit.commitSha }), new Date().toISOString()]);
 		return c.json({ ok: true, payload: { commit: commit.commitSha, branch: commit.branchName, changedPaths: commit.changedPaths, changeset: { ...changeset, resultCommitSha: commit.commitSha } } });
 	} catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => {}); return c.json({ ok: false, code: 'agent_lab_authoring_failed', error: error instanceof Error ? error.message : 'TreeDX could not commit the definitions.' }, 409); }
+}
+
+async function compileGroupRequest(dependencies: WorkdayRouteDependencies, body: Row) {
+	const projectId=text(body.projectId);const contentRoot=await configuredContentRoot(dependencies,projectId);
+	if(!contentRoot)return{...body,contentPathMissing:true};
+	const compiled=compileGroupDefinition({intent:body.intent as never,contentRoot});
+	const document=(value:unknown)=>`---\n${stringifyYaml(value,{lineWidth:0}).trim()}\n---\n`;
+	return {...body,files:[{path:compiled.groupPath,source:document(compiled.group)},...(compiled.edge&&compiled.edgePath?[{path:compiled.edgePath,source:document(compiled.edge)}]:[])]};
 }
 
 async function draft(dependencies: WorkdayRouteDependencies, teamId: string, selectedProjectId?: string) {
@@ -115,8 +140,9 @@ async function draft(dependencies: WorkdayRouteDependencies, teamId: string, sel
 
 export function installOperatorAgentLabAuthoringRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/surfaces/build/draft', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return c.json({ ok: true, payload: await draft(dependencies, c.req.param('teamId'), c.req.query('project')) }); });
-	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return commitBundle(c, dependencies, compileIntentRequest(await readCapacityRequestObject(c))); });
+	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return commitBundle(c, dependencies, await compileIntentRequest(dependencies, await readCapacityRequestObject(c))); });
 	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring-bundle', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; return commitBundle(c, dependencies, await readCapacityRequestObject(c)); });
+	app.post('/v1/teams/:teamId/agent-lab/surfaces/build/authoring-group', async (c) => { const access = await dependencies.manage(c); if (access.response) return access.response; const body=await readCapacityRequestObject(c); return commitBundle(c,dependencies,await compileGroupRequest(dependencies,body)); });
 	app.post('/v1/teams/:teamId/agent-lab/questions/answer', async (c) => {
 		const access = await dependencies.manage(c); if (access.response) return access.response; const body = await readCapacityRequestObject(c); const projectId = text(body.projectId); const path = text(body.path).replace(/^\/+|\/+$/gu,''); const answer = text(body.answer).trim();
 		const project = await dependencies.store.first('SELECT id FROM projects WHERE id = ? AND team_id = ? LIMIT 1',[projectId,c.req.param('teamId')]); if(!project || !answer) return c.json({ok:false,code:'agent_lab_question_answer_invalid',error:'Choose a team question and provide an answer.'},422);

@@ -10,6 +10,9 @@ function text(value: unknown): string | null {
 
 export interface ProjectAgentActivityRef {
 	agentId: string;
+	agentName: string;
+	groupIds: string[];
+	primaryGroupId: string | null;
 	contentPath: string | null;
 	activityType: string;
 	handlerId: string;
@@ -25,7 +28,13 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 		if (profile.enabled === false) return [];
 		const agentId = text(agent.slug ?? agent.agentId);
 		const handlerId = text(profile.handler);
-		return agentId && handlerId ? [{ agentId, contentPath: text(agent.contentPath), activityType, handlerId, profile }] : [];
+		return agentId && handlerId ? [{
+			agentId,
+			agentName: text(agent.name ?? agent.title) ?? agentId,
+			groupIds: Array.isArray(agent.groupIds) ? agent.groupIds.map(String).filter(Boolean) : [],
+			primaryGroupId: text(agent.primaryGroupId),
+			contentPath: text(agent.contentPath), activityType, handlerId, profile,
+		}] : [];
 	});
 }
 

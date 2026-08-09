@@ -88,7 +88,7 @@ function metricTargets(value: unknown): AgentLabOverview['metricTargets'] {
 async function resolveWorkdayContext(store: ProjectionStore, teamId: string, timeZone: string, now: Date, requestedDate?: string | null, requestedWorkdayId?: string | null) {
 	const all = await store.all(`SELECT * FROM capacity_workday_runs WHERE team_id = ? ORDER BY COALESCE(started_at, created_at) DESC, id DESC`, [teamId]);
 	const latest = all.find((row) => text(row.status) === 'running') ?? all.find((row) => text(row.status) === 'completed') ?? null;
-	const selected = requestedWorkdayId ? all.find((row) => text(row.id) === requestedWorkdayId) ?? null : latest;
+	const selected = requestedWorkdayId ? all.find((row) => text(row.id) === requestedWorkdayId) ?? null : null;
 	const selectedDate = requestedDate && operatingDate(requestedDate, timeZone)
 		? requestedDate
 		: selected ? dateKey(new Date(text(selected.started_at, selected.created_at)), timeZone) : dateKey(now, timeZone);

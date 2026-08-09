@@ -62,9 +62,14 @@ export function resolveCapacityWorkdayProjects(
 
 export function capacityWorkdayContentRoot(project: WorkdayProject): string {
 	const architecture = record(project.metadata?.architecture ?? project.architecture);
-	const contentPath = text(architecture.contentPath);
+	const contentPath = text(architecture.contentPath).replace(/^\/+|\/+$/gu, '');
 	if (contentPath) return contentPath;
-	return String(project.slug ?? project.id) === 'market' ? 'src/content' : 'docs/src/content';
+	throw new CapacityGovernanceError(
+		'capacity_workday_content_path_missing',
+		`Capacity workday project ${project.slug ?? project.id} has no configured content path.`,
+		409,
+		{ projectId: project.id },
+	);
 }
 
 export function capacityWorkdayRepositoryId(project: WorkdayProject, parameters: JsonRecord): string {

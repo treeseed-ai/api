@@ -17,13 +17,16 @@ export async function upsertProjectTreeDxLibraryMethod(this: MarketControlPlaneS
     const timestamp = isoNow();
     const id = input.id ?? existing?.id ?? randomUUID();
     const libraryId = String(input.libraryId ?? existing?.libraryId ?? `${project.teamId}/${project.slug}`);
+	const contentPath = String(input.contentPath ?? existing?.contentPath ?? '').trim().replace(/^\/+|\/+$/gu, '');
+	if (!contentPath)
+		throw new Error(`Project ${project.slug} requires a configured content path before TreeDX can be bound.`);
     const topology = this.buildRepositoryTopologySnapshot({
         project,
         instance,
         binding: {
             libraryId,
             repositoryId: input.repositoryId ?? existing?.repositoryId ?? null,
-            contentPath: input.contentPath ?? existing?.contentPath ?? 'src/content',
+            contentPath,
             contentRepositoryUrl: input.contentRepositoryUrl ?? existing?.contentRepositoryUrl ?? contentRepository?.url ?? null,
             contentRepositoryDefaultBranch: input.contentRepositoryDefaultBranch ?? existing?.contentRepositoryDefaultBranch ?? contentRepository?.defaultBranch ?? null,
             contentRepositoryRef: input.contentRepositoryRef ?? existing?.contentRepositoryRef ?? contentRepository?.currentBranch ?? null,
@@ -43,7 +46,7 @@ export async function upsertProjectTreeDxLibraryMethod(this: MarketControlPlaneS
             instance.id,
             libraryId,
             input.repositoryId ?? existing.repositoryId ?? null,
-            input.contentPath ?? existing.contentPath ?? 'src/content',
+            contentPath,
             input.contentRepositoryUrl ?? existing.contentRepositoryUrl ?? contentRepository?.url ?? null,
             input.contentRepositoryDefaultBranch ?? existing.contentRepositoryDefaultBranch ?? contentRepository?.defaultBranch ?? null,
             input.contentRepositoryRef ?? existing.contentRepositoryRef ?? contentRepository?.currentBranch ?? null,
@@ -67,7 +70,7 @@ export async function upsertProjectTreeDxLibraryMethod(this: MarketControlPlaneS
             instance.id,
             libraryId,
             input.repositoryId ?? null,
-            input.contentPath ?? 'src/content',
+            contentPath,
             input.contentRepositoryUrl ?? contentRepository?.url ?? null,
             input.contentRepositoryDefaultBranch ?? contentRepository?.defaultBranch ?? null,
             input.contentRepositoryRef ?? contentRepository?.currentBranch ?? null,
