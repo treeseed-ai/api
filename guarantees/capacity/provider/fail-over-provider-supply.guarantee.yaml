@@ -1,6 +1,6 @@
 schemaVersion: treeseed.guarantee/v1
-id: guarantee.capacity.provider.fail-over-provider-supply.752
-journeyIndex: 752
+id: guarantee.capacity.provider.fail-over-provider-supply.755
+journeyIndex: 755
 type: capacity
 subtype: provider
 journey: Fail over provider supply safely

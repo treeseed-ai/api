@@ -1,6 +1,6 @@
 schemaVersion: treeseed.guarantee/v1
-id: guarantee.agent.graph.filter-signals-through-groups.754
-journeyIndex: 754
+id: guarantee.agent.graph.filter-signals-through-groups.757
+journeyIndex: 757
 type: agent
 subtype: graph
 journey: Filter signal evidence through project groups
@@ -8,7 +8,7 @@ ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: Signal contracts alone form assignment DAG edges while frozen project-local group membership filters which evidence an activity profile may receive.
 status: planned
-dependencies: { journeys: [], guarantees: [guarantee.agent.control-plane.replay-agent-atlas-evidence.753] }
+dependencies: { journeys: [], guarantees: [guarantee.agent.control-plane.replay-agent-atlas-evidence.756] }
 actors: { allowed: [authenticated_user, team_owner, capacity_provider], forbidden: [unauthorized_user] }
 devices: { required: [], optional: [] }
 gates: [future]
