@@ -16,9 +16,9 @@ describe('assignment admission estimates', () => {
 		expect(result).toMatchObject({ seconds: 720, method: 'activity-profile-timebox' });
 	});
 
-	it('uses comparable provider, model, and context history at p90', async () => {
+	it('uses comparable assigned-provider, model, and context history at p90', async () => {
 		const rows = [100,200,300,400,500,600,700,800,900,1000].map((seconds) => ({ active_seconds: seconds, execution_provider_id: 'codex', model_name: 'gpt', metadata_json: JSON.stringify({ contextSizeBytes: 1_000 }) }));
-		const result = await estimateRequestedAgentSeconds(store(rows), { activityType: 'planning', execution: { providerPreference: ['codex'], model: 'gpt' } }, { contextSizeBytes: 1_200 });
+		const result = await estimateRequestedAgentSeconds(store(rows), { activityType: 'planning', execution: { executionProviderId: 'codex', model: 'gpt' } }, { contextSizeBytes: 1_200 });
 		expect(result).toMatchObject({ seconds: 900, method: 'historical-p90', sampleSize: 10, executionProviderId: 'codex', model: 'gpt' });
 	});
 

@@ -67,8 +67,7 @@ export async function estimateRequestedAgentSeconds(store: CapacityGovernanceDat
 	const timebox = Number(agent.execution.timeboxSeconds);
 	if (Number.isInteger(timebox) && timebox > 0) return { seconds: timebox, method: 'activity-profile-timebox', sampleSize: 0 };
 	const model = text(agent.execution.model);
-	const providerPreferences = Array.isArray(agent.execution.providerPreference) ? agent.execution.providerPreference : [];
-	const provider = text(agent.execution.executionProviderId ?? agent.execution.provider ?? providerPreferences[0]);
+	const provider = text(agent.execution.executionProviderId ?? agent.execution.provider);
 	const targetContextBytes = Number(payload.contextSizeBytes ?? payload.contextBytes) || nestedNumber(payload, 'contextPack', 'totalBytes');
 	const rows = await store.all(`SELECT usage.active_seconds,usage.input_tokens,usage.output_tokens,usage.cached_input_tokens,usage.reasoning_tokens,usage.actual_usd,usage.execution_provider_id,usage.model_name,usage.metadata_json,run.selected_input_json FROM capacity_usage_actuals usage
 		JOIN capacity_workday_demands demand ON demand.assignment_id = usage.assignment_id
