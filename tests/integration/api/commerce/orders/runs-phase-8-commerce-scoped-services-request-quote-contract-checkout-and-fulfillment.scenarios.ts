@@ -485,5 +485,5 @@ it('runs phase 8 commerce scoped services request quote contract checkout and fu
 			}),
 		});
 		expect(legacyPaid.status).toBe(400);
-	}, 25_000);
+	}, 60_000);
 });

@@ -148,6 +148,11 @@ roleMatrices:
           nonMember: { status: 403, envelope: { ok: false } }
 
 sdkMethodMatrices:
+  - method: agentLabEntities
+    actor: teamOwner
+    expect:
+      status: 200
+      envelope: { ok: true }
   - method: webSignIn
     actor: anonymous
     expect:
@@ -421,9 +426,9 @@ cases:
           projectId: ${fixtures.project.id}
           decisionId: ${fixtures.decision.id}
           agentClass: engineer
-          minCredits: 1
-          expectedCredits: 1
-          maxCredits: 2
+          minSeconds: 1
+          expectedSeconds: 1
+          maxSeconds: 2
           confidence: medium
           riskLevel: low
           assumptions: []

@@ -33,6 +33,18 @@ function numeric(...values: unknown[]) {
 	return null;
 }
 
+function optionalCapacityMap(value: unknown, owner: string): Record<string, number> {
+	if (value === undefined || value === null) return {};
+	if (typeof value !== 'object' || Array.isArray(value)) {
+		throw new CapacityGovernanceError('capacity_durable_json_invalid', `${owner} availableNative must be an object.`, 500);
+	}
+	const entries = Object.entries(value).map(([unit, amount]) => [unit, numeric(amount)] as const);
+	if (entries.some(([, amount]) => amount == null || amount < 0)) {
+		throw new CapacityGovernanceError('capacity_durable_json_invalid', `${owner} availableNative must contain non-negative numeric amounts.`, 500);
+	}
+	return Object.fromEntries(entries) as Record<string, number>;
+}
+
 async function counterAmount(database: CapacityGovernanceDatabase, id: string) {
 	const row = await database.first(`SELECT committed_amount FROM capacity_admission_counters WHERE id = ? LIMIT 1`, [id]);
 	return Number(row?.committed_amount ?? 0);
@@ -125,8 +137,8 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 		committedBorrowedSecondsByRule,
 		reserveCommittedSeconds,
 		approvedBorrowingRuleIds: Array.isArray(workdayMetadata.approvedBorrowingRuleIds) ? workdayMetadata.approvedBorrowingRuleIds.map(String) : [],
-		providerCapacity: { availableAgentSeconds, availableConcurrentAssignments: Math.max(0, maxConcurrent - activeRunners), capabilities: providerCapabilities, availableTokens: numeric(nativeLimits.availableTokens), availableCost: numeric(nativeLimits.availableCost), availableNative: decodeDurableJsonObject(nativeLimits.availableNative, { owner: 'provider native limits', column: 'availableNative' }) as Record<string, number> },
-		providerLocalLimits: { availableAgentSeconds: localAgentSeconds, availableConcurrentAssignments: Math.max(0, localMaxConcurrent - localActive), availableTokens: numeric(constraints.availableTokens), availableCost: numeric(constraints.availableCost), availableNative: decodeDurableJsonObject(constraints.availableNative, { owner: 'provider local constraints', column: 'availableNative' }) as Record<string, number> },
+		providerCapacity: { availableAgentSeconds, availableConcurrentAssignments: Math.max(0, maxConcurrent - activeRunners), capabilities: providerCapabilities, availableTokens: numeric(nativeLimits.availableTokens), availableCost: numeric(nativeLimits.availableCost), availableNative: optionalCapacityMap(nativeLimits.availableNative, 'provider native limits') },
+		providerLocalLimits: { availableAgentSeconds: localAgentSeconds, availableConcurrentAssignments: Math.max(0, localMaxConcurrent - localActive), availableTokens: numeric(constraints.availableTokens), availableCost: numeric(constraints.availableCost), availableNative: optionalCapacityMap(constraints.availableNative, 'provider local constraints') },
 		grantCommitted: { dailyAgentSeconds, monthlyAgentSeconds, activeAssignments, tokens: committedTokens, cost: committedCost, native: Object.fromEntries((selectedGrant?.budgetLimits?.native ?? []).map((entry, index) => [entry.unit, committedNativeValues[index] ?? 0])) },
 		acting,
 	};

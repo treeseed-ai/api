@@ -18,6 +18,10 @@
   "engines": {
     "node": ">=22"
   },
+  "overrides": {
+    "libsodium": "0.7.15",
+    "libsodium-sumo": "0.7.15"
+  },
   "types": "./dist/index.d.ts",
   "files": [
     "README.md",
@@ -97,8 +101,8 @@
     "@treeseed/sdk": "github:treeseed-ai/sdk#850ec8d20a4dbbff5bdd5e89f726eab84a7fc3b0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.8.2",
-    "libsodium-wrappers": "^0.7.16",
-    "libsodium-wrappers-sumo": "^0.7.16",
+    "libsodium-wrappers": "0.7.15",
+    "libsodium-wrappers-sumo": "0.7.15",
     "octokit": "^5.0.5",
     "pg": "^8.21.0",
     "stripe": "^22.3.0",

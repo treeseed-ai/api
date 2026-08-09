@@ -9,7 +9,7 @@ import type { Context, Hono } from 'hono';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import { ProjectAgentClassService } from '../../../services/projects/agents/project-agent-class-service.ts';
 import { projectTreeDxCommitSignals } from '../../../services/treedx/repositories/treedx-change-projector.ts';
-import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from '../agent-lab-repository-definitions.ts';
+import { agentLabRepositoryDefinitions, validateAgentDefinitionSource } from './repository-definitions.ts';
 import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
 import { applyTextChangeset } from '../../../../knowledge/changesets/apply-text-changeset.ts';
@@ -20,13 +20,21 @@ function object(value: unknown): Row { return value && typeof value === 'object'
 function text(...values: unknown[]) { return String(values.find((value) => typeof value === 'string' && value) ?? ''); }
 function strings(value: unknown) { return Array.isArray(value) ? [...new Set(value.map(text).filter(Boolean))] : []; }
 
+async function configuredContentRoot(dependencies: WorkdayRouteDependencies, projectId: string) {
+	const library = await dependencies.store.first('SELECT content_path FROM treedx_project_libraries WHERE project_id = ? LIMIT 1', [projectId]);
+	return text(library?.content_path).trim().replace(/^\/+|\/+$/gu, '');
+}
+
 async function compileIntentRequest(dependencies: WorkdayRouteDependencies, body: Row) {
 	if (!body.intent || typeof body.intent !== 'object' || Array.isArray(body.intent)) return body;
 	const currentSource = text(body.source); const parsed = currentSource ? parseFrontmatterDocument(currentSource) : { frontmatter: {}, body: '' };
 	const current = object(parsed.frontmatter); const requestedPath = text(body.path);
 	const existingSlug = text(current.slug); const existing = existingSlug ? { identity: { id: text(current.id, `agent:${existingSlug}`), slug: existingSlug, path: requestedPath, createdFromTemplate: text(current.template) || undefined }, frontmatter: current } : undefined;
-	const library = existing ? null : await dependencies.store.first('SELECT content_path FROM treedx_project_libraries WHERE project_id = ? LIMIT 1', [text(body.projectId)]);
-	const compiled = compileAgentDefinition({ intent: body.intent as unknown as AgentAuthoringIntent, projectId: text(body.projectId), contentRoot: text(library?.content_path, 'src/content'), existing });
+	const projectId = text(body.projectId);
+	const modelBoundary = requestedPath.lastIndexOf('/agents/');
+	const contentRoot = existing && modelBoundary > 0 ? requestedPath.slice(0, modelBoundary) : await configuredContentRoot(dependencies, projectId);
+	if (!contentRoot) return { ...body, contentPathMissing: true };
+	const compiled = compileAgentDefinition({ intent: body.intent as unknown as AgentAuthoringIntent, projectId, contentRoot, existing });
 	const source = `---\n${stringifyYaml(compiled.frontmatter, { lineWidth: 0 }).trim()}\n---\n${text(parsed.body, body.contentBody, `\n${text(object(body.intent).name)} participates through declared activity profiles and durable outputs.\n`)}`;
 	return { ...body, path: compiled.identity.path, source, generated: compiled.generated };
 }
@@ -80,6 +88,7 @@ async function verifyReferences(dependencies: WorkdayRouteDependencies, connecti
 }
 
 async function commitBundle(c: Context, dependencies: WorkdayRouteDependencies, body: Row) {
+	if (body.contentPathMissing === true) return c.json({ ok: false, code: 'agent_lab_content_path_required', error: 'Configure the project content path before authoring Agent Lab definitions.' }, 409);
 	const projectId = text(body.projectId); const project = projectId ? await dependencies.store.first('SELECT id, name, slug FROM projects WHERE id = ? AND team_id = ? LIMIT 1', [projectId, c.req.param('teamId')]) : null;
 	if (!project) return c.json({ ok: false, code: 'agent_lab_authoring_project_invalid', error: 'Choose a project in this team.' }, 422);
 	const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId, write: true, authoringPaths: true });
@@ -105,8 +114,9 @@ async function commitBundle(c: Context, dependencies: WorkdayRouteDependencies, 
 }
 
 async function compileGroupRequest(dependencies: WorkdayRouteDependencies, body: Row) {
-	const projectId=text(body.projectId);const library=await dependencies.store.first('SELECT content_path FROM treedx_project_libraries WHERE project_id = ? LIMIT 1',[projectId]);
-	const compiled=compileGroupDefinition({intent:body.intent as never,contentRoot:text(library?.content_path,'src/content')});
+	const projectId=text(body.projectId);const contentRoot=await configuredContentRoot(dependencies,projectId);
+	if(!contentRoot)return{...body,contentPathMissing:true};
+	const compiled=compileGroupDefinition({intent:body.intent as never,contentRoot});
 	const document=(value:unknown)=>`---\n${stringifyYaml(value,{lineWidth:0}).trim()}\n---\n`;
 	return {...body,files:[{path:compiled.groupPath,source:document(compiled.group)},...(compiled.edge&&compiled.edgePath?[{path:compiled.edgePath,source:document(compiled.edge)}]:[])]};
 }

@@ -14,6 +14,7 @@ const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market')) 
 
 function harness() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
@@ -28,7 +29,7 @@ async function seed(store: ReturnType<typeof harness>['store']) {
 }
 
 function input(overrides: Record<string, unknown> = {}) {
-	return { id: 'estimate-a', projectId: 'project-a', agentClass: 'engineer', minCredits: 1, expectedCredits: 2, maxCredits: 3, assumptions: [], blockers: [], dependencies: [], expectedOutputs: [], acceptanceCriteria: ['tests pass'], completionEvidence: [], ...overrides };
+	return { id: 'estimate-a', projectId: 'project-a', agentClass: 'engineer', minSeconds: 1, expectedSeconds: 2, maxSeconds: 3, assumptions: [], blockers: [], dependencies: [], expectedOutputs: [], acceptanceCriteria: ['tests pass'], completionEvidence: [], ...overrides };
 }
 
 describe('structured agent estimate service', () => {
@@ -37,7 +38,7 @@ describe('structured agent estimate service', () => {
 		try {
 			await seed(store);
 			const created = await store.createStructuredAgentEstimate('decision-a', input());
-			expect(created).toMatchObject({ id: 'estimate-a', teamId: 'team-a', decisionId: 'decision-a', status: 'submitted', expectedCredits: 2 });
+			expect(created).toMatchObject({ id: 'estimate-a', teamId: 'team-a', decisionId: 'decision-a', status: 'submitted', expectedSeconds: 2 });
 			expect(await store.getDecisionPlanningStatus('decision-a')).toMatchObject({ projectId: 'project-a', executionReadiness: 'blocked', planningInputsStatus: 'complete' });
 		} finally { await database.close(); }
 	});

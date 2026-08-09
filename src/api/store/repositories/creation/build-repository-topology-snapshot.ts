@@ -13,7 +13,7 @@ export function buildRepositoryTopologySnapshotMethod(this: MarketControlPlaneSt
             githubUrl: binding.contentRepositoryUrl ?? null,
             defaultBranch: binding.contentRepositoryDefaultBranch ?? null,
             ref: binding.contentRepositoryRef ?? null,
-            contentPath: binding.contentPath ?? 'src/content',
+            contentPath: binding.contentPath,
             treeDx: {
                 instanceId: instance.id,
                 libraryId: binding.libraryId,

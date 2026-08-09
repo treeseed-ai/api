@@ -33,7 +33,7 @@ describe('durable capacity JSON', () => {
 		});
 		await expect(loadCapacityAdmissionState({ ensureInitialized: vi.fn(), first } as never, {
 			teamId: 'team-a', providerId: 'provider-a', membershipId: 'membership-a', projectId: 'project-a',
-			environment: 'local', projectAgentClassId: 'class-a', mode: 'planning', workDayId: 'workday-a', requestedCredits: 1,
+			environment: 'local', projectAgentClassId: 'class-a', mode: 'planning', workDayId: 'workday-a', requestedSeconds: 1,
 		})).rejects.toMatchObject({
 			code: 'capacity_durable_json_invalid',
 			details: { owner: 'workday capacity envelope', ownerId: 'workday-a', column: 'metadata_json' },

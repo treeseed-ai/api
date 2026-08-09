@@ -6,6 +6,27 @@ function tokenPayload(token: string) {
 }
 
 describe('knowledge gateway scope', () => {
+	it('uses the configured content root and never substitutes a legacy directory', async () => {
+		const base = {
+			config: { TREESEED_TREEDX_JWT_HS256_SECRET: 'test-secret-at-least-thirty-two-bytes' },
+			async getProjectTreeDxLibrary() {
+				return {
+					repositoryId: 'repo-one', contentPath: 'knowledge-models', contentRepositoryRef: 'refs/heads/main',
+					topology: { contentRepository: { treeDx: { baseUrl: 'http://127.0.0.1:4000' } } },
+				};
+			},
+		};
+		const connection = await resolveKnowledgeGatewayConnection(base, { projectId: 'project-one', write: false, relationPaths: true });
+		expect(connection?.contentPath).toBe('knowledge-models');
+		expect(connection?.allowedPaths).toContain('knowledge-models/agents/**');
+		expect(connection?.allowedPaths.join(' ')).not.toContain('src/content');
+
+		await expect(resolveKnowledgeGatewayConnection({
+			...base,
+			async getProjectTreeDxLibrary() { return { ...(await base.getProjectTreeDxLibrary()), contentPath: '' }; },
+		}, { projectId: 'project-one', write: false })).rejects.toThrow('content path is missing');
+	});
+
 	it('grants read-only graph access to an explicitly pinned source commit', async () => {
 		const store = {
 			config: { TREESEED_TREEDX_JWT_HS256_SECRET: 'test-secret-at-least-thirty-two-bytes' },

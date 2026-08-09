@@ -156,11 +156,11 @@ it('approves membership without creating a grant and issues a one-time credentia
         const session = await store.createProviderAvailabilitySession(rotatedPrincipal!, {
             environment: 'local',
             capabilities: ['engineering'],
-            nativeLimits: { availableCredits: 20, maxConcurrentRunners: 2 },
+            nativeLimits: { availableAgentSeconds: 20, maxConcurrentRunners: 2 },
             runnerPressure: { activeRunners: 0, maxConcurrentRunners: 2 },
         });
         expect(session).toMatchObject({ membershipId: approved.membershipId, providerId: request.providerId, status: 'open', sequence: 1, snapshot: { maxConcurrentAssignments: 2, capabilities: ['engineering'] } });
-        const refreshed = await store.refreshProviderAvailabilitySession(rotatedPrincipal!, session.id, { expectedSequence: 1, capabilities: ['engineering', 'research'], nativeLimits: { availableCredits: 19, maxConcurrentRunners: 2 } });
+        const refreshed = await store.refreshProviderAvailabilitySession(rotatedPrincipal!, session.id, { expectedSequence: 1, capabilities: ['engineering', 'research'], nativeLimits: { availableAgentSeconds: 19, maxConcurrentRunners: 2 } });
         expect(refreshed).toMatchObject({ id: session.id, sequence: 2, snapshot: { capabilities: ['engineering', 'research'] } });
         expect(await store.refreshProviderAvailabilitySession(rotatedPrincipal!, session.id, { expectedSequence: 1 })).toBeNull();
         expect(await store.closeProviderAvailabilitySession(rotatedPrincipal!, session.id)).toMatchObject({ status: 'closed' });

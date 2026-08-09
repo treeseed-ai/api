@@ -98,6 +98,50 @@ function replayedSettlement(entry: Record<string, unknown>, input: CapacitySettl
 	return { replayed: true, entry, usageActualId };
 }
 
+interface CounterSettlement {
+	counterId: string;
+	adjustment: number;
+	releasedAmount: number;
+}
+
+function counterSettlementOperations(
+	input: CapacitySettlementRequest,
+	settlementToken: string,
+	now: string,
+	settlements: CounterSettlement[],
+): CapacityDatabaseOperation[] {
+	if (settlements.length === 0) return [];
+	const ids = settlements.map(({ counterId }) => counterId);
+	const guards = `EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?)
+		AND NOT EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = ?)`;
+	const operations: CapacityDatabaseOperation[] = [];
+	const overruns = input.approvedOverrun === true ? settlements.filter(({ adjustment }) => adjustment > 0) : [];
+	if (overruns.length > 0) operations.push({
+		query: `UPDATE capacity_admission_counters SET hard_limit = CASE id ${overruns.map(() => 'WHEN ? THEN CASE WHEN hard_limit < committed_amount + ? THEN committed_amount + ? ELSE hard_limit END').join(' ')} ELSE hard_limit END, state_version = state_version + 1, updated_at = ? WHERE id IN (${overruns.map(() => '?').join(',')}) AND ${guards}`,
+		params: [
+			...overruns.flatMap(({ counterId, adjustment }) => [counterId, adjustment, adjustment]), now,
+			...overruns.map(({ counterId }) => counterId),
+			input.reservationId, input.teamId, settlementToken, input.reservationId, ACTUAL_SETTLEMENT_PHASE,
+		],
+	});
+	operations.push({
+		query: `UPDATE capacity_admission_counters SET committed_amount = committed_amount + CASE id ${settlements.map(() => 'WHEN ? THEN ?').join(' ')} ELSE 0 END, state_version = state_version + 1, updated_at = ? WHERE id IN (${ids.map(() => '?').join(',')}) AND ${guards}`,
+		params: [
+			...settlements.flatMap(({ counterId, adjustment }) => [counterId, adjustment]), now, ...ids,
+			input.reservationId, input.teamId, settlementToken, input.reservationId, ACTUAL_SETTLEMENT_PHASE,
+		],
+	});
+	operations.push({
+		query: `UPDATE capacity_reservation_counter_claims SET released_amount = CASE counter_id ${settlements.map(() => 'WHEN ? THEN ?').join(' ')} ELSE released_amount END, updated_at = ? WHERE reservation_id = ? AND counter_id IN (${ids.map(() => '?').join(',')}) AND ${guards}`,
+		params: [
+			...settlements.flatMap(({ counterId, releasedAmount }) => [counterId, releasedAmount]), now,
+			input.reservationId, ...ids,
+			input.reservationId, input.teamId, settlementToken, input.reservationId, ACTUAL_SETTLEMENT_PHASE,
+		],
+	});
+	return operations;
+}
+
 interface PreparedCapacitySettlement {
 	input: CapacitySettlementRequest;
 	reservation: Record<string, unknown>;
@@ -146,7 +190,7 @@ function prepareCapacitySettlement(
 	});
 	const tokenActual = Number(input.usageActual?.inputTokens ?? 0) + Number(input.usageActual?.outputTokens ?? 0) + Number(input.usageActual?.reasoningTokens ?? 0);
 	const nativeUsage = input.usageActual?.nativeUsage ?? {};
-	for (const claim of claims) {
+	const counterSettlements = claims.map((claim) => {
 		const reservedAmount = Number(claim.reserved_amount ?? 0);
 		const isConcurrency = claim.release_policy === 'assignment-terminal';
 		const scope = String(claim.scope ?? '');
@@ -156,19 +200,9 @@ function prepareCapacitySettlement(
 					: scope.includes('native') ? Number(nativeUsage[String(claim.period_key ?? '')] ?? input.providerUnits ?? 0)
 						: activeSeconds;
 		const adjustment = desiredAmount - reservedAmount;
-		if (input.approvedOverrun === true && adjustment > 0) operations.push({
-			query: `UPDATE capacity_admission_counters SET hard_limit = CASE WHEN hard_limit < committed_amount + ? THEN committed_amount + ? ELSE hard_limit END, state_version = state_version + 1, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) AND NOT EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = ?)`,
-			params: [adjustment, adjustment, now, claim.counter_id, input.reservationId, input.teamId, settlementToken, input.reservationId, ACTUAL_SETTLEMENT_PHASE],
-		});
-		operations.push({
-			query: `UPDATE capacity_admission_counters SET committed_amount = committed_amount + ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) AND NOT EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = ?)`,
-			params: [adjustment, now, claim.counter_id, input.reservationId, input.teamId, settlementToken, input.reservationId, ACTUAL_SETTLEMENT_PHASE],
-		});
-		operations.push({
-			query: `UPDATE capacity_reservation_counter_claims SET released_amount = ?, updated_at = ? WHERE reservation_id = ? AND counter_id = ? AND EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) AND NOT EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = ?)`,
-			params: [Math.max(0, reservedAmount - desiredAmount), now, input.reservationId, claim.counter_id, input.reservationId, input.teamId, settlementToken, input.reservationId, ACTUAL_SETTLEMENT_PHASE],
-		});
-	}
+		return { counterId: String(claim.counter_id), adjustment, releasedAmount: Math.max(0, reservedAmount - desiredAmount) };
+	});
+	operations.push(...counterSettlementOperations(input, settlementToken, now, counterSettlements));
 	operations.push({
 		query: `INSERT INTO capacity_ledger_entries (id, settlement_key, membership_id, capacity_provider_id, reservation_id, assignment_id, mode_run_id, mode, team_id, project_id, work_day_id, task_id, phase, active_seconds, elapsed_seconds, provider_units, usd, source, metadata_json, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'task_completed_actual_settlement', CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL), ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) ON CONFLICT (reservation_id, phase) DO NOTHING`,
 		params: [entryId, input.settlementKey, input.membershipId, reservation.capacity_provider_id, input.reservationId, input.assignmentId, input.modeRunId ?? null, reservation.mode ?? null, input.teamId, reservation.project_id ?? null, reservation.work_day_id ?? null, reservation.task_id ?? null, activeSeconds, elapsedSeconds, input.providerUnits ?? null, input.usd ?? null, input.source, JSON.stringify({ ...(input.metadata ?? {}), reservedSeconds, activeSeconds, elapsedSeconds, releasedSeconds: Math.max(0, reservedSeconds - activeSeconds), overrunSeconds: Math.max(0, activeSeconds - reservedSeconds) }), now, input.reservationId, input.teamId, settlementToken],

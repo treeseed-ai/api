@@ -10,15 +10,15 @@ describe('atomic capacity admission and settlement', () => {
 it.each([
     ['approved', 12],
     ['rejected', 0],
-] as const)('holds an overrun and applies an explicit %s team decision exactly once', async (decision, consumedCredits) => {
+] as const)('holds an overrun and applies an explicit %s team decision exactly once', async (decision, activeSeconds) => {
     const { database, store } = harness();
     try {
         await store.ensureInitialized();
         const now = new Date().toISOString();
         await seedAdmissionDependencies(store, now);
-        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-overrun', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableCredits":10}', '{}', ?, ?)`, [now, now, now]);
+        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-overrun', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableSeconds":10}', '{}', ?, ?)`, [now, now, now]);
         await commitCapacityAdmission(store, { idempotencyKey: `overrun-admit-${decision}`, admission: admission(6, 0, now), reservationId: `overrun-reservation-${decision}`, assignmentId: `overrun-assignment-${decision}`, assignment: { projectAgentClassId: 'class-a', workDayId: 'workday-overrun' } });
-        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: `overrun-report-${decision}`, teamId: 'team-a', membershipId: 'membership-a', reservationId: `overrun-reservation-${decision}`, assignmentId: `overrun-assignment-${decision}`, actualCredits: 12, source: 'test' }))
+        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: `overrun-report-${decision}`, teamId: 'team-a', membershipId: 'membership-a', reservationId: `overrun-reservation-${decision}`, assignmentId: `overrun-assignment-${decision}`, activeSeconds: 12, elapsedSeconds: 12, source: 'test' }))
             .rejects.toMatchObject({ code: 'capacity_settlement_overrun_requires_approval' });
         expect(await store.first(`SELECT state FROM capacity_reservations WHERE id = ?`, [`overrun-reservation-${decision}`])).toEqual({ state: 'overran_pending_approval' });
         const service = new CapacityOverrunService(store);
@@ -26,18 +26,18 @@ it.each([
         const replay = await service.decide('team-a', `overrun-reservation-${decision}`, decision, 'owner-a', `decision-${decision}`);
         expect(first).toMatchObject({ decision, settlement: { replayed: false } });
         expect(replay).toMatchObject({ decision, settlement: { replayed: true } });
-        expect(await store.first(`SELECT state, consumed_credits FROM capacity_reservations WHERE id = ?`, [`overrun-reservation-${decision}`])).toEqual({ state: 'consumed', consumed_credits: consumedCredits });
-        expect(await store.all(`SELECT phase, credits FROM capacity_ledger_entries WHERE reservation_id = ? ORDER BY phase`, [`overrun-reservation-${decision}`])).toEqual([
-            { phase: 'overrun_hold', credits: 12 },
-            { phase: 'task_completed_actual_settlement', credits: consumedCredits },
+        expect(await store.first(`SELECT state, active_seconds FROM capacity_reservations WHERE id = ?`, [`overrun-reservation-${decision}`])).toEqual({ state: 'consumed', active_seconds: activeSeconds });
+        expect(await store.all(`SELECT phase, active_seconds FROM capacity_ledger_entries WHERE reservation_id = ? ORDER BY phase`, [`overrun-reservation-${decision}`])).toEqual([
+            { phase: 'overrun_hold', active_seconds: 12 },
+            { phase: 'task_completed_actual_settlement', active_seconds: activeSeconds },
         ]);
         expect(await store.first(`SELECT COUNT(*) AS count FROM capacity_audit_events WHERE resource_id = ? AND action = ?`, [`overrun-reservation-${decision}`, `capacity-overrun.${decision}`])).toEqual({ count: 1 });
         const counters = await store.all(`SELECT scope, hard_limit, committed_amount FROM capacity_admission_counters ORDER BY scope`);
         for (const counter of counters) {
-            const expected = counter.scope === 'grant-concurrency' ? 0 : consumedCredits;
+            const expected = String(counter.scope).includes('concurrency') ? 0 : activeSeconds;
             expect(Number(counter.committed_amount)).toBe(expected);
-            if (decision === 'approved' && counter.scope !== 'grant-concurrency')
-                expect(Number(counter.hard_limit)).toBeGreaterThanOrEqual(consumedCredits);
+            if (decision === 'approved' && !String(counter.scope).includes('concurrency'))
+                expect(Number(counter.hard_limit)).toBeGreaterThanOrEqual(activeSeconds);
         }
     }
     finally {
@@ -51,16 +51,16 @@ it('rejects an underreported terminal aggregate and permits a corrected idempote
         await store.ensureInitialized();
         const now = new Date().toISOString();
         await seedAdmissionDependencies(store, now);
-        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-usage', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableCredits":10}', '{}', ?, ?)`, [now, now, now]);
+        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-usage', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableSeconds":10}', '{}', ?, ?)`, [now, now, now]);
         await commitCapacityAdmission(store, { idempotencyKey: 'usage-admit', admission: admission(6), reservationId: 'usage-reservation', assignmentId: 'usage-assignment', assignment: { projectAgentClassId: 'class-a', workDayId: 'workday-usage' } });
-        await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'usage-reservation', assignmentId: 'usage-assignment', idempotencyKey: 'usage-incremental', usageDimension: 'provider-billing', accountingMode: 'incremental', actualCredits: 5, source: 'test' });
-        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: 'usage-settle-low', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'usage-reservation', assignmentId: 'usage-assignment', actualCredits: 4, source: 'test' }))
+        await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'usage-reservation', assignmentId: 'usage-assignment', idempotencyKey: 'usage-incremental', usageDimension: 'provider-billing', accountingMode: 'incremental', activeSeconds: 5, elapsedSeconds: 5, source: 'test' });
+        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: 'usage-settle-low', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'usage-reservation', assignmentId: 'usage-assignment', activeSeconds: 4, elapsedSeconds: 4, source: 'test' }))
             .rejects.toMatchObject({ code: 'capacity_usage_aggregate_underreported' });
         expect(await store.first(`SELECT settlement_token FROM capacity_reservations WHERE id = 'usage-reservation'`)).toEqual({ settlement_token: null });
         expect(await store.first(`SELECT COUNT(*) AS count FROM capacity_ledger_entries WHERE reservation_id = 'usage-reservation'`)).toEqual({ count: 0 });
         expect(await store.first(`SELECT COUNT(*) AS count FROM capacity_usage_actuals WHERE assignment_id = 'usage-assignment' AND accounting_mode = 'aggregate'`)).toEqual({ count: 0 });
-        const corrected = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'usage-settle-corrected', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'usage-reservation', assignmentId: 'usage-assignment', actualCredits: 5, source: 'test' });
-        expect(corrected).toMatchObject({ replayed: false, entry: { credits: 5 } });
+        const corrected = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'usage-settle-corrected', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'usage-reservation', assignmentId: 'usage-assignment', activeSeconds: 5, elapsedSeconds: 5, source: 'test' });
+        expect(corrected).toMatchObject({ replayed: false, entry: { active_seconds: 5 } });
     }
     finally {
         await database.close();
@@ -73,7 +73,7 @@ it('commits reservation and assignment together, enforces counters, and settles 
         await store.ensureInitialized();
         const now = new Date().toISOString();
         await seedAdmissionDependencies(store, now);
-        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableCredits":10,"reservedCredits":0,"consumedCredits":0}', '{}', ?, ?)`, [now, now, now]);
+        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableSeconds":10,"reservedSeconds":0,"activeSeconds":0}', '{}', ?, ?)`, [now, now, now]);
         const first = await commitCapacityAdmission(store, {
             idempotencyKey: 'admit-a',
             admission: admission(6),
@@ -141,34 +141,34 @@ it('commits reservation and assignment together, enforces counters, and settles 
             outputTokens: 25,
             wallMinutes: 1.25,
         };
-        const tokens = await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-tokens-a', usageDimension: 'tokens', actualCredits: 0, providerUnits: 125, source: 'test', usageActual: { nativeUsage: { inputTokens: 100, outputTokens: 25 } } });
-        const tokensReplay = await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-tokens-a', usageDimension: 'tokens', actualCredits: 0, providerUnits: 125, source: 'test', usageActual: { nativeUsage: { inputTokens: 100, outputTokens: 25 } } });
+        const tokens = await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-tokens-a', usageDimension: 'tokens', activeSeconds: 0, elapsedSeconds: 0, providerUnits: 125, source: 'test', usageActual: { nativeUsage: { inputTokens: 100, outputTokens: 25 } } });
+        const tokensReplay = await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-tokens-a', usageDimension: 'tokens', activeSeconds: 0, elapsedSeconds: 0, providerUnits: 125, source: 'test', usageActual: { nativeUsage: { inputTokens: 100, outputTokens: 25 } } });
         expect(tokens.replayed).toBe(false);
         expect(tokensReplay.replayed).toBe(true);
-        await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-wall-a', usageDimension: 'wall-time', accountingMode: 'incremental', actualCredits: 2, providerUnits: 1.25, source: 'test', usageActual: { wallMinutes: 1.25 } });
-        await expect(reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-tokens-conflict', usageDimension: 'tokens', accountingMode: 'incremental', actualCredits: 1, source: 'test' }))
+        await reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-wall-a', usageDimension: 'wall-time', accountingMode: 'incremental', activeSeconds: 2, elapsedSeconds: 2, providerUnits: 1.25, source: 'test', usageActual: { wallMinutes: 1.25 } });
+        await expect(reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-tokens-conflict', usageDimension: 'tokens', accountingMode: 'incremental', activeSeconds: 1, elapsedSeconds: 1, source: 'test' }))
             .rejects.toMatchObject({ code: 'capacity_usage_idempotency_conflict' });
         const fractionalProviderUnits = 2.4753833333333333;
-        const settled = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', actualCredits: 4, providerUnits: fractionalProviderUnits, source: 'test', usageActual });
+        const settled = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', activeSeconds: 4, elapsedSeconds: 4, providerUnits: fractionalProviderUnits, source: 'test', usageActual });
         expect(settled).toMatchObject({ replayed: false, entry: { settlement_key: 'settle-a' }, usageActualId: 'usage:assignment-a:0:aggregate' });
-        const settledReplay = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', actualCredits: 4, providerUnits: fractionalProviderUnits, source: 'test', usageActual });
+        const settledReplay = await settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-a', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', activeSeconds: 4, elapsedSeconds: 4, providerUnits: fractionalProviderUnits, source: 'test', usageActual });
         expect(settledReplay.replayed).toBe(true);
         const terminalizationReplay = await settleCapacityReservationExactlyOnce(store, {
             settlementKey: 'workday-terminal:run-a:assignment-a', teamId: 'team-a', membershipId: 'membership-a',
-            reservationId: 'reservation-a', assignmentId: 'assignment-a', actualCredits: 0,
+            reservationId: 'reservation-a', assignmentId: 'assignment-a', activeSeconds: 0, elapsedSeconds: 0,
             source: 'capacity_workday_terminalization', existingSettlementPolicy: 'replay',
         });
-        expect(terminalizationReplay).toMatchObject({ replayed: true, entry: { settlement_key: 'settle-a', credits: 4 } });
-        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-wrong-attempt', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', assignmentAttempt: 1, actualCredits: 4, source: 'test' }))
+        expect(terminalizationReplay).toMatchObject({ replayed: true, entry: { settlement_key: 'settle-a', active_seconds: 4 } });
+        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-wrong-attempt', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', assignmentAttempt: 1, activeSeconds: 4, elapsedSeconds: 4, source: 'test' }))
             .rejects.toMatchObject({ code: 'capacity_usage_assignment_attempt_conflict' });
-        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-bad-dimension', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', usageDimension: 'Bad Dimension', actualCredits: 4, source: 'test' }))
+        await expect(settleCapacityReservationExactlyOnce(store, { settlementKey: 'settle-bad-dimension', teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', usageDimension: 'Bad Dimension', activeSeconds: 4, elapsedSeconds: 4, source: 'test' }))
             .rejects.toMatchObject({ code: 'capacity_usage_dimension_invalid' });
-        expect(await store.all(`SELECT usage_dimension, actual_credits FROM capacity_usage_actuals WHERE assignment_id = ? ORDER BY usage_dimension`, ['assignment-a'])).toEqual([
-            { usage_dimension: 'aggregate', actual_credits: 4 },
-            { usage_dimension: 'tokens', actual_credits: 0 },
-            { usage_dimension: 'wall-time', actual_credits: 2 },
+        expect(await store.all(`SELECT usage_dimension, active_seconds FROM capacity_usage_actuals WHERE assignment_id = ? ORDER BY usage_dimension`, ['assignment-a'])).toEqual([
+            { usage_dimension: 'aggregate', active_seconds: 4 },
+            { usage_dimension: 'tokens', active_seconds: 0 },
+            { usage_dimension: 'wall-time', active_seconds: 2 },
         ]);
-        await expect(reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-late', usageDimension: 'late', actualCredits: 0, source: 'test' }))
+        await expect(reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId: 'reservation-a', assignmentId: 'assignment-a', idempotencyKey: 'usage-late', usageDimension: 'late', activeSeconds: 0, elapsedSeconds: 0, source: 'test' }))
             .rejects.toMatchObject({ code: 'capacity_usage_reporting_closed' });
         expect(await store.first(`SELECT team_id, project_id, capacity_provider_id FROM capacity_provider_assignments WHERE id = ?`, ['assignment-a']))
             .toEqual({ team_id: 'team-a', project_id: 'project-a', capacity_provider_id: 'provider-a' });
@@ -230,9 +230,9 @@ it('commits reservation and assignment together, enforces counters, and settles 
                     modeRuns: { items: [{ id: 'mode-run-a', status: 'succeeded' }], total: 1, page: { hasMore: false } },
                 },
                 settlement: {
-                    reservedCredits: 6,
-                    consumedCredits: 4,
-                    releasedCredits: 2,
+                    reservedSeconds: 6,
+                    activeSeconds: 4, elapsedSeconds: 4,
+                    releasedSeconds: 2,
                     providerConfidence: 'high',
                     warnings: [],
                     nativeUsage: {
@@ -246,13 +246,21 @@ it('commits reservation and assignment together, enforces counters, and settles 
             },
         });
         const counters = await store.all(`SELECT scope, committed_amount FROM capacity_admission_counters ORDER BY scope ASC`);
-        expect(counters).toEqual([
-            { scope: 'allocation-slice', committed_amount: 4 },
-            { scope: 'grant-concurrency', committed_amount: 0 },
-            { scope: 'grant-daily', committed_amount: 4 },
-            { scope: 'grant-monthly', committed_amount: 4 },
-            { scope: 'workday', committed_amount: 4 },
-        ]);
+        const counterTotals = Object.fromEntries([...new Set(counters.map((row) => String(row.scope)))].map((scope) => [
+            scope,
+            counters.filter((row) => row.scope === scope).reduce((sum, row) => sum + Number(row.committed_amount), 0),
+        ]));
+        expect(counterTotals).toEqual({
+            'allocation-slice': 4,
+            'grant-concurrency': 0,
+            'grant-daily': 4,
+            'grant-monthly': 4,
+            'provider-concurrency': 0,
+            'provider-local-concurrency': 0,
+            'provider-local-time': 4,
+            'provider-time': 4,
+            workday: 4,
+        });
         await expect(commitCapacityAdmission(store, { idempotencyKey: 'admit-b', admission: admission(6, 4), assignment: { projectAgentClassId: 'class-a', workDayId: 'workday-a' }, reservationId: 'reservation-b', assignmentId: 'assignment-b' })).resolves.toMatchObject({ replayed: false });
         await expect(store.createAgentModeRun({
             id: 'mode-run-a',
@@ -293,7 +301,7 @@ it('serializes concurrent admission retries and reservation settlement exactly o
         await store.ensureInitialized();
         await seedAdmissionDependencies(store, new Date().toISOString());
         const now = '2026-07-17T12:00:00.000Z';
-        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableCredits":10}', '{}', ?, ?)`, [now, now, now]);
+        await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'allocation-a', 'active', ?, '{"availableSeconds":10}', '{}', ?, ?)`, [now, now, now]);
         const request = (suffix: string) => commitCapacityAdmission(store, {
             idempotencyKey: 'concurrent-admission',
             admission: admission(6, 0, now),
@@ -313,6 +321,10 @@ it('serializes concurrent admission retries and reservation settlement exactly o
             ['grant-concurrency', 1],
             ['grant-daily', 6],
             ['grant-monthly', 6],
+            ['provider-concurrency', 1],
+            ['provider-local-concurrency', 1],
+            ['provider-local-time', 6],
+            ['provider-time', 6],
             ['workday', 6],
         ]);
         const settlement = (settlementKey: string) => settleCapacityReservationExactlyOnce(store, {
@@ -321,7 +333,7 @@ it('serializes concurrent admission retries and reservation settlement exactly o
             membershipId: 'membership-a',
             reservationId,
             assignmentId,
-            actualCredits: 4,
+            activeSeconds: 4, elapsedSeconds: 4,
             providerUnits: 2,
             source: 'test',
         });
@@ -335,6 +347,10 @@ it('serializes concurrent admission retries and reservation settlement exactly o
             ['grant-concurrency', 0],
             ['grant-daily', 4],
             ['grant-monthly', 4],
+            ['provider-concurrency', 0],
+            ['provider-local-concurrency', 0],
+            ['provider-local-time', 4],
+            ['provider-time', 4],
             ['workday', 4],
         ]);
         const capacityRace = await Promise.allSettled(['three', 'four'].map((suffix) => commitCapacityAdmission(store, {
@@ -354,7 +370,7 @@ it('serializes concurrent admission retries and reservation settlement exactly o
         expect(await store.first(`SELECT committed_amount FROM capacity_admission_counters WHERE scope = 'grant-daily'`)).toEqual({ committed_amount: 10 });
         await expect(settleCapacityReservationExactlyOnce(store, {
             settlementKey: 'conflicting-settlement', teamId: 'team-a', membershipId: 'membership-a',
-            reservationId, assignmentId, actualCredits: 5, providerUnits: 2, source: 'test',
+            reservationId, assignmentId, activeSeconds: 5, elapsedSeconds: 5, providerUnits: 2, source: 'test',
         })).rejects.toMatchObject({ code: 'capacity_settlement_usage_conflict' });
     }
     finally {

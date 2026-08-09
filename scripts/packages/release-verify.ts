@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { DataType,newDb } from 'pg-mem';
 import { createPlatformApiApp } from '../../src/api/support/app.js';
 import { MarketPostgresDatabase } from '../../src/api/support/market-postgres.js';
+import { startAcceptanceMailCapture } from './acceptance-mail-capture.ts';
 import { packageRoot } from './package-tools.ts';
 
 const textExtensions = new Set(['.js', '.ts', '.d.ts', '.json', '.md']);
@@ -116,6 +117,7 @@ function assertCleanDist() {
 
 function createAcceptanceDatabase() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({
 		name: 'md5',
 		args: [DataType.text],
@@ -202,10 +204,20 @@ async function runAcceptanceIfConfigured() {
 		console.log('TREESEED_API_BASE_URL is set without acceptance service credentials; using isolated local API acceptance target.');
 	}
 	console.log('Starting isolated local API acceptance target.');
-	const server = await startLocalAcceptanceApi();
-	const reportDirectory = mkdtempSync(join(tmpdir(), 'treeseed-api-acceptance-'));
-	const reportPath = join(reportDirectory, 'report.json');
+	const capture = await startAcceptanceMailCapture();
+	const previousMailpitHost = process.env.TREESEED_MAILPIT_SMTP_HOST;
+	const previousMailpitPort = process.env.TREESEED_MAILPIT_SMTP_PORT;
+	const previousMailpitUrl = process.env.TREESEED_MAILPIT_URL;
+	process.env.TREESEED_MAILPIT_SMTP_HOST = '127.0.0.1';
+	process.env.TREESEED_MAILPIT_SMTP_PORT = String(capture.smtpPort);
+	process.env.TREESEED_MAILPIT_URL = capture.httpUrl;
+	let server: Awaited<ReturnType<typeof startLocalAcceptanceApi>> | undefined;
+	let reportDirectory: string | undefined;
+	let reportPath: string | undefined;
 	try {
+		server = await startLocalAcceptanceApi();
+		reportDirectory = mkdtempSync(join(tmpdir(), 'treeseed-api-acceptance-'));
+		reportPath = join(reportDirectory, 'report.json');
 		await runAsync('npm', ['run', 'test:acceptance', '--', '--environment', 'local', '--base-url', server.baseUrl, '--report-json', reportPath], {
 			TREESEED_ACCEPTANCE_SERVICE_ID: 'web',
 			TREESEED_ACCEPTANCE_SERVICE_SECRET: 'web-test-secret',
@@ -218,15 +230,25 @@ async function runAcceptanceIfConfigured() {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID ?? 'acceptance-cloudflare-account',
 		});
 	} catch (error) {
-		if (existsSync(reportPath)) {
+		if (reportPath && existsSync(reportPath)) {
 			const report = JSON.parse(readFileSync(reportPath, 'utf8')) as { results?: Array<{ id?: string; status?: number | null; failures?: string[] }> };
 			const failures = (report.results ?? []).filter((result) => (result.failures?.length ?? 0) > 0);
 			console.error(`Acceptance failures (${failures.length}): ${JSON.stringify(failures)}`);
 		}
 		throw error;
 	} finally {
-		await server.close();
-		rmSync(reportDirectory, { recursive: true, force: true });
+		try {
+			if (server) await server.close();
+			await capture.close();
+		} finally {
+			if (previousMailpitHost === undefined) delete process.env.TREESEED_MAILPIT_SMTP_HOST;
+			else process.env.TREESEED_MAILPIT_SMTP_HOST = previousMailpitHost;
+			if (previousMailpitPort === undefined) delete process.env.TREESEED_MAILPIT_SMTP_PORT;
+			else process.env.TREESEED_MAILPIT_SMTP_PORT = previousMailpitPort;
+			if (previousMailpitUrl === undefined) delete process.env.TREESEED_MAILPIT_URL;
+			else process.env.TREESEED_MAILPIT_URL = previousMailpitUrl;
+			if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true });
+		}
 	}
 }
 

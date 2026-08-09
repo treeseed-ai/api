@@ -146,6 +146,7 @@ export async function waitForCondition(assertion: () => Promise<boolean> | boole
 
 export function createTestPostgresDatabase() {
     const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
     memory.public.registerFunction({
         name: 'md5',
         args: [DataType.text],
@@ -276,13 +277,14 @@ export function unsignedTestJwt(payload: Record<string, unknown>) {
 export async function authorizeApp(app: ReturnType<typeof createTestApp>, input: {
     principalId?: string;
     displayName?: string;
+    siteRoles?: string[];
 } = {}) {
     const principalId = input.principalId ?? 'user-1';
     const namespace = `device-${principalId.replace(/[^a-z0-9-]+/giu, '-').toLowerCase()}`;
     const seeded = await json(await app.request('/v1/acceptance/seed', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-treeseed-service-id': 'web', 'x-treeseed-service-secret': 'web-test-secret' },
-        body: JSON.stringify({ namespace, actorsOnly: true, actors: { deviceApprover: { userId: principalId, displayName: input.displayName ?? 'Market User', siteRoles: ['member'] } } }),
+        body: JSON.stringify({ namespace, actorsOnly: true, actors: { deviceApprover: { userId: principalId, displayName: input.displayName ?? 'Market User', siteRoles: input.siteRoles ?? ['member'] } } }),
     }));
     if (!seeded.ok)
         throw new Error(`Acceptance actor seed failed: ${JSON.stringify(seeded)}`);

@@ -1,4 +1,5 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
+import { completeGovernanceProposalInput } from '../../../../support/governance-proposal.ts';
 
 describe('market api', () => {
 it('creates accepted governance decisions from project proposals through admin approval', async () => {
@@ -26,12 +27,12 @@ it('creates accepted governance decisions from project proposals through admin a
 		const proposal = await json(await app.request(`/v1/projects/${project.id}/proposals`, {
 			method: 'POST',
 			headers,
-			body: JSON.stringify({
+			body: JSON.stringify(completeGovernanceProposalInput({
 				title: 'Adopt proposal governance',
 				summary: 'Use accepted proposals as the only source of executable decisions.',
-				body: 'The decision record should be generated from the accepted proposal snapshot and voting evidence.',
+				body: 'The decision record should be generated from the accepted proposal snapshot and voting evidence. This preserves the complete rationale, scope, evidence, and verification contract for every executable decision.',
 				proposalType: 'architecture',
-			}),
+			})),
 		}));
 		expect(proposal.ok).toBe(true);
 		expect(proposal.payload).toMatchObject({

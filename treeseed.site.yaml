@@ -94,8 +94,20 @@ services:
 publicTreeDxFederation:
   railway:
     nodePool:
-      bootstrapCount: 2
-      maxNodes: 4
+      bootstrapCount: 3
+      maxNodes: 12
+    runtime:
+      cpuBudget: 4
+      memoryBudgetMb: 4096
+      cacheMemoryFraction: 0.35
+    repositoryQueries:
+      poolSize: 32
+      maxQueue: 256
+      queueTimeoutMs: 250
+    graphQueries:
+      poolSize: 4
+      maxQueue: 128
+      queueTimeoutMs: 500
 providers:
   operations: api
   deploy: railway

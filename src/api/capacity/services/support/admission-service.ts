@@ -211,31 +211,42 @@ function assertReplayMatchesRequest(
 }
 
 function counterInitializationOperations(input: CapacityAdmissionCommitRequest, decision: CapacityAdmissionDecision, now: string): CapacityDatabaseOperation[] {
+	if (decision.counterClaims.length === 0) return [];
 	const teamId = input.admission.request.teamId;
-	return decision.counterClaims.map((claim) => ({
-			query: `INSERT OR IGNORE INTO capacity_admission_counters (id, team_id, scope, scope_id, period_key, hard_limit, committed_amount, state_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`,
-			params: [claim.id, teamId, claim.scope, claim.scopeId, claim.periodKey, claim.hardLimit, now, now],
-		}));
+	return [{
+		query: `INSERT OR IGNORE INTO capacity_admission_counters (id, team_id, scope, scope_id, period_key, hard_limit, committed_amount, state_version, created_at, updated_at) VALUES ${decision.counterClaims.map(() => '(?, ?, ?, ?, ?, ?, 0, 1, ?, ?)').join(', ')}`,
+		params: decision.counterClaims.flatMap((claim) => [claim.id, teamId, claim.scope, claim.scopeId, claim.periodKey, claim.hardLimit, now, now]),
+	}];
 }
 
 function counterClaimOperations(input: CapacityAdmissionCommitRequest, decision: CapacityAdmissionDecision, reservationId: string, admissionToken: string, now: string): CapacityDatabaseOperation[] {
+	if (decision.counterClaims.length === 0) return [];
 	const teamId = input.admission.request.teamId;
-	return decision.counterClaims.flatMap((claim) => [
-		{
-			query: `UPDATE capacity_admission_counters
-			 SET committed_amount = committed_amount + ?, state_version = state_version + 1, updated_at = ?
-			 WHERE id = ? AND team_id = ?
-			   AND EXISTS (
-				 SELECT 1 FROM capacity_reservations
-				 WHERE id = ? AND team_id = ? AND idempotency_key = ? AND admission_token = ?
-			   )`,
-			params: [claim.amount, now, claim.id, teamId, reservationId, teamId, input.idempotencyKey, admissionToken],
-		},
-		{
+	const ids = decision.counterClaims.map((claim) => claim.id);
+	return [{
+		query: `UPDATE capacity_admission_counters
+		 SET committed_amount = committed_amount + CASE id ${decision.counterClaims.map(() => 'WHEN ? THEN ?').join(' ')} ELSE 0 END,
+		     state_version = state_version + 1,
+		     updated_at = ?
+		 WHERE id IN (${ids.map(() => '?').join(',')}) AND team_id = ?
+		   AND EXISTS (
+			 SELECT 1 FROM capacity_reservations
+			 WHERE id = ? AND team_id = ? AND idempotency_key = ? AND admission_token = ?
+		   )`,
+		params: [
+			...decision.counterClaims.flatMap((claim) => [claim.id, claim.amount]),
+			now,
+			...ids,
+			teamId,
+			reservationId,
+			teamId,
+			input.idempotencyKey,
+			admissionToken,
+		],
+	}, ...decision.counterClaims.map((claim) => ({
 			query: `INSERT INTO capacity_reservation_counter_claims (reservation_id, counter_id, admission_token, reserved_amount, released_amount, release_policy, created_at, updated_at) SELECT ?, ?, ?, CAST(? AS REAL), 0, ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND idempotency_key = ? AND admission_token = ?) ON CONFLICT (reservation_id, counter_id) DO NOTHING`,
 			params: [reservationId, claim.id, admissionToken, claim.amount, claim.release, now, now, reservationId, teamId, input.idempotencyKey, admissionToken],
-		},
-	]);
+		}))];
 }
 
 export async function commitCapacityAdmission(database: CapacityGovernanceDatabase, input: CapacityAdmissionCommitRequest): Promise<CapacityAdmissionCommitResult> {

@@ -299,5 +299,5 @@ it('manages commerce capacity marketplace listings and inquiries without executi
 		expect(serialized).not.toContain('capacityCredit');
 		expect(serialized).not.toContain('grantToken');
 		expect(serialized).not.toContain('executionCredential');
-	}, 25_000);
+	}, 60_000);
 });

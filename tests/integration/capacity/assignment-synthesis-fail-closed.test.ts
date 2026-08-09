@@ -18,6 +18,7 @@ const openDatabases: MarketPostgresDatabase[] = [];
 
 async function harness() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({
 		name: 'md5',
 		args: [DataType.text],
@@ -74,7 +75,7 @@ describe('capacity assignment synthesis fail-closed guarantees', () => {
 			priority: 1,
 			requestedSeconds: 60,
 			idempotencyKey: 'demand-a',
-			payload: { repositoryId: 'treeseed-project-a', contentRoot: 'src/content' },
+			payload: { repositoryId: 'treeseed-project-a', contentRoot: 'knowledge' },
 			metadata: { environment: 'local' },
 			availableAt: now,
 			now,

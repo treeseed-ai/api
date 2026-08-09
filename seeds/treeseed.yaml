@@ -20,6 +20,13 @@ resources:
       metadata:
         visibility: public
 
+  teamMemberships:
+    - key: membership:treeseed/adrian-webb
+      team: team:treeseed
+      email: adrian.webb@knowledge.coop
+      roles: [team_owner]
+      missingUser: defer
+
   projects:
     - key: project:treeseed/market
       team: team:treeseed

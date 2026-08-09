@@ -25,7 +25,7 @@ describe('workday assignment artifact handoff', () => {
 			{ id: 'project-1' } as never,
 			{
 				slug: 'guide-steward', activityType: 'planning', handler: 'writer', projectAgentClassId: 'class-1',
-				projectAgentClassSlug: 'editorial', purpose: 'Author a proposal.', promptTask: 'proposal', planningIntent: {},
+				projectAgentClassSlug: 'editorial', purpose: 'Author a proposal.', promptTask: 'proposal', planningIntent: { includeWorkdayArtifacts: true },
 				branchPolicy: {}, contentAccess: {}, outputContract: {}, inputContract: { artifactContracts: ['planning-note'] },
 				planningPriority: 1, planningAllocationPercent: null, contentPath: null,
 			},

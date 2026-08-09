@@ -12,8 +12,8 @@ function row(overrides: Record<string, unknown> = {}) {
 		scope_hash: 'scope-a',
 		allocation_set_id: null,
 		work_day_id: null,
-		expected_credits: 2,
-		high_credits: 3,
+		expected_seconds: 2,
+		high_seconds: 3,
 		work_units_json: '[]',
 		capability_needs_json: '["repo_read"]',
 		environment_needs_json: '[]',
@@ -40,8 +40,8 @@ describe('agent capacity plan repository serialization', () => {
 			decisionId: 'decision-a',
 			status: 'draft',
 			scopeHash: 'scope-a',
-			expectedCredits: 2,
-			highCredits: 3,
+			expectedSeconds: 2,
+			highSeconds: 3,
 			capabilityNeeds: ['repo_read'],
 		});
 	});
@@ -49,8 +49,8 @@ describe('agent capacity plan repository serialization', () => {
 	it.each([
 		['unknown status', { status: 'approved' }, 'agent_capacity_plan_status_invalid'],
 		['missing team', { team_id: null }, 'agent_capacity_plan_field_invalid'],
-		['negative estimate', { expected_credits: -1 }, 'agent_capacity_plan_amount_invalid'],
-		['inverted estimate', { expected_credits: 4, high_credits: 3 }, 'agent_capacity_plan_amount_invalid'],
+		['negative estimate', { expected_seconds: -1 }, 'agent_capacity_plan_amount_invalid'],
+		['inverted estimate', { expected_seconds: 4, high_seconds: 3 }, 'agent_capacity_plan_amount_invalid'],
 		['corrupt work units', { work_units_json: '{}' }, 'capacity_durable_json_invalid'],
 		['corrupt metadata', { metadata_json: '[]' }, 'capacity_durable_json_invalid'],
 	])('fails closed for %s', (_label, overrides, code) => {

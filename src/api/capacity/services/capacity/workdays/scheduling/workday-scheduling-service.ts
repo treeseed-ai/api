@@ -143,7 +143,8 @@ export async function scheduleCapacityWorkdayRun(
 				{ projectId: project.id },
 			);
 		}
-		contexts.set(project.id, { contentRoot: text(library?.contentPath, capacityWorkdayContentRoot(project)), repositoryId, immutableRef: text(library?.contentRepositoryRef, repositoryId) });
+		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
+		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef: text(library?.contentRepositoryRef, repositoryId) });
 		planningGraphs.set(project.id, await resolveWorkdayPlanningGraphSnapshot(store, project.id, parameters.agentSelection));
 	}
 	const time = workdayTime(parameters);

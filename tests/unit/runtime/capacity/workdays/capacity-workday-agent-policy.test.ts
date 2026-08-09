@@ -137,11 +137,15 @@ describe('capacity workday agent policy', () => {
 
 	it('freezes the selected profile DAG and rejects changed snapshots', () => {
 		const snapshot = compileWorkdayPlanningGraphSnapshot([
-			{ id: 'research', slug: 'research', handlerRefs: { agents: [{ slug: 'researcher', activities: { planning: {
-				handler: 'writer', outputs: { artifactContracts: ['planning-note'], signalContracts: ['evidence-ready'] },
+			{ id: 'research', slug: 'research', handlerRefs: { signalContracts: { 'evidence-ready': {
+				schemaVersion: 'treeseed.agent-signal/v1', id: 'evidence-ready', label: 'Evidence ready', description: 'Evidence is ready for synthesis.',
+				subjectKinds: ['objective'], allowedOrigins: ['agent-tool'], payloadSchema: {}, commitEvidence: 'required',
+				idempotency: 'commit-subject', supersession: 'replace-subject', coalescing: 'latest-subject',
+			} }, agents: [{ slug: 'researcher', activities: { planning: {
+				handler: 'writer', outputs: { artifactContracts: ['planning-note'] }, signals: { publishes: ['evidence-ready'] },
 			} } }] } },
 			{ id: 'steward', slug: 'steward', handlerRefs: { agents: [{ slug: 'steward', activities: { planning: {
-				handler: 'writer', inputs: { artifactContracts: ['planning-note'], signalContracts: ['evidence-ready'], producerPolicy: 'all' },
+				handler: 'writer', signals: { subscribesTo: [{ contract: 'evidence-ready', producerPolicy: 'all' }] },
 				outputs: { artifactContracts: ['planning-proposal'] },
 			} } }] } },
 		], {});

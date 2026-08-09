@@ -4,7 +4,7 @@ function text(value: unknown, fallback = '') { return typeof value === 'string' 
 function intent(value: unknown): 'discuss' | 'propose' | 'act' { return value === 'propose' || value === 'act' ? value : 'discuss'; }
 
 export function installDiscussionRoutes(context: any) {
-	const { app, jsonError, requireProjectAccess, requireTeamAccess, store } = context;
+	const { app, jsonError, requireProjectAccess, requireTeamAccess, sessionEvents, store } = context;
 	app.get('/v1/discussions', async (c: any) => {
 		const projectId = text(c.req.query('projectId'));
 		if (!projectId) return jsonError(c, 400, 'Discussion history requires a project.');
@@ -49,6 +49,8 @@ export function installDiscussionRoutes(context: any) {
 			const details = error && typeof error === 'object' ? error as { status?: number; code?: string } : {};
 			return jsonError(c, details.status ?? 503, error instanceof Error ? error.message : 'TreeDX could not preserve the Discussion message.', { code: details.code ?? 'discussion_content_unavailable' });
 		}
+		await sessionEvents.publish({ eventType: 'discussion.updated', teamId, projectId, resourceId: authored.discussion.id, payload: { discussionId: authored.discussion.id, messageId: authored.message.id, commitSha: authored.commitSha } })
+			.catch((error: unknown) => console.warn('[api] Discussion session event degraded', { error: error instanceof Error ? error.message : String(error) }));
 		if (!authored.mentions.length) return c.json({ ok: true, ...authored, assignments: [] }, 201);
 		const membership = await store.first(`SELECT capacity_provider_id FROM capacity_provider_team_memberships WHERE team_id = ? AND status = 'approved' ORDER BY approved_at ASC LIMIT 1`, [teamId]);
 		if (!membership?.capacity_provider_id) return c.json({ ok: true, ...authored, assignments: [], dispatch: { status: 'blocked', reason: 'No approved capacity provider membership is available.' } }, 202);

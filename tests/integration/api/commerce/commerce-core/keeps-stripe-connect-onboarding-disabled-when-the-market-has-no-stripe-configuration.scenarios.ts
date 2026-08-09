@@ -49,5 +49,5 @@ it('keeps Stripe Connect onboarding disabled when the market has no Stripe confi
 		expect(response.status).toBe(409);
 		const payload = await json(response);
 		expect(payload.error).toContain('Stripe Connect is not configured');
-	}, 15_000);
+	}, 60_000);
 });

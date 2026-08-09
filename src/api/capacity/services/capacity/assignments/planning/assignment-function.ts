@@ -130,7 +130,14 @@ function assignmentInput(
       500,
       { demandId: demand.id },
     );
-  const contentRoot = text(payload.contentRoot, "src/content");
+  const contentRoot = text(payload.contentRoot);
+  if (!contentRoot)
+    throw new CapacityGovernanceError(
+      "capacity_workday_demand_content_path_missing",
+      "Demand omitted its configured project content path.",
+      500,
+      { demandId: demand.id },
+    );
   const contentBaseRef = resolveAssignmentContentBaseRef(payload);
   const planning = demand.mode === "planning";
   const requiredCapabilities = Array.isArray(demand.metadata.requiredCapabilities)

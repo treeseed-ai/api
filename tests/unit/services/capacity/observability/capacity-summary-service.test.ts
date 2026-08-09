@@ -21,10 +21,10 @@ function store(diagnostics: ProjectCapacityDiagnostics, allocationSet: CapacityA
 	});
 	const first = vi.fn(async (query: string, _params?: unknown[]) => {
 		if (query.includes('FROM capacity_provider_team_memberships')) return member;
-		if (query.includes('COUNT(*) AS grant_count')) return { grant_count: 1, daily_credits: 10, monthly_credits: 100 };
+		if (query.includes('COUNT(*) AS grant_count')) return { grant_count: 1, daily_agent_seconds: 10, monthly_agent_seconds: 100 };
 		if (query.includes('FROM capacity_reservations')) return {
-			active_reserved_credits: 2, daily_used_credits: 1, monthly_used_credits: 1,
-			daily_terminal_credits: 1, monthly_terminal_credits: 1,
+			active_reserved_seconds: 2, daily_active_seconds: 1, monthly_active_seconds: 1,
+			daily_terminal_seconds: 1, monthly_terminal_seconds: 1,
 		};
 		return null;
 	});
@@ -41,8 +41,8 @@ function diagnostics(overrides: Partial<ProjectCapacityDiagnostics> = {}): Proje
 	return {
 		projectId: 'project-a', teamId: 'team-a', environment: 'local', executionProviders: [], activeReservations: [],
 		providers: [{ providerId: 'provider-a', identityStatus: 'active', membershipStatus: 'approved' } as never],
-		grants: [{ id: 'grant-a', status: 'active', dailyCreditLimit: 10, monthlyCreditLimit: 100, unmetered: false } as never],
-		derivedCapacity: { entries: [] }, remaining: { dailyCredits: 8, monthlyCredits: 100 }, ...overrides,
+		grants: [{ id: 'grant-a', status: 'active', dailyAgentSecondsLimit: 10, monthlyAgentSecondsLimit: 100, unmetered: false } as never],
+		nativeCapacity: { entries: [] }, remaining: { dailyAgentSeconds: 8, monthlyAgentSeconds: 100 }, ...overrides,
 	};
 }
 
@@ -52,7 +52,7 @@ describe('capacity summary service', () => {
 		const result = await new CapacitySummaryService(store(diagnostics(), allocation)).project('project-a', 'local');
 		expect(result).toMatchObject({
 			projectId: 'project-a', environment: 'local', readiness: 'ready', reasons: [],
-			dailyCredits: 10, dailyUsedCredits: 1, dailyReservedCredits: 3, dailyRemainingCredits: 7,
+			dailyAgentSeconds: 10, dailyActiveSeconds: 1, dailyReservedSeconds: 3, dailyRemainingSeconds: 7,
 			activeProviderCount: 1,
 		});
 	});
@@ -60,9 +60,9 @@ describe('capacity summary service', () => {
 	it('does not inherit a team limit for an explicitly unmetered project grant', async () => {
 		const allocation = { id: 'allocation-a', status: 'active' } as CapacityAllocationSetV2;
 		const result = await new CapacitySummaryService(store(diagnostics({
-			grants: [{ id: 'grant-a', status: 'active', dailyCreditLimit: null, unmetered: true } as never],
+			grants: [{ id: 'grant-a', status: 'active', dailyAgentSecondsLimit: null, unmetered: true } as never],
 		}), allocation)).project('project-a', 'local');
-		expect(result).toMatchObject({ readiness: 'ready', dailyCredits: null, dailyRemainingCredits: null });
+		expect(result).toMatchObject({ readiness: 'ready', dailyAgentSeconds: null, dailyRemainingSeconds: null });
 	});
 
 	it('fails readiness when only a suspended membership remains', async () => {

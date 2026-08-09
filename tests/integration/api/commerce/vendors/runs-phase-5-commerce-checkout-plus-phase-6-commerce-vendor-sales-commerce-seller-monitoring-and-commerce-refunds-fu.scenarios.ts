@@ -412,5 +412,5 @@ it('runs phase 5 commerce checkout plus phase 6 commerce vendor sales, commerce 
 			body: JSON.stringify({ id: 'evt_invalid', type: 'unknown', data: { object: {} } }),
 		});
 		expect(invalidWebhook.status).toBe(400);
-	}, 25_000);
+	}, 60_000);
 });

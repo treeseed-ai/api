@@ -13,6 +13,7 @@ const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
 
 function createStore() {
 	const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
 	const db = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
@@ -46,7 +47,7 @@ describe('typed planning state service', () => {
 			});
 			expect(await store.getDecisionPlanningStatus('decision-a')).toMatchObject({ executionReadiness: 'ready', planningInputsStatus: 'complete', scopeHash: 'scope-a' });
 
-			await store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_credits, high_credits, created_at, updated_at) VALUES ('plan-a', 'team-a', 'project-a', 'decision-a', 'accepted', 'scope-a', 1, 2, ?, ?)`, [now, now]);
+			await store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_seconds, high_seconds, created_at, updated_at) VALUES ('plan-a', 'team-a', 'project-a', 'decision-a', 'accepted', 'scope-a', 1, 2, ?, ?)`, [now, now]);
 			const second = await store.createDecisionExecutionInput('decision-a', {
 				id: 'input-b', projectId: 'project-a', projectAgentClassId: 'class-a', status: 'proposed', scopeHash: 'scope-b',
 				input: { workGraphNodeId: 'graph-a:node:test' }, payload: { objective: 'second' },
@@ -90,7 +91,7 @@ describe('typed planning state service', () => {
 			await create('input-test', 'graph-a:node:test', 'scope-test-v1');
 			await create('input-implementation', 'graph-a:node:implementation', 'scope-implementation-v1');
 			expect(await store.listDecisionExecutionInputs('decision-a', { status: 'accepted' })).toHaveLength(2);
-			await store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_credits, high_credits, created_at, updated_at) VALUES ('plan-a', 'team-a', 'project-a', 'decision-a', 'accepted', 'aggregate-scope', 2, 2, ?, ?)`, [now, now]);
+			await store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_seconds, high_seconds, created_at, updated_at) VALUES ('plan-a', 'team-a', 'project-a', 'decision-a', 'accepted', 'aggregate-scope', 2, 2, ?, ?)`, [now, now]);
 
 			await create('input-test', 'graph-a:node:test', 'scope-test-v1');
 			expect(await store.getAgentCapacityPlan('plan-a')).toMatchObject({ status: 'accepted' });

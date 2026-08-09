@@ -3,7 +3,7 @@ import { authorizeApp,createTestApp,describe,expect,it,json } from '../../../sup
 describe('market api', () => {
 it('plans and applies staging seeds with audit records, then reports unchanged', async () => {
 		const app = createTestApp();
-		const token = await authorizeApp(app);
+		const token = await authorizeApp(app, { siteRoles: ['platform_admin'] });
 
 		const unauthenticated = await app.request('/v1/seeds/treeseed/plan', {
 			method: 'POST',

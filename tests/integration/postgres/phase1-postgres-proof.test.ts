@@ -137,19 +137,19 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			await database.pool.query(`INSERT INTO capacity_execution_providers (id, capacity_provider_id, display_name, adapter, status, capabilities_json, native_unit, quota_visibility, max_concurrent_runners, native_limits_json, metadata_json, created_at, updated_at) VALUES ('codex', 'provider-a', 'Codex', 'codex', 'active', '["engineering"]', 'assignment', 'exact', 2, '[]', '{}', $1, $1)`, [now]);
 			await database.pool.query(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES ('class-a', 'team-a', 'project-a', 'engineer', 'Engineer', 'active', '["planning"]', '["engineering"]', '{}', '{}', '{}', '{}', '{}', $1, $1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_allocation_sets (id, team_id, version, status, effective_from, reserve_policy_json, slices_json, borrowing_rules_json, metadata_json, created_at, updated_at) VALUES ('allocation-a', 'team-a', 1, 'active', $1, '{"percent":0,"overflow":"deny"}', '[{"id":"project:project-a","scope":"project","targetId":"project-a","policy":{"minPercent":0,"targetPercent":100,"maxPercent":100,"hardCapPercent":100}}]', '[]', '{}', $1, $1)`, [now]);
-			await database.pool.query(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, execution_provider_ids_json, lane_ids_json, capabilities_json, allowed_modes_json, daily_credit_limit, monthly_credit_limit, max_concurrent_assignments, unmetered, metadata_json, created_at, updated_at) VALUES ('grant-a', 'membership-a', 'provider-a', 'team-a', 'project-a', 'local', 'active', '["codex"]', '[]', '["engineering"]', '["planning"]', 10, 10, 2, 0, '{}', $1, $1)`, [now]);
-			await database.pool.query(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'allocation-a', 'active', $1, '{"totalCredits":10}', '{"grantId":"grant-a"}', $1, $1)`, [now]);
+			await database.pool.query(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, execution_provider_ids_json, lane_ids_json, capabilities_json, allowed_modes_json, daily_agent_seconds_limit, monthly_agent_seconds_limit, max_concurrent_assignments, unmetered, metadata_json, created_at, updated_at) VALUES ('grant-a', 'membership-a', 'provider-a', 'team-a', 'project-a', 'local', 'active', '["codex"]', '[]', '["engineering"]', '["planning"]', 10, 10, 2, 0, '{}', $1, $1)`, [now]);
+			await database.pool.query(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, allocation_set_id, status, started_at, envelope_json, metadata_json, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'allocation-a', 'active', $1, '{"totalSeconds":10}', '{"grantId":"grant-a"}', $1, $1)`, [now]);
 			const admission: CapacityAdmissionInput = {
 				now,
-				request: { teamId: 'team-a', providerId: 'provider-a', membershipId: 'membership-a', projectId: 'project-a', environment: 'local', agentClassId: 'class-a', mode: 'planning', executionProviderId: 'codex', requiredCapabilities: ['engineering'], requestedCredits: 6 },
+				request: { teamId: 'team-a', providerId: 'provider-a', membershipId: 'membership-a', projectId: 'project-a', environment: 'local', agentClassId: 'class-a', mode: 'planning', executionProviderId: 'codex', requiredCapabilities: ['engineering'], requestedSeconds: 6 },
 				membership: { id: 'membership-a', teamId: 'team-a', providerId: 'provider-a', status: 'approved' },
 				availability: { status: 'open', availableFrom: new Date(Date.parse(now) - 1_000).toISOString(), availableUntil: new Date(Date.parse(now) + 60_000).toISOString() },
-				grant: { schemaVersion: 2, id: 'grant-a', membershipId: 'membership-a', teamId: 'team-a', providerId: 'provider-a', projectId: 'project-a', environment: 'local', status: 'active', executionProviderIds: ['codex'], laneIds: [], capabilities: ['engineering'], allowedModes: ['planning'], dailyCreditLimit: 10, monthlyCreditLimit: 10, maxConcurrentAssignments: 2 },
-				workday: { id: 'workday-a', status: 'active', totalCredits: 10, committedCredits: 0 },
+				grant: { schemaVersion: 2, id: 'grant-a', membershipId: 'membership-a', teamId: 'team-a', providerId: 'provider-a', projectId: 'project-a', environment: 'local', status: 'active', executionProviderIds: ['codex'], laneIds: [], capabilities: ['engineering'], allowedModes: ['planning'], dailyAgentSecondsLimit: 10, monthlyAgentSecondsLimit: 10, maxConcurrentAssignments: 2 },
+				workday: { id: 'workday-a', status: 'active', totalSeconds: 10, committedSeconds: 0 },
 				allocationSet: { schemaVersion: 2, id: 'allocation-a', teamId: 'team-a', version: 1, status: 'active', effectiveFrom: now, reservePolicy: { percent: 0, overflow: 'deny' }, slices: [{ id: 'project:project-a', scope: 'project', targetId: 'project-a', policy: { minPercent: 0, targetPercent: 100, maxPercent: 100, hardCapPercent: 100 } }], borrowingRules: [] },
-				allocationSliceIds: ['project:project-a'], committedCreditsBySlice: { 'project:project-a': 0 },
-				providerCapacity: { availableCredits: 10, availableConcurrentAssignments: 2 }, providerLocalLimits: { availableCredits: 10, availableConcurrentAssignments: 2 },
-				grantCommitted: { dailyCredits: 0, monthlyCredits: 0, activeAssignments: 0 },
+				allocationSliceIds: ['project:project-a'], committedSecondsBySlice: { 'project:project-a': 0 },
+				providerCapacity: { availableAgentSeconds: 10, availableConcurrentAssignments: 2 }, providerLocalLimits: { availableAgentSeconds: 10, availableConcurrentAssignments: 2 },
+				grantCommitted: { dailyAgentSeconds: 0, monthlyAgentSeconds: 0, activeAssignments: 0 },
 			};
 			const concurrentAdmissions = await Promise.allSettled(['one', 'two'].map((suffix) => commitCapacityAdmission(store, {
 				idempotencyKey: `phase4-admission-${suffix}`, admission, reservationId: `phase4-reservation-${suffix}`, assignmentId: `phase4-assignment-${suffix}`,
@@ -166,7 +166,7 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			await reportCapacityUsage(store, {
 				teamId: 'team-a', membershipId: 'membership-a', reservationId, assignmentId,
 				idempotencyKey: 'phase6-usage-incremental', usageDimension: 'provider-billing',
-				accountingMode: 'incremental', actualCredits: 2, source: 'phase6_postgres_concurrency',
+				accountingMode: 'incremental', activeSeconds: 2, elapsedSeconds: 2, source: 'phase6_postgres_concurrency',
 			});
 			const rollbackStore = new Proxy(store, {
 				get(target, property) {
@@ -179,7 +179,7 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			});
 			await expect(settleCapacityReservationExactlyOnce(rollbackStore, {
 				settlementKey: 'phase6-forced-rollback', teamId: 'team-a', membershipId: 'membership-a', reservationId, assignmentId,
-				actualCredits: 4, source: 'phase6_postgres_forced_rollback',
+				activeSeconds: 4, elapsedSeconds: 4, source: 'phase6_postgres_forced_rollback',
 			})).rejects.toThrow();
 			expect((await database.pool.query(`SELECT state, settlement_token FROM capacity_reservations WHERE id = $1`, [reservationId])).rows[0])
 				.toMatchObject({ state: 'reserved', settlement_token: null });
@@ -187,12 +187,12 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			expect((await database.pool.query(`SELECT COUNT(*)::integer AS count FROM capacity_usage_actuals WHERE assignment_id = $1 AND accounting_mode = 'aggregate'`, [assignmentId])).rows[0]).toEqual({ count: 0 });
 			const settle = (settlementKey: string) => settleCapacityReservationExactlyOnce(store, {
 				settlementKey, teamId: 'team-a', membershipId: 'membership-a', reservationId, assignmentId,
-				actualCredits: 4, source: 'phase6_postgres_concurrency',
+				activeSeconds: 4, elapsedSeconds: 4, source: 'phase6_postgres_concurrency',
 			});
 			const race = await Promise.allSettled([
 				settle('phase6-settlement-a'),
 				settle('phase6-settlement-b'),
-				reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId, assignmentId, idempotencyKey: 'phase6-usage-race', usageDimension: 'race-diagnostic', accountingMode: 'informational', actualCredits: 0, source: 'phase6_postgres_concurrency' }),
+				reportCapacityUsage(store, { teamId: 'team-a', membershipId: 'membership-a', reservationId, assignmentId, idempotencyKey: 'phase6-usage-race', usageDimension: 'race-diagnostic', accountingMode: 'informational', activeSeconds: 0, elapsedSeconds: 0, source: 'phase6_postgres_concurrency' }),
 			]);
 			const settlements = race.slice(0, 2).filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof settle>>> => result.status === 'fulfilled').map((result) => result.value);
 			expect(settlements).toHaveLength(2);
@@ -203,7 +203,7 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			const lateReport = race[2];
 			if (lateReport.status === 'rejected') expect(lateReport.reason).toMatchObject({ code: 'capacity_usage_reporting_closed' });
 			expect((await database.pool.query(`SELECT COUNT(*)::integer AS count FROM capacity_usage_actuals WHERE assignment_id = $1 AND accounting_mode = 'incremental'`, [assignmentId])).rows[0]).toEqual({ count: 1 });
-			expect((await database.pool.query(`SELECT state, consumed_credits FROM capacity_reservations WHERE id = $1`, [reservationId])).rows[0]).toMatchObject({ state: 'consumed', consumed_credits: 4 });
+			expect((await database.pool.query(`SELECT state, active_seconds FROM capacity_reservations WHERE id = $1`, [reservationId])).rows[0]).toMatchObject({ state: 'consumed', active_seconds: 4 });
 		} finally {
 			await database.close();
 			await dropDatabase(name);
@@ -311,7 +311,7 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			)).rejects.toMatchObject({ code: '23514' });
 
 			await store.createStructuredAgentEstimate('decision-domain', {
-				id: 'estimate-domain', projectId: 'project-domain', status: 'accepted', agentClass: 'engineer', minCredits: 1, expectedCredits: 2, maxCredits: 3,
+				id: 'estimate-domain', projectId: 'project-domain', status: 'accepted', agentClass: 'engineer', minSeconds: 1, expectedSeconds: 2, maxSeconds: 3,
 				dependencies: [{ id: 'test-proof', type: 'artifact', requiredBefore: 'start', deliverableType: 'test-proof', agentClass: 'tester', summary: 'A failing regression test' }],
 				expectedOutputs: [{ outputType: 'implementation', required: true }], acceptanceCriteria: ['tests pass'],
 			});

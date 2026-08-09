@@ -2,7 +2,7 @@ import type {
 CapacityExecutionProvider,
 CapacityProviderMembershipView,
 CapacityReservation,
-DerivedCapacitySummary,
+NativeCapacitySummary,
 } from '@treeseed/sdk';
 import type { CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
 import { describe,expect,it } from 'vitest';
@@ -32,14 +32,14 @@ describe('project capacity diagnostics', () => {
 		const grant = fixture<CapacityGrantV2>({
 			id: 'grant-a',
 			providerId: provider.providerId,
-			dailyCreditLimit: 10,
-			monthlyCreditLimit: 100,
+			dailyAgentSecondsLimit: 10,
+			monthlyAgentSecondsLimit: 100,
 		});
 		const reservation = fixture<CapacityReservation>({
 			id: 'reservation-a',
 			capacityProviderId: provider.providerId,
 			state: 'reserved',
-			reservedCredits: 3,
+			reservedSeconds: 3,
 			metadata: { attentionWeight: 2 },
 		});
 		const executionProvider = fixture<CapacityExecutionProvider>({
@@ -48,7 +48,7 @@ describe('project capacity diagnostics', () => {
 			maxConcurrentRunners: 2,
 			metadata: { maxAttentionLoad: 4 },
 		});
-		const derivedCapacity = fixture<DerivedCapacitySummary>({ totalDerivedAvailableCredits: 7 });
+		const nativeCapacity = fixture<NativeCapacitySummary>({ entries: [] });
 		const store: ProjectCapacityDiagnosticsStore = {
 			ensureInitialized: async () => undefined,
 			getProject: async () => ({ id: 'project-a', teamId: 'team-a' }),
@@ -59,13 +59,13 @@ describe('project capacity diagnostics', () => {
 			getCapacityProvider: async (_teamId, providerId) => providerId === provider.providerId ? provider : unrelatedProvider,
 			listProviderExecutionSnapshots: async () => [executionProvider],
 			listCapacityReservationsForProjectPage: async () => ({ items: [reservation], page: { limit: 200, hasMore: false, nextCursor: null } }),
-			getTeamDerivedCapacity: async () => derivedCapacity,
-			getCapacityCreditReservationTotals: async () => ({
-				activeReservedCredits: 3,
-				dailyUsedCredits: 0,
-				monthlyUsedCredits: 0,
-				dailyCommittedCredits: 3,
-				monthlyCommittedCredits: 3,
+			getTeamNativeCapacity: async () => nativeCapacity,
+			getCapacityTimeReservationTotals: async () => ({
+				activeReservedSeconds: 3,
+				dailyActiveSeconds: 0,
+				monthlyActiveSeconds: 0,
+				dailyCommittedSeconds: 3,
+				monthlyCommittedSeconds: 3,
 				dailyWindowStartAt: '2026-07-17T00:00:00.000Z',
 				monthlyWindowStartAt: '2026-07-01T00:00:00.000Z',
 			}),
@@ -77,7 +77,7 @@ describe('project capacity diagnostics', () => {
 			projectId: 'project-a',
 			teamId: 'team-a',
 			environment: 'local',
-			remaining: { dailyCredits: 7, monthlyCredits: 100 },
+			remaining: { dailyAgentSeconds: 7, monthlyAgentSeconds: 100 },
 		});
 		expect(diagnostics?.providers.map((entry) => entry.providerId)).toEqual(['provider-a']);
 		expect(diagnostics?.executionProviders.map((entry) => entry.id)).toEqual(['codex-a']);

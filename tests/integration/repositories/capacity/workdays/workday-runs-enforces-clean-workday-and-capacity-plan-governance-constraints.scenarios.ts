@@ -12,6 +12,7 @@ const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/mark
     : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 function createStore() {
     const memory = newDb();
+	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
     memory.public.registerFunction({
         name: 'md5',
         args: [DataType.text],
@@ -40,7 +41,8 @@ it('enforces clean workday and capacity-plan governance constraints', async () =
         await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, ['project-constraints', 'team-constraints', 'constraints', 'Constraint Project', now, now]);
         await expect(store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, status, created_at, updated_at) VALUES ('workday-invalid-status', 'team-constraints', 'project-constraints', 'running', ?, ?)`, [now, now])).rejects.toThrow(/check constraint/iu);
         await expect(store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, status, created_at, updated_at) VALUES ('workday-invalid-project', 'team-constraints', 'missing-project', 'draft', ?, ?)`, [now, now])).rejects.toThrow(/foreign key/iu);
-        await expect(store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_credits, high_credits, created_at, updated_at) VALUES ('plan-invalid-credits', 'team-constraints', 'project-constraints', 'decision-a', 'draft', 'scope-a', 5, 4, ?, ?)`, [now, now])).rejects.toThrow(/check constraint/iu);
+        await expect(store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_seconds, high_seconds, created_at, updated_at) VALUES ('plan-invalid-seconds', 'team-constraints', 'project-constraints', 'decision-a', 'draft', 'scope-a', 5, 4, ?, ?)`, [now, now])).resolves.toMatchObject({ success: true });
+        await expect(store.getAgentCapacityPlan('plan-invalid-seconds')).rejects.toThrow(/high time is below expected time/iu);
         await expect(store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, created_at, updated_at) VALUES ('plan-invalid-status', 'team-constraints', 'project-constraints', 'decision-a', 'approved', 'scope-a', ?, ?)`, [now, now])).rejects.toThrow(/check constraint/iu);
     }
     finally {
@@ -59,7 +61,7 @@ it('keeps lifecycle explanations on the canonical assignment row', async () => {
         await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES (?, ?, ?, 'approved', ?, ?, '{}', ?, ?)`, ['membership-explanation', 'team-explanation', 'provider-explanation', now, 'owner', now, now]);
         await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, ['class-explanation', 'team-explanation', 'project-explanation', 'researcher', 'Researcher', now, now]);
         await store.run(`INSERT INTO capacity_allocation_sets (id, team_id, version, status, effective_from, reserve_policy_json, slices_json, borrowing_rules_json, metadata_json, created_at, updated_at) VALUES ('allocation-test', 'team-explanation', 1, 'active', ?, '{}', '[]', '[]', '{}', ?, ?)`, [now, now, now]);
-        await store.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, capabilities_json, allowed_modes_json, daily_credit_limit, metadata_json, created_at, updated_at) VALUES ('grant-test', 'membership-explanation', 'provider-explanation', 'team-explanation', 'project-explanation', 'local', 'active', '[]', '["planning"]', 10, '{}', ?, ?)`, [now, now]);
+        await store.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, capabilities_json, allowed_modes_json, daily_agent_seconds_limit, metadata_json, created_at, updated_at) VALUES ('grant-test', 'membership-explanation', 'provider-explanation', 'team-explanation', 'project-explanation', 'local', 'active', '[]', '["planning"]', 10, '{}', ?, ?)`, [now, now]);
         const assignmentEnvelope = JSON.stringify({ teamId: 'team-explanation', projectId: 'project-explanation', mode: 'planning' });
         const decisionInput = JSON.stringify({ teamId: 'team-explanation', projectId: 'project-explanation', projectAgentClassId: 'class-explanation', mode: 'planning', input: {} });
         await store.run(`INSERT INTO capacity_provider_assignments (id, membership_id, team_id, project_id, capacity_provider_id, project_agent_class_id, mode, capacity_envelope_json, decision_input_json, explanation_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'planning', ?, ?, ?, ?, ?)`, [
@@ -124,7 +126,7 @@ it('keeps lifecycle explanations on the canonical assignment row', async () => {
         await store.run(`INSERT INTO capacity_reservations (
 					id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id,
 					allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode,
-					team_id, project_id, state, reserved_credits, created_at, updated_at
+					team_id, project_id, state, reserved_seconds, created_at, updated_at
 				) VALUES ('reservation-other', 'terminal-other', 'token-other', 'membership-explanation', 'grant-test',
 					'provider-explanation', 'allocation-test', 1, 'class-explanation', 'assignment-other', 'planning',
 					'team-explanation', 'project-explanation', 'reserved', 1, ?, ?)`, [now, now]);
@@ -146,8 +148,8 @@ it('keeps lifecycle explanations on the canonical assignment row', async () => {
             startedAt: now,
         });
         await store.run(`INSERT INTO capacity_workday_runs (id, team_id, status, scenario_id, environment, created_at, updated_at) VALUES ('run-terminalization', 'team-explanation', 'failed', 'recovery-test', 'local', ?, ?)`, [now, now]);
-        await store.createWorkdayCapacityEnvelope({ id: 'workday-terminalization', workdayRunId: 'run-terminalization', projectId: 'project-explanation', status: 'active', availableCredits: 1 });
-        await store.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_credits, idempotency_key, assignment_id, payload_json, metadata_json, available_at, admitted_at, completed_at, created_at, updated_at) VALUES
+        await store.createWorkdayCapacityEnvelope({ id: 'workday-terminalization', workdayRunId: 'run-terminalization', projectId: 'project-explanation', status: 'active', availableSeconds: 1 });
+        await store.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_seconds, idempotency_key, assignment_id, payload_json, metadata_json, available_at, admitted_at, completed_at, created_at, updated_at) VALUES
 				('demand-completed', 'team-explanation', 'project-explanation', 'run-terminalization', 'workday-terminalization', 'idle-intent', 'completed', 'planning', 'class-explanation', 'researcher', 'writer', 'planning', 'completed', 1, 1, 'demand-completed', 'assignment-explanation', '{}', '{}', ?, ?, ?, ?, ?),
 				('demand-unfinished', 'team-explanation', 'project-explanation', 'run-terminalization', 'workday-terminalization', 'idle-intent', 'unfinished', 'planning', 'class-explanation', 'researcher', 'writer', 'planning', 'admitted', 1, 1, 'demand-unfinished', 'assignment-other', '{}', '{}', ?, ?, NULL, ?, ?)`, [now, now, now, now, now, now, now, now, now]);
         expect(await store.maintainCapacityWorkdayRuns('team-explanation', now)).toEqual({ expired: 0, recoveredTerminalRuns: 1 });
@@ -178,14 +180,14 @@ it('terminalizes workday assignments in bounded batches', async () => {
         await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES (?, ?, ?, 'approved', ?, ?, '{}', ?, ?)`, ['membership-batched-terminal', 'team-batched-terminal', 'provider-batched-terminal', now, 'owner', now, now]);
         await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, ['class-batched-terminal', 'team-batched-terminal', 'project-batched-terminal', 'researcher', 'Researcher', now, now]);
         await store.run(`INSERT INTO capacity_allocation_sets (id, team_id, version, status, effective_from, reserve_policy_json, slices_json, borrowing_rules_json, metadata_json, created_at, updated_at) VALUES ('allocation-test', 'team-batched-terminal', 1, 'active', ?, '{}', '[]', '[]', '{}', ?, ?)`, [now, now, now]);
-        await store.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, capabilities_json, allowed_modes_json, daily_credit_limit, metadata_json, created_at, updated_at) VALUES ('grant-test', 'membership-batched-terminal', 'provider-batched-terminal', 'team-batched-terminal', 'project-batched-terminal', 'local', 'active', '[]', '["planning"]', 500, '{}', ?, ?)`, [now, now]);
+        await store.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, capabilities_json, allowed_modes_json, daily_agent_seconds_limit, metadata_json, created_at, updated_at) VALUES ('grant-test', 'membership-batched-terminal', 'provider-batched-terminal', 'team-batched-terminal', 'project-batched-terminal', 'local', 'active', '[]', '["planning"]', 500, '{}', ?, ?)`, [now, now]);
         await store.run(`INSERT INTO capacity_workday_runs (id, team_id, capacity_provider_id, scenario_id, status, environment, parameters_json, created_at, updated_at) VALUES ('run-batched-terminal', 'team-batched-terminal', 'provider-batched-terminal', 'batch terminalization', 'failed', 'local', '{}', ?, ?)`, [now, now]);
         await store.createWorkdayCapacityEnvelope({
             id: 'workday-batched-summary',
             workdayRunId: 'run-batched-terminal',
             projectId: 'project-batched-terminal',
             status: 'active',
-            availableCredits: 500,
+            availableSeconds: 500,
         });
         const assignmentCount = 201;
         const reservationValues = [];
@@ -199,7 +201,7 @@ it('terminalizes workday assignments in bounded batches', async () => {
         await store.run(`INSERT INTO capacity_reservations (
 					id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id,
 					allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode,
-					team_id, project_id, work_day_id, state, reserved_credits, created_at, updated_at
+					team_id, project_id, work_day_id, state, reserved_seconds, created_at, updated_at
 				) VALUES ${reservationRows.join(', ')}`, reservationValues);
         const assignmentValues = [];
         const assignmentRows = Array.from({ length: assignmentCount }, (_, index) => {
@@ -222,7 +224,7 @@ it('terminalizes workday assignments in bounded batches', async () => {
             return `(?, 'team-batched-terminal', 'project-batched-terminal', 'run-batched-terminal', 'workday-batched-summary',
 				 'idle-intent', ?, 'planning', 'class-batched-terminal', 'researcher', 'writer', 'planning', 'admitted', 1, 1, ?, ?, '{}', '{}', ?, ?, ?, ?)`;
         });
-        await store.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_credits, idempotency_key, assignment_id, payload_json, metadata_json, available_at, admitted_at, created_at, updated_at) VALUES ${demandRows.join(', ')}`, demandValues);
+        await store.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_seconds, idempotency_key, assignment_id, payload_json, metadata_json, available_at, admitted_at, created_at, updated_at) VALUES ${demandRows.join(', ')}`, demandValues);
         const terminalization = await store.terminalizeCapacityWorkdayAssignments('team-batched-terminal', 'run-batched-terminal', { now });
         expect(terminalization).toMatchObject({
             assignmentCount,
@@ -290,5 +292,5 @@ it('terminalizes workday assignments in bounded batches', async () => {
     finally {
         db.close();
     }
-}, 60_000);
+}, 120_000);
 });

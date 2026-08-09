@@ -16,9 +16,9 @@ function localAddress(value: string): boolean {
 }
 
 function normalizedContentPath(value: unknown): string {
-	const path = text(value, 'src/content').replace(/^\/+|\/+$/gu, '');
+	const path = text(value).replace(/^\/+|\/+$/gu, '');
 	if (!path || path.split('/').some((part) => !part || part === '.' || part === '..')) {
-		throw new Error('The project content path is unsafe.');
+		throw new Error('The project content path is missing or unsafe.');
 	}
 	return path;
 }
@@ -79,7 +79,6 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit']
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query'],
 		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
-			authoringBranch,
 			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []),
 			...(input.workspaceRefs ?? [])])],
 		paths: allowedPaths,

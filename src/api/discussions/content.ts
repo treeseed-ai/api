@@ -4,6 +4,7 @@ import { resolveKnowledgeGatewayConnection } from '../knowledge/gateway-treedx-c
 import { applyTextChangeset } from '../knowledge/changesets/apply-text-changeset.ts';
 import { projectTreeDxCommitSignals } from '../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { isAgentAtlasContextReference, type AgentAtlasContextReference } from '@treeseed/sdk/agent-capacity';
+import { persistSessionEvent } from '../realtime/session-events.ts';
 
 type Row = Record<string, unknown>;
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
@@ -120,7 +121,7 @@ export async function validateDiscussionContextRefs(input: { store: any; teamId:
 }
 
 export async function appendDiscussionEvent(input: {
-	store: any; projectId: string; discussionId: string; event: Row;
+	store: any; projectId: string; teamId: string; discussionId: string; event: Row;
 }) {
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: true, relationPaths: true });
 	if (!connection) throw new Error('The project TreeDX repository is unavailable for Discussion event projection.');
@@ -157,6 +158,8 @@ export async function appendDiscussionEvent(input: {
 		] });
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${phase}`, author: { name: 'TreeSeed control plane', email: 'control-plane@services.treeseed.local' } });
 		await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion event: ${phase}`, actorType: 'service', actorId: 'discussion-projector' });
+		await persistSessionEvent(input.store, { eventType: 'discussion.updated', teamId: input.teamId, projectId: input.projectId, resourceId: input.discussionId, payload: { discussionId: input.discussionId, phase, commitSha: commit.commitSha } })
+			.catch((error: unknown) => console.warn('[api] Discussion projection session event degraded', { error: error instanceof Error ? error.message : String(error) }));
 		return { path, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha } };
 	} catch (error) {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);

@@ -22,7 +22,7 @@ export async function projectArchitectureContentBindingsMethod(this: MarketContr
     const binding = await this.getProjectTreeDxLibrary(projectId);
     if (binding) {
         await this.upsertProjectTreeDxLibrary(projectId, {
-            contentPath: architecture.contentPath ?? binding.contentPath ?? 'src/content',
+            contentPath: architecture.contentPath ?? binding.contentPath,
             r2BucketName: publishTarget.kind === 'cloudflare_r2' ? publishTarget.bucket ?? binding.r2BucketName ?? null : binding.r2BucketName ?? null,
             r2ManifestKey: publishTarget.kind === 'cloudflare_r2' ? publishTarget.manifestPath ?? publishTarget.prefix ?? binding.r2ManifestKey ?? null : binding.r2ManifestKey ?? null,
             metadata: {
