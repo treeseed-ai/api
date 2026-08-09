@@ -39,6 +39,10 @@ export interface ProviderSynthesisExecutionProvider {
 	id: string;
 	status: string;
 	capabilities: string[];
+	reliability?: number;
+	pressure?: 'idle' | 'normal' | 'busy' | 'throttled' | 'exhausted';
+	availableConcurrency?: number;
+	estimatedCost?: number | null;
 }
 
 function text(value: unknown): string | null {
@@ -74,6 +78,10 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		id: String(provider.id ?? '').trim(),
 		status: String(provider.status ?? 'unavailable'),
 		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
+		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
+		pressure: ['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(String(provider.pressure)) ? provider.pressure as ProviderSynthesisExecutionProvider['pressure'] : 'normal',
+		availableConcurrency: Number.isInteger(Number(provider.availableConcurrency)) ? Math.max(0, Number(provider.availableConcurrency)) : 1,
+		estimatedCost: Number.isFinite(Number(provider.estimatedCost)) ? Number(provider.estimatedCost) : null,
 	})).filter((provider) => provider.id);
 }
 

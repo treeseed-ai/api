@@ -43,9 +43,11 @@ async function harness() {
 		now,
 	]);
 	await store.run(`INSERT INTO capacity_workday_runs (id, team_id, capacity_provider_id, scenario_id, status, environment, parameters_json, started_at, created_at, updated_at) VALUES ('run-a', 'team-a', 'provider-a', 'planning', 'running', 'local', '{"projects":["project-a"]}', ?, ?, ?)`, [now, now, now]);
-	await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, workday_run_id, status, envelope_json, metadata_json, started_at, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'run-a', 'active', '{"availableCredits":10}', '{}', ?, ?, ?)`, [now, now, now]);
+	await store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, workday_run_id, status, envelope_json, metadata_json, started_at, created_at, updated_at) VALUES ('workday-a', 'team-a', 'project-a', 'run-a', 'active', '{"availableSeconds":600}', '{"grantId":"grant-a"}', ?, ?, ?)`, [now, now, now]);
 	await store.run(`INSERT INTO capacity_providers (id, fingerprint, public_jwk_json, display_name, identity_version, status, metadata_json, created_at, updated_at) VALUES ('provider-a', 'sha256:provider-a', '{}', 'Provider A', 1, 'active', '{}', ?, ?)`, [now, now]);
 	await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner', '{}', ?, ?)`, [now, now, now]);
+	await store.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, execution_provider_ids_json, capabilities_json, allowed_modes_json, unmetered, metadata_json, created_at, updated_at) VALUES ('grant-a', 'membership-a', 'provider-a', 'team-a', 'project-a', 'local', 'active', '["runtime-a"]', '[]', '["planning"]', 1, '{}', ?, ?)`, [now, now]);
+	await store.run(`INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, status, opened_at, refreshed_at, expires_at, available_from, execution_providers_json, capabilities_json, native_limits_json, runner_pressure_json, constraints_json, metadata_json, created_at, updated_at) VALUES ('session-a', 'membership-a', 'team-a', 'provider-a', 'open', ?, ?, '2099-01-01T00:00:00.000Z', ?, '[{"id":"runtime-a","status":"available","capabilities":[],"reliability":1,"pressure":"normal","availableConcurrency":1}]', '[]', '{}', '{}', '{}', '{}', ?, ?)`, [now, now, now, now, now]);
 	return store;
 }
 
@@ -70,7 +72,7 @@ describe('capacity assignment synthesis fail-closed guarantees', () => {
 			handlerId: 'writer',
 			activityType: 'planning',
 			priority: 1,
-			requestedCredits: 1,
+			requestedSeconds: 60,
 			idempotencyKey: 'demand-a',
 			payload: { repositoryId: 'treeseed-project-a', contentRoot: 'src/content' },
 			metadata: { environment: 'local' },
@@ -86,7 +88,7 @@ describe('capacity assignment synthesis fail-closed guarantees', () => {
 			metadata_json: JSON.stringify({
 				reasons: ['capacity_execution_provider_unavailable'],
 				message: 'No advertised execution provider satisfies this demand.',
-				details: { demandId: 'demand-a', requiredCapabilities: [] },
+				details: { demandId: 'demand-a', requiredCapabilities: [], rejected: [] },
 			}),
 		});
 	});

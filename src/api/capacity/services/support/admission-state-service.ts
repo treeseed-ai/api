@@ -12,6 +12,7 @@ export interface CapacityAdmissionStateRequest {
 	membershipId: string;
 	projectId: string;
 	environment: string;
+	grantId?: string | null;
 	projectAgentClassId: string;
 	mode: 'planning' | 'acting';
 	workDayId: string;
@@ -53,7 +54,7 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const allocationSetId = String(workday.allocation_set_id ?? '');
 	const workdayContext = (column: string) => ({ owner: 'workday capacity envelope', ownerId: request.workDayId, column });
 	const workdayMetadata = decodeDurableJsonObject(workday.metadata_json, workdayContext('metadata_json'));
-	const grantId = typeof workdayMetadata.grantId === 'string' ? workdayMetadata.grantId.trim() : '';
+	const grantId = request.grantId?.trim() || (typeof workdayMetadata.grantId === 'string' ? workdayMetadata.grantId.trim() : '');
 	if (!grantId) throw new CapacityGovernanceError('capacity_workday_grant_missing', 'Capacity workday is missing its governed grant provenance.', 409, { workDayId: request.workDayId });
 	const [sessionRow, grantRow, allocationRow] = await Promise.all([
 		request.providerSessionId

@@ -6,7 +6,7 @@ describe('planning graph evidence', () => {
 		const store = {
 			all: async () => [{
 				id: 'signal-1', contract_id: 'evidence-ready', subject_id: 'objective:guide', agent_id: 'evidence-researcher', activity_type: 'planning', assignment_id: 'assignment-1',
-				payload_json: JSON.stringify({ evidenceType: 'research', changedPaths: ['src/content/notes/evidence.mdx'] }), commit_sha: 'abc', immutable_ref: 'abc', digest: 'digest', evidence_ref: 'treedx:abc', causation_id: 'assignment-1', correlation_id: 'objective:guide',
+				payload_json: JSON.stringify({ evidenceType: 'research', changedPaths: ['src/content/notes/evidence.mdx'] }), metadata_json: '{}', commit_sha: 'abc', immutable_ref: 'abc', digest: 'digest', evidence_ref: 'treedx:abc', causation_id: 'assignment-1', correlation_id: 'objective:guide',
 			}],
 		} as never;
 		const evidence = await loadPlanningGraphEvidence(store, {

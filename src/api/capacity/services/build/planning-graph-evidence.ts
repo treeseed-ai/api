@@ -1,19 +1,25 @@
-import type { PlanningGraphNodeEvidence,PlanningGraphEvidenceReference } from '@treeseed/sdk/agent-capacity';
+import { resolveEffectiveGroupMembership,type EffectiveGroupMembership,type PlanningGraphGroupContext,type PlanningGraphNodeEvidence,type PlanningGraphEvidenceReference } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { decodeDurableJsonObject } from '../../durable-json.ts';
 import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
+import type { WorkdayPlanningGraphSnapshot } from '../capacity/workdays/policy/workday-planning-graph-policy.ts';
 
 type Row = Record<string, unknown>;
 
 function text(value: unknown): string { return typeof value === 'string' ? value : ''; }
 
 function reference(row: Row): PlanningGraphEvidenceReference {
+	const persistedMetadata = decodeDurableJsonObject(row.metadata_json, { owner: 'agent signal', ownerId: text(row.id), column: 'metadata_json' });
+	const snapshot = persistedMetadata.groupMembershipSnapshot;
+	const groupMembership = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+		? snapshot as EffectiveGroupMembership : undefined;
 	return {
 		contractId: text(row.contract_id).replace(/_/gu, '-'),
 		recordId: text(row.id),
 		subjectId: text(row.subject_id) || null,
 		payload: decodeDurableJsonObject(row.payload_json, { owner: 'agent signal', ownerId: text(row.id), column: 'payload_json' }),
 		metadata: {
+			...persistedMetadata,
 			assignmentId: row.assignment_id ?? null,
 			commitSha: row.commit_sha ?? null,
 			immutableRef: row.immutable_ref ?? null,
@@ -22,7 +28,24 @@ function reference(row: Row): PlanningGraphEvidenceReference {
 			causationId: row.causation_id,
 			correlationId: row.correlation_id,
 		},
+		groupMembership,
 	};
+}
+
+export function planningGraphGroupContext(projectId: string, snapshot: WorkdayPlanningGraphSnapshot): PlanningGraphGroupContext {
+	const agentMembershipByNodeId: Record<string, EffectiveGroupMembership> = {};
+	const primaryGroupByNodeId: Record<string, string> = {};
+	for (const agent of snapshot.agents) {
+		agentMembershipByNodeId[agent.nodeId] = resolveEffectiveGroupMembership({ projectId, directGroupIds: agent.groupIds, edges: Object.values(snapshot.groupEdges) });
+		if (agent.primaryGroupId) primaryGroupByNodeId[agent.nodeId] = agent.primaryGroupId;
+	}
+	const parents = new Map(Object.values(snapshot.groupEdges).filter((edge) => edge.propagatesMembership).map((edge) => [edge.fromGroupId, edge.toGroupId]));
+	const depthByGroupId = Object.fromEntries(Object.keys(snapshot.groups).map((id) => {
+		let depth = 0; let current: string | undefined = id; const seen = new Set<string>();
+		while (current && !seen.has(current)) { seen.add(current); current = parents.get(current); if (current) depth += 1; }
+		return [id, depth];
+	}));
+	return { projectId, agentMembershipByNodeId, primaryGroupByNodeId, depthByGroupId };
 }
 
 export async function loadPlanningGraphEvidence(

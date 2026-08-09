@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  selectCapacitySupply,
+  type CapacitySupplyPolicy,
+} from "@treeseed/sdk/agent-capacity";
 import type { CapacityGovernanceDatabase } from "../../../../database.ts";
 import { CapacityGovernanceError } from "../../../../database.ts";
 import type { DurableProviderAssignment } from "../../../../repositories/capacity/assignments/assignment.ts";
@@ -15,6 +19,7 @@ import { evaluateDurableWorkdayContinuation } from "../../workdays/lifecycle/wor
 import type { ConfiguredWorkspaceInput } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
 import { workdayTreeDxWorkspaceId } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
 import { admitSynthesizedProviderAssignment } from "../admission/assignment-admission-service.ts";
+import { teamSupplyPolicy } from "../../../../domain/supply-policy.ts";
 
 type JsonRecord = Record<string, unknown>;
 interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
@@ -41,8 +46,8 @@ function record(value: unknown): JsonRecord {
 function text(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
-function assignmentId(demandId: string): string {
-  return `assignment_${createHash("sha256").update(demandId).digest("base64url").slice(0, 32)}`;
+function assignmentId(demandId: string, generation: number): string {
+	return `assignment_${createHash("sha256").update(`${demandId}:${generation}`).digest("base64url").slice(0, 32)}`;
 }
 export function resolveAssignmentContentPathScope(payload: JsonRecord, access: 'read' | 'write', contentRoot: string, fallback: string[]): string[] {
   const configured = record(record(payload.contentAccess)[access]).paths;
@@ -105,6 +110,7 @@ function assignmentInput(
   principal: ProviderLeasePrincipal,
   sessionId: string,
   executionProviders: ProviderSynthesisExecutionProvider[],
+  policy: CapacitySupplyPolicy,
   now: string,
 ) {
   if (!demand?.claimToken)
@@ -113,7 +119,7 @@ function assignmentInput(
       "Claimed demand has no claim token.",
       500,
     );
-  const id = demand.assignmentId ?? assignmentId(demand.id);
+	const id = demand.assignmentId ?? assignmentId(demand.id, Math.max(0, Number(demand.metadata.failoverCount ?? 0)));
   const payload = record(demand.payload);
   const intent = record(payload.intent);
   const repositoryId = text(payload.repositoryId);
@@ -130,16 +136,32 @@ function assignmentInput(
   const requiredCapabilities = Array.isArray(demand.metadata.requiredCapabilities)
     ? demand.metadata.requiredCapabilities.map(String).filter(Boolean)
     : [];
-  const executionProvider = [...executionProviders]
-    .filter((provider) => provider.status === "available")
-    .filter((provider) => requiredCapabilities.every((capability) => provider.capabilities.includes(capability)))
-    .sort((left, right) => left.id.localeCompare(right.id))[0];
+	const selectedSupply = record(demand.metadata.supplySelection);
+	const selectedExecutionProviderId = text(selectedSupply.executionProviderId);
+  const selection = selectCapacitySupply({
+    policy,
+    requiredCapabilities,
+	    candidates: executionProviders.filter((provider) => !selectedExecutionProviderId || provider.id === selectedExecutionProviderId).map((provider) => ({
+	      capacityProviderId: principal.capacityProviderId,
+	      membershipId: principal.membershipId,
+	      providerSessionId: sessionId,
+	      grantId: text(selectedSupply.grantId),
+      executionProviderId: provider.id,
+      status: provider.status,
+      capabilities: provider.capabilities,
+      reliability: provider.reliability ?? 1,
+      pressure: provider.pressure ?? 'normal',
+      availableConcurrency: provider.availableConcurrency ?? 1,
+      estimatedCost: provider.estimatedCost ?? null,
+    })),
+  });
+  const executionProvider = executionProviders.find((provider) => provider.id === selection.selected?.executionProviderId);
   if (!executionProvider) {
     throw new CapacityGovernanceError(
       "capacity_execution_provider_unavailable",
       "No advertised execution provider satisfies this demand.",
       409,
-      { demandId: demand.id, requiredCapabilities },
+	  { demandId: demand.id, requiredCapabilities, rejected: selection.rejected.map((entry) => ({ executionProviderId: entry.candidate.executionProviderId, reasons: entry.reasons })) },
     );
   }
   const allowedReadPaths = resolveAssignmentContentPathScope(payload, 'read', contentRoot, ["**"]);
@@ -258,8 +280,9 @@ function assignmentInput(
     reservationId: `reservation_${id}`,
     synthesisKey: demand.idempotencyKey,
     synthesizedFrom: "workday_demand",
-    projectId: demand.projectId,
-    environment: text(demand.metadata.environment, "local"),
+	    projectId: demand.projectId,
+	    environment: text(demand.metadata.environment, "local"),
+	    grantId: text(selectedSupply.grantId) || null,
     providerSessionId: sessionId,
     executionProviderId: executionProvider.id,
     projectAgentClassId: demand.projectAgentClassId,
@@ -391,17 +414,22 @@ export async function assignNextCompiledDemand(
   now = new Date().toISOString(),
 ): Promise<DurableProviderAssignment | null> {
   const demands = new CapacityWorkdayDemandRepository(store);
+  const policy = teamSupplyPolicy(await store.getTeam(principal.teamId));
   for (const pending of await demands.listProvisioning(
     principal.teamId,
     principal.capacityProviderId,
   )) {
-    const pendingInput = assignmentInput(pending, principal, sessionId, executionProviders, now);
+    const assignment = pending.assignmentId ? await store.getProviderAssignment(principal.teamId, pending.assignmentId) : null;
+    const exactProviders = assignment ? executionProviders.filter((provider) => provider.id === assignment.executionProviderId) : executionProviders;
+    const pendingInput = assignmentInput(pending, principal, sessionId, exactProviders, policy, now);
     await provisionWorkspace(store, pending, pendingInput, now);
   }
   const demand = await demands.claimNext(
     principal.teamId,
     principal.capacityProviderId,
     now,
+	principal.membershipId,
+	sessionId,
   );
   if (!demand) return null;
   const continuation = await evaluateDurableWorkdayContinuation(store, {
@@ -417,7 +445,7 @@ export async function assignNextCompiledDemand(
   }
   let input: ReturnType<typeof assignmentInput>;
   try {
-    input = assignmentInput(demand, principal, sessionId, executionProviders, now);
+    input = assignmentInput(demand, principal, sessionId, executionProviders, policy, now);
   } catch (error) {
     await demands.releaseClaim(demand.id, demand.claimToken!, now);
     await recordDenial(store, principal, demand.id, error, now);

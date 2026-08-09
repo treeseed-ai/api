@@ -1,4 +1,4 @@
-import { validateAgentActivityProfilesConfiguration,validateAgentSignalContract,validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
+import { validateAgentActivityProfilesConfiguration,validateAgentSignalContract,validateProposalTypeContract,validateGroupDefinition,validateGroupEdgeDefinition } from '@treeseed/sdk/agent-capacity';
 import { parseFrontmatterDocument } from '@treeseed/sdk/frontmatter';
 import { parse as parseYaml } from 'yaml';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
@@ -19,7 +19,7 @@ function basename(path: string) {
 }
 
 function definition(path: string, source: string) {
-	if (path.startsWith('src/content/agents/')) {
+	if (path.includes('/content/agents/')) {
 		const parsed = parseFrontmatterDocument(source);
 		const profiles = object(parsed.frontmatter.activityProfiles);
 		const validation = validateAgentActivityProfilesConfiguration(profiles);
@@ -32,6 +32,11 @@ function definition(path: string, source: string) {
 			diagnostics: validation.diagnostics,
 			activities: profiles,
 		};
+	}
+	if (path.includes('/content/groups/') || path.includes('/content/group-edges/')) {
+		const parsed = parseFrontmatterDocument(source).frontmatter;
+		const edge = path.includes('/content/group-edges/'); const validation = edge ? validateGroupEdgeDefinition(parsed) : validateGroupDefinition(parsed);
+		return { kind: edge ? 'group-edge' as const : 'group' as const, definition: parsed, contractId: text(parsed.id, parsed.slug), contractKind: edge ? 'group-edge' : 'group', status: validation.ok ? 'validated group' : 'group needs attention', diagnostics: validation.diagnostics, activities: {} };
 	}
 	let parsed: Row = {};
 	try { parsed = object(parseYaml(source)); } catch { parsed = {}; }
@@ -62,7 +67,7 @@ export async function agentLabRepositoryDefinitions(dependencies: WorkdayRouteDe
 		const listed = await connection.client.listRepositoryPaths({
 			repoId: connection.repositoryId,
 			ref: connection.baseRef,
-			paths: ['src/content/agents/**', 'scenes/**', 'seeds/**', '.treeseed/agents/signals/**', '.treeseed/governance/proposal-types/**'],
+			paths: [`${connection.contentPath}/agents/**`, `${connection.contentPath}/groups/**`, `${connection.contentPath}/group-edges/**`, 'scenes/**', 'seeds/**', '.treeseed/agents/signals/**', '.treeseed/governance/proposal-types/**'],
 			kinds: ['blob'], extensions: ['md', 'mdx', 'yaml', 'yml'], limit: 400, allowProtected: true,
 		}).catch(() => ({ entries: [] }));
 		const paths = (listed.entries ?? []).map((candidate: unknown) => text(object(candidate).path)).filter(Boolean);

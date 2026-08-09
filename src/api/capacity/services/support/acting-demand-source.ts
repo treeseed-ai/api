@@ -103,6 +103,11 @@ export async function listActingDemandSources(
 				{ capacityPlanId: String(row.id), workUnitIndex: index },
 			);
 			const sourceId = text(unit.id) ?? `${String(row.id)}:${index}`;
+			const estimateId = text(unit.estimateId ?? record(unit.metadata).estimateId ?? record(unit.decisionInput).estimateId ?? record(record(unit.decisionInput).metadata).estimateId);
+			const acceptedEstimate = estimateId ? await database.first(`SELECT id FROM structured_agent_estimates
+				WHERE id = ? AND team_id = ? AND project_id = ? AND decision_id = ? AND status = 'accepted' LIMIT 1`,
+				[estimateId, run.teamId, project.id, decisionId]) : null;
+			if (!acceptedEstimate) continue;
 			const workGraphNodeId = text(unit.workGraphNodeId ?? record(unit.decisionInput).workGraphNodeId);
 			const agentId = text(unit.agentId ?? record(unit.decisionInput).agentId);
 			if (!workGraphNodeId) continue;
@@ -146,7 +151,7 @@ export async function listActingDemandSources(
 						types: ['content_artifact_refs'],
 						artifactKinds: graphNode.outputRequirements.map((requirement) => text(requirement.outputType)).filter(Boolean),
 					},
-					decisionExecutionInputId: unit.decisionExecutionInputId ?? null, ...graphNode,
+					decisionExecutionInputId: unit.decisionExecutionInputId ?? null, estimateId, ...graphNode,
 				},
 			});
 		}

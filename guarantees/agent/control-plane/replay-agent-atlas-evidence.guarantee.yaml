@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.control-plane.replay-agent-atlas-evidence.750
+journeyIndex: 750
+type: agent
+subtype: control-plane
+journey: Replay immutable Agent Atlas evidence
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Project frozen workday topology and durable events at an exact replay cursor while validating Discussion context against canonical team, workday, assignment, governance, and TreeDX evidence.
+status: planned
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.persist-discussion-only-in-treedx.744] }
+actors: { allowed: [authenticated_user, team_owner, project_lead], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [desktop_chromium], optional: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: ["A real workday contains frozen Atlas topology and durable forensic events."] }
+api: { required: true, verifierRefs: [] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: ["Current definitions cannot replace frozen historical topology.", "Agent class cannot create group membership or filter signal evidence.", "Groups cannot create DAG edges without a durable signal.", "Malformed or cross-team context references are rejected.", "Historical readiness cannot authorize current Act execution.", "A stale portfolio cursor returns explicit recovery state rather than silent truncation."]
+evidence: { required: [guarantee_report, verifier_evidence] }
+notes: ["Keep planned until exact as-of PostgreSQL proof, stale-cursor recovery, TreeDX reference validation, and live Agent Lab scenes are repeatable."]

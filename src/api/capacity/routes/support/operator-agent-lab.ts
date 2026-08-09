@@ -16,10 +16,11 @@ import { CapacityAllocationService } from '../../services/capacity/allocations/a
 import { agentLabRepositoryDefinitions,matchesAgentDefinition } from './agent-lab-repository-definitions.ts';
 import { agentLabInboxQuestions } from './agent-lab-inbox-questions.ts';
 import { installOperatorAgentLabAuthoringRoutes } from './agent-lab/authoring.ts';
+import { installOperatorAgentAtlasRoutes } from './agent-lab/atlas.ts';
 
 const entityKinds = new Set<AgentLabEntityKind>(['agents', 'workdays', 'events', 'assignments', 'executions', 'artifacts']);
 const commandSurfaces = new Set(['inbox', 'decisions', 'build', 'direction', 'results', 'find']);
-const commandKinds = new Set(['proposal', 'decision', 'question', 'artifact', 'error', 'agent', 'signal', 'proposal-type', 'assignment', 'execution', 'simulation', 'seed', 'workday', 'note']);
+const commandKinds = new Set(['proposal', 'decision', 'question', 'artifact', 'error', 'agent', 'signal', 'proposal-type', 'assignment', 'execution', 'simulation', 'seed', 'workday', 'note', 'atlas-workspace']);
 
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function jsonObject(value: unknown) { if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return object(value); }
@@ -152,6 +153,7 @@ function encodeDeltaCursor(revision: string, ids: string[]) {
 
 export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	installOperatorAgentLabAuthoringRoutes(app, dependencies);
+	installOperatorAgentAtlasRoutes(app, dependencies);
 	app.get('/v1/teams/:teamId/agent-lab/workday-context', async (c) => {
 		const context = await projectionContext(c, dependencies); if (context.response) return context.response;
 		const { snapshot } = context as Exclude<typeof context, { response: Response }>;

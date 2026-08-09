@@ -3,9 +3,11 @@ import { parseFrontmatterDocument, serializeFrontmatterDocument } from '@treesee
 import { resolveKnowledgeGatewayConnection } from '../knowledge/gateway-treedx-connection.ts';
 import { applyTextChangeset } from '../knowledge/changesets/apply-text-changeset.ts';
 import { projectTreeDxCommitSignals } from '../capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { isAgentAtlasContextReference, type AgentAtlasContextReference } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
+function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72) || 'discussion'; }
 
 export function mentionedAgentSlugs(body: string) {
@@ -37,7 +39,7 @@ export async function loadDiscussions(input: { store: any; projectId: string; di
 
 export async function commitDiscussionMessage(input: {
 	store: any; projectId: string; teamId: string; principal: Row; body: string;
-	intent: 'discuss' | 'propose' | 'act'; discussionId?: string; topic?: string; fileRefs?: unknown[];
+	intent: 'discuss' | 'propose' | 'act'; discussionId?: string; topic?: string; fileRefs?: unknown[]; contextRefs?: AgentAtlasContextReference[];
 }) {
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: true, relationPaths: true });
 	if (!connection) throw new Error('The project TreeDX repository is unavailable for Discussion authoring.');
@@ -53,7 +55,7 @@ export async function commitDiscussionMessage(input: {
 	const authorId = text(input.principal.id, 'unknown-user');
 	const authorName = text(input.principal.displayName, input.principal.name, authorId);
 	const discussion = serializeFrontmatterDocument({ title: topic, topic, status: 'open', teamId: input.teamId, projectId: input.projectId, visibility: 'team', participantIds: [authorId], agentIds: mentions, createdAt: now, updatedAt: now }, `# ${topic}\n`);
-	const message = serializeFrontmatterDocument({ title: `${authorName}: ${topic}`.slice(0, 120), discussionId, authorId, authorType: 'user', intent: input.intent, mentionedAgents: mentions, fileRefs: Array.isArray(input.fileRefs) ? input.fileRefs : [], createdAt: now }, `${input.body}\n`);
+	const message = serializeFrontmatterDocument({ title: `${authorName}: ${topic}`.slice(0, 120), discussionId, authorId, authorType: 'user', intent: input.intent, mentionedAgents: mentions, fileRefs: Array.isArray(input.fileRefs) ? input.fileRefs : [], contextRefs: input.contextRefs ?? [], createdAt: now }, `${input.body}\n`);
 	const event = serializeFrontmatterDocument({ title: 'Message committed', discussionId, messageId, phase: 'message.committed', sequence: Date.now(), occurredAt: now, metrics: {}, refs: [messagePath] }, `The user message was committed to TreeDX before assignment dispatch.\n`);
 	const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const workspace = await connection.client.createWorkspace({ workspaceId: `discussion-${randomUUID()}`, repoId: connection.repositoryId, baseRef: branchName, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 600 });
@@ -70,6 +72,51 @@ export async function commitDiscussionMessage(input: {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
 		throw error;
 	}
+}
+
+export async function validateDiscussionContextRefs(input: { store: any; teamId: string; projectId: string; values: unknown }): Promise<AgentAtlasContextReference[]> {
+	const values = Array.isArray(input.values) ? input.values.slice(0, 24) : [];
+	if (values.some((value) => !isAgentAtlasContextReference(value))) throw Object.assign(new Error('Discussion context contains an invalid Atlas reference.'), { status: 422, code: 'discussion_context_invalid' });
+	const references = values as AgentAtlasContextReference[];
+	if (references.some((reference) => reference.projectId !== input.projectId)) throw Object.assign(new Error('Discussion context must belong to the selected project.'), { status: 403, code: 'discussion_context_project_forbidden' });
+	const workdays = new Map<string, Record<string, unknown>>();
+	for (const reference of references) {
+		if (reference.workdayId) {
+			const run = workdays.get(reference.workdayId) ?? await input.store.first('SELECT id, parameters_json FROM capacity_workday_runs WHERE id = ? AND team_id = ? LIMIT 1', [reference.workdayId, input.teamId]);
+			if (!run) throw Object.assign(new Error('Discussion context references an unknown workday.'), { status: 409, code: 'discussion_context_workday_stale' });
+			workdays.set(reference.workdayId, run);
+			if (['agent', 'group', 'project', 'profile', 'signal'].includes(reference.kind)) {
+				const parameters = record(run.parameters_json);
+				const topologies = Object.values(record(parameters.atlasTopologyByProjectId)).map(record);
+				const topology = topologies.find((candidate) => String(candidate.projectId) === input.projectId);
+				const nodes = Array.isArray(topology?.nodes) ? topology.nodes.map(record) : [];
+				const edges = Array.isArray(topology?.edges) ? topology.edges.map(record) : [];
+				const found = reference.kind === 'signal'
+					? edges.some((edge) => String(edge.id) === reference.id || String(edge.contractId) === reference.id)
+					: reference.kind === 'profile'
+						? nodes.some((node) => String(node.activityProfile) === reference.id)
+						: nodes.some((node) => String(node.id) === reference.id && String(node.kind) === reference.kind);
+				if (!found || (reference.immutableRef && String(topology?.immutableRef) !== reference.immutableRef)) throw Object.assign(new Error('Discussion context topology evidence is stale.'), { status: 409, code: 'discussion_context_topology_stale' });
+			}
+		}
+		if (reference.kind === 'event' && reference.workdayId && reference.eventSequence !== undefined) {
+			const event = await input.store.first('SELECT id FROM capacity_workday_events WHERE team_id = ? AND run_id = ? AND event_index = ? LIMIT 1', [input.teamId, reference.workdayId, reference.eventSequence]);
+			if (!event || String(event.id) !== reference.id) throw Object.assign(new Error('Discussion context event evidence is stale.'), { status: 409, code: 'discussion_context_event_stale' });
+		}
+		if (reference.kind === 'assignment') {
+			const assignment = await input.store.first('SELECT id FROM capacity_provider_assignments WHERE id = ? AND team_id = ? AND project_id = ? LIMIT 1', [reference.id, input.teamId, input.projectId]);
+			if (!assignment) throw Object.assign(new Error('Discussion context references an unknown assignment.'), { status: 409, code: 'discussion_context_assignment_stale' });
+		}
+		if (reference.kind === 'proposal') {
+			const proposal = await input.store.first('SELECT id FROM governance_proposals WHERE id = ? AND team_id = ? AND project_id = ? LIMIT 1', [reference.id, input.teamId, input.projectId]);
+			if (!proposal) throw Object.assign(new Error('Discussion context references an unknown proposal.'), { status: 409, code: 'discussion_context_proposal_stale' });
+		}
+		if (reference.kind === 'decision') {
+			const decision = await input.store.first('SELECT id FROM governance_decisions WHERE id = ? AND team_id = ? AND project_id = ? LIMIT 1', [reference.id, input.teamId, input.projectId]);
+			if (!decision) throw Object.assign(new Error('Discussion context references an unknown decision.'), { status: 409, code: 'discussion_context_decision_stale' });
+		}
+	}
+	return references;
 }
 
 export async function appendDiscussionEvent(input: {

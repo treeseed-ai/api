@@ -18,7 +18,7 @@ type WorkdayProject,
 } from '../capacity/workdays/policy/workday-project-policy.ts';
 import { listActingDemandSources } from '../support/acting-demand-source.ts';
 import { resolvePlanningDemandSource } from '../support/planning-demand-source.ts';
-import { loadPlanningGraphEvidence,selectedPlanningGraphInputs } from './planning-graph-evidence.ts';
+import { loadPlanningGraphEvidence,planningGraphGroupContext,selectedPlanningGraphInputs } from './planning-graph-evidence.ts';
 import { currentCooperativePlanningWave } from '../capacity/workdays/scheduling/cooperative-planning-session-service.ts';
 
 interface DemandCompilerStore extends CapacityGovernanceDatabase {
@@ -66,22 +66,19 @@ export async function estimateRequestedAgentSeconds(store: CapacityGovernanceDat
 	if (Number.isInteger(override) && override > 0) return { seconds: override, method: 'assignment-override', sampleSize: 0 };
 	const timebox = Number(agent.execution.timeboxSeconds);
 	if (Number.isInteger(timebox) && timebox > 0) return { seconds: timebox, method: 'activity-profile-timebox', sampleSize: 0 };
-	const model = text(agent.execution.model);
-	const providerPreferences = Array.isArray(agent.execution.providerPreference) ? agent.execution.providerPreference : [];
-	const provider = text(agent.execution.executionProviderId ?? agent.execution.provider ?? providerPreferences[0]);
 	const targetContextBytes = Number(payload.contextSizeBytes ?? payload.contextBytes) || nestedNumber(payload, 'contextPack', 'totalBytes');
 	const rows = await store.all(`SELECT usage.active_seconds,usage.input_tokens,usage.output_tokens,usage.cached_input_tokens,usage.reasoning_tokens,usage.usd,usage.execution_provider_id,usage.model_name,usage.metadata_json,run.selected_input_json FROM capacity_usage_actuals usage
 		JOIN capacity_workday_demands demand ON demand.assignment_id = usage.assignment_id
 		LEFT JOIN agent_mode_runs run ON run.id = usage.mode_run_id
 		WHERE demand.activity_type = ? AND usage.active_seconds > 0 ORDER BY usage.created_at DESC LIMIT 200`, [agent.activityType]);
-	const samples = rows.filter((row) => (!model || text(row.model_name) === model) && (!provider || text(row.execution_provider_id) === provider)).filter((row) => {
+	const samples = rows.filter((row) => {
 		if (!targetContextBytes) return true; const metadata = jsonRecord(row.metadata_json); const selected = jsonRecord(row.selected_input_json); const observed = Number(metadata.contextSizeBytes ?? metadata.contextBytes) || nestedNumber(selected, 'contextPack', 'totalBytes'); return observed > 0 && observed >= targetContextBytes * .5 && observed <= targetContextBytes * 2;
 	});
 	const percentile = (values: number[], quantile: number) => { const sorted = values.filter((value) => Number.isFinite(value) && value >= 0).sort((left, right) => left - right); return sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * quantile) - 1)] : null; };
 	const seconds = samples.map((row) => Number(row.active_seconds)).filter((value) => Number.isInteger(value) && value > 0);
 	const tokenTotals = samples.map((row) => Number(row.input_tokens ?? 0) + Number(row.output_tokens ?? 0) + Number(row.reasoning_tokens ?? 0));
 	const costs = samples.map((row) => Number(row.usd)).filter((value) => Number.isFinite(value) && value >= 0);
-	if (samples.length >= 5) return { seconds: percentile(seconds, .9)!, method: 'historical-p90', sampleSize: samples.length, model: model || null, executionProviderId: provider || null, contextSizeBytes: targetContextBytes || null, recommendations: { p50Seconds: percentile(seconds, .5), p90Seconds: percentile(seconds, .9), p50Tokens: percentile(tokenTotals, .5), p90Tokens: percentile(tokenTotals, .9), p50Cost: percentile(costs, .5), p90Cost: percentile(costs, .9) } };
+	if (samples.length >= 5) return { seconds: percentile(seconds, .9)!, method: 'historical-p90', sampleSize: samples.length, contextSizeBytes: targetContextBytes || null, recommendations: { p50Seconds: percentile(seconds, .5), p90Seconds: percentile(seconds, .9), p50Tokens: percentile(tokenTotals, .5), p90Tokens: percentile(tokenTotals, .9), p50Cost: percentile(costs, .5), p90Cost: percentile(costs, .9) } };
 	const configured = Number(agent.execution.maxRuntimeSeconds);
 	return { seconds: Number.isInteger(configured) && configured > 0 ? configured : 900, method: configured > 0 ? 'conservative-profile-default' : 'conservative-system-default', sampleSize: samples.length, recommendations: null };
 }
@@ -119,10 +116,11 @@ async function compilePlanningDemands(
 	const snapshot = decodeWorkdayPlanningGraphSnapshot(record(run.parameters.planningGraphByProjectId)[project.id], project.id);
 	const { agents, graph } = snapshot;
 	const graphEvidence = await loadPlanningGraphEvidence(store, run, project.id);
+	const groupContext = planningGraphGroupContext(project.id, snapshot);
 	const instances = new Map(agents.flatMap((agent) => {
 		const graphNodeId = agent.nodeId;
 		if (wave && !wave.nodeIds.includes(`${project.id}:${graphNodeId}`)) return [];
-		return evaluatePlanningGraphNodeInstances(graph, graphNodeId, graphEvidence).map((instance) => {
+		return evaluatePlanningGraphNodeInstances(graph, graphNodeId, graphEvidence, groupContext).map((instance) => {
 			const participationId = instance.instanceKey === 'single' ? graphNodeId : `${graphNodeId}@${id('instance', instance.instanceKey)}`;
 			return [participationId, { agent, graphNodeId, ...instance }] as const;
 		});
@@ -189,7 +187,7 @@ async function compilePlanningDemands(
 				cooperativePlanning: wave ? { sessionWaveId: wave.id, round: wave.round, snapshotRef: wave.snapshotRef, snapshot: wave.snapshot } : null,
 				cycle: cycle.cycleNumber,
 			},
-			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment, agentClassSlug: agent.projectAgentClassSlug, planningStage, planningGraphNodeId: graphNodeId, planningWaveId: wave?.id ?? null, planningRound: wave?.round ?? null, planningSnapshotRef: wave?.snapshotRef ?? null, admissionEstimate: { ...estimate, requestedSeconds, sessionCapSeconds: Number.isInteger(sessionTimebox) && sessionTimebox > 0 ? sessionTimebox : null } }, availableAt: now, now,
+			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment, agentClassSlug: agent.projectAgentClassSlug, requiredCapabilities: Array.isArray(agent.execution.requiredCapabilities) ? agent.execution.requiredCapabilities : [], planningStage, planningGraphNodeId: graphNodeId, planningWaveId: wave?.id ?? null, planningRound: wave?.round ?? null, planningSnapshotRef: wave?.snapshotRef ?? null, admissionEstimate: { ...estimate, requestedSeconds, sessionCapSeconds: Number.isInteger(sessionTimebox) && sessionTimebox > 0 ? sessionTimebox : null } }, availableAt: now, now,
 		});
 		await participation.bindDemand(entry.id, demand.id, now);
 		created += 1;
@@ -231,7 +229,7 @@ export async function compileProviderWorkdayDemand(
 	now = new Date().toISOString(),
 ): Promise<{ consideredRuns: number; compiledDemands: number }> {
 	await store.ensureInitialized();
-	const runs = await new CapacityWorkdayRunRepository(store).listActiveForProvider(principal.teamId, principal.capacityProviderId);
+	const runs = await new CapacityWorkdayRunRepository(store).listActiveForSupply(principal.teamId, principal.capacityProviderId);
 	let compiledDemands = 0;
 	for (const run of runs) {
 		if (!deadlineOpen(run, now)) continue;

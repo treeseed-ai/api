@@ -1,4 +1,4 @@
-import { commitDiscussionMessage, loadDiscussions } from '../../discussions/content.ts';
+import { commitDiscussionMessage, loadDiscussions, validateDiscussionContextRefs } from '../../discussions/content.ts';
 
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
 function intent(value: unknown): 'discuss' | 'propose' | 'act' { return value === 'propose' || value === 'act' ? value : 'discuss'; }
@@ -41,11 +41,13 @@ export function installDiscussionRoutes(context: any) {
 			const readiness = await store.getDecisionPlanningStatus(decisionId);
 			if (!readiness || readiness.projectId !== projectId || readiness.humanApprovalState !== 'approved' || readiness.executionReadiness !== 'ready') return jsonError(c, 409, 'The selected decision is not approved and execution-ready for this project.', { code: 'discussion_act_not_ready', decisionId });
 		}
-		let authored;
+		let authored; let contextRefs: Awaited<ReturnType<typeof validateDiscussionContextRefs>> = [];
 		try {
-			authored = await commitDiscussionMessage({ store, projectId, teamId, principal: projectAccess.principal, body: messageBody, intent: selectedIntent, discussionId: text(body.discussionId) || undefined, topic: text(body.topic) || undefined, fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [] });
+			contextRefs = await validateDiscussionContextRefs({ store, projectId, teamId, values: body.contextRefs });
+			authored = await commitDiscussionMessage({ store, projectId, teamId, principal: projectAccess.principal, body: messageBody, intent: selectedIntent, discussionId: text(body.discussionId) || undefined, topic: text(body.topic) || undefined, fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs });
 		} catch (error) {
-			return jsonError(c, 503, error instanceof Error ? error.message : 'TreeDX could not preserve the Discussion message.', { code: 'discussion_content_unavailable' });
+			const details = error && typeof error === 'object' ? error as { status?: number; code?: string } : {};
+			return jsonError(c, details.status ?? 503, error instanceof Error ? error.message : 'TreeDX could not preserve the Discussion message.', { code: details.code ?? 'discussion_content_unavailable' });
 		}
 		if (!authored.mentions.length) return c.json({ ok: true, ...authored, assignments: [] }, 201);
 		const membership = await store.first(`SELECT capacity_provider_id FROM capacity_provider_team_memberships WHERE team_id = ? AND status = 'approved' ORDER BY approved_at ASC LIMIT 1`, [teamId]);
@@ -54,7 +56,7 @@ export function installDiscussionRoutes(context: any) {
 			const now = new Date(); const durationSeconds = Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900)));
 			const run = await store.createCapacityWorkdayRun(teamId, {
 				capacityProviderId: String(membership.capacity_provider_id), scenarioId: `discussion:${authored.discussion.id}`, environment: 'discussion', status: 'running', startedAt: now.toISOString(),
-				parameters: { durationSeconds, deadlineAt: new Date(now.getTime() + durationSeconds * 1000).toISOString(), maxActiveAssignments: authored.mentions.length, planningOnly: selectedIntent !== 'act', projectSlugs: [projectAccess.details.project.slug], agentSelection: { agentSlugs: authored.mentions, activityTypes: ['chat'], classIds: [], classSlugs: [], mode: 'intersection' }, timePolicy: selectedIntent === 'act' ? { cooperativePlanningPercent: 10, governedExecutionPercent: 80, reservePercent: 10 } : { cooperativePlanningPercent: 90, governedExecutionPercent: 0, reservePercent: 10 }, planningSession: { rounds: 1, assignmentTimeboxSeconds: durationSeconds }, discussion: { discussionId: authored.discussion.id, messageId: authored.message.id, messagePath: authored.message.path, intent: selectedIntent, snapshotDigest: authored.snapshotDigest, commitSha: authored.commitSha, decisionId: text(body.decisionId) || null } },
+				parameters: { durationSeconds, deadlineAt: new Date(now.getTime() + durationSeconds * 1000).toISOString(), maxActiveAssignments: authored.mentions.length, planningOnly: selectedIntent !== 'act', projectSlugs: [projectAccess.details.project.slug], agentSelection: { agentSlugs: authored.mentions, activityTypes: ['chat'], classIds: [], classSlugs: [], mode: 'intersection' }, timePolicy: selectedIntent === 'act' ? { cooperativePlanningPercent: 10, governedExecutionPercent: 80, reservePercent: 10 } : { cooperativePlanningPercent: 90, governedExecutionPercent: 0, reservePercent: 10 }, planningSession: { rounds: 1, assignmentTimeboxSeconds: durationSeconds }, discussion: { discussionId: authored.discussion.id, messageId: authored.message.id, messagePath: authored.message.path, intent: selectedIntent, snapshotDigest: authored.snapshotDigest, commitSha: authored.commitSha, contextRefs, decisionId: text(body.decisionId) || null } },
 			});
 			return c.json({ ok: true, ...authored, workday: run, assignments: authored.mentions.map((agentSlug: string) => ({ id: `pending:${run.id}:${agentSlug}`, agentSlug, status: 'queued' })) }, 202);
 		} catch (error) {

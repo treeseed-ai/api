@@ -1,5 +1,5 @@
 import { MAX_CAPACITY_PAGE_LIMIT,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
-import { compileAgentPlanningGraph,normalizeWorkdayAgentSelection,validateAgentSignalContract,validateProposalTypeContract,type AgentPlanningGraph,type AgentSignalContract,type ProposalTypeContract } from '@treeseed/sdk/agent-capacity';
+import { compileAgentPlanningGraph,normalizeWorkdayAgentSelection,validateAgentSignalContract,validateProposalTypeContract,validateGovernanceGroupGraph,validateGroupDefinition,validateGroupEdgeDefinition,type AgentPlanningGraph,type AgentSignalContract,type ProposalTypeContract,type GovernanceGroup,type GovernanceGroupEdge } from '@treeseed/sdk/agent-capacity';
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { capacityWorkdayAgentsFromClasses,type CapacityWorkdayAgent } from './workday-agent-policy.ts';
@@ -16,6 +16,8 @@ export interface WorkdayPlanningGraphSnapshot {
 	graph: AgentPlanningGraph;
 	signalContracts: Record<string, AgentSignalContract>;
 	proposalTypeContracts: Record<string, ProposalTypeContract>;
+	groups: Record<string,GovernanceGroup>;
+	groupEdges: Record<string,GovernanceGroupEdge>;
 }
 
 function record(value: unknown): JsonRecord {
@@ -27,7 +29,6 @@ function profile(agent: CapacityWorkdayAgent) {
 	return {
 		id: agent.nodeId,
 		agentId: agent.slug,
-		agentClass: agent.projectAgentClassSlug,
 		activityType: agent.activityType,
 		stage: typeof agent.planningIntent.stage === 'string' ? agent.planningIntent.stage : null,
 		signals: {
@@ -67,8 +68,12 @@ function proposalTypeContracts(agentClasses: unknown[]) {
 	return Object.fromEntries(Object.entries(selected).sort(([left],[right]) => left.localeCompare(right)));
 }
 
-function digest(agents: CapacityWorkdayAgent[], graph: AgentPlanningGraph, contracts: Record<string, AgentSignalContract>, proposalTypes: Record<string, ProposalTypeContract>) {
-	return createHash('sha256').update(JSON.stringify({ agents, nodes: graph.nodes, edges: graph.edges, signalContracts: contracts, proposalTypeContracts: proposalTypes })).digest('hex');
+function groups(agentClasses:unknown[],key:'groupContracts'|'groupEdgeContracts'){
+	const selected:Record<string,GovernanceGroup|GovernanceGroupEdge>={};for(const value of agentClasses)for(const [id,candidate] of Object.entries(record(record(record(value).handlerRefs??record(value).handler_refs)[key]))){const validation=key==='groupContracts'?validateGroupDefinition(candidate):validateGroupEdgeDefinition(candidate);if(!validation.ok)throw new CapacityGovernanceError('capacity_workday_group_contract_invalid','Project agent reconciliation contains an invalid group contract.',409,{id,diagnostics:validation.diagnostics});selected[id]=candidate as GovernanceGroup|GovernanceGroupEdge}return selected;
+}
+
+function digest(agents: CapacityWorkdayAgent[], graph: AgentPlanningGraph, contracts: Record<string, AgentSignalContract>, proposalTypes: Record<string, ProposalTypeContract>,groupContracts?:Record<string,GovernanceGroup>,groupEdgeContracts?:Record<string,GovernanceGroupEdge>) {
+	return createHash('sha256').update(JSON.stringify({ agents, nodes: graph.nodes, edges: graph.edges, signalContracts: contracts, proposalTypeContracts: proposalTypes,...(groupContracts?{groups:groupContracts}:{}),...(groupEdgeContracts?{groupEdges:groupEdgeContracts}:{}) })).digest('hex');
 }
 
 export function compileWorkdayPlanningGraphSnapshot(agentClasses: unknown[], selection: unknown): WorkdayPlanningGraphSnapshot {
@@ -76,6 +81,9 @@ export function compileWorkdayPlanningGraphSnapshot(agentClasses: unknown[], sel
 	if (!agents.length) throw new CapacityGovernanceError('capacity_workday_agent_selection_empty', 'Workday selection resolved no eligible planning profiles.', 409);
 	const contracts = signalContracts(agentClasses);
 	const proposalTypes = proposalTypeContracts(agentClasses);
+	const groupContracts=groups(agentClasses,'groupContracts') as Record<string,GovernanceGroup>;const groupEdgeContracts=groups(agentClasses,'groupEdgeContracts') as Record<string,GovernanceGroupEdge>;
+	try { validateGovernanceGroupGraph(Object.values(groupContracts), Object.values(groupEdgeContracts)); }
+	catch (error) { throw new CapacityGovernanceError('capacity_workday_group_graph_invalid', error instanceof Error ? error.message : 'Project group graph is invalid.', 409); }
 	const graph = compileAgentPlanningGraph(agents.map(profile), { externalRoots: ['workday-started', 'proposal-submitted'], contracts });
 	if (!graph.ok) throw new CapacityGovernanceError(
 		'capacity_workday_planning_graph_invalid',
@@ -86,7 +94,7 @@ export function compileWorkdayPlanningGraphSnapshot(agentClasses: unknown[], sel
 	const referenced = new Set(graph.nodes.flatMap((node) => [...node.produces, ...node.requires.map((entry) => entry.contract)]));
 	const missing = [...referenced].filter((id) => !contracts[id]);
 	if (missing.length) throw new CapacityGovernanceError('capacity_workday_signal_contract_missing', 'The signal DAG references contracts that were not frozen from TreeDX.', 409, { contractIds: missing });
-	return { agents, graph, signalContracts: contracts, proposalTypeContracts: proposalTypes, revision: digest(agents, graph, contracts, proposalTypes) };
+	return { agents, graph, signalContracts: contracts, proposalTypeContracts: proposalTypes, groups:groupContracts, groupEdges:groupEdgeContracts, revision: digest(agents, graph, contracts, proposalTypes,groupContracts,groupEdgeContracts) };
 }
 
 export async function resolveWorkdayPlanningGraphSnapshot(
@@ -105,9 +113,10 @@ export function decodeWorkdayPlanningGraphSnapshot(value: unknown, projectId: st
 	const agents = snapshot.agents as CapacityWorkdayAgent[];
 	const contracts = record(snapshot.signalContracts) as Record<string, AgentSignalContract>;
 	const proposalTypes = record(snapshot.proposalTypeContracts) as Record<string, ProposalTypeContract>;
+	const groupContracts=record(snapshot.groups) as Record<string,GovernanceGroup>;const groupEdgeContracts=record(snapshot.groupEdges) as Record<string,GovernanceGroupEdge>;
 	const graph = compileAgentPlanningGraph(agents.map(profile), { externalRoots: ['workday-started', 'proposal-submitted'], contracts });
 	const revision = typeof snapshot.revision === 'string' ? snapshot.revision : '';
-	if (!graph.ok || !revision || digest(agents, graph, contracts, proposalTypes) !== revision || Object.entries(contracts).some(([id, contract]) => {
+	if (!graph.ok || !revision || ![digest(agents, graph, contracts, proposalTypes,groupContracts,groupEdgeContracts),digest(agents,graph,contracts,proposalTypes)].includes(revision) || Object.entries(contracts).some(([id, contract]) => {
 		const validation = validateAgentSignalContract(contract); return !validation.ok || validation.value?.id !== id;
 	}) || Object.entries(proposalTypes).some(([id,contract]) => { const validation = validateProposalTypeContract(contract); return !validation.ok || validation.value?.id !== id; })) throw new CapacityGovernanceError(
 		'capacity_workday_planning_graph_snapshot_invalid',
@@ -115,5 +124,5 @@ export function decodeWorkdayPlanningGraphSnapshot(value: unknown, projectId: st
 		500,
 		{ projectId, diagnostics: graph.diagnostics },
 	);
-	return { agents, graph, signalContracts: contracts, proposalTypeContracts: proposalTypes, revision };
+	return { agents, graph, signalContracts: contracts, proposalTypeContracts: proposalTypes, groups:groupContracts, groupEdges:groupEdgeContracts, revision };
 }

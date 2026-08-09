@@ -60,9 +60,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	if (!secret) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
 	const allowedPaths = [`${contentPath}/books/**`, `${contentPath}/knowledge/**`, `${contentPath}/assets/**`,
-		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people']
+		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
 			.map((collection) => `${contentPath}/${collection}/**`) : []),
-		...(input.authoringPaths ? [`${contentPath}/agents/**`, '.treeseed/agents/**', '.treeseed/seeds/**', 'scenes/**'] : [])];
+		...(input.authoringPaths ? [`${contentPath}/agents/**`, `${contentPath}/groups/**`, `${contentPath}/group-edges/**`, '.treeseed/agents/**', '.treeseed/seeds/**', 'scenes/**'] : [])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const token = mintTreeDxHs256Token({
 		secret,
