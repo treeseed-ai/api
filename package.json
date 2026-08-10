@@ -26,7 +26,9 @@
   "files": [
     "README.md",
     "dist",
-    "scripts/support/verify-driver.ts"
+    "scripts/support/verify-driver.ts",
+    "LICENSE",
+    "COMMERCIAL.md"
   ],
   "bin": {
     "treeseed-api": "./dist/api/support/server.js",
@@ -61,7 +63,8 @@
     "./route-descriptors": {
       "types": "./dist/api/support/route-descriptors.d.ts",
       "default": "./dist/api/support/route-descriptors.js"
-    }
+    },
+    "./admin-api-descriptor.json": "./dist/admin-api-descriptor.json"
   },
   "scripts": {
     "setup": "npm install",

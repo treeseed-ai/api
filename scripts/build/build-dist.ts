@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmodSync,copyFileSync,cpSync,existsSync,mkdirSync,mkdtempSync,readdirSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname,extname,join,relative,resolve } from 'node:path';
@@ -26,6 +27,7 @@ const REQUIRED_OUTPUTS = [
 	'api/persistence/store.js',
 	'api/support/market-postgres.js',
 	'api/support/route-descriptors.js',
+	'admin-api-descriptor.json',
 	'operations-runner/entrypoint.js',
 	'scripts/support/migrate-db.js',
 ];
@@ -163,6 +165,24 @@ async function assertCapacityRouteDescriptorCoverage() {
 	}
 }
 
+async function writeAdminApiDescriptorArtifact() {
+	const descriptorModuleUrl = `${pathToFileURL(resolve(distRoot, 'api', 'support', 'route-descriptors.js')).href}?artifact=${Date.now()}`;
+	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<Record<string, unknown>> };
+	const routes = [...descriptorModule.API_ROUTE_DESCRIPTORS].sort((left, right) => String(left.id).localeCompare(String(right.id)));
+	const routesJson = JSON.stringify(routes);
+	const digest = createHash('sha256').update(routesJson).digest('hex');
+	const packageMetadata = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as { version: string };
+	writeFileSync(resolve(distRoot, 'admin-api-descriptor.json'), `${JSON.stringify({
+		schemaVersion: 'treeseed.admin-api-descriptor/v1',
+		package: '@treeseed/api',
+		version: packageMetadata.version,
+		sourceRef: process.env.TREESEED_SOURCE_REF?.trim() || null,
+		digest: `sha256:${digest}`,
+		routeCount: routes.length,
+		routes,
+	}, null, 2)}\n`, 'utf8');
+}
+
 function packageJson() {
 	return JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as {
 		dependencies?: Record<string, string>;
@@ -279,5 +299,6 @@ for (const filePath of walkFiles(scriptsRoot)) {
 
 emitDeclarations();
 copySdkRuntimeArtifacts();
-assertRequiredOutputs();
 await assertCapacityRouteDescriptorCoverage();
+await writeAdminApiDescriptorArtifact();
+assertRequiredOutputs();
