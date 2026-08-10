@@ -46,6 +46,7 @@ export async function projectCurrentPayload(store, action, project) {
                 checkoutPath: repository.checkoutPath,
                 submodulePath: hubRepository.submodulePath ?? undefined,
                 webUrl: repository.webUrl,
+                repositoryPolicy: repository.repositoryPolicy,
             }
             : null,
         architecture: project.metadata?.architecture,
@@ -70,6 +71,7 @@ export function hubRepositoryCurrentPayload(action, repository) {
         accessPolicy: emptyObjectAsNull(repository.accessPolicy),
         releasePolicy: emptyObjectAsNull(repository.releasePolicy),
         publishPolicy: emptyObjectAsNull(repository.publishPolicy),
+        repositoryPolicy: action.payload.repositoryPolicy,
         metadata: action.payload.metadata,
     };
 }
