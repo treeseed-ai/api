@@ -176,7 +176,7 @@ async function createNodeInputs(input: {
 				},
 				metadata: { workflowPromotionId: input.config.id, workdayRunId: input.run.id, graphId: input.graph.id, graphNodeId: node.id, estimateId: estimate.id },
 			},
-			metadata: { workflowPromotionId: input.config.id, graphId: input.graph.id, graphNodeId: node.id },
+			metadata: { workflowPromotionId: input.config.id, graphId: input.graph.id, graphNodeId: node.id, estimateId: estimate.id },
 		});
 		if (!created || created.id !== id || created.status !== 'accepted') throw new CapacityGovernanceError('engineering_workflow_execution_input_failed', 'Engineering workflow execution input was not durably accepted.', 500, { id, graphNodeId: node.id });
 		ids.push(id);

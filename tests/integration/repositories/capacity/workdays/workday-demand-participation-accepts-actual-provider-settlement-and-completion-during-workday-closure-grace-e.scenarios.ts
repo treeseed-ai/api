@@ -35,7 +35,7 @@ async function seed(database: MarketControlPlaneStore) {
     const now = '2026-07-18T12:00:00.000Z';
     await database.ensureInitialized();
     await database.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES ('team-a', 'team-a', 'Team A', ?, ?)`, [now, now]);
-    await database.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', ?, ?)`, [now, now]);
+    await database.run(`INSERT INTO projects (id, team_id, slug, name, metadata_json, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', '{"architecture":{"topology":"single_repository_site","rootPath":".","sitePath":".","contentPath":"src/content","contentRuntimeSource":"local_directory","localContentMaterialization":"existing_path"}}', ?, ?)`, [now, now]);
     await database.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, allowed_modes_json, handler_refs_json, created_at, updated_at) VALUES ('class-a', 'team-a', 'project-a', 'planner', 'Planner', '["planning"]', ?, ?, ?)`, [JSON.stringify({ agents: [{ slug: 'architect', activities: { planning: { handler: 'writer', purpose: 'Plan the project architecture.', planningPriority: 1 } } }] }), now, now]);
     const planningGraph = compileWorkdayPlanningGraphSnapshot([{ id: 'class-a', slug: 'planner', status: 'active', allowedModes: ['planning'], handlerRefs: { agents: [{ slug: 'architect', activities: { planning: { handler: 'writer', purpose: 'Plan the project architecture.', planningPriority: 1 } } }] } }], {});
     await database.run(`INSERT INTO capacity_workday_runs (id, team_id, capacity_provider_id, scenario_id, status, environment, parameters_json, started_at, created_at, updated_at) VALUES ('run-a', 'team-a', 'provider-a', 'real planning', 'running', 'local', ?, ?, ?, ?)`, [JSON.stringify({ projects: ['project-a'], planningGraphByProjectId: { 'project-a': planningGraph } }), now, now, now]);
@@ -46,11 +46,12 @@ async function seedAdmittedAssignment(database: MarketControlPlaneStore, status:
     const now = await seed(database);
     const leased = status === 'leased';
     await database.run(`INSERT INTO capacity_providers (id, fingerprint, public_jwk_json, display_name, identity_version, status, metadata_json, created_at, updated_at) VALUES ('provider-a', 'sha256:provider-a', '{}', 'Provider A', 1, 'active', '{}', ?, ?)`, [now, now]);
+    await database.run(`INSERT INTO capacity_execution_providers (id, capacity_provider_id, display_name, adapter, status, capabilities_json, native_unit, quota_visibility, max_concurrent_runners, native_limits_json, metadata_json, created_at, updated_at) VALUES ('codex', 'provider-a', 'Codex', 'codex', 'active', '["engineering"]', 'wall_minute', 'exact', 2, '[]', '{}', ?, ?)`, [now, now]);
     await database.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner', '{}', ?, ?)`, [now, now, now]);
     await database.run(`INSERT INTO capacity_allocation_sets (id, team_id, version, status, effective_from, reserve_policy_json, slices_json, borrowing_rules_json, metadata_json, created_at, updated_at) VALUES ('allocation-a', 'team-a', 1, 'active', ?, '{}', '[]', '[]', '{}', ?, ?)`, [now, now, now]);
     await database.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, capabilities_json, allowed_modes_json, daily_agent_seconds_limit, metadata_json, created_at, updated_at) VALUES ('grant-a', 'membership-a', 'provider-a', 'team-a', 'project-a', 'local', 'active', '[]', '["planning"]', 10, '{}', ?, ?)`, [now, now]);
     await database.run(`INSERT INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, state, reserved_seconds, created_at, updated_at) VALUES ('reservation-a', 'reservation-a', 'token-a', 'membership-a', 'grant-a', 'provider-a', 'allocation-a', 1, 'class-a', 'assignment-a', 'planning', 'team-a', 'project-a', 'workday-a', 'reserved', 1, ?, ?)`, [now, now]);
-    await database.run(`INSERT INTO capacity_provider_assignments (id, membership_id, team_id, project_id, capacity_provider_id, project_agent_class_id, reservation_id, work_day_id, mode, status, lease_state, lease_token, lease_expires_at, state_version, capacity_envelope_json, decision_input_json, synthesized_from, created_at, updated_at) VALUES ('assignment-a', 'membership-a', 'team-a', 'project-a', 'provider-a', 'class-a', 'reservation-a', 'workday-a', 'planning', ?, ?, ?, ?, 2, '{"teamId":"team-a","projectId":"project-a","mode":"planning"}', '{"teamId":"team-a","projectId":"project-a","projectAgentClassId":"class-a","mode":"planning","input":{}}', 'workday_demand', ?, ?)`, [status, leased ? 'leased' : 'unleased', leased ? 'lease-a' : null, leased ? '2099-01-01T00:00:00.000Z' : null, now, now]);
+    await database.run(`INSERT INTO capacity_provider_assignments (id, membership_id, team_id, project_id, capacity_provider_id, execution_provider_id, project_agent_class_id, reservation_id, work_day_id, mode, status, lease_state, lease_token, lease_expires_at, state_version, capacity_envelope_json, decision_input_json, synthesized_from, created_at, updated_at) VALUES ('assignment-a', 'membership-a', 'team-a', 'project-a', 'provider-a', 'codex', 'class-a', 'reservation-a', 'workday-a', 'planning', ?, ?, ?, ?, 2, '{"teamId":"team-a","projectId":"project-a","mode":"planning"}', '{"teamId":"team-a","projectId":"project-a","projectAgentClassId":"class-a","mode":"planning","input":{}}', 'workday_demand', ?, ?)`, [status, leased ? 'leased' : 'unleased', leased ? 'lease-a' : null, leased ? '2099-01-01T00:00:00.000Z' : null, now, now]);
     await database.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_seconds, idempotency_key, claim_token, assignment_id, payload_json, metadata_json, available_at, claimed_at, admitted_at, created_at, updated_at) VALUES ('demand-a', 'team-a', 'project-a', 'run-a', 'workday-a', 'idle-intent', 'architect', 'planning', 'class-a', 'architect', 'writer', 'planning', 'admitted', 1, 1, 'demand-a', 'claim-a', 'assignment-a', '{"repositoryId":"treeseed-project-a","contentRoot":"src/content","intent":{"objective":"Recover the admitted work."}}', '{"environment":"local"}', ?, ?, ?, ?, ?)`, [now, now, now, now, now]);
     return now;
 }
@@ -261,10 +262,11 @@ it('admits one assignment and creates one workspace under simultaneous complete 
         const controlPlane = createCapacityControlPlane(store);
         const session = await controlPlane.createProviderAvailabilitySession(principal, {
             id: 'session-a', environment: 'local', capabilities: ['engineering'],
-            executionProviders: [{ id: 'codex', adapter: 'codex', capabilities: ['engineering'], maxConcurrentRunners: 2, nativeLimits: { availableAgentSeconds: 10 } }],
+            executionProviders: [{ id: 'codex', adapter: 'codex', status: 'available', capabilities: ['engineering'], maxConcurrentRunners: 2, nativeLimits: { availableAgentSeconds: 10 } }],
             nativeLimits: { availableAgentSeconds: 10, maxConcurrentRunners: 2 }, runnerPressure: { activeRunners: 0, maxConcurrentRunners: 2 },
             constraints: { availableAgentSeconds: 10, activeRunners: 0, maxConcurrentRunners: 2 },
         });
+        const claimAt = new Date(Date.now() + 1_000).toISOString();
         const allocationService = new CapacityAllocationService(store);
         await allocationService.create('team-a', { id: 'allocation-a', reservePolicy: { percent: 0, overflow: 'deny' }, slices: [{ id: 'project:project-a', scope: 'project', targetId: 'project-a', policy: { minPercent: 0, targetPercent: 100, maxPercent: 100, hardCapPercent: 100 } }], borrowingRules: [] }, null, 'demand-allocation-create');
         await allocationService.activate('team-a', 'allocation-a', 'demand-allocation-activate');
@@ -277,7 +279,7 @@ it('admits one assignment and creates one workspace under simultaneous complete 
             sourceType: 'idle-intent', sourceId: 'architect', mode: 'planning', projectAgentClassId: 'class-a', agentId: 'architect',
             handlerId: 'writer', activityType: 'reporting', priority: 1, requestedSeconds: 1, idempotencyKey: 'demand-race',
             payload: { repositoryId: 'treeseed-project-a', contentRoot: 'src/content', decisionInput: { input: { exactBaseRef: '0123456789abcdef0123456789abcdef01234567' } }, intent: { objective: 'Produce one plan.' } },
-            metadata: { environment: 'local' }, availableAt: now, now,
+            metadata: { environment: 'local' }, availableAt: claimAt, now: claimAt,
         });
         let workspaceCreates = 0;
         let workspaceBaseRef = '';
@@ -289,10 +291,10 @@ it('admits one assignment and creates one workspace under simultaneous complete 
             return { workspaceId: 'workspace-race' };
         };
         const results = await Promise.all([
-            assignNextCompiledDemand(controlPlane, principal, session.id, [{ id: 'codex', status: 'available', capabilities: ['engineering'] }], now),
-            assignNextCompiledDemand(controlPlane, principal, session.id, [{ id: 'codex', status: 'available', capabilities: ['engineering'] }], now),
+            assignNextCompiledDemand(controlPlane, principal, session.id, [{ id: 'codex', status: 'available', capabilities: ['engineering'] }], claimAt),
+            assignNextCompiledDemand(controlPlane, principal, session.id, [{ id: 'codex', status: 'available', capabilities: ['engineering'] }], claimAt),
         ]);
-        expect(results.filter(Boolean)).toHaveLength(1);
+		expect(results.filter(Boolean)).toHaveLength(1);
         expect(results.find(Boolean)?.decisionInput).toMatchObject({ input: { activityType: 'reporting' }, metadata: { activityType: 'reporting' } });
         expect(results.find(Boolean)?.metadata).toMatchObject({ contentRoot: 'src/content' });
         expect(results.find(Boolean)?.executionProviderId).toBe('codex');

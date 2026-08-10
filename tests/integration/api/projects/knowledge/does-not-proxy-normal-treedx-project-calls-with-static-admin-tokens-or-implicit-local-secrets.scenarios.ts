@@ -24,6 +24,7 @@ it('does not proxy normal TreeDX project calls with static admin tokens or impli
 			await store.upsertProjectTreeDxLibrary(project.id, {
 				libraryId: 'team-one/dx-static-token-block',
 				repositoryId: 'repo_dx_static_token_block',
+				contentPath: 'src/content',
 			});
 			const fetchSpy = vi.spyOn(globalThis, 'fetch');
 			const response = await app.request(`/v1/dx/projects/${project.id}/repos/repo_dx_static_token_block/files/read`, {

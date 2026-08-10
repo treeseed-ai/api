@@ -24,6 +24,7 @@ describe('market api', () => {
 			await store.upsertProjectTreeDxLibrary(project.id, {
 				libraryId: 'team-one/dx-scoped-token',
 				repositoryId: 'repo_dx_scoped_token',
+				contentPath: 'src/content',
 			});
 			const authorizations: string[] = [];
 			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init = {}) => {
@@ -70,7 +71,7 @@ describe('market api', () => {
 			const token = await authorizeApp(app);
 			const { team, project } = await createTeamAndProject(app, token, { slug: 'dx-create', name: 'DX Create' });
 			await store.upsertTeamTreeDx(team.id, { baseUrl: 'http://127.0.0.1:4012', status: 'active' });
-			await store.upsertProjectTreeDxLibrary(project.id, { libraryId: 'team-one/dx-create', repositoryId: 'repo_existing' });
+			await store.upsertProjectTreeDxLibrary(project.id, { libraryId: 'team-one/dx-create', repositoryId: 'repo_existing', contentPath: 'src/content' });
 			const bodies: Record<string, unknown>[] = [];
 			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init = {}) => {
 				bodies.push(JSON.parse(String(init.body)));

@@ -38,6 +38,6 @@ describe('Agent Lab projection service', () => {
 		expect(series.at(-1)?.statistics.assignments).toMatchObject({ semantic: 'cumulative', exactTotal: 1, mean: 0.5, standardDeviation: 0.5, low: 0, high: 1, sampleSize: 2 });
 		expect(series.at(-1)?.statistics.workdays).toMatchObject({ semantic: 'exact-total', exactTotal: 1, mean: 1, standardDeviation: null, sampleSize: 1 });
 		expect(series.at(-1)?.statistics.running?.semantic).toBe('instantaneous');
-		expect(snapshot!.overview.workdayContext).toMatchObject({ selectedDate: '2026-08-03', selectedWorkdayId: 'day-a', latestWorkdayId: 'day-a' });
+		expect(snapshot!.overview.workdayContext).toMatchObject({ selectedDate: '2026-08-03', selectedWorkdayId: null, latestWorkdayId: 'day-a' });
 	});
 });

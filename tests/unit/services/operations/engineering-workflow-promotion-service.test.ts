@@ -32,7 +32,7 @@ async function seed(store: ReturnType<typeof harness>['store']) {
 	const now = '2026-07-18T12:00:00.000Z';
 	await store.ensureInitialized();
 	await store.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES ('team-a', 'team-a', 'Team A', ?, ?)`, [now, now]);
-	await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', ?, ?)`, [now, now]);
+	await store.run(`INSERT INTO projects (id, team_id, slug, name, metadata_json, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', '{"architecture":{"topology":"single_repository_site","rootPath":".","sitePath":".","contentPath":"src/content","contentRuntimeSource":"local_directory","localContentMaterialization":"existing_path"}}', ?, ?)`, [now, now]);
 	for (const [slug, agent] of [['testing', 'tester'], ['engineering', 'engineer'], ['review', 'reviewer'], ['technical-writing', 'technical-writer'], ['release', 'releaser']] as const) {
 		await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES (?, 'team-a', 'project-a', ?, ?, 'active', '["planning","acting"]', '[]', '{}', '{}', ?, '{}', '{}', ?, ?)`, [`project-a:${slug}`, slug, slug, JSON.stringify({ agents: [{ slug: agent, activities: { planning: { handler: 'writer', purpose: `Plan ${slug} work.` }, acting: { handler: 'actor' } } }] }), now, now]);
 	}

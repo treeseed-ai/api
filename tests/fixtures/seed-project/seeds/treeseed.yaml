@@ -3,7 +3,7 @@ version: 1
 description: Bounded API seed reconciliation fixture
 
 defaultEnvironments: [local]
-environments: [local]
+environments: [local, staging, prod]
 
 resources:
   teams:

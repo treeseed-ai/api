@@ -1,8 +1,9 @@
-import { authorizeApp,createTestApp,describe,expect,it,json } from '../../../../support/api-harness.ts';
+import { resolve } from 'node:path';
+import { authorizeApp,createTestApp,describe,expect,it,json,packageRoot } from '../../../../support/api-harness.ts';
 
 describe('market api', () => {
 it('gates production seed apply on matching approved requests', async () => {
-		const app = createTestApp();
+		const app = createTestApp({ config: { repoRoot: resolve(packageRoot, 'tests/fixtures/seed-project') } });
 		const token = await authorizeApp(app);
 		const teamResponse = await app.request('/v1/teams', {
 			method: 'POST',

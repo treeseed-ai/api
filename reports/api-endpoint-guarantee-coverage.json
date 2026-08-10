@@ -1,7 +1,7 @@
 {
-  "routeCount": 572,
-  "descriptorCount": 572,
-  "coveredByGuarantee": 572,
+  "routeCount": 579,
+  "descriptorCount": 579,
+  "coveredByGuarantee": 579,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -84,6 +84,12 @@
       "get.v1.teams.teamId.access",
       "get.v1.teams.teamId.agent-lab.activity",
       "get.v1.teams.teamId.agent-lab.allocation",
+      "get.v1.teams.teamId.agent-lab.atlas",
+      "get.v1.teams.teamId.agent-lab.atlas.assignment-graphs",
+      "get.v1.teams.teamId.agent-lab.atlas.delta",
+      "get.v1.teams.teamId.agent-lab.atlas.details.kind.entityId",
+      "get.v1.teams.teamId.agent-lab.atlas.events",
+      "get.v1.teams.teamId.agent-lab.atlas.events.stream",
       "get.v1.teams.teamId.agent-lab.details.kind.entityId",
       "get.v1.teams.teamId.agent-lab.entities",
       "get.v1.teams.teamId.agent-lab.metric-series",
@@ -117,6 +123,7 @@
       "post.v1.teams.teamId.agent-lab.simulations.operationId.cancel",
       "post.v1.teams.teamId.agent-lab.surfaces.build.authoring",
       "post.v1.teams.teamId.agent-lab.surfaces.build.authoring-bundle",
+      "post.v1.teams.teamId.agent-lab.surfaces.build.authoring-group",
       "post.v1.teams.teamId.api-keys",
       "post.v1.teams.teamId.archive",
       "post.v1.teams.teamId.catalog-items",
