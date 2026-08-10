@@ -30,9 +30,9 @@ resources:
       repository:
         role: primary
         provider: github
-        owner: knowledge-coop
+        owner: treeseed-ai
         name: market
-        gitUrl: https://github.com/knowledge-coop/market.git
+        gitUrl: https://github.com/treeseed-ai/market.git
         defaultBranch: main
         checkoutPath: .
       architecture:
@@ -593,13 +593,13 @@ resources:
       maxQueuedCredits: 5000
 
   repositoryHosts:
-    - key: repository-host:treeseed/knowledge-coop-github
+    - key: repository-host:treeseed/treeseed-ai-github
       team: team:treeseed
       provider: github
-      name: knowledge-coop
+      name: treeseed-ai
       ownership: treeseed_managed
       accountLabel: Knowledge Coop GitHub organization
-      organizationOrOwner: knowledge-coop
+      organizationOrOwner: treeseed-ai
       defaultVisibility: private
       softwareRepositoryNameTemplate: "{project}"
       contentRepositoryNameTemplate: "{project}-content"
@@ -638,9 +638,9 @@ resources:
       searchText: TreeSeed market control plane starter template
       metadata:
         provider: github
-        owner: knowledge-coop
+        owner: treeseed-ai
         repository: market
-        gitUrl: https://github.com/knowledge-coop/market.git
+        gitUrl: https://github.com/treeseed-ai/market.git
     - key: product:treeseed/engineering-template
       team: team:treeseed
       kind: template
@@ -703,9 +703,9 @@ resources:
       manifestKey: seeds/treeseed.yaml
       metadata:
         provider: github
-        owner: knowledge-coop
+        owner: treeseed-ai
         repository: market
-        gitUrl: https://github.com/knowledge-coop/market.git
+        gitUrl: https://github.com/treeseed-ai/market.git
     - key: catalog-artifact:treeseed/engineering-template/1.0.0
       product: product:treeseed/engineering-template
       version: 1.0.0

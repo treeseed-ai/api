@@ -1822,7 +1822,7 @@ describe('market api', () => {
 			body: JSON.stringify({
 				decryptedConfig: {
 					TREESEED_RAILWAY_API_TOKEN: 'railway-secret-token',
-					TREESEED_RAILWAY_WORKSPACE: 'knowledge-coop',
+					TREESEED_RAILWAY_WORKSPACE: 'treeseed-ai',
 					TREESEED_WORKER_POOL_SCALER: 'railway',
 				},
 			}),

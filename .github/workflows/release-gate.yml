@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: knowledge-coop/market
+          repository: treeseed-ai/market
           ref: ${{ inputs.environment == 'prod' && 'main' || 'staging' }}
           token: ${{ secrets.TREESEED_GITHUB_TOKEN }}
           submodules: recursive

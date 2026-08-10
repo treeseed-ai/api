@@ -171,9 +171,9 @@ describe('local seed apply', () => {
 			expect(repositories[0]).toMatchObject({
 				role: 'primary',
 				provider: 'github',
-				owner: 'knowledge-coop',
+				owner: 'treeseed-ai',
 				name: 'market',
-				url: 'https://github.com/knowledge-coop/market.git',
+				url: 'https://github.com/treeseed-ai/market.git',
 				defaultBranch: 'main',
 			});
 			expect(repositories[0].metadata?.seed).toMatchObject({
@@ -185,9 +185,9 @@ describe('local seed apply', () => {
 			expect(projectDetails?.hosting).toMatchObject({
 				kind: 'self_hosted_project',
 				registration: 'optional',
-				sourceRepoOwner: 'knowledge-coop',
+				sourceRepoOwner: 'treeseed-ai',
 				sourceRepoName: 'market',
-				sourceRepoUrl: 'https://github.com/knowledge-coop/market.git',
+				sourceRepoUrl: 'https://github.com/treeseed-ai/market.git',
 			});
 			expect(projectDetails?.hosting?.metadata?.seed).toMatchObject({
 				resourceKey: 'project:treeseed/market',
@@ -348,12 +348,12 @@ describe('local seed apply', () => {
 				expect.objectContaining({
 					provider: 'github',
 					ownership: 'treeseed_managed',
-					name: 'knowledge-coop',
-					organizationOrOwner: 'knowledge-coop',
+					name: 'treeseed-ai',
+					organizationOrOwner: 'treeseed-ai',
 					metadata: expect.objectContaining({
 						credentialRef: 'env:TREESEED_GITHUB_TOKEN',
 						seed: expect.objectContaining({
-							resourceKey: 'repository-host:treeseed/knowledge-coop-github',
+							resourceKey: 'repository-host:treeseed/treeseed-ai-github',
 							manifestHash: first.result.manifestHash,
 						}),
 					}),
@@ -483,7 +483,7 @@ describe('local seed apply', () => {
 			expect(details?.hosting).toMatchObject({
 				kind: 'self_hosted_project',
 				registration: 'optional',
-				sourceRepoOwner: 'knowledge-coop',
+				sourceRepoOwner: 'treeseed-ai',
 				sourceRepoName: 'market',
 			});
 			expect(details?.connection).toMatchObject({
