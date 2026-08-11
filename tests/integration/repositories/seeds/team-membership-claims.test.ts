@@ -28,11 +28,11 @@ describe('seed team membership claims', () => {
 		try {
 			await applyLocalSeedFromCli({ projectRoot: seedRoot, seedName: 'treeseed', environments: 'local', store });
 			const pending = await store.getSeedTeamMembershipClaim('treeseed', 'membership:treeseed/adrian-webb');
-			expect(pending).toMatchObject({ status: 'pending', normalized_email: 'adrian.webb@knowledge.coop' });
+			expect(pending).toMatchObject({ status: 'pending', normalized_email: 'adrian.webb@treeseed.dev' });
 			const now = new Date().toISOString();
-			await store.run(`INSERT INTO users (id, email, display_name, status, metadata_json, created_at, updated_at) VALUES (?, ?, ?, 'active', '{}', ?, ?)`, ['seed-owner', 'adrian.webb@knowledge.coop', 'Adrian Webb', now, now]);
-			await store.run(`INSERT INTO user_email_addresses (id, user_id, email, normalized_email, status, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, 'verified', true, ?, ?)`, ['seed-owner-email', 'seed-owner', 'adrian.webb@knowledge.coop', 'adrian.webb@knowledge.coop', now, now]);
-			await store.claimSeedTeamMembershipsForVerifiedEmail('seed-owner', 'adrian.webb@knowledge.coop');
+			await store.run(`INSERT INTO users (id, email, display_name, status, metadata_json, created_at, updated_at) VALUES (?, ?, ?, 'active', '{}', ?, ?)`, ['seed-owner', 'adrian.webb@treeseed.dev', 'Adrian Webb', now, now]);
+			await store.run(`INSERT INTO user_email_addresses (id, user_id, email, normalized_email, status, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, 'verified', true, ?, ?)`, ['seed-owner-email', 'seed-owner', 'adrian.webb@treeseed.dev', 'adrian.webb@treeseed.dev', now, now]);
+			await store.claimSeedTeamMembershipsForVerifiedEmail('seed-owner', 'adrian.webb@treeseed.dev');
 			await applyLocalSeedFromCli({ projectRoot: seedRoot, seedName: 'treeseed', environments: 'local', store });
 			const bound = await store.getSeedTeamMembershipClaim('treeseed', 'membership:treeseed/adrian-webb');
 			expect(bound).toMatchObject({ status: 'bound', user_id: 'seed-owner' });

@@ -17,7 +17,7 @@ resources:
   teamMemberships:
     - key: membership:treeseed/adrian-webb
       team: team:treeseed
-      email: adrian.webb@knowledge.coop
+      email: adrian.webb@treeseed.dev
       roles: [team_owner]
       missingUser: defer
 
@@ -31,9 +31,9 @@ resources:
       repository:
         role: primary
         provider: github
-        owner: knowledge-coop
+        owner: treeseed-ai
         name: market
-        gitUrl: https://github.com/knowledge-coop/market.git
+        gitUrl: https://github.com/treeseed-ai/market.git
         defaultBranch: main
         checkoutPath: .
       architecture:

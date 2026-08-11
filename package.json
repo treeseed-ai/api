@@ -2,7 +2,7 @@
   "name": "@treeseed/api",
   "version": "0.6.57",
   "description": "TreeSeed Treeseed backend API and operations runner.",
-  "license": "COMMERCIAL",
+  "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/treeseed-ai/api.git",
@@ -25,6 +25,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "README.md",
+    "LICENSE",
+    "COMMERCIAL.md",
     "dist",
     "scripts/support/verify-driver.ts"
   ],
@@ -61,7 +63,8 @@
     "./route-descriptors": {
       "types": "./dist/api/support/route-descriptors.d.ts",
       "default": "./dist/api/support/route-descriptors.js"
-    }
+    },
+    "./admin-api-descriptor.json": "./dist/admin-api-descriptor.json"
   },
   "scripts": {
     "setup": "npm install",
@@ -98,7 +101,7 @@
   "dependencies": {
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "github:treeseed-ai/sdk#1608089150841c29702b33b37f0fce931577b76d",
+    "@treeseed/sdk": "github:treeseed-ai/sdk#f913d4acd33efb710e7c7077a3fe8e6b90c62836",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.8.2",
     "libsodium-wrappers": "0.7.15",
