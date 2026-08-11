@@ -11,6 +11,7 @@ export async function ensureProjectKnowledgeBinding(input: {
 	teamId: string;
 	projectSlug: string;
 	contentPath?: string;
+	contentRepositoryRef?: string;
 	env?: NodeJS.ProcessEnv;
 	dependencyState?: { repositoryCatalog?: Promise<any[]> };
 }) {
@@ -51,10 +52,9 @@ export async function ensureProjectKnowledgeBinding(input: {
 	await input.store.upsertProjectTreeDxLibrary(input.projectId, {
 		repositoryId: repository.repoId,
 		contentPath: input.contentPath ?? 'src/content',
-		contentRepositoryDefaultBranch: existing?.contentRepositoryDefaultBranch
-			?? repository.defaultRef ?? 'refs/heads/main',
-		contentRepositoryRef: existing?.contentRepositoryRef
-			?? repository.defaultRef ?? 'refs/heads/main',
+		contentRepositoryDefaultBranch: existing?.contentRepositoryDefaultBranch ?? 'main',
+		contentRepositoryRef: input.contentRepositoryRef
+			?? existing?.contentRepositoryRef ?? repository.defaultRef ?? 'refs/heads/main',
 		metadata: { repositoryName, reconciledLocalRuntime: true },
 	});
 	return { kind: 'projectKnowledgeBinding', projectId: input.projectId, repositoryId: repository.repoId };

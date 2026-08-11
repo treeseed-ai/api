@@ -36,6 +36,9 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
             teamId,
             projectSlug: action.payload.slug,
             contentPath: action.payload.architecture?.contentPath,
+			contentRepositoryRef: action.payload.architecture?.topology === 'split_site_content'
+				? 'refs/heads/staging'
+				: undefined,
             env,
             dependencyState,
         }));
