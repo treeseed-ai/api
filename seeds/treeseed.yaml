@@ -655,9 +655,9 @@ resources:
       searchText: TreeSeed engineering workflow import template capacity governance release checks
       metadata:
         provider: github
-        owner: treeseed-templates
+        owner: treeseed-ai
         repository: engineering
-        gitUrl: https://github.com/treeseed-templates/engineering.git
+        gitUrl: https://github.com/treeseed-ai/engineering.git
 
     - key: product:treeseed/research-template
       team: team:treeseed
@@ -673,9 +673,9 @@ resources:
       searchText: TreeSeed research workflow import template knowledge pack source backed
       metadata:
         provider: github
-        owner: treeseed-templates
+        owner: treeseed-ai
         repository: research
-        gitUrl: https://github.com/treeseed-templates/research.git
+        gitUrl: https://github.com/treeseed-ai/research.git
 
     - key: product:treeseed/seed-knowledge-pack
       team: team:treeseed
@@ -714,9 +714,9 @@ resources:
       manifestKey: src/content/templates/engineering.mdx
       metadata:
         provider: github
-        owner: treeseed-templates
+        owner: treeseed-ai
         repository: engineering
-        gitUrl: https://github.com/treeseed-templates/engineering.git
+        gitUrl: https://github.com/treeseed-ai/engineering.git
 
     - key: catalog-artifact:treeseed/research-template/1.0.0
       product: product:treeseed/research-template
@@ -726,9 +726,9 @@ resources:
       manifestKey: src/content/templates/research.mdx
       metadata:
         provider: github
-        owner: treeseed-templates
+        owner: treeseed-ai
         repository: research
-        gitUrl: https://github.com/treeseed-templates/research.git
+        gitUrl: https://github.com/treeseed-ai/research.git
 
     - key: catalog-artifact:treeseed/seed-knowledge-pack/1.0.0
       product: product:treeseed/seed-knowledge-pack
