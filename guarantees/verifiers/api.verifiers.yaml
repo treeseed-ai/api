@@ -115,7 +115,7 @@ verifiers:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts
-    caseId: descriptor-executable-role-matrix.get.v1.markets.current.anonymous
+    caseId: descriptor-executable-role-matrix.get.v1.me.anonymous
   api.endpoints.auth-and-sessions:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"

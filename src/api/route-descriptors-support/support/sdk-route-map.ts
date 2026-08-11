@@ -39,7 +39,6 @@ export const SDK_METHOD_ROUTE_MAP = {
     deletePersonalTheme: 'delete.v1.auth.web.themes.themeId',
     me: 'get.v1.me',
     markets: 'get.v1.me.markets',
-    currentMarket: 'get.v1.markets.current',
     teams: 'get.v1.teams',
     createTeam: 'post.v1.teams',
     archiveTeam: 'post.v1.teams.teamId.archive',
@@ -170,3 +169,7 @@ export const SDK_METHOD_ROUTE_MAP = {
     catalog: 'get.v1.catalog',
     artifactDownload: 'get.v1.catalog.itemId.artifacts.version.download',
 };
+
+export const MARKET_SDK_METHOD_ROUTE_MAP = {
+    currentMarket: 'get.v1.market.profile',
+} as const;

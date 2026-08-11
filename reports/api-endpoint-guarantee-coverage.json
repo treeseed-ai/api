@@ -1,13 +1,12 @@
 {
-  "routeCount": 579,
-  "descriptorCount": 579,
-  "coveredByGuarantee": 579,
+  "routeCount": 578,
+  "descriptorCount": 578,
+  "coveredByGuarantee": 578,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
       "get.v1.discussions",
       "get.v1.execution-runs.runId.transcript",
-      "get.v1.markets.current",
       "get.v1.me",
       "get.v1.me.markets",
       "get.v1.provider-connectors.github.kind.callback",

@@ -38,7 +38,6 @@ export function sdkArgsForMethod(method) {
         deleteAccount: [{ confirmation: 'DELETE acceptance-owned-account' }],
         me: [],
         markets: [],
-        currentMarket: [],
         teams: [],
         createTeam: [{ slug: 'acceptance-${runNonce}-sdk-team', name: 'Acceptance SDK Team' }],
         archiveTeam: ['missing-team', 1],
@@ -276,7 +275,7 @@ export function sdkArgsForMethod(method) {
 }
 
 export function actorForSdkMethod(method, descriptor) {
-    if (method.startsWith('webSign') || method === 'startDeviceLogin' || method === 'pollDeviceLogin' || method === 'refreshToken' || method === 'checkWebUsername' || method === 'checkWebEmail' || method === 'authProviders' || method === 'requestWebPasswordReset' || method === 'completeWebPasswordReset' || method === 'currentMarket') {
+    if (method.startsWith('webSign') || method === 'startDeviceLogin' || method === 'pollDeviceLogin' || method === 'refreshToken' || method === 'checkWebUsername' || method === 'checkWebEmail' || method === 'authProviders' || method === 'requestWebPasswordReset' || method === 'completeWebPasswordReset') {
         return 'anonymous';
     }
     if (descriptor?.authClass === 'platform-admin' || method.includes('Seed'))
