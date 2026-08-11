@@ -1925,18 +1925,6 @@
       "providerAccessToken": 401,
       "platformRunner": 401
     },
-    "get.v1.markets.current": {
-      "anonymous": 200,
-      "siteAdmin": 200,
-      "marketSteward": 200,
-      "teamOwner": 200,
-      "teamOperator": 200,
-      "teamViewer": 200,
-      "nonMember": 200,
-      "providerOperator": 200,
-      "providerAccessToken": 200,
-      "platformRunner": 200
-    },
     "get.v1.me": {
       "anonymous": 401,
       "siteAdmin": 200,

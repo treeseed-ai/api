@@ -7,6 +7,7 @@ import {
 ACCEPTANCE_ACTORS,
 API_ENDPOINT_GUARANTEE_FAMILIES,
 API_ROUTE_DESCRIPTORS,
+MARKET_SDK_METHOD_ROUTE_MAP,
 PROJECT_MANAGER_ACTORS,
 PROJECT_MEMBER_ACTORS,
 SDK_METHOD_ROUTE_MAP,
@@ -66,6 +67,18 @@ describe('API route descriptors', () => {
 			authClass: 'user',
 			ownerDomain: 'market',
 		});
+	});
+
+	it('records the runtime plane that blocks sovereign migration until Market extraction completes', () => {
+		const byPath = new Map(API_ROUTE_DESCRIPTORS.map((route) => [route.path, route]));
+		expect(byPath.get('/v1/commerce/products')?.runtimePlane).toBe('market');
+		expect(byPath.get('/v1/catalog')?.runtimePlane).toBe('market');
+		expect(byPath.get('/v1/seeds/:name/plan')?.runtimePlane).toBe('market');
+		expect(byPath.get('/v1/teams')?.runtimePlane).toBe('admin');
+		expect(byPath.get('/v1/projects')?.runtimePlane).toBe('admin');
+		expect(byPath.get('/v1/ui/governance')?.runtimePlane).toBe('admin');
+		expect(API_ROUTE_DESCRIPTORS.filter((route) => route.runtimePlane === 'market').length).toBeGreaterThan(0);
+		expect(API_ROUTE_DESCRIPTORS.every((route) => route.runtimePlane === 'admin' || route.runtimePlane === 'market')).toBe(true);
 	});
 
 	it('discovers routes from every focused capacity route owner', () => {
@@ -189,12 +202,14 @@ describe('API route descriptors', () => {
 	it('maps every public MarketClient method to an active descriptor-backed endpoint', () => {
 		const descriptorIds = new Set(API_ROUTE_DESCRIPTORS.map((route) => route.id));
 		const methods = publicMarketClientMethods();
-		const missingMappings = methods.filter((method) => !(method in SDK_METHOD_ROUTE_MAP));
+		const missingMappings = methods.filter((method) => !(method in SDK_METHOD_ROUTE_MAP) && !(method in MARKET_SDK_METHOD_ROUTE_MAP));
 		const staleMappings = Object.entries(SDK_METHOD_ROUTE_MAP)
 			.filter(([, routeId]) => !descriptorIds.has(routeId))
 			.map(([method, routeId]) => `${method}:${routeId}`);
 		expect(missingMappings).toEqual([]);
 		expect(staleMappings).toEqual([]);
+		expect(MARKET_SDK_METHOD_ROUTE_MAP).toEqual({ currentMarket: 'get.v1.market.profile' });
+		expect(descriptorIds.has(MARKET_SDK_METHOD_ROUTE_MAP.currentMarket)).toBe(false);
 	});
 
 	it('keeps live acceptance descriptor-covered with explicit email delivery coverage', () => {

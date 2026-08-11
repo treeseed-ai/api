@@ -21,7 +21,7 @@ export function authClass(path, method = 'get') {
         return 'platform-admin';
     if (path === '/v1/feedback')
         return 'user';
-    if (path === '/v1/markets/current' || path.startsWith('/v1/auth/web/sign-') || path.startsWith('/v1/auth/availability/') || path === '/v1/auth/providers' || path.startsWith('/v1/auth/oauth/') || path.includes('/password-reset/') || path.includes('/auth/device/')) {
+    if (path.startsWith('/v1/auth/web/sign-') || path.startsWith('/v1/auth/availability/') || path === '/v1/auth/providers' || path.startsWith('/v1/auth/oauth/') || path.includes('/password-reset/') || path.includes('/auth/device/')) {
         return 'public';
     }
     if (path.startsWith('/v1/platform/operations'))
@@ -117,7 +117,7 @@ export function successActorsFor(path, method) {
         || path === '/v1/knowledge/context' || path === '/v1/knowledge/search'
         || path.startsWith('/v1/knowledge/pages/'))
         return ACCEPTANCE_ACTORS;
-    if (path === '/v1/markets/current' || path.includes('/username/check') || path.includes('/confirm-email') || path.includes('/password-reset/request') || path.includes('/password-reset/complete') || path.includes('/auth/device/')) {
+    if (path.includes('/username/check') || path.includes('/confirm-email') || path.includes('/password-reset/request') || path.includes('/password-reset/complete') || path.includes('/auth/device/')) {
         return ACCEPTANCE_ACTORS;
     }
     if (path.startsWith('/v1/auth/web/sign-up'))
