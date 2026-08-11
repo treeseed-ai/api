@@ -68,6 +68,18 @@ describe('API route descriptors', () => {
 		});
 	});
 
+	it('records the runtime plane that blocks sovereign migration until Market extraction completes', () => {
+		const byPath = new Map(API_ROUTE_DESCRIPTORS.map((route) => [route.path, route]));
+		expect(byPath.get('/v1/commerce/products')?.runtimePlane).toBe('market');
+		expect(byPath.get('/v1/catalog')?.runtimePlane).toBe('market');
+		expect(byPath.get('/v1/seeds/:name/plan')?.runtimePlane).toBe('market');
+		expect(byPath.get('/v1/teams')?.runtimePlane).toBe('admin');
+		expect(byPath.get('/v1/projects')?.runtimePlane).toBe('admin');
+		expect(byPath.get('/v1/ui/governance')?.runtimePlane).toBe('admin');
+		expect(API_ROUTE_DESCRIPTORS.filter((route) => route.runtimePlane === 'market').length).toBeGreaterThan(0);
+		expect(API_ROUTE_DESCRIPTORS.every((route) => route.runtimePlane === 'admin' || route.runtimePlane === 'market')).toBe(true);
+	});
+
 	it('discovers routes from every focused capacity route owner', () => {
 		const descriptorIds = new Set(API_ROUTE_DESCRIPTORS.map((route) => route.id));
 		for (const id of [

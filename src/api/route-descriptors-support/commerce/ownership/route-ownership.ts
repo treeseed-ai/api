@@ -13,6 +13,21 @@ export function routeId(method, path) {
     ].join('.');
 }
 
+const SINGLETON_MARKET_PREFIXES = [
+    '/v1/catalog',
+    '/v1/commerce/',
+    '/v1/commons/',
+    '/v1/markets/',
+    '/v1/seeds/',
+    '/v1/templates',
+];
+
+export function runtimePlane(path) {
+    return SINGLETON_MARKET_PREFIXES.some((prefix) => path === prefix.replace(/\/$/u, '') || path.startsWith(prefix))
+        ? 'market'
+        : 'admin';
+}
+
 export function ownerDomain(path) {
     if (path.startsWith('/v1/provider/') || path.startsWith('/v1/provider-registrations'))
         return 'provider-ingress';

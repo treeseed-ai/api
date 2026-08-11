@@ -169,6 +169,8 @@ async function writeAdminApiDescriptorArtifact() {
 	const descriptorModuleUrl = `${pathToFileURL(resolve(distRoot, 'api', 'support', 'route-descriptors.js')).href}?artifact=${Date.now()}`;
 	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<Record<string, unknown>> };
 	const routes = [...descriptorModule.API_ROUTE_DESCRIPTORS].sort((left, right) => String(left.id).localeCompare(String(right.id)));
+	const adminRoutes = routes.filter((route) => route.runtimePlane === 'admin');
+	const marketRoutes = routes.filter((route) => route.runtimePlane === 'market');
 	const routesJson = JSON.stringify(routes);
 	const digest = createHash('sha256').update(routesJson).digest('hex');
 	const packageMetadata = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as { version: string };
@@ -179,6 +181,9 @@ async function writeAdminApiDescriptorArtifact() {
 		sourceRef: process.env.TREESEED_SOURCE_REF?.trim() || null,
 		digest: `sha256:${digest}`,
 		routeCount: routes.length,
+		adminRouteCount: adminRoutes.length,
+		marketRouteCount: marketRoutes.length,
+		migrationReady: marketRoutes.length === 0,
 		routes,
 	}, null, 2)}\n`, 'utf8');
 }

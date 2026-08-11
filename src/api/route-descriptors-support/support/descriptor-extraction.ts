@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { authClass } from '../accounts/authorization-policy.js';
 import { safeProduction } from '../commerce/catalog/production-safety.js';
-import { ownerDomain,routeId } from '../commerce/ownership/route-ownership.js';
+import { ownerDomain,routeId,runtimePlane } from '../commerce/ownership/route-ownership.js';
 import { endpointGuarantee } from '../guarantees/guarantee-coverage.js';
 import { fixtureRequirements } from '../testing/fixture-requirements.js';
 import { acceptancePolicy } from './acceptance-policy.js';
@@ -25,6 +25,7 @@ export function extractActiveApiRoutes(source = [
             id: routeId(method, path),
             method: method.toUpperCase(),
             path,
+            runtimePlane: runtimePlane(path),
             ownerDomain: ownerDomain(path),
             authClass: authClass(path, method),
             mutability: mutability(method),
