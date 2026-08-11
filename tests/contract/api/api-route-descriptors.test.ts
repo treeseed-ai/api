@@ -24,7 +24,7 @@ function publicMarketClientMethods() {
 	const classSource = source.slice(classStart);
 	const methodNames = [...classSource.matchAll(/^\s+([a-zA-Z][a-zA-Z0-9_]*)\([^)]*\)\s*\{/gmu)]
 		.map((match) => match[1])
-		.filter((name) => !['constructor', 'headers', 'url', 'request', 'tryRequest'].includes(name));
+		.filter((name) => !['constructor', 'headers', 'url', 'baseUrlForPath', 'request', 'tryRequest'].includes(name));
 	return [...new Set(methodNames)];
 }
 
