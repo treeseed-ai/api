@@ -334,7 +334,27 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 							options: [{ id: 'approve', label: 'Approve' }],
 							metadata: { acceptance: true, namespace },
 						}).catch(() => null);
-					const decisionId = `decision-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+					const proposalId = `proposal-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+					const proposal = await store.createGovernanceProposal(null, {
+						id: proposalId,
+						teamId: team.id,
+						projectId: project.id,
+						scope: 'project',
+						title: 'Acceptance assignment graph',
+						summary: 'Authoritative accepted proposal for assignment graph acceptance.',
+						body: 'Compile and verify a bounded assignment graph through the normal governance path.',
+						proposalType: 'implementation',
+						createdByType: 'service',
+						createdById: 'acceptance',
+						metadata: { acceptance: true, namespace },
+					});
+					await store.transitionGovernanceProposal(proposal!.id, 'accepted', {
+						actorType: 'service', actorId: 'acceptance', reason: 'Acceptance fixture decision authority.',
+					});
+					const governanceDecision = await store.createGovernanceDecisionFromProposal(proposal!.id, {
+						actorType: 'service', actorId: 'acceptance', outcome: { voteResult: { acceptance: true } },
+					});
+					const decisionId = governanceDecision!.id;
 					const decisionPlanningStatus = await capacity.upsertDecisionPlanningStatus({
 						id: `dps-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
 						projectId: project.id,

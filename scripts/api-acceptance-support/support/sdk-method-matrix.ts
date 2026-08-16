@@ -49,6 +49,8 @@ export function sdkArgsForMethod(method) {
         teamPermissions: ['${fixtures.team.id}'],
         projects: ['${fixtures.team.id}'],
         createProject: ['${fixtures.team.id}', { slug: 'acceptance-${runNonce}-sdk-project', name: 'Acceptance SDK Project' }],
+		archiveProject: ['${fixtures.project.id}'],
+		restoreProject: ['${fixtures.project.id}'],
         deleteProject: ['missing-project', { confirmation: 'DELETE missing-project' }],
         projectDeletionBlockers: ['${fixtures.project.id}'],
         importProjectRepository: ['${fixtures.team.id}', {
@@ -106,6 +108,7 @@ export function sdkArgsForMethod(method) {
         providerAvailabilitySessions: ['${fixtures.team.id}', { providerId: '${fixtures.provider.id}' }],
         capacityProviderAssignments: ['${fixtures.team.id}', { providerId: '${fixtures.provider.id}', projectId: '${fixtures.project.id}' }],
         capacityProviderAssignment: ['${fixtures.team.id}', 'missing-assignment'],
+		assignmentAuthorityProbe: ['${fixtures.team.id}', 'missing-assignment'],
         capacityReservations: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
         capacityReservationExplanation: ['${fixtures.team.id}', 'missing-reservation'],
         capacityUsage: ['${fixtures.team.id}', { projectId: '${fixtures.project.id}' }],
@@ -140,6 +143,19 @@ export function sdkArgsForMethod(method) {
 		agentLabActivity: ['${fixtures.team.id}'],
 		agentLabMetricSeries: ['${fixtures.team.id}'],
 		agentLabEntities: ['${fixtures.team.id}', { kind: 'assignments', limit: 25 }],
+		checkProjectContextQuery: ['${fixtures.team.id}', '${fixtures.project.id}', {
+			testId: 'missing-context-query-test', idempotencyKey: 'acceptance-${runNonce}-context-query-check',
+		}],
+		projectContextQueryChecks: ['${fixtures.team.id}', '${fixtures.project.id}'],
+		planAgentDeployment: ['${fixtures.team.id}', {
+			sourceProjectId: '${fixtures.project.id}', targetProjectId: '${fixtures.project.id}', agentId: 'missing-agent', bindings: {},
+		}],
+		executeAgentDeployment: ['${fixtures.team.id}', {
+			sourceProjectId: '${fixtures.project.id}', targetProjectId: '${fixtures.project.id}', agentId: 'missing-agent', bindings: {}, idempotencyKey: '',
+		}],
+		agentDeployment: ['${fixtures.team.id}', 'missing-deployment'],
+		activateAgentDeployment: ['${fixtures.team.id}', 'missing-deployment', { idempotencyKey: '', prerequisiteEvidence: [] }],
+		upgradeAgentDeployment: ['${fixtures.team.id}', 'missing-deployment', { sourceRef: 'missing-ref', execute: false }],
 		updateAgentLabTargets: ['${fixtures.team.id}', {}],
         projectTreeDxProxyAudit: ['${fixtures.project.id}'],
         decisionPlanningStatus: ['missing-decision'],
@@ -167,6 +183,7 @@ export function sdkArgsForMethod(method) {
         decisionCapacityPlans: ['${fixtures.decision.id}'],
         createDecisionCapacityPlan: ['${fixtures.decision.id}', {
                 projectId: '${fixtures.project.id}',
+				idempotencyKey: 'acceptance-${runNonce}-capacity-plan-create',
                 estimatedCreditsP50: 1,
                 estimatedCreditsP90: 2,
                 summary: 'Acceptance capacity plan.',
@@ -189,6 +206,7 @@ export function sdkArgsForMethod(method) {
         completeWorkday: ['missing-workday'],
         workdaySummary: ['missing-workday'],
         workdayRuns: ['${fixtures.team.id}'],
+		preflightWorkdayRun: ['${fixtures.team.id}', {}],
         createWorkdayRun: ['${fixtures.team.id}', {
                 scenarioId: 'acceptance',
                 status: 'queued',
@@ -196,6 +214,7 @@ export function sdkArgsForMethod(method) {
                 parameters: { acceptance: true, runNonce: '${runNonce}' },
             }],
         workdayRun: ['${fixtures.team.id}', 'missing-workday-run'],
+		closeWorkdayAdmission: ['${fixtures.team.id}', 'missing-workday-run', { idempotencyKey: 'acceptance-${runNonce}-close-admission' }],
         updateWorkdayRun: ['${fixtures.team.id}', 'missing-workday-run', {
                 status: 'running',
                 summary: { acceptance: true, runNonce: '${runNonce}' },
@@ -212,6 +231,15 @@ export function sdkArgsForMethod(method) {
             }],
         cancelCapacityAssignment: ['${fixtures.team.id}', 'missing-assignment', { idempotencyKey: 'acceptance-${runNonce}-assignment-cancel' }],
         requeueCapacityAssignment: ['${fixtures.team.id}', 'missing-assignment', { idempotencyKey: 'acceptance-${runNonce}-assignment-requeue' }],
+		abandonAssignmentContent: ['${fixtures.team.id}', 'missing-assignment', {
+			idempotencyKey: 'acceptance-${runNonce}-content-abandonment', expectedCommitShas: ['0123456789abcdef0123456789abcdef01234567'],
+			reason: 'Acceptance missing-assignment abandonment.', workdayId: '${fixtures.workday.id}', simulateHuman: true,
+		}],
+		integrateAssignmentContent: ['${fixtures.team.id}', 'missing-assignment', {
+			idempotencyKey: 'acceptance-${runNonce}-content-integration', expectedBaseRef: '0123456789abcdef0123456789abcdef01234567',
+			expectedCommitSha: 'abcdef0123456789abcdef0123456789abcdef01', reason: 'Acceptance missing-assignment integration.',
+			workdayId: '${fixtures.workday.id}', simulateHuman: true,
+		}],
         decideCapacityOverrun: ['${fixtures.team.id}', 'missing-reservation', 'approve', { idempotencyKey: 'acceptance-${runNonce}-overrun' }],
         teamTreeDx: ['${fixtures.team.id}'],
         updateTeamTreeDx: ['${fixtures.team.id}', {
