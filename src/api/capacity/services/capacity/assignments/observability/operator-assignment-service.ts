@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
+import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { CapacityWorkdayDemandRepository,serializeCapacityWorkdayDemandRow } from '../../../../repositories/capacity/workdays/workday-demand.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
+import { terminalAssignmentAuthority } from '../lifecycle/assignment-terminal-authority.ts';
 
 function id(value: string) { return `demand_${createHash('sha256').update(value).digest('base64url').slice(0, 32)}`; }
 function idempotencyKey(value: string) {
@@ -14,7 +16,10 @@ function idempotencyKey(value: string) {
 export class OperatorAssignmentService {
 	private readonly assignments: ProviderAssignmentRepository;
 	private readonly demands: CapacityWorkdayDemandRepository;
-	constructor(private readonly database: CapacityGovernanceDatabase) {
+	constructor(
+		private readonly database: CapacityGovernanceDatabase,
+		private readonly closeWorkspace?: (assignment: DurableProviderAssignment) => Promise<unknown>,
+	) {
 		this.assignments = new ProviderAssignmentRepository(database);
 		this.demands = new CapacityWorkdayDemandRepository(database);
 	}
@@ -24,13 +29,14 @@ export class OperatorAssignmentService {
 		const operationKey = idempotencyKey(input.idempotencyKey);
 		let assignment = await this.assignments.get(teamId, assignmentId);
 		if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment does not exist.', 404, { assignmentId });
-		if (assignment.status !== 'cancelled' && (!['pending', 'returned', 'expired'].includes(assignment.status) || !['unleased', 'released', 'expired'].includes(assignment.leaseState))) throw new CapacityGovernanceError(
+		const failedCleanup = assignment.status === 'failed' && assignment.leaseState === 'released';
+		if (assignment.status !== 'cancelled' && !failedCleanup && (!['pending', 'returned', 'expired'].includes(assignment.status) || !['unleased', 'released', 'expired'].includes(assignment.leaseState))) throw new CapacityGovernanceError(
 			'capacity_assignment_active_lease_conflict', 'An active or terminal assignment cannot be safely cancelled.', 409,
 			{ assignmentId, status: assignment.status, leaseState: assignment.leaseState },
 		);
 		if (!assignment.reservationId || !assignment.membershipId) throw new CapacityGovernanceError('capacity_assignment_admission_provenance_missing', 'Assignment lacks reservation provenance.', 500, { assignmentId });
 		const now = new Date().toISOString();
-		if (assignment.status !== 'cancelled') {
+		if (assignment.status !== 'cancelled' && !failedCleanup) {
 			const fenced = await this.database.first(
 				`UPDATE capacity_provider_assignments SET status = 'cancelled', lease_state = 'released', lifecycle_code = 'operator_cancelled', lifecycle_reason = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status IN ('pending','returned','expired') AND lease_state IN ('unleased','released','expired') RETURNING id`,
 				[input.reason ?? 'Assignment cancelled by a team operator.', now, assignmentId, teamId, assignment.stateVersion],
@@ -39,6 +45,12 @@ export class OperatorAssignmentService {
 			assignment = await this.assignments.get(teamId, assignmentId);
 			if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment disappeared during cancellation.', 500, { assignmentId });
 		}
+		const terminalAuthority = terminalAssignmentAuthority(assignment, now);
+		await this.database.batch([
+			{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('cancelled','failed')`, params: [JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignmentId, teamId] },
+			{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ?`, params: [now, now, assignmentId, teamId] },
+		]);
+		if (this.closeWorkspace) await this.closeWorkspace(assignment);
 		await releaseCapacityReservationsExactlyOnce(this.database, [{
 			settlementKey: `operator-cancel:${teamId}:${operationKey}`, teamId, membershipId: assignment.membershipId,
 			reservationId: assignment.reservationId, assignmentId, activeSeconds: 0, elapsedSeconds: 0, source: 'operator_assignment_cancel',
@@ -49,7 +61,8 @@ export class OperatorAssignmentService {
 			{ query: `UPDATE capacity_workday_participation_entries SET status = 'blocked', reason_code = 'operator_cancelled', covered_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'assigned'`, params: [now, now, assignmentId] },
 		]);
 		const cancelled = await this.assignments.get(teamId, assignmentId);
-		if (!cancelled || cancelled.status !== 'cancelled') throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
+		const expectedStatus = failedCleanup ? 'failed' : 'cancelled';
+		if (!cancelled || cancelled.status !== expectedStatus) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
 		return cancelled;
 	}
 

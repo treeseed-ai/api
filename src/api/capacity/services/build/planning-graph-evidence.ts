@@ -34,10 +34,8 @@ function reference(row: Row): PlanningGraphEvidenceReference {
 
 export function planningGraphGroupContext(projectId: string, snapshot: WorkdayPlanningGraphSnapshot): PlanningGraphGroupContext {
 	const agentMembershipByNodeId: Record<string, EffectiveGroupMembership> = {};
-	const primaryGroupByNodeId: Record<string, string> = {};
 	for (const agent of snapshot.agents) {
 		agentMembershipByNodeId[agent.nodeId] = resolveEffectiveGroupMembership({ projectId, directGroupIds: agent.groupIds, edges: Object.values(snapshot.groupEdges) });
-		if (agent.primaryGroupId) primaryGroupByNodeId[agent.nodeId] = agent.primaryGroupId;
 	}
 	const parents = new Map(Object.values(snapshot.groupEdges).filter((edge) => edge.propagatesMembership).map((edge) => [edge.fromGroupId, edge.toGroupId]));
 	const depthByGroupId = Object.fromEntries(Object.keys(snapshot.groups).map((id) => {
@@ -45,7 +43,7 @@ export function planningGraphGroupContext(projectId: string, snapshot: WorkdayPl
 		while (current && !seen.has(current)) { seen.add(current); current = parents.get(current); if (current) depth += 1; }
 		return [id, depth];
 	}));
-	return { projectId, agentMembershipByNodeId, primaryGroupByNodeId, depthByGroupId };
+	return { projectId, agentMembershipByNodeId, depthByGroupId };
 }
 
 export async function loadPlanningGraphEvidence(

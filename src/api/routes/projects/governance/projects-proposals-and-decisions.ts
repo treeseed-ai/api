@@ -54,6 +54,12 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 					const body = await readJsonOrFormBody(c);
 					let authored;
 					try {
+						try {
+							const replay = await store.updateGovernanceProposalDraft(access.principal, proposal.id, { ...body, contentProvenance: proposal.metadata?.contentProvenance, repairExistingVersion: true });
+							return c.json({ ok: true, payload: replay, idempotentReplay: true });
+						} catch (error) {
+							if ((error as { code?: string }).code !== 'governance_proposal_repair_material_change') throw error;
+						}
 						authored = await commitProposalVersionContent({ store, proposal, principal: access.principal, update: body });
 						return c.json({ ok: true, payload: await store.updateGovernanceProposalDraft(access.principal, proposal.id, authored.update), authoringReceipt: authored.receipt });
 					} catch (error) {
@@ -66,9 +72,13 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 					if (access.response) return access.response;
 					const body = await readJsonOrFormBody(c);
-					const proposal = await store.openGovernanceProposal(access.principal, c.req.param('proposalId'), body);
-					if (!proposal || proposal.projectId !== access.details.project.id) return jsonError(c, 404, 'Unknown governance proposal.');
-					return c.json({ ok: true, payload: proposal });
+					try {
+						const proposal = await store.openGovernanceProposal(access.principal, c.req.param('proposalId'), body);
+						if (!proposal || proposal.projectId !== access.details.project.id) return jsonError(c, 404, 'Unknown governance proposal.');
+						return c.json({ ok: true, payload: proposal });
+					} catch (error) {
+						return jsonThrownError(c, error, 400);
+					}
 				});
 	
 	app.post('/v1/projects/:projectId/proposals/:proposalId/start-voting', async (c) => {
@@ -111,7 +121,7 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 					try {
 						contentReference = await createProposalDiscussionContent({ store, proposal, principal: access.principal, kind, message, idempotencyKey: c.req.header('Idempotency-Key') || crypto.randomUUID(), contributorRef: optionalTrimmedString(body.contentContributorRef) });
 					} catch (error) {
-						return jsonError(c, 503, error instanceof Error ? error.message : 'TreeDX could not preserve the proposal discussion.', { code: 'proposal_discussion_content_unavailable' });
+						return jsonThrownError(c, error, 503);
 					}
 					return c.json({ ok: true, payload: await store.recordGovernanceEvent({
 						eventType: 'proposal.discussion',

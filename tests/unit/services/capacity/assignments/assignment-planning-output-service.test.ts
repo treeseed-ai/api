@@ -1,5 +1,5 @@
 import { describe,expect,it,vi } from 'vitest';
-import { projectCompletedPlanningOutputs } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-planning-output-service.ts';
+import { assertPlanningArtifactContent,assignmentWorkdayRunId,persistAssignmentProposalRevision,projectCompletedPlanningOutputs } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-planning-output-service.ts';
 
 const assignment = {
 	id: 'assignment-a', teamId: 'team-a', projectId: 'project-a', decisionId: 'decision-a',
@@ -15,6 +15,20 @@ const estimate = {
 };
 
 describe('assignment planning output projection', () => {
+	it('resolves the API workday run from assignment metadata instead of the child project envelope id', () => {
+		expect(assignmentWorkdayRunId({ workDayId: 'workday-run-a-project-a', metadata: { workdayRunId: 'run-a' } } as never)).toBe('run-a');
+		expect(assignmentWorkdayRunId({ workDayId: 'legacy-run-a', metadata: {} } as never)).toBe('legacy-run-a');
+	});
+
+	it('rejects malformed TreeDX proposal artifacts with field-addressable diagnostics', () => {
+		expect(() => assertPlanningArtifactContent('proposal','src/content/proposals/invalid.mdx',{ title:'Invalid proposal' },'assignment-a'))
+			.toThrow(expect.objectContaining({
+				code:'assignment_content_model_invalid',status:409,
+				details:expect.objectContaining({ contentPath:'src/content/proposals/invalid.mdx',model:'proposal',
+					diagnostics:expect.arrayContaining([expect.objectContaining({ field:'description',code:'content_zod_invalid_type' })]) }),
+			}));
+	});
+
 	it('persists a correlated structured estimate once as submitted planning evidence', async () => {
 		const create = vi.fn(async (_decisionId: string, input: Record<string, unknown>) => ({ ...estimate, ...input }));
 		const run = vi.fn(async () => undefined);
@@ -22,7 +36,7 @@ describe('assignment planning output projection', () => {
 		await expect(projectCompletedPlanningOutputs(store as never, assignment, { output: { metadata: { structuredEstimate: estimate } } }))
 			.resolves.toMatchObject({ id: 'estimate-a', status: 'submitted', metadata: { assignmentId: 'assignment-a' } });
 		expect(create).toHaveBeenCalledWith('decision-a', expect.objectContaining({ status: 'submitted', recordMetadata: { source: 'validated_assignment_planning_output', assignmentId: 'assignment-a' } }));
-		expect(run).toHaveBeenCalledWith(expect.stringContaining(`UPDATE planning_input_requests SET status = 'complete'`), expect.arrayContaining(['request-a', 'team-a', 'project-a']));
+		expect(run).toHaveBeenCalledWith(expect.stringContaining(`UPDATE agent_invocation_requests SET status = 'completed'`), expect.arrayContaining(['request-a', 'team-a', 'project-a']));
 	});
 
 	it('returns the assignment-owned estimate on replay and rejects cross-scope output', async () => {
@@ -58,5 +72,35 @@ describe('assignment planning output projection', () => {
 		};
 		await expect(projectCompletedPlanningOutputs(store as never, discoveryAssignment as never, { output: { artifactManifest } })).resolves.toBeNull();
 		expect(store.getGovernanceProposal).not.toHaveBeenCalled();
+	});
+
+	it('publishes a provenance-linked agent revision and replays its immutable digest',async () => {
+		const revisionAssignment = { ...assignment,workDayId: 'workday-a',decisionInput: { input: { intent: { relatedArtifact: { model: 'proposal',commitSha: 'base-commit' } } } } } as never;
+		const existing = { id: 'proposal-a',activeVersion: 2,metadata: { contentProvenance: { commitSha: 'base-commit',digest: 'base-digest' } } };
+		const updated = { ...existing,activeVersion: 3,metadata: { contentProvenance: { commitSha: 'revision-commit',digest: 'revision-digest' } } };
+		const store = { updateGovernanceProposalDraft: vi.fn(async () => updated),getGovernanceProposal: vi.fn(async () => updated) };
+		await expect(persistAssignmentProposalRevision({
+			store: store as never,assignment: revisionAssignment,existing,proposalId: 'proposal-a',digest: 'revision-digest',
+			contentProvenance: { commitSha: 'revision-commit',digest: 'revision-digest' },proposal: { title: 'Revision',summary: 'Summary',body: 'Body' },
+		})).resolves.toBe(updated);
+		expect(store.updateGovernanceProposalDraft).toHaveBeenCalledWith(expect.objectContaining({ id: 'engineer',type: 'agent' }),'proposal-a',expect.objectContaining({
+			expectedProposalVersion: 2,createdByType: 'agent',createdById: 'engineer',contentProvenance: expect.objectContaining({ digest: 'revision-digest' }),
+		}));
+		await expect(persistAssignmentProposalRevision({
+			store: store as never,assignment: revisionAssignment,existing: updated,proposalId: 'proposal-a',digest: 'revision-digest',
+			contentProvenance: { commitSha: 'revision-commit',digest: 'revision-digest' },proposal: {},
+		})).resolves.toBe(updated);
+		expect(store.updateGovernanceProposalDraft).toHaveBeenCalledTimes(1);
+	});
+
+	it('rejects a stale proposal revision without overwriting the current version',async () => {
+		const store = { updateGovernanceProposalDraft: vi.fn(),getGovernanceProposal: vi.fn() };
+		await expect(persistAssignmentProposalRevision({
+			store: store as never,
+			assignment: { ...assignment,decisionInput: { input: { intent: { relatedArtifact: { model: 'proposal',commitSha: 'stale-commit' } } } } } as never,
+			existing: { activeVersion: 4,metadata: { contentProvenance: { commitSha: 'current-commit',digest: 'current-digest' } } },
+			proposalId: 'proposal-a',digest: 'revision-digest',contentProvenance: { commitSha: 'revision-commit',digest: 'revision-digest' },proposal: {},
+		})).rejects.toMatchObject({ code: 'assignment_proposal_revision_stale',status: 409 });
+		expect(store.updateGovernanceProposalDraft).not.toHaveBeenCalled();
 	});
 });

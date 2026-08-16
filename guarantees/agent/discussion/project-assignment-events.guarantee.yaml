@@ -1,4 +1,4 @@
-schemaVersion: treeseed.guarantee/v1
+schemaVersion: treeseed.guarantee/v2
 id: guarantee.agent.discussion.project-assignment-events.745
 journeyIndex: 745
 type: agent
@@ -8,12 +8,17 @@ ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: Preserve receipt, lease, provider, mode-run, output, usage, settlement, failure, and recovery evidence as immutable Discussion events.
 status: planned
+capabilityId: agent.communication.event-message-separation
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.discussion-read, capacity.assignment], minimumRepositoryPostconditions: 0, outcomePredicates: { communication.event-message-separation: [event.append-only, event.message-separate, event.generic-assignment-no-message] } }
+outcomes: [{ id: communication.event-message-separation, kind: required, description: Assignment lifecycle evidence is append-only Discussion event content and no generic assignment event fabricates an agent-authored conversational message., evidenceKinds: [treedx_read_back, assignment_read_back], authoritativeSubjects: [discussionEvent, responseMessage, assignment] }]
 dependencies: { journeys: [744], guarantees: [guarantee.agent.discussion.persist-discussion-only-in-treedx.744] }
 actors: { allowed: [authenticated_user, capacity_operator], forbidden: [unauthorized_user] }
 devices: { required: [desktop_chromium], optional: [] }
 gates: [future]
 preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
-api: { required: true, verifierRefs: [] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
 content: { required: true, verifierRefs: [] }
 audit: { required: true, verifierRefs: [] }
 negativeCases: []

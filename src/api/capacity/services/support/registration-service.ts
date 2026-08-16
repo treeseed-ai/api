@@ -15,6 +15,7 @@ import { CapacityGovernanceRepository } from '../../repositories/governance/poli
 import { CapacityAuditRepository } from '../../repositories/support/audit.ts';
 import { CapacitySecretCodec,canonicalJson,capacityProviderFingerprint,sha256,verifyCapacityProviderProof } from '../../security.ts';
 import { settleCapacityReservationExactlyOnce } from '../capacity/accounting/settlement-service.ts';
+import { accessTokenValiditySeconds } from './access-token-validity.ts';
 
 function secretPrefix(value: string) {
 	const parts = value.split('_');
@@ -267,6 +268,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 	async issueAccessToken(input: {
 		credentialValue: string;
 		credentialId: string;
+		requestedValiditySeconds?: number;
 		proof: CapacityProviderSignedProof;
 		path: string;
 		idempotencyKey: string;
@@ -281,13 +283,14 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const identity = membership ? await this.identityRepository.byId(membership.providerId) : null;
 		if (!membership || !identity) throw new CapacityGovernanceError('provider_identity_not_found', 'Provider identity for the membership credential does not exist.', 404);
 		await this.assertTeamExists(membership.teamId);
+		const validitySeconds = accessTokenValiditySeconds(input.requestedValiditySeconds);
 		const verified = verifyCapacityProviderProof({
 			proof: input.proof,
 			publicJwk: identity.publicJwk,
 			method: 'POST',
 			path: input.path,
 			audience: this.audience,
-			body: { credentialId: input.credentialId, idempotencyKey: input.idempotencyKey },
+			body: { credentialId: input.credentialId, idempotencyKey: input.idempotencyKey, ...(input.requestedValiditySeconds === undefined ? {} : { requestedValiditySeconds: input.requestedValiditySeconds }) },
 		});
 		const issuedAt = nowIso();
 		if (!await this.repository.consumeProofNonce(verified.fingerprint, verified.payload.jti, verified.payload.expiresAt, issuedAt)) throw new CapacityGovernanceError('provider_proof_replayed', 'Provider proof has already been used.', 409);
@@ -299,11 +302,11 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 			if (replay.hash !== String(priorIssue.token_hash)) throw new CapacityGovernanceError('provider_access_token_replay_invalid', 'Access-token replay did not match durable token evidence.', 500, { accessTokenId: priorIssue.id });
 			return { id: String(priorIssue.id), teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, credentialId: input.credentialId, status: 'active', scopes: JSON.parse(String(priorIssue.scopes_json || '[]')) as ProviderAccessTokenIssue['scopes'], issuedAt: String(priorIssue.issued_at), expiresAt: String(priorIssue.expires_at), accessToken: replay.plaintext, identityVersion: identity.identityVersion };
 		}
-		const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+		const expiresAt = new Date(Date.parse(issuedAt) + validitySeconds * 1000).toISOString();
 		const id = randomUUID();
 		const issued = this.secrets.derive('access', `provider-access-token:${id}`);
 		await this.repository.createAccessToken({ id, credential: matched.metadata, idempotencyKey: input.idempotencyKey, prefix: issued.prefix, hash: issued.hash, issuedAt, expiresAt });
-		await this.auditRepository.record({ id: randomUUID(), teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: identity.fingerprint, action: 'provider-access-token.issued', resourceType: 'provider-access-token', resourceId: id, idempotencyKey: input.idempotencyKey, metadata: { credentialId: input.credentialId, expiresAt }, now: issuedAt });
+		await this.auditRepository.record({ id: randomUUID(), teamId: membership.teamId, providerId: membership.providerId, membershipId: membership.id, actorType: 'provider-identity', actorId: identity.fingerprint, action: 'provider-access-token.issued', resourceType: 'provider-access-token', resourceId: id, idempotencyKey: input.idempotencyKey, metadata: { credentialId: input.credentialId, expiresAt, validitySeconds }, now: issuedAt });
 		return { id, teamId: membership.teamId, providerId: membership.providerId, membershipId: matched.metadata.membershipId, credentialId: matched.metadata.id, status: 'active', scopes: matched.metadata.scopes, issuedAt, expiresAt, accessToken: issued.plaintext, identityVersion: identity.identityVersion };
 	}
 

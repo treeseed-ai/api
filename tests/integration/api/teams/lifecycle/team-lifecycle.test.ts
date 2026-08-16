@@ -22,6 +22,11 @@ describe('team lifecycle visibility', () => {
 		}));
 		const before = await app.request('/v1/teams/by-name/lifecycle-team/profile');
 		expect(before.status).toBe(200);
+		expect((await before.json()).payload.team.id).toBeUndefined();
+		const operatorProfile = await store.loadTeamProfileByName('lifecycle-team', {
+			id: 'local-acceptance-operator', roles: ['platform_admin'], permissions: ['*:*:*'],
+		});
+		expect(operatorProfile?.team.id).toBe(created.payload.id);
 		const archived = await json(await app.request(`/v1/teams/${created.payload.id}/archive`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json', authorization: `Bearer ${ownerToken}` },
@@ -107,7 +112,7 @@ describe('team lifecycle visibility', () => {
 		}));
 		expect(memberProfile).toMatchObject({
 			ok: true,
-			payload: { team: { name: 'private-profile-team' } },
+			payload: { team: { id: created.payload.id, name: 'private-profile-team' } },
 		});
 		expect(JSON.stringify(memberProfile.payload)).not.toMatch(/membership|email|role/iu);
 	});

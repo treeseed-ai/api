@@ -7,8 +7,13 @@ import { observeWorkflowRun, queueRun, serializeWorkflowOperation,
 	serializeWorkflowOperationRun } from '../../../../routes/projects/operations/workflow-operations.ts';
 import { modeRunActivityEvent } from '../../../services/capacity/workdays/content/mode-run-activity-event.ts';
 import { redactTranscriptValue } from '../../support/workday-activity.ts';
+import { filterWorkdayActivity } from '../../support/workday-activity.ts';
+import { agentActivityPageSchema,agentActivityQuerySchema } from '@treeseed/sdk/agent-capacity';
 import { assertProviderOwnsAssignment,assignmentActivityType,assignmentRecord as record,providerAssignmentErrorResponse as errorResponse,type ProviderAssignmentStore } from './provider-assignment-route-support.ts';
 import { installProviderAssignmentSignalRoutes } from './provider-assignment-signals.ts';
+import { installProviderAssignmentDiscussionRoutes } from './provider-assignment-discussions.ts';
+import { startAssignmentCloseoutWindow,startAssignmentExecutionWindow } from '../../../services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
+import { reconcileBlockedDiscussionInvocations } from '../../../services/capacity/invocations/discussion-invocation-service.ts';
 
 function providerEventInput(assignment: Record<string, unknown>, body: Record<string, unknown>) {
 	const id = typeof body.id === 'string' ? body.id.trim() : '';
@@ -59,17 +64,35 @@ function assertAssignmentWorkflowDispatch(assignment: Record<string, unknown>, p
 	return handle;
 }
 
-export function installProviderAssignmentRoutes(app: Hono, options: { store: CapacityGovernanceDatabase }) {
+async function leaseNextAssignment(c: Context,store: ProviderAssignmentStore,sessionEvents?: { subscribe(teamId:string,listener:(event:{eventType:string;payload:Record<string,unknown>})=>void):Promise<()=>void> }) {
+	try {
+		const principal = requireProviderPrincipal(c, ['provider:assignments:read']);
+		const body = await readCapacityRequestObject(c, { optional: true });
+		await reconcileBlockedDiscussionInvocations(store,principal.teamId);
+		const waitMs=Math.max(0,Math.min(30,Number(body.waitSeconds)||0))*1000; const deadline=Date.now()+waitMs;
+		let wake: (()=>void)|null=null; let unsubscribe:(()=>void)|null=null;
+		let result=await store.leaseNextProviderAssignment(principal,body);
+		try{
+			if(!result.assignment&&waitMs>0&&sessionEvents)unsubscribe=await sessionEvents.subscribe(principal.teamId,(event)=>{
+				if(event.eventType!=='capacity.assignment.available')return;
+				const requestedPurpose=typeof body.lanePurpose==='string'?body.lanePurpose:null;
+				if(requestedPurpose&&event.payload.lanePurpose&&event.payload.lanePurpose!==requestedPurpose)return;
+				wake?.();
+			});
+			if(!result.assignment&&unsubscribe)result=await store.leaseNextProviderAssignment(principal,body);
+			while(!result.assignment&&Date.now()<deadline&&!c.req.raw.signal.aborted){
+				await new Promise<void>((resolve)=>{wake=resolve;setTimeout(resolve,Math.min(250,Math.max(1,deadline-Date.now())));});wake=null;
+				result=await store.leaseNextProviderAssignment(principal,body);
+			}
+		}finally{unsubscribe?.();}
+		return c.json({ ok: true, payload: result.assignment, assignment: result.assignment, leaseToken: result.leaseToken, leaseSeconds: result.leaseSeconds, diagnostics: result.diagnostics ?? null, leaseDiagnostics: result.diagnostics ?? null });
+	} catch (error) { return errorResponse(c, error); }
+}
+
+export function installProviderAssignmentRoutes(app: Hono, options: { store: CapacityGovernanceDatabase; sessionEvents?: { subscribe(teamId:string,listener:(event:{eventType:string;payload:Record<string,unknown>})=>void):Promise<()=>void> } }) {
 	const store = options.store as ProviderAssignmentStore;
 
-	app.post('/v1/provider/assignments/next', async (c) => {
-		try {
-			const principal = requireProviderPrincipal(c, ['provider:assignments:read']);
-			const body = await readCapacityRequestObject(c, { optional: true });
-			const result = await store.leaseNextProviderAssignment(principal, body);
-			return c.json({ ok: true, payload: result.assignment, assignment: result.assignment, leaseToken: result.leaseToken, leaseSeconds: result.leaseSeconds, diagnostics: result.diagnostics ?? null, leaseDiagnostics: result.diagnostics ?? null });
-		} catch (error) { return errorResponse(c, error); }
-	});
+	app.post('/v1/provider/assignments/next', (c) => leaseNextAssignment(c,store,options.sessionEvents));
 
 	app.get('/v1/provider/assignments/:assignmentId', async (c) => {
 		try {
@@ -87,6 +110,20 @@ export function installProviderAssignmentRoutes(app: Hono, options: { store: Cap
 		} catch (error) { return errorResponse(c, error); }
 	});
 
+	app.get('/v1/provider/assignments/:assignmentId/activity', async (c) => {
+		try {
+			const principal = requireProviderPrincipal(c, ['provider:assignments:read']);
+			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(principal.teamId, c.req.param('assignmentId')), principal, 'inspect activity for');
+			const workdayRunId = record(assignment.metadata).workdayRunId;
+			if (typeof workdayRunId !== 'string' || !workdayRunId) throw new CapacityGovernanceError('provider_assignment_workday_required', 'Assignment activity requires a durable workday.', 409);
+			const query = agentActivityQuerySchema.safeParse({ after: c.req.query('after') ?? undefined, limit: c.req.query('limit') ?? undefined, type: c.req.query('type') ?? undefined, severity: c.req.query('severity') ?? undefined });
+			if (!query.success) throw new CapacityGovernanceError('provider_assignment_activity_query_invalid', 'Assignment activity query is invalid.', 400, { diagnostics: query.error.issues });
+			const events = await store.listCapacityWorkdayEventsPage(principal.teamId, workdayRunId, { limit: 200, cursor: null, afterEventIndex: query.data.after });
+			const items = filterWorkdayActivity(events.items as never[], query.data).filter((event) => event.assignmentId === assignment.id).slice(0, query.data.limit);
+			return c.json({ ok: true, payload: agentActivityPageSchema.parse({ items, cursor: items.at(-1)?.sequence ?? query.data.after }) });
+		} catch (error) { return errorResponse(c, error); }
+	});
+
 	const lifecycle = (scope: string, method: 'renewProviderAssignmentLease' | 'returnProviderAssignment' | 'completeProviderAssignment') => async (c: Context) => {
 		try {
 			const principal = requireProviderPrincipal(c, [scope]);
@@ -97,7 +134,19 @@ export function installProviderAssignmentRoutes(app: Hono, options: { store: Cap
 		} catch (error) { return errorResponse(c, error); }
 	};
 	app.post('/v1/provider/assignments/:assignmentId/renew', lifecycle('provider:assignments:read', 'renewProviderAssignmentLease'));
+	app.post('/v1/provider/assignments/:assignmentId/execution-start',async(c)=>{
+		try { const principal=requireProviderPrincipal(c,['provider:assignments:write']); const body=await readCapacityRequestObject(c); const assignment=await startAssignmentExecutionWindow(store,principal,c.req.param('assignmentId'),body); return c.json({ok:true,payload:assignment}); }
+		catch(error){ return errorResponse(c,error); }
+	});
+	app.post('/v1/provider/assignments/:assignmentId/closeout-start',async(c)=>{
+		try { const principal=requireProviderPrincipal(c,['provider:assignments:write']); const body=await readCapacityRequestObject(c); const assignment=await startAssignmentCloseoutWindow(store,principal,c.req.param('assignmentId'),body); return c.json({ok:true,payload:assignment}); }
+		catch(error){ return errorResponse(c,error); }
+	});
 	app.post('/v1/provider/assignments/:assignmentId/return', lifecycle('provider:assignments:write', 'returnProviderAssignment'));
+	app.post('/v1/provider/assignments/:assignmentId/completion-preflight',async(c)=>{
+		try{const principal=requireProviderPrincipal(c,['provider:assignments:write']);const body=await readCapacityRequestObject(c);const result=await store.preflightProviderAssignmentCompletion(principal,c.req.param('assignmentId'),body);return c.json({ok:true,payload:result});}
+		catch(error){return errorResponse(c,error);}
+	});
 	app.post('/v1/provider/assignments/:assignmentId/complete', lifecycle('provider:assignments:write', 'completeProviderAssignment'));
 
 	app.post('/v1/provider/assignments/:assignmentId/fail', async (c) => {
@@ -141,6 +190,7 @@ export function installProviderAssignmentRoutes(app: Hono, options: { store: Cap
 	});
 
 	installProviderAssignmentSignalRoutes(app, store);
+	installProviderAssignmentDiscussionRoutes(app, store);
 
 	app.post('/v1/provider/assignments/:assignmentId/workflow-operations/:operationId/dispatch', async (c) => {
 		try {

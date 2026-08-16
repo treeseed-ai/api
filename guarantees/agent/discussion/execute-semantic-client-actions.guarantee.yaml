@@ -1,0 +1,25 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.execute-semantic-client-actions.936
+journeyIndex: 936
+type: agent
+subtype: discussion
+journey: Execute bounded semantic client actions
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Authenticated user/project sessions execute only TTL-bounded semantic actions and report unavailable clients without blocking agents.
+status: planned
+capabilityId: agent.communication.semantic-client-actions
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.assignment], minimumRepositoryPostconditions: 0, outcomePredicates: { communication.client-action: [client.scope, client.semantic-only, client.result, client.unavailable] } }
+outcomes: [{ id: communication.client-action, kind: required, description: Session and action read-back proves user/project scope, semantic vocabulary, expiry, result, and nonblocking unavailability., evidenceKinds: [client_session_read_back, client_action_read_back], authoritativeSubjects: [clientSession, clientAction] }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.admit-after-treedx-readback.931] }
+actors: { allowed: [authenticated_user, capacity_operator], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: false, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

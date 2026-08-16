@@ -41,6 +41,7 @@ export class StructuredAgentEstimateService {
 		const expected = Number(input.expectedSeconds ?? input.minSeconds ?? 0);
 		const maximum = Number(input.maxSeconds ?? input.expectedSeconds ?? input.minSeconds ?? 0);
 		const estimate: StructuredAgentEstimateRecord = {
+			schemaVersion: input.schemaVersion === 3 ? 3 : input.schemaVersion === 2 ? 2 : 1,
 			id: text(input.id) || randomUUID(), teamId: project.teamId, projectId: project.id, decisionId,
 			proposalId: text(input.proposalId) || null, workUnitId: text(input.workUnitId) || null,
 			agentClass: text(input.agentClass ?? input.projectAgentClassSlug ?? input.projectAgentClassId), agentId: text(input.agentId) || null,
@@ -48,6 +49,13 @@ export class StructuredAgentEstimateService {
 			confidence: (input.confidence ?? 'medium') as StructuredAgentEstimateRecord['confidence'], riskLevel: (input.riskLevel ?? 'medium') as StructuredAgentEstimateRecord['riskLevel'],
 			assumptions: strings(input.assumptions), blockers: strings(input.blockers), dependencies: array(input.dependencies) as StructuredAgentEstimateRecord['dependencies'],
 			expectedOutputs: array(input.expectedOutputs) as StructuredAgentEstimateRecord['expectedOutputs'], acceptanceCriteria: strings(input.acceptanceCriteria), completionEvidence: strings(input.completionEvidence),
+			workBreakdown: input.workBreakdown as StructuredAgentEstimateRecord['workBreakdown'],
+			groupSnapshot: input.groupSnapshot as StructuredAgentEstimateRecord['groupSnapshot'],
+			proposalRevision: input.proposalRevision as StructuredAgentEstimateRecord['proposalRevision'],
+			decisionRevision: input.decisionRevision as StructuredAgentEstimateRecord['decisionRevision'],
+			providerNativeRanges: array(input.providerNativeRanges) as StructuredAgentEstimateRecord['providerNativeRanges'],
+			requiredProviderCapabilities: strings(input.requiredProviderCapabilities), acceptableProviderClasses: strings(input.acceptableProviderClasses),
+			agentDefinitionRevision: input.agentDefinitionRevision as StructuredAgentEstimateRecord['agentDefinitionRevision'],
 			createdAt: text(input.createdAt) || now, metadata: record(input.metadata), status,
 			acceptedAt: status === 'accepted' ? now : null, rejectedAt: status === 'rejected' ? now : null,
 		};

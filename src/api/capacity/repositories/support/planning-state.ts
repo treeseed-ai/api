@@ -59,6 +59,12 @@ export function serializePlanningInputRequestRow(row: Row | null): PlanningInput
 	const id = text(row.id);
 	const mode = text(row.mode);
 	if (mode !== 'planning' && mode !== 'acting') throw new CapacityGovernanceError('planning_input_mode_invalid', `Planning input request ${id} has invalid mode.`, 500, { id });
+	const invocationStatus = text(row.status);
+	const status = invocationStatus === 'queued' ? 'requested'
+		: invocationStatus === 'completed' ? 'complete'
+		: invocationStatus === 'cancelled' ? 'waived'
+		: invocationStatus === 'failed' ? 'rejected'
+		: invocationStatus;
 	return {
 		id,
 		teamId: required(row, id, 'teamId', 'team_id'),
@@ -66,7 +72,7 @@ export function serializePlanningInputRequestRow(row: Row | null): PlanningInput
 		decisionId: required(row, id, 'decisionId', 'decision_id'),
 		projectAgentClassId: nullableText(row.project_agent_class_id),
 		mode,
-		status: enumValue(row.status, PLANNING_STATUSES, 'planning_input_status_invalid'),
+		status: enumValue(status, PLANNING_STATUSES, 'planning_input_status_invalid'),
 		scopeHash: required(row, id, 'scopeHash', 'scope_hash'),
 		prompt: nullableText(row.prompt),
 		response: object(row, id, 'response_json'),
@@ -141,13 +147,19 @@ export class PlanningStateRepository {
 
 	async createPlanningRequest(request: PlanningInputRequest, planning: DecisionPlanningStatus) {
 		await this.database.ensureInitialized();
+		const status = request.status === 'requested' ? 'queued'
+			: request.status === 'complete' ? 'completed'
+			: request.status === 'waived' ? 'cancelled'
+			: request.status === 'rejected' ? 'failed'
+			: request.status;
 		await this.database.batch([
 			decisionPlanningStatusOperation(planning),
 			{
-				query: `INSERT INTO planning_input_requests (
-					id, team_id, project_id, decision_id, project_agent_class_id, mode, status, scope_hash,
-					prompt, response_json, metadata_json, requested_at, completed_at, stale_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				query: `INSERT INTO agent_invocation_requests (
+					id, team_id, project_id, decision_id, project_agent_class_id, mode, execution_kind,
+					trigger_kind, status, scope_hash, prompt, content_refs_json, priority_class, available_at,
+					idempotency_key, request_digest, response_json, metadata_json, requested_at, completed_at, stale_at
+				) VALUES (?, ?, ?, ?, ?, ?, 'workday', 'manual', ?, ?, ?, '[]', 'operational', ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (id) DO UPDATE SET
 					team_id = EXCLUDED.team_id, project_id = EXCLUDED.project_id, decision_id = EXCLUDED.decision_id,
 					project_agent_class_id = EXCLUDED.project_agent_class_id, mode = EXCLUDED.mode, status = EXCLUDED.status,
@@ -155,7 +167,8 @@ export class PlanningStateRepository {
 					metadata_json = EXCLUDED.metadata_json, completed_at = EXCLUDED.completed_at, stale_at = EXCLUDED.stale_at`,
 				params: [
 					request.id, request.teamId, request.projectId, request.decisionId, request.projectAgentClassId ?? null,
-					request.mode, request.status, request.scopeHash, request.prompt ?? null, JSON.stringify(request.response ?? {}),
+					request.mode, status, request.scopeHash, request.prompt ?? null, request.requestedAt, request.id,
+					request.scopeHash, JSON.stringify(request.response ?? {}),
 					JSON.stringify(request.metadata ?? {}), request.requestedAt, request.completedAt ?? null, request.staleAt ?? null,
 				],
 			},
@@ -164,12 +177,12 @@ export class PlanningStateRepository {
 	}
 
 	async getPlanningRequest(id: string) {
-		return serializePlanningInputRequestRow(await this.database.first(`SELECT * FROM planning_input_requests WHERE id = ? LIMIT 1`, [id]));
+		return serializePlanningInputRequestRow(await this.database.first(`SELECT * FROM agent_invocation_requests WHERE id = ? AND execution_kind = 'workday' LIMIT 1`, [id]));
 	}
 
 	async listPlanningRequests(decisionId: string) {
 		await this.database.ensureInitialized();
-		const rows = await this.database.all(`SELECT * FROM planning_input_requests WHERE decision_id = ? ORDER BY requested_at DESC, id DESC LIMIT 200`, [decisionId]);
+		const rows = await this.database.all(`SELECT * FROM agent_invocation_requests WHERE decision_id = ? AND execution_kind = 'workday' ORDER BY requested_at DESC, id DESC LIMIT 200`, [decisionId]);
 		return rows.map((row) => serializePlanningInputRequestRow(row) as PlanningInputRequest);
 	}
 

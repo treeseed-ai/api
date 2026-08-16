@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
-import type { AgentAtlasActivityItem, AgentAtlasAssignmentSummary, AgentAtlasDelta, AgentAtlasEventCategory, AgentAtlasNodeState, AgentAtlasProjection, AgentAtlasReplayCursor, AgentAtlasScope, AgentAtlasSizingMetric, AgentAtlasTopologySnapshot } from "@treeseed/sdk/agent-capacity";
+import type { AgentAtlasActivityItem, AgentAtlasAssignmentSummary, AgentAtlasDelta, AgentAtlasNodeState, AgentAtlasProjection, AgentAtlasReplayCursor, AgentAtlasScope, AgentAtlasSizingMetric, AgentAtlasTopologySnapshot } from "@treeseed/sdk/agent-capacity";
 import { agentAtlasSizingMetrics } from "@treeseed/sdk/agent-capacity";
 import { compileWorkdayAtlasTopology } from "../workdays/policy/workday-atlas-topology-policy.ts";
 import { compileWorkdayPlanningGraphSnapshot, type WorkdayPlanningGraphSnapshot } from "../workdays/policy/workday-planning-graph-policy.ts";
+import { projectAgentAtlasActivity } from "./atlas/activity-projection.ts";
+import { projectAgentAtlasWorkdaySummary } from "./atlas/workday-summary.ts";
 
 type Row = Record<string, unknown>;
-type Snapshot = { overview: { revision: string; generatedAt: string; timeZone: string; team?: { id: string }; operatingDay: { start: string; end: string }; workdayContext: { selectedDate: string; selectedWorkdayId: string | null } }; rows: { projects: Row[]; classes: Row[]; workdays: Row[]; events: Row[]; assignments: Row[]; executions: Row[]; demands: Row[]; usage: Row[]; ledger: Row[] } };
+type Snapshot = { overview: { revision: string; generatedAt: string; timeZone: string; team?: { id: string }; operatingDay: { start: string; end: string }; workdayContext: { selectedDate: string; selectedWorkdayId: string | null } }; rows: { projects: Row[]; classes: Row[]; workdays: Row[]; events: Row[]; eventTotal?: number; assignments: Row[]; executions: Row[]; demands: Row[]; usage: Row[]; ledger: Row[] } };
 
 function record(value: unknown): Row {
   if (value && typeof value === "object" && !Array.isArray(value))
@@ -21,64 +23,15 @@ function record(value: unknown): Row {
 function text(...values: unknown[]) { return String(values.find((value) => typeof value === "string" && value) ?? ""); }
 function number(value: unknown) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function iso(value: unknown, fallback: string) { const parsed = Date.parse(String(value ?? "")); return Number.isFinite(parsed) ? new Date(parsed).toISOString() : fallback; }
-function array(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
-
-function category(eventType: string): AgentAtlasEventCategory {
-  const value = eventType.toLowerCase();
-  if (value.includes("question")) return "question";
-  if (value.includes("proposal")) return "proposal";
-  if (value.includes("estimate")) return "estimate";
-  if (value.includes("assignment")) return "assignment";
-  if (value.includes("artifact") || value.includes("content")) return "artifact";
-  if (value.includes("signal")) return "signal";
-  if (value.includes("tool")) return "tool";
-  if (value.includes("usage") || value.includes("settle") || value.includes("ledger")) return "usage";
-  if (value.includes("message") || value.includes("discussion")) return "message";
-  if (value.includes("note")) return "note";
-  if (value.includes("fail") || value.includes("error") || value.includes("blocked")) return "failure";
-  return "execution";
-}
-
-function eventActivity(row: Row): AgentAtlasActivityItem {
-  const context = record(row.context_json ?? row.context);
-  const refs = record(row.refs_json ?? row.refs);
-  const metadata = record(row.metadata_json ?? row.metadata);
-  const eventType = text(row.event_type, row.eventType, "event");
-  const status = text(row.status);
-  return {
-    id: text(row.id),
-    workdayId: text(row.run_id, row.runId),
-    sequence: number(row.event_index ?? row.eventIndex),
-    timestamp: iso(row.created_at ?? row.createdAt, new Date(0).toISOString()),
-    category: category(eventType),
-    direction:
-      eventType.includes("requested") || eventType.includes("received")
-        ? "input"
-        : eventType.includes("published") || eventType.includes("completed")
-          ? "output"
-          : "internal",
-    severity: ["failed", "error"].includes(status)
-      ? "error"
-      : status === "warning"
-        ? "warning"
-        : "info",
-    summary: text(row.message, row.title, eventType),
-    projectId: text(row.project_id, row.projectId) || null,
-    agentId: text(context.agentId) || null,
-    activityProfile: text(context.activityType) || null,
-    signalContractId:
-      text(context.signalContractId, metadata.contractId) || null,
-    assignmentId: text(row.assignment_id, row.assignmentId) || null,
-    artifactRefs: array(refs.artifacts).map(record),
-    metadata: { eventType, ...metadata },
-  };
-}
 
 function runTopologies(snapshot: Snapshot): AgentAtlasTopologySnapshot[] {
   const projects = new Map(
     snapshot.rows.projects.map((project) => [text(project.id), project]),
   );
-  const frozen = snapshot.rows.workdays.flatMap((run) => {
+  const frozenRuns = snapshot.overview.workdayContext.selectedWorkdayId
+    ? snapshot.rows.workdays
+    : snapshot.rows.workdays.filter((run) => text(run.status) === "running");
+  const frozen = frozenRuns.flatMap((run) => {
     const parameters = record(run.parameters_json);
     const stored = record(parameters.atlasTopologyByProjectId);
     if (Object.keys(stored).length)
@@ -390,7 +343,7 @@ export class AgentAtlasProjectionService {
     } = {},
   ): AgentAtlasProjection {
     const allActivity = snapshot.rows.events
-      .map(eventActivity)
+      .map(projectAgentAtlasActivity)
       .sort(
         (left, right) =>
           left.timestamp.localeCompare(right.timestamp) ||
@@ -431,8 +384,15 @@ export class AgentAtlasProjectionService {
       sizingMetric,
     };
     const replayCursor = cursor(activity, observedAt);
+    const historical = observedAt < snapshot.overview.generatedAt;
     const revision = createHash("sha256")
-      .update(`${snapshot.overview.revision}:${replayCursor.cursor}`)
+      .update(
+        JSON.stringify([
+          snapshot.overview.revision,
+          replayCursor.positions,
+          historical ? observedAt : "live",
+        ]),
+      )
       .digest("hex")
       .slice(0, 24);
     return {
@@ -450,9 +410,19 @@ export class AgentAtlasProjectionService {
       ),
       assignments,
       activity,
+      workdaySummary: projectAgentAtlasWorkdaySummary({
+        selectedWorkdayId: snapshot.overview.workdayContext.selectedWorkdayId,
+        workdays: snapshot.rows.workdays,
+        assignments: snapshot.rows.assignments,
+        eventTotal: number(snapshot.rows.eventTotal),
+      }),
+      activityWindow: {
+        total: number(snapshot.rows.eventTotal),
+        loaded: activity.length,
+        truncated: number(snapshot.rows.eventTotal) > activity.length,
+      },
       playback: {
-        mode:
-          observedAt < snapshot.overview.generatedAt ? "historical" : "live",
+        mode: historical ? "historical" : "live",
         startedAt: snapshot.overview.operatingDay.start,
         endedAt: snapshot.overview.operatingDay.end,
         liveEdgeAt: snapshot.overview.generatedAt,

@@ -105,8 +105,11 @@ export function installTreeDxProxyRoutes(app: Hono, options: TreeDxProxyRouteOpt
 			const projectId = c.req.param('projectId'); const repoId = c.req.param('repoId');
 			assertRepository(await store.getProjectTreeDxLibrary(projectId), repoId);
 			const body = await readCapacityRequestObject(c, { optional: true });
-			const pathInput = Array.isArray(body.paths) && body.paths.length ? body.paths : typeof body.path === 'string' && body.path.trim() ? treeDxPathScope(body.path) : ['**'];
-			const capabilities = operation === 'context/build' ? ['files:read', 'files:search', 'graph:query'] : ['files:read'];
+			const declaredPaths = Array.isArray(body.scopePaths) && body.scopePaths.length ? body.scopePaths : body.paths;
+			const pathInput = Array.isArray(declaredPaths) && declaredPaths.length
+				? declaredPaths.flatMap(treeDxPathScope)
+				: typeof body.path === 'string' && body.path.trim() ? treeDxPathScope(body.path) : ['**'];
+			const capabilities = operation === 'context/build' ? ['files:read', 'files:search', 'git:read', 'graph:query', 'graph:refresh'] : ['files:read'];
 			return await execute({ c, projectId, permission: 'projects:read:team', method: 'POST', path: `/api/v1/repos/${encodeURIComponent(repoId)}/${operation}`, body: operation === 'context/build' ? treeDxRepoScopedContextBody(body, repoId) : body, tokenScope: treeDxTokenScope({ repoId, capabilities, paths: pathInput }) });
 		} catch (error) { return errorResponse(c, error); }
 	};

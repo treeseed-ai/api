@@ -36,20 +36,28 @@ export async function maintainCapacityWorkdayRuns(store: WorkdayRecoveryStore, t
 		const runs = await repository.listRunning(teamId, cursor);
 		for (const run of runs) {
 			const timing = deadline(run); if (!Number.isFinite(timing.deadlineMs) || timing.deadlineMs > nowMs) continue;
-			const admissionClosure = await store.closeCapacityWorkdayAdmission(run.teamId, run.id);
-			await store.createCapacityWorkdayEvent(run.teamId, run.id, {
-				id: `workday-deadline-admission:${run.id}`, eventType: 'workday.deadline_admission_closed', status: 'warning',
+			await store.closeCapacityWorkdayAdmission(run.teamId, run.id);
+			const admissionEventId = `workday-deadline-admission:${run.id}`;
+			const existingAdmissionEvent = await store.first(
+				`SELECT id FROM capacity_workday_events WHERE id = ? AND run_id = ? AND team_id = ? LIMIT 1`,
+				[admissionEventId, run.id, run.teamId],
+			);
+			if (!existingAdmissionEvent) await store.createCapacityWorkdayEvent(run.teamId, run.id, {
+				id: admissionEventId, eventType: 'workday.deadline_admission_closed', status: 'warning',
 				title: 'Workday deadline stopped new assignment admission',
-				context: { deadlineAt: timing.deadlineAt, settlementGraceSeconds: timing.settlementGraceSeconds, closedEnvelopes: admissionClosure.closed },
+				context: { deadlineAt: timing.deadlineAt, settlementGraceSeconds: timing.settlementGraceSeconds },
 			});
 			if (timing.staleAtMs > nowMs) continue;
 			const terminalization = await store.terminalizeCapacityWorkdayAssignments(run.teamId, run.id, { now, settlementKeyPrefix: 'workday-deadline', source: 'capacity_workday_deadline_terminalization',
 				code: 'workday_deadline_elapsed', reason: 'Workday deadline elapsed before this assignment reached a terminal state.',
+				demandStatus:'cancelled',
 				preserveActiveLeasesUntil: new Date(timing.staleAtMs).toISOString(),
 				metadata: { deadlineAt: timing.deadlineAt, deadlineSource: 'configured', settlementGraceSeconds: timing.settlementGraceSeconds, expiredAt: now } });
 			const evidence = await repository.modeRunEvidence(run.teamId, run.id);
 			const terminalStatus = terminalization.assignmentCount > 0 && terminalization.unfinishedAssignmentCount === 0 && terminalization.failedAssignments === 0
-				&& evidence.failedModeRuns === 0 && evidence.succeededModeRuns > 0 && evidence.contentArtifactCount > 0 && terminalization.settlementErrorCount === 0 ? 'completed' : 'degraded';
+				&& evidence.failedModeRuns === 0 && evidence.succeededModeRuns > 0 && evidence.contentArtifactCount > 0
+				&& evidence.unresolvedContentOutcomeAssignments === 0 && evidence.abandonedContentOutcomeAssignments === 0
+				&& terminalization.settlementErrorCount === 0 ? 'completed' : 'degraded';
 			const actual = { assignmentCount: terminalization.assignmentCount, completedAssignments: terminalization.completedAssignments,
 				failedAssignments: terminalization.failedAssignments + terminalization.unfinishedAssignmentCount, ...evidence,
 				deferredActiveAssignmentCount: terminalization.deferredActiveAssignmentCount,
@@ -74,14 +82,15 @@ export async function maintainCapacityWorkdayRuns(store: WorkdayRecoveryStore, t
 		const terminalRuns = await repository.listTerminal(teamId, terminalCursor); if (!terminalRuns.length) break;
 		for (const terminalRun of terminalRuns) {
 			const candidate = await repository.recoveryState(terminalRun);
-			if (!candidate.hasUnfinishedAssignments && !candidate.hasOpenEnvelopes && !candidate.missingDeadlineEvent) continue;
+			if (!candidate.hasUnfinishedAssignments && !candidate.hasActiveDemands && !candidate.hasOpenEnvelopes && !candidate.missingDeadlineEvent) continue;
 			const { run } = candidate;
 			const terminalization = await store.terminalizeCapacityWorkdayAssignments(run.teamId, run.id, { now, settlementKeyPrefix: 'workday-terminal-recovery', source: 'capacity_workday_terminal_recovery',
 				code: `workday_${run.status}_recovered`, reason: `Recovered unfinished assignment state from terminal workday ${run.id}.`,
+				demandStatus:'cancelled',
 				preserveActiveLeasesUntil: terminalGraceUntil(run), metadata: { status: run.status, recovery: true } });
 			await store.terminalizeCapacityWorkdayEnvelopes(run.teamId, run.id, terminalEnvelopeStatus(run.status));
 			if (candidate.missingDeadlineEvent) await store.createCapacityWorkdayEvent(run.teamId, run.id, eventInput(run, run.actual));
-			if (candidate.hasUnfinishedAssignments || candidate.hasOpenEnvelopes || candidate.missingDeadlineEvent || terminalization.unfinishedAssignmentCount > 0) recoveredTerminalRuns += 1;
+			if (candidate.hasUnfinishedAssignments || candidate.hasActiveDemands || candidate.hasOpenEnvelopes || candidate.missingDeadlineEvent || terminalization.unfinishedAssignmentCount > 0) recoveredTerminalRuns += 1;
 		}
 		if (terminalRuns.length < MAX_CAPACITY_PAGE_LIMIT) break;
 		terminalCursor = terminalRuns.at(-1)!.id;

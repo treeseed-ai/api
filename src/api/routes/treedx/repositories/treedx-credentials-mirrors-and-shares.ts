@@ -1,5 +1,6 @@
 import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { resolveGitHubCredentialAuthority } from '../../../../security/provider-credential-authority.ts';
+import { prepareTreeDxCredentialDelivery } from './treedx-credential-delivery-preparation.ts';
 
 function sameSecret(left: string, right: string) {
 	const a = Buffer.from(left);
@@ -38,7 +39,22 @@ export function sealCredential(nodePublicKey: string, credential: Record<string,
 }
 
 export function installTreedxCredentialsMirrorsAndSharesRoutes(context: any) {
-	const { app, jsonError, requireTeamAccess, store, runtime } = context;
+	const { app, jsonError, requirePlatformRunner, requireTeamAccess, store, runtime } = context;
+	app.post('/v1/internal/treedx/credential-deliveries/prepare', async (c: any) => {
+		const access = await requirePlatformRunner(c, runtime.resolved.config);
+		if (access.response) return access.response;
+		try {
+			const payload = await prepareTreeDxCredentialDelivery({
+				store, body: await c.req.json().catch(() => ({})), env: process.env,
+				fetchImpl: runtime?.resolved?.config?.fetchImpl,
+			});
+			c.header('cache-control', 'private, no-store');
+			return c.json({ ok: true, payload });
+		} catch (error: any) {
+			return jsonError(c, error?.status ?? 500, error instanceof Error ? error.message : 'Credential delivery preparation failed.',
+				{ code: error?.code ?? 'credential_delivery_preparation_failed' });
+		}
+	});
 	app.post('/v1/internal/credential-deliveries/consume', async (c: any) => {
 		const expected = String(runtime?.resolved?.config?.TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION
 			?? process.env.TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION ?? '');

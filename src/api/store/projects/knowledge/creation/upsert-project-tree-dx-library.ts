@@ -1,5 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,MarketControlPlaneStore,objectValue,serializeTreeDxInstance } from "../../../../persistence/store.ts";
+
+export function mergeRepositoryTopologyMetadata(existing: unknown, requested: unknown) {
+    const current = objectValue(existing, {});
+    const update = objectValue(requested, {});
+    const mergePlane = (name: 'contentRepository' | 'siteRepository' | 'projectRepository') => ({
+        ...objectValue(current[name], {}),
+        ...objectValue(update[name], {}),
+    });
+    return {
+        ...current,
+        ...update,
+        contentRepository: mergePlane('contentRepository'),
+        siteRepository: mergePlane('siteRepository'),
+        projectRepository: mergePlane('projectRepository'),
+    };
+}
+
 export async function upsertProjectTreeDxLibraryMethod(this: MarketControlPlaneStore, projectId, input: any = {}) {
     await this.ensureInitialized();
     const project = await this.getProject(projectId);
@@ -35,7 +52,7 @@ export async function upsertProjectTreeDxLibraryMethod(this: MarketControlPlaneS
         },
         softwareRepository,
         workspaceLink: null,
-        metadata: objectValue(input.topology, {}),
+        metadata: mergeRepositoryTopologyMetadata(existing?.topology, input.topology),
     });
     if (existing) {
         await this.run(`UPDATE treedx_project_libraries

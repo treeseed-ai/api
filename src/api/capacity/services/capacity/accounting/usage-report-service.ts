@@ -73,14 +73,16 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 	return {
 		query: `INSERT INTO capacity_usage_actuals (
 			id, idempotency_key, task_id, work_day_id, project_id, task_signature, execution_profile_id, assignment_id, assignment_attempt, usage_dimension, accounting_mode, mode_run_id, mode,
-			capacity_provider_id, execution_provider_id, lane_id, business_model, model_name, input_tokens, output_tokens,
+			capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind,
+			invocation_id, parent_workday_id, parent_assignment_id, handoff_root_id, handoff_parent_id, handoff_depth,
+			source_message_refs_json, operation_handoff_id, business_model, model_name, input_tokens, output_tokens,
 			cached_input_tokens, reasoning_tokens, quota_minutes, wall_minutes, files_opened, files_changed, diff_lines_added,
 			diff_lines_removed, test_runs, retry_count, active_seconds, elapsed_seconds, actual_usd,
 			native_usage_json, metadata_json, created_at
-		) SELECT ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL),
-			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER),
-			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), ?, ?, ?
+		) SELECT ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?,
+			?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER),
+			CAST(? AS REAL), CAST(? AS REAL), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER),
+			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), ?, ?, ?
 		  WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND ${guard.column} = ?)
 		  ON CONFLICT (id) DO NOTHING`,
 		params: [identity.id, identity.idempotencyKey, reservation.task_id ?? null, reservation.work_day_id ?? null, reservation.project_id,
@@ -88,6 +90,10 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 			usage.executionProfileId ?? 'standard-code-model', input.assignmentId, identity.assignmentAttempt, identity.usageDimension, accountingMode,
 			input.modeRunId ?? null, reservation.mode ?? null, reservation.capacity_provider_id,
 			usage.executionProviderId ?? reservation.execution_provider_id ?? null, reservation.lane_id ?? null,
+			reservation.lane_purpose ?? null, reservation.communication_overflow ?? 0, reservation.execution_kind ?? 'workday',
+			reservation.trigger_kind ?? 'scheduled', reservation.invocation_id ?? null, reservation.parent_workday_id ?? null,
+			reservation.parent_assignment_id ?? null, reservation.handoff_root_id ?? null, reservation.handoff_parent_id ?? null,
+			reservation.handoff_depth ?? 0, reservation.source_message_refs_json ?? '[]', reservation.operation_handoff_id ?? null,
 			usage.businessModel ?? 'provider-native', usage.modelName ?? null, usage.inputTokens ?? null, usage.outputTokens ?? null,
 			usage.cachedInputTokens ?? null, usage.reasoningTokens ?? null, usage.quotaMinutes ?? null, usage.wallMinutes ?? null, usage.filesOpened ?? null,
 			usage.filesChanged ?? null, usage.diffLinesAdded ?? null, usage.diffLinesRemoved ?? null, usage.testRuns ?? null,
@@ -100,7 +106,7 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 export async function reportCapacityUsage(database: CapacityGovernanceDatabase, input: CapacityUsageReportRequest) {
 	await database.ensureInitialized();
 	if (input.accountingMode === 'aggregate') throw new CapacityGovernanceError('capacity_usage_aggregate_terminal_only', 'Aggregate usage is accepted only by terminal settlement.', 400);
-	const reservation = await database.first(`SELECT reservation.*, assignment.attempt_count AS assignment_attempt FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id = reservation.assignment_id WHERE reservation.id = ? AND reservation.team_id = ? LIMIT 1`, [input.reservationId, input.teamId]);
+	const reservation = await database.first(`SELECT reservation.*, assignment.attempt_count AS assignment_attempt, assignment.parent_workday_id, assignment.parent_assignment_id, assignment.handoff_root_id, assignment.handoff_parent_id, assignment.handoff_depth, assignment.source_message_refs_json FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id = reservation.assignment_id WHERE reservation.id = ? AND reservation.team_id = ? LIMIT 1`, [input.reservationId, input.teamId]);
 	if (!reservation) throw new CapacityGovernanceError('capacity_reservation_not_found', 'Capacity reservation does not exist.', 404);
 	if (String(reservation.assignment_id ?? '') !== input.assignmentId) throw new CapacityGovernanceError('capacity_usage_assignment_mismatch', 'Usage report assignment does not own the reservation.', 409);
 	if (String(reservation.membership_id ?? '') !== input.membershipId) throw new CapacityGovernanceError('capacity_usage_membership_mismatch', 'Usage report membership does not own the reservation.', 403);

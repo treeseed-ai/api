@@ -6,7 +6,7 @@ subtype: provider
 journey: Fail over provider supply safely
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
-summary: Team policy selects capability-compatible reliable supply and requeues only side-effect-free work with immutable prior-attempt evidence.
+summary: Team policy selects capability-compatible reliable supply, otherwise honors the provider-advertised default, and requeues only side-effect-free work with immutable prior-attempt evidence.
 status: planned
 dependencies: { journeys: [], guarantees: [guarantee.capacity.provider.require-synthesis-authority.504] }
 actors: { allowed: [team_owner, capacity_provider], forbidden: [unauthorized_user] }
@@ -16,6 +16,6 @@ preconditions: { fixtures: [integrated_treeseed_project], notes: ["At least two 
 api: { required: true, verifierRefs: [] }
 content: { required: false, verifierRefs: [] }
 audit: { required: true, verifierRefs: [] }
-negativeCases: ["Agent definitions cannot pin a provider.", "Incapable or exhausted providers cannot win preference ranking.", "Selection cannot cross project, environment, mode, or active-grant scope.", "Acting failover cannot proceed without current approval, readiness, and accepted-estimate provenance.", "Evidence of usage, mode success, TreeDX mutation, fallback output, or uncertain settlement prevents automatic replay."]
+negativeCases: ["Agent definitions cannot pin a provider.", "A provider-local default cannot override explicit team supply policy.", "Incapable or exhausted providers cannot win preference ranking.", "Selection cannot cross project, environment, mode, or active-grant scope.", "Acting failover cannot proceed without current approval, readiness, and accepted-estimate provenance.", "Evidence of usage, mode success, TreeDX mutation, fallback output, or uncertain settlement prevents automatic replay."]
 evidence: { required: [guarantee_report, verifier_evidence] }
 notes: ["Keep planned until multi-provider PostgreSQL acceptance and live provider-manager failover scenes are repeatable."]

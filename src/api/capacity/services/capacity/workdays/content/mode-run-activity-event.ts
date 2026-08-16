@@ -45,43 +45,54 @@ export function modeRunActivityEvent(input: { assignment: Row; modeRun: Row }) {
 	)!;
 	const payloadDigest = text(payload.payloadDigest)
 		?? createHash('sha256').update(JSON.stringify({ eventType, item, outputs: { status: outputs.status, summary: outputs.summary } })).digest('hex');
+	const status = modeRun.status === 'failed' ? 'failed' : modeRun.status === 'running' ? 'active' : 'recorded';
+	const title = text(item.type, outputs.status, eventType);
+	const messageText = summary.slice(0, 1_000);
+	const context = {
+		agentId: text(modeRun.agentId, assignment.agentId),
+		agentClassId: text(modeRun.projectAgentClassId, assignment.projectAgentClassId),
+		activityType: assignmentActivityType(assignment),
+		handlerId: text(modeRun.handlerId, assignment.handlerId),
+		capacityProviderId: text(modeRun.capacityProviderId, assignment.capacityProviderId),
+		providerManagerId: text(metadata.providerManagerId),
+		runnerId: text(metadata.runnerId, assignment.runnerId),
+		executionProviderId: text(modeRun.executionProviderId, assignment.executionProviderId),
+		executionRunId: text(record(modeRun.traceRefs).executionRunId),
+		contextPackDigest: text(record(record(assignment.decisionInput).contextPack).digest, record(assignment.metadata).contextPackDigest),
+	};
+	const refs = {
+		transcriptRef: `mode-run://${String(modeRun.id)}`,
+		artifacts: Array.isArray(outputs.artifacts) ? outputs.artifacts : [],
+	};
+	const eventMetadata = {
+		sourceEventId: text(metadata.telemetryEventId, modeRun.id),
+		severity: severity(modeRun.status, payload),
+		usageDelta: record(payload.usage),
+		durationMs: null,
+		errorCategory: text(record(payload.error).code, record(payload.error).message),
+		recoveryState: text(metadata.recoveryState),
+		redactionStatus: text(payload.redactionStatus, 'sanitized'),
+		payloadDigest,
+	};
+	const createdAt = text(modeRun.createdAt, new Date().toISOString());
+	const identityDigest = createHash('sha256').update(JSON.stringify({ eventType, status, title, messageText, context, refs, eventMetadata, createdAt })).digest('hex');
 	return {
-		id: `activity:${String(modeRun.id)}`,
+		// A mode run is a mutable aggregate while its telemetry records are
+		// append-only. Bind the event identity to the exact payload so an exact
+		// retry replays and a later phase/status becomes a distinct event.
+		id: `activity:${String(modeRun.id)}:${identityDigest.slice(0, 24)}`,
 		projectId: text(modeRun.projectId, assignment.projectId),
 		workdayId: text(assignment.workDayId),
 		assignmentId: text(modeRun.providerAssignmentId, assignment.id),
 		modeRunId: text(modeRun.id),
 		eventType,
-		status: modeRun.status === 'failed' ? 'failed' : modeRun.status === 'running' ? 'active' : 'recorded',
-		title: text(item.type, outputs.status, eventType),
-		message: summary.slice(0, 1_000),
+		status,
+		title,
+		message: messageText,
 		parameters: {},
-		context: {
-			agentId: text(modeRun.agentId, assignment.agentId),
-			agentClassId: text(modeRun.projectAgentClassId, assignment.projectAgentClassId),
-			activityType: assignmentActivityType(assignment),
-			handlerId: text(modeRun.handlerId, assignment.handlerId),
-			capacityProviderId: text(modeRun.capacityProviderId, assignment.capacityProviderId),
-			providerManagerId: text(metadata.providerManagerId),
-			runnerId: text(metadata.runnerId, assignment.runnerId),
-			executionProviderId: text(modeRun.executionProviderId, assignment.executionProviderId),
-			executionRunId: text(record(modeRun.traceRefs).executionRunId),
-			contextPackDigest: text(record(record(assignment.decisionInput).contextPack).digest, record(assignment.metadata).contextPackDigest),
-		},
-		refs: {
-			transcriptRef: `mode-run://${String(modeRun.id)}`,
-			artifacts: Array.isArray(outputs.artifacts) ? outputs.artifacts : [],
-		},
-		metadata: {
-			sourceEventId: text(metadata.telemetryEventId, modeRun.id),
-			severity: severity(modeRun.status, payload),
-			usageDelta: record(payload.usage),
-			durationMs: null,
-			errorCategory: text(record(payload.error).code, record(payload.error).message),
-			recoveryState: text(metadata.recoveryState),
-			redactionStatus: text(payload.redactionStatus, 'sanitized'),
-			payloadDigest,
-		},
-		createdAt: text(modeRun.createdAt, new Date().toISOString()),
+		context,
+		refs,
+		metadata: eventMetadata,
+		createdAt,
 	};
 }

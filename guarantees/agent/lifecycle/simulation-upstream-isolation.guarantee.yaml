@@ -1,0 +1,40 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.lifecycle.simulation-upstream-isolation.919
+journeyIndex: 919
+type: agent
+subtype: lifecycle
+journey: Prove simulation upstream isolation
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Simulation exercises the production-shaped lifecycle locally while exact remote source and content refs remain unchanged.
+status: planned
+capabilityId: agent.lifecycle.simulation-upstream-isolation
+catalog: agent.system
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof:
+  requiredCommands: [capacity.workday, capacity.assignment, capacity.checkpoint-integrate, capacity.workday-summary, platform.status]
+  minimumRepositoryPostconditions: 2
+  outcomePredicates:
+    simulation.real-local-outcome: [simulation.provider, simulation.context, simulation.local-commit, simulation.review, simulation.receipt, simulation.usage, simulation.settlement]
+    simulation.upstream-unchanged: [simulation.source-remote-before-after, simulation.content-remote-before-after, simulation.no-push-credential, simulation.save-denied]
+outcomes:
+  - id: simulation.real-local-outcome
+    kind: required
+    description: Real providers, context, tools, commits, reviews, receipts, usage, settlement, and cleanup complete in isolated local targets.
+    evidenceKinds: [execution_trace, mutation_receipt, repository_read_back]
+    authoritativeSubjects: [workday, assignment, localIntegrationRef]
+  - id: simulation.upstream-unchanged
+    kind: required
+    description: Fresh before-and-after observations prove every upstream source and content ref is unchanged and save authority is denied.
+    evidenceKinds: [remote_ref_read_back, authority_audit, cleanup]
+    authoritativeSubjects: [sourceRemoteRef, contentRemoteRef]
+dependencies: { journeys: [], guarantees: [guarantee.work.agents.recover-a-failed-agent-execution.669] }
+actors: { allowed: [capacity_operator, simulated_human], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [bounded_source_project] }
+api: { required: true, verifierRefs: [api.agent-catalog.control-plane-live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence, redacted_cli_transcript] }

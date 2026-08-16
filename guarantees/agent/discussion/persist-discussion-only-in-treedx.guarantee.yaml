@@ -1,4 +1,4 @@
-schemaVersion: treeseed.guarantee/v1
+schemaVersion: treeseed.guarantee/v2
 id: guarantee.agent.discussion.persist-discussion-only-in-treedx.744
 journeyIndex: 744
 type: agent
@@ -8,14 +8,21 @@ ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: Commit sessions, messages, and append-only events to project Git through TreeDX before assignment dispatch.
 status: planned
+capabilityId: agent.communication.treedx-durable-content
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.discussion-read, capacity.agent-invocation], minimumRepositoryPostconditions: 1, outcomePredicates: { communication.treedx-durable-content: [discussion.treedx-commit, discussion.authoritative-read-back, invocation.opaque-reference] } }
+outcomes: [{ id: communication.treedx-durable-content, kind: required, description: The exact Discussion and message are durable TreeDX content before any invocation exists, while PostgreSQL contains only opaque content references., evidenceKinds: [treedx_read_back, invocation_read_back, persistence_audit], authoritativeSubjects: [discussion, requestMessage, invocation] }]
 dependencies: { journeys: [], guarantees: [] }
 actors: { allowed: [authenticated_user, team_owner], forbidden: [anonymous_user, unauthorized_user] }
 devices: { required: [desktop_chromium], optional: [] }
 gates: [future]
 preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
-api: { required: true, verifierRefs: [] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
 content: { required: true, verifierRefs: [] }
 audit: { required: true, verifierRefs: [] }
-negativeCases: [{ id: unavailable-treedx-blocks-dispatch, actor: authenticated_user, verifierRefs: [] }]
+negativeCases:
+  - { id: unavailable-treedx-blocks-dispatch, actor: authenticated_user, verifierRefs: [] }
+  - { id: invalid-content-blocks-changeset, actor: authenticated_user, verifierRefs: [] }
 evidence: { required: [guarantee_report, verifier_evidence] }
-notes: ["PostgreSQL retains only generic operational records and Discussion references."]
+notes: ["PostgreSQL retains only generic operational records and Discussion references. Discussion sources are Zod-validated before a TreeDX workspace opens, TreeDX read-back is revalidated before projection, and failures retain exact field diagnostics. Keep planned until three live exact-outcome variants pass on one generation."]

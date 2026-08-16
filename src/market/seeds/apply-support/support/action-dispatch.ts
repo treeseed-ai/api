@@ -58,6 +58,7 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
                 metadata: projectMetadata,
             })).project;
         ids.projects.set(action.key, project.id);
+		ids.projectTeams.set(action.key, teamId);
         return project;
     }
     if (action.kind === 'hubRepository') {
@@ -65,7 +66,8 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
         if (!projectId)
             throw new Error(`Missing project for ${action.key}.`);
         const projectAction = plan.actions.find((entry) => entry.key === action.payload.projectKey);
-        const teamId = projectAction ? ids.teams.get(projectAction.payload.teamKey) : null;
+        const teamId = ids.projectTeams.get(action.payload.projectKey)
+			?? (projectAction ? ids.teams.get(projectAction.payload.teamKey) : null);
         if (!teamId)
             throw new Error(`Missing team for ${action.key}.`);
         const repository = await store.upsertHubRepository(projectId, {

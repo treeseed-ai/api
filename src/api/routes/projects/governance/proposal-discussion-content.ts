@@ -2,7 +2,10 @@ import { createHash,randomUUID } from 'node:crypto';
 import { serializeFrontmatterDocument } from '@treeseed/sdk/frontmatter';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../../capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { recordTreeDxAuthoringState } from '../../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { applyTextChangeset } from '../../../knowledge/changesets/apply-text-changeset.ts';
+import { assertGovernanceContent } from '../../../governance/content-validation.ts';
+import { treeDxWorkspaceId } from '../../../knowledge/workspace-identity.ts';
 
 type Row = Record<string, unknown>;
 
@@ -60,9 +63,10 @@ export async function createProposalDiscussionContent(input: {
 		feedbackKind: input.kind, about: [`proposal:${text(input.proposal.id)}`], relatedObjectives, relatedQuestions: [], relatedProposals: reference ? [reference] : [], relatedDecisions: [], relatedBooks,
 	};
 	const source = serializeFrontmatterDocument(frontmatter, `${input.message}\n`);
+	assertGovernanceContent(input.kind === 'question' ? 'question' : 'note',source);
 	const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const workspace = await connection.client.createWorkspace({
-		workspaceId: `proposal-discussion-${randomUUID()}`, repoId: connection.repositoryId, baseRef: branchName,
+		workspaceId: treeDxWorkspaceId(randomUUID()), repoId: connection.repositoryId, baseRef: branchName,
 		branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 600,
 	});
 	try {
@@ -71,6 +75,7 @@ export async function createProposalDiscussionContent(input: {
 			workspaceId: workspace.workspaceId, message: `governance: ${input.kind} on ${text(input.proposal.id)}`,
 			author: { name: text(input.principal.name, input.principal.id, 'Team member'), email: text(input.principal.email, 'governance@users.treeseed.local') },
 		});
+		await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,actorType:'user',actorId:text(input.principal.id) });
 		await projectTreeDxCommitSignals(input.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `${input.kind} on proposal ${text(input.proposal.id)}`, actorType: 'user', actorId: text(input.principal.id) });
 		return { model: input.kind === 'question' ? 'question' : 'note', id: identity, path, commitSha: commit.commitSha, digest: createHash('sha256').update(source).digest('hex'), proposalReference: reference, changeset: { ...changeset, resultCommitSha: commit.commitSha } };
 	} catch (error) {

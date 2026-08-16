@@ -111,7 +111,7 @@ export function installCapacityWorkdayRoutes(app: Hono, options: CapacityWorkday
 		} catch (cause) {
 			return error(c, 400, cause instanceof Error ? cause.message : String(cause));
 		}
-		if (cursor && !evidence) return error(c, 400, 'Workday summary cursor requires an evidence collection.');
+		if ((cursor || c.req.query('limit')) && !evidence) return error(c, 400, 'Workday summary pagination requires an evidence collection.');
 		const summary = await store.getWorkdayCapacitySummary(c.req.param('workdayId'), {
 			evidence: evidence as EvidenceCollection | null,
 			limit,

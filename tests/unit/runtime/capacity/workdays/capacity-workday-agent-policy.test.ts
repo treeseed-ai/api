@@ -10,26 +10,51 @@ describe('capacity workday agent policy', () => {
 		const agents = capacityWorkdayAgentsFromClasses([{
 			id: 'research',
 			slug: 'research',
+			metadata: { immutableRef: 'a'.repeat(40) },
 			handlerRefs: {
 				agents: [{
 					slug: 'custom-investigator',
+					groupIds:['group:research'],
+					contextQueryRefs:[{id:'query:common',revision:2}],
+					contextQuerySetRefs:[{id:'set:common',revision:1}],
+					instructionTemplateRefs:[{id:'template:plan',revision:1}],
 					contentPath: 'src/content/agents/editorial/custom-investigator.mdx',
 					activities: { planning: {
 						handler: 'writer',
 						branchPolicy: { kind: 'staging-content', base: 'staging' },
-						contentAccess: { write: { paths: ['src/content/notes/editorial/books/guide/**'] } },
+						permissions: { content: { note: { operations:['create','update'],filters:{ paths:['src/content/notes/editorial/books/guide/**'] } } } },
 						prompt: { task: 'planning' },
 						outputs: { modelMutations: ['linked_note:create'] },
 						planningIntent: { objective: 'Investigate the highest-value unanswered project question.' },
 						planningPriority: 20,
+						contextQueryRefs:[{id:'query:profile',revision:3},{id:'query:common',revision:2}],
+						instructionTemplateRefs:[{id:'template:summary',revision:2}],
+						tools:{allowed:['treeseed.content.read']},
 					} },
 				}],
 			},
 		}]);
 		expect(agents).toHaveLength(1);
 		expect(agents[0].contentPath).toBe('src/content/agents/editorial/custom-investigator.mdx');
+		expect(agents[0].sourceImmutableRef).toBe('a'.repeat(40));
 		expect(agents[0].branchPolicy).toEqual({ kind: 'staging-content', base: 'staging' });
-		expect(agents[0].contentAccess).toEqual({ write: { paths: ['src/content/notes/editorial/books/guide/**'] } });
+		expect(agents[0].permissions).toMatchObject({
+			content: { note: { operations:['create','update'],filters:{ paths:['src/content/notes/editorial/books/guide/**'] } } },
+			commit: { allowed: true },
+			repository: { writePaths: [], allowCodeMutation: false },
+			shell: { allowedCommands: [], allowCommands: false },
+		});
+		expect(agents[0].contextQueryRefs).toEqual([{id:'query:common',revision:2},{id:'query:profile',revision:3}]);
+		expect(agents[0].contextQuerySetRefs).toEqual([{id:'set:common',revision:1}]);
+		expect(agents[0].instructionTemplateRefs).toEqual([{id:'template:plan',revision:1},{id:'template:summary',revision:2}]);
+		expect(agents[0].toolPolicy.allowed).toEqual(expect.arrayContaining([
+			'treeseed.content.read',
+			'treeseed.assignment_plan',
+			'treeseed.assignment_summary',
+		]));
+		expect(agents[0].toolPolicy.allowed).not.toContain('treeseed.checkpoint');
+		expect(agents[0].authorityPresetIds).toEqual(['influence','plan-contribution']);
+		expect(agents[0].groupIds).toEqual(['group:research']);
 		expect(compileCapacityWorkdayAssignmentIntent(agents[0])).toEqual({
 			objective: 'Investigate the highest-value unanswered project question.',
 			artifactKind: 'planning_note',
@@ -96,10 +121,10 @@ describe('capacity workday agent policy', () => {
 
 	it('normalizes serialized null proposal subjects for workday artifact handoff', () => {
 		const intent = compileCapacityWorkdayAssignmentIntent({
-			slug: 'steward', contentPath: null, handler: 'estimate', projectAgentClassId: 'class', projectAgentClassSlug: 'steward',
+			slug: 'steward', contentPath: null, sourceImmutableRef: null, handler: 'estimate', projectAgentClassId: 'class', projectAgentClassSlug: 'steward',
 			purpose: 'Estimate the preceding proposal.', promptTask: 'estimating', outputContract: {},
 			planningIntent: { subjectModel: 'proposal', subjectId: 'null', artifactKind: 'agent_estimate' },
-			branchPolicy: {}, contentAccess: {}, planningPriority: null, planningAllocationPercent: null, activityType: 'estimating',
+			branchPolicy: {}, permissions: {},toolPolicy:{},authorityPresetIds:['messaging','estimation'],groupIds:[],contextQueryRefs:[],contextQuerySetRefs:[],instructionTemplateRefs:[],nodeId:'steward:estimating:evaluation',displayName:'Steward',execution:{},signalPolicy:{}, planningPriority: null, planningAllocationPercent: null, activityType: 'estimating',
 		});
 		expect(intent.subjectId).toBeNull();
 	});
@@ -115,6 +140,15 @@ describe('capacity workday agent policy', () => {
 		]);
 		expect(compileCapacityWorkdayAssignmentIntent(agents.find((agent) => agent.activityType === 'reviewing')!)).toMatchObject({
 			includeWorkdayArtifacts: true,
+		});
+	});
+
+	it('accepts chat as a planning-mode activity without falling back to planning', () => {
+		const agents=capacityWorkdayAgentsFromClasses([{id:'chat',slug:'chat',handlerRefs:{agents:[{slug:'collaborator',activities:{chat:{handler:'writer',enabled:true}}}]}}]);
+		expect(agents.map((agent)=>agent.activityType)).toEqual(['chat']);
+		expect(compileCapacityWorkdayAssignmentIntent(agents[0])).toEqual({
+			objective: 'Respond to the exact committed Discussion turn with a durable, correctly addressed message.',
+			artifactKind: 'discussion_response', subjectModel: 'discussion_message', subjectId: null, includeWorkdayArtifacts: false,
 		});
 	});
 

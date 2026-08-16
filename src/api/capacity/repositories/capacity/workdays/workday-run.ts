@@ -23,6 +23,13 @@ export function parseCapacityWorkdayRunStatus(value: unknown, errorStatus = 400)
 	return candidate;
 }
 
+function executionMode(parameters:JsonRecord) {
+	const value=parameters.executionMode;
+	if(value===undefined||value===null||value==='') return 'simulation' as const;
+	if(value==='production'||value==='simulation') return value;
+	throw new CapacityGovernanceError('capacity_workday_run_corrupt','Capacity workday run has invalid executionMode.',500,{ executionMode:value??null });
+}
+
 function requiredText(row: Record<string, unknown>, column: string): string {
 	const value = row[column];
 	if (typeof value !== 'string' || !value) {
@@ -67,6 +74,7 @@ export function serializeCapacityWorkdayRunRow(row: Record<string, unknown> | nu
 		if (error instanceof CapacityGovernanceError) throw new CapacityGovernanceError('capacity_workday_run_corrupt', `Capacity workday run ${String(row.id)} has unknown status ${String(row.status)}.`, 500, { runId: String(row.id), status: String(row.status) });
 		throw error;
 	}
+	const parameters=jsonObject(row, 'parameters_json');
 	return {
 		id: requiredText(row, 'id'),
 		teamId: requiredText(row, 'team_id'),
@@ -74,8 +82,12 @@ export function serializeCapacityWorkdayRunRow(row: Record<string, unknown> | nu
 		scenarioId: requiredText(row, 'scenario_id'),
 		status,
 		environment: requiredText(row, 'environment'),
+		executionKind: requiredText(row, 'execution_kind') as DurableCapacityWorkdayRun['executionKind'],
+		triggerKind: requiredText(row, 'trigger_kind') as DurableCapacityWorkdayRun['triggerKind'],
+		hidden: Number(row.hidden) === 1,
+		executionMode: executionMode(parameters),
 		requestedById: nullableText(row.requested_by_id),
-		parameters: jsonObject(row, 'parameters_json'),
+		parameters,
 		summary: jsonObject(row, 'summary_json'),
 		metrics: jsonObject(row, 'metrics_json'),
 		expected: jsonObject(row, 'expected_json'),
@@ -130,12 +142,14 @@ export class CapacityWorkdayRunRepository {
 	async list(teamId: string, filters: {
 		status?: string | null;
 		providerId?: string | null;
+		executionKind?: string | null;
 		limit?: unknown;
 		cursor?: CapacityPageCursor | null;
 	} = {}): Promise<CapacityPage<DurableCapacityWorkdayRun>> {
 		await this.database.ensureInitialized();
 		const clauses = ['team_id = ?'];
 		const values: unknown[] = [teamId];
+		clauses.push('execution_kind = ?'); values.push(filters.executionKind ?? 'workday');
 		if (filters.status) { clauses.push('status = ?'); values.push(parseCapacityWorkdayRunStatus(filters.status)); }
 		if (filters.providerId) { clauses.push('capacity_provider_id = ?'); values.push(filters.providerId); }
 		if (filters.cursor) {

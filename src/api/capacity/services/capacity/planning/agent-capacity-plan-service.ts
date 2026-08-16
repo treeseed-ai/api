@@ -39,6 +39,14 @@ export interface CreateAgentCapacityPlanInput {
 	review?: JsonRecord;
 	metadata?: JsonRecord;
 	decisionExecutionInputIds?: string[];
+	idempotencyKey?: string;
+}
+
+type MutationReceipt = { digest: string; status?: DurableAgentCapacityPlanStatus };
+
+function records(value: unknown): Record<string, MutationReceipt> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+	return value as Record<string, MutationReceipt>;
 }
 
 function idPart(value: string, fallback = 'item') {
@@ -111,6 +119,12 @@ export class AgentCapacityPlanService {
 			allocationSetId: input.allocationSetId ?? null,
 			workDayId: input.workDayId ?? null,
 		});
+		const idempotencyKey = input.idempotencyKey?.trim() || null;
+		const requestDigest = this.store.scopeHash({
+			decisionId, projectId: project.id, scopeHash, allocationSetId: input.allocationSetId ?? null,
+			workDayId: input.workDayId ?? null, status: input.status ?? 'draft', humanApprovalState: input.humanApprovalState ?? 'approved',
+			review: input.review ?? {}, metadata: input.metadata ?? {}, executionInputIds: executionInputs.map((entry) => entry.id).sort(),
+		});
 		const plan = buildAgentCapacityPlanDraft({
 			id: input.id ?? `acp_${idPart(decisionId)}_${idPart(scopeHash)}`,
 			teamId: project.teamId,
@@ -125,9 +139,20 @@ export class AgentCapacityPlanService {
 				...(input.metadata ?? {}),
 				source: 'accepted_decision_execution_inputs',
 				executionInputIds: executionInputs.map((entry) => entry.id),
+				...(idempotencyKey ? { creationIdempotencyKey: idempotencyKey, creationRequestDigest: requestDigest } : {}),
 			},
 			now,
 		});
+		const existing = await this.repository.get(plan.id);
+		if (existing) {
+			const priorKey = typeof existing.metadata.creationIdempotencyKey === 'string' ? existing.metadata.creationIdempotencyKey : null;
+			const priorDigest = typeof existing.metadata.creationRequestDigest === 'string' ? existing.metadata.creationRequestDigest : null;
+			if (priorDigest === requestDigest) return existing;
+			if (idempotencyKey && priorKey === idempotencyKey) {
+				throw new CapacityGovernanceError('agent_capacity_plan_idempotency_conflict', 'The capacity-plan idempotency key was already used with different input.', 409, { planId: plan.id, idempotencyKey });
+			}
+			throw new CapacityGovernanceError('agent_capacity_plan_identity_conflict', 'The derived capacity-plan identity already exists with different content.', 409, { planId: plan.id });
+		}
 		const persisted = await this.repository.upsert(plan, input.review ?? {});
 		if (!persisted) throw new CapacityGovernanceError('agent_capacity_plan_persistence_failed', 'Agent capacity plan was not persisted.', 500, { planId: plan.id });
 		await this.recordPlanningStatus(persisted, input.humanApprovalState ?? 'approved');
@@ -135,7 +160,28 @@ export class AgentCapacityPlanService {
 	}
 
 	async transition(planId: string, status: DurableAgentCapacityPlanStatus, input: AgentCapacityPlanTransitionInput = {}) {
-		const updated = await this.repository.transition(planId, status, input);
+		const existing = await this.repository.get(planId);
+		if (!existing) return null;
+		const idempotencyKey = input.idempotencyKey?.trim() || null;
+		const requestDigest = this.store.scopeHash({
+			planId, status, workDayId: input.workDayId ?? null, allocationSetId: input.allocationSetId ?? null,
+			reason: input.reason ?? null, review: input.review ?? {}, metadata: input.metadata ?? {},
+		});
+		const receipts = records(existing.metadata.transitionReceipts);
+		if (idempotencyKey && receipts[idempotencyKey]) {
+			if (receipts[idempotencyKey]!.digest !== requestDigest) throw new CapacityGovernanceError(
+				'agent_capacity_plan_idempotency_conflict', 'The capacity-plan idempotency key was already used with different input.', 409,
+				{ planId, idempotencyKey },
+			);
+			return existing;
+		}
+		const updated = await this.repository.transition(planId, status, {
+			...input,
+			metadata: {
+				...(input.metadata ?? {}),
+				...(idempotencyKey ? { transitionReceipts: { ...receipts, [idempotencyKey]: { digest: requestDigest, status } } } : {}),
+			},
+		});
 		if (!updated) return null;
 		const authoritative = isActivePlan(updated)
 			? updated

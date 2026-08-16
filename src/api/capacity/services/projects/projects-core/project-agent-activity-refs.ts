@@ -12,11 +12,20 @@ export interface ProjectAgentActivityRef {
 	agentId: string;
 	agentName: string;
 	groupIds: string[];
-	primaryGroupId: string | null;
 	contentPath: string | null;
+	contextQueryRefs: Array<{id:string;revision:number}>;
+	contextQuerySetRefs: Array<{id:string;revision:number}>;
+	instructionTemplateRefs: Array<{id:string;revision:number}>;
 	activityType: string;
 	handlerId: string;
 	profile: JsonRecord;
+}
+
+function revisionRefs(...values:unknown[]) {
+	const refs=values.flatMap((value)=>Array.isArray(value)?value:[]).map(record)
+		.filter((value)=>text(value.id)&&Number.isInteger(Number(value.revision))&&Number(value.revision)>0)
+		.map((value)=>({id:text(value.id)!,revision:Number(value.revision)}));
+	return [...new Map(refs.map((reference)=>[`${reference.id}@${reference.revision}`,reference])).values()];
 }
 
 export function projectAgentActivityRefs(handlerRefs: unknown, activityType: string): ProjectAgentActivityRef[] {
@@ -32,13 +41,15 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 			agentId,
 			agentName: text(agent.name ?? agent.title) ?? agentId,
 			groupIds: Array.isArray(agent.groupIds) ? agent.groupIds.map(String).filter(Boolean) : [],
-			primaryGroupId: text(agent.primaryGroupId),
 			contentPath: text(agent.contentPath), activityType, handlerId, profile,
+			contextQueryRefs:revisionRefs(agent.contextQueryRefs,profile.contextQueryRefs),
+			contextQuerySetRefs:revisionRefs(agent.contextQuerySetRefs,profile.contextQuerySetRefs),
+			instructionTemplateRefs:revisionRefs(agent.instructionTemplateRefs,profile.instructionTemplateRefs),
 		}] : [];
 	});
 }
 
-const ACTIVITY_TYPES = new Set(['planning', 'estimating', 'reviewing', 'reporting', 'acting']);
+const ACTIVITY_TYPES = new Set(['planning', 'estimating', 'reviewing', 'reporting', 'acting', 'chat']);
 
 export function validateProjectAgentActivityRefs(handlerRefs: unknown): string[] {
 	const refs = record(handlerRefs);

@@ -3,6 +3,7 @@ export * from './persistence/local-store.js';
 export * from './projects/projects-core/project-dependencies.js';
 export * from './projects/projects-core/project-knowledge-binding.js';
 export * from './reconciliation/plan-reconciliation.js';
+export * from './reconciliation/resource-resolution.js';
 export * from './runtime/local-bootstrap.js';
 export * from './support/action-dispatch.js';
 export * from './support/apply.js';

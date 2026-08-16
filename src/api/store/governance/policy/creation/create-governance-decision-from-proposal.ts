@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,MarketControlPlaneStore,serializeGovernanceDecision } from "../../../../persistence/store.ts";
+import { resolveDecisionDependencySnapshots } from '../../../../governance/decision-authority.ts';
 export async function createGovernanceDecisionFromProposalMethod(this: MarketControlPlaneStore, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
@@ -24,12 +25,18 @@ export async function createGovernanceDecisionFromProposalMethod(this: MarketCon
         contentHash: proposal.activeContentHash,
         version: proposal.activeVersion,
     };
+	const dependencyResult = await resolveDecisionDependencySnapshots(this, proposal.teamId, proposal.metadata?.decisionDependencies ?? []);
+	if (!dependencyResult.ok) {
+		const error: Error & Record<string, any> = new Error(`Decision dependency ${dependencyResult.reference.decisionId} is not current: ${dependencyResult.validation.message}`);
+		error.status = 409; error.code = dependencyResult.validation.code; error.details = { dependency: dependencyResult.reference }; throw error;
+	}
+	const decisionRecord = { decisionDependencies: dependencyResult.dependencies };
     await this.run(`INSERT INTO governance_decisions (
 				id, team_id, project_id, proposal_id, proposal_version, proposal_content_hash, status,
 				title, summary, content_decision_slug, governance_provider_id, governance_rule_json,
 				electorate_snapshot_id, vote_result_json, voter_reasons_json, proposal_snapshot_json,
 				decision_record_json, created_by_type, created_by_id, created_at, updated_at, superseded_at
-			) VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, NULL)`, [
+			) VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, [
         id,
         proposal.teamId,
         proposal.projectId,
@@ -44,7 +51,8 @@ export async function createGovernanceDecisionFromProposalMethod(this: MarketCon
         input.electorateSnapshotId ?? null,
         JSON.stringify(input.outcome?.voteResult ?? {}),
         JSON.stringify(voterReasons),
-        JSON.stringify(proposalSnapshot),
+		JSON.stringify({ ...proposalSnapshot, decisionDependencies: dependencyResult.dependencies }),
+		JSON.stringify(decisionRecord),
         input.actorType ?? 'system',
         input.actorId ?? null,
         timestamp,

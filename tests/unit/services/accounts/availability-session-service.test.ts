@@ -28,8 +28,22 @@ async function seed(store: MarketControlPlaneStore) {
 	await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner-a', ?, ?)`, [now, now, now]);
 }
 
-function snapshot(status = 'active') {
-	return { ttlSeconds: 90, capabilities: ['engineering'], nativeLimits: { maxConcurrentRunners: 2 }, runnerPressure: { pressure: 'normal', maxConcurrentRunners: 2 }, executionProviders: [{ id: 'codex', adapter: 'codex', status, maxConcurrentRunners: 2, capabilities: ['engineering'] }] };
+function snapshot(status = 'active', maxConcurrentRunners = 2) {
+	return {
+		ttlSeconds: 90,
+		capabilities: ['engineering'],
+		nativeLimits: { maxConcurrentRunners },
+		runnerPressure: { pressure: 'normal', maxConcurrentRunners },
+		executionProviders: [{
+			id: 'codex', adapter: 'codex', status, maxConcurrentRunners, capabilities: ['engineering'],
+			lanes: maxConcurrentRunners >= 2
+				? [
+					{ id: 'codex-communication', purpose: 'communication', maxConcurrentRunners: 1, activeRunners: 0, capabilities: ['communication'], nativeLimits: {} },
+					{ id: 'codex-operation', purpose: 'operation', maxConcurrentRunners: 1, activeRunners: 0, capabilities: ['engineering'], nativeLimits: {} },
+				]
+				: [{ id: 'codex-operation', purpose: 'operation', maxConcurrentRunners: 1, activeRunners: 0, capabilities: ['engineering'], nativeLimits: {} }],
+		}],
+	};
 }
 
 describe('availability session service', () => {
@@ -70,11 +84,26 @@ describe('availability session service', () => {
 		} finally { await database.close(); }
 	});
 
+	it('reports exact communication readiness and blocks one-slot providers', async () => {
+		const { database, store, service } = harness();
+		try {
+			await seed(store);
+			const blocked = await service.open(principal, snapshot('active', 1));
+			expect(blocked?.snapshot).toMatchObject({
+				communicationReady: false,
+				communicationBlockers: ['provider_requires_two_global_slots_and_distinct_communication_operation_lanes'],
+			});
+			const ready = await service.open(principal, snapshot());
+			expect(ready?.snapshot).toMatchObject({ communicationReady: true, communicationBlockers: [] });
+		} finally { await database.close(); }
+	});
+
 	it('rejects invalid bounds, unauthorized principals, and suspended memberships', async () => {
 		const { database, store, service } = harness();
 		try {
 			await seed(store);
 			await expect(service.open(principal, { ...snapshot(), ttlSeconds: 0 })).rejects.toMatchObject({ code: 'provider_availability_ttl_invalid' });
+			await expect(service.open(principal, { ...snapshot(), executionProviders: [{ id: 'human', minimumAssignmentDuration: { amount: 5, unit: 'business-days', calendar: { timeZone: 'not/a-zone' } } }] })).rejects.toMatchObject({ code: 'provider_execution_provider_minimum_duration_invalid' });
 			const opened = await service.open(principal, snapshot());
 			await expect(service.close({ ...principal, membershipId: 'membership-other' }, opened!.id)).rejects.toMatchObject({ code: 'provider_membership_not_approved' });
 			expect(await service.get('team-a', opened!.id)).toMatchObject({ status: 'open' });

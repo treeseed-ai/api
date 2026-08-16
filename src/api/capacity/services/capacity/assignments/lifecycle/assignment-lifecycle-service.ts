@@ -1,26 +1,23 @@
-import type {
-ProviderAssignmentExplanation,
-ProviderAssignmentLifecycleRequest,
-} from '@treeseed/sdk/agent-capacity';
-import { classifyCapacityFailure } from '@treeseed/sdk/agent-capacity';
-import { ASSIGNMENT_PERFORMANCE_SCHEMA, CAPACITY_BUDGET_SCHEMA, emptyCapacityBudget } from '@treeseed/sdk/agent-capacity';
+import { ASSIGNMENT_PERFORMANCE_SCHEMA,CAPACITY_BUDGET_SCHEMA,classifyCapacityFailure,emptyCapacityBudget,type ProviderAssignmentExplanation,type ProviderAssignmentLifecycleRequest } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import type { AgentFallbackOutputWrite } from '../../../../repositories/runtime/runtime-evidence.ts';
-import {
-evaluateProviderAssignmentLeaseAuthority,
-type ProviderLeasePrincipal,
-} from '../../../accounts/lease-authority-service.ts';
+import { evaluateProviderAssignmentLeaseAuthority,type ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
 import { projectCompletedResearchWorkflow,type ResearchWorkflowProjectionStore } from '../../../projects/projects-core/research-workflow-projection-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../accounting/settlement-service.ts';
 import { projectCompletedAssignmentDeliverable,type AssignmentDeliverableStore } from '../context/assignment-deliverable-service.ts';
 import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
 import { projectCompletedPlanningOutputs,type AssignmentPlanningOutputStore } from '../planning/assignment-planning-output-service.ts';
 import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
-
+import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
+import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
+import { closeSuspendedConversationExecution } from './assignment-discussion-suspension-service.ts';
+import { terminalizeOperationHandoff } from '../handoffs/operation-handoff-lifecycle-service.ts';
+import { archivedConversationCancellation,assignmentFailureDisposition } from './assignment-failure-policy.ts';
+import { contentIntegrationRequirementOperation } from './assignment-content-integration-requirement.ts';
+import { semanticCompletionPreflightRequired } from './assignment-completion-preflight-service.ts';
 type JsonRecord = Record<string, unknown>;
-
 export interface ExtendedProviderAssignmentLifecycleRequest extends ProviderAssignmentLifecycleRequest {
 	activeSeconds?: number | null;
 	elapsedSeconds?: number | null;
@@ -37,6 +34,7 @@ interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, A
 		assignmentId: string,
 		input: ProviderAssignmentExplanationWrite,
 	): Promise<ProviderAssignmentExplanation | null>;
+	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<JsonRecord | null>;
 }
 
 export interface ProviderAssignmentLifecycleMutationResult {
@@ -47,33 +45,6 @@ export interface ProviderAssignmentLifecycleMutationResult {
 
 function record(value: unknown): JsonRecord {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function revokeCapabilityHandles(value: unknown, now: string): JsonRecord {
-	const handles = record(value);
-	const revoke = (entries: unknown) => Array.isArray(entries)
-		? entries.map((entry) => ({ ...record(entry), status: 'revoked', revokedAt: now }))
-		: [];
-	return {
-		...handles,
-		repository: revoke(handles.repository),
-		treeDx: revoke(handles.treeDx),
-		workflowOperations: revoke(handles.workflowOperations),
-		secrets: revoke(handles.secrets),
-	};
-}
-
-function terminalWorkspaceProjection(assignment: DurableProviderAssignment, now: string) {
-	const proxyHandle = { ...record(assignment.treedxProxyHandle), status: 'revoked', revokedAt: now };
-	const workspaceContext = record(assignment.workspaceContext);
-	return {
-		proxyHandle,
-		workspaceContext: {
-			...workspaceContext,
-			treedxProxyHandle: proxyHandle,
-			capabilityHandles: revokeCapabilityHandles(assignment.capabilityHandles ?? workspaceContext.capabilityHandles, now),
-		},
-	};
 }
 
 function optionalFiniteNumber(value: unknown, field: string): number | null {
@@ -98,15 +69,6 @@ function assertCompletionEvidence(input: ExtendedProviderAssignmentLifecycleRequ
 	}
 }
 
-function failureDisposition(input: ExtendedProviderAssignmentLifecycleRequest) {
-	const value = `${String(input.code ?? '')} ${String(input.reason ?? input.message ?? '')}`.toLowerCase();
-	if (/deadline|timeout/u.test(value)) return 'deadline_exhausted';
-	if (/budget|quota|token|cost|capacity/u.test(value)) return 'budget_exhausted';
-	if (/cancel|abort/u.test(value)) return 'cancelled';
-	if (/block|authority|credential|dependency|evidence/u.test(value)) return 'blocked';
-	return 'failed';
-}
-
 function terminalPerformance(
 	assignment: DurableProviderAssignment,
 	input: ExtendedProviderAssignmentLifecycleRequest,
@@ -122,14 +84,22 @@ function terminalPerformance(
 	const completion = record(input.completion);
 	const disposition = status === 'completed'
 		? String(completion.disposition ?? 'completed')
-		: failureDisposition(input);
+		: assignmentFailureDisposition(input);
 	return {
 		schemaVersion: ASSIGNMENT_PERFORMANCE_SCHEMA, assignmentId: assignment.id, workdayId: assignment.workDayId ?? null,
 		teamId: assignment.teamId, projectId: assignment.projectId, agentId: assignment.agentId ?? null,
 		agentClassId: assignment.projectAgentClassId, activityProfile: String(metadata.activityProfile ?? metadata.activityType ?? assignment.mode),
 		handlerId: assignment.handlerId ?? null, capacityProviderId: assignment.capacityProviderId,
 		executionProviderId: assignment.executionProviderId ?? null, model: metadata.model ? String(metadata.model) : null,
-		groupIds: Array.isArray(metadata.groupIds) ? metadata.groupIds.map(String) : [], taskSignature: `${assignment.projectAgentClassId}:${assignment.mode}`,
+		groupIds: Array.isArray(metadata.groupIds) ? metadata.groupIds.map(String) : [],
+		configuration: { planningGraphRevision: metadata.planningGraphRevision ? String(metadata.planningGraphRevision) : null,
+			agentDefinitionRevision: metadata.agentDefinitionRevision ? String(metadata.agentDefinitionRevision) : null,
+			agentClassRevision: metadata.agentClassRevision ? String(metadata.agentClassRevision) : null,
+			activityProfileRevision: metadata.activityProfileRevision ? String(metadata.activityProfileRevision) : null,
+			handlerRevision: metadata.handlerRevision ? String(metadata.handlerRevision) : null,
+			groupMembershipRevision: metadata.groupMembershipRevision ? String(metadata.groupMembershipRevision) : null,
+			executionProviderConfigurationRevision: metadata.executionProviderConfigurationRevision ? String(metadata.executionProviderConfigurationRevision) : null },
+		taskSignature: `${assignment.projectAgentClassId}:${assignment.mode}`,
 		disposition, reason: String(input.reason ?? input.message ?? (status === 'completed' ? 'Assignment completed.' : 'Assignment failed.')),
 		acceptanceChecks: Array.isArray(completion.acceptanceChecks) ? completion.acceptanceChecks : [],
 		completedScope: [], remainingScope: [], artifactRefs: Array.isArray(completion.durableArtifactRefs) ? completion.durableArtifactRefs.map(String) : [], budget,
@@ -149,6 +119,18 @@ async function assertRequiredSignals(database: CapacityGovernanceDatabase, assig
 	const published = new Set(rows.map((row) => String(row.contract_id).replace(/_/gu, '-')));
 	const missing = required.filter((contractId) => !published.has(contractId));
 	if (missing.length) throw new CapacityGovernanceError('provider_assignment_signal_evidence_missing', 'Assignment cannot complete before all declared signal publications are durably validated.', 409, { assignmentId: assignment.id, missingContractIds: missing });
+}
+
+async function assertCommunicationOutcome(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment) {
+	if (assignment.executionKind !== 'conversation') return;
+	if (!assignment.invocationId) throw new CapacityGovernanceError('communication_invocation_provenance_missing', 'Conversation assignment lacks its exact invocation.', 409, { assignmentId: assignment.id });
+	const invocation = await database.first(`SELECT status,assignment_id,final_message_ref FROM agent_invocation_requests WHERE id = ? AND team_id = ? LIMIT 1`, [assignment.invocationId, assignment.teamId]);
+	if (!invocation || invocation.assignment_id !== assignment.id || !String(invocation.final_message_ref ?? '').trim()) throw new CapacityGovernanceError(
+		'communication_final_message_required',
+		'Conversation assignment cannot complete without one authoritative durable final response.',
+		409,
+		{ assignmentId: assignment.id, invocationId: assignment.invocationId },
+	);
 }
 
 function activeLeaseOwnedBy(
@@ -231,7 +213,7 @@ export class ProviderAssignmentLifecycleService {
 		await this.store.run(
 			`UPDATE capacity_provider_assignments
 			 SET lease_expires_at = ?, lease_renewed_at = ?, runner_id = COALESCE(?, runner_id),
-			     state_version = state_version + 1, updated_at = ?
+			     updated_at = ?
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
 			   AND lease_token = ? AND (lease_expires_at IS NULL OR lease_expires_at > ?)`,
@@ -243,10 +225,11 @@ export class ProviderAssignmentLifecycleService {
 		const renewed = await this.store.getProviderAssignment(principal.teamId, assignment.id);
 		if (
 			!renewed
-			|| renewed.stateVersion < assignment.stateVersion + 1
+			|| renewed.stateVersion < assignment.stateVersion
 			|| renewed.status !== 'leased'
 			|| renewed.leaseState !== 'leased'
 			|| renewed.leaseToken !== input.leaseToken
+			|| !renewed.leaseRenewedAt
 			|| (renewed.leaseExpiresAt && Date.parse(renewed.leaseExpiresAt) <= Date.parse(now))
 		) {
 			await recordFailure('lease_state_changed_concurrently');
@@ -263,6 +246,28 @@ export class ProviderAssignmentLifecycleService {
 		await this.store.ensureInitialized();
 		const now = new Date().toISOString();
 		const assignment = await this.store.getProviderAssignment(principal.teamId, assignmentId);
+		if (assignment?.status === 'returned' && assignment.leaseState === 'released'
+			&& record(assignment.metadata).operationalState === 'suspended'
+			&& assignment.lifecycleCode === 'discussion_response_required') {
+			if (assignment.capacityProviderId !== principal.capacityProviderId || assignment.membershipId !== principal.membershipId) return null;
+			const existing = record(assignment.lifecycleOutput);
+			const observed = composeAssignmentLifecycleOutput(record(input), input.performance ?? existing.performance ?? null);
+			const merged = { ...existing, ...observed };
+			if (JSON.stringify(existing) === JSON.stringify(merged)) {
+				await closeSuspendedConversationExecution(this.store,assignment,now);
+				return { assignment, leaseToken: null, leaseSeconds: null };
+			}
+			await this.store.run(
+				`UPDATE capacity_provider_assignments SET lifecycle_output_json = ?, state_version = state_version + 1, updated_at = ?
+				 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ? AND state_version = ?
+				   AND status = 'returned' AND lease_state = 'released' AND lifecycle_code = 'discussion_response_required'`,
+				[JSON.stringify(merged), now, assignment.id, assignment.teamId, assignment.capacityProviderId, assignment.membershipId, assignment.stateVersion],
+			);
+			const repaired = await this.store.getProviderAssignment(principal.teamId, assignmentId);
+			if (!repaired || repaired.stateVersion !== assignment.stateVersion + 1 || repaired.status !== 'returned') return null;
+			await closeSuspendedConversationExecution(this.store,repaired,now);
+			return { assignment: repaired, leaseToken: null, leaseSeconds: null };
+		}
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
 		const completionInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: 'completed' } };
 		assertCompletionEvidence(completionInput);
@@ -331,7 +336,10 @@ export class ProviderAssignmentLifecycleService {
 		const now = new Date().toISOString();
 		const assignment = await this.store.getProviderAssignment(principal.teamId, assignmentId);
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
-		const terminalInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: failureDisposition(input) } };
+		const terminalInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: 'completed' } };
+		const semanticReceipt=String(record(terminalInput.metadata).semanticCompletionPreflightReceiptDigest??'');
+		const semanticPreflight=semanticCompletionPreflightRequired(assignment,terminalInput)&&/^[a-f0-9]{64}$/u.test(semanticReceipt)?await this.store.first(`SELECT id FROM capacity_workday_events WHERE id = ? AND assignment_id = ? AND team_id = ? AND event_type = 'assignment.semantic_completion_preflight_passed' LIMIT 1`,[`semantic-preflight:${assignment.id}:${semanticReceipt.slice(0,20)}`,assignment.id,assignment.teamId]):!semanticCompletionPreflightRequired(assignment,terminalInput);
+		if(!semanticPreflight)throw new CapacityGovernanceError('assignment_semantic_completion_preflight_required','Artifact-producing assignment completion requires a durable semantic preflight before settlement.',409,{assignmentId:assignment.id});
 		if (assignment.reservationId) {
 			const reservation = await this.store.first(
 				`SELECT state FROM capacity_reservations WHERE id = ? AND team_id = ? AND membership_id = ? AND assignment_id = ? LIMIT 1`,
@@ -340,15 +348,21 @@ export class ProviderAssignmentLifecycleService {
 			if (!reservation || reservation.state !== 'consumed') return null;
 		}
 		await assertRequiredSignals(this.store, assignment);
+		await assertCommunicationOutcome(this.store, assignment);
 		await projectCompletedPlanningOutputs(this.store, assignment, input as JsonRecord);
 		await projectCompletedResearchWorkflow(this.store, assignment, input as JsonRecord);
 		await projectCompletedAssignmentDeliverable(this.store, assignment, input as JsonRecord);
-		return this.transition(principal, assignment, terminalInput, now, {
+		const completed = await this.transition(principal, assignment, terminalInput, now, {
 			status: 'completed',
 			timestampColumn: 'completed_at',
 			defaultCode: 'provider_assignment_completed',
 			defaultReason: null,
 		});
+		if (completed && assignment.invocationId) {
+			await this.store.run(`UPDATE agent_invocation_requests SET assignment_id=?,blocking_state_json=?,updated_at=?
+				WHERE id=? AND team_id=? AND status='running'`, [assignment.id,JSON.stringify({ code:'content_integration_pending',assignmentId:assignment.id }),now,assignment.invocationId,assignment.teamId]);
+		}
+		return completed;
 	}
 
 	async fail(
@@ -388,11 +402,12 @@ export class ProviderAssignmentLifecycleService {
 				metadata: { reason: input.reason ?? input.message ?? null, code: input.code ?? 'provider_assignment_failed' },
 			});
 		}
+		const archived=archivedConversationCancellation(assignment,input);
 		return this.transition(principal, assignment, input, now, {
-			status: 'failed',
+			status: archived?'cancelled':'failed',
 			timestampColumn: 'failed_at',
-			defaultCode: 'provider_assignment_failed',
-			defaultReason: 'Provider assignment failed.',
+			defaultCode: archived?'discussion_archived':'provider_assignment_failed',
+			defaultReason: archived?'The source Discussion was archived.':'Provider assignment failed.',
 			metadata: { ...record(assignment.metadata), failureClassification: failure },
 		});
 	}
@@ -412,23 +427,27 @@ export class ProviderAssignmentLifecycleService {
 		input: ExtendedProviderAssignmentLifecycleRequest,
 		now: string,
 		options: {
-			status: 'returned' | 'completed' | 'failed';
+			status: 'returned' | 'completed' | 'failed' | 'cancelled';
 			timestampColumn: 'returned_at' | 'completed_at' | 'failed_at';
 			defaultCode: string;
 			defaultReason: string | null;
 			metadata?: JsonRecord;
 		},
 	): Promise<ProviderAssignmentLifecycleMutationResult | null> {
-		const metadataWrite = options.metadata ? ', metadata_json = ?' : '';
-		const performance = options.status === 'returned' ? input.performance ?? null : terminalPerformance(assignment, input, options.status, now);
+		const transitionMetadata = options.metadata ?? (['completed','failed','cancelled'].includes(options.status)
+			? { ...record(assignment.metadata), operationalState: options.status }
+			: null);
+		const metadataWrite = transitionMetadata ? ', metadata_json = ?' : '';
+		const performance = options.status === 'returned' ? input.performance ?? null : terminalPerformance(assignment, input, options.status==='completed'?'completed':'failed', now);
+		const lifecycleOutput = composeAssignmentLifecycleOutput(record(input), performance);
 		const params: unknown[] = [
 			input.runnerId ?? null,
 			now,
 			input.reason ?? input.message ?? options.defaultReason,
 			input.code ?? options.defaultCode,
-			JSON.stringify({ ...record(input.output ?? input.summary), completion: input.completion ?? null, performance }),
+			JSON.stringify(lifecycleOutput),
 		];
-		if (options.metadata) params.push(JSON.stringify(options.metadata));
+		if (transitionMetadata) params.push(JSON.stringify(transitionMetadata));
 		params.push(
 			now, assignment.id, principal.teamId, principal.capacityProviderId, principal.membershipId,
 			assignment.stateVersion, input.leaseToken ?? null, now,
@@ -441,8 +460,10 @@ export class ProviderAssignmentLifecycleService {
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
 			   AND lease_token = ? AND (lease_expires_at IS NULL OR lease_expires_at > ?)`, params: [options.status, ...params] }];
-		if (options.status === 'completed' || options.status === 'failed') {
-			const terminalWorkspace = terminalWorkspaceProjection(assignment, now);
+		if (['completed','failed','cancelled'].includes(options.status)) {
+			const integrationRequirement=options.status==='completed'?contentIntegrationRequirementOperation({ assignmentId:assignment.id,capacityProviderId:principal.capacityProviderId,stateVersion:assignment.stateVersion+1,lifecycleOutput,now }):null;
+			if(integrationRequirement)operations.push(integrationRequirement);
+			const terminalWorkspace = terminalAssignmentAuthority(assignment, now);
 			operations.push({
 				query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ?
 				 WHERE assignment_id = ? AND team_id = ?
@@ -454,19 +475,25 @@ export class ProviderAssignmentLifecycleService {
 				 WHERE id = ? AND team_id = ? AND status = ? AND state_version = ?`,
 				params: [JSON.stringify(terminalWorkspace.proxyHandle), JSON.stringify(terminalWorkspace.workspaceContext), assignment.id, principal.teamId, options.status, assignment.stateVersion + 1],
 			});
-			const demandStatus = options.status === 'completed' ? 'completed' : 'blocked';
+			const demandStatus = options.status === 'completed' ? 'completed' : options.status==='cancelled'?'cancelled':'blocked';
+			const participationStatus=options.status==='completed'?'completed':'blocked';
 			operations.push({
 				query: `UPDATE capacity_workday_demands SET status = ?, completed_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'admitted'`,
 				params: [demandStatus, now, now, assignment.id],
 			});
 			operations.push({
 				query: `UPDATE capacity_workday_participation_entries SET status = ?, reason_code = ?, covered_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'assigned'`,
-				params: [demandStatus, options.status === 'failed' ? input.code ?? options.defaultCode : null, now, now, assignment.id],
+				params: [participationStatus, options.status === 'completed' ? null : input.code ?? options.defaultCode, now, now, assignment.id],
+			});
+			if (options.status !== 'completed' && assignment.invocationId) operations.push({
+				query: `UPDATE agent_invocation_requests SET status=?, assignment_id=?, completed_at=COALESCE(completed_at,?), blocking_state_json=?, updated_at=? WHERE id=? AND team_id=? AND status IN ('admitted','running')`,
+				params: [options.status==='cancelled'?'cancelled':'failed',assignment.id, now, JSON.stringify({ code: input.code ?? options.defaultCode, reason: input.reason ?? input.message ?? options.defaultReason }), now, assignment.invocationId, assignment.teamId],
 			});
 		}
 		await this.store.batch(operations);
 		const transitioned = await this.store.getProviderAssignment(principal.teamId, assignment.id);
 		if (!transitioned || transitioned.stateVersion !== assignment.stateVersion + 1 || transitioned.status !== options.status) return null;
+		if (assignment.operationHandoffId && (options.status === 'completed' || options.status === 'failed')) await terminalizeOperationHandoff(this.store, assignment.operationHandoffId, assignment.id, options.status, now);
 		return { assignment: transitioned, leaseToken: null, leaseSeconds: null };
 	}
 }

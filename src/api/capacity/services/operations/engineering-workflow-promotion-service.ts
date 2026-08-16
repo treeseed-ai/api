@@ -79,13 +79,13 @@ export function engineeringWorkflowPromotionConfigs(parameters: JsonRecord): Eng
 	});
 }
 
-function handlerSelection(agentClass: ProjectAgentClass, graphHandler: string | null) {
+function handlerSelection(agentClass: ProjectAgentClass, graphHandler: string | null, activityType: 'acting' | 'reviewing') {
 	if (agentClass.status !== 'active' || !agentClass.allowedModes.includes('acting')) return null;
-	const agents = projectAgentActivityRefs(agentClass.handlerRefs, 'acting');
+	const agents = projectAgentActivityRefs(agentClass.handlerRefs, activityType);
 	const matching = graphHandler ? agents.filter((agent) => agent.handlerId === graphHandler) : agents;
 	if (matching.length !== 1) throw new CapacityGovernanceError(
 		'engineering_workflow_agent_ambiguous',
-		`Engineering workflow class ${agentClass.slug} must resolve exactly one acting agent/handler.`,
+		`Engineering workflow class ${agentClass.slug} must resolve exactly one ${activityType} agent/handler.`,
 		409,
 		{ projectAgentClassId: agentClass.id, graphHandler, matchCount: matching.length },
 	);
@@ -152,7 +152,8 @@ async function createNodeInputs(input: {
 	const ids: string[] = [];
 	for (const node of input.graph.nodes) {
 		const agentClass = await resolveAgentClass(classes, input.config.projectId, node.targetAgentClass);
-		const selected = handlerSelection(agentClass, text(node.handler));
+		const activityType = node.activityType === 'reviewing' ? 'reviewing' : 'acting';
+		const selected = handlerSelection(agentClass, text(node.handler), activityType);
 		if (!selected?.agentId) throw new CapacityGovernanceError('engineering_workflow_agent_missing', `Engineering workflow class ${agentClass.slug} has no uniquely configured agent.`, 409, { projectAgentClassId: agentClass.id });
 		const estimate = input.estimates.find((candidate) => candidate.agentClass === agentClass.id || candidate.agentClass === agentClass.slug) ?? input.estimates[0]!;
 		const id = `dei_${stableHash({ graphId: input.graph.id, nodeId: node.id })}`;
@@ -162,7 +163,7 @@ async function createNodeInputs(input: {
 			id, projectId: input.config.projectId, projectAgentClassId: agentClass.id, mode: 'acting', status: 'accepted', scopeHash,
 			humanApprovalState: 'approved', planningInputsStatus: 'complete',
 			input: {
-				workGraphNodeId: node.id, estimateId: estimate.id, taskId: node.id, workDayId: input.workdayId, agentId: selected.agentId, handlerId: selected.handlerId,
+				workGraphNodeId: node.id, estimateId: estimate.id, taskId: node.id, workDayId: input.workdayId, agentId: selected.agentId, handlerId: selected.handlerId, activityType,
 				capacity: {
 					teamId: input.run.teamId, projectId: input.config.projectId, workDayId: input.workdayId,
 					allocationSetId: input.allocationSetId, mode: 'acting', projectAgentClassId: agentClass.id,

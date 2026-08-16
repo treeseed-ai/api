@@ -20,6 +20,7 @@ export interface AgentCapacityPlanTransitionInput {
 	reason?: string | null;
 	review?: JsonRecord;
 	metadata?: JsonRecord;
+	idempotencyKey?: string;
 }
 
 function text(value: unknown): string {

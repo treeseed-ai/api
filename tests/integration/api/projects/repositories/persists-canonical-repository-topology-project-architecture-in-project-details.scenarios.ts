@@ -40,7 +40,8 @@ it('returns and updates the canonical TreeDX repository topology without conflat
 		const binding = await json(await app.request(`/v1/projects/${project.id}/treedx-library`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-			body: JSON.stringify({ libraryId: 'acme/hub-one', repositoryId: 'repo_hub_one' }),
+			body: JSON.stringify({ libraryId: 'acme/hub-one', repositoryId: 'repo_hub_one',
+				topology: { contentRepository: { authoringBranch: 'main' } } }),
 		}));
 		expect(binding.payload.contentRepositoryUrl).toBe('https://github.com/acme/hub-one-content');
 
@@ -48,7 +49,7 @@ it('returns and updates the canonical TreeDX repository topology without conflat
 			headers: { authorization: `Bearer ${token}` },
 		}));
 		expect(topology.payload).toMatchObject({
-			contentRepository: { accessMode: 'treedx', contentPath: 'src/content', remote: null,
+			contentRepository: { accessMode: 'treedx', contentPath: 'src/content', authoringBranch: 'main', remote: null,
 				treeDx: { repositoryId: 'repo_hub_one', libraryId: 'acme/hub-one' } },
 			siteRepository: { accessMode: 'filesystem', name: 'hub-one-site' },
 		});

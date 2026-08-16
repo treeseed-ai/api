@@ -1,4 +1,4 @@
-import { governanceVotingProvider,normalizeGovernanceProposalPlan } from '@treeseed/sdk';
+import { decisionDependencyReferencesAreComplete,governanceVotingProvider,normalizeDecisionDependencyReferences,normalizeGovernanceProposalPlan } from '@treeseed/sdk';
 import { randomUUID } from 'node:crypto';
 import { COMMONS_TEAM_SLUG,governanceContentHash,governanceSlug,isoNow,MarketControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
 export async function createGovernanceProposalMethod(this: MarketControlPlaneStore, principal, input: any = {}) {
@@ -21,7 +21,12 @@ export async function createGovernanceProposalMethod(this: MarketControlPlaneSto
     const proposalTypes = [...new Set((Array.isArray(input.proposalTypes) ? input.proposalTypes : [input.proposalType ?? input.decisionType]).map(String).map((value) => value.trim()).filter(Boolean))];
     const proposalType = proposalTypes[0] ?? 'implementation';
     const normalizedTypes = proposalTypes.length ? proposalTypes : [proposalType];
-    const metadata = { ...(input.metadata ?? {}), proposalTypes: normalizedTypes, relatedObjectives: input.relatedObjectives ?? input.metadata?.relatedObjectives ?? [], evidenceRefs: input.evidenceRefs ?? input.metadata?.evidenceRefs ?? [], plan: normalizeGovernanceProposalPlan(input.plan ?? input.metadata?.plan), contentProvenance: input.contentProvenance ?? input.metadata?.contentProvenance ?? null };
+    const rawDecisionDependencies = input.decisionDependencies ?? input.metadata?.decisionDependencies ?? [];
+    if (!decisionDependencyReferencesAreComplete(rawDecisionDependencies)) {
+        const error: Error & Record<string, any> = new Error('Every decision dependency requires projectId and decisionId.');
+        error.status = 400; error.code = 'governance_decision_dependency_invalid'; throw error;
+    }
+    const metadata = { ...(input.metadata ?? {}), proposalTypes: normalizedTypes, relatedObjectives: input.relatedObjectives ?? input.metadata?.relatedObjectives ?? [], evidenceRefs: input.evidenceRefs ?? input.metadata?.evidenceRefs ?? [], decisionDependencies: normalizeDecisionDependencyReferences(rawDecisionDependencies), plan: normalizeGovernanceProposalPlan(input.plan ?? input.metadata?.plan), contentProvenance: input.contentProvenance ?? input.metadata?.contentProvenance ?? null };
     const contentHash = governanceContentHash({ title, summary, body, proposalType, ...metadata });
     const contentProposalSlug = optionalStringValue(input.contentProposalSlug) ?? governanceSlug(title, 'proposal');
     await this.run(`INSERT INTO governance_proposals (

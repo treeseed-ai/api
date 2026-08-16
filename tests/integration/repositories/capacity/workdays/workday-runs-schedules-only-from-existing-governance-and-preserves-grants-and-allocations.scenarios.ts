@@ -90,9 +90,24 @@ it('schedules only from existing governance and preserves grants and allocations
             grants: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_grants WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
             allocations: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_allocation_sets WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
         };
+		const request = {
+			id: 'run-governed', capacityProviderId: 'provider-governed', environment: 'local', status: 'running',
+			parameters: { projects: ['agent'], durationSeconds: 900, allocationSetId: allocation.id, availableSeconds: 900, planningSession: { rounds: 1, assignmentTimeboxSeconds: 60 } },
+		};
+		expect(await store.preflightCapacityWorkdayRunRequest('team-governed', request)).toMatchObject({
+			ok: true, providerId: 'provider-governed', allocationSetId: allocation.id,
+			projects: [{ id: 'project-agent', slug: 'agent', repositoryId: 'treeseed-agent', agentProfiles: 1 }],
+			availableSeconds: 900, planningSeconds: 180, requiredSeconds: 60, rounds: 1, waves: 1, participants: 1,
+		});
+		expect({
+			runs: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_workday_runs WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
+			envelopes: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_capacity_envelopes WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
+			events: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_workday_events WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
+			participants: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_planning_participants`, []))?.count ?? 0),
+			waves: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_planning_waves`, []))?.count ?? 0),
+		}).toEqual({ runs: 0, envelopes: 0, events: 0, participants: 0, waves: 0 });
         const run = await store.createCapacityWorkdayRun('team-governed', {
-            id: 'run-governed', capacityProviderId: 'provider-governed', environment: 'local', status: 'running',
-            parameters: { projects: ['agent'], durationSeconds: 900, allocationSetId: allocation.id, availableSeconds: 900, planningSession: { rounds: 1, assignmentTimeboxSeconds: 60 } },
+			...request,
         });
         expect(run).toMatchObject({
             id: 'run-governed', status: 'running',
@@ -173,9 +188,13 @@ it('persists workday runs and ordered audit events', async () => {
         const idempotent = await store.createCapacityWorkdayEvent('team-test', 'run-test', {
             id: 'event-idempotent', eventType: 'command.observed', status: 'recorded', title: 'Observed',
         });
-        const repeated = await store.createCapacityWorkdayEvent('team-test', 'run-test', {
-            id: 'event-idempotent', eventType: 'command.changed', status: 'error', title: 'Must not replace',
-        });
+		await expect(store.createCapacityWorkdayEvent('team-test', 'run-test', {
+			id: 'event-idempotent', eventType: 'command.changed', status: 'error', title: 'Must not replace',
+		})).rejects.toMatchObject({ code: 'capacity_workday_event_idempotency_conflict' });
+		const repeated = await store.createCapacityWorkdayEvent('team-test', 'run-test', {
+			id: 'event-idempotent', eventType: 'command.observed', status: 'recorded', title: 'Observed',
+			createdAt: idempotent?.createdAt,
+		});
         expect(first?.eventIndex).toBe(0);
         expect(second?.eventIndex).toBe(1);
         expect(idempotent).toMatchObject({ eventIndex: 2, eventType: 'command.observed', status: 'recorded' });
@@ -218,6 +237,7 @@ it('autonomously terminalizes an elapsed run with durable degraded evidence', as
     try {
         await store.ensureInitialized();
         await store.createTeam({ id: 'team-expiry', slug: 'expiry-team', name: 'expiry-team' });
+        await store.createProject('team-expiry', { id: 'project-expiry', slug: 'expiry-project', name: 'expiry-project' });
         const startedAt = new Date(Date.now() + 60000).toISOString();
         const deadlineAt = new Date(Date.parse(startedAt) + 60000).toISOString();
         const terminalizedAt = new Date(Date.parse(deadlineAt) + 600000).toISOString();
@@ -234,6 +254,16 @@ it('autonomously terminalizes an elapsed run with durable degraded evidence', as
             status: 'running',
             startedAt,
             parameters: { deadlineAt, settlementGraceSeconds: 300 },
+        });
+        await store.createWorkdayCapacityEnvelope({
+            id: 'workday-expiry', workdayRunId: 'run-expiry', projectId: 'project-expiry', status: 'active', availableSeconds: 60,
+        });
+        const admissionOnlyAt = new Date(Date.parse(deadlineAt) + 60000).toISOString();
+        expect(await store.maintainCapacityWorkdayRuns('team-expiry', admissionOnlyAt)).toEqual({ expired: 0, recoveredTerminalRuns: 0 });
+        expect(await store.maintainCapacityWorkdayRuns('team-expiry', admissionOnlyAt)).toEqual({ expired: 0, recoveredTerminalRuns: 0 });
+        expect((await store.listCapacityWorkdayEventsPage('team-expiry', 'run-expiry', { limit: 200 })).items[0]).toMatchObject({
+            id: 'workday-deadline-admission:run-expiry',
+            context: { deadlineAt, settlementGraceSeconds: 300 },
         });
         const concurrent = await Promise.all([
             store.maintainCapacityWorkdayRuns('team-expiry', terminalizedAt),

@@ -45,4 +45,37 @@ describe('Agent Lab read projections', () => {
 		const classes = await app.request(`/v1/teams/${team.id}/agent-lab/allocation`, { method: 'POST', headers, body: JSON.stringify({ scope: 'agent-class', projectId: project.id, slices: [{ id: 'class-a', percentage: 65 }, { id: 'class-b', percentage: 35 }], expectedActiveAllocationSetId: portfolioBody.payload.activeAllocationSetId, requestId: 'class-update' }) }); expect(classes.status).toBe(200);
 		active = await allocations.getActive(team.id); const classA = active?.slices.find((slice) => slice.targetId === 'class-a'); expect(classA?.policy).toEqual({ minPercent: 10, targetPercent: 65, maxPercent: 70, hardCapPercent: 80 }); expect(active?.slices.some((slice) => slice.id === 'mode-a')).toBe(true);
 	});
+
+	it('merges independent Atlas workspace layout fields without preference loss', async () => {
+		const db = createTestPostgresDatabase(); const store = createTestStore(db); const app = createTestApp({ db, store });
+		const token = await authorizeApp(app, { principalId: 'atlas-layout-owner', displayName: 'Atlas Layout Owner' });
+		const { team } = await createTeamAndProject(app, token, { slug: 'atlas-layout-team', name: 'Atlas Layout Team', description: 'Personal view state.' });
+		const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }; const endpoint = `/v1/teams/${team.id}/agent-lab/view-state`;
+		const vitals = await app.request(endpoint, { method: 'PATCH', headers, body: JSON.stringify({ namespace: 'atlas', kind: 'atlas-workspace', id: team.id, layoutPatch: { vitalDensity: 'compact' } }) });
+		expect(vitals.status).toBe(200);
+		const atlas = await app.request(endpoint, { method: 'PATCH', headers, body: JSON.stringify({ namespace: 'atlas', kind: 'atlas-workspace', id: team.id, layoutPatch: { metric: 'cost', dock: 'assignments', redrawSeed: 4 } }) });
+		expect(atlas.status).toBe(200);
+		const state = await app.request(`${endpoint}?namespace=atlas`, { headers }); const body = await json(state);
+		expect(body.payload).toContainEqual(expect.objectContaining({ kind: 'atlas-workspace', id: team.id, layout: { vitalDensity: 'compact', metric: 'cost', dock: 'assignments', redrawSeed: 4 } }));
+	});
+
+	it('keeps raw Atlas evidence behind diagnostic detail mode', async () => {
+		const db = createTestPostgresDatabase(); const store = createTestStore(db); const app = createTestApp({ db, store });
+		const token = await authorizeApp(app, { principalId: 'atlas-diagnostic-owner', displayName: 'Atlas Diagnostic Owner' });
+		const { team, project } = await createTeamAndProject(app, token, { slug: 'atlas-diagnostic-team', name: 'Atlas Diagnostic Team', description: 'Protected evidence.' });
+		const headers = { authorization: `Bearer ${token}` };
+		const now = new Date().toISOString();
+		const handlerRefs = JSON.stringify({ agents: [{ slug: 'diagnostic-agent', activities: { planning: { handler: 'writer', purpose: 'Inspect protected workday evidence.' } } }] });
+		await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES ('diagnostic-class', ?, ?, 'diagnostic-class', 'Diagnostic Class', 'active', '["planning"]', '[]', '{}', '{}', ?, '{}', '{}', ?, ?)`, [team.id, project.id, handlerRefs, now, now]);
+		const projection = (await json(await app.request(`/v1/teams/${team.id}/agent-lab/atlas`, { headers }))).payload;
+		const node = projection.topologies.flatMap((topology: any) => topology.nodes).find((item: any) => item.kind === 'project');
+		expect(node).toBeTruthy();
+		const endpoint = `/v1/teams/${team.id}/agent-lab/atlas/details/project/${encodeURIComponent(node.id.replace(/@[a-f0-9]{8}$/u, ''))}`;
+		const easy = await json(await app.request(`${endpoint}?detail=easy`, { headers }));
+		expect(easy.payload).toMatchObject({ data: {}, summary: { project: expect.any(String) } });
+		expect(easy.payload.evidence).toBeUndefined();
+		const diagnostic = await json(await app.request(`${endpoint}?detail=diagnostic`, { headers }));
+		expect(diagnostic.payload.data).toMatchObject({ kind: 'project' });
+		expect(diagnostic.payload.evidence).toMatchObject({ replayCursor: expect.any(Object) });
+	});
 });

@@ -24,6 +24,15 @@ async function seed(store: ReturnType<typeof harness>['store']) {
 	await store.ensureInitialized();
 	await store.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES ('team-a', 'team-a', 'Team A', ?, ?)`, [now, now]);
 	await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', ?, ?)`, [now, now]);
+	await seedAcceptedDecision(store, { decisionId: 'decision-a', projectId: 'project-a', proposalId: 'proposal-a', now });
+}
+async function seedAcceptedDecision(store: ReturnType<typeof harness>['store'], input: { decisionId: string; projectId: string; proposalId: string; now?: string; dependencies?: unknown[] }) {
+	const now = input.now ?? new Date().toISOString();
+	const hash = `hash:${input.proposalId}`;
+	await store.run(`INSERT INTO governance_proposals (id, team_id, project_id, scope, status, title, summary, body, proposal_type, proposal_types_json, active_version, active_content_hash, governance_provider_id, governance_provider_version, metadata_json, created_at, updated_at)
+		VALUES (?, 'team-a', ?, 'project', 'accepted', ?, 'Accepted proposal summary', 'Accepted proposal body', 'implementation', '["implementation"]', 1, ?, 'admin_approval_v1', '1', '{}', ?, ?)`, [input.proposalId, input.projectId, input.proposalId, hash, now, now]);
+	await store.run(`INSERT INTO governance_decisions (id, team_id, project_id, proposal_id, proposal_version, proposal_content_hash, status, title, summary, governance_provider_id, governance_rule_json, vote_result_json, voter_reasons_json, proposal_snapshot_json, decision_record_json, created_by_type, created_at, updated_at)
+		VALUES (?, 'team-a', ?, ?, 1, ?, 'accepted', ?, 'Accepted decision summary', 'admin_approval_v1', '{}', '{}', '[]', '{}', ?, 'system', ?, ?)`, [input.decisionId, input.projectId, input.proposalId, hash, input.decisionId, JSON.stringify({ decisionDependencies: input.dependencies ?? [] }), now, now]);
 }
 async function acceptedEstimate(store: ReturnType<typeof harness>['store'], id = 'estimate-a') {
 	return store.createStructuredAgentEstimate('decision-a', {
@@ -59,6 +68,62 @@ describe('decision work graph service', () => {
 			expect(graph!.nodes[1]).toMatchObject({ targetAgentClass: 'engineer', requiredDeliverableContractIds: [graph!.deliverableContracts[0]!.id], metadata: { testMutationForbidden: true } });
 			expect(graph!.nodes[0]).toMatchObject({ status: 'ready', metadata: { implementationMutationForbidden: true } });
 			expect(graph!.deliverableContracts.every((contract) => contract.id.endsWith(':v1'))).toBe(true);
+		} finally { await database.close(); }
+	});
+
+	it('keeps assignments project-local while snapshotting accepted cross-project decisions', async () => {
+		const { database, store } = harness();
+		try {
+			await seed(store);
+			const now = new Date().toISOString();
+			await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES ('project-b', 'team-a', 'project-b', 'Project B', ?, ?)`, [now, now]);
+			await seedAcceptedDecision(store, { decisionId: 'decision-b', projectId: 'project-b', proposalId: 'proposal-b', now });
+			const dependency = { teamId: 'team-a', projectId: 'project-b', decisionId: 'decision-b', proposalId: 'proposal-b', proposalVersion: 1, proposalContentHash: 'hash:proposal-b' };
+			await store.run(`UPDATE governance_decisions SET decision_record_json = ? WHERE id = 'decision-a'`, [JSON.stringify({ decisionDependencies: [dependency] })]);
+			const graph = await store.createDecisionAssignmentGraph('decision-a', {
+				projectId: 'project-a', workflowKind: 'engineering-test-first', exactBaseRef: '0123456789abcdef',
+				roles: { tester: 'tester', engineer: 'engineer', reviewer: 'reviewer', technicalWriter: 'writer', releaser: 'releaser' },
+				metadata: { decisionDependencies: [{ projectId: 'attacker', decisionId: 'forged' }], proposalVersion: 99 },
+			});
+			expect(graph!.metadata).toMatchObject({ proposalId: 'proposal-a', proposalVersion: 1, proposalContentHash: 'hash:proposal-a', decisionDependencies: [dependency] });
+			expect(graph!.projectId).toBe('project-a');
+			expect(graph!.nodes.every((node) => node.projectId === 'project-a')).toBe(true);
+			expect(graph!.deliverableContracts.every((contract) => contract.projectId === 'project-a')).toBe(true);
+			await expect(store.createDecisionAssignmentGraph('decision-b', {
+				projectId: 'project-a', workflowKind: 'engineering-test-first', exactBaseRef: '0123456789abcdef',
+				roles: { tester: 'tester', engineer: 'engineer', reviewer: 'reviewer', technicalWriter: 'writer', releaser: 'releaser' },
+			})).rejects.toMatchObject({ code: 'governance_decision_project_mismatch' });
+		} finally { await database.close(); }
+	});
+
+	it('rejects graph compilation when a dependency decision snapshot becomes stale', async () => {
+		const { database, store } = harness();
+		try {
+			await seed(store);
+			const now = new Date().toISOString();
+			await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES ('project-b', 'team-a', 'project-b', 'Project B', ?, ?)`, [now, now]);
+			await seedAcceptedDecision(store, { decisionId: 'decision-b', projectId: 'project-b', proposalId: 'proposal-b', now });
+			await store.run(`UPDATE governance_decisions SET decision_record_json = ? WHERE id = 'decision-a'`, [JSON.stringify({ decisionDependencies: [{ teamId: 'team-a', projectId: 'project-b', decisionId: 'decision-b', proposalId: 'proposal-b', proposalVersion: 1, proposalContentHash: 'hash:proposal-b' }] })]);
+			await store.run(`UPDATE governance_proposals SET active_content_hash = 'changed' WHERE id = 'proposal-b'`);
+			await expect(store.createDecisionAssignmentGraph('decision-a', {
+				projectId: 'project-a', workflowKind: 'engineering-test-first', exactBaseRef: '0123456789abcdef',
+				roles: { tester: 'tester', engineer: 'engineer', reviewer: 'reviewer', technicalWriter: 'writer', releaser: 'releaser' },
+			})).rejects.toMatchObject({ code: 'governance_decision_proposal_stale' });
+		} finally { await database.close(); }
+	});
+
+	it('revalidates execution authority receipts through the authenticated control-plane route', async () => {
+		const { database, store } = harness();
+		try {
+			await seed(store);
+			const app = new Hono();
+			installDecisionWorkGraphRoutes(app, { store, async requireProjectAccess() { return {}; } });
+			const authority = { authorityId: 'authority-a', teamId: 'team-a', projectId: 'project-a', decisionId: 'decision-a', proposalId: 'proposal-a', proposalVersion: 1, proposalContentHash: 'hash:proposal-a', decisionDependencies: [] };
+			const valid = await (await app.request('/v1/governance/execution-authorities/validate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ authorities: [authority] }) })).json() as any;
+			expect(valid).toMatchObject({ ok: true, payload: [{ authorityId: 'authority-a', valid: true, code: null }] });
+			await store.run(`UPDATE governance_decisions SET status = 'superseded', superseded_at = ? WHERE id = 'decision-a'`, [new Date().toISOString()]);
+			const stale = await (await app.request('/v1/governance/execution-authorities/validate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ authorities: [authority] }) })).json() as any;
+			expect(stale).toMatchObject({ ok: true, payload: [{ authorityId: 'authority-a', valid: false, code: 'governance_decision_not_accepted' }] });
 		} finally { await database.close(); }
 	});
 

@@ -62,7 +62,7 @@ async function seedAdmittedAssignment(database: MarketControlPlaneStore, status:
     await database.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner', '{}', ?, ?)`, [now, now, now]);
     await database.run(`INSERT INTO capacity_allocation_sets (id, team_id, version, status, effective_from, reserve_policy_json, slices_json, borrowing_rules_json, metadata_json, created_at, updated_at) VALUES ('allocation-a', 'team-a', 1, 'active', ?, '{}', '[]', '[]', '{}', ?, ?)`, [now, now, now]);
     await database.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, capabilities_json, allowed_modes_json, daily_agent_seconds_limit, metadata_json, created_at, updated_at) VALUES ('grant-a', 'membership-a', 'provider-a', 'team-a', 'project-a', 'local', 'active', '[]', '["planning"]', 10, '{}', ?, ?)`, [now, now]);
-    await database.run(`INSERT INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, state, reserved_seconds, created_at, updated_at) VALUES ('reservation-a', 'reservation-a', 'token-a', 'membership-a', 'grant-a', 'provider-a', 'allocation-a', 1, 'class-a', 'assignment-a', 'planning', 'team-a', 'project-a', 'workday-a', 'reserved', 1, ?, ?)`, [now, now]);
+    await database.run(`INSERT INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, state, requested_seconds, reserved_seconds, created_at, updated_at) VALUES ('reservation-a', 'reservation-a', 'token-a', 'membership-a', 'grant-a', 'provider-a', 'allocation-a', 1, 'class-a', 'assignment-a', 'planning', 'team-a', 'project-a', 'workday-a', 'reserved', 1, 1, ?, ?)`, [now, now]);
     await database.run(`INSERT INTO capacity_provider_assignments (id, membership_id, team_id, project_id, capacity_provider_id, execution_provider_id, project_agent_class_id, reservation_id, work_day_id, mode, status, lease_state, lease_token, lease_expires_at, state_version, capacity_envelope_json, decision_input_json, synthesized_from, created_at, updated_at) VALUES ('assignment-a', 'membership-a', 'team-a', 'project-a', 'provider-a', 'codex', 'class-a', 'reservation-a', 'workday-a', 'planning', ?, ?, ?, ?, 2, '{"teamId":"team-a","projectId":"project-a","mode":"planning"}', '{"teamId":"team-a","projectId":"project-a","projectAgentClassId":"class-a","mode":"planning","input":{}}', 'workday_demand', ?, ?)`, [status, leased ? 'leased' : 'unleased', leased ? 'lease-a' : null, leased ? '2099-01-01T00:00:00.000Z' : null, now, now]);
     await database.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_seconds, idempotency_key, claim_token, assignment_id, payload_json, metadata_json, available_at, claimed_at, admitted_at, created_at, updated_at) VALUES ('demand-a', 'team-a', 'project-a', 'run-a', 'workday-a', 'idle-intent', 'architect', 'planning', 'class-a', 'architect', 'writer', 'planning', 'admitted', 1, 1, 'demand-a', 'claim-a', 'assignment-a', '{"repositoryId":"treeseed-project-a","contentRoot":"src/content","intent":{"objective":"Recover the admitted work."}}', '{"environment":"local"}', ?, ?, ?, ?, ?)`, [now, now, now, now, now]);
     return now;
@@ -94,17 +94,31 @@ it('bases a content handoff workspace on the exact upstream artifact commit', ()
 
 it('narrows assignment TreeDX writes to the configured editorial book hierarchy', () => {
     expect(resolveAssignmentContentPathScope({
-        contentAccess: { write: { paths: [
+        permissions: { content: { note: { operations: ['create', 'update'], filters: { paths: [
             'src/content/notes/editorial/books/treeseed-guide/reviews/**',
             'src/content/questions/editorial/books/treeseed-guide/**',
-        ] } },
+        ] } } } },
     }, 'write', 'src/content', ['src/content/**'])).toEqual([
         'src/content/notes/editorial/books/treeseed-guide/reviews/**',
         'src/content/questions/editorial/books/treeseed-guide/**',
     ]);
     expect(() => resolveAssignmentContentPathScope({
-        contentAccess: { write: { paths: ['packages/api/src/**'] } },
+        permissions: { content: { note: { operations: ['create'], filters: { paths: ['packages/api/src/**'] } } } },
     }, 'write', 'src/content', ['src/content/**'])).toThrow(/outside the project content root/u);
+});
+
+it('compiles model-level read authority into collection paths when no path filter is present', () => {
+    expect(resolveAssignmentContentPathScope({
+        permissions: { content: {
+            book: { operations: ['query', 'read'], filters: { books: ['treeseed-guide'] } },
+            objective: { operations: ['read'], filters: { books: ['treeseed-guide'] } },
+            note: { operations: ['read'], filters: { paths: ['src/content/notes/editorial/books/treeseed-guide/**'] } },
+        } },
+    }, 'read', 'src/content', ['**'])).toEqual([
+        'src/content/books/**',
+        'src/content/objectives/**',
+        'src/content/notes/editorial/books/treeseed-guide/**',
+    ]);
 });
 
 it('derives deterministic open objectives, questions, proposals, decisions, and knowledge gaps through TreeDX', async () => {
@@ -119,8 +133,10 @@ it('derives deterministic open objectives, questions, proposals, decisions, and 
         const directory = path.split('/').at(-2) ?? '';
         const singular = directory.replace(/s$/u, '');
         const frontmatter = directory === 'questions'
-            ? { title: 'Missing evidence', status: 'open', question_type: 'knowledge-gap' }
-            : { title: `Open ${singular}`, status: 'open' };
+            ? { title: 'Missing evidence', status: 'planned', question_type: 'knowledge-gap' }
+            : directory === 'proposals'
+                ? { title: 'Open proposal', description: 'Planning proposal.', date: '2026-08-12', status: 'planned', summary: 'Open planning proposal.', proposal_type: 'implementation', motivation: 'Test planning demand.', primary_contributor: 'architect' }
+                : { title: `Open ${singular}`, status: 'planned' };
         return new Response(JSON.stringify({ ok: true, results: [{ path: `src/content/${directory}/${singular}-a.mdx`, frontmatter, body: `Body for ${singular}.` }] }), {
             status: 200, headers: { 'content-type': 'application/json' },
         });
@@ -307,6 +323,9 @@ it('enforces active, useful-work, deadline, budget, pause, and resume continuati
     const { database, store } = harness();
     try {
         const now = await seed(store);
+        await store.run(`INSERT INTO capacity_providers (id, fingerprint, public_jwk_json, display_name, identity_version, status, metadata_json, created_at, updated_at) VALUES ('provider-a', 'sha256:provider-a', '{}', 'Provider A', 1, 'active', '{}', ?, ?)`, [now, now]);
+        await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner', '{}', ?, ?)`, [now, now, now]);
+        await store.run(`INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, environment, status, opened_at, refreshed_at, expires_at, available_from, execution_providers_json, metadata_json, created_at, updated_at) VALUES ('session-a', 'membership-a', 'team-a', 'provider-a', 'local', 'open', ?, ?, '2099-01-01T00:00:00.000Z', ?, '[{"id":"codex","status":"available","capabilities":["writer"],"availableConcurrency":1,"maxConcurrentRunners":1}]', '{}', ?, ?)`, [now, now, now, now, now]);
         const controlPlane = createCapacityControlPlane(store);
         const evaluate = (usefulEligibleWork = true) => evaluateDurableWorkdayContinuation(store, {
             teamId: 'team-a', workdayRunId: 'run-a', workdayId: 'workday-a', usefulEligibleWork, now,
@@ -391,6 +410,9 @@ it('compiles configured planning into one durable demand instead of creating an 
     const { database, store } = harness();
     try {
         const now = await seed(store);
+        await store.run(`INSERT INTO capacity_providers (id, fingerprint, public_jwk_json, display_name, identity_version, status, metadata_json, created_at, updated_at) VALUES ('provider-a', 'sha256:provider-a', '{}', 'Provider A', 1, 'active', '{}', ?, ?)`, [now, now]);
+        await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner', '{}', ?, ?)`, [now, now, now]);
+        await store.run(`INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, environment, status, opened_at, refreshed_at, expires_at, available_from, execution_providers_json, metadata_json, created_at, updated_at) VALUES ('session-a', 'membership-a', 'team-a', 'provider-a', 'local', 'open', ?, ?, '2099-01-01T00:00:00.000Z', ?, '[{"id":"codex","status":"available","capabilities":["writer"],"availableConcurrency":1,"maxConcurrentRunners":1,"lanes":[{"id":"codex-operation","purpose":"operation","maxConcurrentRunners":1,"capabilities":["writer"]}]}]', '{}', ?, ?)`, [now, now, now, now, now]);
         const controlPlane = createCapacityControlPlane(store);
         await expect(compileProviderWorkdayDemand(controlPlane, {
             teamId: 'team-a', capacityProviderId: 'provider-a', membershipId: 'membership-a',
@@ -427,7 +449,7 @@ it('stops new work without zero-settling a valid in-flight lease during its grac
         await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner', '{}', ?, ?)`, [now, now, now]);
         await store.run(`INSERT INTO capacity_allocation_sets (id, team_id, version, status, effective_from, reserve_policy_json, slices_json, borrowing_rules_json, metadata_json, created_at, updated_at) VALUES ('allocation-a', 'team-a', 1, 'active', ?, '{}', '[]', '[]', '{}', ?, ?)`, [now, now, now]);
         await store.run(`INSERT INTO capacity_grants (id, membership_id, capacity_provider_id, team_id, project_id, environment, status, capabilities_json, allowed_modes_json, daily_agent_seconds_limit, metadata_json, created_at, updated_at) VALUES ('grant-a', 'membership-a', 'provider-a', 'team-a', 'project-a', 'local', 'active', '[]', '["planning"]', 10, '{}', ?, ?)`, [now, now]);
-        await store.run(`INSERT INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, state, reserved_seconds, created_at, updated_at) VALUES ('reservation-a', 'reservation-a', 'token-a', 'membership-a', 'grant-a', 'provider-a', 'allocation-a', 1, 'class-a', 'assignment-a', 'planning', 'team-a', 'project-a', 'workday-a', 'reserved', 1, ?, ?)`, [now, now]);
+        await store.run(`INSERT INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, state, requested_seconds, reserved_seconds, created_at, updated_at) VALUES ('reservation-a', 'reservation-a', 'token-a', 'membership-a', 'grant-a', 'provider-a', 'allocation-a', 1, 'class-a', 'assignment-a', 'planning', 'team-a', 'project-a', 'workday-a', 'reserved', 1, 1, ?, ?)`, [now, now]);
         await store.run(`INSERT INTO capacity_provider_assignments (id, membership_id, team_id, project_id, capacity_provider_id, project_agent_class_id, reservation_id, work_day_id, mode, status, lease_state, lease_token, lease_expires_at, state_version, capacity_envelope_json, decision_input_json, created_at, updated_at) VALUES ('assignment-a', 'membership-a', 'team-a', 'project-a', 'provider-a', 'class-a', 'reservation-a', 'workday-a', 'planning', 'leased', 'leased', 'lease-a', ?, 2, '{"teamId":"team-a","projectId":"project-a","mode":"planning"}', '{"teamId":"team-a","projectId":"project-a","projectAgentClassId":"class-a","mode":"planning","input":{}}', ?, ?)`, [leaseExpiresAt, now, now]);
         await store.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_seconds, idempotency_key, assignment_id, payload_json, metadata_json, available_at, admitted_at, created_at, updated_at) VALUES ('demand-a', 'team-a', 'project-a', 'run-a', 'workday-a', 'idle-intent', 'architect', 'planning', 'class-a', 'architect', 'writer', 'planning', 'admitted', 1, 1, 'demand-a', 'assignment-a', '{}', '{}', ?, ?, ?, ?)`, [now, now, now, now]);
         const preserved = await createCapacityControlPlane(store).terminalizeCapacityWorkdayAssignments('team-a', 'run-a', {
@@ -436,12 +458,22 @@ it('stops new work without zero-settling a valid in-flight lease during its grac
         expect(preserved).toMatchObject({ unfinishedAssignmentCount: 1, deferredActiveAssignmentCount: 1 });
         expect(await store.first(`SELECT status, lease_token FROM capacity_provider_assignments WHERE id = 'assignment-a'`)).toEqual({ status: 'leased', lease_token: 'lease-a' });
         expect(await store.first(`SELECT state FROM capacity_reservations WHERE id = 'reservation-a'`)).toEqual({ state: 'reserved' });
+		await store.run(`UPDATE capacity_provider_assignments SET lifecycle_output_json = ? WHERE id = 'assignment-a'`, [
+			JSON.stringify({ metadata: { executionSnapshot: { artifactManifest: { status: 'returned' } } } }),
+		]);
         const fenced = await createCapacityControlPlane(store).terminalizeCapacityWorkdayAssignments('team-a', 'run-a', {
             now: '2026-07-18T12:06:00.000Z', preserveActiveLeasesUntil: graceUntil,
         });
         expect(fenced).toMatchObject({ unfinishedAssignmentCount: 0, failedAssignments: 1, deferredActiveAssignmentCount: 0 });
         expect(await store.first(`SELECT status, lease_token FROM capacity_provider_assignments WHERE id = 'assignment-a'`)).toEqual({ status: 'failed', lease_token: null });
         expect(await store.first(`SELECT state, active_seconds FROM capacity_reservations WHERE id = 'reservation-a'`)).toEqual({ state: 'consumed', active_seconds: 0 });
+		const evidence = await store.first<{ lifecycle_output_json: unknown }>(`SELECT lifecycle_output_json FROM capacity_provider_assignments WHERE id = 'assignment-a'`);
+		const lifecycleOutput = JSON.parse(String(evidence?.lifecycle_output_json ?? '{}')) as Record<string, unknown>;
+		expect(lifecycleOutput).toMatchObject({
+			metadata: { executionSnapshot: { artifactManifest: { status: 'returned' } } },
+			runId: 'run-a',
+			terminalizedAt: '2026-07-18T12:06:00.000Z',
+		});
     }
     finally {
         await database.close();

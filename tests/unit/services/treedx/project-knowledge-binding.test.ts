@@ -30,4 +30,32 @@ describe('project knowledge binding reconciliation', () => {
 			contentRepositoryRef: 'refs/heads/staging',
 		}));
 	});
+
+	it('replaces a stale content repository URL with the seed-owned repository', async () => {
+		const upsertProjectTreeDxLibrary = vi.fn(async () => ({}));
+		const store = {
+			getProjectTreeDxLibrary: vi.fn(async () => ({
+				contentRepositoryUrl: 'https://github.com/knowledge-coop/market.git',
+				contentRepositoryDefaultBranch: 'main',
+				contentRepositoryRef: 'refs/heads/staging',
+			})),
+			upsertTeamTreeDx: vi.fn(async () => ({})),
+			upsertProjectTreeDxLibrary,
+		};
+		await ensureProjectKnowledgeBinding({
+			store,
+			projectId: 'project-market',
+			teamId: 'team-a',
+			projectSlug: 'market',
+			contentRepositoryUrl: 'https://github.com/treeseed-ai/market-content.git',
+			contentRepositoryDefaultBranch: 'main',
+			dependencyState: { repositoryCatalog: Promise.resolve([{
+				name: 'treeseed-market', repoId: 'repo-market', defaultRef: 'refs/heads/main',
+			}]) },
+		});
+		expect(upsertProjectTreeDxLibrary).toHaveBeenCalledWith('project-market', expect.objectContaining({
+			contentRepositoryUrl: 'https://github.com/treeseed-ai/market-content.git',
+			contentRepositoryDefaultBranch: 'main',
+		}));
+	});
 });

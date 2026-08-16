@@ -24,6 +24,7 @@ function providerSignalInput(assignment: Record<string, unknown>, body: Record<s
 	if (!/^[a-z0-9][a-z0-9-]{1,119}$/u.test(contractId)) throw new CapacityGovernanceError('assignment_signal_contract_invalid', 'Signal contract ID is invalid.', 400);
 	if (!subjectKind || !subjectId || !causationId || !correlationId) throw new CapacityGovernanceError('assignment_signal_identity_required', 'Signal subject, causation, and correlation identities are required.', 400);
 	const evidence = assignmentRecord(body.evidence);
+	const mutationReceipt = assignmentRecord(evidence.mutationReceipt);
 	const commitSha = typeof evidence.commitSha === 'string' ? evidence.commitSha.trim() : '';
 	const evidenceRef = typeof evidence.controlPlaneRef === 'string' ? evidence.controlPlaneRef.trim() : '';
 	if (!commitSha && !evidenceRef) throw new CapacityGovernanceError('assignment_signal_evidence_required', 'A signal requires immutable commit evidence or a durable control-plane evidence reference.', 400);
@@ -39,8 +40,9 @@ function providerSignalInput(assignment: Record<string, unknown>, body: Record<s
 		commitSha: commitSha || null, immutableRef: typeof evidence.immutableRef === 'string' ? evidence.immutableRef : null,
 		digest: typeof evidence.digest === 'string' ? evidence.digest : null,
 		changedPaths: Array.isArray(evidence.changedPaths) ? evidence.changedPaths.filter((entry) => typeof entry === 'string') : [],
-		evidenceRef: evidenceRef || null, payload: assignmentRecord(sanitized.payload),
-		metadata: { ...assignmentRecord(sanitized.metadata), producerProfile: assignmentActivityType(assignment) ?? null, groupMembershipSnapshot, groupMembershipSource },
+		evidenceRef: evidenceRef || (typeof mutationReceipt.id === 'string' ? `artifact-mutation-receipt:${mutationReceipt.id}` : null), payload: assignmentRecord(sanitized.payload),
+		metadata: { ...assignmentRecord(sanitized.metadata), producerProfile: assignmentActivityType(assignment) ?? null, groupMembershipSnapshot, groupMembershipSource,
+			mutationReceipt: Object.keys(mutationReceipt).length ? mutationReceipt : null },
 		workdayRunId: typeof metadata.workdayRunId === 'string' ? metadata.workdayRunId : null,
 	};
 }
@@ -66,7 +68,7 @@ export function installProviderAssignmentSignalRoutes(app: Hono, store: Provider
 				?? snapshot.agents.find((agent) => agent.slug === assignment.agentId);
 			const evidence = assignmentRecord(body.evidence);
 			const knownGroupIds = new Set([...Object.keys(snapshot.groups), ...snapshot.agents.flatMap((agent) => agent.groupIds)]);
-			const subjectGroups = resolveSignalSubjectGroups(body, selectedAgent?.primaryGroupId ?? null, knownGroupIds);
+			const subjectGroups = resolveSignalSubjectGroups(body, knownGroupIds);
 			const membership = subjectGroups.directGroupIds.length ? resolveEffectiveGroupMembership({ projectId: String(assignment.projectId), directGroupIds: subjectGroups.directGroupIds, edges: Object.values(snapshot.groupEdges) }) : null;
 			const groupMembershipSnapshot: GroupMembershipSnapshot | null = membership ? {
 				...membership, projectId: String(assignment.projectId), graphRevision: snapshot.revision,

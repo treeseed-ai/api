@@ -30,7 +30,7 @@ describe('Agent Lab projection service', () => {
 	});
 
 	it('derives native attempt metrics and deduplicates durable artifacts', async () => {
-		const service = new AgentLabProjectionService(fixtureStore());
+		const store = fixtureStore(); const service = new AgentLabProjectionService(store);
 		const snapshot = await service.snapshot('team-a', 'America/New_York', new Date('2026-08-03T16:00:00.000Z'));
 		expect(Object.fromEntries(snapshot!.overview.metrics.map((metric) => [metric.key, metric.value]))).toMatchObject({ agents: 1, workdays: 1, systemEvents: 1, assignments: 1, executions: 1, artifacts: 1, passed: 1, failed: 0, running: 0 });
 		expect(service.activity(snapshot!.rows)[0]).toMatchObject({ activityProfile: 'estimating', status: 'succeeded', stateVersion: 3 });
@@ -39,5 +39,20 @@ describe('Agent Lab projection service', () => {
 		expect(series.at(-1)?.statistics.workdays).toMatchObject({ semantic: 'exact-total', exactTotal: 1, mean: 1, standardDeviation: null, sampleSize: 1 });
 		expect(series.at(-1)?.statistics.running?.semantic).toBe('instantaneous');
 		expect(snapshot!.overview.workdayContext).toMatchObject({ selectedDate: '2026-08-03', selectedWorkdayId: null, latestWorkdayId: 'day-a' });
+		const projectionQueries = store.all.mock.calls.map(([query]) => String(query));
+		expect(projectionQueries.find((query) => query.includes('FROM capacity_provider_assignments assignment'))).not.toContain('assignment.*');
+		expect(projectionQueries.find((query) => query.includes('FROM agent_mode_runs'))).not.toContain('mode_run.*');
+	});
+
+	it('coalesces concurrent endpoint snapshots from the same live observation window', async () => {
+		const store = fixtureStore(); const service = new AgentLabProjectionService(store);
+		const at = new Date('2026-08-03T16:00:00.000Z');
+		const [overview, build, detail] = await Promise.all([
+			service.snapshot('team-a', 'America/New_York', at),
+			service.snapshot('team-a', 'America/New_York', at),
+			new AgentLabProjectionService(store).snapshot('team-a', 'America/New_York', at),
+		]);
+		expect(overview).toBe(build); expect(build).toBe(detail);
+		expect(store.all.mock.calls.filter(([query]) => String(query).includes('capacity_workday_events'))).toHaveLength(1);
 	});
 });

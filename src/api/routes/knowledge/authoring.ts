@@ -3,9 +3,10 @@ import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treed
 import { createRevisionWorkspace, currentReviewIds, discardRevisionWorkspace, reviewWorkspaceAvailable } from '../../knowledge/review-revision.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspace-identity.ts';
 import { editorialReviewGate, editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedEditorialContextTrace } from '../../knowledge/editorial-review.ts';
-import { relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
+import { RelationContentValidationError,relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
 import { allowedWorkspacePath, assertSimulatedProductionPolicy, authorizedCatalog, bookDocument, list, pageDocument, parseBook, parseKnowledgePage, requestId, text, workspaceAccess } from './authoring-support.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 export { reviewPathsMatch, searchRelations } from './relation-search.ts';
 
@@ -50,7 +51,8 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 		if (!connection) return jsonError(c, 503, 'The project knowledge graph is unavailable.');
 		try {
 			return c.json({ ok: true, payload: { results: await searchRelations(connection, query, requested) } });
-		} catch {
+		} catch (error) {
+			if (error instanceof RelationContentValidationError) return jsonError(c,error.status,error.message,{code:error.code,diagnostics:error.diagnostics});
 			return jsonError(c, 503, 'Knowledge relationship search is unavailable.', { code: 'knowledge_relation_search_unavailable' });
 		}
 	});
@@ -118,7 +120,10 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 		const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId, write: false, relationPaths: true });
 		if (!connection) return jsonError(c, 503, 'The project knowledge graph is unavailable.');
 		try { return c.json({ ok: true, payload: { results: await searchRelations(connection, query, requested) } }); }
-		catch { return jsonError(c, 503, 'Knowledge relationship search is unavailable.', { code: 'knowledge_relation_search_unavailable' }); }
+		catch (error) {
+			if (error instanceof RelationContentValidationError) return jsonError(c,error.status,error.message,{code:error.code,diagnostics:error.diagnostics});
+			return jsonError(c, 503, 'Knowledge relationship search is unavailable.', { code: 'knowledge_relation_search_unavailable' });
+		}
 	});
 
 	app.get('/v1/knowledge/workspaces/:workspaceId/content', async (c: any) => {
@@ -265,6 +270,7 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 				message: text(body.message) || 'Update knowledge', author: { name: text(access.principal.name) || access.principal.id,
 					email: text(access.principal.email) || `${access.principal.id}@users.treeseed.local` } });
 		const requiredReviewerIds = requiredRevisionReviewerIds(existingReview);
+		await recordTreeDxAuthoringState(store,'unpublished',{ projectId:access.workspace.projectId,repositoryId:access.workspace.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:diff.changedPaths,actorType:'user',actorId:access.principal.id });
 		await projectTreeDxCommitSignals(store, { projectId: access.workspace.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: diff.changedPaths, changeSummary: text(body.message) || 'Update knowledge', actorType: 'user', actorId: access.principal.id });
 		const submitted = await store.submitKnowledgeWorkspace({ workspaceId: access.workspace.id,
 			workspaceVersion: access.workspace.version, submittedByUserId: access.principal.id,

@@ -19,7 +19,7 @@ describe('provider synthesis context', () => {
 				id: 'session-a', membership_id: 'membership-a', team_id: 'team-a', capacity_provider_id: 'provider-a',
 				environment: 'local', status: 'open', available_from: '2026-07-17T11:00:00.000Z',
 				available_until: '2026-07-17T13:00:00.000Z', expires_at: '2026-07-17T13:00:00.000Z', closed_at: null,
-				execution_providers_json: '[{"id":"codex","status":"available","capabilities":["engineering"]}]',
+				execution_providers_json: '[{"id":"codex","status":"available","capabilities":["engineering"],"minimumAssignmentDuration":{"amount":600,"unit":"seconds"}}]',
 			};
 		});
 		await expect(resolveProviderSynthesisContext(database(first), principal, {
@@ -27,7 +27,7 @@ describe('provider synthesis context', () => {
 		})).resolves.toMatchObject({
 			provider: { id: 'provider-a', status: 'active' },
 			session: { id: 'session-a', membershipId: 'membership-a', environment: 'local', status: 'open' },
-			executionProviders: [{ id: 'codex', status: 'available', capabilities: ['engineering'] }],
+			executionProviders: [{ id: 'codex', status: 'available', capabilities: ['engineering'], minimumAssignmentDuration: { amount: 600, unit: 'seconds' } }],
 			environment: 'local',
 		});
 		expect(first).toHaveBeenCalledTimes(2);

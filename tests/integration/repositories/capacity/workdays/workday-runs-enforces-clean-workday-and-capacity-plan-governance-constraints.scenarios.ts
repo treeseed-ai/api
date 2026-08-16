@@ -41,8 +41,7 @@ it('enforces clean workday and capacity-plan governance constraints', async () =
         await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, ['project-constraints', 'team-constraints', 'constraints', 'Constraint Project', now, now]);
         await expect(store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, status, created_at, updated_at) VALUES ('workday-invalid-status', 'team-constraints', 'project-constraints', 'running', ?, ?)`, [now, now])).rejects.toThrow(/check constraint/iu);
         await expect(store.run(`INSERT INTO workday_capacity_envelopes (id, team_id, project_id, status, created_at, updated_at) VALUES ('workday-invalid-project', 'team-constraints', 'missing-project', 'draft', ?, ?)`, [now, now])).rejects.toThrow(/foreign key/iu);
-        await expect(store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_seconds, high_seconds, created_at, updated_at) VALUES ('plan-invalid-seconds', 'team-constraints', 'project-constraints', 'decision-a', 'draft', 'scope-a', 5, 4, ?, ?)`, [now, now])).resolves.toMatchObject({ success: true });
-        await expect(store.getAgentCapacityPlan('plan-invalid-seconds')).rejects.toThrow(/high time is below expected time/iu);
+		await expect(store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, expected_seconds, high_seconds, created_at, updated_at) VALUES ('plan-invalid-seconds', 'team-constraints', 'project-constraints', 'decision-a', 'draft', 'scope-a', 5, 4, ?, ?)`, [now, now])).rejects.toThrow(/check constraint/iu);
         await expect(store.run(`INSERT INTO agent_capacity_plans (id, team_id, project_id, decision_id, status, scope_hash, created_at, updated_at) VALUES ('plan-invalid-status', 'team-constraints', 'project-constraints', 'decision-a', 'approved', 'scope-a', ?, ?)`, [now, now])).rejects.toThrow(/check constraint/iu);
     }
     finally {
@@ -126,10 +125,10 @@ it('keeps lifecycle explanations on the canonical assignment row', async () => {
         await store.run(`INSERT INTO capacity_reservations (
 					id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id,
 					allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode,
-					team_id, project_id, state, reserved_seconds, created_at, updated_at
+					team_id, project_id, state, requested_seconds, reserved_seconds, created_at, updated_at
 				) VALUES ('reservation-other', 'terminal-other', 'token-other', 'membership-explanation', 'grant-test',
 					'provider-explanation', 'allocation-test', 1, 'class-explanation', 'assignment-other', 'planning',
-					'team-explanation', 'project-explanation', 'reserved', 1, ?, ?)`, [now, now]);
+					'team-explanation', 'project-explanation', 'reserved', 1, 1, ?, ?)`, [now, now]);
         await store.run(`UPDATE capacity_provider_assignments
 				 SET status = 'pending', reservation_id = 'reservation-other', synthesized_from = 'workday_demand', metadata_json = '{"workdayRunId":"run-terminalization"}'
 				 WHERE id = 'assignment-other'`);
@@ -196,12 +195,12 @@ it('terminalizes workday assignments in bounded batches', async () => {
             reservationValues.push(`reservation-batched-${suffix}`, `terminal-batched-${suffix}`, `token-batched-${suffix}`, `assignment-batched-${suffix}`, now, now);
             return `(?, ?, ?, 'membership-batched-terminal', 'grant-test', 'provider-batched-terminal',
 					'allocation-test', 1, 'class-batched-terminal', ?, 'planning', 'team-batched-terminal',
-					'project-batched-terminal', 'workday-batched-summary', 'reserved', 1, ?, ?)`;
+					'project-batched-terminal', 'workday-batched-summary', 'reserved', 1, 1, ?, ?)`;
         });
         await store.run(`INSERT INTO capacity_reservations (
 					id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id,
 					allocation_set_id, allocation_version, project_agent_class_id, assignment_id, mode,
-					team_id, project_id, work_day_id, state, reserved_seconds, created_at, updated_at
+					team_id, project_id, work_day_id, state, requested_seconds, reserved_seconds, created_at, updated_at
 				) VALUES ${reservationRows.join(', ')}`, reservationValues);
         const assignmentValues = [];
         const assignmentRows = Array.from({ length: assignmentCount }, (_, index) => {
@@ -274,20 +273,21 @@ it('terminalizes workday assignments in bounded batches', async () => {
                     assignments: { total: assignmentCount, failed: assignmentCount },
                     modeRuns: { total: assignmentCount, succeeded: assignmentCount },
                 },
-                evidence: {
-                    assignments: { total: assignmentCount, page: { limit: 50, hasMore: true, nextCursor: expect.any(String) } },
-                    modeRuns: { total: assignmentCount, page: { limit: 50, hasMore: true, nextCursor: expect.any(String) } },
-                },
+				evidence: null,
             },
         });
-        expect(summary.payload.evidence.assignments.items).toHaveLength(50);
-        const nextSummary = await store.getWorkdayCapacitySummary('workday-batched-summary', {
+		const firstSummary = await store.getWorkdayCapacitySummary('workday-batched-summary', {
+			evidence: 'assignments',limit: 50,
+		});
+		expect(firstSummary.payload.evidence.assignments.items).toHaveLength(50);
+		expect(firstSummary.payload.evidence.assignments.page).toMatchObject({ limit: 50,hasMore: true,nextCursor: expect.any(String) });
+		const nextSummary = await store.getWorkdayCapacitySummary('workday-batched-summary', {
             evidence: 'assignments',
             limit: 50,
-            cursor: decodeCapacityPageCursor(summary.payload.evidence.assignments.page.nextCursor),
+			cursor: decodeCapacityPageCursor(firstSummary.payload.evidence.assignments.page.nextCursor),
         });
         expect(nextSummary.payload.evidence.assignments.items).toHaveLength(50);
-        expect(nextSummary.payload.evidence.assignments.items[0]?.id).not.toBe(summary.payload.evidence.assignments.items[0]?.id);
+		expect(nextSummary.payload.evidence.assignments.items[0]?.id).not.toBe(firstSummary.payload.evidence.assignments.items[0]?.id);
     }
     finally {
         db.close();

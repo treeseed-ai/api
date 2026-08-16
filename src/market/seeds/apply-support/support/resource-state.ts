@@ -28,6 +28,7 @@ export async function projectCurrentPayload(store, action, project) {
     if (!project)
         return null;
     const repository = action.payload.repository;
+    const configuredRepository = project.metadata?.repository ?? {};
     const hubRepository = (await store.listHubRepositories(project.id)).find((entry) => entry.role === repository.role) ?? null;
     return {
         teamKey: action.payload.teamKey,
@@ -43,10 +44,10 @@ export async function projectCurrentPayload(store, action, project) {
                 name: hubRepository.name,
                 gitUrl: hubRepository.url,
                 defaultBranch: hubRepository.defaultBranch ?? undefined,
-                checkoutPath: repository.checkoutPath,
+                checkoutPath: configuredRepository.checkoutPath,
                 submodulePath: hubRepository.submodulePath ?? undefined,
-                webUrl: repository.webUrl,
-                repositoryPolicy: repository.repositoryPolicy,
+                webUrl: configuredRepository.webUrl,
+                repositoryPolicy: configuredRepository.repositoryPolicy,
             }
             : null,
         architecture: project.metadata?.architecture,

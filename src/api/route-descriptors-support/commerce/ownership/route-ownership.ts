@@ -39,6 +39,8 @@ export function ownerDomain(path) {
         return 'market-ui';
     if (path.startsWith('/v1/auth/'))
         return 'auth';
+    if (path.startsWith('/v1/governance/'))
+        return 'governance';
     if (path.startsWith('/v1/commons/'))
         return 'commons';
     if (path.startsWith('/v1/teams/'))

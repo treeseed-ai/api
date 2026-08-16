@@ -42,4 +42,38 @@ describe('workday demand supply brokerage', () => {
 		const result = await selectWorkdayDemandSupply(database(), retried, now);
 		expect(result.selected).toMatchObject({ capacityProviderId: 'provider-a', executionProviderId: 'runtime-a' });
 	});
+
+	it('honors the provider-advertised default when eligible supply is otherwise equal', async () => {
+		const source = {
+			first: async (query: string) => query.includes('FROM teams')
+				? { metadata_json: '{}' }
+				: { required_capabilities_json: '["agent-execution"]' },
+			all: async (query: string) => query.includes('capacity_grants')
+				? [{ id: 'grant-a', membership_id: 'membership-a', execution_provider_ids_json: '["codex-key","codex-sub"]', capabilities_json: '["agent-execution"]', allowed_modes_json: '["planning"]' }]
+				: [{ id: 'session-a', membership_id: 'membership-a', capacity_provider_id: 'provider-a', execution_providers_json: JSON.stringify([
+					{ id: 'codex-key', status: 'available', capabilities: ['agent-execution'], reliability: 1, pressure: 'normal', availableConcurrency: 1 },
+					{ id: 'codex-sub', preferred: true, status: 'available', capabilities: ['agent-execution'], reliability: 1, pressure: 'normal', availableConcurrency: 1 },
+				]) }],
+		} as never;
+		const result = await selectWorkdayDemandSupply(source, demand, now);
+		expect(result.selected?.executionProviderId).toBe('codex-sub');
+	});
+
+	it('explains a capability mismatch instead of silently dropping supply', async () => {
+		const source = {
+			first: async (query: string) => query.includes('FROM teams')
+				? { metadata_json: '{}' }
+				: { required_capabilities_json: '["agent-execution"]' },
+			all: async (query: string) => query.includes('capacity_grants')
+				? [{ id: 'grant-a', membership_id: 'membership-a', execution_provider_ids_json: '["codex-sub"]', capabilities_json: '["agent_mode_run"]', allowed_modes_json: '["planning"]' }]
+				: [{ id: 'session-a', membership_id: 'membership-a', capacity_provider_id: 'provider-a', execution_providers_json: JSON.stringify([
+					{ id: 'codex-sub', status: 'available', capabilities: ['agent_mode_run'], reliability: 1, pressure: 'normal', availableConcurrency: 1 },
+				]) }],
+		} as never;
+		const result = await selectWorkdayDemandSupply(source, demand, now);
+		expect(result.selected).toBeNull();
+		expect(result.rejected).toEqual([
+			expect.objectContaining({ reasons: ['missing_capability:agent-execution'] }),
+		]);
+	});
 });

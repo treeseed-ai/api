@@ -80,6 +80,9 @@ export class CapacityWorkdayDemandRepository {
 
 	async create(value: CapacityWorkdayDemandWrite): Promise<CapacityWorkdayDemandRecord> {
 		await this.database.ensureInitialized();
+		if (!Number.isInteger(value.requestedSeconds) || value.requestedSeconds <= 0) {
+			throw new CapacityGovernanceError('capacity_workday_demand_time_invalid', 'Demand requested time must be positive.', 400, { requestedSeconds: value.requestedSeconds });
+		}
 		await this.database.run(
 			`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id,
 			 mode, project_agent_class_id, agent_id, handler_id, activity_type, decision_id, capacity_plan_id, status, priority,

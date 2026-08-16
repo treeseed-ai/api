@@ -1,4 +1,7 @@
 import { CapacityWorkdayMaintenanceScheduler } from '../../../api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.js';
+import { ContextQueryCheckMaintenanceScheduler } from '../../../api/capacity/services/capacity/agents/context-query-check-maintenance-service.js';
+import { ContextQueryCheckService } from '../../../api/capacity/services/capacity/agents/context-query-check-service.js';
+import { randomUUID } from 'node:crypto';
 import { drainNotificationEmailOutbox } from '../../../notifications/service.js';
 import { runSecretOperationExecutor } from '../../security/secret-operation-executor.js';
 import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
@@ -17,10 +20,13 @@ export async function runLoop() {
     let controlPlaneStore = null;
     let capacityWorkdayMaintenance = null;
 	let feedbackRetention = null;
+	let contextQueryCheckMaintenance = null;
+	let operationRunnerId = null;
     while (!stopping) {
         try {
-            if (!config) {
-                config = await loadConfig();
+			if (!config) {
+				config = await loadConfig();
+				operationRunnerId = `${config.runnerId}:process:${process.pid}:${randomUUID()}`;
             }
             if (!client) {
                 client = await createClient(config);
@@ -28,18 +34,22 @@ export async function runLoop() {
                 capacityWorkdayMaintenance = controlPlaneStore
                     ? new CapacityWorkdayMaintenanceScheduler(controlPlaneStore, config.capacityWorkdayMaintenanceIntervalMs)
                     : null;
+				contextQueryCheckMaintenance = controlPlaneStore
+					? new ContextQueryCheckMaintenanceScheduler(new ContextQueryCheckService(controlPlaneStore), config.capacityWorkdayMaintenanceIntervalMs)
+					: null;
 				feedbackRetention = controlPlaneStore ? new FeedbackRetentionScheduler(controlPlaneStore, config.feedbackRetentionIntervalMs) : null;
                 await registerAndHeartbeat(client, config, version, { ...options, controlPlaneStore });
             }
             healthState.ready = true;
             healthState.status = 'running';
             healthState.error = null;
-            await runOnceWithClient(config, client, version, { ...options, controlPlaneStore });
+			await runOnceWithClient(config, client, version, { ...options, controlPlaneStore, operationRunnerId });
             if (controlPlaneStore)
                 await runSecretOperationExecutor(controlPlaneStore);
             if (controlPlaneStore)
                 await drainNotificationEmailOutbox(controlPlaneStore);
             await capacityWorkdayMaintenance?.runIfDue();
+			await contextQueryCheckMaintenance?.runIfDue();
 			await feedbackRetention?.runIfDue();
         }
         catch (error) {
@@ -57,6 +67,7 @@ export async function runLoop() {
             client = null;
             controlPlaneStore = null;
             capacityWorkdayMaintenance = null;
+			contextQueryCheckMaintenance = null;
 			feedbackRetention = null;
         }
         await new Promise((resolveSleep) => setTimeout(resolveSleep, options.pollIntervalMs));

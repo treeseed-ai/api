@@ -33,8 +33,13 @@ async function seed(store: ReturnType<typeof harness>['store']) {
 	await store.ensureInitialized();
 	await store.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES ('team-a', 'team-a', 'Team A', ?, ?)`, [now, now]);
 	await store.run(`INSERT INTO projects (id, team_id, slug, name, metadata_json, created_at, updated_at) VALUES ('project-a', 'team-a', 'project-a', 'Project A', '{"architecture":{"topology":"single_repository_site","rootPath":".","sitePath":".","contentPath":"src/content","contentRuntimeSource":"local_directory","localContentMaterialization":"existing_path"}}', ?, ?)`, [now, now]);
+	const proposalHash = 'hash:proposal-a';
+	await store.run(`INSERT INTO governance_proposals (id, team_id, project_id, scope, status, title, summary, body, proposal_type, active_version, active_content_hash, governance_provider_id, governance_provider_version, metadata_json, created_at, updated_at)
+		VALUES ('proposal-a', 'team-a', 'project-a', 'project', 'accepted', 'proposal-a', 'Accepted engineering proposal', 'Accepted engineering proposal', 'implementation', 1, ?, 'admin_approval_v1', '1', '{}', ?, ?)`, [proposalHash, now, now]);
+	await store.run(`INSERT INTO governance_decisions (id, team_id, project_id, proposal_id, proposal_version, proposal_content_hash, status, title, summary, governance_provider_id, decision_record_json, created_by_type, created_by_id, created_at, updated_at)
+		VALUES ('decision-a', 'team-a', 'project-a', 'proposal-a', 1, ?, 'accepted', 'decision-a', 'Accepted engineering decision', 'admin_approval_v1', '{"decisionDependencies":[]}', 'system', 'system', ?, ?)`, [proposalHash, now, now]);
 	for (const [slug, agent] of [['testing', 'tester'], ['engineering', 'engineer'], ['review', 'reviewer'], ['technical-writing', 'technical-writer'], ['release', 'releaser']] as const) {
-		await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES (?, 'team-a', 'project-a', ?, ?, 'active', '["planning","acting"]', '[]', '{}', '{}', ?, '{}', '{}', ?, ?)`, [`project-a:${slug}`, slug, slug, JSON.stringify({ agents: [{ slug: agent, activities: { planning: { handler: 'writer', purpose: `Plan ${slug} work.` }, acting: { handler: 'actor' } } }] }), now, now]);
+		await store.run(`INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES (?, 'team-a', 'project-a', ?, ?, 'active', '["planning","acting"]', '[]', '{}', '{}', ?, '{}', '{}', ?, ?)`, [`project-a:${slug}`, slug, slug, JSON.stringify({ agents: [{ slug: agent, activities: { planning: { handler: 'writer', purpose: `Plan ${slug} work.` }, acting: { handler: 'actor' }, ...(slug === 'review' ? { reviewing: { handler: 'writer' } } : {}) } }] }), now, now]);
 	}
 	const planningGraph = await resolveWorkdayPlanningGraphSnapshot(store, 'project-a', {});
 	await store.run(`INSERT INTO capacity_workday_runs (id, team_id, scenario_id, status, environment, parameters_json, summary_json, metrics_json, expected_json, actual_json, report_refs_json, error_json, started_at, created_at, updated_at) VALUES ('run-a', 'team-a', 'engineering', 'running', 'local', '{}', '{}', '{}', '{}', '{}', '{}', '{}', ?, ?, ?)`, [now, now, now]);
@@ -67,10 +72,12 @@ describe('engineering workflow promotion service', () => {
 			expect(inputs.map((entry) => entry.input.input.artifactKind)).toEqual(expect.arrayContaining([
 				'failing_test_proof', 'implementation_change', 'passing_verification', 'review_decision', 'documentation_update', 'release_readiness',
 			]));
+			expect(inputs.find((entry) => entry.input.input.artifactKind === 'review_decision')?.input.activityType).toBe('reviewing');
 			const plan = await store.getAgentCapacityPlan(first[0]!.capacityPlanId!);
 			expect(plan).toMatchObject({ status: 'accepted', workDayId: 'workday-a', metadata: { workflowPromotionId: 'engineering-a' } });
 			expect(plan!.workUnits).toHaveLength(6);
 			expect(plan!.workUnits.every((unit) => unit.workGraphNodeId && unit.id !== unit.workGraphNodeId)).toBe(true);
+			expect(plan!.workUnits.filter((unit) => unit.activityType === 'reviewing')).toHaveLength(1);
 
 			const second = await promoteEngineeringWorkflows(store, run);
 			expect(second).toEqual(first);
@@ -249,6 +256,7 @@ describe('engineering workflow promotion service', () => {
 			const now = run.startedAt!;
 			await store.run(`INSERT INTO capacity_providers (id, fingerprint, public_jwk_json, display_name, identity_version, status, metadata_json, created_at, updated_at) VALUES ('provider-a', 'sha256:provider-a', '{}', 'Provider A', 1, 'active', '{}', ?, ?)`, [now, now]);
 			await store.run(`INSERT INTO capacity_provider_team_memberships (id, team_id, capacity_provider_id, status, approved_at, approved_by_id, metadata_json, created_at, updated_at) VALUES ('membership-a', 'team-a', 'provider-a', 'approved', ?, 'owner', '{}', ?, ?)`, [now, now, now]);
+			await store.run(`INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, environment, status, opened_at, refreshed_at, expires_at, available_from, execution_providers_json, metadata_json, created_at, updated_at) VALUES ('session-a', 'membership-a', 'team-a', 'provider-a', 'local', 'open', ?, ?, '2099-01-01T00:00:00.000Z', ?, '[{"id":"codex","status":"available","capabilities":["writer"],"availableConcurrency":1,"maxConcurrentRunners":1}]', '{}', ?, ?)`, [now, now, now, now, now]);
 			await store.run(`UPDATE capacity_workday_runs SET capacity_provider_id = 'provider-a', parameters_json = ? WHERE id = 'run-a'`, [JSON.stringify(run.parameters)]);
 			const first = await tickCapacityWorkdayRun(store, 'team-a', 'run-a', now, 'engineering-tick-a');
 			const replay = await tickCapacityWorkdayRun(store, 'team-a', 'run-a', '2026-07-18T12:01:00.000Z', 'engineering-tick-a');

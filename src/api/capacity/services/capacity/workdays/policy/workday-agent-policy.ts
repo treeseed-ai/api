@@ -1,5 +1,5 @@
-import { ENGINEERING_HANDLER_KINDS,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
-import { selectWorkdayAgents } from '@treeseed/sdk/agent-capacity';
+import { ENGINEERING_HANDLER_KINDS,type AgentActivityProfile,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
+import { compileAgentAuthoritySnapshot,compileDefaultChatActivityProfile,selectWorkdayAgents,type AgentAuthorityPresetId } from '@treeseed/sdk/agent-capacity';
 import { projectAgentActivityRefs,type ProjectAgentActivityRef } from '../../../projects/projects-core/project-agent-activity-refs.ts';
 
 type UnknownRecord = Record<string, unknown>;
@@ -9,8 +9,11 @@ export type CapacityWorkdayAgent = {
 	slug: string;
 	displayName: string;
 	groupIds: string[];
-	primaryGroupId: string | null;
 	contentPath: string | null;
+	contextQueryRefs:Array<{id:string;revision:number}>;
+	contextQuerySetRefs:Array<{id:string;revision:number}>;
+	instructionTemplateRefs:Array<{id:string;revision:number}>;
+	sourceImmutableRef: string | null;
 	handler: EngineeringHandlerKind;
 	projectAgentClassId: string;
 	projectAgentClassSlug: string;
@@ -20,7 +23,9 @@ export type CapacityWorkdayAgent = {
 	signalPolicy: UnknownRecord;
 	planningIntent: UnknownRecord;
 	branchPolicy: UnknownRecord;
-	contentAccess: UnknownRecord;
+	permissions: UnknownRecord;
+	toolPolicy: UnknownRecord;
+	authorityPresetIds: AgentAuthorityPresetId[];
 	execution: UnknownRecord;
 	planningPriority: number | null;
 	planningAllocationPercent: number | null;
@@ -39,7 +44,11 @@ export type CapacityWorkdayPlanningStage = 'discovery' | 'synthesis' | 'delibera
 const PLANNING_STAGES = new Set<CapacityWorkdayPlanningStage>(['discovery', 'synthesis', 'deliberation', 'evaluation', 'revision', 'closeout']);
 
 function record(value: unknown): UnknownRecord {
-	return value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {};
+	if (value && typeof value === 'object' && !Array.isArray(value)) return value as UnknownRecord;
+	if (typeof value === 'string') {
+		try { return record(JSON.parse(value)); } catch { return {}; }
+	}
+	return {};
 }
 
 function array(value: unknown): unknown[] {
@@ -80,6 +89,10 @@ export function capacityWorkdayRequiredSignals(agent: CapacityWorkdayAgent): str
 }
 
 export function compileCapacityWorkdayAssignmentIntent(agent: CapacityWorkdayAgent): CapacityWorkdayAssignmentIntent {
+	if (agent.activityType === 'chat') {
+		const intent = compileDefaultChatActivityProfile(agent.slug).planningIntent;
+		return { objective: text(intent?.objective), artifactKind: text(intent?.artifactKind), subjectModel: text(intent?.subjectModel), subjectId: null, includeWorkdayArtifacts: false };
+	}
 	const configured = record(agent.planningIntent);
 	const mutations = array(agent.outputContract.modelMutations).map((value) => text(value)).filter(Boolean);
 	const requiredArtifacts = array(agent.outputContract.requiredArtifacts).map((value) => text(value)).filter(Boolean);
@@ -118,7 +131,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		const agentClass = record(value);
 		const allowedModes = array(agentClass.allowedModes ?? agentClass.allowed_modes).map((mode) => text(mode));
 		if (text(agentClass.status, 'active') !== 'active' || (allowedModes.length > 0 && !allowedModes.includes('planning'))) continue;
-		const metadata = record(agentClass.metadata);
+		const metadata = record(agentClass.metadata ?? agentClass.metadata_json);
 		const allocation = Number(
 			metadata.planningAllocationPercent
 				?? metadata.planningPercent
@@ -126,7 +139,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				?? agentClass.planning_allocation_percent
 				?? Number.NaN,
 		);
-		const handlerRefs = agentClass.handlerRefs ?? agentClass.handler_refs;
+		const handlerRefs = agentClass.handlerRefs ?? agentClass.handler_refs ?? record(agentClass.handler_refs_json);
 		const selectedProfiles = new Map<string, ProjectAgentActivityRef>();
 		for (const activityType of ['planning', 'reporting', 'reviewing', 'estimating', 'chat'] as const) {
 			for (const ref of projectAgentActivityRefs(handlerRefs, activityType)) selectedProfiles.set(`${ref.agentId}:${ref.activityType}`, ref);
@@ -136,14 +149,22 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 			const profile = selectedActivity.profile;
 			const configuredHandler = handler(selectedActivity.handlerId);
 			if (!configuredHandler) continue;
+			const authority = compileAgentAuthoritySnapshot(
+				selectedActivity.activityType,
+				profile as unknown as AgentActivityProfile,
+			);
+			if (authority.diagnostics.length) continue;
 			const priority = Number(profile.planningPriority);
 			for (const stage of planningStageVariants(profile)) agents.push({
 				nodeId: `${slug}:${selectedActivity.activityType}:${text(stage.stage, 'discovery')}`,
 				slug,
 				displayName: selectedActivity.agentName,
 				groupIds: selectedActivity.groupIds,
-				primaryGroupId: selectedActivity.primaryGroupId,
 				contentPath: selectedActivity.contentPath,
+				contextQueryRefs:selectedActivity.contextQueryRefs,
+				contextQuerySetRefs:selectedActivity.contextQuerySetRefs,
+				instructionTemplateRefs:selectedActivity.instructionTemplateRefs,
+				sourceImmutableRef: text(metadata.immutableRef) || null,
 				handler: configuredHandler,
 				projectAgentClassId: text(agentClass.id),
 				projectAgentClassSlug: text(agentClass.slug, 'planning'),
@@ -152,8 +173,10 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				outputContract: record(profile.outputs),
 				signalPolicy: Object.keys(record(stage.signals)).length ? record(stage.signals) : record(profile.signals),
 				planningIntent: { ...record(profile.planningIntent), stage: stage.stage },
-				branchPolicy: record(profile.branchPolicy),
-				contentAccess: record(profile.contentAccess),
+				branchPolicy: record(authority.branchPolicy),
+				permissions: record(authority.permissions),
+				toolPolicy: record(authority.tools),
+				authorityPresetIds: authority.presetIds,
 				execution: record(profile.execution),
 				planningPriority: Number.isFinite(priority) ? priority : null,
 				planningAllocationPercent: Number.isFinite(allocation) && allocation > 0 ? allocation : null,

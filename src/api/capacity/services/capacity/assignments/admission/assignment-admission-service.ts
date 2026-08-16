@@ -3,6 +3,7 @@ import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
+import { persistSessionEvent } from '../../../../../realtime/session-events.ts';
 import { commitCapacityAdmission } from '../../../support/admission-service.ts';
 import { loadCapacityAdmissionState } from '../../../support/admission-state-service.ts';
 import { compileAssignmentProjectContext } from '../context/assignment-context-service.ts';
@@ -25,6 +26,18 @@ export interface SynthesizedProviderAssignmentInput {
 	budget?: import('@treeseed/sdk/agent-capacity').CapacityBudgetV2 | null;
 	executionProviderId?: string | null;
 	laneId?: string | null;
+	lanePurpose?: 'communication' | 'operation' | null;
+	communicationOverflow?: boolean;
+	executionKind?: 'workday' | 'conversation' | 'simulation' | 'recovery';
+	triggerKind?: 'scheduled' | 'manual' | 'discussion' | 'agent-handoff';
+	invocationId?: string | null;
+	parentWorkdayId?: string | null;
+	parentAssignmentId?: string | null;
+	handoffRootId?: string | null;
+	handoffParentId?: string | null;
+	handoffDepth?: number;
+	sourceMessageRefs?: string[];
+	operationHandoffId?: string | null;
 	decisionId?: string | null;
 	proposalId?: string | null;
 	taskId?: string | null;
@@ -104,6 +117,18 @@ export async function admitSynthesizedProviderAssignment(
 			providerSessionId: input.providerSessionId ?? null,
 			executionProviderId: input.executionProviderId ?? null,
 			laneId: input.laneId ?? null,
+			lanePurpose: input.lanePurpose ?? null,
+			communicationOverflow: input.communicationOverflow === true,
+			executionKind: input.executionKind ?? 'workday',
+			triggerKind: input.triggerKind ?? 'scheduled',
+			invocationId: input.invocationId ?? null,
+			parentWorkdayId: input.parentWorkdayId ?? null,
+			parentAssignmentId: input.parentAssignmentId ?? null,
+			handoffRootId: input.handoffRootId ?? null,
+			handoffParentId: input.handoffParentId ?? null,
+			handoffDepth: input.handoffDepth ?? 0,
+			sourceMessageRefs: input.sourceMessageRefs ?? [],
+			operationHandoffId: input.operationHandoffId ?? null,
 			workDayId: input.workDayId,
 			taskId: input.taskId ?? null,
 			agentId: input.agentId ?? null,
@@ -128,5 +153,10 @@ export async function admitSynthesizedProviderAssignment(
 			},
 		},
 	});
+	await persistSessionEvent(store, {
+		eventType: 'capacity.assignment.available', teamId: input.teamId, projectId: input.projectId,
+		resourceId: input.assignmentId,
+		payload: { laneId: input.laneId ?? null, lanePurpose: input.lanePurpose ?? null, executionKind: input.executionKind ?? 'workday' },
+	}).catch(() => undefined);
 	return store.getProviderAssignment(principal.teamId, String(committed.assignment.id));
 }

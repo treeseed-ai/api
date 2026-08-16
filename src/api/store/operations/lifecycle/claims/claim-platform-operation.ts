@@ -14,14 +14,14 @@ export async function claimPlatformOperationMethod(this: MarketControlPlaneStore
         ? await this.all(`SELECT * FROM platform_operations
 				 WHERE id = ? AND (
 				    status = 'queued'
-				    OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
+				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
 				 )
 				 ${capabilityWhere}
 				 ORDER BY created_at ASC LIMIT ?`, [input.operationId, now, ...capabilities, limit])
         : await this.all(`SELECT * FROM platform_operations
 				 WHERE (
 				    status = 'queued'
-				    OR (status = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
+				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
 				 )
 				 ${capabilityWhere}
 				 ORDER BY created_at ASC LIMIT ?`, [now, ...capabilities, limit]);
@@ -35,9 +35,11 @@ export async function claimPlatformOperationMethod(this: MarketControlPlaneStore
 			     started_at = COALESCE(started_at, ?),
 			     updated_at = ?
 			 WHERE id = ?`, [runnerId, leaseExpiresAt, now, now, row.id]);
-    await this.appendPlatformOperationEvent(row.id, 'claimed', {
-        runnerId,
-        leaseExpiresAt,
-    });
+	const reclaimed = ['leased', 'running'].includes(String(row.status));
+	await this.appendPlatformOperationEvent(row.id, reclaimed ? 'runner.lease_reclaimed' : 'claimed', {
+		runnerId,
+		leaseExpiresAt,
+		...(reclaimed ? { previousRunnerId: row.assigned_runner_id ?? null, previousStatus: row.status } : {}),
+	});
     return this.findPlatformOperationById(row.id);
 }

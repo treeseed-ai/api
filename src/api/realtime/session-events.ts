@@ -30,6 +30,7 @@ function deserialize(row: Record<string, unknown>): SessionEvent {
 }
 
 export async function persistSessionEvent(store: SessionEventStore, input: { eventType: string; teamId: string; projectId?: string | null; resourceId: string; payload?: Record<string, unknown> }) {
+	if (/token[._-]?delta|delta[._-]?token/iu.test(input.eventType)) throw new Error('Transient token deltas cannot be persisted as durable session events.');
 	const now = new Date();
 	const row = await store.first<Record<string, unknown>>(
 		`INSERT INTO session_events (event_type, team_id, project_id, resource_id, payload_json, created_at, expires_at)

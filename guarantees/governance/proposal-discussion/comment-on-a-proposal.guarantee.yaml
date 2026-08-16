@@ -6,7 +6,7 @@ subtype: proposal-discussion
 journey: "Comment on a proposal"
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
-summary: "Guarantee that TreeSeed can comment on a proposal."
+summary: "Persist model-valid proposal questions and feedback notes through TreeDX with field-addressable validation failures."
 status: planned
 dependencies: { journeys: [], guarantees: [] }
 actors: { allowed: [authenticated_user, team_owner, platform_admin], forbidden: [unauthorized_user] }
@@ -16,6 +16,6 @@ preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
 api: { required: false, verifierRefs: [] }
 content: { required: false, verifierRefs: [] }
 audit: { required: false, verifierRefs: [] }
-negativeCases: []
+negativeCases: [{ id: invalid-discussion-content-makes-no-workspace, actor: authenticated_user, verifierRefs: [] }]
 evidence: { required: [guarantee_report] }
-notes: ["Planned from the TreeSeed Guide platform coverage audit."]
+notes: ["Proposal discussion validates question/note source before opening a TreeDX workspace, and the route preserves structured diagnostics. Keep planned until the route verifier produces repeatable evidence."]

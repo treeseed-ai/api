@@ -148,10 +148,10 @@ export function installCapacityGovernanceRoutes(app: Hono, options: CapacityGove
 		try {
 			const credential = membershipCredential(c);
 			if (!credential) throw new CapacityGovernanceError('provider_credential_required', 'Treeseed-Credential authorization is required.', 401);
-			const body = await readCapacityRequestObject(c) as { credentialId?: string; proof?: CapacityProviderSignedProof };
+			const body = await readCapacityRequestObject(c) as { credentialId?: string; requestedValiditySeconds?: number; proof?: CapacityProviderSignedProof };
 			if (!body.credentialId) throw new CapacityGovernanceError('provider_credential_id_required', 'Provider credentialId is required.', 400);
 			if (!body.proof) throw new CapacityGovernanceError('provider_proof_required', 'Provider proof is required.', 401);
-			return c.json({ ok: true, payload: await service.issueAccessToken({ credentialValue: credential, credentialId: body.credentialId, proof: body.proof, path: '/v1/provider/access-tokens', idempotencyKey: idempotencyKey(c) }) }, { status: 201 });
+			return c.json({ ok: true, payload: await service.issueAccessToken({ credentialValue: credential, credentialId: body.credentialId, requestedValiditySeconds: body.requestedValiditySeconds, proof: body.proof, path: '/v1/provider/access-tokens', idempotencyKey: idempotencyKey(c) }) }, { status: 201 });
 		} catch (error) { return errorResponse(c, error); }
 	});
 

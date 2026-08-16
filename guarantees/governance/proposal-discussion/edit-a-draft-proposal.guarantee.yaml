@@ -6,7 +6,7 @@ subtype: proposal-discussion
 journey: "Edit a draft proposal"
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
-summary: "Guarantee that TreeSeed can edit a draft proposal."
+summary: "Edit a draft proposal through a model-valid TreeDX revision without committing malformed governance content."
 status: planned
 dependencies: { journeys: [], guarantees: [] }
 actors: { allowed: [authenticated_user, team_owner, platform_admin], forbidden: [unauthorized_user] }
@@ -16,6 +16,6 @@ preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
 api: { required: false, verifierRefs: [] }
 content: { required: false, verifierRefs: [] }
 audit: { required: false, verifierRefs: [] }
-negativeCases: []
+negativeCases: [{ id: invalid-proposal-content-makes-no-changeset, actor: authenticated_user, verifierRefs: [] }]
 evidence: { required: [guarantee_report] }
-notes: ["Planned from the TreeSeed Guide platform coverage audit."]
+notes: ["API proposal-version authoring now emits the canonical singular proposal type, contributor, and motivation fields and validates the complete source before applying a TreeDX changeset. Agent planning output replays identical current provenance and creates a new immutable revision only when its base commit and digest match the current version; stale or divergent writers receive a conflict. Keep planned until the route verifier proves the negative cases and exact diagnostic envelope."]

@@ -35,4 +35,19 @@ describe('workday assignment artifact handoff', () => {
 			relatedArtifacts: [{ contentPath: 'src/content/notes/editorial/evidence.mdx', commitSha: 'evidence-commit', artifactKind: 'planning_note' }],
 		});
 	});
+
+	it('derives an exact proposal subject from a proposal-ready graph signal', async () => {
+		const intent = await resolveCapacityWorkdayAssignmentIntent(
+			{ all:async () => [] } as never,
+			{ id:'run-1',teamId:'team-1',scenarioId:'review',parameters:{ objectiveRefs:['objective:guide-objective'] } } as never,
+			{ id:'project-1' } as never,
+			{ slug:'audience-reviewer',activityType:'reviewing',handler:'writer',projectAgentClassId:'class-1',projectAgentClassSlug:'audience-review',purpose:'Review proposal.',promptTask:'review',planningIntent:{ subjectModel:'proposal',includeWorkdayArtifacts:true },branchPolicy:{},contentAccess:{},outputContract:{},inputContract:{ artifactContracts:['planning-proposal'] },planningPriority:1,planningAllocationPercent:null,contentPath:null } as never,
+			[{ producerNodeId:'guide-steward:planning:synthesis',kind:'signal',contractId:'proposal-ready',recordId:'signal-1',subjectId:'proposal:guide-cohort',payload:{ evidenceRefs:['src/content/proposals/editorial/books/treeseed-guide/guide-cohort.mdx'] },metadata:{ commitSha:'abc123',agentId:'guide-steward' } }],
+		);
+		expect(intent).toMatchObject({
+			subjectModel:'proposal',subjectId:'guide-cohort',subjectPath:'src/content/proposals/editorial/books/treeseed-guide/guide-cohort.mdx',
+			relatedArtifact:{ model:'proposal',artifactKind:'planning_proposal',commitSha:'abc123' },
+		});
+		expect(intent.objective).not.toContain('No generated proposal exists yet');
+	});
 });

@@ -11,7 +11,7 @@ const repositoryPolicy = {
 };
 
 describe('seed repository policy state', () => {
-	it('compares project repository policy as provider-owned desired state', async () => {
+	it('reports missing persisted project repository policy as drift', async () => {
 		const payload = await projectCurrentPayload({
 			listHubRepositories: vi.fn(async () => [{
 				role: 'primary', provider: 'github', owner: 'treeseed-ai', name: 'sdk',
@@ -27,6 +27,16 @@ describe('seed repository policy state', () => {
 			},
 		}, { id: 'project-sdk', slug: 'sdk', name: 'SDK', metadata: {} });
 
+		expect(payload.repository.repositoryPolicy).toBeUndefined();
+	});
+
+	it('reads project repository policy from persisted project metadata', async () => {
+		const payload = await projectCurrentPayload({ listHubRepositories: vi.fn(async () => [{
+			role: 'primary', provider: 'github', owner: 'treeseed-ai', name: 'sdk',
+			url: 'https://github.com/treeseed-ai/sdk.git', defaultBranch: 'main',
+		}]) }, { payload: { teamKey: 'team:treeseed', kind: 'package', metadata: {}, repository: { role: 'primary' } } }, {
+			id: 'project-sdk', slug: 'sdk', name: 'SDK', metadata: { repository: { repositoryPolicy } },
+		});
 		expect(payload.repository.repositoryPolicy).toEqual(repositoryPolicy);
 	});
 

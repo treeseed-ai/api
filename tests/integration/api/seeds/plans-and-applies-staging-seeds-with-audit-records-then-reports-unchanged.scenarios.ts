@@ -113,6 +113,35 @@ it('plans and applies staging seeds with audit records, then reports unchanged',
 		expect(secondApply.result.actionCount).toBe(0);
 		expect(secondApply.result).not.toHaveProperty('capacityProviderKeys');
 
+		const extensionApplyResponse = await app.request('/v1/seeds/extension/apply', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({ environments: ['staging'] }),
+		});
+		expect(extensionApplyResponse.status).toBe(200);
+		const extensionApply = await json(extensionApplyResponse);
+		expect(extensionApply.summary).toMatchObject({ create: 1, update: 0, unchanged: 0 });
+		const projectsResponse = await app.request(`/v1/projects?teamId=${team.id}`, {
+			headers: { authorization: `Bearer ${token}` },
+		});
+		expect(projectsResponse.status).toBe(200);
+		const extension = (await json(projectsResponse)).payload.find((project: { slug?: string }) => project.slug === 'extension');
+		expect(extension).toMatchObject({ slug: 'extension', name: 'TreeSeed Extension' });
+
+		const extensionReplayResponse = await app.request('/v1/seeds/extension/apply', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({ environments: ['staging'] }),
+		});
+		expect(extensionReplayResponse.status).toBe(200);
+		expect((await json(extensionReplayResponse)).summary).toMatchObject({ create: 0, update: 0, unchanged: 1 });
+
 		const exportResponse = await app.request(`/v1/teams/${team.id}/seeds/export`, {
 			method: 'POST',
 			headers: {

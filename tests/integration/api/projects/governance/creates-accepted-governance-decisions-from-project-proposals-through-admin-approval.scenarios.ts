@@ -15,6 +15,16 @@ it('creates accepted governance decisions from project proposals through admin a
 			authorization: `Bearer ${token}`,
 			'content-type': 'application/json',
 		};
+		const dependencyProject = await json(await app.request(`/v1/teams/${team.id}/projects`, {
+			method: 'POST', headers, body: JSON.stringify({ slug: 'governance-dependency', name: 'Governance Dependency' }),
+		}));
+		const dependencyProposal = await json(await app.request(`/v1/projects/${dependencyProject.payload.project.id}/proposals`, {
+			method: 'POST', headers, body: JSON.stringify(completeGovernanceProposalInput({ title: 'Publish shared governance contract' })),
+		}));
+		await app.request(`/v1/projects/${dependencyProject.payload.project.id}/proposals/${dependencyProposal.payload.id}/open`, { method: 'POST', headers, body: JSON.stringify({ reason: 'Ready.' }) });
+		const dependencyAccepted = await json(await app.request(`/v1/projects/${dependencyProject.payload.project.id}/proposals/${dependencyProposal.payload.id}/admin-decision`, {
+			method: 'POST', headers, body: JSON.stringify({ status: 'approved', reason: 'Shared contract approved.' }),
+		}));
 
 		const defaultPolicy = await json(await app.request(`/v1/projects/${project.id}/governance-policy`, { headers }));
 		expect(defaultPolicy.ok).toBe(true);
@@ -32,6 +42,7 @@ it('creates accepted governance decisions from project proposals through admin a
 				summary: 'Use accepted proposals as the only source of executable decisions.',
 				body: 'The decision record should be generated from the accepted proposal snapshot and voting evidence. This preserves the complete rationale, scope, evidence, and verification contract for every executable decision.',
 				proposalType: 'architecture',
+				decisionDependencies: [{ projectId: dependencyProject.payload.project.id, decisionId: dependencyAccepted.payload.decisionId }],
 			})),
 		}));
 		expect(proposal.ok).toBe(true);
@@ -71,6 +82,11 @@ it('creates accepted governance decisions from project proposals through admin a
 				status: 'accepted',
 				proposalContentHash: proposal.payload.activeContentHash,
 				governanceProviderId: 'admin_approval_v1',
+				decisionRecord: { decisionDependencies: [expect.objectContaining({
+					projectId: dependencyProject.payload.project.id,
+					decisionId: dependencyAccepted.payload.decisionId,
+					proposalVersion: 1,
+				})] },
 			}),
 		]);
 

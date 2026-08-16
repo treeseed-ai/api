@@ -1,4 +1,4 @@
-import type { AgentActivityEvent, CapacityWorkdayEventRecord } from '@treeseed/sdk/agent-capacity';
+import { agentActivityEventSchema,agentActivityQuerySchema,type AgentActivityEvent,type AgentActivityQuery,type CapacityWorkdayEventRecord } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
 
@@ -9,7 +9,7 @@ function text(value: unknown): string | null { return typeof value === 'string' 
 
 export function projectWorkdayActivity(event: CapacityWorkdayEventRecord): AgentActivityEvent {
 	const context = record(event.context); const refs = record(event.refs); const metadata = record(event.metadata);
-	return {
+	return agentActivityEventSchema.parse({
 		id: event.id, sequence: event.eventIndex, sourceEventId: text(metadata.sourceEventId) ?? event.id,
 		timestamp: event.createdAt, teamId: event.teamId, projectId: event.projectId,
 		workdayId: event.workdayId ?? event.runId, assignmentId: event.assignmentId, modeRunId: event.modeRunId,
@@ -23,12 +23,13 @@ export function projectWorkdayActivity(event: CapacityWorkdayEventRecord): Agent
 		usageDelta: record(metadata.usageDelta), durationMs: Number.isFinite(Number(metadata.durationMs)) ? Number(metadata.durationMs) : null,
 		errorCategory: text(metadata.errorCategory), recoveryState: text(metadata.recoveryState),
 		redactionStatus: text(metadata.redactionStatus) ?? 'not-required', payloadDigest: text(metadata.payloadDigest) ?? '',
-	};
+	});
 }
 
-export function filterWorkdayActivity(events: CapacityWorkdayEventRecord[], query: Row) {
-	const after = Math.max(-1, Number(query.after ?? -1));
-	const csv = (value: unknown) => new Set(typeof value === 'string' ? value.split(',').map((entry) => entry.trim()).filter(Boolean) : []);
+export function filterWorkdayActivity(events: CapacityWorkdayEventRecord[], input: Row | AgentActivityQuery) {
+	const normalized = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== null && value !== undefined && value !== ''));
+	const query = agentActivityQuerySchema.parse(normalized); const after = query.after;
+	const csv = (value: unknown) => new Set(Array.isArray(value) ? value.map(String) : typeof value === 'string' ? value.split(',').map((entry) => entry.trim()).filter(Boolean) : []);
 	const agents = csv(query.agent); const classes = csv(query.agentClass); const types = csv(query.type); const severities = csv(query.severity);
 	return events.map(projectWorkdayActivity).filter((event) => event.sequence > after
 		&& (!agents.size || Boolean(event.agentId && agents.has(event.agentId)))

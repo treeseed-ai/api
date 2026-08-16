@@ -9,28 +9,31 @@ function strings(value: unknown, context: { owner: string; ownerId: string; colu
 	return decodeDurableJsonArray<unknown>(value, context).map(String).filter(Boolean);
 }
 
-function providers(row: Row, grants: Row[], requiredCapabilities: string[], mode: string): CapacitySupplyCandidate[] {
+function providers(row: Row, grants: Row[], mode: string): CapacitySupplyCandidate[] {
 	return decodeDurableJsonArray<Row>(row.execution_providers_json, {
 		owner: 'provider availability session', ownerId: String(row.id), column: 'execution_providers_json',
 	}).flatMap((provider) => grants.filter((grant) => {
 		const ownerId = String(grant.id);
 		const executionProviderIds = strings(grant.execution_provider_ids_json, { owner: 'capacity grant', ownerId, column: 'execution_provider_ids_json' });
-		const capabilities = strings(grant.capabilities_json, { owner: 'capacity grant', ownerId, column: 'capabilities_json' });
 		const allowedModes = strings(grant.allowed_modes_json, { owner: 'capacity grant', ownerId, column: 'allowed_modes_json' });
 		return String(grant.membership_id) === String(row.membership_id)
 			&& (!executionProviderIds.length || executionProviderIds.includes(String(provider.id)))
-			&& allowedModes.includes(mode)
-			&& requiredCapabilities.every((capability) => capabilities.includes(capability));
-	}).map((grant) => ({
+			&& allowedModes.includes(mode);
+	}).map((grant) => {
+		const granted = new Set(strings(grant.capabilities_json, { owner: 'capacity grant', ownerId: String(grant.id), column: 'capabilities_json' }));
+		const advertised = Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [];
+		return ({
 		capacityProviderId: String(row.capacity_provider_id), membershipId: String(row.membership_id),
 		providerSessionId: String(row.id), grantId: String(grant.id), executionProviderId: String(provider.id ?? ''),
 		status: String(provider.status ?? 'unavailable'),
-		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
+		capabilities: advertised.filter((capability) => granted.has(capability)),
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle','normal','busy','throttled','exhausted'].includes(String(provider.pressure)) ? provider.pressure as CapacitySupplyCandidate['pressure'] : 'normal',
 		availableConcurrency: Number.isInteger(Number(provider.availableConcurrency)) ? Math.max(0, Number(provider.availableConcurrency)) : 1,
+		preferred: provider.preferred === true,
 		estimatedCost: Number.isFinite(Number(provider.estimatedCost)) ? Number(provider.estimatedCost) : null,
-	}))).filter((provider) => provider.executionProviderId);
+	});
+	})).filter((provider) => provider.executionProviderId);
 }
 
 export async function selectWorkdayDemandSupply(database: CapacityGovernanceDatabase, demand: Row, now: string) {
@@ -60,7 +63,7 @@ export async function selectWorkdayDemandSupply(database: CapacityGovernanceData
 		const value = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Row : {};
 		return `${String(value.capacityProviderId ?? '')}:${String(value.executionProviderId ?? '')}`;
 	}));
-	const portfolio = sessions.flatMap((session) => providers(session, grants, requiredCapabilities, String(demand.mode)))
+	const portfolio = sessions.flatMap((session) => providers(session, grants, String(demand.mode)))
 		.filter((candidate) => !failoverCount || !attemptedSupply.has(`${candidate.capacityProviderId}:${candidate.executionProviderId}`));
 	const candidates = failoverAllowed ? portfolio : portfolio.filter((candidate) => candidate.capacityProviderId === primaryProviderId);
 	const selection = selectCapacitySupply({ candidates, requiredCapabilities, policy });

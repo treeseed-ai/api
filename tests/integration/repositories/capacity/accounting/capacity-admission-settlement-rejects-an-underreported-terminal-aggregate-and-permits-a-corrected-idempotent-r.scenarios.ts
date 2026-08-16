@@ -216,7 +216,7 @@ it('commits reservation and assignment together, enforces counters, and settles 
             expect.objectContaining({ id: 'mode-run-a', assignmentId: 'assignment-a' }),
             expect.objectContaining({ id: 'telemetry-assignment-a-message-1', assignmentId: 'assignment-a' }),
         ]));
-        const summary = await store.getWorkdayCapacitySummary('workday-a');
+        const summary = await store.getWorkdayCapacitySummary('workday-a', { evidence: 'mode-runs' });
         expect(summary).toMatchObject({
             payload: {
                 totals: {

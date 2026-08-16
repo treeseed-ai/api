@@ -236,38 +236,36 @@ export async function buildWorkdayCapacitySummary(
 ) {
 	const envelope = await repository.getWorkdayCapacityEnvelope(workdayId);
 	if (!envelope) return null;
-	const evidenceLimit = normalizeCapacityPageLimit(options.limit);
 	const selectedEvidence = options.evidence ?? null;
-	const cursorFor = (collection: WorkdaySummaryOptions['evidence']) => selectedEvidence === collection ? options.cursor ?? null : null;
-	const [aggregate, assignmentPage, modeRunPage, reservationPage, usageActualPage, ledgerPage] = await Promise.all([
-		aggregateWorkdaySummary(repository, { workDayId: workdayId }),
-		repository.listProviderAssignmentsPage(envelope.teamId, {
+	const aggregate = await aggregateWorkdaySummary(repository, { workDayId: workdayId });
+	const evidenceLimit = normalizeCapacityPageLimit(options.limit);
+	let evidence: Record<string,unknown> | null = null;
+	if (selectedEvidence === 'assignments') evidence = { assignments: { ...await repository.listProviderAssignmentsPage(envelope.teamId, {
 			projectId: envelope.projectId,
 			workdayId,
 			limit: evidenceLimit,
-			cursor: cursorFor('assignments'),
-		}),
-		repository.listAgentModeRunsPage(envelope.projectId, {
+			cursor: options.cursor ?? null,
+		}),total: aggregate.assignment.total } };
+	if (selectedEvidence === 'mode-runs') evidence = { modeRuns: { ...await repository.listAgentModeRunsPage(envelope.projectId, {
 			workDayId: workdayId,
 			limit: evidenceLimit,
-			cursor: cursorFor('mode-runs'),
-		}),
-		repository.listCapacityReservationsForProjectPage(envelope.projectId, {
+			cursor: options.cursor ?? null,
+		}),total: aggregate.modeRun.total } };
+	if (selectedEvidence === 'reservations') evidence = { reservations: { ...await repository.listCapacityReservationsForProjectPage(envelope.projectId, {
 			workDayId: workdayId,
 			limit: evidenceLimit,
-			cursor: cursorFor('reservations'),
-		}),
-		repository.listTaskUsageActualsPage(envelope.projectId, {
+			cursor: options.cursor ?? null,
+		}),total: aggregate.reservation.total } };
+	if (selectedEvidence === 'usage-actuals') evidence = { usageActuals: { ...await repository.listTaskUsageActualsPage(envelope.projectId, {
 			workDayId: workdayId,
 			limit: evidenceLimit,
-			cursor: cursorFor('usage-actuals'),
-		}),
-		repository.listCapacityLedgerEntriesPage(envelope.projectId, {
+			cursor: options.cursor ?? null,
+		}),total: aggregate.usage.total } };
+	if (selectedEvidence === 'ledger-entries') evidence = { ledgerEntries: { ...await repository.listCapacityLedgerEntriesPage(envelope.projectId, {
 			workDayId: workdayId,
 			limit: evidenceLimit,
-			cursor: cursorFor('ledger-entries'),
-		}),
-	]);
+			cursor: options.cursor ?? null,
+		}),total: aggregate.ledger.total } };
 	const warnings: string[] = [];
 	if (aggregate.assignment.missingSettlementCount > 0) {
 		warnings.push(`${aggregate.assignment.missingSettlementCount} completed assignments have no actual-settlement ledger entry; sample: ${aggregate.warningSamples.missingSettlementAssignmentIds.join(', ') || 'unavailable'}`);
@@ -331,13 +329,7 @@ export async function buildWorkdayCapacitySummary(
 				providerConfidence: warnings.length ? 'medium' : 'high',
 				warnings,
 			},
-			evidence: {
-				assignments: { ...assignmentPage, total: aggregate.assignment.total },
-				modeRuns: { ...modeRunPage, total: aggregate.modeRun.total },
-				reservations: { ...reservationPage, total: aggregate.reservation.total },
-				usageActuals: { ...usageActualPage, total: aggregate.usage.total },
-				ledgerEntries: { ...ledgerPage, total: aggregate.ledger.total },
-			},
+			evidence,
 		},
 	};
 }

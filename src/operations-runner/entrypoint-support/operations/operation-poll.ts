@@ -1,14 +1,17 @@
 import { runPlatformOperationOnce } from '@treeseed/sdk';
+import { randomUUID } from 'node:crypto';
 import { CapacityWorkdayMaintenanceScheduler } from '../../../api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.js';
+import { ContextQueryCheckMaintenanceScheduler } from '../../../api/capacity/services/capacity/agents/context-query-check-maintenance-service.js';
+import { ContextQueryCheckService } from '../../../api/capacity/services/capacity/agents/context-query-check-service.js';
 import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
 import { createClient,createControlPlaneStore,createExecutorsForOptions,loadConfig,packageVersion,registerAndHeartbeat } from '../index.js';
 
 export async function runOnceWithClient(config, client, version, options: any = {}) {
     const controlPlaneStore = options.controlPlaneStore ?? options.store ?? null;
     await registerAndHeartbeat(client, config, version, { ...options, controlPlaneStore, config });
-    const result = await runPlatformOperationOnce({
-        client,
-        runnerId: config.runnerId,
+	const result = await runPlatformOperationOnce({
+		client,
+		runnerId: options.operationRunnerId ?? config.runnerId,
         workspaceRoot: config.dataDir,
         environment: config.environment,
         executors: createExecutorsForOptions({ ...options, controlPlaneStore, config }),
@@ -30,10 +33,13 @@ export async function runOnce(options: any = {}) {
     const client = await createClient(config);
     const controlPlaneStore = options.controlPlaneStore ?? createControlPlaneStore(config);
     try {
-        const result = await runOnceWithClient(config, client, version, { ...options, controlPlaneStore });
+		const operationRunnerId = options.operationRunnerId ?? `${config.runnerId}:process:${process.pid}:${randomUUID()}`;
+		const result = await runOnceWithClient(config, client, version, { ...options, controlPlaneStore, operationRunnerId });
         if (controlPlaneStore) {
             const maintenance = new CapacityWorkdayMaintenanceScheduler(controlPlaneStore, config.capacityWorkdayMaintenanceIntervalMs);
             await maintenance.runIfDue();
+			const contextChecks = new ContextQueryCheckMaintenanceScheduler(new ContextQueryCheckService(controlPlaneStore), config.capacityWorkdayMaintenanceIntervalMs);
+			await contextChecks.runIfDue();
 			const feedbackRetention = new FeedbackRetentionScheduler(controlPlaneStore, config.feedbackRetentionIntervalMs);
 			await feedbackRetention.runIfDue();
         }

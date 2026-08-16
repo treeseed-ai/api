@@ -99,19 +99,23 @@ it('approves membership without creating a grant and issues a one-time credentia
         expect(credentialRow).not.toHaveProperty('encrypted_reveal_value');
         expect(credentialRow).not.toHaveProperty('credential');
         const accessIdempotency = 'access-a';
+		const requestedValiditySeconds = 1_861;
         const access = await service.issueAccessToken({
             credentialValue: credential.credential,
             credentialId: credential.id,
-            proof: proof({ privateKey: identity.privateKey, publicJwk: identity.publicJwk, method: 'POST', path: '/v1/provider/access-tokens', body: { credentialId: credential.id, idempotencyKey: accessIdempotency }, jti: 'access-a' }),
+			requestedValiditySeconds,
+			proof: proof({ privateKey: identity.privateKey, publicJwk: identity.publicJwk, method: 'POST', path: '/v1/provider/access-tokens', body: { credentialId: credential.id, idempotencyKey: accessIdempotency, requestedValiditySeconds }, jti: 'access-a' }),
             path: '/v1/provider/access-tokens',
             idempotencyKey: accessIdempotency,
         });
         expect(access).toMatchObject({ membershipId: approved.membershipId, status: 'active' });
+		expect((Date.parse(access.expiresAt) - Date.parse(access.issuedAt)) / 1_000).toBe(requestedValiditySeconds);
         expect(access.accessToken).toMatch(/^tspa_/u);
         const accessReplay = await service.issueAccessToken({
             credentialValue: credential.credential,
             credentialId: credential.id,
-            proof: proof({ privateKey: identity.privateKey, publicJwk: identity.publicJwk, method: 'POST', path: '/v1/provider/access-tokens', body: { credentialId: credential.id, idempotencyKey: accessIdempotency }, jti: 'access-a-retry' }),
+			requestedValiditySeconds,
+			proof: proof({ privateKey: identity.privateKey, publicJwk: identity.publicJwk, method: 'POST', path: '/v1/provider/access-tokens', body: { credentialId: credential.id, idempotencyKey: accessIdempotency, requestedValiditySeconds }, jti: 'access-a-retry' }),
             path: '/v1/provider/access-tokens',
             idempotencyKey: accessIdempotency,
         });

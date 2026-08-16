@@ -1,4 +1,4 @@
-import { authorizeApp,createTestApp,describe,expect,it,json } from '../../../support/api-harness.ts';
+import { authorizeApp,createTestApp,createTestStore,describe,expect,it,json } from '../../../support/api-harness.ts';
 
 describe('market api', () => {
 it('creates platform operations and lets the Treeseed operations runner claim and complete them', async () => {
@@ -155,5 +155,19 @@ it('creates platform operations and lets the Treeseed operations runner claim an
 			'runner.progress',
 			'completed',
 		]);
-	});
+});
+
+it('reclaims an interrupted running operation after its lease expires', async () => {
+	const store = createTestStore();
+	await store.ensureInitialized();
+	await store.run(`INSERT INTO platform_operations (
+		id, namespace, operation, status, target, input_json, requested_by_type,
+		assigned_runner_id, lease_expires_at, created_at, updated_at, started_at
+	) VALUES ('operation-interrupted', 'agent-lab', 'run-scene', 'running', 'market_operations_runner', '{}', 'user', 'runner-old', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`);
+	const claimed = await store.claimPlatformOperation({ runnerId: 'runner-new', capabilities: ['agent-lab:run-scene'], leaseSeconds: 300 });
+	expect(claimed).toMatchObject({ id: 'operation-interrupted', status: 'leased', assignedRunnerId: 'runner-new' });
+	const events = await store.listPlatformOperationEvents('operation-interrupted');
+	expect(events).toHaveLength(1);
+	expect(events[0]).toMatchObject({ kind: 'runner.lease_reclaimed', data: { previousRunnerId: 'runner-old', previousStatus: 'running', runnerId: 'runner-new' } });
+});
 });

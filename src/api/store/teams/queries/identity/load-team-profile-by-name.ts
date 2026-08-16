@@ -7,8 +7,13 @@ export async function loadTeamProfileByNameMethod(this: MarketControlPlaneStore,
     const memberContext = principal ? await this.resolvePrincipalTeamContext(team.id, principal) : null;
     if (teamIsPrivate(team) && !memberContext)
         return null;
+    const globallyAuthorized = !teamIsPrivate(team) && Boolean(principal
+        && (principal.permissions?.includes?.('*:*:*')
+            || principal.roles?.includes?.('platform_admin')
+            || principal.roles?.includes?.('market_admin')));
     return {
         team: {
+            ...(memberContext || globallyAuthorized ? { id: team.id } : {}),
             name: team.name,
             displayName: team.displayName,
             logoUrl: team.logoUrl,

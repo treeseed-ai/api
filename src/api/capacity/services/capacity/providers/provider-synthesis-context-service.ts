@@ -1,6 +1,7 @@
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonArray } from '../../../durable-json.ts';
+import type { MinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider/contracts';
 
 type Row = Record<string, unknown>;
 
@@ -42,7 +43,16 @@ export interface ProviderSynthesisExecutionProvider {
 	reliability?: number;
 	pressure?: 'idle' | 'normal' | 'busy' | 'throttled' | 'exhausted';
 	availableConcurrency?: number;
+	maxConcurrentRunners: number;
 	estimatedCost?: number | null;
+	minimumAssignmentDuration?: MinimumAssignmentDuration;
+	lanes: Array<{
+		id: string;
+		purpose: 'communication' | 'operation';
+		maxConcurrentRunners: number;
+		capabilities: string[];
+		minimumAssignmentDuration?: MinimumAssignmentDuration;
+	}>;
 }
 
 function text(value: unknown): string | null {
@@ -81,7 +91,15 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(String(provider.pressure)) ? provider.pressure as ProviderSynthesisExecutionProvider['pressure'] : 'normal',
 		availableConcurrency: Number.isInteger(Number(provider.availableConcurrency)) ? Math.max(0, Number(provider.availableConcurrency)) : 1,
+		maxConcurrentRunners: Math.max(1, Number(provider.maxConcurrentRunners ?? 1)),
 		estimatedCost: Number.isFinite(Number(provider.estimatedCost)) ? Number(provider.estimatedCost) : null,
+		...(provider.minimumAssignmentDuration ? { minimumAssignmentDuration: provider.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}),
+		lanes: Array.isArray(provider.lanes) ? provider.lanes.map((value) => value as Row).flatMap((lane) => {
+			const id = String(lane.id ?? '').trim();
+			const purpose = lane.purpose === 'communication' ? 'communication' as const : lane.purpose === 'operation' ? 'operation' as const : null;
+			return id && purpose ? [{ id, purpose, maxConcurrentRunners: Math.max(1, Number(lane.maxConcurrentRunners ?? 1)), capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String).filter(Boolean) : [],
+				...(lane.minimumAssignmentDuration ? { minimumAssignmentDuration: lane.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}) }] : [];
+		}) : [],
 	})).filter((provider) => provider.id);
 }
 

@@ -72,7 +72,8 @@ describe('knowledge publication custody boundary', () => {
 			closeWorkspace: vi.fn().mockResolvedValue(undefined) };
 		const store = { first: vi.fn().mockResolvedValue(publication), getKnowledgeWorkspace: vi.fn().mockResolvedValue(workspace),
 			getKnowledgeReview: vi.fn().mockResolvedValue(review), completeKnowledgePublication: vi.fn().mockResolvedValue({ ok: true }),
-			recordAuditEvent: vi.fn().mockResolvedValue({}) };
+			getProject:vi.fn().mockResolvedValue({ teamId:'team-a' }),upsertProjectTreeDxLibrary:vi.fn().mockResolvedValue({ repositoryId:'repo-a',contentRepositoryRef:commit }),
+			run:vi.fn().mockResolvedValue({}),recordAuditEvent: vi.fn().mockResolvedValue({}) };
 		const storage = { readCurrent: vi.fn().mockResolvedValue(manifest), readRevision: vi.fn().mockResolvedValue(null),
 			readObject: vi.fn(), publish: vi.fn(), rollback: vi.fn() };
 		const loadSnapshots = vi.fn();

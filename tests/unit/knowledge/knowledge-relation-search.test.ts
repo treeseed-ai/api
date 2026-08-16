@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { reviewPathsMatch, searchRelations } from '../../../src/api/routes/knowledge/authoring.ts';
+import { RelationContentValidationError } from '../../../src/api/routes/knowledge/relation-search.ts';
 
 describe('knowledge relationship search', () => {
 	it('maps authorized TreeDX files to stable functional-content identifiers', async () => {
@@ -18,6 +19,16 @@ describe('knowledge relationship search', () => {
 		expect(searchRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({ repoId: 'repo-admin', ref: 'refs/heads/main' }));
 		expect(notes).toEqual([expect.objectContaining({ id: 'note:knowledge-authoring-traceability', kind: 'notes' })]);
 		expect(questions).toEqual([expect.objectContaining({ id: 'question:trustworthy-knowledge-publication', kind: 'questions' })]);
+	});
+
+	it('rejects malformed indexed content with exact Zod diagnostics', async () => {
+		const connection = { repositoryId: 'repo-admin',baseRef: 'refs/heads/main',contentPath: 'docs/src/content',allowedPaths: ['docs/src/content/**'],client: {
+			searchRepositoryFiles: vi.fn().mockResolvedValue({ results: [{ path:'docs/src/content/questions/untitled.md',frontmatter:{ questionType:'knowledge-gap' } }] }),
+		} };
+
+		await expect(searchRelations(connection,'missing title',new Set(['questions']))).rejects.toMatchObject<RelationContentValidationError>({
+			code:'knowledge_relation_content_invalid',status:422,diagnostics:[expect.objectContaining({path:'docs/src/content/questions/untitled.md',model:'question',field:'title',code:'content_zod_invalid_type'})],
+		});
 	});
 });
 

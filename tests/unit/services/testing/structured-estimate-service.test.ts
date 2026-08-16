@@ -43,6 +43,23 @@ describe('structured agent estimate service', () => {
 		} finally { await database.close(); }
 	});
 
+	it('retains the complete governed work breakdown through durable read-back', async () => {
+		const { database, store } = harness();
+		try {
+			await seed(store);
+			const workBreakdown = {
+				preparationSeconds: 0, implementationSeconds: 0, verificationSeconds: 0,
+				independentReviewSeconds: 1, revisionSeconds: 0, revisionVerificationSeconds: 0,
+				finalReviewSeconds: 1, reportingSeconds: 1, reserveSeconds: 0, expectedRevisionCycles: 1,
+			};
+			const created = await store.createStructuredAgentEstimate('decision-a', input({
+				schemaVersion: 2, expectedSeconds: 3, maxSeconds: 4, workBreakdown,
+			}));
+			expect(created).toMatchObject({ schemaVersion: 2, workBreakdown });
+			expect(await store.getStructuredAgentEstimate('estimate-a')).toMatchObject({ schemaVersion: 2, workBreakdown });
+		} finally { await database.close(); }
+	});
+
 	it('enforces one-way status transitions and strict status filters', async () => {
 		const { database, store } = harness();
 		try {

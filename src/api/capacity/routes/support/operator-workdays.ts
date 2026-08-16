@@ -1,9 +1,12 @@
 import { decodeCapacityPageCursor,encodeCapacityPageCursor,normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
+import { agentActivityQuerySchema,agentTranscriptPayloadSchema } from '@treeseed/sdk/agent-capacity';
 import type { Context, Hono } from 'hono';
 import { CapacityGovernanceError } from '../../database.ts';
+import { terminalizeCompletedConversationInvocation } from '../../services/capacity/invocations/discussion-invocation-service.ts';
 import type { CapacityOperatorStore } from './operator.ts';
 import { readCapacityRequestObject } from './request-json.ts';
 import { filterWorkdayActivity, redactTranscriptValue } from './workday-activity.ts';
+import { installOperatorCommunicationRoutes } from './operator-communication.ts';
 
 type Access = { response?: Response | null; principal?: { id?: string } };
 
@@ -11,6 +14,7 @@ export interface WorkdayRouteDependencies {
 	store: CapacityOperatorStore;
 	read(c: Context): Promise<Access>;
 	manage(c: Context): Promise<Access>;
+	diagnose(c: Context): Promise<Access>;
 	query(c: Context, name: string): string | null;
 	page(c: Context): { limit: number; cursor: ReturnType<typeof import('@treeseed/sdk/capacity-pagination').decodeCapacityPageCursor> };
 	notFound(c: Context, message: string): Response;
@@ -22,11 +26,12 @@ export interface WorkdayRouteDependencies {
 
 export function installOperatorWorkdayRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	const { store, read, manage, query, page, notFound, operatorError } = dependencies;
+	installOperatorCommunicationRoutes(app,dependencies);
 
 	app.get('/v1/teams/:teamId/workday-runs', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
 		try {
-			return c.json({ ok: true, payload: await store.listCapacityWorkdayRunsPage(c.req.param('teamId'), { status: query(c, 'status'), providerId: query(c, 'providerId'), ...page(c) }) });
+			return c.json({ ok: true, payload: await store.listCapacityWorkdayRunsPage(c.req.param('teamId'), { status: query(c, 'status'), providerId: query(c, 'providerId'), executionKind: query(c,'executionKind') || 'workday', ...page(c) }) });
 		} catch (error) { return operatorError(error); }
 	});
 	app.get('/v1/teams/:teamId/workday-schedules', async (c) => {
@@ -60,6 +65,13 @@ export function installOperatorWorkdayRoutes(app: Hono, dependencies: WorkdayRou
 			return c.json({ ok: true, payload: await store.createCapacityWorkdayRun(c.req.param('teamId'), { ...body, requestedById: access.principal?.id ?? null }) }, { status: 201 });
 		} catch (error) { return operatorError(error); }
 	});
+	app.post('/v1/teams/:teamId/workday-runs/preflight', async (c) => {
+		const access = await manage(c); if (access.response) return access.response;
+		try {
+			const body = await readCapacityRequestObject(c, { optional: true });
+			return c.json({ ok: true, payload: await store.preflightCapacityWorkdayRunRequest(c.req.param('teamId'), { ...body, requestedById: access.principal?.id ?? null }) });
+		} catch (error) { return operatorError(error); }
+	});
 	app.get('/v1/teams/:teamId/workday-runs/:runId', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
 		const run = await store.getCapacityWorkdayRun(c.req.param('teamId'), c.req.param('runId'));
@@ -71,6 +83,10 @@ export function installOperatorWorkdayRoutes(app: Hono, dependencies: WorkdayRou
 		const access = await manage(c); if (access.response) return access.response;
 		try {
 			const run = await store.updateCapacityWorkdayRun(c.req.param('teamId'), c.req.param('runId'), await readCapacityRequestObject(c, { optional: true }));
+			if (run?.status === 'completed' && run.executionKind === 'conversation') {
+				const invocations = await store.all(`SELECT DISTINCT assignment.invocation_id FROM capacity_workday_demands demand JOIN capacity_provider_assignments assignment ON assignment.id=demand.assignment_id WHERE demand.team_id=? AND demand.workday_run_id=? AND assignment.invocation_id IS NOT NULL`, [c.req.param('teamId'), c.req.param('runId')]);
+				for (const invocation of invocations) await terminalizeCompletedConversationInvocation(store, c.req.param('teamId'), String(invocation.invocation_id));
+			}
 			return run ? c.json({ ok: true, payload: run }) : notFound(c, 'Unknown workday run.');
 		} catch (error) { return operatorError(error); }
 	});
@@ -83,6 +99,16 @@ export function installOperatorWorkdayRoutes(app: Hono, dependencies: WorkdayRou
 			if (!key) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
 			return c.json({ ok: true, payload: await store.tickCapacityWorkdayRun(c.req.param('teamId'), c.req.param('runId'), now, key) });
 		} catch (error) { return operatorError(error); }
+	});
+	app.post('/v1/teams/:teamId/workday-runs/:runId/close-admission', async (c) => {
+		const access = await manage(c); if (access.response) return access.response;
+		try {
+			const body = await readCapacityRequestObject(c,{ optional: true });
+			const key = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim() ? body.idempotencyKey.trim() : c.req.header('Idempotency-Key')?.trim();
+			if (!key) throw new CapacityGovernanceError('capacity_idempotency_key_required','An idempotency key is required.',400);
+			return c.json({ ok: true,payload: await store.fenceCapacityWorkdayAdmission(c.req.param('teamId'),c.req.param('runId')) });
+		}
+		catch (error) { return operatorError(error); }
 	});
 	app.get('/v1/teams/:teamId/workday-runs/:runId/events', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
@@ -106,10 +132,11 @@ export function installOperatorActivityRoutes(app: Hono, dependencies: WorkdayRo
 		const access = await read(c); if (access.response) return access.response;
 		const run = await store.getCapacityWorkdayRun(c.req.param('teamId'), c.req.param('runId'));
 		if (!run) return notFound(c, 'Unknown workday run.');
-		const limit = normalizeCapacityPageLimit(query(c, 'limit'));
-		const after = Math.max(-1, Number(query(c, 'after') ?? -1));
+		const request = agentActivityQuerySchema.safeParse({ limit: query(c, 'limit') ?? undefined, after: query(c, 'after') ?? undefined, agent: query(c, 'agent') ?? undefined, agentClass: query(c, 'agentClass') ?? undefined, type: query(c, 'type') ?? undefined, severity: query(c, 'severity') ?? undefined });
+		if (!request.success) return c.json({ ok: false, code: 'agent_activity_query_invalid', error: 'The activity query is invalid.', diagnostics: request.error.issues }, 400);
+		const { limit,after } = request.data;
 		const events = await store.listCapacityWorkdayEventsPage(c.req.param('teamId'), String(run.id), { limit: 200, cursor: null, afterEventIndex: after });
-		const items = filterWorkdayActivity(events.items as never[], { after, agent: query(c, 'agent'), agentClass: query(c, 'agentClass'), type: query(c, 'type'), severity: query(c, 'severity') }).slice(0, limit);
+		const items = filterWorkdayActivity(events.items as never[], request.data).slice(0, limit);
 		return c.json({ ok: true, payload: { items, cursor: items.at(-1)?.sequence ?? Number(query(c, 'after') ?? -1) } });
 	});
 	app.get('/v1/teams/:teamId/workday-runs/:runId/activity/stream', async (c) => {
@@ -140,6 +167,7 @@ export function installOperatorActivityRoutes(app: Hono, dependencies: WorkdayRo
 			cursor ? [run.team_id, run.provider_assignment_id, cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [run.team_id, run.provider_assignment_id, limit + 1]);
 		const selected = rows.slice(0, limit);
 		const last = selected.at(-1);
-		return c.json({ ok: true, payload: { executionRunId: c.req.param('runId'), redactionStatus: 'sanitized', entries: redactTranscriptValue(selected), page: { limit, hasMore: rows.length > limit, nextCursor: rows.length > limit && last ? encodeCapacityPageCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null } } });
+		const payload = agentTranscriptPayloadSchema.parse({ executionRunId: c.req.param('runId'), redactionStatus: 'sanitized', entries: redactTranscriptValue(selected), page: { limit, hasMore: rows.length > limit, nextCursor: rows.length > limit && last ? encodeCapacityPageCursor({ createdAt: String(last.created_at), id: String(last.id) }) : null } });
+		return c.json({ ok: true, payload });
 	});
 }

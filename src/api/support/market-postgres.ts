@@ -163,6 +163,11 @@ async function constraintExists(pool: PostgresQueryable, tableName: string, cons
 	return existing.rows.length > 0;
 }
 
+async function columnExists(pool:PostgresQueryable,tableName:string,columnName:string){
+	const existing=await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name=$2 LIMIT 1`,[tableName,columnName]);
+	return existing.rows.length>0;
+}
+
 async function hasAdoptableBaselineSchema(pool: PostgresQueryable): Promise<boolean> {
 	const baselineTables = [
 		'agent_capacity_plans',
@@ -363,15 +368,20 @@ export class MarketPostgresDatabase {
 			try {
 				await client.query('BEGIN');
 				for (const statement of splitSqlList(sql)) {
-					const createTable = String(statement).match(/^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-zA-Z0-9_]+)["`]?\s*\(/iu);
+					const inspected=String(statement).replace(/^(?:\s*--[^\n]*(?:\n|$))+/u,'').trimStart();
+					const createTable = inspected.match(/^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-zA-Z0-9_]+)["`]?\s*\(/iu);
 					if (createTable) {
 						const tableName = createTable[1];
 						if (await tableExists(client, tableName)) continue;
 					}
-					const addConstraint = String(statement).match(
+					const addConstraint = inspected.match(
 						/^\s*ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+ADD\s+CONSTRAINT\s+["`]?([a-zA-Z0-9_]+)["`]?/iu,
 					);
 					if (addConstraint && await constraintExists(client, addConstraint[1], addConstraint[2])) continue;
+					const addColumn=inspected.match(/^\s*ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+ADD\s+COLUMN\s+["`]?([a-zA-Z0-9_]+)["`]?/iu);
+					if(addColumn&&await columnExists(client,addColumn[1],addColumn[2]))continue;
+					const existingColumnMutation=inspected.match(/^\s*ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+(?:ALTER|DROP)\s+COLUMN\s+["`]?([a-zA-Z0-9_]+)["`]?/iu);
+					if(existingColumnMutation&&!await columnExists(client,existingColumnMutation[1],existingColumnMutation[2]))continue;
 					const createIndex = String(statement).match(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS\b)/iu);
 					const statementToApply = createIndex
 						? String(statement).replace(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+/iu, (_match, unique = '') => `CREATE ${unique}INDEX IF NOT EXISTS `)

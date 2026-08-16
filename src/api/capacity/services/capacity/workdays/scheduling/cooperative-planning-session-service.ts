@@ -27,6 +27,33 @@ export async function initializeCooperativePlanningSession(input: {
 	assignmentTimeboxSeconds?: number;
 	now: string;
 }) {
+	const { graph, participants, compiled } = compileCooperativePlanningSession(input);
+	await input.database.batch([
+		...participants.map((participant) => ({
+			query: `INSERT INTO workday_planning_participants
+				(id,session_id,agent_id,node_id,project_agent_class_id,status,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,'scheduled',?,?,?) ON CONFLICT(session_id,node_id) DO NOTHING`,
+			params: [`participant:${input.sessionId}:${digest(participant.nodeId).slice(0, 16)}`, input.sessionId, participant.agentId, participant.nodeId, participant.projectAgentClassId, JSON.stringify({ timeboxSeconds: participant.timeboxSeconds }), input.now, input.now],
+		})),
+		...compiled.waves.map((wave) => ({
+			query: `INSERT INTO workday_planning_waves
+				(id,session_id,round,wave,status,snapshot_ref,snapshot_json,assignment_ids_json,created_at,updated_at) VALUES (?,?,?,?,'scheduled','unresolved','{}','[]',?,?) ON CONFLICT(session_id,round,wave) DO NOTHING`,
+			params: [`wave:${input.sessionId}:${wave.round}:${wave.wave}`, input.sessionId, wave.round, wave.wave, input.now, input.now],
+		})),
+		{
+			query: `UPDATE workday_planning_sessions SET metadata_json = ?, updated_at = ? WHERE id = ?`,
+			params: [JSON.stringify({ planningInitialized: true, participantNodes: participants.map((entry) => entry.nodeId), waves: compiled.waves, requiredSeconds: compiled.requiredSeconds }), input.now, input.sessionId],
+		},
+	]);
+	return compiled;
+}
+
+export function compileCooperativePlanningSession(input: {
+	snapshots: Map<string, Snapshot>;
+	rounds: number;
+	maxConcurrentAssignments: number;
+	allocatedSeconds: number;
+	assignmentTimeboxSeconds?: number;
+}) {
 	const graph: AgentPlanningGraph = { nodes: [], edges: [], externalRoots: [], diagnostics: [], ok: true };
 	const participants: Array<{ agentId: string; nodeId: string; projectAgentClassId: string; timeboxSeconds: number }> = [];
 	for (const [projectId, snapshot] of input.snapshots) {
@@ -42,25 +69,36 @@ export async function initializeCooperativePlanningSession(input: {
 		});
 	}
 	const compiled = compileCooperativePlanningWaves({ graph, participants, rounds: input.rounds, maxConcurrentAssignments: input.maxConcurrentAssignments, allocatedSeconds: input.allocatedSeconds });
+	if (participants.length > 0 && compiled.waves.length === 0) throw new CapacityGovernanceError(
+		'capacity_planning_session_wave_empty',
+		'The cooperative planning graph selected participants but compiled no executable waves.',
+		409,
+		{
+			participantNodeIds: participants.map((entry) => entry.nodeId).sort(),
+			graphNodeIds: graph.nodes.map((entry) => entry.id).sort(),
+		},
+	);
 	if (!compiled.fits) throw new CapacityGovernanceError('capacity_planning_session_time_insufficient', 'The cooperative planning profiles do not fit within the allocated agent time.', 409, { requiredSeconds: compiled.requiredSeconds, allocatedSeconds: input.allocatedSeconds });
-	for (const participant of participants) await input.database.run(`INSERT INTO workday_planning_participants
-		(id,session_id,agent_id,node_id,project_agent_class_id,status,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,'scheduled',?,?,?) ON CONFLICT(session_id,node_id) DO NOTHING`,
-		[`participant:${input.sessionId}:${digest(participant.nodeId).slice(0, 16)}`, input.sessionId, participant.agentId, participant.nodeId, participant.projectAgentClassId, JSON.stringify({ timeboxSeconds: participant.timeboxSeconds }), input.now, input.now]);
-	for (const wave of compiled.waves) await input.database.run(`INSERT INTO workday_planning_waves
-		(id,session_id,round,wave,status,snapshot_ref,snapshot_json,assignment_ids_json,created_at,updated_at) VALUES (?,?,?,?,'scheduled','unresolved','{}','[]',?,?) ON CONFLICT(session_id,round,wave) DO NOTHING`,
-		[`wave:${input.sessionId}:${wave.round}:${wave.wave}`, input.sessionId, wave.round, wave.wave, input.now, input.now]);
-	await input.database.run(`UPDATE workday_planning_sessions SET metadata_json = ?, updated_at = ? WHERE id = ?`, [JSON.stringify({ participantNodes: participants.map((entry) => entry.nodeId), waves: compiled.waves, requiredSeconds: compiled.requiredSeconds }), input.now, input.sessionId]);
-	return compiled;
+	return { graph, participants, compiled };
 }
 
 function parsed(value: unknown): Row { try { const result = JSON.parse(String(value ?? '{}')); return result && typeof result === 'object' && !Array.isArray(result) ? result as Row : {}; } catch { return {}; } }
 function strings(value: unknown) { return Array.isArray(value) ? value.map(String) : []; }
 
 export async function currentCooperativePlanningWave(database: CapacityGovernanceDatabase, runId: string, now: string) {
-	const session = await database.first(`SELECT * FROM workday_planning_sessions WHERE workday_run_id = ? AND status = 'running' LIMIT 1`, [runId]);
+	const session = await database.first(`SELECT session.* FROM workday_planning_sessions session
+		LEFT JOIN workday_planning_waves pending_wave ON pending_wave.session_id = session.id AND pending_wave.status IN ('running','scheduled')
+		WHERE session.workday_run_id = ? AND (session.status = 'running' OR (session.status = 'completed' AND pending_wave.id IS NOT NULL))
+		ORDER BY CASE WHEN session.status = 'running' THEN 0 ELSE 1 END LIMIT 1`, [runId]);
 	if (!session) return null;
+	if (session.status === 'completed') await database.run(`UPDATE workday_planning_sessions SET status = 'running',completed_at = NULL,updated_at = ?
+		WHERE id = ? AND status = 'completed' AND EXISTS (SELECT 1 FROM workday_planning_waves WHERE session_id = ? AND status IN ('running','scheduled'))`, [now, session.id, session.id]);
 	let wave = await database.first(`SELECT * FROM workday_planning_waves WHERE session_id = ? AND status IN ('running','scheduled') ORDER BY round ASC,wave ASC LIMIT 1`, [session.id]);
-	if (!wave) { await database.run(`UPDATE workday_planning_sessions SET status = 'completed',completed_at = ?,updated_at = ? WHERE id = ? AND status = 'running'`, [now, now, session.id]); return null; }
+	if (!wave) {
+		if (parsed(session.metadata_json).planningInitialized !== true) return null;
+		await database.run(`UPDATE workday_planning_sessions SET status = 'completed',completed_at = ?,updated_at = ? WHERE id = ? AND status = 'running'`, [now, now, session.id]);
+		return null;
+	}
 	if (wave.status === 'running') {
 		const demands = await database.all(`SELECT project_id,status,metadata_json FROM capacity_workday_demands WHERE workday_run_id = ? AND metadata_json LIKE ?`, [runId, `%"planningWaveId":"${String(wave.id)}"%`]);
 		const expectedNodes = waveNodes(session, wave);

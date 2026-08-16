@@ -17,5 +17,6 @@ export async function decideApprovalRequestMethod(this: MarketControlPlaneStore,
         timestamp,
         id,
     ]);
+	await this.run(`UPDATE agent_operation_handoffs SET status=?,updated_at=? WHERE approval_request_id=? AND status='awaiting-approval'`,[state==='approved'?'approved':'cancelled',timestamp,id]);
     return this.getApprovalRequest(id);
 }

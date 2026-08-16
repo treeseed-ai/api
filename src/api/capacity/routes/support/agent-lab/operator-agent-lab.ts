@@ -11,13 +11,14 @@ import { AgentLabCommandService } from '../../../services/capacity/observability
 import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
-import { searchRelations } from '../../../../routes/knowledge/relation-search.ts';
+import { RelationContentValidationError,searchRelations } from '../../../../routes/knowledge/relation-search.ts';
 import { CapacityAllocationService } from '../../../services/capacity/allocations/allocation-service.ts';
-import { agentLabRepositoryDefinitions,matchesAgentDefinition } from './repository-definitions.ts';
+import { agentLabRepositoryDefinitions,matchesAgentDefinition,unmatchedAgentDefinitions } from './repository-definitions.ts';
 import { agentLabInboxQuestions } from './inbox-questions.ts';
 import { installOperatorAgentLabAuthoringRoutes } from './authoring.ts';
 import { installOperatorAgentAtlasRoutes } from './atlas.ts';
 import { installAgentLabTargetRoutes } from './target-routes.ts';
+import { installContextQueryCheckRoutes } from './context-query-checks.ts';
 
 const entityKinds = new Set<AgentLabEntityKind>(['agents', 'workdays', 'events', 'assignments', 'executions', 'artifacts']);
 const commandSurfaces = new Set(['inbox', 'decisions', 'build', 'direction', 'results', 'find']);
@@ -27,13 +28,18 @@ function object(value: unknown): Record<string, unknown> { return value && typeo
 function jsonObject(value: unknown) { if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return object(value); }
 function text(...values: unknown[]) { return String(values.find((value) => typeof value === 'string' && value) ?? ''); }
 
+function relationValidationIssue(error: RelationContentValidationError,projectId: string,projectName = '') {
+	return { id:`treedx:${projectId}:validation:${createHash('sha256').update(JSON.stringify(error.diagnostics)).digest('hex').slice(0,16)}`,kind:'error',title:'Invalid repository content',description:error.message,status:'blocked',projectId,projectName,actionable:true,tags:['TreeDX','validation'],data:{ source:'treedx',code:error.code,diagnostics:error.diagnostics } };
+}
+
 async function relationResults(dependencies: WorkdayRouteDependencies, projects: Array<Record<string, unknown>>, query: string) {
 	if (query.trim().length < 2) return [];
 	const results = await Promise.all(projects.map(async (project) => {
 		const projectId = text(project.id); if (!projectId) return [];
 		const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId, write: false, relationPaths: true }).catch(() => null);
 		if (!connection) return [];
-		const found = await searchRelations(connection, query, new Set()).catch(() => []);
+		let found; try { found = await searchRelations(connection,query,new Set()); }
+		catch (error) { return error instanceof RelationContentValidationError ? [relationValidationIssue(error,projectId,text(project.name,project.slug))] : []; }
 		return found.map((entry: Record<string, unknown>) => ({ id: `treedx:${projectId}:${text(entry.kind)}:${text(entry.id)}`, kind: ['questions', 'proposals', 'decisions', 'agents'].includes(text(entry.kind)) ? text(entry.kind).replace(/s$/u, '') : 'note', title: text(entry.title, 'Repository content'), description: text(entry.summary, 'TreeDX relationship match'), status: 'indexed', projectId, projectName: text(project.name, project.slug), tags: ['TreeDX', text(entry.kind)].filter(Boolean), data: { ...entry, projectId, source: 'treedx' } }));
 	}));
 	return results.flat();
@@ -49,7 +55,8 @@ async function knowledgeConversation(dependencies: WorkdayRouteDependencies, pro
 	if (!projectId || !subjectId) return [];
 	const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId, write: false, relationPaths: true }).catch(() => null);
 	if (!connection) return [];
-	const matches = await searchRelations(connection, subjectId, new Set()).catch(() => []);
+	let matches; try { matches = await searchRelations(connection,subjectId,new Set()); }
+	catch (error) { return error instanceof RelationContentValidationError ? [relationValidationIssue(error,projectId)] : []; }
 	return matches.filter((entry: Record<string, unknown>) => text(entry.id) !== subjectId).map((entry: Record<string, unknown>) => ({
 		id: `treedx:${projectId}:${text(entry.kind)}:${text(entry.id)}`,
 		kind: ['notes','questions'].includes(text(entry.kind)) ? text(entry.kind).replace(/s$/u, '') : 'artifact',
@@ -266,6 +273,7 @@ function installSurfaceRoutes(app: Hono, dependencies: WorkdayRouteDependencies)
 		if (surface === 'build') {
 			const definitions = await agentLabRepositoryDefinitions(dependencies, snapshot.rows.projects);
 			const repositoryAgents = definitions.filter((item) => item.kind === 'agent');
+			const runtimeAgents = payload.items.filter((item) => item.kind === 'agent');
 			payload.items = payload.items.map((item) => {
 				if (item.kind !== 'agent') return item;
 				const definition = repositoryAgents.find((candidate) => matchesAgentDefinition(item, candidate));
@@ -276,7 +284,7 @@ function installSurfaceRoutes(app: Hono, dependencies: WorkdayRouteDependencies)
 				const runtimeStatus = deriveAgentRuntimeStatus({ enabled: authored.enabled !== false, valid: !Array.isArray(repository.diagnostics) || repository.diagnostics.length === 0, activeRunStatus: text(activeRun?.status) || null, assignmentStatus: text(activeAssignment?.status) || null, latestTerminalStatus: text(runs.at(-1)?.status) || null });
 				return { ...item, status: runtimeStatus, tags: [...(item.tags ?? []), 'TreeDX definition'], data: { ...object(item.data), definition: definition.data, runtimeStatus } };
 			});
-			payload.items.push(...definitions.filter((item) => item.kind !== 'agent') as typeof payload.items); payload.page.total = payload.items.length;
+			payload.items.push(...unmatchedAgentDefinitions(runtimeAgents, repositoryAgents) as typeof payload.items, ...definitions.filter((item) => item.kind !== 'agent') as typeof payload.items); payload.page.total = payload.items.length;
 			const byContract = new Map(definitions.map((item) => [text(item.data.contractId),item]));
 			for (const agent of payload.items.filter((item) => item.kind === 'agent')) {
 				const agentData = jsonObject(agent.data); const repository = jsonObject(agentData.definition); const repositoryActivities = jsonObject(repository.activities);
@@ -318,7 +326,8 @@ function installViewStateRoutes(app: Hono, dependencies: WorkdayRouteDependencie
 		if (!commandKinds.has(kind) || !entityId) return c.json({ ok: false, code: 'agent_lab_view_state_invalid', error: 'Provide a supported record type and ID.' }, 400);
 		const namespace = typeof body.namespace === 'string' && body.namespace ? body.namespace : 'command'; const existing = await dependencies.store.first(`SELECT * FROM agent_lab_view_state WHERE user_id = ? AND team_id = ? AND namespace = ? AND entity_kind = ? AND entity_id = ? LIMIT 1`, [access.principal.id, c.req.param('teamId'), namespace, kind, entityId]);
 		if (body.expectedVersion !== undefined && Number(body.expectedVersion) !== Number(existing?.version ?? 0)) return c.json({ ok: false, code: 'agent_lab_view_state_stale', error: 'This personal view changed in another session.', currentVersion: Number(existing?.version ?? 0) }, 409);
-		const now = new Date().toISOString(); const version = Number(existing?.version ?? 0) + 1; const values = { pinned: body.pinned === undefined ? Number(existing?.pinned ?? 0) : body.pinned ? 1 : 0, hidden: body.hidden === undefined ? Number(existing?.hidden ?? 0) : body.hidden ? 1 : 0, resolved: body.resolved === undefined ? Number(existing?.resolved ?? 0) : body.resolved ? 1 : 0, layout: body.layout === undefined ? String(existing?.layout_json ?? '{}') : JSON.stringify(body.layout ?? {}) };
+		const existingLayout = jsonObject(existing?.layout_json); const layoutPatch = jsonObject(body.layoutPatch); const nextLayout = body.layout === undefined ? { ...existingLayout, ...layoutPatch } : body.layout;
+		const now = new Date().toISOString(); const version = Number(existing?.version ?? 0) + 1; const values = { pinned: body.pinned === undefined ? Number(existing?.pinned ?? 0) : body.pinned ? 1 : 0, hidden: body.hidden === undefined ? Number(existing?.hidden ?? 0) : body.hidden ? 1 : 0, resolved: body.resolved === undefined ? Number(existing?.resolved ?? 0) : body.resolved ? 1 : 0, layout: JSON.stringify(nextLayout ?? {}) };
 		if (existing) await dependencies.store.run(`UPDATE agent_lab_view_state SET pinned = ?, hidden = ?, resolved = ?, layout_json = ?, version = ?, updated_at = ? WHERE id = ?`, [values.pinned, values.hidden, values.resolved, values.layout, version, now, existing.id]);
 		else await dependencies.store.run(`INSERT INTO agent_lab_view_state (id, user_id, team_id, namespace, entity_kind, entity_id, pinned, hidden, resolved, layout_json, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [randomUUID(), access.principal.id, c.req.param('teamId'), namespace, kind, entityId, values.pinned, values.hidden, values.resolved, values.layout, version, now, now]);
 		return c.json({ ok: true, payload: { kind, id: entityId, ...values, layout: JSON.parse(values.layout), version } });
@@ -369,7 +378,7 @@ function installSimulationRoutes(app: Hono, dependencies: WorkdayRouteDependenci
 			const errors = diagnostics.filter((item) => item.severity === 'error'); if (!scene || errors.length) throw new Error(errors.map((item) => item.message).join(' ') || 'The scene is invalid.');
 			if (scene.runtime.mode !== 'demo' || scene.mode.test || !scene.mode.demo) throw new Error('Browser simulations must explicitly use demo mode and test: false.');
 			if (scene.agentLab?.scope.kind !== 'team') throw new Error('Browser simulations must use the retained team scope.');
-			seedSources = await Promise.all((scene.setup.seeds ?? []).map(async (seed) => { const path = `seeds/${seed.name}.yaml`; const seedRead = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: immutableRef, path, encoding: 'utf8', maxBytes: 393_216, allowProtected: true }); const source = text(object(seedRead.file).content); const validation = validateSeedSource(source); if (!validation.ok) throw new Error(`Seed ${seed.name} is invalid: ${validation.diagnostics.map((item) => item.message).join(' ')}`); return { name: seed.name, path, source }; }));
+			seedSources = await Promise.all((scene.setup.seeds ?? []).map(async (seed) => { const path = `seeds/${seed.name}.yaml`; const seedRead = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: immutableRef, path, encoding: 'utf8', maxBytes: 196_608, allowProtected: true }); const source = text(object(seedRead.file).content); const validation = validateSeedSource(source); if (!validation.ok) throw new Error(`Seed ${seed.name} is invalid: ${validation.diagnostics.map((item) => item.message).join(' ')}`); return { name: seed.name, path, source }; }));
 		} catch (error) {
 			return c.json({ ok: false, code: 'agent_lab_simulation_ref_invalid', error: error instanceof Error ? error.message : 'TreeDX could not read the scene at that commit.' }, 422);
 		}
@@ -427,7 +436,10 @@ function installDetailRoutes(app: Hono, dependencies: WorkdayRouteDependencies) 
 			const [, projectId, relationKind, ...identity] = entityId.split(':'); const project = snapshot.rows.projects.find((row) => text(row.id) === projectId);
 			if (!project) return dependencies.notFound(c, 'Unknown TreeDX relationship.');
 			const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId, write: false, relationPaths: true }).catch(() => null);
-			const match = connection ? (await searchRelations(connection, identity.join(':'), new Set(relationKind ? [relationKind] : [])).catch(() => [])).find((entry: Record<string, unknown>) => text(entry.id) === identity.join(':')) : null;
+			let relationMatches: Array<Record<string,unknown>> = [];
+			try { relationMatches = connection ? await searchRelations(connection,identity.join(':'),new Set(relationKind ? [relationKind] : [])) : []; }
+			catch (error) { if (error instanceof RelationContentValidationError) return c.json({ok:false,code:error.code,error:error.message,modelDiagnostics:error.diagnostics},error.status); }
+			const match = relationMatches.find((entry: Record<string, unknown>) => text(entry.id) === identity.join(':'));
 			if (!match) return dependencies.notFound(c, 'Unknown TreeDX relationship.');
 			const read = connection && text(match.path) ? await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: connection.baseRef, path: text(match.path), encoding: 'utf8', maxBytes: 196_608 }).catch(() => null) : null;
 			const content = repositoryBody(text(object(read?.file).content, match.summary));
@@ -442,12 +454,12 @@ function installDetailRoutes(app: Hono, dependencies: WorkdayRouteDependencies) 
 			payload.permissions = { ...(payload.permissions ?? {}),edit:canManage && ['draft','open'].includes(status),vote:status === 'voting',open:canManage && status === 'draft',startVoting:canManage && ['draft','open'].includes(status),decide:canManage && ['open','voting'].includes(status),withdraw:canManage && mutable,supersede:canManage && mutable,resolve:false };
 		}
 		if (kind === 'agent') {
-			const definitions = await agentLabRepositoryDefinitions(dependencies, snapshot.rows.projects);
+			const definitions = await agentLabRepositoryDefinitions(dependencies, snapshot.rows.projects.filter((project) => text(project.id) === text(payload.projectId)));
 			const definition = definitions.find((candidate) => matchesAgentDefinition(payload, candidate));
 			if (definition) {
 				const definitionData = object(definition.data); const path = text(definitionData.path);
 				const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId: text(payload.projectId), write: false, authoringPaths: true }).catch(() => null);
-				const read = connection && path ? await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: connection.baseRef, path, encoding: 'utf8', maxBytes: 393_216, allowProtected: true }).catch(() => null) : null;
+				const read = connection && path ? await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: connection.baseRef, path, encoding: 'utf8', maxBytes: 196_608, allowProtected: true }).catch(() => null) : null;
 				const source = text(object(read?.file).content); const activities = object(definitionData.activities); const contractIds = new Set<string>();
 				const frontmatterMatch = source.match(/^---\s*\n([\s\S]*?)\n---/u); const authored = frontmatterMatch ? object(parseYaml(frontmatterMatch[1] ?? '')) : {};
 				const agentSlug = text(authored.slug, authored.id).replace(/^agent:/u,''); const projectId = text(payload.projectId);
@@ -481,5 +493,6 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 	installSimulationRoutes(app, dependencies);
 	installDetailRoutes(app, dependencies);
 	installAgentLabTargetRoutes(app, dependencies);
+	installContextQueryCheckRoutes(app, dependencies);
 	installOperatorAgentAtlasRoutes(app, dependencies);
 }

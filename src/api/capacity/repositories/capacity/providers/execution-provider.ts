@@ -88,15 +88,17 @@ export function upsertCapacityExecutionProviderOperations(input: {
 			const laneStatus = ['active', 'paused', 'degraded', 'revoked'].includes(String(lane.status))
 				? String(lane.status)
 				: 'active';
+			const lanePurpose = lane.purpose === 'communication' ? 'communication' : 'operation';
 			return [{
 				query: `INSERT INTO capacity_provider_lanes (
-					capacity_provider_id, id, execution_provider_id, display_name, status,
+					capacity_provider_id, id, execution_provider_id, display_name, purpose, status,
 					capabilities_json, max_concurrent_runners, native_limits_json,
 					metadata_json, created_at, updated_at
-				) SELECT ?, ?, ?, ?, ?, ?, CAST(? AS integer), ?, ?, ?, ?${guardClause}
+				) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS integer), ?, ?, ?, ?${guardClause}
 				ON CONFLICT (capacity_provider_id, id) DO UPDATE SET
 					execution_provider_id = EXCLUDED.execution_provider_id,
 					display_name = EXCLUDED.display_name,
+					purpose = EXCLUDED.purpose,
 					status = EXCLUDED.status,
 					capabilities_json = EXCLUDED.capabilities_json,
 					max_concurrent_runners = EXCLUDED.max_concurrent_runners,
@@ -108,6 +110,7 @@ export function upsertCapacityExecutionProviderOperations(input: {
 					laneId,
 					id,
 					String(lane.displayName ?? lane.name ?? laneId),
+					lanePurpose,
 					laneStatus,
 					JSON.stringify(strings(lane.capabilities)),
 					positiveInteger(lane.maxConcurrentRunners, 1),

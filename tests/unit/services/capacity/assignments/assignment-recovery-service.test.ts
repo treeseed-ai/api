@@ -5,7 +5,8 @@ import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 import { reportCapacityUsage } from '../../../../../src/api/capacity/services/capacity/accounting/usage-report-service.ts';
-import { recoverExpiredProviderAssignments } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
+import { decideAssignmentRecovery,recoverExpiredProviderAssignments } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
+import { observeAssignmentCleanup } from '../../../../../src/api/capacity/services/capacity/assignments/observability/assignment-cleanup-observation-service.ts';
 import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
 import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
 
@@ -45,6 +46,30 @@ async function expiredAssignment(store: ReturnType<typeof harness>['store'], id:
 }
 
 describe('expired assignment recovery', () => {
+	it('fails an expired conversation without an exact durable final response', () => {
+		const result=decideAssignmentRecovery({id:'chat-a',executionKind:'conversation'} as never,{
+			reservation:null,settlement:null,usageCount:1,succeededModeRuns:1,activeModeRuns:0,proxyEvents:1,
+			fallbackOutputs:0,demand:null,failoverAllowed:true,failoverCount:0,invocationFinalMessageRef:null,
+		});
+		expect(result).toEqual({assignmentId:'chat-a',disposition:'terminal-failure',status:'failed',reasonCode:'expired_communication_final_response_missing'});
+	});
+	it('terminalizes the admitted demand when an expired conversation has no final response',async()=>{
+		const {database,store}=harness();
+		try {
+			await store.ensureInitialized();
+			const now='2026-07-18T12:00:00.000Z';
+			await seed(store,now);
+			await expiredAssignment(store,'chat-a',now);
+			await store.run(`UPDATE capacity_provider_assignments SET execution_kind='conversation' WHERE id='chat-a'`);
+			await store.run(`INSERT INTO capacity_workday_runs (id, team_id, capacity_provider_id, scenario_id, status, environment, execution_kind, parameters_json, started_at, created_at, updated_at) VALUES ('conversation-a', 'team-a', 'provider-a', 'chat', 'running', 'local', 'conversation', '{}', ?, ?, ?)`,[now,now,now]);
+			await store.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_seconds, idempotency_key, payload_json, metadata_json, available_at, assignment_id, admitted_at, created_at, updated_at) VALUES ('demand-chat-a', 'team-a', 'project-a', 'conversation-a', 'workday-a', 'handoff', 'chat-a', 'planning', 'class-a', 'agent-a', 'writer', 'chat', 'admitted', 400, 2, 'demand-chat-a', '{}', '{}', ?, 'chat-a', ?, ?, ?)`,[now,now,now,now]);
+
+			expect(await recoverExpiredProviderAssignments(store,{teamId:'team-a',providerId:'provider-a',now})).toMatchObject({recovered:1,terminalFailures:1});
+			expect(await store.first(`SELECT status FROM capacity_workday_demands WHERE id='demand-chat-a'`)).toEqual({status:'cancelled'});
+			const assignment=await store.getProviderAssignment('team-a','chat-a');
+			expect(await observeAssignmentCleanup(store,assignment as never)).toMatchObject({verified:true,activeDemands:0});
+		} finally { await database.close(); }
+	});
 	it('converges a provider failure interrupted after settlement but before lifecycle transition', async () => {
 		const { database, host, store } = harness();
 		try {
@@ -91,6 +116,10 @@ describe('expired assignment recovery', () => {
 			await store.run(`INSERT INTO capacity_workday_demands (id, team_id, project_id, workday_run_id, workday_id, source_type, source_id, mode, project_agent_class_id, agent_id, handler_id, activity_type, status, priority, requested_seconds, idempotency_key, payload_json, metadata_json, available_at, assignment_id, admitted_at, created_at, updated_at) VALUES ('demand-safe', 'team-a', 'project-a', 'run-a', 'workday-a', 'idle-intent', 'safe', 'planning', 'class-a', 'agent-a', 'writer', 'planning', 'admitted', 1, 2, 'demand-safe', '{}', '{}', ?, 'safe', ?, ?, ?)`, [now, now, now, now]);
 			await expiredAssignment(store, 'terminal', now, { maxAttempts: 1 });
 			const operatorReservation = await expiredAssignment(store, 'operator', now);
+			const operatorHandle = { id: 'tdx-operator', assignmentId: 'operator', repositoryId: 'repo-a', workspaceId: 'workspace-a', status: 'issued' };
+			const operatorCapabilities = { treeDx: [{ id: 'workspace-operator', status: 'issued' }] };
+			await store.run(`UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ? WHERE id = 'operator'`, [JSON.stringify(operatorHandle), JSON.stringify({ treedxProxyHandle: operatorHandle, capabilityHandles: operatorCapabilities })]);
+			await store.run(`INSERT INTO treedx_proxy_handles (id, team_id, project_id, assignment_id, repository_id, workspace_id, status, scopes_json, allowed_operations_json, allowed_paths_json, metadata_json, issued_at, created_at, updated_at) VALUES ('tdx-operator', 'team-a', 'project-a', 'operator', 'repo-a', 'workspace-a', 'issued', '[]', '[]', '[]', '{}', ?, ?, ?)`, [now, now, now]);
 			const completedReservation = await expiredAssignment(store, 'completed', now);
 			const intermediateReservation = await expiredAssignment(store, 'intermediate', now);
 			const providerFailureReservation = await expiredAssignment(store, 'provider-failure', now);
@@ -111,6 +140,12 @@ describe('expired assignment recovery', () => {
 			expect(await store.first(`SELECT status, lease_state, lifecycle_code FROM capacity_provider_assignments WHERE id = 'provider-failure'`)).toEqual({ status: 'failed', lease_state: 'released', lifecycle_code: 'provider_failure_settlement_recovered' });
 			expect(await store.first(`SELECT status, lease_state, lifecycle_code FROM capacity_provider_assignments WHERE id = 'operator'`)).toEqual({ status: 'expired', lease_state: 'expired', lifecycle_code: 'expired_lease_side_effect_evidence_present' });
 			expect(await store.first(`SELECT status, fallback_reason FROM agent_mode_runs WHERE id = 'operator-run'`)).toEqual({ status: 'failed', fallback_reason: 'expired_lease_side_effect_evidence_present' });
+			expect(await store.first(`SELECT status, revoked_at FROM treedx_proxy_handles WHERE id = 'tdx-operator'`)).toEqual({ status: 'revoked', revoked_at: now });
+			const recoveredOperator = await store.getProviderAssignment('team-a', 'operator');
+			expect(recoveredOperator).toMatchObject({
+				treedxProxyHandle: { status: 'revoked', revokedAt: now },
+				capabilityHandles: { treeDx: [{ status: 'revoked', revokedAt: now }] },
+			});
 			expect(await store.first(`SELECT state, active_seconds FROM capacity_reservations WHERE id = 'reservation-terminal'`)).toEqual({ state: 'consumed', active_seconds: 0 });
 			expect(await store.first(`SELECT COUNT(*) AS total FROM capacity_audit_events WHERE action LIKE 'capacity-assignment.recovery.%'`)).toEqual({ total: 6 });
 			expect(await recoverExpiredProviderAssignments(store, { teamId: 'team-a', providerId: 'provider-a', now })).toMatchObject({ scanned: 0, recovered: 0 });

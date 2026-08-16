@@ -1,4 +1,4 @@
-import { createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
+import { createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json,vi } from '../../../../support/api-harness.ts';
 
 describe('market api', () => {
 it('allows local acceptance admin token to manage workday runs in local mode', async () => {
@@ -7,6 +7,18 @@ it('allows local acceptance admin token to manage workday runs in local mode', a
 		try {
 			await store.ensureInitialized();
 			await store.createTeam({ id: 'treeseed', slug: 'treeseed', name: 'TreeSeed' });
+			const persistedKeyLookup = vi.spyOn(store, 'authenticateTeamApiKey').mockResolvedValue({
+				teamId: 'treeseed',
+				keyId: 'persisted-narrow-key',
+				principal: {
+					id: 'team-key:persisted-narrow-key',
+					displayName: 'Persisted narrow key',
+					roles: ['team_api_key'],
+					permissions: ['projects:read:team'],
+					scopes: ['auth:me'],
+					metadata: { teamId: 'treeseed' },
+				},
+			});
 			const app = createTestApp({ db, store, config: { environment: 'local' } });
 			const headers = {
 				'content-type': 'application/json',
@@ -28,6 +40,7 @@ it('allows local acceptance admin token to manage workday runs in local mode', a
 				id: 'run-local-acceptance',
 				requestedById: 'team-key:local-capacity-acceptance',
 			});
+			expect(persistedKeyLookup).not.toHaveBeenCalled();
 
 			const event = await app.request('/v1/teams/treeseed/workday-runs/run-local-acceptance/events', {
 				method: 'POST',

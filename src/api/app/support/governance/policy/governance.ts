@@ -44,6 +44,14 @@ export async function requireTeamAccess(c, store, teamId, permission = null) {
             };
         }
     }
+	if (permission === 'workday:diagnose' && !isTeamApiPrincipal(principal)) {
+		const access = await store.getTeamAccessSummary(teamId, principal);
+		if (!access.permissions.includes(permission)) {
+			return {
+				response: jsonError(c, 403, 'Permission denied.', { permission }),
+			};
+		}
+	}
     return { principal };
 }
 export async function requireSellerTeamAccess(c, store, teamId, permission = 'projects:read:team') {

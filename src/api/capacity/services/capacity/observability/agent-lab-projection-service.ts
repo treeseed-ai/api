@@ -15,6 +15,18 @@ interface ProjectionStore {
 	getProjectAgentsSummary?(projectId: string, principal?: unknown): Promise<Row | null>;
 }
 
+type Snapshot = Awaited<ReturnType<AgentLabProjectionService['loadSnapshot']>>;
+type SnapshotEntry = { settledAt: number | null; value: Promise<Snapshot> };
+const snapshotCaches = new WeakMap<object, Map<string, SnapshotEntry>>();
+const SNAPSHOT_COALESCE_MS = 2_000;
+const PORTFOLIO_EVENT_WINDOW = 500;
+
+function snapshotCache(store: object) {
+	const current = snapshotCaches.get(store);
+	if (current) return current;
+	const created = new Map<string, SnapshotEntry>(); snapshotCaches.set(store, created); return created;
+}
+
 function record(value: unknown): Row {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
 	if (typeof value === 'string') { try { return record(JSON.parse(value)); } catch { return {}; } }
@@ -86,15 +98,17 @@ function metricTargets(value: unknown): AgentLabOverview['metricTargets'] {
 }
 
 async function resolveWorkdayContext(store: ProjectionStore, teamId: string, timeZone: string, now: Date, requestedDate?: string | null, requestedWorkdayId?: string | null) {
-	const all = await store.all(`SELECT * FROM capacity_workday_runs WHERE team_id = ? ORDER BY COALESCE(started_at, created_at) DESC, id DESC`, [teamId]);
-	const latest = all.find((row) => text(row.status) === 'running') ?? all.find((row) => text(row.status) === 'completed') ?? null;
+	const all = await store.all(`SELECT * FROM capacity_workday_runs WHERE team_id = ? AND execution_kind='workday' ORDER BY COALESCE(started_at, created_at) DESC, id DESC`, [teamId]);
+	const latest = all.find((row) => text(row.status) === 'running') ?? all[0] ?? null;
 	const selected = requestedWorkdayId ? all.find((row) => text(row.id) === requestedWorkdayId) ?? null : null;
 	const selectedDate = requestedDate && operatingDate(requestedDate, timeZone)
 		? requestedDate
-		: selected ? dateKey(new Date(text(selected.started_at, selected.created_at)), timeZone) : dateKey(now, timeZone);
+		: selected ? dateKey(new Date(text(selected.started_at, selected.created_at)), timeZone)
+			: latest ? dateKey(new Date(text(latest.started_at, latest.created_at)), timeZone) : dateKey(now, timeZone);
 	const day = operatingDate(selectedDate, timeZone) ?? operatingDay(now, timeZone);
 	const withinDate = all.filter((row) => {
-		const started = Date.parse(text(row.started_at, row.created_at)); const finished = Date.parse(text(row.completed_at, row.updated_at));
+		const started = Date.parse(text(row.started_at, row.created_at));
+		const finished = text(row.status) === 'running' ? now.getTime() : Date.parse(text(row.completed_at, row.updated_at));
 		return started < Date.parse(day.end) && finished >= Date.parse(day.start);
 	});
 	const context: AgentLabWorkdayContext = { selectedDate, selectedWorkdayId: selected ? text(selected.id) : null, latestWorkdayId: latest ? text(latest.id) : null,
@@ -107,15 +121,20 @@ async function sourceRows(store: ProjectionStore, teamId: string, day: { start: 
 	const runValues = selectedWorkdayId ? [teamId, selectedWorkdayId] : [teamId, day.end, day.start];
 	const eventClause = selectedWorkdayId ? ' AND run_id = ?' : ' AND created_at >= ? AND created_at < ?';
 	const eventValues = selectedWorkdayId ? [teamId, selectedWorkdayId] : [teamId, day.start, day.end];
+	const eventColumns = 'id, run_id, event_index, event_type, status, title, message, project_id, assignment_id, context_json, refs_json, metadata_json, created_at';
+	const eventQuery = selectedWorkdayId
+		? `SELECT ${eventColumns} FROM capacity_workday_events WHERE team_id = ?${eventClause} ORDER BY created_at ASC, event_index ASC`
+		: `SELECT * FROM (SELECT ${eventColumns} FROM capacity_workday_events WHERE team_id = ?${eventClause} ORDER BY created_at DESC, event_index DESC LIMIT ${PORTFOLIO_EVENT_WINDOW}) recent ORDER BY created_at ASC, event_index ASC`;
 	const demandJoin = selectedWorkdayId ? ` JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id AND demand.workday_run_id = ?` : '';
 	const assignmentValues = selectedWorkdayId ? [selectedWorkdayId, teamId] : [teamId, day.end, day.start];
-	const [team, projects, workdays, events, assignments, executions, providers, classes] = await Promise.all([
+	const [team, projects, workdays, events, eventCount, assignments, executions, providers, classes] = await Promise.all([
 		store.first(`SELECT id, name, slug, metadata_json, updated_at FROM teams WHERE id = ? LIMIT 1`, [teamId]),
 		store.all(`SELECT id, name, slug FROM projects WHERE team_id = ? ORDER BY name ASC`, [teamId]),
-		store.all(`SELECT * FROM capacity_workday_runs WHERE team_id = ?${runClause} ORDER BY created_at ASC`, runValues),
-		store.all(`SELECT * FROM capacity_workday_events WHERE team_id = ?${eventClause} ORDER BY created_at ASC, event_index ASC`, eventValues),
-		store.all(`SELECT assignment.*, project.name AS project_name FROM capacity_provider_assignments assignment${demandJoin} JOIN projects project ON project.id = assignment.project_id WHERE assignment.team_id = ?${selectedWorkdayId ? '' : ' AND assignment.created_at < ? AND COALESCE(assignment.completed_at, assignment.failed_at, assignment.returned_at, assignment.updated_at) >= ?'} ORDER BY assignment.created_at ASC`, assignmentValues),
-		store.all(`SELECT mode_run.*, assignment.state_version AS assignment_state_version, assignment.status AS assignment_status, assignment.returned_at AS assignment_returned_at, project.name AS project_name FROM agent_mode_runs mode_run JOIN capacity_provider_assignments assignment ON assignment.id = mode_run.provider_assignment_id${selectedWorkdayId ? ' JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id AND demand.workday_run_id = ?' : ''} JOIN projects project ON project.id = mode_run.project_id WHERE mode_run.team_id = ?${selectedWorkdayId ? '' : ' AND mode_run.created_at < ? AND COALESCE(mode_run.completed_at, mode_run.failed_at, mode_run.updated_at) >= ?'} AND ${logicalModeRunSql('mode_run')} ORDER BY mode_run.created_at ASC, mode_run.id ASC`, assignmentValues),
+		store.all(`SELECT * FROM capacity_workday_runs WHERE team_id = ? AND execution_kind='workday'${runClause} ORDER BY created_at ASC`, runValues),
+		store.all(eventQuery, eventValues),
+		store.first(`SELECT COUNT(*) AS total FROM capacity_workday_events WHERE team_id = ?${eventClause}`, eventValues),
+		store.all(`SELECT assignment.id, assignment.membership_id, assignment.team_id, assignment.project_id, assignment.capacity_provider_id, assignment.provider_session_id, assignment.execution_provider_id, assignment.project_agent_class_id, assignment.reservation_id, assignment.work_day_id, assignment.task_id, assignment.mode, assignment.status, assignment.lease_state, assignment.lease_expires_at, assignment.state_version, assignment.agent_id, assignment.handler_id, assignment.attempt_count, assignment.assigned_at, assignment.claimed_at, assignment.completed_at, assignment.returned_at, assignment.failed_at, assignment.lifecycle_reason, assignment.lifecycle_code, assignment.decision_id, assignment.proposal_id, assignment.metadata_json, assignment.decision_input_json, assignment.lifecycle_output_json, assignment.created_at, assignment.updated_at, project.name AS project_name FROM capacity_provider_assignments assignment${demandJoin} JOIN projects project ON project.id = assignment.project_id WHERE assignment.team_id = ?${selectedWorkdayId ? '' : ' AND assignment.created_at < ? AND COALESCE(assignment.completed_at, assignment.failed_at, assignment.returned_at, assignment.updated_at) >= ?'} ORDER BY assignment.created_at ASC`, assignmentValues),
+		store.all(`SELECT mode_run.id, mode_run.team_id, mode_run.project_id, mode_run.provider_assignment_id, mode_run.capacity_provider_id, mode_run.execution_provider_id, mode_run.project_agent_class_id, mode_run.agent_id, mode_run.handler_id, mode_run.mode, mode_run.status, mode_run.fallback_reason, mode_run.started_at, mode_run.completed_at, mode_run.failed_at, mode_run.metadata_json, mode_run.selected_input_json, mode_run.outputs_json, mode_run.created_at, mode_run.updated_at, mode_run.usage_actual_json AS usage_json, assignment.state_version AS assignment_state_version, assignment.status AS assignment_status, assignment.returned_at AS assignment_returned_at, project.name AS project_name FROM agent_mode_runs mode_run JOIN capacity_provider_assignments assignment ON assignment.id = mode_run.provider_assignment_id${selectedWorkdayId ? ' JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id AND demand.workday_run_id = ?' : ''} JOIN projects project ON project.id = mode_run.project_id WHERE mode_run.team_id = ?${selectedWorkdayId ? '' : ' AND mode_run.created_at < ? AND COALESCE(mode_run.completed_at, mode_run.failed_at, mode_run.updated_at) >= ?'} AND ${logicalModeRunSql('mode_run')} ORDER BY mode_run.created_at ASC, mode_run.id ASC`, assignmentValues),
 		store.all(`SELECT * FROM capacity_provider_availability_sessions WHERE team_id = ? AND status = 'open' AND expires_at > ? ORDER BY updated_at DESC`, [teamId, observedAt]),
 		store.all(`SELECT * FROM project_agent_classes WHERE team_id = ? AND status = 'active' ORDER BY project_id, slug`, [teamId]),
 	]);
@@ -130,7 +149,9 @@ async function sourceRows(store: ProjectionStore, teamId: string, day: { start: 
 	const roster = classes.flatMap((agentClass) => { const configured = record(agentClass.handler_refs_json).agents; return Array.isArray(configured) ? configured.map((agent) => ({ ...record(agent), project_id: text(agentClass.project_id), agentSlug: text(record(agent).slug, record(agent).agentId), status: 'configured' })) : []; });
 	const runtimeAgents = agentSummaries.flatMap(({ projectId, summary }) => Array.isArray(summary?.agents) ? summary.agents.map((agent) => ({ ...record(agent), project_id: projectId })) : []);
 	const agentsByIdentity = new Map(roster.map((agent) => [`${text(agent.project_id)}:${text(agent.agentSlug, agent.slug)}`, agent])); for (const agent of runtimeAgents) { const identity = `${text(agent.project_id)}:${text(agent.agentSlug, agent.slug)}`; agentsByIdentity.set(identity, { ...agentsByIdentity.get(identity), ...agent }); } const agents = [...agentsByIdentity.values()];
-	return { team, projects, workdays, events, assignments, executions, providers, classes, agents, demands, reservations, usage, ledger };
+	const eventTotal = eventCount && Number.isFinite(Number(eventCount.total))
+		? count(eventCount.total) : new Set(events.map((row) => text(row.id))).size;
+	return { team, projects, workdays, events, eventTotal, assignments, executions, providers, classes, agents, demands, reservations, usage, ledger };
 }
 
 export type AgentLabSourceRows = Awaited<ReturnType<typeof sourceRows>>;
@@ -153,7 +174,7 @@ function metrics(rows: Awaited<ReturnType<typeof sourceRows>>, artifactRows: Row
 	const values: Record<AgentLabMetricKey, number> = {
 		agents: new Set(rows.agents.map((row) => `${text(row.project_id)}:${text(row.agentSlug, row.slug)}`).filter((value) => !value.endsWith(':'))).size,
 		workdays: rows.workdays.filter((row) => text(row.status) === 'completed').length,
-		systemEvents: new Set(rows.events.map((row) => text(row.id))).size,
+		systemEvents: Number.isFinite(rows.eventTotal) ? rows.eventTotal : new Set(rows.events.map((row) => text(row.id))).size,
 		assignments: new Set(rows.assignments.map((row) => text(row.id))).size,
 		executions: new Set(rows.executions.filter((row) => Boolean(row.started_at)).map((row) => text(row.id))).size,
 		artifacts: artifactRows.length,
@@ -179,6 +200,17 @@ export class AgentLabProjectionService {
 	constructor(private readonly store: ProjectionStore) {}
 
 	async snapshot(teamId: string, timeZone: string, now = new Date(), selection: { date?: string | null; workdayId?: string | null } = {}) {
+		const key = [teamId, timeZone, selection.date ?? '', selection.workdayId ?? ''].join('\0'); const cache = snapshotCache(this.store as object);
+		const current = cache.get(key); const observedAt = Date.now();
+		if (current && (current.settledAt === null || observedAt - current.settledAt <= SNAPSHOT_COALESCE_MS)) return current.value;
+		const value = this.loadSnapshot(teamId, timeZone, now, selection); const entry: SnapshotEntry = { settledAt: null, value }; cache.set(key, entry);
+		for (const [candidate, cached] of cache) if (candidate !== key && cached.settledAt !== null && observedAt - cached.settledAt > SNAPSHOT_COALESCE_MS) cache.delete(candidate);
+		void value.then(() => { if (cache.get(key)?.value === value) entry.settledAt = Date.now(); });
+		value.catch(() => { if (cache.get(key)?.value === value) cache.delete(key); });
+		return value;
+	}
+
+	async loadSnapshot(teamId: string, timeZone: string, now = new Date(), selection: { date?: string | null; workdayId?: string | null } = {}) {
 		await this.store.ensureInitialized();
 		const resolved = await resolveWorkdayContext(this.store, teamId, timeZone, now, selection.date, selection.workdayId);
 		const selectedBounds = resolved.selected ? { start: iso(resolved.selected.started_at ?? resolved.selected.created_at)!, end: text(resolved.selected.status) === 'running' ? now.toISOString() : iso(resolved.selected.completed_at ?? resolved.selected.updated_at) ?? now.toISOString() } : resolved.day;

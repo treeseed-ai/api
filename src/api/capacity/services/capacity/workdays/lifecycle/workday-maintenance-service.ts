@@ -1,4 +1,6 @@
 export interface CapacityWorkdayMaintenanceStore {
+	all(sql: string, params?: unknown[]): Promise<Array<Record<string, unknown>>>;
+	tickCapacityWorkdayRun(teamId: string, runId: string, now?: string, idempotencyKey?: string): Promise<unknown>;
 	maintainCapacityWorkdayRuns(teamId?: string | null, now?: string): Promise<{ expired: number; recoveredTerminalRuns?: number }>;
 	maintainCapacityRuntimeRetention(now?: string): Promise<{
 		expiredAccessTokens: number;
@@ -28,6 +30,24 @@ export interface CapacityWorkdayMaintenanceResult {
 	schedulesConsidered: number;
 	scheduledWorkdaysCreated: number;
 	scheduleTickFailures: number;
+	runningWorkdaysConsidered: number;
+	runningWorkdaysReticked: number;
+	runningWorkdayTickFailures: number;
+}
+
+async function retickRunningWorkdays(store: CapacityWorkdayMaintenanceStore, now: string) {
+	const rows = await store.all(`SELECT id, team_id FROM capacity_workday_runs
+		WHERE status = 'running' ORDER BY created_at ASC, id ASC LIMIT 200`);
+	let reticked = 0; let failures = 0;
+	for (const row of rows) {
+		const runId = String(row.id ?? ''); const teamId = String(row.team_id ?? '');
+		if (!runId || !teamId) { failures += 1; continue; }
+		try {
+			await store.tickCapacityWorkdayRun(teamId,runId,now,`maintenance-recovery:${runId}:${now}`);
+			reticked += 1;
+		} catch { failures += 1; }
+	}
+	return { considered:rows.length,reticked,failures };
 }
 
 export async function runCapacityWorkdayMaintenance(
@@ -40,6 +60,7 @@ export async function runCapacityWorkdayMaintenance(
 		store.maintainCapacityRuntimeRetention(now),
 		store.tickDueCapacityWorkdaySchedules(now),
 	]);
+	const running = await retickRunningWorkdays(store,now);
 	return {
 		ranAt: now,
 		terminalizedWorkdays: workdays.expired + (workdays.recoveredTerminalRuns ?? 0),
@@ -53,6 +74,9 @@ export async function runCapacityWorkdayMaintenance(
 		schedulesConsidered: schedules.considered,
 		scheduledWorkdaysCreated: schedules.created,
 		scheduleTickFailures: schedules.failures.length,
+		runningWorkdaysConsidered: running.considered,
+		runningWorkdaysReticked: running.reticked,
+		runningWorkdayTickFailures: running.failures,
 	};
 }
 

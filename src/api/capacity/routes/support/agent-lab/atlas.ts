@@ -129,6 +129,11 @@ export function installOperatorAgentAtlasRoutes(
     async (c) => {
       const context = await load(c, dependencies);
       if (context.response) return context.response;
+      const diagnostic = c.req.query("detail") === "diagnostic";
+      if (diagnostic) {
+        const access = await dependencies.diagnose(c);
+        if (access.response) return access.response;
+      }
       const kind = c.req.param("kind");
       const id = decodeURIComponent(c.req.param("entityId"));
       const projection = new AgentAtlasProjectionService().projection(
@@ -222,6 +227,11 @@ export function installOperatorAgentAtlasRoutes(
                 (item) => item.signalContractId === text(selected.contractId),
               )
             : [];
+      const summary = {
+        status: text(selected.status, selected.severity, "observed"),
+        project: projectId || "portfolio",
+        observedAt: projection.playback.cursor.observedAt,
+      };
       return c.json({
         ok: true,
         payload: {
@@ -242,17 +252,18 @@ export function installOperatorAgentAtlasRoutes(
           ),
           status: text(selected.status, selected.severity, "observed"),
           projectId,
-          data: {
+          summary,
+          data: diagnostic ? {
             ...selected,
             definition: designed,
             assignments: relatedAssignments,
             observed,
-          },
-          evidence: {
+          } : {},
+          evidence: diagnostic ? {
             topologyRevision: topology.revision ?? null,
             immutableRef: topology.immutableRef ?? null,
             replayCursor: projection.playback.cursor,
-          },
+          } : undefined,
         },
       });
     },
@@ -314,7 +325,7 @@ export function installOperatorAgentAtlasRoutes(
   });
 
   app.get("/v1/teams/:teamId/agent-lab/atlas/assignment-graphs", async (c) => {
-    const access = await dependencies.read(c);
+    const access = await dependencies.diagnose(c);
     if (access.response) return access.response;
     const teamId = c.req.param("teamId");
     const projectId = c.req.query("project");

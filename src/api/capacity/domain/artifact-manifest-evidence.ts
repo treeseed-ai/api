@@ -50,3 +50,18 @@ export function canonicalArtifactManifestReferences(
     return parsed;
   });
 }
+
+export function canonicalArtifactMutationReceipts(output: unknown, owner: string): JsonRecord[] {
+  const root = record(output);
+  if (!root) throw new CapacityGovernanceError("capacity_artifact_evidence_corrupt", `${owner} output must be an object.`, 500, { owner });
+  if (root.artifactManifest === undefined || root.artifactManifest === null) return [];
+  const manifest = record(root.artifactManifest);
+  if (!manifest) throw new CapacityGovernanceError("capacity_artifact_evidence_corrupt", `${owner} artifact manifest must be an object.`, 500, { owner });
+  if (manifest.mutationReceipts === undefined) return [];
+  if (!Array.isArray(manifest.mutationReceipts)) throw new CapacityGovernanceError("capacity_artifact_evidence_corrupt", `${owner} artifact manifest mutationReceipts must be an array.`, 500, { owner });
+  return manifest.mutationReceipts.map((receipt, index) => {
+    const parsed = record(receipt);
+    if (!parsed) throw new CapacityGovernanceError("capacity_artifact_evidence_corrupt", `${owner} artifact manifest mutation receipt ${index} must be an object.`, 500, { owner, index });
+    return parsed;
+  });
+}

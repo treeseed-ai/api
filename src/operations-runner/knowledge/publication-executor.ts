@@ -5,6 +5,7 @@ import { createKnowledgePublicationStorage } from '../../api/knowledge/publicati
 import { recordPublicationCompletedAudit, recordPublicationEntryAudits } from './publication-audit.ts';
 import { publishRemoteRepository } from './remote-publication.ts';
 import { editorialReviewGate, verifiedEditorialContextTrace } from '../../api/knowledge/editorial-review.ts';
+import { recordTreeDxAuthoringState } from '../../api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 
 export function localPublicationRemote(value: unknown) {
 	if (typeof value !== 'string' || !value.trim()) return false;
@@ -190,6 +191,9 @@ export function createKnowledgePublicationExecutor(options: any) {
 			const updated = await store.completeKnowledgePublication(publication.id, { workspaceId: workspace.id,
 				workspaceVersion: workspace.version, publishedRevision: manifest.revision, completedAt: now });
 			if (!updated.ok) throw new Error('Knowledge publication state changed while the runner was working.');
+			await recordTreeDxAuthoringState(store,'integrated',{ projectId:workspace.projectId,repositoryId:workspace.repositoryId,
+				commitSha:publication.commit_sha,ref:publication.published_ref,changedPaths:Array.isArray(review.changedPaths) ? review.changedPaths : [],
+				actorType:'service',actorId:'knowledge-publication-runner' });
 			await recordPublicationEntryAudits({ store, storage: publicationStorage, publication, workspace, previous: auditPrevious, manifest });
 			await recordPublicationCompletedAudit({ store, publication, workspace, review, manifest,
 				operationId: context.operation.id, graphRevision: graph?.graphVersion });

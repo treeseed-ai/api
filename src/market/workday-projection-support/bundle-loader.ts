@@ -31,8 +31,10 @@ export function boundedEvidencePage(result: any, collection: string) {
 
 export async function loadProjectWorkdayBundle(store: any, principal: any, project: any, envelope: any) {
     const projectId = compact(project?.id);
-    const [summaryReport, projectSummary, agents, approvals, capacitySummary] = await Promise.all([
-        store.getWorkdayCapacitySummary(envelope.id, { limit: MAX_CAPACITY_PAGE_LIMIT }),
+	const evidenceKinds = ['assignments','mode-runs','reservations','usage-actuals','ledger-entries'] as const;
+	const [summaryReport, evidenceReports, projectSummary, agents, approvals, capacitySummary] = await Promise.all([
+		store.getWorkdayCapacitySummary(envelope.id),
+		Promise.all(evidenceKinds.map((evidence) => store.getWorkdayCapacitySummary(envelope.id,{ evidence,limit: MAX_CAPACITY_PAGE_LIMIT }))),
         store.getProjectSummary(projectId, principal),
         store.getProjectAgentsSummary(projectId, principal),
         store.listApprovalRequestsForProject(projectId, 200),
@@ -45,7 +47,7 @@ export async function loadProjectWorkdayBundle(store: any, principal: any, proje
             details: { workdayId: envelope.id, projectId },
         });
     }
-    const evidence = summaryReport.payload.evidence ?? {};
+	const evidence = Object.assign({},...evidenceReports.map((report: any) => report?.payload?.evidence ?? {}));
     const assignments = boundedEvidencePage(evidence.assignments, 'assignments');
     const modeRuns = boundedEvidencePage(evidence.modeRuns, 'mode runs');
     const reservations = boundedEvidencePage(evidence.reservations, 'reservations');

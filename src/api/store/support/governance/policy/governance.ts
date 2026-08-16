@@ -12,6 +12,10 @@ export function governanceContentHash(input: any = {}) {
         relatedNotes: arrayValue(input.relatedNotes ?? input.related_notes).map(String).sort(),
         relatedBooks: arrayValue(input.relatedBooks ?? input.related_books).map(String).sort(),
         evidenceRefs: arrayValue(input.evidenceRefs ?? input.evidence_refs).map(String).sort(),
+		decisionDependencies: arrayValue(input.decisionDependencies ?? input.decision_dependencies)
+			.map((entry) => entry && typeof entry === 'object' ? entry : {})
+			.map((entry: any) => ({ projectId: String(entry.projectId ?? entry.project_id ?? '').trim(), decisionId: String(entry.decisionId ?? entry.decision_id ?? '').trim() }))
+			.sort((left, right) => `${left.projectId}:${left.decisionId}`.localeCompare(`${right.projectId}:${right.decisionId}`)),
         plan: input.plan ?? null,
         contentProvenance: input.contentProvenance ?? input.content_provenance ?? null,
     };

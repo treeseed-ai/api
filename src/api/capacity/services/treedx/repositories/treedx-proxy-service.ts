@@ -15,6 +15,7 @@ import {
 	requestTreeDxJson,
 	type TreeDxProxyStore,
 } from './treedx-proxy-effects.ts';
+import { ensureTreeDxContextGraphReady } from './treedx-context-readiness.ts';
 
 export async function proxyTreeDxJson(input: {
 	c: Context;
@@ -37,6 +38,11 @@ export async function proxyTreeDxJson(input: {
 	const token = resolveTreeDxProxyToken(input.runtime, baseUrl, input.projectId, input.tokenScope);
 	if (!token) throw new CapacityGovernanceError('treedx_proxy_token_unavailable', 'TreeDX proxy token is not configured for this project.', 503, { projectId: input.projectId });
 	const fetchImpl = input.fetchImpl ?? fetch;
+	if (input.path.endsWith('/context/build')) await ensureTreeDxContextGraphReady({
+		repoId: input.path.split('/')[4] ?? '',
+		body: input.body && typeof input.body === 'object' && !Array.isArray(input.body) ? input.body as Record<string, unknown> : {},
+		request: (method, path, body) => requestTreeDxJson({ baseUrl, token, projectId: input.projectId, method, path, body, fetchImpl }),
+	});
 	const payload = await requestTreeDxJson({ baseUrl, token, projectId: input.projectId, method: input.method, path: input.path, body: input.body, fetchImpl });
 	await grantCreatedLoopbackRepository({ runtime: input.runtime, baseUrl, token, projectId: input.projectId, method: input.method, path: input.path, payload, fetchImpl });
 	const assignmentId = input.c.req.header('x-treeseed-assignment-id') ?? input.c.req.query('assignmentId') ?? null;

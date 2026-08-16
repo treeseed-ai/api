@@ -1,0 +1,25 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.bound-agent-handoffs.933
+journeyIndex: 933
+type: agent
+subtype: discussion
+journey: Bound agent communication handoffs
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Team-disabled-by-default handoffs enforce exact roots, depth, fan-out, recipients, duplicate and self denial without widening authority.
+status: planned
+capabilityId: agent.communication.handoff-limits
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.agent-invocation], minimumRepositoryPostconditions: 0, outcomePredicates: { communication.handoff-bounds: [handoff.root, handoff.depth, handoff.fanout, handoff.cycle-denial] } }
+outcomes: [{ id: communication.handoff-bounds, kind: required, description: Exact invocation provenance and denials prove bounded coordination., evidenceKinds: [invocation_read_back, denial_evidence], authoritativeSubjects: [handoffRoot, invocation] }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.contain-hidden-conversations.932] }
+actors: { allowed: [capacity_operator], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

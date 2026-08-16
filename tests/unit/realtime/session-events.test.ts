@@ -27,4 +27,11 @@ describe('session event service', () => {
 		unsubscribe();
 		expect(received).toEqual([event.sequence]);
 	});
+
+	it('rejects transient token deltas instead of persisting replayable content',async()=>{
+		const database=createTestPostgresDatabase();databases.push(database);
+		const service=new SessionEventService(createTestStore(database));
+		await expect(service.publish({eventType:'agent.token.delta',teamId:'team-a',resourceId:'run-a',payload:{delta:'secret partial output'}})).rejects.toThrow('Transient token deltas');
+		expect(await service.list('team-a',0)).toEqual([]);
+	});
 });

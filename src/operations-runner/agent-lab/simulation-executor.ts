@@ -26,7 +26,7 @@ export function createAgentLabSimulationExecutor(options: { config?: Record<stri
 			}
 			const executor = createProductionAgentLabExecutor({ env: process.env });
 			let reportPath: string | null = null;
-			const report = await runScene({ projectRoot: bundleRoot, scene: snapshotPath, environment: 'local', runId: context.operationId, agentLabExecutor: executor, onProgress: (event) => { void context.emit({ kind: `agent_lab.${event.type}`, data: record(event.data) }); }, onAgentLabReportReady: async ({ path }) => { reportPath = path; await context.checkpoint({ phase: 'agent-lab.report.ready', reportPath: path }, { kind: 'agent_lab.report.ready', data: { reportPath: path } }); } });
+			const report = await runScene({ projectRoot: bundleRoot, scene: snapshotPath, environment: 'local', runId: context.operationId, agentLabContentRef: immutableRef, agentLabExecutor: executor, onProgress: (event) => { void context.emit({ kind: `agent_lab.${event.type}`, data: record(event.data) }); }, onAgentLabReportReady: async ({ path }) => { reportPath = path; await context.checkpoint({ phase: 'agent-lab.report.ready', reportPath: path }, { kind: 'agent_lab.report.ready', data: { reportPath: path } }); } });
 			if (!report.ok) throw new Error(report.blockers?.map((entry) => entry.message).join('; ') || 'Agent Lab scene failed.');
 			return { ok: true, sceneId: report.sceneId, runId: report.runId, immutableRef, sceneSnapshotPath: snapshotPath, reportPath, artifacts: report.artifacts, executingServicePrincipalId };
 		},

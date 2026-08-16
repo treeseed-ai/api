@@ -220,6 +220,10 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			const now = new Date().toISOString();
 			await store.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, ['team-domain', 'team-domain', 'Domain Team', now, now]);
 			await store.run(`INSERT INTO projects (id, team_id, slug, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, ['project-domain', 'team-domain', 'project-domain', 'Domain Project', now, now]);
+			await store.run(`INSERT INTO governance_proposals (id, team_id, project_id, scope, status, title, summary, body, proposal_type, proposal_types_json, active_version, active_content_hash, governance_provider_id, governance_provider_version, metadata_json, created_at, updated_at)
+				VALUES ('proposal-domain', 'team-domain', 'project-domain', 'project', 'accepted', 'Domain proposal', 'Domain proposal summary', 'Domain proposal body', 'implementation', '["implementation"]', 1, 'domain-hash', 'admin_approval_v1', '1', '{}', ?, ?)`, [now, now]);
+			await store.run(`INSERT INTO governance_decisions (id, team_id, project_id, proposal_id, proposal_version, proposal_content_hash, status, title, summary, governance_provider_id, governance_rule_json, vote_result_json, voter_reasons_json, proposal_snapshot_json, decision_record_json, created_by_type, created_at, updated_at)
+				VALUES ('decision-domain', 'team-domain', 'project-domain', 'proposal-domain', 1, 'domain-hash', 'accepted', 'Domain decision', 'Domain decision summary', 'admin_approval_v1', '{}', '{}', '[]', '{}', '{"decisionDependencies":[]}', 'system', ?, ?)`, [now, now]);
 			await store.run(
 				`INSERT INTO capacity_workday_runs (id, team_id, scenario_id, status, environment, parameters_json, created_at, updated_at)
 				 VALUES (?, ?, ?, 'queued', 'local', '{}', ?, ?)`,

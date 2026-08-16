@@ -81,6 +81,7 @@ describe('capacity workday routes', () => {
 		for (const path of [
 			'/v1/workdays/workday-a/summary?evidence=unknown',
 			`/v1/workdays/workday-a/summary?cursor=${encodeURIComponent(cursor)}`,
+			'/v1/workdays/workday-a/summary?limit=25',
 			'/v1/workdays/workday-a/summary?evidence=assignments&limit=201',
 		]) {
 			const response = await app.request(path);

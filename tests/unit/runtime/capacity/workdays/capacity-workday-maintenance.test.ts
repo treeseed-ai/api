@@ -8,6 +8,8 @@ describe('capacity workday maintenance', () => {
 	it('terminalizes stale workdays without mutating governance grants', async () => {
 		const calls: string[] = [];
 		const store = {
+			async all() { return [{ id:'run-active',team_id:'team-a' }]; },
+			async tickCapacityWorkdayRun(teamId:string,runId:string,now:string) { calls.push(`tick:${teamId}:${runId}:${now}`); },
 			async maintainCapacityWorkdayRuns(_teamId: string | null, now: string) {
 				calls.push(`workdays:${now}`);
 				return { expired: 2 };
@@ -28,6 +30,7 @@ describe('capacity workday maintenance', () => {
 			'assignments:2026-07-17T04:00:00.000Z',
 			'retention:2026-07-17T04:00:00.000Z',
 			'schedules:2026-07-17T04:00:00.000Z',
+			'tick:team-a:run-active:2026-07-17T04:00:00.000Z',
 		]);
 		expect(result).toEqual({
 			ranAt: '2026-07-17T04:00:00.000Z',
@@ -46,6 +49,9 @@ describe('capacity workday maintenance', () => {
 			schedulesConsidered: 1,
 			scheduledWorkdaysCreated: 1,
 			scheduleTickFailures: 0,
+			runningWorkdaysConsidered: 1,
+			runningWorkdaysReticked: 1,
+			runningWorkdayTickFailures: 0,
 		});
 	});
 
@@ -53,6 +59,7 @@ describe('capacity workday maintenance', () => {
 		let release: (() => void) | undefined;
 		const pending = new Promise<void>((resolve) => { release = resolve; });
 		const store = {
+			all:vi.fn(async()=>[]),tickCapacityWorkdayRun:vi.fn(),
 			maintainCapacityWorkdayRuns: vi.fn(async () => {
 				await pending;
 				return { expired: 1 };
@@ -75,6 +82,7 @@ describe('capacity workday maintenance', () => {
 	it('propagates maintenance storage failures instead of reporting a false no-op', async () => {
 		const failure = Object.assign(new Error('database unavailable'), { code: 'capacity_storage_unavailable' });
 		const store = {
+			all:vi.fn(async()=>[]),tickCapacityWorkdayRun:vi.fn(),
 			maintainCapacityWorkdayRuns: vi.fn(async () => { throw failure; }),
 			recoverExpiredProviderAssignments: vi.fn(async () => ({ recovered: 0, safeRetries: 0, terminalFailures: 0, completed: 0, operatorActions: 0 })),
 			maintainCapacityRuntimeRetention: vi.fn(async () => ({ expiredAccessTokens: 0, expiredAvailabilitySessions: 0, expiredRegistrationRequests: 0, deletedProofNonces: 0, deletedRateLimitBuckets: 0 })),

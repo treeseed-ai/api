@@ -5,6 +5,40 @@ import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../.
 import { installCapacityOperatorRoutes } from '../../../../../src/api/capacity/routes/support/operator.ts';
 
 describe('capacity operator routes', () => {
+	it('preflights a workday through the managing boundary without creating the run', async () => {
+		const app = new Hono();
+		let creates = 0;
+		const calls: Array<Record<string, unknown>> = [];
+		const preflight = {
+			ok: true, teamId: 'team-a', providerId: 'provider-a', allocationSetId: 'allocation-a',
+			projects: [{ id: 'project-a', slug: 'market', repositoryId: 'repo-a', planningGraphRevision: 'revision-a', agentProfiles: 6 }],
+			availableSeconds: 6_000, planningSeconds: 5_400, requiredSeconds: 5_100, rounds: 3, waves: 5, participants: 6,
+		};
+		const store = {
+			async createCapacityWorkdayRun() { creates += 1; return {}; },
+			async preflightCapacityWorkdayRunRequest(teamId: string, input: Record<string, unknown>) {
+				calls.push({ teamId, ...input });
+				return preflight;
+			},
+		} as unknown as CapacityGovernanceDatabase;
+		installCapacityOperatorRoutes(app, {
+			store,
+			async requireTeamAccess(_c, _store, _teamId, permission) {
+				expect(permission).toBe('teams:manage:team');
+				return { principal: { id: 'owner-a' } };
+			},
+		});
+		const response = await app.request('/v1/teams/team-a/workday-runs/preflight', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ status: 'running', parameters: { durationSeconds: 3_000 } }),
+		});
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true, payload: preflight });
+		expect(calls).toEqual([{ teamId: 'team-a', status: 'running', parameters: { durationSeconds: 3_000 }, requestedById: 'owner-a' }]);
+		expect(creates).toBe(0);
+	});
+
 	it('preserves fail-closed workday governance status and code at the HTTP boundary', async () => {
 		const app = new Hono();
 		const store = {
@@ -166,6 +200,9 @@ describe('capacity operator routes', () => {
 			async tickCapacityWorkdayRun(teamId: string, runId: string, now: string | undefined, idempotencyKey: string) {
 				calls.push({ operation: 'tick', teamId, runId, now, idempotencyKey }); return { runId };
 			},
+			async fenceCapacityWorkdayAdmission(teamId: string,runId: string) {
+				calls.push({ operation: 'close-admission',teamId,runId }); return { runId,ready: true,successful: true };
+			},
 			async cancelCapacityAssignment(teamId: string, assignmentId: string, input: Record<string, unknown>) {
 				calls.push({ operation: 'cancel', teamId, assignmentId, ...input }); return { id: assignmentId, status: 'cancelled' };
 			},
@@ -175,11 +212,14 @@ describe('capacity operator routes', () => {
 		} as unknown as CapacityGovernanceDatabase;
 		installCapacityOperatorRoutes(app, { store, async requireTeamAccess() { return { principal: { id: 'owner-a' } }; } });
 		const tick = await app.request('/v1/teams/team-a/workday-runs/run-a/tick', { method: 'POST', headers: { 'Idempotency-Key': 'tick-a' } });
+		const missingFenceKey = await app.request('/v1/teams/team-a/workday-runs/run-a/close-admission',{ method: 'POST' });
+		const fence = await app.request('/v1/teams/team-a/workday-runs/run-a/close-admission',{ method: 'POST',headers: { 'Idempotency-Key': 'fence-a' } });
 		const cancel = await app.request('/v1/teams/team-a/capacity/assignments/assignment-a/cancel', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'cancel-a', reason: 'No longer needed.' }) });
 		const requeue = await app.request('/v1/teams/team-a/capacity/assignments/assignment-a/requeue', { method: 'POST', headers: { 'Idempotency-Key': 'retry-a' } });
-		expect([tick.status, cancel.status, requeue.status]).toEqual([200, 200, 200]);
+		expect([tick.status,missingFenceKey.status,fence.status,cancel.status,requeue.status]).toEqual([200,400,200,200,200]);
 		expect(calls).toEqual([
 			{ operation: 'tick', teamId: 'team-a', runId: 'run-a', now: undefined, idempotencyKey: 'tick-a' },
+			{ operation: 'close-admission',teamId: 'team-a',runId: 'run-a' },
 			{ operation: 'cancel', teamId: 'team-a', assignmentId: 'assignment-a', idempotencyKey: 'cancel-a', actorId: 'owner-a', reason: 'No longer needed.' },
 			{ operation: 'requeue', teamId: 'team-a', assignmentId: 'assignment-a', idempotencyKey: 'retry-a', actorId: 'owner-a' },
 		]);

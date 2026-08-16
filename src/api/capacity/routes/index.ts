@@ -35,7 +35,7 @@ function installCapacityErrorBoundary(app: Hono) {
 	});
 }
 
-export function installCapacityRoutes(app: Hono, options: Parameters<typeof installCapacityGovernanceRoutes>[1] & ProjectAgentOperatorRouteOptions & ProjectDiagnosticsRouteOptions & ProjectAgentObservabilityRouteOptions & TreeDxProxyRouteOptions) {
+export function installCapacityRoutes(app: Hono, options: Parameters<typeof installCapacityGovernanceRoutes>[1] & ProjectAgentOperatorRouteOptions & ProjectDiagnosticsRouteOptions & ProjectAgentObservabilityRouteOptions & TreeDxProxyRouteOptions & Parameters<typeof installProviderAssignmentRoutes>[1]) {
 	installCapacityErrorBoundary(app);
 	installCapacityGovernanceRoutes(app, options);
 	installCapacityPolicyRoutes(app, options);

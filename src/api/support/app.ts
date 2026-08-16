@@ -14,6 +14,8 @@ import {
   createApiExtension,
   defaultConfig,
   installApiRequestLogger,
+	localAcceptanceAdminToken,
+	localAcceptanceAuthEnabled,
   resolveAgentArtifactBucket,
   resolveAuthApprovalBaseUrl,
   shouldLogApiRequests,
@@ -91,6 +93,18 @@ export function createPlatformApiApp(
       environment: resolveStripeEnvironment(config),
     });
 
+	const authenticateBearerOverride = async (token: string) => {
+		if (!localAcceptanceAuthEnabled({ resolved: { config } }) || token !== localAcceptanceAdminToken()) return null;
+		return {
+			principal: {
+				id: 'team-key:local-capacity-acceptance', displayName: 'Local Capacity Acceptance',
+				roles: ['team_api_key', 'market_admin'], permissions: ['*:*:*', 'seeds:apply:global', 'teams:manage:team'],
+				scopes: ['auth:me'], metadata: { localAcceptance: true },
+			},
+			credential: { type: 'service_token' as const, id: 'local-capacity-acceptance', label: 'Local Capacity Acceptance' },
+		};
+	};
+
   return createSdkApiApp({
     ...options,
     config: {
@@ -99,6 +113,7 @@ export function createPlatformApiApp(
     },
     runtimeProviders,
     sdk: sharedSdk,
+	authenticateBearerOverride,
     internalPrefix: options.internalPrefix ?? "/internal/core",
     surfaces: { templates: false, ...(options.surfaces ?? {}) },
     extensions: [

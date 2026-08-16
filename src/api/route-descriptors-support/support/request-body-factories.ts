@@ -69,6 +69,8 @@ export function bodyFactoryFor(path, method) {
         return 'providerAssignmentRenew';
     if (path.includes('/provider/assignments/') && path.endsWith('/return'))
         return 'providerAssignmentReturn';
+    if (path.includes('/provider/assignments/') && path.endsWith('/completion-preflight'))
+        return 'providerAssignmentComplete';
     if (path.includes('/provider/assignments/') && path.endsWith('/complete'))
         return 'providerAssignmentComplete';
     if (path.includes('/provider/assignments/') && path.endsWith('/fail'))

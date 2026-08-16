@@ -146,6 +146,60 @@ describe("AgentAtlasProjectionService", () => {
     ]);
     expect(projection.playback.cursor.positions).toEqual({ "run-1": 2 });
   });
+  it("summarizes a selected terminal workday without exposing raw diagnostics", () => {
+    const value = snapshot();
+    value.rows.workdays[0] = {
+      ...value.rows.workdays[0],
+      scenario_id: "Short human acceptance",
+      status: "cancelled",
+      completed_at: "2026-08-08T13:45:00.000Z",
+      error_json: JSON.stringify({ message: "private provider failure details" }),
+    };
+    value.rows.assignments[0] = { ...value.rows.assignments[0], status: "expired" };
+    const projection = new AgentAtlasProjectionService().projection(value as never);
+    expect(projection.workdaySummary).toEqual(expect.objectContaining({
+      id: "run-1",
+      title: "Short human acceptance",
+      status: "cancelled",
+      assignments: { total: 1, active: 0, completed: 0, failed: 1, cancelled: 0 },
+      eventCount: 0,
+    }));
+    expect(projection.workdaySummary?.message).toBe("Short human acceptance was cancelled. 1 assignment needs attention.");
+    expect(projection.workdaySummary?.message).not.toContain("private provider failure");
+  });
+  it("classifies failed assignment events as failures before their broader assignment family", () => {
+    const value = snapshot();
+    value.rows.events[0] = { ...value.rows.events[0], event_type: "assignment.failed", status: "failed" };
+    const projection = new AgentAtlasProjectionService().projection(value as never);
+    expect(projection.activity[0]).toEqual(expect.objectContaining({ category: "failure", severity: "error" }));
+  });
+  it("keeps live revisions stable when only the observation clock advances", () => {
+    const first = snapshot();
+    const second = snapshot();
+    second.overview.generatedAt = "2026-08-08T14:01:00.000Z";
+    second.overview.operatingDay.end = second.overview.generatedAt;
+    const service = new AgentAtlasProjectionService();
+    const firstProjection = service.projection(first as never);
+    const secondProjection = service.projection(second as never);
+    expect(firstProjection.playback.mode).toBe("live");
+    expect(secondProjection.playback.mode).toBe("live");
+    expect(secondProjection.revision).toBe(firstProjection.revision);
+    expect(secondProjection.playback.cursor.observedAt).not.toBe(
+      firstProjection.playback.cursor.observedAt,
+    );
+  });
+  it("keeps the exact observation point in historical revisions", () => {
+    const service = new AgentAtlasProjectionService();
+    const first = service.projection(snapshot() as never, {
+      observedAt: "2026-08-08T12:30:00.000Z",
+    });
+    const second = service.projection(snapshot() as never, {
+      observedAt: "2026-08-08T13:00:00.000Z",
+    });
+    expect(first.playback.mode).toBe("historical");
+    expect(second.playback.mode).toBe("historical");
+    expect(second.revision).not.toBe(first.revision);
+  });
   it("keeps conflicting frozen project revisions as explicit node variants", () => {
     const value = snapshot();
     value.rows.workdays.push({
@@ -179,5 +233,28 @@ describe("AgentAtlasProjectionService", () => {
         .filter((item) => item.kind === "agent")
         .every((item) => /@[a-f0-9]{8}$/u.test(item.id)),
     ).toBe(true);
+  });
+  it("keeps inactive historical revisions out of the live portfolio", () => {
+    const value = snapshot();
+    value.overview.workdayContext.selectedWorkdayId = null;
+    value.rows.workdays[0].status = "completed";
+    value.rows.workdays.push({
+      ...value.rows.workdays[0],
+      id: "run-active",
+      status: "running",
+      parameters_json: JSON.stringify({
+        atlasTopologyByProjectId: {
+          "project-1": { ...topology, revision: "active-topology" },
+        },
+      }),
+    });
+    const projection = new AgentAtlasProjectionService().projection(value as never);
+    expect(projection.topologies.map((item) => item.revision)).toEqual(["active-topology"]);
+  });
+  it("describes the bounded embedded activity window", () => {
+    const value = snapshot() as ReturnType<typeof snapshot> & { rows: { eventTotal?: number } };
+    value.rows.eventTotal = 42;
+    const projection = new AgentAtlasProjectionService().projection(value as never);
+    expect(projection.activityWindow).toEqual({ total: 42, loaded: 2, truncated: true });
   });
 });

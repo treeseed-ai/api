@@ -17,8 +17,9 @@ type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
 import { resolveWorkdayPlanningGraphSnapshot } from '../policy/workday-planning-graph-policy.ts';
 import { compileWorkdayAtlasTopology } from '../policy/workday-atlas-topology-policy.ts';
-import { initializeCooperativePlanningSession } from './cooperative-planning-session-service.ts';
+import { compileCooperativePlanningSession,initializeCooperativePlanningSession } from './cooperative-planning-session-service.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
+import { ContextQueryCheckService } from '../../agents/context-query-check-service.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -87,14 +88,15 @@ async function recordRequiredEvent(
 	}
 }
 
-export async function scheduleCapacityWorkdayRun(
+async function resolveCapacityWorkdayPreflight(
 	store: WorkdayScheduleStore,
 	run: DurableCapacityWorkdayRun,
-): Promise<{ projects: WorkdayProject[]; allocationSet: CapacityAllocationSetV2 }> {
+) {
 	await store.ensureInitialized();
 	const legacy = await store.first(`SELECT id FROM capacity_reservations WHERE team_id = ? AND state IN ('reserved','consuming','overran_pending_approval','continuation_required') AND requested_seconds IS NULL LIMIT 1`, [run.teamId]);
 	if (legacy) throw new CapacityGovernanceError('capacity_legacy_reservations_active', 'Time scheduling is blocked while a nonterminal legacy-credit reservation remains. Terminalize or recover legacy capacity before retrying.', 409, { reservationId: legacy.id, cleanupOperation: 'trsd capacity recover --legacy-reservations' });
 	const parameters = run.parameters;
+	const executionMode = run.executionMode ?? (parameters.executionMode === 'production' ? 'production' : 'simulation');
 	const providerId = text(run.capacityProviderId ?? parameters.providerId);
 	if (!providerId) {
 		throw new CapacityGovernanceError('capacity_workday_provider_required', 'Workday requires a capacity provider.', 400);
@@ -132,7 +134,6 @@ export async function scheduleCapacityWorkdayRun(
 	const contexts = new Map<string, { contentRoot: string; repositoryId: string; immutableRef: string }>();
 	const planningGraphs = new Map<string, Awaited<ReturnType<typeof resolveWorkdayPlanningGraphSnapshot>>>();
 	for (const project of projects) {
-		await reconcileTreeDxRefSignals(store, project.id, startedAt);
 		const library = await store.getProjectTreeDxLibrary(project.id);
 		const repositoryId = text(library?.repositoryId);
 		if (!repositoryId) {
@@ -145,9 +146,55 @@ export async function scheduleCapacityWorkdayRun(
 		}
 		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
 		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef: text(library?.contentRepositoryRef, repositoryId) });
-		planningGraphs.set(project.id, await resolveWorkdayPlanningGraphSnapshot(store, project.id, parameters.agentSelection));
+		const planningGraph=await resolveWorkdayPlanningGraphSnapshot(store, project.id, parameters.agentSelection);
+		const contextRefs=[...new Map(planningGraph.agents.flatMap((agent)=>[
+			...agent.contextQueryRefs.map((reference)=>({kind:'query' as const,...reference})),
+			...agent.contextQuerySetRefs.map((reference)=>({kind:'query-set' as const,...reference})),
+		]).map((reference)=>[`${reference.kind}:${reference.id}:${reference.revision}`,reference])).values()];
+		if(contextRefs.length) await new ContextQueryCheckService(store).requirePassing(run.teamId,project.id,contexts.get(project.id)!.immutableRef,contextRefs,new Date(startedAt));
+		planningGraphs.set(project.id,planningGraph);
 	}
 	const time = workdayTime(parameters);
+	const planningSeconds = Math.floor(time.availableSeconds * time.timePolicy.cooperativePlanningPercent / 100);
+	const rounds = Number(record(parameters.planningSession).rounds ?? 3);
+	const maxConcurrentAssignments = Number(parameters.maxActiveAssignments ?? 1);
+	const assignmentTimeboxSeconds = Number(record(parameters.planningSession).assignmentTimeboxSeconds ?? 900);
+	const planning = compileCooperativePlanningSession({
+		snapshots: planningGraphs, rounds, maxConcurrentAssignments, allocatedSeconds: planningSeconds, assignmentTimeboxSeconds,
+	});
+	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,allocationSet,grantsByProjectId,contexts,planningGraphs,time,planningSeconds,rounds,maxConcurrentAssignments,assignmentTimeboxSeconds,planning };
+}
+
+export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, run: DurableCapacityWorkdayRun) {
+	const resolved = await resolveCapacityWorkdayPreflight(store, run);
+	return {
+		ok: true,
+		teamId: run.teamId,
+		providerId: resolved.providerId,
+		allocationSetId: resolved.allocationSet.id,
+		projects: resolved.projects.map((project) => ({
+			id: project.id,
+			slug: project.slug ?? project.id,
+			repositoryId: resolved.contexts.get(project.id)!.repositoryId,
+			planningGraphRevision: resolved.planningGraphs.get(project.id)!.revision,
+			agentProfiles: resolved.planningGraphs.get(project.id)!.agents.length,
+		})),
+		availableSeconds: resolved.time.availableSeconds,
+		planningSeconds: resolved.planningSeconds,
+		requiredSeconds: resolved.planning.compiled.requiredSeconds,
+		rounds: resolved.rounds,
+		waves: resolved.planning.compiled.waves.length,
+		participants: resolved.planning.participants.length,
+	};
+}
+
+export async function scheduleCapacityWorkdayRun(
+	store: WorkdayScheduleStore,
+	run: DurableCapacityWorkdayRun,
+): Promise<{ projects: WorkdayProject[]; allocationSet: CapacityAllocationSetV2 }> {
+	const resolved = await resolveCapacityWorkdayPreflight(store, run);
+	const { parameters,executionMode,providerId,startedAt,environment,membership,projects,allocationSet,grantsByProjectId,contexts,planningGraphs,time,planningSeconds,rounds,maxConcurrentAssignments,assignmentTimeboxSeconds } = resolved;
+	for (const project of projects) await reconcileTreeDxRefSignals(store, project.id, startedAt);
 	for (const project of projects) {
 		const context = contexts.get(project.id)!;
 		const grant = grantsByProjectId.get(project.id)!;
@@ -156,7 +203,7 @@ export async function scheduleCapacityWorkdayRun(
 			id: workdayId, workdayRunId: run.id, projectId: project.id, allocationSetId: allocationSet.id,
 			environment, status: 'active', startedAt, availableSeconds: time.availableSeconds, timePolicy: time.timePolicy,
 			metadata: {
-				source: 'workday_scheduler', runId: run.id, slug: project.slug,
+				source: 'workday_scheduler', runId: run.id, slug: project.slug, executionMode,
 				deadlineAt: parameters.deadlineAt ?? null, durationSeconds: parameters.durationSeconds ?? null,
 				grantId: grant.id,
 			},
@@ -182,25 +229,24 @@ export async function scheduleCapacityWorkdayRun(
 			JSON.stringify({ workdayId, graphRevision: planningGraphs.get(project.id)!.revision, objectives: parameters.objectiveRefs ?? [] }), startedAt,
 		]);
 	}
-	const planningSeconds = Math.floor(time.availableSeconds * time.timePolicy.cooperativePlanningPercent / 100);
 	await store.run(`INSERT INTO workday_planning_sessions
 		(id,team_id,workday_run_id,graph_revision,status,agenda_json,objectives_json,proposal_ids_json,rounds,current_round,allocated_seconds,reserved_seconds,started_at,deadline,metadata_json,created_at,updated_at)
 		VALUES (?,?,?,?,'running',?,?, '[]',?,0,?,0,?,?,?, ?, ?) ON CONFLICT(workday_run_id) DO NOTHING`, [
 		`planning-session:${run.id}`, run.teamId, run.id,
 		[...planningGraphs.values()].map((entry) => entry.revision).sort().join(':'),
 		JSON.stringify(record(parameters.planningSession)), JSON.stringify(parameters.objectiveRefs ?? []),
-		Number(record(parameters.planningSession).rounds ?? 3), planningSeconds, startedAt, parameters.deadlineAt,
+		rounds, planningSeconds, startedAt, parameters.deadlineAt,
 		JSON.stringify({ projectIds: projects.map((project) => project.id), maxActiveAssignments: parameters.maxActiveAssignments ?? 1 }), startedAt, startedAt,
 	]);
 	await initializeCooperativePlanningSession({
 		database: store, teamId: run.teamId, runId: run.id, sessionId: `planning-session:${run.id}`,
-		snapshots: planningGraphs, rounds: Number(record(parameters.planningSession).rounds ?? 3),
-		maxConcurrentAssignments: Number(parameters.maxActiveAssignments ?? 1), allocatedSeconds: planningSeconds, now: startedAt,
-		assignmentTimeboxSeconds: Number(record(parameters.planningSession).assignmentTimeboxSeconds ?? 900),
+		snapshots: planningGraphs, rounds,
+		maxConcurrentAssignments, allocatedSeconds: planningSeconds, now: startedAt,
+		assignmentTimeboxSeconds,
 	});
 	const updated = await store.updateCapacityWorkdayRun(run.teamId, run.id, {
 		parameters: {
-			...parameters, allocationSetId: allocationSet.id, availableSeconds: time.availableSeconds, timePolicy: time.timePolicy,
+			...parameters, executionMode, allocationSetId: allocationSet.id, availableSeconds: time.availableSeconds, timePolicy: time.timePolicy,
 			scheduledProjectIds: projects.map((project) => project.id),
 			scheduledProjectSlugs: projects.map((project) => project.slug ?? project.id),
 			repositoryIdsByProjectId: Object.fromEntries(

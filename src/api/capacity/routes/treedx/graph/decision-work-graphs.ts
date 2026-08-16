@@ -3,6 +3,7 @@ import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { readCapacityRequestObject } from '../../support/request-json.ts';
+import { validateExecutionAuthorityReceipt } from '../../../../governance/decision-authority.ts';
 
 interface DecisionWorkGraphStore extends CapacityGovernanceDatabase {
 	getDecisionPlanningStatus(decisionId: string): Promise<DecisionPlanningStatus | null>;
@@ -31,6 +32,21 @@ function active(value: unknown): boolean | undefined {
 
 export function installDecisionWorkGraphRoutes(app: Hono, options: DecisionWorkGraphRouteOptions) {
 	const store = options.store as DecisionWorkGraphStore;
+	app.post('/v1/governance/execution-authorities/validate', async (c) => {
+		const body = await readCapacityRequestObject(c);
+		const authorities = Array.isArray(body.authorities) ? body.authorities : [];
+		if (!authorities.length || authorities.length > 200) throw new CapacityGovernanceError('governance_execution_authorities_invalid', 'One to 200 execution authorities are required.', 400);
+		const results = [];
+		for (const value of authorities) {
+			const authority = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+			const projectId = typeof authority.projectId === 'string' ? authority.projectId : '';
+			if (!projectId) throw new CapacityGovernanceError('governance_execution_authority_project_required', 'Every execution authority requires projectId.', 400);
+			const access = await options.requireProjectAccess(c, options.store, projectId, 'projects:read:team');
+			if (access.response) return access.response;
+			results.push({ authorityId: typeof authority.authorityId === 'string' ? authority.authorityId : null, ...(await validateExecutionAuthorityReceipt(store, authority)) });
+		}
+		return c.json({ ok: true, payload: results });
+	});
 	app.post('/v1/decisions/:decisionId/assignment-graphs/compile', async (c) => {
 		const body = await readCapacityRequestObject(c, { optional: true });
 		const projectId = typeof body.projectId === 'string' ? body.projectId : '';

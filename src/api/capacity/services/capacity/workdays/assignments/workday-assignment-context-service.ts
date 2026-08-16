@@ -48,6 +48,20 @@ function text(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function signalArtifactModel(input: CapacityWorkdayGraphInput,value: JsonRecord) {
+	const explicit = text(value.model);
+	if (explicit) return explicit;
+	const subjectId = text(value.subjectId ?? input.subjectId);
+	if (subjectId.startsWith('proposal:') || input.contractId === 'proposal-ready') return 'proposal';
+	return '';
+}
+
+function signalArtifactKind(input: CapacityWorkdayGraphInput,value: JsonRecord) {
+	const explicit = text(value.artifactKind ?? value.kind);
+	if (explicit) return explicit;
+	return input.contractId === 'proposal-ready' ? 'planning_proposal' : '';
+}
+
 function selectedObjective(run: DurableCapacityWorkdayRun): string {
   const refs = Array.isArray(run.parameters.objectiveRefs) ? run.parameters.objectiveRefs : [];
   return text(refs[0]);
@@ -162,7 +176,7 @@ export async function resolveCapacityWorkdayAssignmentIntent(
     const value = { ...record(input.payload), ...record(input.metadata) };
     const paths = [value.contentPath, ...array(value.changedPaths), ...array(value.evidenceRefs).map((entry) => typeof entry === 'string' ? entry : record(entry).contentPath)].map((entry) => text(entry)).filter(Boolean);
     return paths.map((contentPath) => ({
-      ...value, contentPath, model: text(value.model), artifactKind: text(value.artifactKind ?? value.kind),
+      ...value, contentPath, model: signalArtifactModel(input,value), artifactKind: signalArtifactKind(input,value),
       subjectId: text(value.subjectId ?? input.subjectId), producedByAgent: text(value.producedByAgent ?? value.agentId),
     } satisfies CapacityWorkdayArtifactRef));
   });

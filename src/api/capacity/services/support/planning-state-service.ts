@@ -7,12 +7,19 @@ type DecisionPlanningStatus,
 type PlanningInputRequest,
 type PlanningInputRequestStatus,
 } from '@treeseed/sdk/agent-capacity';
+import { AGENT_ACTIVITY_TYPES,type AgentActivityType } from '@treeseed/sdk/types/agents';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { PlanningStateRepository } from '../../repositories/support/planning-state.ts';
 
 type JsonRecord = Record<string, unknown>;
+
+function activityType(value: unknown): AgentActivityType | undefined {
+	if (value == null) return undefined;
+	if (typeof value === 'string' && AGENT_ACTIVITY_TYPES.includes(value as AgentActivityType)) return value as AgentActivityType;
+	throw new CapacityGovernanceError('agent_activity_type_invalid', 'activityType must identify a canonical agent activity profile.', 400);
+}
 
 interface PlanningStateStore extends CapacityGovernanceDatabase {
 	getProject(projectId: string): Promise<{ id: string; teamId: string } | null>;
@@ -189,8 +196,10 @@ export class PlanningStateService {
 		if (!projectAgentClassId) throw new CapacityGovernanceError('project_agent_class_required', 'projectAgentClassId is required.', 400);
 		const now = new Date().toISOString();
 		const sourceInput = input.input ?? {};
+		const selectedActivityType = activityType(sourceInput.activityType);
 		const normalizedInput: DecisionExecutionInput = {
 			teamId: project.teamId, projectId: project.id, projectAgentClassId, mode: selectedMode,
+			...(selectedActivityType ? { activityType: selectedActivityType } : {}),
 			workGraphNodeId: optionalText(sourceInput.workGraphNodeId),
 			taskId: optionalText(sourceInput.taskId), workDayId: optionalText(sourceInput.workDayId),
 			agentId: optionalText(sourceInput.agentId), handlerId: optionalText(sourceInput.handlerId),

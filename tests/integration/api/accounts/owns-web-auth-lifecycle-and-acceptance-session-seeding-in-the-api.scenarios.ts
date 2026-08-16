@@ -138,4 +138,40 @@ describe("web authentication lifecycle", () => {
       ]),
     );
   }, 30_000);
+
+  it("seeds an inspectable Agent Lab topology and forensic event", async () => {
+    const db = createTestPostgresDatabase();
+    const store = createTestStore(db);
+    const app = createTestApp({ db, store });
+    const namespace = `atlas-${crypto.randomUUID().slice(0, 8)}`;
+    const seeded = await json(await app.request("/v1/acceptance/seed", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-treeseed-service-id": "web",
+        "x-treeseed-service-secret": "web-test-secret",
+      },
+      body: JSON.stringify({ namespace }),
+    }));
+    expect(seeded.ok).toBe(true);
+    expect(seeded.payload.fixtures).toMatchObject({
+      agentClass: { id: expect.any(String) },
+      workdayRun: { id: expect.any(String) },
+      workdayEvent: { id: expect.any(String) },
+    });
+
+    const projectId = seeded.payload.fixtures.project.id;
+    const agentClass = await store.first("SELECT * FROM project_agent_classes WHERE project_id = ?", [projectId]);
+    expect(agentClass).toMatchObject({ name: "Visual Audit Agent", status: "active" });
+    expect(JSON.parse(String(agentClass?.handler_refs_json))).toMatchObject({
+      agents: [expect.objectContaining({ slug: "visual-audit-agent", enabled: true })],
+    });
+    expect(await store.first("SELECT * FROM capacity_workday_runs WHERE id = ?", [seeded.payload.fixtures.workdayRun.id]))
+      .toMatchObject({ status: "queued" });
+    expect(await store.first("SELECT * FROM capacity_workday_events WHERE id = ?", [seeded.payload.fixtures.workdayEvent.id]))
+      .toMatchObject({
+        event_type: "acceptance.atlas.ready",
+        message: "A validated project agent definition is available for Atlas inspection.",
+      });
+  }, 30_000);
 });

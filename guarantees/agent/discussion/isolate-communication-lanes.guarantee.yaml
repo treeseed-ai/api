@@ -1,0 +1,25 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.isolate-communication-lanes.930
+journeyIndex: 930
+type: agent
+subtype: discussion
+journey: Isolate communication capacity
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Communication reserves a communication lane, may overflow only to idle operation capacity, and operation work never consumes communication capacity.
+status: planned
+capabilityId: agent.communication.lane-isolation
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.provider-sessions, capacity.agent-invocations], minimumRepositoryPostconditions: 0, outcomePredicates: { communication.lane-isolation: [communication.ready, communication.overflow, communication.operation-denied] } }
+outcomes: [{ id: communication.lane-isolation, kind: required, description: Exact lane-purpose read-back proves reserved communication, bounded overflow, non-preemption, and operation exclusion., evidenceKinds: [assignment_read_back, provider_read_back], authoritativeSubjects: [providerSession, assignment] }]
+dependencies: { journeys: [], guarantees: [] }
+actors: { allowed: [capacity_operator], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: false, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

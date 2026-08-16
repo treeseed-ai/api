@@ -1,6 +1,11 @@
 import { MarketControlPlaneStore,serializeProject } from "../../../../persistence/store.ts";
+import { principalIsAdmin } from "../../../support/foundation.ts";
 export async function listProjectsForPrincipalMethod(this: MarketControlPlaneStore, principal) {
     await this.ensureInitialized();
+    if (principalIsAdmin(principal)) {
+        const rows = await this.all(`SELECT * FROM projects ORDER BY created_at ASC`);
+        return rows.map(serializeProject).filter((project) => project?.metadata?.deletion?.status !== 'succeeded');
+    }
     const teamIds = await this.teamIdsForPrincipal(principal);
     if (teamIds.length === 0) {
         return [];

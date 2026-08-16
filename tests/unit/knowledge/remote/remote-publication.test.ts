@@ -10,6 +10,7 @@ const binding = {
 };
 
 function storeFor(overrides: Record<string, unknown> = {}) {
+	let delivery: { id: string; expires_at: string } | null = null;
 	return {
 		first: vi.fn(async (sql: string) => {
 			if (sql.includes('project_remote_repository_bindings WHERE project_id')) return { ...binding, ...overrides };
@@ -17,9 +18,15 @@ function storeFor(overrides: Record<string, unknown> = {}) {
 				reference: 'TREESEED_GITHUB_TOKEN_EXAMPLE_KNOWLEDGE', capabilities_json: '["repository-hosting"]',
 				provider_id: 'github', authority_id: 'authority-1', id: 'authority-1' };
 			if (sql.includes('remote_git_operation_grants WHERE idempotency_key')) return { id: 'grant-1' };
+			if (sql.includes('remote_credential_deliveries WHERE grant_id')) return delivery;
 			return null;
 		}),
-		all: vi.fn(async () => []), run: vi.fn(async () => ({ meta: { changes: 1 } })),
+		all: vi.fn(async () => []), run: vi.fn(async (sql: string, values: unknown[] = []) => {
+			if (sql.includes('INSERT INTO remote_credential_deliveries')) {
+				delivery = { id: String(values[0]), expires_at: String(values[6]) };
+			}
+			return { meta: { changes: 1 } };
+		}),
 	};
 }
 

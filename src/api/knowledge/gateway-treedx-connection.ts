@@ -1,5 +1,6 @@
 import { TreeDxClient } from '@treeseed/sdk/treedx';
 import { mintTreeDxHs256Token } from '@treeseed/sdk/treedx/auth';
+import { AGENT_OPERATIONAL_CONTENT_COLLECTIONS } from '@treeseed/sdk/content-validation';
 
 type RecordValue = Record<string, unknown>;
 
@@ -41,6 +42,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	readRefs?: string[];
 	workspaceRefs?: string[];
 	relationPaths?: boolean;
+	communicationPaths?: boolean;
 	authoringPaths?: boolean;
 }): Promise<KnowledgeGatewayConnection | null> {
 	const library = await store.getProjectTreeDxLibrary(input.projectId);
@@ -62,8 +64,15 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	const allowedPaths = [`${contentPath}/books/**`, `${contentPath}/knowledge/**`, `${contentPath}/assets/**`,
 		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
 			.map((collection) => `${contentPath}/${collection}/**`) : []),
-		...(input.authoringPaths ? [`${contentPath}/agents/**`, `${contentPath}/groups/**`, `${contentPath}/group-edges/**`, '.treeseed/agents/**', '.treeseed/seeds/**', 'scenes/**'] : [])];
+		...(input.communicationPaths ? ['discussions', 'discussion-messages', 'discussion-events']
+			.map((collection) => `${contentPath}/${collection}/**`) : []),
+		...(input.authoringPaths ? [
+			`${contentPath}/agents/**`,`${contentPath}/agent-tests/**`,`${contentPath}/groups/**`,`${contentPath}/group-edges/**`,
+			...Object.values(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map((collection) => `${contentPath}/${collection}/**`),
+			'.treeseed/agents/**','.treeseed/governance/proposal-types/**','.treeseed/seeds/**','seeds/**','scenes/**',
+		] : [])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
+	const canonicalAuthoringRef = `refs/heads/${authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const token = mintTreeDxHs256Token({
 		secret,
 		issuer: text(store.config.TREESEED_TREEDX_JWT_ISSUER, process.env.TREESEED_TREEDX_JWT_ISSUER) || 'https://api.treeseed.local/treedx',
@@ -72,13 +81,14 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		tenantId: text(store.config.TREESEED_TREEDX_PROXY_TENANT_ID, process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
 		repoIds: [repositoryId],
 		capabilities: input.maintenanceRefs?.length
-			? ['repos:read', 'files:read', 'git:read', 'git:diff', 'git:fetch', 'git:push', 'policy:write']
+			? ['repos:read', 'files:read', 'git:read', 'git:diff', 'git:fetch', 'git:push', 'registry:read', 'policy:write']
 			: input.publishRefs?.length
-			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:fetch', 'git:push', 'graph:query', 'graph:refresh']
+			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:fetch', 'git:push', 'registry:read', 'graph:query', 'graph:refresh']
 			: input.write
-			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit']
+			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:search', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit', 'graph:query', 'graph:refresh']
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query'],
 		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
+			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
 			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []),
 			...(input.workspaceRefs ?? [])])],
 		paths: allowedPaths,

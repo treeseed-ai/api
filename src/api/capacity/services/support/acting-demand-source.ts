@@ -5,6 +5,7 @@ import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/work
 import { resolveEngineeringNodeAuthority } from '../accounts/engineering-source-authority.ts';
 import type { WorkdayProject } from '../capacity/workdays/policy/workday-project-policy.ts';
 import { projectAgentActivityRefs } from '../projects/projects-core/project-agent-activity-refs.ts';
+import { approvedOperationHandoffForWorkUnit } from '../capacity/assignments/handoffs/operation-handoff-lifecycle-service.ts';
 
 export interface ActingDemandSource {
 	sourceType: 'capacity-plan'; sourceId: string; decisionId: string; capacityPlanId: string;
@@ -23,8 +24,9 @@ async function readyGraphNode(input: {
 	projectAgentClassId: string;
 	projectAgentClassSlug: string;
 	handlerId: string;
+	activityType: 'acting' | 'reviewing';
 }) {
-	const { database, decisionId, projectId, workGraphNodeId, projectAgentClassId, projectAgentClassSlug, handlerId } = input;
+	const { database, decisionId, projectId, workGraphNodeId, projectAgentClassId, projectAgentClassSlug, handlerId, activityType } = input;
 	const row = await database.first(
 		`SELECT id, graph_json FROM decision_assignment_graphs WHERE decision_id = ? AND project_id = ? AND active = 1 AND status = 'ready' ORDER BY version DESC LIMIT 1`,
 		[decisionId, projectId],
@@ -35,7 +37,7 @@ async function readyGraphNode(input: {
 	const edges = Array.isArray(graph.edges) ? graph.edges.map(record) : [];
 	const node = nodes.find((candidate) => text(candidate.id) === workGraphNodeId);
 	if (!node || !['pending', 'ready'].includes(String(node.status ?? ''))) return null;
-	if (node.activityType !== 'acting') return null;
+	if (node.activityType !== activityType) return null;
 	if (![projectAgentClassId, projectAgentClassSlug].includes(text(node.targetAgentClass) ?? '')) return null;
 	const graphHandler = text(node.handler);
 	if (graphHandler && graphHandler !== handlerId) return null;
@@ -57,13 +59,13 @@ async function readyGraphNode(input: {
 	};
 }
 
-async function classAuthorizesActing(database: CapacityGovernanceDatabase, projectId: string, classId: string, agentId: string | null, handlerId: string) {
+async function classAuthorizesActing(database: CapacityGovernanceDatabase, projectId: string, classId: string, agentId: string | null, handlerId: string, activityType: 'acting' | 'reviewing') {
 	const row = await database.first(`SELECT slug, status, allowed_modes_json, handler_refs_json FROM project_agent_classes WHERE id = ? AND project_id = ? LIMIT 1`, [classId, projectId]);
 	if (!row || row.status !== 'active') return null;
 	const modes = decodeDurableJsonArray<string>(row.allowed_modes_json, { owner: 'project agent class', ownerId: classId, column: 'allowed_modes_json' });
 	if (!modes.includes('acting')) return null;
 	const refs = decodeDurableJsonObject(row.handler_refs_json, { owner: 'project agent class', ownerId: classId, column: 'handler_refs_json' });
-	const activity = projectAgentActivityRefs(refs, 'acting').find((agent) => agent.handlerId === handlerId && (!agentId || agent.agentId === agentId));
+	const activity = projectAgentActivityRefs(refs, activityType).find((agent) => agent.handlerId === handlerId && (!agentId || agent.agentId === agentId));
 	return activity ? { slug: text(row.slug) ?? classId, contentPath: activity.contentPath } : null;
 }
 
@@ -96,6 +98,7 @@ export async function listActingDemandSources(
 			if (unit.mode && unit.mode !== 'acting') continue;
 			if (Array.isArray(unit.blockers) && unit.blockers.length > 0) continue;
 			const projectAgentClassId = text(unit.projectAgentClassId);
+			const activityType = text(unit.activityType ?? record(unit.decisionInput).activityType) === 'reviewing' ? 'reviewing' : 'acting';
 			const handlerId = text(unit.handlerId ?? record(unit.decisionInput).handlerId);
 			const requestedSeconds = Number(unit.highSeconds ?? unit.expectedSeconds ?? 0);
 			if (!projectAgentClassId || !handlerId || !Number.isInteger(requestedSeconds) || requestedSeconds <= 0) throw new CapacityGovernanceError(
@@ -111,15 +114,20 @@ export async function listActingDemandSources(
 			const workGraphNodeId = text(unit.workGraphNodeId ?? record(unit.decisionInput).workGraphNodeId);
 			const agentId = text(unit.agentId ?? record(unit.decisionInput).agentId);
 			if (!workGraphNodeId) continue;
-			const authorizedClass = await classAuthorizesActing(database, project.id, projectAgentClassId, agentId, handlerId);
+			const authorizedClass = await classAuthorizesActing(database, project.id, projectAgentClassId, agentId, handlerId, activityType);
 			if (!authorizedClass) continue;
 			const graphNode = await readyGraphNode({
 				database, decisionId, projectId: project.id, workGraphNodeId, projectAgentClassId,
-				projectAgentClassSlug: authorizedClass.slug, handlerId,
+				projectAgentClassSlug: authorizedClass.slug, handlerId, activityType,
 			});
 			if (!graphNode) continue;
 			const requiredCapabilities = Array.isArray(unit.requiredCapabilities) ? unit.requiredCapabilities.map(String).filter(Boolean) : [];
 			const capacityPlanId = String(row.id);
+			const proposalId = text(row.proposal_id);
+			const operationHandoff = await approvedOperationHandoffForWorkUnit(database, {
+				teamId: run.teamId, projectId: project.id, decisionId, proposalId,
+				workUnitId: sourceId, workGraphNodeId: graphNode.nodeId,
+			});
 			const capacityPlanStatus = String(row.status);
 			const decisionInput = decodeDurableJsonObject(JSON.stringify(record(unit.decisionInput)), { owner: 'capacity plan work unit', ownerId: sourceId, column: 'decisionInput' });
 			const governedInput = {
@@ -140,7 +148,7 @@ export async function listActingDemandSources(
 			sources.push({
 				sourceType: 'capacity-plan', sourceId, decisionId, capacityPlanId, projectAgentClassId,
 				agentId, handlerId,
-				activityType: text(unit.activityType) ?? 'acting', priority: Number(record(unit.metadata).priority ?? 100),
+				activityType, priority: Number(record(unit.metadata).priority ?? 100),
 				requestedSeconds, requiredCapabilities, agentContentPath: authorizedClass.contentPath,
 				payload: {
 					agentContentPath: authorizedClass.contentPath,
@@ -152,6 +160,7 @@ export async function listActingDemandSources(
 						artifactKinds: graphNode.outputRequirements.map((requirement) => text(requirement.outputType)).filter(Boolean),
 					},
 					decisionExecutionInputId: unit.decisionExecutionInputId ?? null, estimateId, ...graphNode,
+					...(operationHandoff ? { operationHandoffId: operationHandoff.id, operationHandoffDiscussionId: operationHandoff.discussionId, operationHandoffSourceMessageRefs: operationHandoff.sourceMessageRefs } : {}),
 				},
 			});
 		}

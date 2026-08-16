@@ -5,7 +5,9 @@ export function authClass(path, method = 'get') {
         return 'provider-proof';
     if (path.startsWith('/v1/provider/'))
         return 'provider-access-token';
-    if (path.startsWith('/v1/platform/runners/'))
+    if (path.startsWith('/v1/platform/runners/')
+        || path === '/v1/internal/treedx/authoring-journal/status'
+        || path === '/v1/internal/treedx/credential-deliveries/prepare')
         return 'platform-runner';
     if (path.startsWith('/v1/acceptance/teams/'))
         return 'team-member';
@@ -87,7 +89,9 @@ export function routeNeedsManagement(path, method) {
         return true;
     if (method === 'get')
         return false;
-    if (path.includes('/capacity-provider-requests') || path.includes('/capacity-provider-memberships') || path.includes('/workday-runs'))
+    if (path.includes('/capacity-provider-requests') || path.includes('/capacity-provider-memberships')
+		|| path.includes('/workday-runs') || path.includes('/workday-schedules') || path.includes('/agent-lab/')
+		|| path.includes('/agent-deployments') || (path.includes('/agent-invocations/') && path.endsWith('/cancel')))
         return true;
     return /\/members\/|\/invites|\/api-keys|\/capacity\/|\/capacity-grants|\/services|\/vault|\/credential-profiles|\/operation-leases|\/external-vault|\/treedx/u.test(path);
 }
@@ -95,7 +99,9 @@ export function routeNeedsManagement(path, method) {
 export function successActorsFor(path, method) {
     if (path.startsWith('/v1/provider/'))
         return ['providerAccessToken'];
-    if (path.startsWith('/v1/platform/runners/'))
+    if (path.startsWith('/v1/platform/runners/')
+        || path === '/v1/internal/treedx/authoring-journal/status'
+        || path === '/v1/internal/treedx/credential-deliveries/prepare')
         return ['platformRunner'];
     if (path.startsWith('/v1/acceptance/teams/'))
         return TEAM_MANAGER_ACTORS;
@@ -107,6 +113,8 @@ export function successActorsFor(path, method) {
         return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/platform/operations'))
         return PLATFORM_ADMIN_ACTORS;
+	if (path === '/v1/discussions')
+		return PROJECT_MEMBER_ACTORS;
     if (path.startsWith('/v1/admin/feedback'))
         return ['siteAdmin'];
     if (path === '/v1/feedback')

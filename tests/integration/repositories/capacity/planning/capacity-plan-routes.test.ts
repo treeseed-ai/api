@@ -53,9 +53,21 @@ describe('capacity plan routes', () => {
 			async getAgentCapacityPlan() { return { id: 'plan-a', projectId: 'project-a' }; },
 			updateAgentCapacityPlanStatus,
 		}, permissions);
-		const response = await app.request('/v1/capacity-plans/plan-a/accept', { method: 'POST', body: '{}' });
+		const response = await app.request('/v1/capacity-plans/plan-a/accept', { method: 'POST', headers: { 'Idempotency-Key': 'accept-plan-a' }, body: '{}' });
 		expect(response.status).toBe(200);
-		expect(updateAgentCapacityPlanStatus).toHaveBeenCalledWith('plan-a', 'accepted', {});
+		expect(updateAgentCapacityPlanStatus).toHaveBeenCalledWith('plan-a', 'accepted', { idempotencyKey: 'accept-plan-a' });
 		expect(permissions).toEqual(['projects:manage:team']);
+	});
+
+	it('rejects a capacity-plan mutation without durable replay identity', async () => {
+		const updateAgentCapacityPlanStatus = vi.fn();
+		const app = appWith({
+			async getAgentCapacityPlan() { return { id: 'plan-a', projectId: 'project-a' }; },
+			updateAgentCapacityPlanStatus,
+		});
+		const response = await app.request('/v1/capacity-plans/plan-a/accept', { method: 'POST', body: '{}' });
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({ code: 'capacity_idempotency_key_required' });
+		expect(updateAgentCapacityPlanStatus).not.toHaveBeenCalled();
 	});
 });

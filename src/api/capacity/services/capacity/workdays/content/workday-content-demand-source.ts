@@ -1,4 +1,5 @@
 import { TreeDxClient } from '@treeseed/sdk/treedx/client';
+import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type { WorkdayProject } from '../policy/workday-project-policy.ts';
@@ -54,12 +55,16 @@ export async function listTreeDxPlanningDemandSources(
 				includeBody: true, includeFrontmatter: true,
 			});
 			for (const candidate of response.results ?? response.files ?? []) {
-				const file = record(candidate); const frontmatter = record(file.frontmatter);
+				const file = record(candidate); const frontmatter = record(file.frontmatter); const path = text(file.path);
+				if (!path) continue;
+				const validation = validatePortableContentData(model.model, frontmatter);
+				if (!validation.ok) throw new CapacityGovernanceError('capacity_workday_content_model_invalid', 'TreeDX planning content failed model validation.', 409, {
+					projectId: project.id, repositoryId: connection.repositoryId, path, model: model.model, diagnostics: validation.diagnostics,
+				});
 				const status = text(frontmatter.status).toLowerCase();
 				if (CLOSED.has(status)) continue;
-				const path = text(file.path); if (!path) continue;
 				if (model.model === 'objective' && selectedObjectives.size && !selectedObjectives.has(id(path))) continue;
-				const sourceType = model.model === 'question' && ['gap', 'knowledge-gap', 'research-gap'].includes(text(frontmatter.question_type ?? frontmatter.questionType).toLowerCase())
+				const sourceType = model.model === 'question' && text(frontmatter.question_type ?? frontmatter.questionType).toLowerCase() === 'knowledge-gap'
 					? 'knowledge-gap' : model.type;
 				sources.push({
 					sourceType, sourceId: `${model.model}:${id(path)}`, priority: model.priority,
@@ -69,6 +74,7 @@ export async function listTreeDxPlanningDemandSources(
 			}
 		}
 	} catch (error) {
+		if (error instanceof CapacityGovernanceError) throw error;
 		throw new CapacityGovernanceError('capacity_workday_treedx_demand_query_failed', 'TreeDX could not compile project planning demand.', 503, {
 			projectId: project.id, repositoryId: connection.repositoryId, details: error instanceof Error ? error.message : String(error),
 		});

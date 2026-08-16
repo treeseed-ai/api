@@ -176,7 +176,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 								privateTeamTreeDxDefault: true,
 							},
 						}).catch(() => null);
-						await store.upsertHubRepository(project.id, {
+					await store.upsertHubRepository(project.id, {
 						teamId: team.id,
 						role: 'software',
 						provider: 'github',
@@ -187,6 +187,72 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 						status: 'ready',
 						metadata: { acceptance: true, namespace },
 					}).catch(() => null);
+					const agentClassId = `${project.id}:visual-audit`;
+					const agentClass = await capacity.getProjectAgentClass(project.id, agentClassId)
+						?? await capacity.createProjectAgentClass(project.id, {
+							id: agentClassId,
+							slug: 'visual-audit',
+							name: 'Visual Audit Agent',
+							status: 'active',
+							allowedModes: ['planning'],
+							requiredCapabilities: [],
+							handlerRefs: {
+								agents: [{
+									slug: 'visual-audit-agent',
+									name: 'Visual Audit Agent',
+									groupIds: [],
+									contentPath: 'src/content/agents/visual-audit-agent.mdx',
+									enabled: true,
+									activities: {
+										planning: {
+											handler: 'writer',
+											purpose: 'Keep the authenticated Agent Lab acceptance surface visibly inspectable.',
+											planningPriority: 1,
+										},
+									},
+								}],
+								signalContracts: {},
+								proposalTypeContracts: {},
+								groupContracts: {},
+								groupEdgeContracts: {},
+							},
+							metadata: { acceptance: true, namespace, immutableRef: `acceptance:${namespace}` },
+						}, `acceptance-${namespace}-agent-class`);
+					const workdayRunId = `workday-run-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+					const workdayRun = await capacity.getCapacityWorkdayRun(team.id, workdayRunId)
+						?? await capacity.createCapacityWorkdayRun(team.id, {
+							id: workdayRunId,
+							scenarioId: 'Acceptance Atlas readiness',
+							status: 'queued',
+							environment: 'local',
+							parameters: { acceptance: true, namespace, durationSeconds: 0 },
+						});
+					const workdayEventId = `event-${namespace}-atlas-ready`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+					const existingWorkdayEvent = await store.first(`SELECT id FROM capacity_workday_events WHERE id = ? LIMIT 1`, [workdayEventId]).catch(() => null);
+					const workdayEvent = existingWorkdayEvent ?? await capacity.createCapacityWorkdayEvent(team.id, workdayRunId, {
+						id: workdayEventId,
+						projectId: project.id,
+						eventType: 'acceptance.atlas.ready',
+						status: 'recorded',
+						title: 'Acceptance agent topology ready',
+						message: 'A validated project agent definition is available for Atlas inspection.',
+						metadata: { acceptance: true, namespace, agentId: 'visual-audit-agent' },
+					});
+					for (let index = 1; index <= 26; index += 1) {
+						const suffix = String(index).padStart(2, '0');
+						const eventId = `event-${namespace}-forensic-${suffix}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
+						const existing = await store.first(`SELECT id FROM capacity_workday_events WHERE id = ? LIMIT 1`, [eventId]).catch(() => null);
+						if (existing) continue;
+						await capacity.createCapacityWorkdayEvent(team.id, workdayRunId, {
+							id: eventId,
+							projectId: project.id,
+							eventType: 'acceptance.atlas.forensic',
+							status: 'recorded',
+							title: `Acceptance forensic event ${suffix}`,
+							message: `Acceptance forensic event ${suffix} is available for filter and paging verification.`,
+							metadata: { acceptance: true, namespace, sequence: index },
+						});
+					}
 					const workday = await capacity.createWorkdayCapacityEnvelope({
 						id: `workday-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
 						projectId: project.id,
@@ -319,6 +385,9 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 								memberships: membershipFixtures,
 								session: { id: actors.teamOwner?.sessionId ?? actors.siteAdmin?.sessionId ?? null },
 								workday: { id: workday?.id ?? `workday-${namespace}` },
+								agentClass: { id: agentClass?.id ?? agentClassId },
+								workdayRun: { id: workdayRun?.id ?? workdayRunId },
+								workdayEvent: { id: workdayEvent?.id ?? workdayEventId },
 								job: { id: operation?.id ?? `operation-${namespace}` },
 								platformOperation: { id: operation?.id ?? `operation-${namespace}` },
 								platformRunner: { id: platformRunner?.id ?? platformRunnerId },

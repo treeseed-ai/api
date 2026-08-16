@@ -15,6 +15,7 @@ import { synthesizeProviderAssignments } from './services/capacity/assignments/c
 import { recoverExpiredProviderAssignments as recoverExpiredAssignments } from './services/capacity/assignments/lifecycle/assignment-recovery-service.ts';
 import { recordProviderAssignmentExplanation as persistProviderAssignmentExplanation } from './services/capacity/assignments/observability/assignment-explanation-service.ts';
 import { OperatorAssignmentService } from './services/capacity/assignments/observability/operator-assignment-service.ts';
+import { closeTerminalAssignmentWorkspace } from './services/capacity/assignments/observability/assignment-terminal-workspace.ts';
 import { CapacityOperationsQueryService } from './services/capacity/capacity-core/capacity-operations-query-service.ts';
 import { NativeCapacityService } from './services/capacity/capacity-core/native-capacity-service.ts';
 import { CapacitySummaryService } from './services/capacity/observability/capacity-summary-service.ts';
@@ -25,11 +26,12 @@ import { buildWorkdayCapacitySummary } from './services/capacity/workdays/assign
 import { CapacityWorkdayEventService } from './services/capacity/workdays/content/workday-event-service.ts';
 import { terminalizeCapacityWorkdayAssignments as terminalizeWorkdayAssignments } from './services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
 import { closeCapacityWorkdayAdmission as closeWorkdayAdmission,terminalizeCapacityWorkdayEnvelopes as terminalizeWorkdayEnvelopes } from './services/capacity/workdays/lifecycle/workday-envelope-terminalization-service.ts';
+import { fenceCapacityWorkdayAdmission as fenceWorkdayAdmission } from './services/capacity/workdays/lifecycle/workday-admission-fence-service.ts';
 import { maintainCapacityWorkdayRuns as maintainWorkdayRuns } from './services/capacity/workdays/lifecycle/workday-recovery-service.ts';
 import type { WorkdayProject } from './services/capacity/workdays/policy/workday-project-policy.ts';
 import { CapacityWorkdayRunService } from './services/capacity/workdays/scheduling/workday-run-service.ts';
 import { CapacityWorkdayScheduleService } from './services/capacity/workdays/scheduling/workday-schedule-service.ts';
-import { scheduleCapacityWorkdayRun as scheduleWorkdayRun } from './services/capacity/workdays/scheduling/workday-scheduling-service.ts';
+import { preflightCapacityWorkdayRun as preflightWorkdayRun,scheduleCapacityWorkdayRun as scheduleWorkdayRun } from './services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 import { tickCapacityWorkdayRun as tickWorkdayRun } from './services/capacity/workdays/scheduling/workday-tick-service.ts';
 import { createConfiguredWorkdayTreeDxWorkspace } from './services/capacity/workdays/treedx/workday-treedx-workspace-service.ts';
 import { ResearchWorkflowService } from './services/operations/research-workflow-service.ts';
@@ -256,12 +258,18 @@ class CapacityControlPlane {
 	async scheduleCapacityWorkdayRun(run: DurableCapacityWorkdayRun) {
 			return scheduleWorkdayRun(this.capacityContext, run);
 		}
+	async preflightCapacityWorkdayRun(run: DurableCapacityWorkdayRun) {
+		return preflightWorkdayRun(this.capacityContext, run);
+	}
 	async terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string) {
 			return terminalizeWorkdayEnvelopes(this.capacityContext, teamId, runId, status);
 		}
 	async closeCapacityWorkdayAdmission(teamId: string, runId: string) {
 		return closeWorkdayAdmission(this.capacityContext, teamId, runId);
 		}
+	async fenceCapacityWorkdayAdmission(teamId: string, runId: string) {
+		return fenceWorkdayAdmission(this.capacityContext, teamId, runId);
+	}
 	async synthesizeProviderAssignments(principal: ProviderLeasePrincipal, input: ProviderSynthesisRequest = {}) {
 			return synthesizeProviderAssignments(this.capacityContext, principal, input);
 		}
@@ -269,7 +277,7 @@ class CapacityControlPlane {
 		return tickWorkdayRun(this.capacityContext, teamId, runId, now, idempotencyKey);
 		}
 	async cancelCapacityAssignment(teamId: string, assignmentId: string, input: JsonRecord = {}) {
-		return new OperatorAssignmentService(this.capacityContext).cancel(teamId, assignmentId, {
+		return new OperatorAssignmentService(this.capacityContext, (assignment) => closeTerminalAssignmentWorkspace(this.capacityContext, assignment)).cancel(teamId, assignmentId, {
 			idempotencyKey: String(input.idempotencyKey ?? ''), actorId: typeof input.actorId === 'string' ? input.actorId : null,
 			reason: typeof input.reason === 'string' ? input.reason : null,
 		});
@@ -321,6 +329,9 @@ class CapacityControlPlane {
 	async createCapacityWorkdayRun(teamId: string, input: JsonRecord = {}) {
 			return new CapacityWorkdayRunService(this.capacityContext).create(teamId, input);
 		}
+	async preflightCapacityWorkdayRunRequest(teamId: string, input: JsonRecord = {}) {
+		return new CapacityWorkdayRunService(this.capacityContext).preflight(teamId, input);
+	}
 	async terminalizeCapacityWorkdayAssignments(teamId: string, runId: string, input: JsonRecord = {}) {
 			return terminalizeWorkdayAssignments(this.capacityContext, teamId, runId, input);
 		}

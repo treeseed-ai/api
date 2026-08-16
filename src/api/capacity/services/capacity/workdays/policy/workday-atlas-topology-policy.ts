@@ -90,9 +90,7 @@ export function compileWorkdayAtlasTopology(input: {
       id: `agent:${projectId}:${agent.nodeId}`,
       kind: "agent",
       projectId,
-      parentId: agent.primaryGroupId
-        ? `group:${projectId}:${agent.primaryGroupId}`
-        : projectNodeId,
+		parentId: projectNodeId,
       name: agent.displayName,
       slug: agent.slug,
       capacityClass: agent.projectAgentClassSlug,
@@ -100,7 +98,7 @@ export function compileWorkdayAtlasTopology(input: {
       directGroupIds: agent.groupIds,
       effectiveGroupIds: effectiveGroups(agent.groupIds),
       contentPath: agent.contentPath,
-      metadata: { planningNodeId: agent.nodeId, handler: agent.handler, primaryGroupId: agent.primaryGroupId },
+		metadata: { planningNodeId: agent.nodeId, handler: agent.handler },
     });
   const edges: AgentAtlasTopologyEdge[] = [];
   for (const agent of input.planning.agents)

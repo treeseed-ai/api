@@ -13,13 +13,19 @@ import { CapacityOperatorEvidenceService } from '../../services/support/operator
 import { readCapacityRequestObject } from './request-json.ts';
 import { installOperatorActivityRoutes, installOperatorWorkdayRoutes } from './operator-workdays.ts';
 import { installOperatorAgentLabRoutes } from './agent-lab/operator-agent-lab.ts';
+import { installOperatorAssignmentContentRoutes } from './operator-assignment-content.ts';
+import { observeAssignmentCleanup } from '../../services/capacity/assignments/observability/assignment-cleanup-observation-service.ts';
+import { readAssignmentContentIntegrations } from '../../services/capacity/assignments/observability/assignment-content-integration-service.ts';
+import { assignmentAuthorityProbe } from '../../services/capacity/assignments/observability/assignment-authority-probe-service.ts';
 
 export interface CapacityOperatorStore extends CapacityGovernanceDatabase {
 	listCapacityWorkdayRunsPage(teamId: string, filters: Record<string, unknown> & { limit: number; cursor: CapacityPageCursor | null }): Promise<CapacityPage<Record<string, unknown>>>;
 	createCapacityWorkdayRun(teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+	preflightCapacityWorkdayRunRequest(teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
 	getCapacityWorkdayRun(teamId: string, runId: string): Promise<Record<string, unknown> | null>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	tickCapacityWorkdayRun(teamId: string, runId: string, now?: string, idempotencyKey?: string): Promise<Record<string, unknown>>;
+	fenceCapacityWorkdayAdmission(teamId: string, runId: string): Promise<Record<string, unknown>>;
 	listCapacityWorkdayEventsPage(teamId: string, runId: string, filters: { limit: number; cursor: CapacityPageCursor | null; afterEventIndex?: number | null }): Promise<CapacityPage<Record<string, unknown>>>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: Record<string, unknown>): Promise<unknown>;
 	createCapacityWorkdaySchedule(teamId: string, input: Record<string, unknown>): Promise<unknown>;
@@ -105,8 +111,9 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 	const evidence = new CapacityOperatorEvidenceService(options.store);
 	const read = (c: Context) => options.requireTeamAccess(c, options.store, c.req.param('teamId'), 'projects:read:team');
 	const manage = (c: Context) => options.requireTeamAccess(c, options.store, c.req.param('teamId'), 'teams:manage:team');
+	const diagnose = (c: Context) => options.requireTeamAccess(c, options.store, c.req.param('teamId'), 'workday:diagnose');
 	const workdayDependencies = {
-		store, read, manage, query, page, notFound, operatorError,
+		store, read, manage, diagnose, query, page, notFound, operatorError,
 		runtimeMarketAuthProvider: options.runtimeMarketAuthProvider,
 		environment: options.config?.environment,
 		requireTeamAccess: (c: Context, teamId: string) => options.requireTeamAccess(c, options.store, teamId, 'projects:read:team'),
@@ -114,6 +121,7 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 	installOperatorWorkdayRoutes(app, workdayDependencies);
 	installOperatorActivityRoutes(app, workdayDependencies);
 	installOperatorAgentLabRoutes(app, workdayDependencies);
+	installOperatorAssignmentContentRoutes(app,{ store,manage,operatorError });
 
 	app.get('/v1/teams/:teamId/capacity/availability-sessions', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
@@ -151,8 +159,13 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 
 	app.get('/v1/teams/:teamId/capacity/assignments/:assignmentId', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
-		const assignment = await store.getProviderAssignment(c.req.param('teamId'), c.req.param('assignmentId'));
-		return assignment ? c.json({ ok: true, payload: assignment }) : notFound(c, 'Unknown assignment.');
+		const teamId=c.req.param('teamId'); const assignmentId=c.req.param('assignmentId');
+		const assignment = await store.getProviderAssignment(teamId,assignmentId);
+		if(!assignment)return notFound(c, 'Unknown assignment.');
+		const [cleanup,contentIntegrations]=await Promise.all([
+			observeAssignmentCleanup(store,assignment),readAssignmentContentIntegrations(store,teamId,assignmentId),
+		]);
+		return c.json({ ok: true, payload: { ...assignment,cleanup,contentIntegrations } });
 	});
 
 	app.get('/v1/teams/:teamId/capacity/execution-runs', async (c) => {
@@ -177,6 +190,15 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 		const assignment = await store.getProviderAssignment(c.req.param('teamId'), c.req.param('assignmentId'));
 		if (!assignment) return notFound(c, 'Unknown assignment.');
 		return c.json({ ok: true, payload: assignment.explanation ?? {} });
+	});
+
+	app.get('/v1/teams/:teamId/capacity/assignments/:assignmentId/authority-probe', async (c) => {
+		const access = await diagnose(c); if (access.response) return access.response;
+		try {
+			const assignment = await store.getProviderAssignment(c.req.param('teamId'),c.req.param('assignmentId'));
+			if (!assignment) return notFound(c,'Unknown assignment.');
+			return c.json({ ok:true,payload:assignmentAuthorityProbe(assignment) },200,{ 'Cache-Control':'private, no-store' });
+		} catch(error) { return operatorError(error); }
 	});
 
 	const evidencePage = (c: Context) => ({

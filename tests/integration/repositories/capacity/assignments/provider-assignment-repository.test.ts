@@ -1,6 +1,8 @@
 import { describe,expect,it } from 'vitest';
 import { CapacityGovernanceError } from '../../../../../src/api/capacity/database.ts';
 import { serializeProviderAssignmentRow } from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { commitCapacityAdmission } from '../../../../../src/api/capacity/services/support/admission-service.ts';
+import { capacityAdmissionInput,createCapacityAdmissionTestHarness,seedCapacityAdmissionDependencies } from '../../../../support/capacity/admission.ts';
 
 function assignmentRow(overrides: Record<string, unknown> = {}) {
 	return {
@@ -56,5 +58,21 @@ describe('ProviderAssignmentRepository serialization', () => {
 		expect(() => serializeProviderAssignmentRow(assignmentRow(overrides))).toThrowError(
 			expect.objectContaining<Partial<CapacityGovernanceError>>({ code: expectedCode }),
 		);
+	});
+});
+
+describe('invocation assignment admission',()=>{
+	it('binds the exact invocation in the same atomic admission batch',async()=>{
+		const {database,store}=createCapacityAdmissionTestHarness();
+		try{
+			await store.ensureInitialized(); const now=new Date().toISOString();
+			await seedCapacityAdmissionDependencies(store,now);
+			await store.run(`INSERT INTO workday_capacity_envelopes (id,team_id,project_id,allocation_set_id,status,started_at,envelope_json,metadata_json,created_at,updated_at) VALUES ('workday-a','team-a','project-a','allocation-a','active',?,'{"availableSeconds":10,"totalSeconds":10}','{}',?,?)`,[now,now,now]);
+			await store.run(`INSERT INTO agent_invocation_requests (id,team_id,project_id,project_agent_class_id,agent_id,mode,execution_kind,trigger_kind,status,scope_hash,blocking_state_json,available_at,idempotency_key,request_digest,requested_at,updated_at) VALUES ('invocation-a','team-a','project-a','class-a','agent-a','planning','conversation','discussion','admitted','scope-a','{"code":"communication_admission_claimed"}',?,'invoke-a','digest-a',?,?)`,[now,now,now]);
+			const input=capacityAdmissionInput(1,0,now);
+			const admitted=await commitCapacityAdmission(store,{idempotencyKey:'admit-invocation-a',admission:input,reservationId:'reservation-a',assignmentId:'assignment-a',assignment:{projectAgentClassId:'class-a',workDayId:'workday-a',providerSessionId:null,invocationId:'invocation-a',executionKind:'conversation',triggerKind:'discussion'}});
+			expect(admitted.assignment.id).toBe('assignment-a');
+			expect(await store.first(`SELECT status,assignment_id,blocking_state_json FROM agent_invocation_requests WHERE id='invocation-a'`)).toEqual({status:'running',assignment_id:'assignment-a',blocking_state_json:'{}'});
+		}finally{await database.close();}
 	});
 });

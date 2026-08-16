@@ -31,16 +31,18 @@ export function serializeAvailabilitySessionRow(row: Row | null): ProviderAvaila
 	const nativeLimits = decodeDurableJsonObject(row.native_limits_json, context(id, 'native_limits_json'));
 	const pressure = decodeDurableJsonObject(row.runner_pressure_json, context(id, 'runner_pressure_json'));
 	const constraints = decodeDurableJsonObject(row.constraints_json, context(id, 'constraints_json'));
+	const communicationProviders=executionProviders.filter((provider)=>Number(provider.maxConcurrentRunners)>=2&&Array.isArray(provider.lanes)&&provider.lanes.some((lane)=>lane&&typeof lane==='object'&&(lane as JsonRecord).purpose==='communication')&&provider.lanes.some((lane)=>lane&&typeof lane==='object'&&(lane as JsonRecord).purpose==='operation'));
+	const communicationReady=communicationProviders.length>0;
 	const pressureValue = String(pressure.throttleState ?? pressure.pressure ?? 'normal');
 	if (!['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(pressureValue)) throw new CapacityGovernanceError('provider_availability_pressure_invalid', `Availability session ${id} has invalid pressure.`, 500, { sessionId: id });
 	return {
 		id, membershipId: text(row.membership_id), teamId: text(row.team_id), providerId: text(row.capacity_provider_id), status: status(row.status, id), sequence,
-		snapshot: {
+			snapshot: {
 			sequence, availableFrom: text(row.available_from || row.opened_at), availableUntil: nullableText(row.available_until),
 			pressure: pressureValue as ProviderAvailabilitySession['snapshot']['pressure'],
 			maxConcurrentAssignments: Number(pressure.maxConcurrentRunners ?? nativeLimits.maxConcurrentRunners ?? 0),
 			activeAssignmentIds: Array.isArray(pressure.activeAssignmentIds) ? pressure.activeAssignmentIds.map(String) : [],
-			executionProviders: executionProviders as unknown as ProviderAvailabilitySession['snapshot']['executionProviders'], capabilities, constraints,
+			executionProviders: executionProviders as unknown as ProviderAvailabilitySession['snapshot']['executionProviders'],communicationReady,communicationBlockers:communicationReady?[]:['provider_requires_two_global_slots_and_distinct_communication_operation_lanes'], capabilities, constraints,
 		},
 		openedAt: text(row.opened_at), refreshedAt: text(row.refreshed_at), expiresAt: text(row.expires_at), closedAt: nullableText(row.closed_at),
 	};

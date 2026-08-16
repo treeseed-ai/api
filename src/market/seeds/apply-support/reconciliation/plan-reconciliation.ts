@@ -1,4 +1,4 @@
-import { actionIsUnchanged,catalogArtifactCurrentPayload,hubRepositoryCurrentPayload,productCurrentPayload,projectCurrentPayload,projectSeedMetadataRequiresMigration,teamCurrentPayload } from '../index.js';
+import { actionIsUnchanged,catalogArtifactCurrentPayload,hubRepositoryCurrentPayload,productCurrentPayload,projectCurrentPayload,projectSeedMetadataRequiresMigration,resolveSeedReferences,teamCurrentPayload } from '../index.js';
 
 export function selectedActions(plan) {
     return plan.actions.filter((action) => action.action !== 'skip' && action.environments.some((environment) => plan.environments.includes(environment)));
@@ -12,6 +12,10 @@ export async function reconcilePlanWithStore(plan, store) {
     const teamIds = new Map();
     const projectIds = new Map();
     const productIds = new Map();
+	for (const resource of await resolveSeedReferences(store, plan.references ?? [])) {
+		if (resource.kind === 'team') teamIds.set(resource.key, resource.id);
+		if (resource.kind === 'project') projectIds.set(resource.key, resource.id);
+	}
     const nextActions = [];
     for (const action of plan.actions) {
         if (action.action === 'skip') {

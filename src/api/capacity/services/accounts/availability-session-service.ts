@@ -5,6 +5,7 @@ import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../../repositories/accounts/availability-session.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
+import { isMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
 
 type JsonRecord = Record<string, unknown>;
 export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: string; capacityProviderId: string; }
@@ -71,6 +72,7 @@ export class AvailabilitySessionService {
 		if (availableUntil && Date.parse(availableUntil) <= Date.parse(availableFrom)) throw new CapacityGovernanceError('provider_availability_window_invalid', 'availableUntil must be after availableFrom.', 400);
 		const executionProviders = objects(input.executionProviders ?? input.execution_providers);
 		if (executionProviders.some((entry) => typeof entry.id !== 'string' || !entry.id.trim())) throw new CapacityGovernanceError('provider_execution_provider_invalid', 'Every execution provider snapshot requires an id.', 400);
+		if (executionProviders.some((entry) => entry.minimumAssignmentDuration !== undefined && !isMinimumAssignmentDuration(entry.minimumAssignmentDuration))) throw new CapacityGovernanceError('provider_execution_provider_minimum_duration_invalid', 'Every advertised minimum assignment duration must satisfy the SDK contract.', 400);
 		return {
 			id, membershipId: principal.membershipId, teamId: principal.teamId, providerId: principal.capacityProviderId,
 			environment: typeof input.environment === 'string' ? input.environment : null, sequence, openedAt: now, refreshedAt: now, expiresAt, availableFrom, availableUntil,

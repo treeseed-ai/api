@@ -18,6 +18,7 @@ import { installFeedbackAdministrationRoutes } from "../routes/feedback/administ
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installDiscussionRoutes } from "../routes/discussions/discussions.ts";
 import { installSessionEventRoutes } from "../routes/realtime/session-events.ts";
+import { installClientActionRoutes } from "../routes/realtime/client-actions.ts";
 import { installGovernanceCommonsProposalsQuestionsAndVotesRoutes } from "../routes/governance/commons/governance-commons-proposals-questions-and-votes.ts";
 import { installGovernanceCommonsReviewsDecisionsAndDelegationsRoutes } from "../routes/governance/commons/governance-commons-reviews-decisions-and-delegations.ts";
 import { installKnowledgeAuthoringRoutes } from "../routes/knowledge/authoring.ts";
@@ -60,6 +61,7 @@ export function installPlatformRoutes(context: any): void {
   installFeedbackSubmissionRoutes(context);
   installDiscussionRoutes(context);
   installSessionEventRoutes(context);
+  installClientActionRoutes(context);
   installFeedbackAdministrationRoutes(context);
   installContextualKnowledgeRoutes(context);
   installKnowledgeAuthoringRoutes(context);

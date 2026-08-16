@@ -1,5 +1,5 @@
 import type { CapacityGovernanceDatabase } from '../../database.ts';
-import { decodeDurableJsonObject } from '../../durable-json.ts';
+import { decodeDurableJsonArray, decodeDurableJsonObject } from '../../durable-json.ts';
 import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
 import { serializeResearchWorkflowRow } from '../../repositories/operations/research-workflow.ts';
 import { listCapacityWorkdayContentArtifactRefs,type CapacityWorkdayResolvedIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
@@ -155,6 +155,40 @@ export async function resolvePlanningDemandSource(
 	agent: CapacityWorkdayAgent,
 	intent: CapacityWorkdayResolvedIntent,
 ): Promise<PlanningDemandSource> {
+	if (agent.activityType === 'chat') {
+		const invocation = await database.first(
+			`SELECT * FROM agent_invocation_requests
+			 WHERE team_id = ? AND project_id = ? AND execution_id = ? AND agent_id = ?
+			   AND execution_kind = 'conversation' AND status = 'admitted'
+			 ORDER BY priority_class DESC, requested_at ASC, id ASC LIMIT 1`,
+			[run.teamId, project.id, run.id, agent.slug],
+		);
+		if (invocation) {
+			const workdayParameters=record(run.parameters);
+			const metadata = decodeDurableJsonObject(invocation.metadata_json, {
+				owner: 'agent invocation', ownerId: String(invocation.id), column: 'metadata_json',
+			});
+			const contentRefs = decodeDurableJsonArray<string>(invocation.content_refs_json, {
+				owner: 'agent invocation', ownerId: String(invocation.id), column: 'content_refs_json',
+			});
+			return {
+				sourceType: 'planning-input', sourceId: String(invocation.id), decisionId: text(invocation.decision_id),
+				priority: invocation.priority_class === 'human-interactive' ? 400
+					: invocation.priority_class === 'workday-blocking-agent' ? 300
+						: invocation.priority_class === 'agent-asynchronous' ? 200 : 100,
+				payload: {
+					intent: { ...intent, discussionIntent: 'discuss' }, planningSource: 'discussion-invocation',
+					agentInvocationId: String(invocation.id), discussionId: text(metadata.discussionId),
+					discussionMessageId: text(metadata.sourceMessageId), subjectPath: contentRefs[0] ?? null,
+					contentBaseRef: text(metadata.sourceCommit), contextPack: { digest: invocation.subject_digest ?? null, refs: contentRefs },
+					parentWorkdayId: text(invocation.parent_workday_id), parentAssignmentId: text(invocation.parent_assignment_id),
+					providerSourceClosureDigest: text(workdayParameters.providerSourceClosureDigest),
+					handoffRootId: text(invocation.handoff_root_id), handoffParentId: text(invocation.handoff_parent_id),
+					handoffDepth: Number(invocation.handoff_depth ?? 0), triggerKind: text(invocation.trigger_kind),
+				},
+			};
+		}
+	}
 	const discussion = record(record(run.parameters).discussion);
 	if (agent.activityType === 'chat' && text(discussion.discussionId) && text(discussion.messageId)) return {
 		sourceType: 'planning-input', sourceId: `discussion-message:${text(discussion.messageId)}`, decisionId: text(discussion.decisionId), priority: 110,
@@ -168,8 +202,8 @@ export async function resolvePlanningDemandSource(
 	const research = await researchWorkflowSource(database, project, agent, intent);
 	if (research) return research;
 	const rows = await database.all(
-		`SELECT * FROM planning_input_requests
-		 WHERE team_id = ? AND project_id = ? AND status = 'requested'
+		`SELECT * FROM agent_invocation_requests
+		 WHERE team_id = ? AND project_id = ? AND execution_kind = 'workday' AND status = 'queued'
 		   AND (project_agent_class_id = ? OR project_agent_class_id IS NULL)
 		 ORDER BY requested_at ASC, id ASC LIMIT 25`,
 		[run.teamId, project.id, agent.projectAgentClassId],

@@ -324,7 +324,7 @@ export async function recordPrivateKnowledgeAudit(store, input: any = {}) {
 export const AGENT_TASK_SIGNATURES = {
     'question.summarize': {
         defaultSeconds: 300,
-        requiredCapabilities: ['agent_execution'],
+        requiredCapabilities: ['agent-execution'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -332,7 +332,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'proposal.draft': {
         defaultSeconds: 600,
-        requiredCapabilities: ['agent_execution'],
+        requiredCapabilities: ['agent-execution'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -340,7 +340,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'proposal.compare': {
         defaultSeconds: 600,
-        requiredCapabilities: ['agent_execution'],
+        requiredCapabilities: ['agent-execution'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -348,7 +348,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'decision.summary': {
         defaultSeconds: 480,
-        requiredCapabilities: ['agent_execution', 'reporting'],
+        requiredCapabilities: ['agent-execution', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -356,7 +356,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'release.summary': {
         defaultSeconds: 480,
-        requiredCapabilities: ['agent_execution', 'reporting'],
+        requiredCapabilities: ['agent-execution', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -364,7 +364,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'market.description.draft': {
         defaultSeconds: 480,
-        requiredCapabilities: ['agent_execution'],
+        requiredCapabilities: ['agent-execution'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -372,7 +372,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'repository.change.apply': {
         defaultSeconds: 1200,
-        requiredCapabilities: ['agent_execution', 'repository_work'],
+        requiredCapabilities: ['agent-execution', 'repository_work'],
         repositoryMutation: true,
         bindingWork: true,
         productionAllowed: false,
@@ -380,7 +380,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'verification.run': {
         defaultSeconds: 900,
-        requiredCapabilities: ['agent_execution', 'repository_work', 'reporting'],
+        requiredCapabilities: ['agent-execution', 'repository_work', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: false,
@@ -388,7 +388,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'workday.report': {
         defaultSeconds: 300,
-        requiredCapabilities: ['agent_execution', 'reporting'],
+        requiredCapabilities: ['agent-execution', 'reporting'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,

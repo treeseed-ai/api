@@ -48,6 +48,7 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 	if (!row) return null;
 	const id = text(row.id);
 	const workspaceContext = json(row.workspace_context_json, {}, 'workspace_context_json', id);
+	const metadata = json(row.metadata_json, {}, 'metadata_json', id);
 	const assignment = {
 		id,
 		membershipId: text(row.membership_id),
@@ -58,12 +59,25 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 		providerSessionId: row.provider_session_id == null ? null : text(row.provider_session_id),
 		executionProviderId: row.execution_provider_id == null ? null : text(row.execution_provider_id),
 		laneId: row.lane_id == null ? null : text(row.lane_id),
+		lanePurpose: row.lane_purpose == null ? null : text(row.lane_purpose) as DurableProviderAssignment['lanePurpose'],
+		communicationOverflow: Number(row.communication_overflow) === 1,
+		executionKind: text(row.execution_kind) as DurableProviderAssignment['executionKind'],
+		triggerKind: text(row.trigger_kind) as DurableProviderAssignment['triggerKind'],
+		invocationId: row.invocation_id == null ? null : text(row.invocation_id),
+		parentWorkdayId: row.parent_workday_id == null ? null : text(row.parent_workday_id),
+		parentAssignmentId: row.parent_assignment_id == null ? null : text(row.parent_assignment_id),
+		handoffRootId: row.handoff_root_id == null ? null : text(row.handoff_root_id),
+		handoffParentId: row.handoff_parent_id == null ? null : text(row.handoff_parent_id),
+		handoffDepth: Number(row.handoff_depth ?? 0),
+		sourceMessageRefs: (() => { try { return JSON.parse(text(row.source_message_refs_json) || '[]') as string[]; } catch { return []; } })(),
+		operationHandoffId: row.operation_handoff_id == null ? null : text(row.operation_handoff_id),
 		allocationSetId: row.allocation_set_id == null ? null : text(row.allocation_set_id),
 		projectAgentClassId: text(row.project_agent_class_id),
 		reservationId: row.reservation_id == null ? null : text(row.reservation_id),
 		workDayId: row.work_day_id == null ? null : text(row.work_day_id),
 		taskId: row.task_id == null ? null : text(row.task_id),
 		mode: text(row.mode),
+		executionMode: metadata.executionMode === 'production' ? 'production' : 'simulation',
 		status: text(row.status),
 		leaseState: text(row.lease_state),
 		leaseExpiresAt: row.lease_expires_at == null ? null : text(row.lease_expires_at),
@@ -93,7 +107,7 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 		fallbackOutputId: row.fallback_output_id == null ? null : text(row.fallback_output_id),
 		treedxProxyHandle: json(row.treedx_proxy_handle_json, {}, 'treedx_proxy_handle_json', id),
 		capabilityHandles: json(workspaceContext.capabilityHandles, {}, 'capability_handles', id),
-		metadata: json(row.metadata_json, {}, 'metadata_json', id),
+		metadata,
 		createdAt: text(row.created_at),
 		updatedAt: text(row.updated_at),
 	};

@@ -23,6 +23,7 @@ audit:
 negativeCases:
   - id: unauthorized-governance-mutation-denied
     verifierRefs: [api.endpoints.governance-and-decisions]
+  - id: stale-execution-authority-rejected
+    verifierRefs: [api.endpoints.governance-and-decisions]
 evidence:
   required: [guarantee_report, api_acceptance_report]
-

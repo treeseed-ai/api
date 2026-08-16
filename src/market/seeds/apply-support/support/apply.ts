@@ -1,4 +1,4 @@
-import { applyAction,approvalMatchesPlan,createLocalSeedStore,createProductionApproval,createSeedRunIfAvailable,ensureLocalSeedTeamMemberships,ensureProjectSeedDependencies,isoNow,manifestHashFor,mutationActions,planSeedWithStore,redactSeedApplyResult,seedRunInput,selectedActions,updateSeedRunIfAvailable } from '../index.js';
+import { addSeedReferencesToIds,applyAction,approvalMatchesPlan,createLocalSeedStore,createProductionApproval,createSeedRunIfAvailable,ensureLocalSeedTeamMemberships,ensureProjectSeedDependencies,isoNow,manifestHashFor,mutationActions,planSeedWithStore,redactSeedApplyResult,resolveSeedReferences,seedRunInput,selectedActions,updateSeedRunIfAvailable } from '../index.js';
 
 async function verifyAppliedSeed(input, store) {
     const observed = await planSeedWithStore({
@@ -70,15 +70,18 @@ export async function applySeedWithStore(input) {
         }
     }
     const appliedAt = isoNow();
-    const ids = { teams: new Map(), projects: new Map(), products: new Map(), productTeams: new Map() };
+    const ids = { teams: new Map(), projects: new Map(), projectTeams: new Map(), products: new Map(), productTeams: new Map() };
+	addSeedReferencesToIds(ids, await resolveSeedReferences(store, planned.plan.references ?? []));
     const repairs = [];
     const dependencyState = {};
 	for (const action of selectedActions(planned.plan)) {
         if (action.existing?.id) {
             if (action.kind === 'team')
                 ids.teams.set(action.key, action.existing.id);
-            if (action.kind === 'project')
+            if (action.kind === 'project') {
                 ids.projects.set(action.key, action.existing.id);
+				ids.projectTeams.set(action.key, ids.teams.get(action.payload.teamKey));
+			}
             if (action.kind === 'product') {
                 ids.products.set(action.key, action.existing.id);
                 ids.productTeams.set(action.key, action.existing.teamId);
@@ -87,6 +90,7 @@ export async function applySeedWithStore(input) {
         await applyAction({ action, store, ids, manifestHash, appliedAt, plan: planned.plan });
 		repairs.push(...await ensureProjectSeedDependencies({
             action, store, ids, manifestHash, appliedAt, env: input.env, localOnly: input.localOnly, dependencyState,
+			plan: planned.plan,
 		}));
 	}
 	const membershipClaims = {

@@ -1,6 +1,13 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.communication.live-proof:
+    kind: nodeScript
+    ownerPackage: "@treeseed/api"
+    command: scripts/guarantees/verify-agent-capability.ts
+    cwd: .
+    timeoutSeconds: 7200
+    resultSchema: treeseed.guarantee-verifier-result/v1
   api.capacity.provider.membership-admission-workflow:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -96,6 +103,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/runtime/provider-assignment-retry-policy.test.ts
     testName: rejects terminal mutations from an expired lease without mutation
+  api.capacity.assignment.closeout-window-lease-denied:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/services/capacity/assignments/assignment-time-budget.test.ts
+    testName: rejects returned work that has entered its closeout window
   api.capacity.assignment.expired-lease-recovery-converges:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -466,3 +478,14 @@ verifiers:
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts
     caseId: workday.diagnostics.inspect-mode-run-trace
+  api.capacity.assignment.required-discussion-response-suspends:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/services/capacity/assignments/assignment-discussion-resume.test.ts
+    testName: closes the prior demand and admits a new exact continuation after a human discussion response
+  api.agent-catalog.control-plane-live-proof:
+    kind: nodeScript
+    ownerPackage: "@treeseed/api"
+    command: scripts/guarantees/verify-agent-capability.ts
+    timeoutSeconds: 7200
+    resultSchema: treeseed.guarantee-verifier-result/v1

@@ -1,5 +1,6 @@
 import { MarketControlPlaneStore } from "../../../persistence/store.ts";
 interface RepositoryTopologyMetadata {
+    contentRepository?: Record<string, unknown>;
     siteRepository?: Record<string, unknown>;
     projectRepository?: Record<string, unknown>;
 }
@@ -13,6 +14,7 @@ export function buildRepositoryTopologySnapshotMethod(this: MarketControlPlaneSt
             githubUrl: binding.contentRepositoryUrl ?? null,
             defaultBranch: binding.contentRepositoryDefaultBranch ?? null,
             ref: binding.contentRepositoryRef ?? null,
+            authoringBranch: metadata.contentRepository?.authoringBranch ?? null,
             contentPath: binding.contentPath,
             treeDx: {
                 instanceId: instance.id,

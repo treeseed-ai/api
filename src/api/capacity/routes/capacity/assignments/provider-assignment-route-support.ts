@@ -9,9 +9,11 @@ export interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
 	renewProviderAssignmentLease(principal: CapacityProviderAccessPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	returnProviderAssignment(principal: CapacityProviderAccessPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	completeProviderAssignment(principal: CapacityProviderAccessPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+	preflightProviderAssignmentCompletion(principal: CapacityProviderAccessPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
 	failProviderAssignment(principal: CapacityProviderAccessPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	createAgentModeRun(input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	createCapacityWorkdayEvent?(teamId: string, runId: string, input: Record<string, unknown>): Promise<unknown>;
+	listCapacityWorkdayEventsPage(teamId: string, runId: string, page: { limit: number; cursor: null; afterEventIndex: number }): Promise<{ items: unknown[] }>;
 }
 
 export function providerAssignmentErrorResponse(c: Context, error: unknown) {

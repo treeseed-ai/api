@@ -6,7 +6,7 @@ subtype: graph
 journey: Compile Decision Assignment Graph
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
-summary: "Accepted structured estimates compile into deterministic versioned decision assignment graphs."
+summary: "Each accepted project decision compiles only that project's assignments while exact accepted decisions in other projects remain immutable dependency snapshots."
 status: planned
 actors:
   allowed: [project_manager, capacity_operator, team_owner]
@@ -26,6 +26,12 @@ audit:
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
+    verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
+  - id: stale-decision-authority-denied
+    actor: project_manager
+    verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
+  - id: cross-project-assignment-authority-denied
+    actor: project_manager
     verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
 evidence:
   required: [guarantee_report, verifier_evidence]

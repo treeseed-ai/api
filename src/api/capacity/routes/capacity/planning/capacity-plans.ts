@@ -37,6 +37,14 @@ function requestedStatus(value: unknown): DurableAgentCapacityPlanStatus | null 
 	return candidate;
 }
 
+function mutationInput(c: Context, body: Record<string, unknown>) {
+	const idempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()
+		? body.idempotencyKey.trim()
+		: c.req.header('Idempotency-Key')?.trim();
+	if (!idempotencyKey) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
+	return { ...body, idempotencyKey };
+}
+
 export function installCapacityPlanRoutes(app: Hono, options: CapacityPlanRouteOptions) {
 	const store = options.store as CapacityPlanStore;
 
@@ -54,7 +62,7 @@ export function installCapacityPlanRoutes(app: Hono, options: CapacityPlanRouteO
 		if (!projectId) return error(c, 400, 'projectId is required.');
 		const access = await options.requireProjectAccess(c, options.store, projectId, 'projects:manage:team');
 		if (access.response) return access.response;
-		const plan = await store.createAgentCapacityPlan(c.req.param('decisionId'), body);
+		const plan = await store.createAgentCapacityPlan(c.req.param('decisionId'), mutationInput(c, body));
 		return plan ? c.json({ ok: true, payload: plan }, { status: 201 }) : error(c, 404, 'Unknown project.');
 	});
 
@@ -71,7 +79,7 @@ export function installCapacityPlanRoutes(app: Hono, options: CapacityPlanRouteO
 		if (!plan) return error(c, 404, 'Unknown capacity plan.');
 		const access = await options.requireProjectAccess(c, options.store, plan.projectId, 'projects:manage:team');
 		if (access.response) return access.response;
-		const body = await readCapacityRequestObject(c, { optional: true });
+		const body = mutationInput(c, await readCapacityRequestObject(c, { optional: true }));
 		return c.json({ ok: true, payload: await store.updateAgentCapacityPlanStatus(plan.id, status, body) });
 	};
 
