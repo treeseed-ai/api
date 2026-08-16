@@ -303,6 +303,42 @@ sdkMethodMatrices:
     expect:
       status: 409
       envelope: { ok: false }
+  # The canonical fixture project intentionally has durable dependencies, so
+  # archival must remain blocked rather than mutating the rest of this matrix.
+  - method: archiveProject
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  # Isolated API acceptance has no live TreeDX definition ref. Dynamic query
+  # semantics are proved by the dedicated live context campaign instead.
+  - method: checkProjectContextQuery
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  - method: projectContextQueryChecks
+    actor: teamOwner
+    expect:
+      status: 409
+      envelope: { ok: false }
+  # These SDK coverage cases send complete requests for deliberately missing
+  # durable entities and therefore must resolve through authoritative 404s.
+  - method: closeWorkdayAdmission
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: abandonAssignmentContent
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
+  - method: integrateAssignmentContent
+    actor: teamOwner
+    expect:
+      status: 404
+      envelope: { ok: false }
   - method: createWorkdayRun
     actor: teamOwner
     expect:
