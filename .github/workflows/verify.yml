@@ -52,8 +52,15 @@ jobs:
           fi
           run_id=""
           for attempt in {1..120}; do
-            run_id="$(gh run list --repo treeseed-ai/sdk --workflow verify.yml --commit "${sdk_sha}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            runs_json="$(gh run list --repo treeseed-ai/sdk --workflow verify.yml --commit "${sdk_sha}" --limit 20 --json databaseId,status,conclusion,url)"
+            mapfile -t run_state < <(RUNS_JSON="${runs_json}" node -e "const runs=JSON.parse(process.env.RUNS_JSON); const success=runs.find((run)=>run.conclusion==='success'); console.log(success?.databaseId ?? ''); console.log(runs.filter((run)=>run.status!=='completed').length); console.log(runs.length);")
+            run_id="${run_state[0]}"
             [[ -n "${run_id}" ]] && break
+            if [[ "${run_state[2]}" -gt 0 && "${run_state[1]}" -eq 0 ]]; then
+              echo "Exact SDK producer ${sdk_sha} has completed without a successful Verify artifact." >&2
+              gh run list --repo treeseed-ai/sdk --workflow verify.yml --commit "${sdk_sha}" --limit 20
+              exit 1
+            fi
             sleep 10
           done
           [[ -n "${run_id}" ]]
