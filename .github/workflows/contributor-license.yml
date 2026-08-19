@@ -22,5 +22,5 @@ jobs:
               .split(/\r?\n/u)
               .some((line) => line.trim() === `- [x] ${grant}` || line.trim() === `- [X] ${grant}`);
             if (!affirmed) {
-              core.setFailed('Check the Contribution grant affirmation in the pull-request description before this contribution can be merged.');
+              core.setFailed('A human contributor must edit the PR description and check the Contribution grant affirmation supplied by .github/PULL_REQUEST_TEMPLATE.md before this contribution can be merged. Agents must leave this affirmation for the accountable human.');
             }
