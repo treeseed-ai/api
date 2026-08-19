@@ -39,6 +39,8 @@ Contributor mode (select one):
 
 <!-- Record exact commands, checks, contract/compatibility evidence, and results. -->
 
+- [ ] I ran the narrowest relevant package verification and documented any checks that could not be run.
+
 ## Risk and rollback
 
 <!-- Identify risks, migration effects, and an exact rollback/recovery path. -->
@@ -66,8 +68,3 @@ read CONTRIBUTING.md and affirm the grant by checking it in the PR description.
 - [ ] No plaintext secrets, credentials, machine state, or unrelated residue are included.
 - [ ] Plan, status, commits, and completion summary form a complete durable record.
 - [ ] Rollback or recovery steps are documented and executable.
-
-
-## Verification
-
-- [ ] I ran the narrowest relevant package verification and documented any checks that could not be run.
