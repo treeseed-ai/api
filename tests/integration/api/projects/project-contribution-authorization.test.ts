@@ -1,6 +1,12 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../support/api-harness.ts';
 
 describe('project contribution authorization',()=>{
+	it('fails closed when dedicated contribution signing custody is unavailable',async()=>{
+		const db=createTestPostgresDatabase();const store=createTestStore(db);store.config.contributionSigningSecret=undefined;const app=createTestApp({db,store});
+		const token=await authorizeApp(app,{principalId:'missing-signing-owner'});const {project}=await createTeamAndProject(app,token,{slug:'missing-signing-project',name:'Missing Signing Project',description:'Fail-closed signing custody.'});
+		const response=await app.request(`/v1/projects/${project.id}/contribution-authorizations/plan`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({repository:{provider:'github',owner:'treeseed-ai',name:'sdk'}})});
+		expect(response.status).toBe(503);expect(await json(response)).toMatchObject({code:'contribution_signing_key_unavailable'});
+	});
 	it('plans, applies, reads, and revokes one human-owned standing grant',async()=>{
 		const db=createTestPostgresDatabase();const store=createTestStore(db);const app=createTestApp({db,store});
 		const token=await authorizeApp(app,{principalId:'contribution-owner',displayName:'Contribution Owner'});

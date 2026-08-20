@@ -194,6 +194,7 @@ export function createTestApp(options: ApiTestOptions = {}) {
             webServiceId: 'web',
             webServiceSecret: 'web-test-secret',
             webAssertionSecret: 'web-assertion-secret',
+			contributionSigningSecret: 'contribution-signing-secret',
             ...(options.config ?? {}),
         },
     });
@@ -212,6 +213,7 @@ export function createTestStore(db = createTestPostgresDatabase()) {
         serviceId: 'web',
         serviceSecret: 'web-test-secret',
         assertionSecret: 'web-assertion-secret',
+		contributionSigningSecret: 'contribution-signing-secret',
     }, db);
 }
 

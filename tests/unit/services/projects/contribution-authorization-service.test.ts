@@ -3,6 +3,13 @@ import { describe,expect,it } from 'vitest';
 import { applyProjectContributionAuthorization,issueAgentContributionAttestation,planProjectContributionAuthorization,projectContributionGrant } from '../../../../src/api/projects/contribution-authorization-service.ts';
 
 describe('agent contribution receipt issuance',()=>{
+	it('keeps receipt identity stable across restarts and detects an explicit key change',()=>{
+		const input={id:'grant-stable',generation:1,projectId:'project-1',repository:{provider:'github',owner:'treeseed-ai',name:'sdk'},agentIds:['agent-1'],capacityProviderIds:['provider-1'],contributionModes:['agent-authored'],targetBranches:['staging'],effectiveAt:'2026-08-20T12:00:00.000Z',expiresAt:'2027-08-20T12:00:00.000Z'};const principal={id:'human-1',displayName:'Human'};
+		const first=planProjectContributionAuthorization(input,principal,'persistent-signing-secret');const restarted=planProjectContributionAuthorization(input,principal,'persistent-signing-secret');const rotated=planProjectContributionAuthorization(input,principal,'rotated-signing-secret');
+		expect(restarted.confirmationDigest).toBe(first.confirmationDigest);expect(restarted.authorization.receiptKey).toEqual(first.authorization.receiptKey);
+		expect(rotated.confirmationDigest).not.toBe(first.confirmationDigest);expect(rotated.authorization.receiptKey.keyId).not.toBe(first.authorization.receiptKey.keyId);
+		expect(()=>planProjectContributionAuthorization(input,principal,'')).toThrow('Project contribution receipt signing is not configured.');
+	});
 	it('selects license-specific grant profiles without changing the workflow',()=>{
 		expect(projectContributionGrant({name:'sdk'})).toMatchObject({version:'apache-2.0-section-5-project-authorization/v1',text:expect.stringContaining('Apache License, Version 2.0')});
 		expect(projectContributionGrant({name:'api'})).toMatchObject({version:'treeseed-dual-license-project-authorization/v1',text:expect.stringContaining('alternative commercial licenses')});

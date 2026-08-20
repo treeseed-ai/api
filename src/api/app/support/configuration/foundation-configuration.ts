@@ -28,6 +28,10 @@ export function defaultConfig(overrides: any = {}) {
     const resolved = resolveApiConfig();
     const config = {
         ...resolved,
+		contributionSigningSecret: overrides.contributionSigningSecret
+			?? resolved.contributionSigningSecret
+			?? process.env.TREESEED_CONTRIBUTION_SIGNING_SECRET?.trim()
+			?? undefined,
         projectId: overrides.projectId ?? resolved.projectId ?? 'treeseed-market',
         repoRoot: overrides.repoRoot ?? resolved.repoRoot ?? process.cwd(),
         d1DatabaseId: undefined,
