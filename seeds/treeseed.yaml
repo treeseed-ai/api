@@ -598,20 +598,6 @@ resources:
       provider: github
       name: treeseed-ai
       ownership: treeseed_managed
-      accountLabel: Knowledge Coop GitHub organization
-      organizationOrOwner: treeseed-ai
-      defaultVisibility: private
-      softwareRepositoryNameTemplate: "{project}"
-      contentRepositoryNameTemplate: "{project}-content"
-      allowedProjectKinds: [market_app, package, knowledge_hub]
-      status: active
-      credentialRef: env:TREESEED_GITHUB_TOKEN
-
-    - key: repository-host:treeseed/treeseed-ai-github
-      team: team:treeseed
-      provider: github
-      name: treeseed-ai
-      ownership: treeseed_managed
       accountLabel: TreeSeed AI GitHub organization
       organizationOrOwner: treeseed-ai
       defaultVisibility: public
