@@ -49,24 +49,9 @@ Contributor mode (select one):
 
 <!-- Summarize the journey, final status, unresolved blockers, and next action. -->
 
-## Contribution grant (human action required)
+## AGPL committer authorization
 
-The accountable human must review [CONTRIBUTING.md](https://github.com/treeseed-ai/api/blob/main/CONTRIBUTING.md) and check the affirmation below. Agents must leave it unchecked for the human.
-
-<!--
-An agent must not check this box. The human contributor or accountable human must
-read CONTRIBUTING.md and affirm the grant by checking it in the PR description.
--->
-
-- [ ] I have read `CONTRIBUTING.md`, have the right to submit this contribution, and grant the rights described there, including the right to offer my contribution under the project's AGPL and alternative commercial licenses.
-
-## Agent contribution attestation
-
-Governed agents must leave the human affirmation unchecked. TreeSeed populates the managed block below only when an active project authorization, assignment, agent, capacity provider, repository, base SHA, and head SHA all match. Agents cannot create or broaden that authorization.
-
-<!-- treeseed:contribution-attestation:start -->
-Pending — TreeSeed will replace this text for an authorized agent contribution.
-<!-- treeseed:contribution-attestation:end -->
+The base-owned workflow checks the provider-authenticated pull-request author against `.github/approved-committers.json`. There is no per-PR grant checkbox. If the check reports that the GitHub username is unapproved, follow the linked one-time approval form and re-run the check after the reviewed allowlist change reaches this target branch.
 
 ## Submission checklist
 

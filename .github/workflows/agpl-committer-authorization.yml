@@ -1,0 +1,56 @@
+name: AGPL Committer Authorization
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  authorization:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the provider-authenticated PR author
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const actor = String(pr?.user?.login ?? '').trim().toLowerCase();
+            if (!actor) return core.setFailed('GitHub did not provide the pull-request author login.');
+
+            const path = '.github/approved-committers.json';
+            let policy;
+            try {
+              const response = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path,
+                ref: pr.base.sha,
+              });
+              if (Array.isArray(response.data) || !response.data.content) throw new Error(`${path} is not a file.`);
+              policy = JSON.parse(Buffer.from(response.data.content, response.data.encoding ?? 'base64').toString('utf8'));
+            } catch (error) {
+              return core.setFailed(`The exact base ref has no valid trusted committer policy: ${error.message}`);
+            }
+
+            const expectedRepository = `${context.repo.owner}/${context.repo.repo}`.toLowerCase();
+            if (policy?.schemaVersion !== 1 || String(policy?.repository ?? '').toLowerCase() !== expectedRepository || !Array.isArray(policy?.approvedGitHubUsernames)) {
+              return core.setFailed('The trusted committer policy has an invalid schema or repository binding.');
+            }
+
+            const usernames = policy.approvedGitHubUsernames.map((value) => String(value).trim().toLowerCase());
+            if (usernames.some((value) => !/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/u.test(value)) || new Set(usernames).size !== usernames.length) {
+              return core.setFailed('The trusted committer policy contains an invalid or duplicate GitHub username.');
+            }
+
+            if (!usernames.includes(actor)) {
+              const approvalUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/issues/new?template=agpl-committer-approval.yml`;
+              return core.setFailed(`GitHub user @${actor} is not yet an approved AGPL committer. Complete the one-time approval request at ${approvalUrl}; no email address or per-PR checkbox is required.`);
+            }
+
+            await core.summary
+              .addHeading('AGPL committer authorization')
+              .addRaw(`Provider-authenticated PR author @${actor} is present in ${path} at exact base ${pr.base.sha}.`)
+              .write();
