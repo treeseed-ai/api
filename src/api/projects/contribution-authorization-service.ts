@@ -53,6 +53,7 @@ export async function applyProjectContributionAuthorization(store:any,input:any,
 		...(current?[{query:`UPDATE project_contribution_authorizations SET status='superseded',updated_at=? WHERE id=? AND status='active'`,params:[now,current.id]}]:[]),
 		{query:`INSERT INTO project_contribution_authorizations (id,project_id,generation,status,repository_json,grant_version,grant_digest,receipt_key_json,authorized_by_principal_id,authorized_by_display_name,agent_ids_json,capacity_provider_ids_json,contribution_modes_json,target_branches_json,allowed_actions_json,effective_at,expires_at,revoked_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,params:[a.id,a.projectId,a.generation,a.status,json(a.repository),a.grant.version,a.grant.digest,json(a.receiptKey),a.authorizedBy.principalId,a.authorizedBy.displayName??null,json(a.agentIds),json(a.capacityProviderIds),json(a.contributionModes),json(a.targetBranches),json(a.allowedActions),a.effectiveAt,a.expiresAt??null,null,now,now]},
 	]);
+	await store.recordAuditEvent({actorType:'user',actorId:a.authorizedBy.principalId,eventType:'project.contribution_authorization.applied',targetType:'project',targetId:a.projectId,data:{authorizationId:a.id,generation:a.generation,grantVersion:a.grant.version,grantDigest:a.grant.digest,repository:a.repository}});
 	return {ok:true,payload:a};
 }
 export async function revokeProjectContributionAuthorization(store:any,projectId:string,id:string,actorId:string) {

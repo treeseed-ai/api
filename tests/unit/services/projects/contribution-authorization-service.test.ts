@@ -1,8 +1,13 @@
 import { verifyAgentContributionReceipt } from '@treeseed/sdk/work-providers';
 import { describe,expect,it } from 'vitest';
-import { issueAgentContributionAttestation,planProjectContributionAuthorization } from '../../../../src/api/projects/contribution-authorization-service.ts';
+import { applyProjectContributionAuthorization,issueAgentContributionAttestation,planProjectContributionAuthorization } from '../../../../src/api/projects/contribution-authorization-service.ts';
 
 describe('agent contribution receipt issuance',()=>{
+	it('records the accountable human and exact grant digest when applying authority',async()=>{
+		const secret='test-contribution-signing-secret';const principal={id:'human-1',displayName:'Human'};const input={id:'grant-1',projectId:'project-1',repository:{provider:'github',owner:'treeseed-ai',name:'api'},agentIds:['agent-1'],capacityProviderIds:['provider-1'],contributionModes:['agent-authored'],targetBranches:['staging'],effectiveAt:'2026-08-20T12:00:00.000Z',expiresAt:'2027-08-20T12:00:00.000Z'};const plan=planProjectContributionAuthorization({...input,generation:1},principal,secret);let audit:any;
+		const result=await applyProjectContributionAuthorization({first:async()=>null,batch:async()=>{},recordAuditEvent:async(value:any)=>{audit=value;}},{...input,confirmationDigest:plan.confirmationDigest},principal,secret);
+		expect(result.ok).toBe(true);expect(audit).toMatchObject({actorType:'user',actorId:'human-1',eventType:'project.contribution_authorization.applied',targetType:'project',targetId:'project-1',data:{authorizationId:'grant-1',generation:1,grantDigest:plan.authorization.grant.digest,repository:input.repository}});
+	});
 	it('binds a signed receipt to active project, assignment, agent, provider, and exact refs',async()=>{
 		const secret='test-contribution-signing-secret';
 		const authorization=planProjectContributionAuthorization({id:'grant-1',generation:1,projectId:'project-1',repository:{provider:'github',owner:'treeseed-ai',name:'api'},agentIds:['agent-1'],capacityProviderIds:['provider-1'],contributionModes:['agent-authored'],targetBranches:['staging'],effectiveAt:'2026-08-20T12:00:00.000Z',expiresAt:'2027-08-20T12:00:00.000Z'},{id:'human-1',displayName:'Human'},secret).authorization;
