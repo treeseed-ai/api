@@ -1,8 +1,12 @@
 import { verifyAgentContributionReceipt } from '@treeseed/sdk/work-providers';
 import { describe,expect,it } from 'vitest';
-import { applyProjectContributionAuthorization,issueAgentContributionAttestation,planProjectContributionAuthorization } from '../../../../src/api/projects/contribution-authorization-service.ts';
+import { applyProjectContributionAuthorization,issueAgentContributionAttestation,planProjectContributionAuthorization,projectContributionGrant } from '../../../../src/api/projects/contribution-authorization-service.ts';
 
 describe('agent contribution receipt issuance',()=>{
+	it('selects license-specific grant profiles without changing the workflow',()=>{
+		expect(projectContributionGrant({name:'sdk'})).toMatchObject({version:'apache-2.0-section-5-project-authorization/v1',text:expect.stringContaining('Apache License, Version 2.0')});
+		expect(projectContributionGrant({name:'api'})).toMatchObject({version:'treeseed-dual-license-project-authorization/v1',text:expect.stringContaining('alternative commercial licenses')});
+	});
 	it('records the accountable human and exact grant digest when applying authority',async()=>{
 		const secret='test-contribution-signing-secret';const principal={id:'human-1',displayName:'Human'};const input={id:'grant-1',projectId:'project-1',repository:{provider:'github',owner:'treeseed-ai',name:'api'},agentIds:['agent-1'],capacityProviderIds:['provider-1'],contributionModes:['agent-authored'],targetBranches:['staging'],effectiveAt:'2026-08-20T12:00:00.000Z',expiresAt:'2027-08-20T12:00:00.000Z'};const plan=planProjectContributionAuthorization({...input,generation:1},principal,secret);let audit:any;
 		const result=await applyProjectContributionAuthorization({first:async()=>null,batch:async()=>{},recordAuditEvent:async(value:any)=>{audit=value;}},{...input,confirmationDigest:plan.confirmationDigest},principal,secret);

@@ -5,13 +5,15 @@ import {
 } from '@treeseed/sdk/work-providers';
 import { createHash,createPrivateKey,createPublicKey,randomUUID,sign } from 'node:crypto';
 
-const GRANT_TEXT='I have the right to authorize contributions to this project and grant the project owner a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, distribute, publicly perform, publicly display, sublicense, and relicense authorized contributions, including under the project AGPL and alternative commercial licenses.';
-const GRANT_VERSION='treeseed-dual-license-project-authorization/v1';
+const GRANT_PROFILES={
+	'apache-2.0':{version:'apache-2.0-section-5-project-authorization/v1',text:'I have the right to authorize contributions to this project and intentionally submit authorized contributions for inclusion under the Apache License, Version 2.0, without additional terms or conditions, as described by Section 5 of that license.'},
+	'treeseed-dual-license':{version:'treeseed-dual-license-project-authorization/v1',text:'I have the right to authorize contributions to this project and grant the project owner a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, reproduce, modify, distribute, publicly perform, publicly display, sublicense, and relicense authorized contributions, including under the project AGPL and alternative commercial licenses.'},
+} as const;
 const json=(value:unknown)=>JSON.stringify(value);
 const parse=(value:unknown,fallback:unknown)=>{try{return JSON.parse(String(value??''));}catch{return fallback;}};
 const text=(value:unknown)=>typeof value==='string'?value.trim():'';
 const list=(value:unknown)=>[...new Set(Array.isArray(value)?value.map(text).filter(Boolean):[])].sort();
-export const projectContributionGrant=()=>({version:GRANT_VERSION,text:GRANT_TEXT,digest:`sha256:${createHash('sha256').update(GRANT_TEXT).digest('base64url')}`});
+export const projectContributionGrant=(repository?:{name?:unknown})=>{const profile=repository?.name==='api'?GRANT_PROFILES['treeseed-dual-license']:GRANT_PROFILES['apache-2.0'];return{version:profile.version,text:profile.text,digest:`sha256:${createHash('sha256').update(profile.text).digest('base64url')}`};};
 
 function signer(secret:string) {
 	if(!secret) throw new Error('Project contribution receipt signing is not configured.');
@@ -38,7 +40,7 @@ export async function listProjectContributionAuthorizations(store:any,projectId:
 	return (await store.all(`SELECT * FROM project_contribution_authorizations WHERE project_id=? ORDER BY generation DESC`,[projectId])).map(serialize);
 }
 export function planProjectContributionAuthorization(input:any,principal:any,secret:string) {
-	const key=signer(secret); const grant=projectContributionGrant(); const now=new Date();
+	const key=signer(secret); const grant=projectContributionGrant(input.repository); const now=new Date();
 	const authorization:ProjectContributionAuthorization={schemaVersion:TREESEED_CONTRIBUTION_GRANT_VERSION,id:text(input.id)||randomUUID(),generation:Number(input.generation)||1,status:'active',projectId:text(input.projectId),repository:{provider:text(input.repository?.provider),owner:text(input.repository?.owner),name:text(input.repository?.name)},grant:{version:grant.version,digest:grant.digest},receiptKey:{keyId:key.keyId,algorithm:'Ed25519',publicKeyJwk:key.publicKeyJwk},authorizedBy:{principalId:String(principal.id),displayName:text(principal.displayName)||undefined},agentIds:list(input.agentIds),capacityProviderIds:list(input.capacityProviderIds),contributionModes:list(input.contributionModes) as ProjectContributionAuthorization['contributionModes'],targetBranches:list(input.targetBranches),allowedActions:['populate_pr_attestation','update_pr_attestation'],effectiveAt:text(input.effectiveAt)||now.toISOString(),expiresAt:text(input.expiresAt)||null};
 	const confirmationDigest=`sha256:${createHash('sha256').update(json(authorization)).digest('base64url')}`;
 	return {authorization,grantText:grant.text,confirmationDigest};
