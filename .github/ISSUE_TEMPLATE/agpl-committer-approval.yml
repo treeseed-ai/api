@@ -1,0 +1,24 @@
+name: AGPL committer approval
+description: Request one-time approval for a GitHub username to contribute to the dual-licensed API.
+title: "[committer approval] "
+body:
+  - type: markdown
+    attributes:
+      value: This is a one-time account-level request. Do not enter an email address, password, token, or other secret.
+  - type: input
+    id: github_username
+    attributes:
+      label: GitHub username
+      description: Enter the exact GitHub username that will open pull requests.
+      placeholder: octocat
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribution_terms
+    attributes:
+      label: Contribution terms
+      options:
+        - label: I have read CONTRIBUTING.md, have the right to submit my contributions, and grant the rights described there, including use under the project's AGPL and alternative commercial licenses.
+          required: true
+        - label: I understand approval is bound to the provider-authenticated GitHub username above and does not bypass review, tests, or release policy.
+          required: true

@@ -1,0 +1,7 @@
+# API workspace guidance
+
+The API is offered under AGPL-3.0-only and an alternative commercial license. The trusted base workflow compares the provider-authenticated pull-request author login with `.github/approved-committers.json`.
+
+Agents operating through an approved GitHub account inherit that provider-authenticated username for this check. They must not spoof identity through email, commit metadata, or pull-request text, and must never receive GitHub tokens inside execution workspaces. Adding or removing a username requires an explicit reviewed policy commit. An unlisted account follows `.github/COMMITTER_APPROVAL.md` once; there is no per-PR grant checkbox.
+
+Preserve exact project, assignment, repository, base, head, verification, review, staging, and release authority independently of committer approval.
