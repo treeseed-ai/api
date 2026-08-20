@@ -5,6 +5,12 @@ import { dirname, resolve } from 'node:path';
 function record(value: unknown) { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown) { return typeof value === 'string' && value.trim() ? value.trim() : null; }
 
+export function agentLabAuthorityScope(value: unknown) {
+	const input = record(value); const teamId = text(input.teamId); const projectId = text(input.projectId);
+	if (!teamId || !projectId) throw new Error('Agent Lab simulation requires an authoritative team and project scope.');
+	return { teamId, projectId };
+}
+
 export function createAgentLabSimulationExecutor(options: { config?: Record<string, unknown> } = {}) {
 	return {
 		namespace: 'agent-lab', operation: 'run-scene',
@@ -12,6 +18,7 @@ export function createAgentLabSimulationExecutor(options: { config?: Record<stri
 			const input = record(rawInput); const environment = text(input.environment) ?? 'local';
 			if (environment !== 'local') throw new Error('Agent Lab browser simulations are local-only while hosted execution is suspended.');
 			const scenePath = text(input.scenePath); const immutableRef = text(input.immutableRef);
+			const authorityScope = agentLabAuthorityScope(input);
 			const sceneSource = text(input.sceneSource);
 			if (!scenePath || !immutableRef || !sceneSource) throw new Error('Agent Lab simulation requires a scene snapshot and immutable repository ref.');
 			const executingServicePrincipalId = text(input.executingServicePrincipalId) ?? process.env.TREESEED_AGENT_LAB_SERVICE_PRINCIPAL_ID ?? null;
@@ -26,7 +33,7 @@ export function createAgentLabSimulationExecutor(options: { config?: Record<stri
 			}
 			const executor = createProductionAgentLabExecutor({ env: process.env });
 			let reportPath: string | null = null;
-			const report = await runScene({ projectRoot: bundleRoot, scene: snapshotPath, environment: 'local', runId: context.operationId, agentLabContentRef: immutableRef, agentLabExecutor: executor, onProgress: (event) => { void context.emit({ kind: `agent_lab.${event.type}`, data: record(event.data) }); }, onAgentLabReportReady: async ({ path }) => { reportPath = path; await context.checkpoint({ phase: 'agent-lab.report.ready', reportPath: path }, { kind: 'agent_lab.report.ready', data: { reportPath: path } }); } });
+			const report = await runScene({ projectRoot: bundleRoot, scene: snapshotPath, environment: 'local', runId: context.operationId, agentLabContentRef: immutableRef, agentLabAuthorityScope: authorityScope, agentLabExecutor: executor, onProgress: (event) => { void context.emit({ kind: `agent_lab.${event.type}`, data: record(event.data) }); }, onAgentLabReportReady: async ({ path }) => { reportPath = path; await context.checkpoint({ phase: 'agent-lab.report.ready', reportPath: path }, { kind: 'agent_lab.report.ready', data: { reportPath: path } }); } });
 			if (!report.ok) throw new Error(report.blockers?.map((entry) => entry.message).join('; ') || 'Agent Lab scene failed.');
 			return { ok: true, sceneId: report.sceneId, runId: report.runId, immutableRef, sceneSnapshotPath: snapshotPath, reportPath, artifacts: report.artifacts, executingServicePrincipalId };
 		},
