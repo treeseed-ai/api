@@ -29,6 +29,8 @@ describe('API licensing policy', () => {
 		const provenance = readRepositoryFile('docs/licensing-provenance.md');
 		const template = readRepositoryFile('.github/PULL_REQUEST_TEMPLATE.md');
 		const workflow = readRepositoryFile('.github/workflows/contributor-license.yml');
+		expect(workflow).toContain('Date.parse(authorization.effectiveAt) > Date.now()');
+		expect(workflow).toContain("authorization.allowedActions.includes('populate_pr_attestation')");
 
 		expect(provenance).toContain('Status: complete for the currently reachable repository history.');
 		expect(provenance).toContain('Adrian Webb `<adrian@webb.sh>`');
