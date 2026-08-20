@@ -1,7 +1,7 @@
-# API agent contribution policy
+# API workspace guidance
 
-Agents may populate or update the managed **Agent contribution attestation** in a pull request only when the agent definition enables delegated project authorization, the assignment and capacity grant include `contribution_attestation`, and the trusted API supplies a valid project authorization receipt bound to the exact repository, agent, provider, assignment, base SHA, and head SHA.
+The API is offered under AGPL-3.0-only and an alternative commercial license. Contributor authorization is repository policy, not assignment authority: the trusted base workflow compares the provider-authenticated pull-request author login with `.github/approved-committers.json`.
 
-Agents must never check or edit the **Human contribution affirmation**. Agents may not create, broaden, renew, revoke, or supersede project contribution authorizations. Missing, stale, mismatched, expired, or revoked authority fails closed and requires one project-level human action, never routine per-PR approval.
+Agents operating through an approved GitHub account inherit that provider-authenticated username for this check. They must not spoof identity through email, commit metadata, or pull-request text, and must never receive GitHub tokens inside execution workspaces. Adding or removing a username requires an explicit policy assignment and reviewed commit. An unlisted account follows `.github/COMMITTER_APPROVAL.md` once; there is no per-PR grant checkbox or agent attestation.
 
-Keep work scoped to the API repository. Never place provider private keys, membership credentials, signing secrets, PATs, or webhook secrets in an agent checkout, PR body, operation bundle, log, or chat.
+Preserve exact project, assignment, repository, base, head, verification, review, staging, and release authority independently of committer approval.

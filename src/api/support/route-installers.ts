@@ -30,7 +30,6 @@ import { installGovernanceProjectionRoutes } from "../routes/projects/governance
 import { installGovernanceProjectsItemApprovalsItemDecisionRoutes } from "../routes/projects/governance/governance-projects-item-approvals-item-decision.ts";
 import { installGovernanceTeamProjectDelegationsAndApprovalsRoutes } from "../routes/projects/governance/governance-team-project-delegations-and-approvals.ts";
 import { installGovernanceTeamProjectPolicyRoutes } from "../routes/projects/governance/governance-team-project-policy.ts";
-import { installProjectContributionAuthorizationRoutes } from "../routes/projects/governance/project-contribution-authorizations.ts";
 import { installProjectsProposalsAndDecisionsRoutes } from "../routes/projects/governance/projects-proposals-and-decisions.ts";
 import { installOperationsProjectJobsRoutes } from "../routes/projects/operations/operations-project-jobs.ts";
 import { installProjectsCollectionRoutes } from "../routes/projects/projects-collection.ts";
@@ -96,7 +95,6 @@ export function installPlatformRoutes(context: any): void {
   installGitHubWebhookRoutes(context);
   installProjectsSettingsAndSummariesRoutes(context);
   installGovernanceTeamProjectPolicyRoutes(context);
-  installProjectContributionAuthorizationRoutes(context);
   installProjectsProposalsAndDecisionsRoutes(context);
   installGovernanceTeamProjectDelegationsAndApprovalsRoutes(context);
   installGovernanceProjectsItemApprovalsItemDecisionRoutes(context);

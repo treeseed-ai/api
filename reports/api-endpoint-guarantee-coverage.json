@@ -1,7 +1,7 @@
 {
-  "routeCount": 621,
-  "descriptorCount": 621,
-  "coveredByGuarantee": 621,
+  "routeCount": 616,
+  "descriptorCount": 616,
+  "coveredByGuarantee": 616,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -171,7 +171,6 @@
       "get.v1.projects.projectId.agents",
       "get.v1.projects.projectId.agents.agentSlug",
       "get.v1.projects.projectId.capacity",
-      "get.v1.projects.projectId.contribution-authorizations",
       "get.v1.projects.projectId.deletion-blockers",
       "get.v1.projects.projectId.direct",
       "get.v1.projects.projectId.repository-topology",
@@ -186,10 +185,6 @@
       "patch.v1.projects.projectId.agent-classes.classId",
       "post.v1.projects.projectId.agent-classes",
       "post.v1.projects.projectId.archive",
-      "post.v1.projects.projectId.contribution-attestations",
-      "post.v1.projects.projectId.contribution-authorizations.apply",
-      "post.v1.projects.projectId.contribution-authorizations.authorizationId.revoke",
-      "post.v1.projects.projectId.contribution-authorizations.plan",
       "post.v1.projects.projectId.private-knowledge.access",
       "post.v1.projects.projectId.research-workflows",
       "post.v1.projects.projectId.restore",
