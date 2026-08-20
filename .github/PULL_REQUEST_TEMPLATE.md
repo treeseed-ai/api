@@ -60,6 +60,14 @@ read CONTRIBUTING.md and affirm the grant by checking it in the PR description.
 
 - [ ] I have read `CONTRIBUTING.md`, have the right to submit this contribution, and grant the rights described there, including the right to offer my contribution under the project's AGPL and alternative commercial licenses.
 
+## Agent contribution attestation
+
+Governed agents must leave the human affirmation unchecked. TreeSeed populates the managed block below only when an active project authorization, assignment, agent, capacity provider, repository, base SHA, and head SHA all match. Agents cannot create or broaden that authorization.
+
+<!-- treeseed:contribution-attestation:start -->
+Pending — TreeSeed will replace this text for an authorized agent contribution.
+<!-- treeseed:contribution-attestation:end -->
+
 ## Submission checklist
 
 - [ ] The change is bounded to the stated work item and target repository.

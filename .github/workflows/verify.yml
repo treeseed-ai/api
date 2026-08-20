@@ -50,22 +50,33 @@ jobs:
             echo "Using the exact published SDK version declared by package.json."
             exit 0
           fi
+          artifact_name="sdk-${sdk_sha}"
           run_id=""
           for attempt in {1..120}; do
-            runs_json="$(gh run list --repo treeseed-ai/sdk --workflow verify.yml --commit "${sdk_sha}" --limit 20 --json databaseId,status,conclusion,url)"
-            mapfile -t run_state < <(RUNS_JSON="${runs_json}" node -e "const runs=JSON.parse(process.env.RUNS_JSON); const success=runs.find((run)=>run.conclusion==='success'); console.log(success?.databaseId ?? ''); console.log(runs.filter((run)=>run.status!=='completed').length); console.log(runs.length);")
-            run_id="${run_state[0]}"
+            mapfile -t candidate_run_ids < <(
+              gh api "repos/treeseed-ai/sdk/actions/artifacts?name=${artifact_name}&per_page=100" \
+                --jq ".artifacts[] | select(.expired == false and .workflow_run.head_sha == \"${sdk_sha}\") | .workflow_run.id"
+            )
+            for candidate_run_id in "${candidate_run_ids[@]}"; do
+              mapfile -t candidate_state < <(
+                gh run view "${candidate_run_id}" --repo treeseed-ai/sdk \
+                  --json headSha,status,conclusion \
+                  --jq '[.headSha, .status, .conclusion] | .[]'
+              )
+              if [[ "${candidate_state[0]}" == "${sdk_sha}" && "${candidate_state[1]}" == "completed" && "${candidate_state[2]}" == "success" ]]; then
+                run_id="${candidate_run_id}"
+                break
+              fi
+            done
             [[ -n "${run_id}" ]] && break
-            if [[ "${run_state[2]}" -gt 0 && "${run_state[1]}" -eq 0 ]]; then
-              echo "Exact SDK producer ${sdk_sha} has completed without a successful Verify artifact." >&2
-              gh run list --repo treeseed-ai/sdk --workflow verify.yml --commit "${sdk_sha}" --limit 20
-              exit 1
-            fi
             sleep 10
           done
-          [[ -n "${run_id}" ]]
+          if [[ -z "${run_id}" ]]; then
+            echo "No successful SDK Verify run published exact artifact ${artifact_name}." >&2
+            exit 1
+          fi
           mkdir -p artifacts/sdk
-          gh run download "${run_id}" --repo treeseed-ai/sdk --name "sdk-${sdk_sha}" --dir artifacts/sdk
+          gh run download "${run_id}" --repo treeseed-ai/sdk --name "${artifact_name}" --dir artifacts/sdk
 
       - name: Install dependencies
         timeout-minutes: 20
