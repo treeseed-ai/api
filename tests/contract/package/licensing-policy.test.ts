@@ -34,8 +34,12 @@ describe('API licensing policy', () => {
 		expect(provenance).toContain('Adrian Webb `<adrian@webb.sh>`');
 		expect(provenance).toContain('TreeSeed migration `<operations@treeseed.dev>`');
 		expect(template).toContain('- [ ] I have read `CONTRIBUTING.md`');
-		expect(workflow).toContain('pull_request:');
+		expect(template).toContain('Agent contribution attestation');
+		expect(workflow).toContain('pull_request_target:');
 		expect(workflow).toContain('core.setFailed');
-		expect(workflow).toContain('Contribution grant affirmation');
+		expect(workflow).toContain('delegated agent attestation');
+		expect(workflow).toContain(".treeseed/contribution-policy.json");
+		expect(workflow).toContain('actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b');
+		expect(workflow).not.toContain('actions/checkout');
 	});
 });
