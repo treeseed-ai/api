@@ -185,7 +185,7 @@ async function writeAdminApiDescriptorArtifact() {
 }
 
 function preparedSdkPackageRoot(installedSdkRoot: string) {
-	if (existsSync(resolve(installedSdkRoot, 'dist', 'index.js')) && existsSync(resolve(installedSdkRoot, 'dist', 'api', 'index.js'))) {
+	if (existsSync(resolve(installedSdkRoot, 'dist', 'index.js'))) {
 		return { root: installedSdkRoot, cleanup: () => {} };
 	}
 	throw new Error('@treeseed/api requires the installed semantic @treeseed/sdk package to contain its published runtime artifacts.');
@@ -206,7 +206,6 @@ function copySdkRuntimeArtifacts() {
 		if (!existsSync(sdkPackageJson)) return;
 		const requiredSdkOutputs = [
 			resolve(sdkPackage.root, 'dist', 'index.js'),
-			resolve(sdkPackage.root, 'dist', 'api', 'index.js'),
 		];
 		for (const requiredOutput of requiredSdkOutputs) {
 			if (!existsSync(requiredOutput)) {
