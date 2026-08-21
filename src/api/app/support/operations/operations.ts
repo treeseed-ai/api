@@ -1,4 +1,3 @@
-import { derivePlatformOperationNavigation,isPlatformOperationTerminal } from '@treeseed/sdk';
 import { createHmac,timingSafeEqual } from 'node:crypto';
 import { bearerTokenFromRequest } from '../../../accounts/request-auth.ts';
 import { base64urlJson,jsonError,normalizeBaseUrl,optionalTrimmedString,parseBase64urlJson,requireTeamAccess,safeTokenEquals } from '../index.ts';
@@ -23,6 +22,32 @@ export const PLATFORM_OPERATION_SCOPES = [
     'platform:deploy:write',
     'platform:database:migrate',
 ];
+const operationRecord = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+const operationString = (...values) => values.find((value) => typeof value === 'string' && value.trim())?.trim() ?? null;
+const operationStrings = (value) => Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter(Boolean) : [];
+const nestedOperationRecord = (value, keys) => {
+    let current = value;
+    for (const key of keys) {
+        current = operationRecord(current)?.[key];
+    }
+    return operationRecord(current);
+};
+export function derivePlatformOperationNavigation(operation) {
+    const output = operationRecord(operation?.output) ?? {};
+    const nestedOutput = nestedOperationRecord(output, ['output']) ?? {};
+    const record = nestedOperationRecord(output, ['record']) ?? nestedOperationRecord(nestedOutput, ['record']);
+    const child = nestedOperationRecord(output, ['child']) ?? nestedOperationRecord(nestedOutput, ['child']);
+    const decision = nestedOperationRecord(output, ['decision']) ?? nestedOperationRecord(nestedOutput, ['decision']);
+    return {
+        href: operationString(output.href, nestedOutput.href, record?.href, child?.href, decision?.href),
+        changedPaths: [...new Set([...operationStrings(output.changedPaths), ...operationStrings(nestedOutput.changedPaths)])],
+        branch: operationString(output.branch, nestedOutput.branch),
+        commitSha: operationString(output.commitSha, nestedOutput.commitSha),
+    };
+}
+export function isPlatformOperationTerminal(operation) {
+    return ['succeeded', 'failed', 'cancelled'].includes(String(operation?.status ?? ''));
+}
 export function operationTokenSecret(runtime) {
     return runtime?.resolved?.config?.assertionSecret
         ?? runtime?.resolved?.config?.authSecret
