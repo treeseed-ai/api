@@ -1,6 +1,10 @@
 export function bodyFactoryFor(path, method) {
     if (method === 'get')
         return null;
+	if (path === '/v1/operator/commands/read')
+		return 'operatorRead';
+	if (path === '/v1/operator/commands/mutations')
+		return 'operatorMutation';
     if (path.includes('/auth/device/start'))
         return 'deviceStart';
     if (path === '/v1/feedback')

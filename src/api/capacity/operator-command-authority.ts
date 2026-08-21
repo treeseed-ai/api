@@ -1,6 +1,7 @@
 import {
 	TREESEED_COMMAND_TREE_V1,
 	listCommandPaths,
+	type CommandNodeDescriptor,
 	validateCommandTree,
 } from '@treeseed/sdk/operator-contracts';
 
@@ -12,6 +13,17 @@ export interface ApiCommandAuthorityBinding {
 	apiRouteIds: readonly string[];
 }
 
+function commandKinds(nodes: CommandNodeDescriptor[], parent: string[] = [], output = new Map<string, 'read' | 'mutation'>()) {
+	for (const node of nodes) {
+		const path = [...parent, node.segment];
+		if (node.nodeType === 'leaf') output.set(path.join(' '), node.kind);
+		else commandKinds(node.children, path, output);
+	}
+	return output;
+}
+
+const kinds = commandKinds(TREESEED_COMMAND_TREE_V1.commands);
+
 /**
  * API-owned authorization projection for the canonical operator tree.
  *
@@ -20,23 +32,13 @@ export interface ApiCommandAuthorityBinding {
  * which permission class governs them.
  */
 export const API_COMMAND_AUTHORITY = [
-	{ commandPath: 'capacity status', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity.usage'] },
-	{ commandPath: 'capacity explain', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity.ledger'] },
-	{ commandPath: 'capacity usage', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity.usage'] },
-	{ commandPath: 'capacity ledger', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity.ledger'] },
-	{ commandPath: 'capacity audit', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity-audit-events'] },
-	{ commandPath: 'plans list', access: 'team-read', apiRouteIds: ['get.v1.decisions.decisionId.capacity-plans'] },
-	{ commandPath: 'plans show', access: 'team-read', apiRouteIds: ['get.v1.capacity-plans.capacityPlanId'] },
-	{ commandPath: 'workdays plan', access: 'team-manage', apiRouteIds: ['post.v1.teams.teamId.workday-runs.preflight'] },
-	{ commandPath: 'workdays start', access: 'team-manage', apiRouteIds: ['post.v1.teams.teamId.workday-runs'] },
-	{ commandPath: 'workdays list', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.workday-runs'] },
-	{ commandPath: 'workdays show', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.workday-runs.runId'] },
-	{ commandPath: 'workdays watch', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.workday-runs.runId.activity.stream'] },
-	{ commandPath: 'assignments list', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity.assignments'] },
-	{ commandPath: 'assignments show', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity.assignments.assignmentId'] },
-	{ commandPath: 'assignments explain', access: 'team-read', apiRouteIds: ['get.v1.teams.teamId.capacity.assignments.assignmentId.explanation'] },
-	{ commandPath: 'assignments retry', access: 'team-manage', apiRouteIds: ['post.v1.teams.teamId.capacity.assignments.assignmentId.requeue'] },
-	{ commandPath: 'assignments cancel', access: 'team-manage', apiRouteIds: ['post.v1.teams.teamId.capacity.assignments.assignmentId.cancel'] },
+	...listCommandPaths(TREESEED_COMMAND_TREE_V1)
+		.filter((commandPath) => !commandPath.startsWith('auth ') && !commandPath.startsWith('secrets '))
+		.map((commandPath) => ({
+			commandPath,
+			access: kinds.get(commandPath) === 'mutation' || commandPath === 'workdays plan' ? 'team-manage' as const : 'team-read' as const,
+			apiRouteIds: [kinds.get(commandPath) === 'mutation' || commandPath === 'workdays plan' ? 'post.v1.operator.commands.mutations' : 'post.v1.operator.commands.read'],
+		})),
 ] as const satisfies readonly ApiCommandAuthorityBinding[];
 
 export function validateApiCommandAuthority(routeIds: ReadonlySet<string>): string[] {

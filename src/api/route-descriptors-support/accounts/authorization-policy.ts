@@ -1,6 +1,8 @@
 import { ACCEPTANCE_ACTORS,PLATFORM_ADMIN_ACTORS,PROJECT_MANAGER_ACTORS,PROJECT_MEMBER_ACTORS,TEAM_MANAGER_ACTORS,TEAM_MEMBER_ACTORS } from '../support/actor-groups.js';
 
 export function authClass(path, method = 'get') {
+	if (path === '/v1/operator/commands/read') return 'team-member';
+	if (path === '/v1/operator/commands/mutations') return 'team-manager';
     if (path.startsWith('/v1/provider-registrations') || path === '/v1/provider/access-tokens')
         return 'provider-proof';
     if (path.startsWith('/v1/provider/'))
@@ -97,6 +99,8 @@ export function routeNeedsManagement(path, method) {
 }
 
 export function successActorsFor(path, method) {
+	if (path === '/v1/operator/commands/read') return TEAM_MEMBER_ACTORS;
+	if (path === '/v1/operator/commands/mutations') return TEAM_MANAGER_ACTORS;
     if (path.startsWith('/v1/provider/'))
         return ['providerAccessToken'];
     if (path.startsWith('/v1/platform/runners/')
