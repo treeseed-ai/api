@@ -46,28 +46,21 @@ describe('capacity plan routes', () => {
 		expect(listAgentCapacityPlans).not.toHaveBeenCalled();
 	});
 
-	it('uses management authorization and the canonical transition owner', async () => {
-		const updateAgentCapacityPlanStatus = vi.fn(async (_id, status) => ({ id: 'plan-a', projectId: 'project-a', status }));
-		const permissions: string[] = [];
-		const app = appWith({
-			async getAgentCapacityPlan() { return { id: 'plan-a', projectId: 'project-a' }; },
-			updateAgentCapacityPlanStatus,
-		}, permissions);
-		const response = await app.request('/v1/capacity-plans/plan-a/accept', { method: 'POST', headers: { 'Idempotency-Key': 'accept-plan-a' }, body: '{}' });
-		expect(response.status).toBe(200);
-		expect(updateAgentCapacityPlanStatus).toHaveBeenCalledWith('plan-a', 'accepted', { idempotencyKey: 'accept-plan-a' });
-		expect(permissions).toEqual(['projects:manage:team']);
-	});
-
-	it('rejects a capacity-plan mutation without durable replay identity', async () => {
+	it('does not expose client-authored capacity-plan creation or transitions', async () => {
+		const createAgentCapacityPlan = vi.fn();
 		const updateAgentCapacityPlanStatus = vi.fn();
-		const app = appWith({
-			async getAgentCapacityPlan() { return { id: 'plan-a', projectId: 'project-a' }; },
-			updateAgentCapacityPlanStatus,
-		});
-		const response = await app.request('/v1/capacity-plans/plan-a/accept', { method: 'POST', body: '{}' });
-		expect(response.status).toBe(400);
-		expect(await response.json()).toMatchObject({ code: 'capacity_idempotency_key_required' });
+		const app = appWith({ createAgentCapacityPlan,updateAgentCapacityPlanStatus });
+		for (const [path,body] of [
+			['/v1/decisions/decision-a/capacity-plans', { projectId: 'project-a' }],
+			['/v1/capacity-plans/plan-a/accept', {}],
+			['/v1/capacity-plans/plan-a/request-revision', {}],
+			['/v1/capacity-plans/plan-a/schedule', {}],
+			['/v1/capacity-plans/plan-a/supersede', {}],
+		] as const) {
+			const response = await app.request(path, { method: 'POST',headers: { 'content-type': 'application/json' },body: JSON.stringify(body) });
+			expect(response.status,path).toBe(404);
+		}
+		expect(createAgentCapacityPlan).not.toHaveBeenCalled();
 		expect(updateAgentCapacityPlanStatus).not.toHaveBeenCalled();
 	});
 });

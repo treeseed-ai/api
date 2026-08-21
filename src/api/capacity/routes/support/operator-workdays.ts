@@ -1,8 +1,7 @@
 import { decodeCapacityPageCursor,encodeCapacityPageCursor,normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
 import { agentActivityQuerySchema,agentTranscriptPayloadSchema } from '@treeseed/sdk/agent-capacity';
 import type { Context, Hono } from 'hono';
-import { CapacityGovernanceError } from '../../database.ts';
-import { terminalizeCompletedConversationInvocation } from '../../services/capacity/invocations/discussion-invocation-service.ts';
+import { WorkdayPreflightService,parsePublicWorkdayIntent } from '../../services/capacity/workdays/scheduling/workday-preflight-service.ts';
 import type { CapacityOperatorStore } from './operator.ts';
 import { readCapacityRequestObject } from './request-json.ts';
 import { filterWorkdayActivity, redactTranscriptValue } from './workday-activity.ts';
@@ -61,15 +60,21 @@ export function installOperatorWorkdayRoutes(app: Hono, dependencies: WorkdayRou
 	app.post('/v1/teams/:teamId/workday-runs', async (c) => {
 		const access = await manage(c); if (access.response) return access.response;
 		try {
-			const body = await readCapacityRequestObject(c, { optional: true });
-			return c.json({ ok: true, payload: await store.createCapacityWorkdayRun(c.req.param('teamId'), { ...body, requestedById: access.principal?.id ?? null }) }, { status: 201 });
+			const body = await readCapacityRequestObject(c);
+			const idempotencyKey=typeof body.idempotencyKey==='string'&&body.idempotencyKey.trim()?body.idempotencyKey.trim():c.req.header('Idempotency-Key')?.trim()??'';
+			const payload=await new WorkdayPreflightService(store).start(c.req.param('teamId'),{
+				preflightId:typeof body.preflightId==='string'?body.preflightId:'',
+				preflightDigest:typeof body.preflightDigest==='string'?body.preflightDigest:'',idempotencyKey,
+			},access.principal?.id??null);
+			return c.json({ ok: true,payload }, { status: 201 });
 		} catch (error) { return operatorError(error); }
 	});
 	app.post('/v1/teams/:teamId/workday-runs/preflight', async (c) => {
 		const access = await manage(c); if (access.response) return access.response;
 		try {
-			const body = await readCapacityRequestObject(c, { optional: true });
-			return c.json({ ok: true, payload: await store.preflightCapacityWorkdayRunRequest(c.req.param('teamId'), { ...body, requestedById: access.principal?.id ?? null }) });
+			const body = await readCapacityRequestObject(c);
+			const intent=parsePublicWorkdayIntent(c.req.param('teamId'),body);
+			return c.json({ ok: true, payload: await new WorkdayPreflightService(store).preflight(c.req.param('teamId'),intent,access.principal?.id??null) });
 		} catch (error) { return operatorError(error); }
 	});
 	app.get('/v1/teams/:teamId/workday-runs/:runId', async (c) => {
@@ -79,50 +84,12 @@ export function installOperatorWorkdayRoutes(app: Hono, dependencies: WorkdayRou
 		const events = await store.listCapacityWorkdayEventsPage(c.req.param('teamId'), String(run.id), { limit: 50, cursor: null });
 		return c.json({ ok: true, payload: { run, events: events.items, eventPage: events.page } });
 	});
-	app.patch('/v1/teams/:teamId/workday-runs/:runId', async (c) => {
-		const access = await manage(c); if (access.response) return access.response;
-		try {
-			const run = await store.updateCapacityWorkdayRun(c.req.param('teamId'), c.req.param('runId'), await readCapacityRequestObject(c, { optional: true }));
-			if (run?.status === 'completed' && run.executionKind === 'conversation') {
-				const invocations = await store.all(`SELECT DISTINCT assignment.invocation_id FROM capacity_workday_demands demand JOIN capacity_provider_assignments assignment ON assignment.id=demand.assignment_id WHERE demand.team_id=? AND demand.workday_run_id=? AND assignment.invocation_id IS NOT NULL`, [c.req.param('teamId'), c.req.param('runId')]);
-				for (const invocation of invocations) await terminalizeCompletedConversationInvocation(store, c.req.param('teamId'), String(invocation.invocation_id));
-			}
-			return run ? c.json({ ok: true, payload: run }) : notFound(c, 'Unknown workday run.');
-		} catch (error) { return operatorError(error); }
-	});
-	app.post('/v1/teams/:teamId/workday-runs/:runId/tick', async (c) => {
-		const access = await manage(c); if (access.response) return access.response;
-		try {
-			const body = await readCapacityRequestObject(c, { optional: true });
-			const now = typeof body.now === 'string' && body.now ? body.now : undefined;
-			const key = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim() ? body.idempotencyKey.trim() : c.req.header('Idempotency-Key')?.trim();
-			if (!key) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
-			return c.json({ ok: true, payload: await store.tickCapacityWorkdayRun(c.req.param('teamId'), c.req.param('runId'), now, key) });
-		} catch (error) { return operatorError(error); }
-	});
-	app.post('/v1/teams/:teamId/workday-runs/:runId/close-admission', async (c) => {
-		const access = await manage(c); if (access.response) return access.response;
-		try {
-			const body = await readCapacityRequestObject(c,{ optional: true });
-			const key = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim() ? body.idempotencyKey.trim() : c.req.header('Idempotency-Key')?.trim();
-			if (!key) throw new CapacityGovernanceError('capacity_idempotency_key_required','An idempotency key is required.',400);
-			return c.json({ ok: true,payload: await store.fenceCapacityWorkdayAdmission(c.req.param('teamId'),c.req.param('runId')) });
-		}
-		catch (error) { return operatorError(error); }
-	});
 	app.get('/v1/teams/:teamId/workday-runs/:runId/events', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
 		const run = await store.getCapacityWorkdayRun(c.req.param('teamId'), c.req.param('runId'));
 		if (!run) return notFound(c, 'Unknown workday run.');
 		try { return c.json({ ok: true, payload: await store.listCapacityWorkdayEventsPage(c.req.param('teamId'), String(run.id), page(c)) }); }
 		catch (error) { return operatorError(error); }
-	});
-	app.post('/v1/teams/:teamId/workday-runs/:runId/events', async (c) => {
-		const access = await manage(c); if (access.response) return access.response;
-		try {
-			const event = await store.createCapacityWorkdayEvent(c.req.param('teamId'), c.req.param('runId'), await readCapacityRequestObject(c, { optional: true }));
-			return event ? c.json({ ok: true, payload: event }, { status: 201 }) : notFound(c, 'Unknown workday run.');
-		} catch (error) { return operatorError(error); }
 	});
 }
 

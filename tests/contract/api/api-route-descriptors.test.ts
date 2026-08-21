@@ -1,4 +1,3 @@
-import { CAPACITY_OPERATOR_CAPABILITIES } from '@treeseed/sdk/agent-capacity';
 import { existsSync,mkdirSync,readFileSync,writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe,expect,it } from 'vitest';
@@ -15,6 +14,7 @@ TEAM_MANAGER_ACTORS,
 TEAM_MEMBER_ACTORS,
 extractActiveApiRoutes,
 } from '../../../src/api/support/route-descriptors.js';
+import { API_COMMAND_AUTHORITY,validateApiCommandAuthority } from '../../../src/api/capacity/operator-command-authority.js';
 
 function publicMarketClientMethods() {
 	const sourcePath = existsSync(resolve(process.cwd(), '../sdk/src/entrypoints/clients/market-client.ts'))
@@ -30,17 +30,11 @@ function publicMarketClientMethods() {
 }
 
 describe('API route descriptors', () => {
-	it('implements every API route in the canonical capacity operator matrix', () => {
-		const descriptors = new Set(API_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.id));
-		const missing = CAPACITY_OPERATOR_CAPABILITIES.flatMap((capability) =>
-			capability.apiRouteIds
-				.filter((routeId) => !descriptors.has(routeId))
-				.map((routeId) => ({ capability: capability.id, routeId })),
-		);
-		expect(missing).toEqual([]);
+	it('binds API-owned authorization only to canonical SDK command paths and active routes', () => {
+		expect(validateApiCommandAuthority(new Set(API_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.id)))).toEqual([]);
 	});
 
-	it('matches every human capacity capability to its descriptor permission class', () => {
+	it('matches every API command binding to its descriptor permission class', () => {
 		const descriptors = new Map(API_ROUTE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor]));
 		const actors = {
 			'team-read': TEAM_MEMBER_ACTORS,
@@ -48,12 +42,11 @@ describe('API route descriptors', () => {
 			'project-read': PROJECT_MEMBER_ACTORS,
 			'project-manage': PROJECT_MANAGER_ACTORS,
 		} as const;
-		const mismatches = CAPACITY_OPERATOR_CAPABILITIES.flatMap((capability) => {
-			if (!(capability.access in actors)) return [];
-			const expected = actors[capability.access as keyof typeof actors];
-			return capability.apiRouteIds.flatMap((routeId) => {
+		const mismatches = API_COMMAND_AUTHORITY.flatMap((binding) => {
+			const expected = actors[binding.access];
+			return binding.apiRouteIds.flatMap((routeId) => {
 				const actual = descriptors.get(routeId)?.acceptance.successActors;
-				return JSON.stringify(actual) === JSON.stringify(expected) ? [] : [{ capability: capability.id, routeId, expected, actual }];
+				return JSON.stringify(actual) === JSON.stringify(expected) ? [] : [{ commandPath: binding.commandPath, routeId, expected, actual }];
 			});
 		});
 		expect(mismatches).toEqual([]);
@@ -121,7 +114,6 @@ describe('API route descriptors', () => {
 			'post.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials.rotate',
 			'post.v1.teams.teamId.capacity-grants',
 			'post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.activate',
-			'post.v1.teams.teamId.workday-runs.runId.tick',
 		]) {
 			expect(byId.get(id)?.acceptance.successActors, id).toEqual(TEAM_MANAGER_ACTORS);
 		}
