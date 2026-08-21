@@ -3,6 +3,7 @@ import { githubConnectorConfig, githubConnectorRequiredPermissions, isGitHubConn
 import { resolveGitHubCredentialAuthority } from '../../../security/provider-credential-authority.ts';
 import { reconciledWorkflowRunStatus } from '../../../providers/github/actions-client.ts';
 import { verifyGitHubInstallation } from './github-connector-api.ts';
+import { RepositoryWorkdayProfileService,REPOSITORY_WORKDAY_PROFILE_PATH } from '../../capacity/services/capacity/workdays/policy/repository-workday-profile-service.ts';
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -119,6 +120,53 @@ async function reconcileWorkflowRun(store: any, payload: any) {
 	return { runId: correlated.id, providerRunId: String(observed.id), status, conclusion: observed.conclusion ?? null };
 }
 
+export async function reconcileRepositoryPush(store:any,payload:any) {
+	const fullName=String(payload.repository?.full_name??'').toLowerCase();
+	const [owner,name,...rest]=fullName.split('/');
+	const ref=String(payload.ref??'');
+	const commit=String(payload.after??'').toLowerCase();
+	if(!owner||!name||rest.length||!/^refs\/heads\/[A-Za-z0-9._/-]+$/u.test(ref)||!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('GitHub push webhook omitted exact repository, ref, or commit identity.');
+	const binding:any=await store.first(`SELECT * FROM project_remote_repository_bindings WHERE LOWER(owner)=? AND LOWER(name)=? LIMIT 1`,[owner,name]);
+	if(!binding) return null;
+	if(String(payload.repository?.id??'')!==String(binding.provider_repository_id??'')) throw new Error('GitHub push repository identity does not match the authorized binding.');
+	if(ref!==`refs/heads/${String(binding.publication_ref??'')}`) return null;
+	if(/^0{40}$/u.test(commit)) return null;
+	return {repository:fullName,observedCommit:commit,status:'awaiting-required-check'};
+}
+
+export async function reconcileRepositoryCheckRun(store:any,payload:any) {
+	const fullName=String(payload.repository?.full_name??'').toLowerCase();
+	const [owner,name,...rest]=fullName.split('/');
+	const checkRunId=String(payload.check_run?.id??'');
+	if(!owner||!name||rest.length||!/^\d+$/u.test(checkRunId)) throw new Error('GitHub check-run webhook omitted exact repository or check identity.');
+	const binding:any=await store.first(`SELECT * FROM project_remote_repository_bindings WHERE LOWER(owner)=? AND LOWER(name)=? LIMIT 1`,[owner,name]);
+	if(!binding) return null;
+	if(String(payload.repository?.id??'')!==String(binding.provider_repository_id??'')) throw new Error('GitHub check-run repository identity does not match the authorized binding.');
+	const credential=await resolveGitHubCredentialAuthority({store,authorityId:binding.authority_id,repositoryBindingId:binding.id,capability:'repository-hosting'});
+	const checkResponse=await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/check-runs/${encodeURIComponent(checkRunId)}`,{
+		headers:{accept:'application/vnd.github+json',authorization:`Bearer ${credential.token}`,'user-agent':'treeseed-provider-webhook','x-github-api-version':'2022-11-28'},
+	});
+	if(!checkResponse.ok) throw new Error(`GitHub required-check read-back failed (HTTP ${checkResponse.status}).`);
+	const check:any=await checkResponse.json();
+	const commit=String(check.head_sha??'').toLowerCase();
+	if(String(check.name??'')!=='verify'||String(check.status??'')!=='completed'||String(check.conclusion??'')!=='success'
+		||String(check.check_suite?.head_branch??'')!==String(binding.publication_ref??'')||String(check.app?.slug??'')!=='github-actions'
+		||!/^[a-f0-9]{40}$/u.test(commit)||/^0{40}$/u.test(commit)) return null;
+	const ref=`refs/heads/${String(binding.publication_ref??'')}`;
+	const refResponse=await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/ref/heads/${String(binding.publication_ref??'').split('/').map(encodeURIComponent).join('/')}`,{
+		headers:{accept:'application/vnd.github+json',authorization:`Bearer ${credential.token}`,'user-agent':'treeseed-provider-webhook','x-github-api-version':'2022-11-28'},
+	});
+	if(!refResponse.ok) throw new Error(`GitHub publication-ref read-back failed (HTTP ${refResponse.status}).`);
+	const currentRef:any=await refResponse.json();
+	if(String(currentRef.object?.sha??'').toLowerCase()!==commit) return {repository:fullName,observedCommit:commit,status:'stale-required-check'};
+	const response=await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${REPOSITORY_WORKDAY_PROFILE_PATH.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(commit)}`,{
+		headers:{accept:'application/vnd.github.raw+json',authorization:`Bearer ${credential.token}`,'user-agent':'treeseed-provider-webhook','x-github-api-version':'2022-11-28'},
+	});
+	if(response.status===404) return {repository:fullName,observedCommit:commit,status:'no-profile'};
+	if(!response.ok) throw new Error(`GitHub repository profile read-back failed (HTTP ${response.status}).`);
+	return new RepositoryWorkdayProfileService(store).reconcile({repository:fullName,ref,commit,path:REPOSITORY_WORKDAY_PROFILE_PATH,content:await response.text()});
+}
+
 export function installGitHubWebhookRoutes(context: any) {
 	const { app, store, jsonError } = context;
 	app.post('/v1/provider-webhooks/github/:kind', async (c: any) => {
@@ -156,6 +204,10 @@ export function installGitHubWebhookRoutes(context: any) {
 					: await reconcileInstallation(store, kind, installationId);
 			} else if (kind === 'workflow' && eventType === 'workflow_run') {
 				correlation = await reconcileWorkflowRun(store, payload);
+			} else if (kind === 'repository' && eventType === 'push') {
+				correlation = await reconcileRepositoryPush(store,payload);
+			} else if (kind === 'repository' && eventType === 'check_run') {
+				correlation = await reconcileRepositoryCheckRun(store,payload);
 			}
 			await store.run(`UPDATE provider_webhook_deliveries SET status = 'processed', correlation_id = ?, processed_at = ? WHERE id = ?`,
 				[correlation?.runId ?? correlation?.installationId ?? null, new Date().toISOString(), recordId]);

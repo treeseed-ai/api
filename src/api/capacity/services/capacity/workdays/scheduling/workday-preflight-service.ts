@@ -22,6 +22,7 @@ interface WorkdayIntentStore extends CapacityGovernanceDatabase {
 interface StoredPreflight { receipt:WorkdayPreflightReceipt; intent:WorkdayIntent; runInput:JsonRecord }
 
 function record(value:unknown):JsonRecord { return value&&typeof value==='object'&&!Array.isArray(value)?value as JsonRecord:{}; }
+function jsonRecord(value:unknown):JsonRecord { try { return record(JSON.parse(String(value??'{}'))); } catch { return {}; } }
 function text(value:unknown):string { return typeof value==='string'?value.trim():''; }
 function integer(value:unknown,fallback:number):number { const parsed=Number(value); return Number.isInteger(parsed)&&parsed>0?parsed:fallback; }
 function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(value))}`; }
@@ -67,7 +68,19 @@ export class WorkdayPreflightService {
 	private async compile(teamId:string,intent:WorkdayIntent,requestedById:string|null,id:string):Promise<StoredPreflight> {
 		await this.store.ensureInitialized();
 		const providerId=await this.providerId(teamId,intent);
-		const allocation=await this.store.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND id = ? AND status = 'active' LIMIT 1`,[teamId,intent.profileId]);
+		let allocation=await this.store.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND id = ? AND status = 'active' LIMIT 1`,[teamId,intent.profileId]);
+		if(!allocation) {
+			const indexed=await this.store.first(`SELECT response_json FROM capacity_operation_receipts WHERE team_id=? AND operation='repository-workday-profile.reconcile' AND resource_id LIKE ? ORDER BY created_at DESC LIMIT 1`,[teamId,`%:${intent.profileId}`]);
+			if(indexed) {
+				let allocationSetId='';
+				try {
+					const receipt=record(JSON.parse(String(indexed.response_json)));
+					if(text(record(receipt.generation).profileId)!==intent.profileId) throw new Error('profile identity mismatch');
+					allocationSetId=text(receipt.allocationSetId);
+				} catch { throw new CapacityGovernanceError('workday_profile_index_receipt_invalid','The selected repository profile index receipt is invalid.',500,{profileId:intent.profileId}); }
+				if(allocationSetId) allocation=await this.store.first(`SELECT * FROM capacity_allocation_sets WHERE team_id=? AND id=? AND status='active' LIMIT 1`,[teamId,allocationSetId]);
+			}
+		}
 		if(!allocation) throw new CapacityGovernanceError('workday_profile_not_indexed','The selected repository allocation profile has not been indexed into an accepted allocation generation.',409,{profileId:intent.profileId});
 		const startsAt=intent.startsAt;
 		const endsAt=intent.endsAt??new Date(Date.parse(startsAt)+(intent.durationSeconds??0)*1000).toISOString();
@@ -106,15 +119,16 @@ export class WorkdayPreflightService {
 		const classAccounting=[...new Set(selectedDemands.map((entry)=>entry.classSlug))].sort().map((classSlug)=>({classSlug,
 			allocatedSeconds:selectedDemands.filter((entry)=>entry.classSlug===classSlug).reduce((sum,entry)=>sum+entry.requestedSeconds,0),
 			borrowedSeconds:0,lentSeconds:0,idleSeconds:0,reservedSeconds:0,activeSeconds:0,releasedSeconds:0,overrunSeconds:0}));
-		const profileGeneration=integer(allocation.state_version??allocation.version,1);
+		const indexedProfile=record(jsonRecord(allocation.metadata_json).repositoryProfile);
+		const profileGeneration=integer(indexedProfile.generation??allocation.state_version??allocation.version,1);
 		const state:WorkdayPreflightObservation={
-			profileGeneration, profileDigest:digest(allocation), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[]}),
+			profileGeneration, profileDigest:text(indexedProfile.profileDigest)||digest(allocation), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[]}),
 			providerCapacityDigest:digest({providerId,membershipTeam:teamId,availableSeconds:projection.availableSeconds??null}),
 			authorizationDigest:digest({teamId,requestedById,profileId:intent.profileId}),
 			reservationDigest:digest(await this.store.all(`SELECT id,state,requested_seconds,reserved_seconds,active_seconds,elapsed_seconds,released_seconds,overrun_seconds FROM capacity_reservations WHERE team_id = ? AND state IN ('reserved','consuming','overran_pending_approval','continuation_required') ORDER BY id`,[teamId])),
 		};
 		const base={ schemaVersion:'treeseed.workday-preflight/v1' as const,id,teamId,intentDigest:digest(intent),profileId:intent.profileId,
-			profileVersion:text(allocation.version)||`generation-${profileGeneration}`,...state,selectedDemands,classAccounting,borrowing:[],startsAt,endsAt,
+			profileVersion:text(indexedProfile.profileVersion)||text(allocation.version)||`generation-${profileGeneration}`,...state,selectedDemands,classAccounting,borrowing:[],startsAt,endsAt,
 			maxConcurrency,reserveSeconds:Math.floor(durationSeconds*maxConcurrency*reservePercent/100),expiresAt:new Date(Date.now()+5*60_000).toISOString() };
 		const receipt:WorkdayPreflightReceipt={...base,preflightDigest:digest(base)};
 		const diagnostics=validateWorkdayPreflight(receipt);

@@ -36,7 +36,7 @@ describe('provider credential authority', () => {
 		expect(credential.token).toBe('installation-token');
 		const request = fetchImpl.mock.calls[0];
 		expect(request[0]).toContain('/app/installations/42/access_tokens');
-		expect(JSON.parse(request[1].body)).toEqual({ repositories: ['admin'], permissions: { contents: 'write' } });
+		expect(JSON.parse(request[1].body)).toEqual({ repositories: ['admin'], permissions: { checks: 'read', contents: 'write' } });
 		expect(JSON.stringify(request)).not.toContain(pem);
 	});
 

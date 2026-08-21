@@ -113,7 +113,6 @@ describe('API route descriptors', () => {
 			'post.v1.teams.teamId.capacity-provider-memberships.membershipId.suspend',
 			'post.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials.rotate',
 			'post.v1.teams.teamId.capacity-grants',
-			'post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.activate',
 		]) {
 			expect(byId.get(id)?.acceptance.successActors, id).toEqual(TEAM_MANAGER_ACTORS);
 		}

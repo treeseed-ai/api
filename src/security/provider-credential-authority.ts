@@ -34,7 +34,7 @@ function connectorEnvironment(profileId: string) {
 
 function permissionScope(profileId: string) {
 	return profileId === 'github-repository-app'
-		? { contents: 'write' }
+		? { contents: 'write', checks: 'read' }
 		: { actions: 'write', contents: 'read', secrets: 'write', variables: 'write' };
 }
 
