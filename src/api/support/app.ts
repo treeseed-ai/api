@@ -1,158 +1,170 @@
-import { AgentSdk } from "@treeseed/sdk";
+import { AgentSdk, REMOTE_CONTRACT_HEADER, REMOTE_CONTRACT_VERSION } from '@treeseed/sdk';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { Hono } from 'hono';
+import { PostgresAuthProvider } from '../auth/postgres-provider.ts';
+import { createCapacityControlPlane } from '../capacity/control-plane.ts';
+import { createApiControlPlaneOperations } from '../control-plane/catalog/index.ts';
+import { installControlPlaneProtocolRoutes } from '../control-plane/http/protocol-routes.ts';
+import { ControlPlaneStore } from '../persistence/store.js';
+import { SessionEventService } from '../realtime/session-events.ts';
 import {
-  D1AuthProvider as DatabaseAuthProvider,
-  createApiApp as createSdkApiApp,
-} from "@treeseed/sdk/api";
-import { createCapacityControlPlane } from "../capacity/control-plane.ts";
-import { ControlPlaneStore } from "../persistence/store.js";
-import {
-  POSTGRES_AUTH_PROVIDER_ID,
-  createApiExtension,
-  defaultConfig,
-  installApiRequestLogger,
+	defaultConfig,
+	installApiRequestLogger,
 	localAcceptanceAdminToken,
 	localAcceptanceAuthEnabled,
-  resolveAgentArtifactBucket,
-  resolveAuthApprovalBaseUrl,
-  shouldLogApiRequests,
-} from "../app/support/index.ts";
-import { createControlPlanePostgresDatabase } from "./control-plane-postgres.js";
-import { routeDependencies } from "./route-dependencies.ts";
-import { installPlatformRoutes } from "./route-installers.ts";
-import { SessionEventService } from "../realtime/session-events.ts";
-import { installControlPlaneProtocolRoutes } from "../control-plane/http/protocol-routes.ts";
-import { createApiControlPlaneOperations } from "../control-plane/catalog/index.ts";
+	resolveAgentArtifactBucket,
+	resolveAuthApprovalBaseUrl,
+	shouldLogApiRequests,
+} from '../app/support/index.ts';
+import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
+import { routeDependencies } from './route-dependencies.ts';
+import { installPlatformRoutes } from './route-installers.ts';
 
-export * from "../app/support/index.ts";
+export * from '../app/support/index.ts';
 
-export function createPlatformApiApp(
-  options: any = {},
-): ReturnType<typeof createSdkApiApp> {
-  const config = defaultConfig(options.config ?? {});
-  const apiDatabaseUrl =
-    config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? null;
-  if (!options.db && !apiDatabaseUrl) {
-    throw new Error(
-      "TREESEED_DATABASE_URL is required for the Treeseed PostgreSQL control-plane database.",
-    );
-  }
-  const db = options.db ?? createControlPlanePostgresDatabase(apiDatabaseUrl);
-  const store =
-    options.store ??
-    new ControlPlaneStore(
-      {
-        ...config,
-        assertionSecret: config.webAssertionSecret,
-        serviceId: config.webServiceId,
-        serviceSecret: config.webServiceSecret,
-        fetchImpl: options.fetchImpl ?? fetch,
-      },
-      db,
-    );
-  const capacity = createCapacityControlPlane(store);
-  const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
-  const configuredAuthProviderId =
-    config.providers?.auth ?? POSTGRES_AUTH_PROVIDER_ID;
-  const authProviderId =
-    configuredAuthProviderId === "d1"
-      ? POSTGRES_AUTH_PROVIDER_ID
-      : configuredAuthProviderId;
-  const authConfig = {
-    ...config,
-    baseUrl: resolveAuthApprovalBaseUrl(config),
-  };
-  const sharedSdk =
-    options.sdk ?? AgentSdk.createLocal({ repoRoot: config.repoRoot });
-  const runtimeProviders =
-    authProviderId === POSTGRES_AUTH_PROVIDER_ID
-      ? {
-          ...(options.runtimeProviders ?? {}),
-          auth: {
-            ...(options.runtimeProviders?.auth ?? {}),
-            [POSTGRES_AUTH_PROVIDER_ID]: ({ config: runtimeConfig }: any) =>
-              new DatabaseAuthProvider(
-                {
-                  ...runtimeConfig,
-                  baseUrl: resolveAuthApprovalBaseUrl({
-                    ...config,
-                    ...runtimeConfig,
-                  }),
-                },
-                { db },
-              ),
-          },
-        }
-      : { ...(options.runtimeProviders ?? {}) };
-  const logRequests = shouldLogApiRequests(config, options);
-	const authenticateBearerOverride = async (token: string) => {
-		if (!localAcceptanceAuthEnabled({ resolved: { config } }) || token !== localAcceptanceAdminToken()) return null;
-		return {
-			principal: {
-				id: 'team-key:local-capacity-acceptance', displayName: 'Local Capacity Acceptance',
-				roles: ['team_api_key', 'platform_admin'], permissions: ['*:*:*', 'seeds:apply:global', 'teams:manage:team'],
-				scopes: ['auth:me'], metadata: { localAcceptance: true },
-			},
-			credential: { type: 'service_token' as const, id: 'local-capacity-acceptance', label: 'Local Capacity Acceptance' },
-		};
+function bearerToken(request: Request) {
+	return request.headers.get('authorization')?.match(/^Bearer\s+(.+)$/iu)?.[1] ?? null;
+}
+
+function sameSecret(left: string, right: string | undefined) {
+	if (!right) return false;
+	const leftBuffer = Buffer.from(left);
+	const rightBuffer = Buffer.from(right);
+	return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function projectPrincipal(config: any) {
+	return {
+		id: `project:${config.projectId}`,
+		displayName: config.projectApiLabel,
+		roles: ['project_api'],
+		permissions: [...(config.projectApiPermissions ?? [])],
+		scopes: ['auth:me'],
+		metadata: { projectId: config.projectId },
 	};
+}
 
-  return createSdkApiApp({
-    ...options,
-    config: {
-      ...config,
-      providers: { ...(config.providers ?? {}), auth: authProviderId },
-    },
-    runtimeProviders,
-    sdk: sharedSdk,
-	authenticateBearerOverride,
-    internalPrefix: options.internalPrefix ?? "/internal/core",
-    surfaces: { templates: false, ...(options.surfaces ?? {}) },
-    extensions: [
-      createApiExtension({
-        mount(app, runtime) {
-          if (logRequests) installApiRequestLogger(app);
-          const runtimeControlPlaneAuthProvider = new DatabaseAuthProvider(
-            {
-              ...authConfig,
-              ...runtime.resolved.config,
-              baseUrl: resolveAuthApprovalBaseUrl({
-                ...config,
-                ...runtime.resolved.config,
-              }),
-            },
-            { db },
-          );
-          store.setArtifactBucket(resolveAgentArtifactBucket(runtime));
-          const routeContext = {
-            ...routeDependencies,
-            apiDatabaseUrl,
-            app,
-            authConfig,
-            authProviderId,
-            capacity,
-            config,
-            configuredAuthProviderId,
-            db,
-            logRequests,
-            options,
-            runtime,
-            runtimeControlPlaneAuthProvider,
-            runtimeProviders,
-            sharedSdk,
-            sessionEvents,
-            store,
-          };
-          installPlatformRoutes(routeContext);
-          installControlPlaneProtocolRoutes(
-            app,
-            (token) => runtimeControlPlaneAuthProvider.authenticateBearerToken(token),
-            runtimeControlPlaneAuthProvider,
-            createApiControlPlaneOperations({ store }),
-          );
-          options.extendApp?.(app, runtime);
-        },
-      }),
-      ...(options.extensions ?? []),
-    ],
-  });
+function authProviderFor(options: any, config: any, db: any) {
+	const id = config.providers?.auth ?? 'control-plane-postgres';
+	const factory = options.runtimeProviders?.auth?.[id];
+	if (factory) return factory({ config });
+	if (id !== 'control-plane-postgres') throw new Error(`TreeSeed API runtime could not resolve auth provider "${id}".`);
+	return new PostgresAuthProvider({ ...config, baseUrl: resolveAuthApprovalBaseUrl(config) }, { db });
+}
+
+function setAuthentication(context: any, result: any, actorType?: string) {
+	context.set('principal', result.principal);
+	context.set('credential', result.credential);
+	context.set('actorType', actorType ?? (result.credential?.type === 'service_token' ? 'service' : 'user'));
+	context.set('permissionGrants', result.principal?.permissions ?? []);
+}
+
+export function createPlatformApiApp(options: any = {}) {
+	const config = defaultConfig(options.config ?? {});
+	const apiDatabaseUrl = config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL ?? null;
+	if (!options.db && !apiDatabaseUrl) throw new Error('TREESEED_DATABASE_URL is required for the TreeSeed PostgreSQL control-plane database.');
+	const db = options.db ?? createControlPlanePostgresDatabase(apiDatabaseUrl);
+	const store = options.store ?? new ControlPlaneStore({
+		...config,
+		assertionSecret: config.webAssertionSecret,
+		serviceId: config.webServiceId,
+		serviceSecret: config.webServiceSecret,
+		fetchImpl: options.fetchImpl ?? fetch,
+	}, db);
+	const authProvider = authProviderFor(options, config, db);
+	const capacity = createCapacityControlPlane(store);
+	const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
+	const sharedSdk = options.sdk ?? AgentSdk.createLocal({ repoRoot: config.repoRoot });
+	const runtimeProviders = {
+		auth: authProvider,
+		selections: { auth: config.providers?.auth ?? 'control-plane-postgres', agents: config.providers?.agents ?? {} },
+	};
+	const runtime = {
+		resolved: { config, surfaces: { auth: true, templates: false, sdk: false, operations: false, ...(options.surfaces ?? {}) } },
+		runtimeProviders,
+		sharedSdk,
+		internalPrefix: options.internalPrefix ?? '/internal/core',
+	};
+	const app = new Hono();
+
+	app.use('*', async (context, next) => {
+		context.set('requestId', context.req.header('x-request-id')?.trim() || randomUUID());
+		context.set('config', config);
+		context.set('principal', null);
+		context.set('actingUser', null);
+		context.set('credential', null);
+		context.set('actorType', 'anonymous');
+		context.set('permissionGrants', []);
+		context.header(REMOTE_CONTRACT_HEADER, String(REMOTE_CONTRACT_VERSION));
+		await next();
+	});
+
+	app.use('*', async (context, next) => {
+		const serviceId = context.req.header('x-treeseed-service-id');
+		const serviceSecret = context.req.header('x-treeseed-service-secret');
+		if (serviceId && serviceSecret && typeof authProvider.authenticateServiceCredential === 'function') {
+			const authenticated = await authProvider.authenticateServiceCredential(serviceId, serviceSecret);
+			if (!authenticated) return context.json({ ok: false, error: 'Invalid internal service credential.' }, 401);
+			setAuthentication(context, authenticated, 'service');
+		}
+		await next();
+	});
+
+	app.use('*', async (context, next) => {
+		const token = bearerToken(context.req.raw);
+		if (token) {
+			if (localAcceptanceAuthEnabled({ resolved: { config } }) && token === localAcceptanceAdminToken()) {
+				setAuthentication(context, {
+					principal: { id: 'team-key:local-capacity-acceptance', displayName: 'Local Capacity Acceptance', roles: ['team_api_key', 'platform_admin'], permissions: ['*:*:*', 'seeds:apply:global', 'teams:manage:team'], scopes: ['auth:me'], metadata: { localAcceptance: true } },
+					credential: { type: 'service_token', id: 'local-capacity-acceptance', label: 'Local Capacity Acceptance' },
+				}, 'service');
+			} else if (sameSecret(token, config.projectApiKey)) {
+				setAuthentication(context, { principal: projectPrincipal(config), credential: { type: 'project_api_key', id: config.projectId, label: config.projectApiLabel } }, 'project');
+			} else if (typeof authProvider.authenticateBearerToken === 'function') {
+				const authenticated = await authProvider.authenticateBearerToken(token);
+				if (authenticated) setAuthentication(context, authenticated);
+			}
+		}
+		await next();
+	});
+
+	app.use('*', async (context, next) => {
+		const assertion = context.req.header('x-treeseed-user-assertion');
+		if (assertion && context.get('actorType') === 'service' && typeof authProvider.verifyTrustedUserAssertion === 'function') {
+			const claims = authProvider.verifyTrustedUserAssertion(assertion);
+			if (!claims) return context.json({ ok: false, error: 'Invalid trusted user assertion.' }, 401);
+			const exchange = await authProvider.exchangeTrustedUserAssertion(claims);
+			context.set('actingUser', exchange.principal);
+			setAuthentication(context, { principal: exchange.principal, credential: context.get('credential') }, 'user');
+		}
+		await next();
+	});
+
+	if (shouldLogApiRequests(config, options)) installApiRequestLogger(app);
+	store.setArtifactBucket(resolveAgentArtifactBucket(runtime));
+	const routeContext = {
+		...routeDependencies,
+		apiDatabaseUrl,
+		app,
+		authConfig: { ...config, baseUrl: resolveAuthApprovalBaseUrl(config) },
+		authProviderId: config.providers?.auth ?? 'control-plane-postgres',
+		capacity,
+		config,
+		configuredAuthProviderId: config.providers?.auth ?? 'control-plane-postgres',
+		db,
+		logRequests: shouldLogApiRequests(config, options),
+		options,
+		runtime,
+		runtimeControlPlaneAuthProvider: authProvider,
+		runtimeProviders,
+		sharedSdk,
+		sessionEvents,
+		store,
+	};
+	installPlatformRoutes(routeContext);
+	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider, createApiControlPlaneOperations({ store }));
+	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
+	options.extendApp?.(app, runtime);
+	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));
+	return app;
 }

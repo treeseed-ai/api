@@ -1,6 +1,5 @@
 import * as sdk from "@treeseed/sdk";
 import * as accountContracts from "@treeseed/sdk/account-contracts";
-import * as sdkApi from "@treeseed/sdk/api";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as fsPromises from "node:fs/promises";
@@ -33,7 +32,6 @@ import * as postgres from "./control-plane-postgres.js";
 export const routeDependencies: Record<string, any> = {
   ...sdk,
   ...accountContracts,
-  ...sdkApi,
   ...crypto,
   ...fs,
   ...fsPromises,
@@ -58,7 +56,6 @@ export const routeDependencies: Record<string, any> = {
   ...postgres,
   ...support,
   contentRelationPolicy: contentRelations.contentRelationPolicy,
-  DatabaseAuthProvider: sdkApi.D1AuthProvider,
   parseYaml,
   resolve: path.resolve,
   relative: path.relative,
