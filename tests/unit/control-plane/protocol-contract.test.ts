@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { CONTROL_PLANE_OPERATION_SCHEMA_VERSION } from '@treeseed/sdk/operator-contracts';
+import { z } from 'zod';
 import { controlPlaneOperations, createApiControlPlaneOperations } from '../../../src/api/control-plane/catalog/index.ts';
+import { OperationRegistry, type BoundOperation } from '../../../src/api/control-plane/catalog/operation-registry.ts';
 import { installControlPlaneProtocolRoutes } from '../../../src/api/control-plane/http/protocol-routes.ts';
 import { generateOpenApi, openApiDigest } from '../../../src/api/control-plane/openapi/generate-openapi.ts';
 
@@ -75,6 +78,49 @@ describe('control-plane protocol contract', () => {
 		expect(failed.headers.get('content-type')).toContain('application/problem+json');
 		expect(JSON.parse(failedText)).toMatchObject({ status: 503, code: 'control_plane_database_unavailable' });
 		expect(failedText).not.toContain('private database detail');
+	});
+
+	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {
+		const calls: Array<{ input: unknown; requestId: string; traceparent?: string }> = [];
+		const input = z.object({ projectId: z.string().min(1), name: z.string().min(1) }).strict();
+		const output = z.object({ projectId: z.string(), name: z.string(), revision: z.number().int() }).strict();
+		const operation: BoundOperation<z.infer<typeof input>, z.infer<typeof output>> = {
+			descriptor: {
+				schemaVersion: CONTROL_PLANE_OPERATION_SCHEMA_VERSION,
+				operationId: 'projects.update',
+				description: 'Update a project through the shared operation adapter.',
+				rest: { method: 'PATCH', path: '/v1/projects/:projectId' },
+				schemas: { input: 'treeseed.projects.update.input/v1', output: 'treeseed.projects.update.output/v1', errors: 'treeseed.problem/v1' },
+				capability: 'projects.write', oauthScopes: ['treeseed:projects:write'], kind: 'mutation', riskClass: 'ordinary', confirmation: 'never',
+				idempotency: { required: true, header: 'Idempotency-Key' },
+				concurrency: { required: true, readHeader: 'ETag', writeHeader: 'If-Match' },
+				surfaces: ['rest'], cacheScope: 'private', pagination: 'none', audited: true, receipt: true, redactedPaths: [],
+			},
+			inputSchema: input,
+			outputSchema: output,
+			async handler(value, context) {
+				calls.push({ input: value, requestId: context.requestId, traceparent: context.traceparent });
+				return { ...value, revision: 2 };
+			},
+		};
+		const app = new Hono();
+		installControlPlaneProtocolRoutes(app, async () => ({ principal: { id: 'user_1', scopes: ['treeseed:projects:write'] }, credential: { id: 'client_1' } }), oauthProvider, new OperationRegistry([operation]));
+		const headers = { authorization: 'Bearer test-token', 'content-type': 'application/json' };
+		const missingIdempotency = await app.request('/v1/projects/project-a', { method: 'PATCH', headers, body: JSON.stringify({ name: 'Example' }) });
+		const missingIdempotencyProblem = await missingIdempotency.json();
+		expect({ status: missingIdempotency.status, body: missingIdempotencyProblem }).toMatchObject({ status: 400, body: { code: 'idempotency_key_required' } });
+		const missingConcurrency = await app.request('/v1/projects/project-a', { method: 'PATCH', headers: { ...headers, 'idempotency-key': 'attempt-1' }, body: JSON.stringify({ name: 'Example' }) });
+		expect(missingConcurrency.status).toBe(412);
+		expect(await missingConcurrency.json()).toMatchObject({ code: 'precondition_required' });
+		const accepted = await app.request('/v1/projects/project-a', {
+			method: 'PATCH',
+			headers: { ...headers, 'idempotency-key': 'attempt-1', 'if-match': '"revision-1"', 'x-request-id': 'request-1', traceparent: '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' },
+			body: JSON.stringify({ name: 'Example' }),
+		});
+		expect(accepted.status).toBe(200);
+		expect(accepted.headers.get('etag')).toMatch(/^"sha256:[a-f0-9]{64}"$/u);
+		expect(await accepted.json()).toEqual({ data: { projectId: 'project-a', name: 'Example', revision: 2 } });
+		expect(calls).toEqual([{ input: { projectId: 'project-a', name: 'Example' }, requestId: 'request-1', traceparent: '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' }]);
 	});
 
 	it('lists only visible team projects through the shared REST and MCP operation', async () => {
