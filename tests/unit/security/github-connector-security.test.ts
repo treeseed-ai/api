@@ -2,7 +2,7 @@ import { createHmac, generateKeyPairSync } from 'node:crypto';
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installGitHubConnectorRoutes } from '../../../src/api/routes/providers/github-connectors.ts';
-import { assertWorkflowWebhookScope, installGitHubWebhookRoutes } from '../../../src/api/routes/providers/github-webhooks.ts';
+import { assertWorkflowWebhookScope, installGitHubWebhookRoutes,reconcileRepositoryCheckRun,reconcileRepositoryPush } from '../../../src/api/routes/providers/github-webhooks.ts';
 import { verifyGitHubInstallation } from '../../../src/api/routes/providers/github-connector-api.ts';
 import { connectorStateHash, createConnectorState, readConnectorState } from '../../../src/security/github-connector-config.ts';
 
@@ -26,7 +26,7 @@ function jsonError(c: any, status: number, message: string, detail: any = {}) {
 	return c.json({ ok: false, message, ...detail }, status);
 }
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe('GitHub Connector security boundary', () => {
 	it('signs callback state and rejects mutation or the wrong secret', () => {
@@ -60,6 +60,24 @@ describe('GitHub Connector security boundary', () => {
 		} }, run, operation, repository)).toThrow(/authorized run scope/u);
 		expect(() => assertWorkflowWebhookScope({ ...payload, repository: { id: 78, full_name: 'other/project' } },
 			run, operation, repository)).toThrow(/authorized run scope/u);
+	});
+
+	it('waits for and re-reads a successful exact staging check before fetching a repository profile',async()=>{
+		vi.stubEnv('TREESEED_GITHUB_TOKEN_PROFILE_TEST','token-not-exposed');
+		const exactCommit='c'.repeat(40);
+		const fetchImpl=vi.fn(async(url:string|URL|Request)=>String(url).includes('/check-runs/')
+			?Response.json({id:91,name:'verify',status:'completed',conclusion:'success',head_sha:exactCommit,check_suite:{head_branch:'staging'},app:{slug:'github-actions'}})
+			:new Response('',{status:404}));
+		vi.stubGlobal('fetch',fetchImpl);
+		const store={first:vi.fn(async(query:string)=>query.includes('LOWER(owner)')
+			?{id:'binding-a',team_id:'team-a',project_id:'project-sdk',provider_repository_id:'77',owner:'treeseed-ai',name:'sdk',publication_ref:'staging',authority_id:'authority-a'}
+			:{id:'authority-a',team_id:'team-a',connection_id:'connection-a',provider_id:'github',authority_id:'authority-a',credential_profile_id:'github-repository-token',scheme:'environment-reference',reference:'TREESEED_GITHUB_TOKEN_PROFILE_TEST',capabilities_json:'["repository-hosting"]',non_secret_config_json:'{}'})};
+		await expect(reconcileRepositoryPush(store,{ref:'refs/heads/staging',after:exactCommit,repository:{id:77,full_name:'treeseed-ai/sdk'}})).resolves.toEqual({repository:'treeseed-ai/sdk',observedCommit:exactCommit,status:'awaiting-required-check'});
+		expect(fetchImpl).not.toHaveBeenCalled();
+		await expect(reconcileRepositoryPush(store,{ref:'refs/heads/main',after:exactCommit,repository:{id:77,full_name:'treeseed-ai/sdk'}})).resolves.toBeNull();
+		await expect(reconcileRepositoryCheckRun(store,{repository:{id:77,full_name:'treeseed-ai/sdk'},check_run:{id:91}})).resolves.toEqual({repository:'treeseed-ai/sdk',observedCommit:exactCommit,status:'no-profile'});
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
+		expect(fetchImpl).toHaveBeenNthCalledWith(2,expect.stringContaining(`ref=${exactCommit}`),expect.objectContaining({headers:expect.objectContaining({authorization:'Bearer token-not-exposed'})}));
 	});
 
 	it('starts setup only for an authorized GitHub service connection and persists no secret', async () => {

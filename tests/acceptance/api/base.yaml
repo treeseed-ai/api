@@ -263,16 +263,6 @@ sdkMethodMatrices:
     expect:
       status: 409
       envelope: { ok: false }
-  - method: planCapacityAllocationSet
-    actor: teamOwner
-    expect:
-      status: 200
-      envelope: { ok: true }
-  - method: supersedeCapacityAllocationSet
-    actor: teamOwner
-    expect:
-      status: 409
-      envelope: { ok: false }
   - method: explainCapacityAllocationSet
     actor: teamOwner
     expect:

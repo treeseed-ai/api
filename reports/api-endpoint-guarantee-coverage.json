@@ -1,7 +1,7 @@
 {
-  "routeCount": 597,
-  "descriptorCount": 597,
-  "coveredByGuarantee": 597,
+  "routeCount": 592,
+  "descriptorCount": 592,
+  "coveredByGuarantee": 592,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -355,12 +355,7 @@
       "post.v1.teams.teamId.capacity-registration-key.enable",
       "post.v1.teams.teamId.capacity-registration-key.rotate",
       "post.v1.teams.teamId.capacity.admissions",
-      "post.v1.teams.teamId.capacity.allocation-sets",
-      "post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.activate",
-      "post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.archive",
       "post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.explain",
-      "post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.supersede",
-      "post.v1.teams.teamId.capacity.allocation-sets.plan",
       "post.v1.teams.teamId.capacity.assignments.assignmentId.cancel",
       "post.v1.teams.teamId.capacity.assignments.assignmentId.content-abandonment",
       "post.v1.teams.teamId.capacity.assignments.assignmentId.content-integration",

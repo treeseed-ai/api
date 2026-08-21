@@ -106,45 +106,6 @@ export function installCapacityPolicyRoutes(app: Hono, options: CapacityPolicyRo
 		} catch (error) { return failure(c, error); }
 	});
 
-	app.post('/v1/teams/:teamId/capacity/allocation-sets/plan', async (c) => {
-		try {
-			const access = await manage(c); if (access.response) return access.response;
-			const { candidate, validation } = await allocations.plan(c.req.param('teamId'), await readCapacityRequestObject(c));
-			return c.json({ ok: validation.ok, payload: { candidate, validation } }, { status: validation.ok ? 200 : 400 });
-		} catch (error) { return failure(c, error); }
-	});
-
-	app.post('/v1/teams/:teamId/capacity/allocation-sets', async (c) => {
-		try {
-			const access = await manage(c); if (access.response) return access.response;
-			const principal = access as { principal?: { id?: string } };
-			const allocation = await allocations.create(c.req.param('teamId'), await readCapacityRequestObject(c), principal.principal?.id ?? null, idempotencyKey(c));
-			return c.json({ ok: true, payload: allocation }, { status: 201 });
-		} catch (error) { return failure(c, error); }
-	});
-
-	app.post('/v1/teams/:teamId/capacity/allocation-sets/:allocationSetId/activate', async (c) => {
-		try {
-			const access = await manage(c); if (access.response) return access.response;
-			const allocation = await allocations.activate(c.req.param('teamId'), c.req.param('allocationSetId'), idempotencyKey(c));
-			return allocation ? c.json({ ok: true, payload: allocation }) : c.json({ ok: false, error: 'Capacity allocation set does not exist.', code: 'capacity_allocation_not_found' }, { status: 404 });
-		} catch (error) { return failure(c, error); }
-	});
-
-	app.post('/v1/teams/:teamId/capacity/allocation-sets/:allocationSetId/supersede', async (c) => {
-		try {
-			const access = await manage(c); if (access.response) return access.response;
-			const body = await readCapacityRequestObject(c, { optional: true });
-			const result = await allocations.supersede(
-				c.req.param('teamId'),
-				c.req.param('allocationSetId'),
-				typeof body.expectedActiveAllocationSetId === 'string' ? body.expectedActiveAllocationSetId : null,
-				idempotencyKey(c),
-			);
-			return c.json({ ok: true, payload: result });
-		} catch (error) { return failure(c, error); }
-	});
-
 	app.post('/v1/teams/:teamId/capacity/allocation-sets/:allocationSetId/explain', async (c) => {
 		try {
 			const access = await read(c); if (access.response) return access.response;
@@ -173,11 +134,4 @@ export function installCapacityPolicyRoutes(app: Hono, options: CapacityPolicyRo
 		} catch (error) { return failure(c, error); }
 	});
 
-	app.post('/v1/teams/:teamId/capacity/allocation-sets/:allocationSetId/archive', async (c) => {
-		try {
-			const access = await manage(c); if (access.response) return access.response;
-			const allocation = await allocations.archive(c.req.param('teamId'), c.req.param('allocationSetId'), idempotencyKey(c));
-			return allocation ? c.json({ ok: true, payload: allocation }) : c.json({ ok: false, error: 'Capacity allocation set does not exist.', code: 'capacity_allocation_not_found' }, { status: 404 });
-		} catch (error) { return failure(c, error); }
-	});
 }
