@@ -1,25 +1,6 @@
 export function installProjectsCollectionRoutes(context: any) {
 	const { app, capacity, ensurePrincipal, jsonError, requireProjectAccess, requireTeamAccess, store } = context;
 	
-	app.get('/v1/projects', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const teamId = typeof c.req.query('teamId') === 'string' ? c.req.query('teamId') : null;
-					if (teamId) {
-						const access = await requireTeamAccess(c, store, teamId, 'projects:read:team');
-						if (access.response) return access.response;
-						const projects = await store.listTeamProjects(teamId);
-						return c.json({
-							ok: true,
-							payload: projects.filter((project) => project.teamId === teamId && project.metadata?.inventory?.status !== 'archived'),
-						});
-					}
-					return c.json({
-						ok: true,
-						payload: await store.listProjectsForPrincipal(auth.principal),
-					});
-	});
-
 	app.get('/v1/teams/:teamId/project-inventory', async (c) => {
 		const teamId = c.req.param('teamId');
 		const access = await requireTeamAccess(c, store, teamId, 'projects:read:team');

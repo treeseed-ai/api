@@ -125,12 +125,13 @@ roleMatrices:
       - id: projects-list
         method: GET
         path: ${apiVersionPath}/projects?teamId=${fixtures.team.id}
+        expect: { envelope: false }
         expectByActor:
-          siteAdmin: { status: 200, envelope: { ok: true } }
-          teamOwner: { status: 200, envelope: { ok: true } }
-          teamOperator: { status: 200, envelope: { ok: true } }
-          teamViewer: { status: 200, envelope: { ok: true } }
-          nonMember: { status: 403, envelope: { ok: false } }
+          siteAdmin: { status: 200 }
+          teamOwner: { status: 200 }
+          teamOperator: { status: 200 }
+          teamViewer: { status: 200 }
+          nonMember: { status: 403 }
       - id: project-summary
         method: GET
         path: ${apiVersionPath}/projects/${fixtures.project.id}/summary

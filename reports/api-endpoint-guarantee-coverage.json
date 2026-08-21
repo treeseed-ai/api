@@ -1,7 +1,7 @@
 {
-  "routeCount": 474,
-  "descriptorCount": 474,
-  "coveredByGuarantee": 474,
+  "routeCount": 473,
+  "descriptorCount": 473,
+  "coveredByGuarantee": 473,
   "missingRoutes": [],
   "families": {
     "health-and-identity": [
@@ -146,7 +146,6 @@
     ],
     "projects-and-workstreams": [
       "delete.v1.projects.projectId",
-      "get.v1.projects",
       "get.v1.projects.projectId",
       "get.v1.projects.projectId.access",
       "get.v1.projects.projectId.agent-artifacts",

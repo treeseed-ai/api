@@ -24,6 +24,14 @@ describe('control-plane protocol contract', () => {
 			return { accessToken: 'access-2', refreshToken: 'refresh-2', tokenType: 'Bearer', expiresInSeconds: 900, principal: { scopes: ['treeseed:read'] } };
 		},
 	};
+	const operationStore = (overrides: Record<string, unknown> = {}) => ({
+		async ensureInitialized() {},
+		async first() { return { ok: 1 }; },
+		async listProjectsForPrincipal() { return []; },
+		async listTeamProjects() { return []; },
+		async principalCanAccessTeam() { return true; },
+		...overrides,
+	});
 
 	it('binds status to one catalog operation and deterministic OpenAPI 3.1.1', () => {
 		const operation = controlPlaneOperations.require('status.show');
@@ -51,7 +59,7 @@ describe('control-plane protocol contract', () => {
 
 	it('binds dependency-backed deep health directly through the catalog', async () => {
 		const app = new Hono();
-		const registry = createApiControlPlaneOperations({ store: { async ensureInitialized() {}, async first() { return { ok: 1 }; } } });
+		const registry = createApiControlPlaneOperations({ store: operationStore() });
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/healthz/deep');
 		expect(response.status).toBe(200);
@@ -59,7 +67,7 @@ describe('control-plane protocol contract', () => {
 		const specification = await app.request('/openapi.json');
 		expect((await specification.json() as any).paths['/healthz/deep'].get.operationId).toBe('health.deep');
 		const unavailableApp = new Hono();
-		const unavailable = createApiControlPlaneOperations({ store: { async ensureInitialized() { throw new Error('private database detail'); }, async first() { return null; } } });
+		const unavailable = createApiControlPlaneOperations({ store: operationStore({ async ensureInitialized() { throw new Error('private database detail'); } }) });
 		installControlPlaneProtocolRoutes(unavailableApp, authenticate, oauthProvider, unavailable);
 		const failed = await unavailableApp.request('/healthz/deep');
 		const failedText = await failed.text();
@@ -67,6 +75,33 @@ describe('control-plane protocol contract', () => {
 		expect(failed.headers.get('content-type')).toContain('application/problem+json');
 		expect(JSON.parse(failedText)).toMatchObject({ status: 503, code: 'control_plane_database_unavailable' });
 		expect(failedText).not.toContain('private database detail');
+	});
+
+	it('lists only visible team projects through the shared REST and MCP operation', async () => {
+		const registry = createApiControlPlaneOperations({ store: operationStore({
+			async listTeamProjects() {
+				return [{ id: 'active', metadata: {} }, { id: 'archived', metadata: { inventory: { status: 'archived' } } }];
+			},
+		}) });
+		const app = new Hono();
+		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
+		const response = await app.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer test-token' } });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { projects: [{ id: 'active', metadata: {} }] } });
+		const specification = await app.request('/openapi.json');
+		expect((await specification.json() as any).paths['/v1/projects'].get.operationId).toBe('projects.list');
+		const catalog = await app.request('/mcp/catalog.json');
+		expect((await catalog.json() as any).tools.map((tool: { name: string }) => tool.name)).toContain('projects.list');
+		const adminApp = new Hono();
+		const adminRegistry = createApiControlPlaneOperations({ store: operationStore({ async principalCanAccessTeam() { return false; } }) });
+		installControlPlaneProtocolRoutes(adminApp, async () => ({ principal: { id: 'admin', scopes: ['treeseed:read'], roles: ['admin'], permissions: [] }, credential: { id: 'admin-client' } }), oauthProvider, adminRegistry);
+		expect((await adminApp.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer admin' } })).status).toBe(200);
+		const deniedApp = new Hono();
+		const deniedRegistry = createApiControlPlaneOperations({ store: operationStore({ async principalCanAccessTeam() { return false; } }) });
+		installControlPlaneProtocolRoutes(deniedApp, authenticate, oauthProvider, deniedRegistry);
+		const denied = await deniedApp.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer test-token' } });
+		expect(denied.status).toBe(403);
+		expect(await denied.json()).toMatchObject({ code: 'team_access_denied' });
 	});
 
 	it('publishes truthful OAuth resource metadata and RFC 8628 device exchange', async () => {

@@ -38,7 +38,7 @@ export function installControlPlaneProtocolRoutes(
 					clientId: authenticated.credential.id,
 					scopes: admin ? ['treeseed:read', 'treeseed:knowledge:write', 'treeseed:governance:write', 'treeseed:projects:write', 'treeseed:execution', 'treeseed:admin'] : scopes.length > 0 ? scopes : ['treeseed:read'],
 					expiresAt: Math.floor(Date.now() / 1000) + 60,
-					extra: { principalId: authenticated.principal.id },
+					extra: { principalId: authenticated.principal.id, principal: authenticated.principal },
 				};
 			},
 		},
@@ -73,8 +73,10 @@ export function installControlPlaneProtocolRoutes(
 			}, 403, { 'content-type': 'application/problem+json' });
 			const requestId = context.req.header('x-request-id') ?? crypto.randomUUID();
 			try {
-				const output = await operation.handler(operation.inputSchema.parse({}), {
+				const input = Object.fromEntries(new URL(context.req.url).searchParams.entries());
+				const output = await operation.handler(operation.inputSchema.parse(input), {
 					interface: 'rest', requestId, traceparent: context.req.header('traceparent'), authInfo,
+					principal: authInfo?.extra?.principal as AuthenticatedPrincipal['principal'] | undefined,
 				});
 				return context.json({ data: operation.outputSchema.parse(output) }, 200, { 'x-treeseed-contract-digest': digest, 'x-request-id': requestId });
 			} catch (error) {

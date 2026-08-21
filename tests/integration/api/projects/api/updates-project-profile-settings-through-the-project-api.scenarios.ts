@@ -32,7 +32,7 @@ it('updates project profile settings through the project API', async () => {
 		const listed = await json(await app.request(`/v1/projects?teamId=${team.id}`, {
 			headers: { authorization: `Bearer ${token}` },
 		}));
-		expect(listed.payload.find((entry: { id: string }) => entry.id === project.id)?.slug).toBe('settings-after');
+		expect(listed.data.projects.find((entry: { id: string }) => entry.id === project.id)?.slug).toBe('settings-after');
 
 		const duplicate = await json(await app.request(`/v1/teams/${team.id}/projects`, {
 			method: 'POST',

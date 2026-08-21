@@ -21,7 +21,10 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry) {
 				},
 			}, async (input) => {
 				const parsed = operation.inputSchema.parse(input);
-				const output = await operation.handler(parsed, { interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo });
+				const output = await operation.handler(parsed, {
+					interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo,
+					principal: requestContext.authInfo?.extra?.principal as any,
+				});
 				const validated = operation.outputSchema.parse(output) as Record<string, unknown>;
 				return { content: [{ type: 'text', text: JSON.stringify(validated) }], structuredContent: validated };
 			});
@@ -33,7 +36,10 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry) {
 				mimeType: resource.mimeType,
 				cacheHint: { ttlMs: (resource.cacheTtlSeconds ?? 0) * 1000, cacheScope: operation.descriptor.cacheScope === 'public' ? 'public' : 'private' },
 			}, async (uri) => {
-				const output = await operation.handler(operation.inputSchema.parse({}), { interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo });
+				const output = await operation.handler(operation.inputSchema.parse({}), {
+					interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo,
+					principal: requestContext.authInfo?.extra?.principal as any,
+				});
 				return { contents: [{ uri: uri.href, mimeType: resource.mimeType, text: JSON.stringify(operation.outputSchema.parse(output)) }] };
 			});
 		}

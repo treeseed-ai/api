@@ -128,7 +128,7 @@ it('plans and applies staging seeds with audit records, then reports unchanged',
 			headers: { authorization: `Bearer ${token}` },
 		});
 		expect(projectsResponse.status).toBe(200);
-		const extension = (await json(projectsResponse)).payload.find((project: { slug?: string }) => project.slug === 'extension');
+		const extension = (await json(projectsResponse)).data.projects.find((project: { slug?: string }) => project.slug === 'extension');
 		expect(extension).toMatchObject({ slug: 'extension', name: 'TreeSeed Extension' });
 
 		const extensionReplayResponse = await app.request('/v1/seeds/extension/apply', {

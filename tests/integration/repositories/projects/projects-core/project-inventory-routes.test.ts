@@ -46,17 +46,6 @@ describe('team project inventory route', () => {
 		expect(listTeamProjects).not.toHaveBeenCalled();
 	});
 
-	it('omits archived projects from the team-scoped project list', async () => {
-		const listTeamProjects = vi.fn(async () => [
-			{ id: 'active', teamId: 'team-a', metadata: {} },
-			{ id: 'archived', teamId: 'team-a', metadata: { inventory: { status: 'archived' } } },
-		]);
-		const response = await application({ listTeamProjects }).request('/v1/projects?teamId=team-a');
-		expect(response.status).toBe(200);
-		expect((await response.json()).payload.map((project: { id: string }) => project.id)).toEqual(['active']);
-		expect(listTeamProjects).toHaveBeenCalledWith('team-a');
-	});
-
 	it('archives and restores inventory membership without deleting the project', async () => {
 		let project = { id: 'project-a', teamId: 'team-a', slug: 'project-a', metadata: { repository: { name: 'project-a' } } };
 		const updateProject = vi.fn(async (_id: string, input: { metadata: typeof project.metadata }) => {

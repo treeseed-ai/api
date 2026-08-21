@@ -8,6 +8,12 @@ export interface OperationInvocationContext {
 	requestId: string;
 	traceparent?: string;
 	authInfo?: AuthInfo;
+	principal?: {
+		id: string;
+		roles?: string[];
+		permissions?: string[];
+		metadata?: Record<string, unknown>;
+	};
 }
 
 export interface BoundOperation<TInput = unknown, TOutput = unknown> {
