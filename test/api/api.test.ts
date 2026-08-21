@@ -11192,7 +11192,7 @@ describe('market api', () => {
 		expect(firstApply.ok).toBe(true);
 		expect(firstApply.summary).toMatchObject({ create: 19, update: 1, unchanged: 0, skip: 20 });
 		expect(firstApply.run).toMatchObject({ state: 'completed', mode: 'apply', seedName: 'treeseed' });
-		expect(firstApply.result.actionCount).toBe(21);
+		expect(firstApply.result.actionCount).toBe(20);
 		expect(firstApply.result.capacityProviderKeys.created).toHaveLength(0);
 
 		const runs = await json(await app.request('/v1/seeds/runs', {
