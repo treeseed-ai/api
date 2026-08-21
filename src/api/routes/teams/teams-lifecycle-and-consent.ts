@@ -7,7 +7,7 @@ function statusFor(result: { ok?: boolean; code?: string }) {
 }
 
 export function installTeamsLifecycleAndConsentRoutes(context: any) {
-	const { app, config, consumeReauthentication, deleteTeamCapacityAggregate, ensurePrincipal, isLocalAcceptanceServicePrincipal, jsonError, localAcceptanceAuthEnabled, marketAuthContext, options, principalHasGlobalPlatformRole, requireConfiguredServiceCredential, runtime, sendTeamInviteEmail, shouldBypassAcceptanceAuthEmailDelivery, store } = context;
+	const { app, config, consumeReauthentication, deleteTeamCapacityAggregate, ensurePrincipal, isLocalAcceptanceServicePrincipal, jsonError, localAcceptanceAuthEnabled, controlPlaneAuthContext, options, principalHasGlobalPlatformRole, requireConfiguredServiceCredential, runtime, sendTeamInviteEmail, shouldBypassAcceptanceAuthEmailDelivery, store } = context;
 	const clockNow = () => options?.clock?.now?.() ?? new Date();
 
 	const requireTeamRole = async (c: any, teamId: string, roles: string[]) => {
@@ -60,7 +60,7 @@ export function installTeamsLifecycleAndConsentRoutes(context: any) {
 		if (result.ok && result.invite && result.token) {
 			try {
 				if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime?.resolved?.config ?? config)) {
-					await sendTeamInviteEmail(marketAuthContext(c, config), {
+					await sendTeamInviteEmail(controlPlaneAuthContext(c, config), {
 						invite: result.invite,
 						team: await store.getTeam(teamId),
 						token: result.token,

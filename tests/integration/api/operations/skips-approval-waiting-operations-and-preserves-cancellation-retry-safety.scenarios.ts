@@ -1,6 +1,6 @@
 import { authorizeApp,createTestApp,describe,expect,it,json } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('skips approval-waiting operations and preserves cancellation/retry safety', async () => {
 		const app = createTestApp({
 			config: {
@@ -41,7 +41,7 @@ it('skips approval-waiting operations and preserves cancellation/retry safety', 
 				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
-				namespace: 'market',
+				namespace: 'api',
 				operation: 'noop',
 				input: {},
 			}),

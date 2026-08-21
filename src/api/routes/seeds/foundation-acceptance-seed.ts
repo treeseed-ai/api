@@ -24,11 +24,11 @@ interface AcceptanceSeedRequest {
 }
 
 export function installFoundationAcceptanceSeedRoutes(context: any) {
-	const { app, capacity, config, createHash, createMarketWebSession, ensureMarketCredentialSchema, hashMarketPassword, normalizeEmail, normalizeUsername, optionalTrimmedString, randomUUID, requireConfiguredServiceCredential, resolve, resolvePlatformRunnerSecret, runtime, runtimeControlPlaneAuthProvider, store } = context;
+	const { app, capacity, config, createHash, createControlPlaneWebSession, ensureControlPlaneCredentialSchema, hashControlPlanePassword, normalizeEmail, normalizeUsername, optionalTrimmedString, randomUUID, requireConfiguredServiceCredential, resolve, resolvePlatformRunnerSecret, runtime, runtimeControlPlaneAuthProvider, store } = context;
 	app.post('/v1/acceptance/seed', async (c) => {
 					const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
 					if (service.response) return service.response;
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const body = await c.req.json().catch(() => ({})) as AcceptanceSeedRequest;
 					const namespace = optionalTrimmedString(body.namespace) ?? `acceptance-${runtime.resolved.config.environment ?? 'local'}`;
 					const password = optionalTrimmedString(body.password) ?? `TreeSeed-${namespace}-acceptance-123!`;
@@ -36,7 +36,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 						? body.actors
 						: {
 							siteAdmin: { siteRoles: ['platform_admin'] },
-							marketSteward: { siteRoles: ['market_admin'] },
+							platformSteward: { siteRoles: ['platform_admin'] },
 							teamOwner: { siteRoles: ['member'], teamRole: 'team_owner' },
 							teamOperator: { siteRoles: ['member'], teamRole: 'contributor' },
 							teamViewer: { siteRoles: ['viewer'], teamRole: 'reviewer' },
@@ -76,7 +76,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 						await store.run(
 							`INSERT INTO control_plane_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
 							 VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-							[synced.principal.id, email, username, hashMarketPassword(password), now, now],
+							[synced.principal.id, email, username, hashControlPlanePassword(password), now, now],
 						);
 						await store.run(`DELETE FROM user_email_addresses WHERE user_id = ? OR normalized_email = ?`, [synced.principal.id, email]).catch(() => null);
 						await store.run(
@@ -85,7 +85,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 							) VALUES (?, ?, ?, ?, 'verified', 1, ?, ?, ?, ?)`,
 							[randomUUID(), synced.principal.id, email, email, now, now, now, now],
 						).catch(() => null);
-						const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, synced.principal.id, {
+						const session = await createControlPlaneWebSession(runtimeControlPlaneAuthProvider, synced.principal.id, {
 							source: 'acceptance_seed',
 							namespace,
 							actorId,
@@ -261,10 +261,10 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 					}).catch(() => null);
 					const operation = await store.createPlatformOperation({
 						id: `operation-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
-						namespace: 'market',
+						namespace: 'control-plane',
 						operation: 'noop',
 						status: 'queued',
-						target: 'market_operations_runner',
+						target: 'control_plane_operations_runner',
 						idempotencyKey: `acceptance-${namespace}`,
 						input: { acceptance: true, namespace },
 						requestedByType: 'service',
@@ -272,11 +272,11 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 					}).catch(() => null);
 					const platformRunnerId = `treeseed-ops-${namespace}-1`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96);
 					const platformRunnerDataDir = resolve(process.cwd(), '.treeseed/acceptance-runners', namespace);
-					const platformRunner = await store.upsertMarketOperationRunner({
+					const platformRunner = await store.upsertControlPlaneOperationRunner({
 						runnerId: platformRunnerId,
 						name: `Acceptance ${namespace} Runner`,
 						environment: runtime.resolved.config.environment ?? 'local',
-						capabilities: ['market:noop', 'project:web_deployment'],
+						capabilities: ['control-plane:noop', 'project:web_deployment'],
 						maxConcurrentJobs: 1,
 						metadata: { acceptance: true, namespace, dataDir: platformRunnerDataDir },
 					}).catch(() => null);

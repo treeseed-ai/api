@@ -95,7 +95,7 @@ function installFeedbackExportRoutes({ app, store, feedbackStorage }: any) {
 		const includeScreenshots = body.includeScreenshots === true;
 		await store.run(`INSERT INTO feedback_exports (id, requested_by_user_id, status, filters_json, include_screenshots, item_count, storage_key, digest, byte_size, source_closure, error, expires_at, completed_at, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, ?, NULL, NULL, NULL, ?, NULL, ?, NULL, ?, ?)`, [id, principal.id, JSON.stringify(filters), includeScreenshots ? 1 : 0, rows.length, process.env.TREESEED_SOURCE_CLOSURE ?? null, expiresAt, now, now]);
 		for (const row of rows) await store.run('INSERT INTO feedback_export_items (export_id, feedback_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [id, row.id, now]);
-		const operation = await store.createPlatformOperation({ namespace: 'feedback', operation: 'generate_export', target: 'market_operations_runner', idempotencyKey: `feedback-export:${id}`, input: { exportId: id }, requestedByType: 'user', requestedById: principal.id });
+		const operation = await store.createPlatformOperation({ namespace: 'feedback', operation: 'generate_export', target: 'control_plane_operations_runner', idempotencyKey: `feedback-export:${id}`, input: { exportId: id }, requestedByType: 'user', requestedById: principal.id });
 		return c.json({ ok: true, code: 'feedback_export_queued', message: 'Privacy-safe feedback export is being prepared.', operation, payload: { id, status: 'queued', itemCount: rows.length, includeScreenshots, createdAt: now, expiresAt, operationId: operation.id } }, { status: 202 });
 	});
 	app.get('/v1/admin/feedback/exports/:exportId', async (c: any) => {

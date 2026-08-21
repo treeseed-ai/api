@@ -11,7 +11,7 @@ describe('capacity operator routes', () => {
 		const calls: Array<Record<string, unknown>> = [];
 		const schedulerProjection = {
 			ok: true, teamId: 'team-a', providerId: 'provider-a', allocationSetId: 'allocation-a',
-			projects: [{ id: 'project-a', slug: 'market', repositoryId: 'repo-a', planningGraphRevision: 'revision-a', agentProfiles: 6 }],
+			projects: [{ id: 'project-a', slug: 'api', repositoryId: 'repo-a', planningGraphRevision: 'revision-a', agentProfiles: 6 }],
 			availableSeconds: 6_000, planningSeconds: 5_400, requiredSeconds: 5_100, rounds: 3, waves: 5, participants: 6,
 		};
 		const store = {
@@ -35,7 +35,7 @@ describe('capacity operator routes', () => {
 		const response = await app.request('/v1/teams/team-a/workday-runs/preflight', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ schemaVersion:'treeseed.workday-intent/v1',profileId:'allocation-a',projects:['market'],startsAt:new Date(Date.now()+60_000).toISOString(),durationSeconds:3_000 }),
+			body: JSON.stringify({ schemaVersion:'treeseed.workday-intent/v1',profileId:'allocation-a',projects:['api'],startsAt:new Date(Date.now()+60_000).toISOString(),durationSeconds:3_000 }),
 		});
 		expect(response.status).toBe(200);
 		const responseBody=await response.json() as any;

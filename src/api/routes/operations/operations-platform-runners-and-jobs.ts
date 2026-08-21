@@ -25,7 +25,7 @@ export function installOperationsPlatformRunnersAndJobsRoutes(context: any) {
 					const operation = await store.createPlatformOperation({
 						namespace,
 						operation: operationName,
-						target: optionalTrimmedString(body.target) ?? 'market_operations_runner',
+						target: optionalTrimmedString(body.target) ?? 'control_plane_operations_runner',
 						status: approvalRequired ? 'waiting_for_approval' : optionalTrimmedString(body.status) ?? 'queued',
 						idempotencyKey: optionalTrimmedString(body.idempotencyKey),
 						input,
@@ -93,7 +93,7 @@ export function installOperationsPlatformRunnersAndJobsRoutes(context: any) {
 					const body = await c.req.json().catch(() => ({}));
 					const runnerId = optionalTrimmedString(body.runnerId);
 					if (!runnerId) return jsonError(c, 400, 'runnerId is required.');
-					const runner = await store.upsertMarketOperationRunner({
+					const runner = await store.upsertControlPlaneOperationRunner({
 						runnerId,
 						runnerKey: optionalTrimmedString(body.runnerKey) ?? runnerId,
 						name: optionalTrimmedString(body.name) ?? runnerId,
@@ -112,7 +112,7 @@ export function installOperationsPlatformRunnersAndJobsRoutes(context: any) {
 					const body = await c.req.json().catch(() => ({}));
 					const runnerId = optionalTrimmedString(body.runnerId);
 					if (!runnerId) return jsonError(c, 400, 'runnerId is required.');
-					const runner = await store.upsertMarketOperationRunner({
+					const runner = await store.upsertControlPlaneOperationRunner({
 						runnerId,
 						runnerKey: optionalTrimmedString(body.runnerKey) ?? runnerId,
 						name: optionalTrimmedString(body.name) ?? runnerId,

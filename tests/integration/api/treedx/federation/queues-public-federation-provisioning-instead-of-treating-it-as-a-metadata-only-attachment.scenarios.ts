@@ -1,6 +1,6 @@
 import { authorizeApp,createTeam,createTestApp,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('queues public federation provisioning instead of treating it as a metadata-only attachment', async () => {
 		const app = createTestApp();
 		const token = await authorizeApp(app);

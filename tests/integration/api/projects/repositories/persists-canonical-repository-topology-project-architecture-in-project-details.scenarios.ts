@@ -1,6 +1,6 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('returns and updates the canonical TreeDX repository topology without conflating project architecture', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);

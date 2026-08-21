@@ -85,7 +85,7 @@ export function serializePlatformOperationEvent(row) {
     };
 }
 
-export function serializeMarketOperationRunner(row) {
+export function serializeControlPlaneOperationRunner(row) {
     if (!row)
         return null;
     return {

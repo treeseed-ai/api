@@ -38,7 +38,7 @@ export function webSessionData(c, source) {
         ...requestSessionMetadata(c),
     };
 }
-export function marketAuthContext(c, config: any = {}) {
+export function controlPlaneAuthContext(c, config: any = {}) {
     const configuredSiteUrl = String(config.siteUrl ?? config.authApprovalBaseUrl ?? '').trim();
     return {
         locals: {
@@ -67,20 +67,20 @@ export function authTokenTimestampMillis(value) {
         return 0;
     return number < 10000000000 ? number * 1000 : number;
 }
-export async function createMarketWebSession(marketAuthProvider, userId, data: any = {}, options: any = {}) {
-    if (typeof marketAuthProvider.issueUserSession === 'function') {
-        return marketAuthProvider.issueUserSession(userId, {
+export async function createControlPlaneWebSession(controlPlaneAuthProvider, userId, data: any = {}, options: any = {}) {
+    if (typeof controlPlaneAuthProvider.issueUserSession === 'function') {
+        return controlPlaneAuthProvider.issueUserSession(userId, {
             sessionType: 'web',
             data,
         });
     }
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    const token = await marketAuthProvider.createPersonalAccessToken(userId, {
+    const token = await controlPlaneAuthProvider.createPersonalAccessToken(userId, {
         name: 'Treeseed web session',
         scopes: ['auth:me'],
         expiresAt,
     });
-    const authenticated = await marketAuthProvider.authenticateBearerToken(token.token);
+    const authenticated = await controlPlaneAuthProvider.authenticateBearerToken(token.token);
     const sessionId = randomUUID();
     const now = new Date().toISOString();
     if (options.store?.run) {
@@ -88,7 +88,7 @@ export async function createMarketWebSession(marketAuthProvider, userId, data: a
 			 VALUES (?, ?, 'web', ?, ?, ?, NULL, ?, ?, ?)`, [
             sessionId,
             userId,
-            createHash('sha256').update(`${options.authSecret ?? 'market'}:${sessionId}`).digest('hex'),
+            createHash('sha256').update(`${options.authSecret ?? 'control-plane'}:${sessionId}`).digest('hex'),
             JSON.stringify(['auth:me']),
             expiresAt,
             JSON.stringify({ ...data, tokenId: token.id }),

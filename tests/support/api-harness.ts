@@ -14,7 +14,7 @@ import { DataType,newDb } from 'pg-mem';
 
 import * as Core from '@treeseed/sdk';
 
-import { AgentSdk,PlatformRunnerClient } from '@treeseed/sdk';
+import { AgentSdk } from '@treeseed/sdk';
 
 import { createPlatformApiApp } from '../../src/api/support/app.js';
 
@@ -23,6 +23,7 @@ import { ControlPlanePostgresDatabase } from '../../src/api/support/control-plan
 import { ControlPlaneStore } from '../../src/api/persistence/store.js';
 
 import { runOnceWithClient } from '../../src/operations-runner/entrypoint.js';
+import { ControlPlaneRunnerClient } from '../../src/operations-runner/client/control-plane-runner-client.js';
 
 export const packageRoot = process.cwd();
 
@@ -103,11 +104,11 @@ export function createTestApp(options: ApiTestOptions = {}) {
         config: {
             repoRoot: packageRoot,
             authSecret: 'test-secret',
-            baseUrl: 'https://market.example.com',
-            siteUrl: 'https://market.example.com',
-            issuer: 'https://market.example.com',
-            projectId: 'treeseed-market',
-            projectApiKey: 'market-project-key',
+            baseUrl: 'https://api.example.com',
+            siteUrl: 'https://api.example.com',
+            issuer: 'https://api.example.com',
+            projectId: 'treeseed-api',
+            projectApiKey: 'api-project-key',
             projectApiPermissions: ['sdk:execute:global', 'agent:execute:global', 'operations:execute:global'],
             webServiceId: 'web',
             webServiceSecret: 'web-test-secret',
@@ -121,11 +122,11 @@ export function createTestStore(db = createTestPostgresDatabase()) {
     return new ControlPlaneStore({
         repoRoot: packageRoot,
         authSecret: 'test-secret',
-        baseUrl: 'https://market.example.com',
-        siteUrl: 'https://market.example.com',
-        issuer: 'https://market.example.com',
-        projectId: 'treeseed-market',
-        projectApiKey: 'market-project-key',
+        baseUrl: 'https://api.example.com',
+        siteUrl: 'https://api.example.com',
+        issuer: 'https://api.example.com',
+        projectId: 'treeseed-api',
+        projectApiKey: 'api-project-key',
         projectApiPermissions: ['sdk:execute:global', 'agent:execute:global', 'operations:execute:global'],
         serviceId: 'web',
         serviceSecret: 'web-test-secret',
@@ -141,7 +142,7 @@ export function git(cwd: string, args: string[]) {
     return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
 
-export async function withHttpMarketApp<T>(app: ReturnType<typeof createTestApp>, action: (baseUrl: string) => Promise<T>) {
+export async function withHttpControlPlaneApp<T>(app: ReturnType<typeof createTestApp>, action: (baseUrl: string) => Promise<T>) {
     const server = createServer((request, response) => {
         void (async () => {
             const chunks: Buffer[] = [];
@@ -202,7 +203,7 @@ export async function authorizeApp(app: ReturnType<typeof createTestApp>, input:
     const seeded = await json(await app.request('/v1/acceptance/seed', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-treeseed-service-id': 'web', 'x-treeseed-service-secret': 'web-test-secret' },
-        body: JSON.stringify({ namespace, actorsOnly: true, actors: { deviceApprover: { userId: principalId, displayName: input.displayName ?? 'Market User', siteRoles: input.siteRoles ?? ['member'] } } }),
+        body: JSON.stringify({ namespace, actorsOnly: true, actors: { deviceApprover: { userId: principalId, displayName: input.displayName ?? 'API User', siteRoles: input.siteRoles ?? ['member'] } } }),
     }));
     if (!seeded.ok)
         throw new Error(`Acceptance actor seed failed: ${JSON.stringify(seeded)}`);
@@ -270,4 +271,4 @@ export async function createTeam(app: ReturnType<typeof createTestApp>, token: s
 afterEach(() => {
     vi.restoreAllMocks();
 });
-export { afterEach,AgentSdk,Core,createPlatformApiApp,createServer,DataType,describe,execFileSync,existsSync,expect,it,ControlPlaneStore,ControlPlanePostgresDatabase,mkdirSync,mkdtempSync,newDb,PlatformRunnerClient,resolve,rmSync,runOnceWithClient,tmpdir,vi,writeFileSync };
+export { afterEach,AgentSdk,ControlPlaneRunnerClient,Core,createPlatformApiApp,createServer,DataType,describe,execFileSync,existsSync,expect,it,ControlPlaneStore,ControlPlanePostgresDatabase,mkdirSync,mkdtempSync,newDb,resolve,rmSync,runOnceWithClient,tmpdir,vi,writeFileSync };

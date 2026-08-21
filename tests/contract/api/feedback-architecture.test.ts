@@ -11,7 +11,7 @@ describe('feedback API architecture contract', () => {
 		const submission = source('src/api/routes/feedback/submission.ts');
 		const administration = source('src/api/routes/feedback/administration.ts');
 		const retired = [
-			'src/api/routes/support/foundation-health-market-and-feedback.ts',
+			'src/api/routes/support/foundation-health-api-and-feedback.ts',
 			'src/api/app/support/feedback.ts',
 		];
 		for (const path of retired) expect(() => readFileSync(path)).toThrow();

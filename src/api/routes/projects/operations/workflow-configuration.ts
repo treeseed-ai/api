@@ -86,7 +86,7 @@ async function queueConfiguration(store: any, input: { context: any; projectId: 
 		throw error;
 	}
 	const operation = await store.createPlatformOperation({ id: operationId, namespace: 'workflow', operation: 'configure',
-		target: 'market_operations_runner', idempotencyKey: input.idempotencyKey, requestedByType: 'user', requestedById: input.actorId,
+		target: 'control_plane_operations_runner', idempotencyKey: input.idempotencyKey, requestedByType: 'user', requestedById: input.actorId,
 		input: { deliveryId } });
 	await store.recordAuditEvent({ eventType: `workflow.${input.kind}.configuration_queued`, actorType: 'user', actorId: input.actorId,
 		targetType: 'workflow_configuration_record', targetId: record.id, data: { projectId: input.projectId,

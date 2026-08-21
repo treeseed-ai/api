@@ -26,7 +26,6 @@ export const PLATFORM_OPERATION_SCOPES = [
 export function operationTokenSecret(runtime) {
     return runtime?.resolved?.config?.assertionSecret
         ?? runtime?.resolved?.config?.authSecret
-        ?? process.env.TREESEED_MARKET_OPERATION_TOKEN_SECRET
         ?? process.env.TREESEED_AUTH_SECRET
         ?? 'treeseed-local-operation-token-secret';
 }
@@ -84,7 +83,7 @@ export function principalIsSeedAdmin(principal) {
         && (principal.permissions?.includes?.('*:*:*')
             || principal.permissions?.includes?.('seeds:apply:global')
             || principal.roles?.includes?.('platform_admin')
-            || principal.roles?.includes?.('market_admin')));
+            || principal.roles?.includes?.('platform_admin')));
 }
 export function isTeamApiPrincipal(principal) {
     return Boolean(principal?.roles?.includes?.('team_api_key'));
@@ -135,7 +134,7 @@ export function resolvePlatformRunnerSecret(config) {
     return optionalTrimmedString(config.platformRunnerSecret)
         ?? optionalTrimmedString(config.operationsRunnerSecret)
         ?? optionalTrimmedString(process.env.TREESEED_PLATFORM_RUNNER_SECRET)
-        ?? optionalTrimmedString(process.env.TREESEED_MARKET_OPERATIONS_RUNNER_SECRET);
+        ?? optionalTrimmedString(process.env.TREESEED_PLATFORM_RUNNER_SECRET);
 }
 export function platformOperationMutationError(c, error) {
     const status = Number(error?.status ?? 500);
@@ -176,7 +175,7 @@ export async function ensurePrincipal(c) {
 }
 export function principalHasGlobalPlatformRole(principal) {
     return Boolean(principal?.roles?.includes?.('platform_admin')
-        || principal?.roles?.includes?.('market_admin')
+        || principal?.roles?.includes?.('platform_admin')
         || principal?.permissions?.includes?.('*:*:*'));
 }
 export async function requireServiceParticipantAccess(c, store, request, sellerPermission = 'projects:read:team') {

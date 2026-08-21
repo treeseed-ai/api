@@ -112,7 +112,7 @@ export function installKnowledgePackRoutes(context: any) {
 			requestedByUserId: access.principal.id, bookIds: selection.bookIds,
 			publicationRevision: manifest.revision });
 		const operation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'build_pack',
-			target: 'market_operations_runner', idempotencyKey: `knowledge-pack:${build.id}`,
+			target: 'control_plane_operations_runner', idempotencyKey: `knowledge-pack:${build.id}`,
 			input: { buildId: build.id }, requestedByType: 'user', requestedById: access.principal.id });
 		return c.json({ ok: true, code: 'knowledge_pack_queued', message: 'Knowledge-pack build queued.',
 			payload: { build: publicBuild(build), operation } }, 202);
@@ -131,7 +131,7 @@ export function installKnowledgePackRoutes(context: any) {
 		const access = await context.requireTeamAccess(c, store, teamId, 'knowledge:manage-books');
 		if (access.response) return access.response;
 		const operation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'cleanup_packs',
-			target: 'market_operations_runner', idempotencyKey: `knowledge-pack-cleanup:${teamId}:${new Date().toISOString().slice(0, 10)}`,
+			target: 'control_plane_operations_runner', idempotencyKey: `knowledge-pack-cleanup:${teamId}:${new Date().toISOString().slice(0, 10)}`,
 			input: { teamId }, requestedByType: 'user', requestedById: access.principal.id });
 		return c.json({ ok: true, code: 'knowledge_pack_cleanup_queued', message: 'Knowledge-pack retention cleanup queued.',
 			payload: { operation } }, 202);

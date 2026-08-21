@@ -1,6 +1,6 @@
 import { createTestApp,describe,expect,it } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('redirects legacy v1 browser approval links to the web approval page', async () => {
 		const app = createTestApp({
 			config: {

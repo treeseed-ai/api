@@ -2,7 +2,7 @@ import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatab
 import { bindGovernanceTreeDx,completeGovernanceProposalInput } from '../../../../support/governance-proposal.ts';
 import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('lets isolated agent stand-ins question, debate, vote, and create a decision', async () => {
 	const db = createTestPostgresDatabase();
 	const store = createTestStore(db);

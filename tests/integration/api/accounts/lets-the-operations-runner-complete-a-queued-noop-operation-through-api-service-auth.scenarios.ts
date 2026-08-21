@@ -1,11 +1,10 @@
-import { PlatformRunnerClient } from '@treeseed/sdk';
 import { resolve } from 'node:path';
 import { runOnceWithClient } from '../../../../src/operations-runner/entrypoint.ts';
-import { authorizeApp,createTestApp,describe,expect,it,json,withHttpMarketApp } from '../../../support/api-harness.ts';
+import { authorizeApp,ControlPlaneRunnerClient,createTestApp,describe,expect,it,json,withHttpControlPlaneApp } from '../../../support/api-harness.ts';
 
 import { packageRoot } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('lets the Treeseed operations runner complete a queued noop operation through API service auth', async () => {
 		const app = createTestApp({
 			config: {
@@ -20,15 +19,15 @@ it('lets the Treeseed operations runner complete a queued noop operation through
 				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
-				namespace: 'market',
+				namespace: 'control-plane',
 				operation: 'noop',
 				input: { source: 'runner-integration-test' },
 			}),
 		}));
-		await withHttpMarketApp(app, async (baseUrl) => {
-			const client = new PlatformRunnerClient({
-				marketUrl: baseUrl,
-				marketId: 'local',
+		await withHttpControlPlaneApp(app, async (baseUrl) => {
+			const client = new ControlPlaneRunnerClient({
+				serverUrl: baseUrl,
+				serverId: 'local',
 				runnerSecret: 'platform-runner-secret',
 			});
 			const result = await runOnceWithClient({

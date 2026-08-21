@@ -1,7 +1,7 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
 import { completeGovernanceProposalInput } from '../../../../support/governance-proposal.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('creates accepted governance decisions from project proposals through admin approval', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);

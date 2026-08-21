@@ -188,9 +188,9 @@ declare module '../persistence/store.ts' {
 		cancelPlatformOperation: OmitThisParameter<typeof import('./operations/retirement/cancel-platform-operation.ts').cancelPlatformOperationMethod>;
 		retryPlatformOperation: OmitThisParameter<typeof import('./operations/lifecycle/platform-operations/retry-platform-operation.ts').retryPlatformOperationMethod>;
 		assertPlatformOperationRunnerUpdate: OmitThisParameter<typeof import('./operations/contracts/assert-platform-operation-runner-update.ts').assertPlatformOperationRunnerUpdateMethod>;
-		upsertMarketOperationRunner: OmitThisParameter<typeof import('./operations/creation/upsert-market-operation-runner.ts').upsertMarketOperationRunnerMethod>;
-		findMarketOperationRunnerById: OmitThisParameter<typeof import('./operations/queries/runners/find-market-operation-runner-by-id.ts').findMarketOperationRunnerByIdMethod>;
-		listMarketOperationRunners: OmitThisParameter<typeof import('./operations/queries/runners/list-market-operation-runners.ts').listMarketOperationRunnersMethod>;
+		upsertControlPlaneOperationRunner: OmitThisParameter<typeof import('./operations/creation/upsert-control-plane-operation-runner.ts').upsertControlPlaneOperationRunnerMethod>;
+		findControlPlaneOperationRunnerById: OmitThisParameter<typeof import('./operations/queries/runners/find-control-plane-operation-runner-by-id.ts').findControlPlaneOperationRunnerByIdMethod>;
+		listControlPlaneOperationRunners: OmitThisParameter<typeof import('./operations/queries/runners/list-control-plane-operation-runners.ts').listControlPlaneOperationRunnersMethod>;
 		claimPlatformOperation: OmitThisParameter<typeof import('./operations/lifecycle/claims/claim-platform-operation.ts').claimPlatformOperationMethod>;
 		renewPlatformOperationLease: OmitThisParameter<typeof import('./operations/lifecycle/claims/renew-platform-operation-lease.ts').renewPlatformOperationLeaseMethod>;
 		checkpointPlatformOperation: OmitThisParameter<typeof import('./operations/contracts/checkpoint-platform-operation.ts').checkpointPlatformOperationMethod>;

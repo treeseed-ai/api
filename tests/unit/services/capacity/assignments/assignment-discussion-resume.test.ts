@@ -27,7 +27,7 @@ describe('assignment Discussion continuation',()=>{
 			async tickCapacityWorkdayRun(){return {};},
 			async updateCapacityWorkdayRun(){return null;},
 		};
-		const result=await admitDiscussionInvocations(store as never,{teamId:'team-a',projectId:'project-a',projectSlug:'market',discussionId:'discussion-a',messageId:'human-reply',messagePath:'src/content/discussion-messages/discussion-a/human-reply.mdx',messageCommit:'a'.repeat(40),contextRefs:[],agentSlugs:['guide-writer'],idempotencyKey:'reply-key',parentAssignmentId:'assignment-old',durationSeconds:900});
+		const result=await admitDiscussionInvocations(store as never,{teamId:'team-a',projectId:'project-a',projectSlug:'api',discussionId:'discussion-a',messageId:'human-reply',messagePath:'src/content/discussion-messages/discussion-a/human-reply.mdx',messageCommit:'a'.repeat(40),contextRefs:[],agentSlugs:['guide-writer'],idempotencyKey:'reply-key',parentAssignmentId:'assignment-old',durationSeconds:900});
 		expect(result).toMatchObject([{status:'admitted',parentAssignmentId:'assignment-old',handoffParentId:'invocation-old',handoffDepth:1}]);
 		const statements=run.mock.calls.map(([query])=>String(query));
 		expect(statements.some((query)=>query.includes('INSERT INTO agent_invocation_requests'))).toBe(true);

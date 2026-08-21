@@ -31,7 +31,7 @@ describe('local acceptance team access', () => {
 	it('allows the isolated live-acceptance service to manage its run-created team', async () => {
 		const principal = {
 			id: 'team-key:local-capacity-acceptance',
-			roles: ['team_api_key', 'market_admin'],
+			roles: ['team_api_key', 'platform_admin'],
 			permissions: ['*:*:*'],
 			metadata: { localAcceptance: true },
 		};

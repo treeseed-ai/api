@@ -29,7 +29,7 @@ export async function enqueueTreeDxProvisionOperation(store, teamId, payload, bo
     const operation = await store.createPlatformOperation({
         namespace: 'treedx',
         operation: 'provision',
-        target: 'market_operations_runner',
+        target: 'control_plane_operations_runner',
         idempotencyKey,
         input: {
             teamId,

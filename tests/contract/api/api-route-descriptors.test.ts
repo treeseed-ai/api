@@ -177,7 +177,7 @@ describe('API route descriptors', () => {
 			expect.objectContaining({
 				id: 'descriptor-executable-role-matrix',
 				methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-				actors: expect.arrayContaining(['anonymous', 'siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator', 'platformRunner']),
+				actors: expect.arrayContaining(['anonymous', 'siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator', 'platformRunner']),
 				excludeProviderIngress: false,
 				excludeInternalRunner: false,
 				coverageOnly: true,

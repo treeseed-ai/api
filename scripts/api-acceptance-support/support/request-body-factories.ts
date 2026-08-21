@@ -52,9 +52,9 @@ export function bodyForFactory(factory, descriptor, actor) {
         passwordResetRequest: { email: '${actors.teamOwner.email}' },
         passwordResetComplete: { token: '${fixtures.passwordReset.token}', password: '${seed.password}' },
         platformOperationCreate: {
-            namespace: 'market',
+            namespace: 'control-plane',
             operation: 'noop',
-            target: 'market_operations_runner',
+            target: 'control_plane_operations_runner',
             idempotencyKey: `acceptance-${stamp}-${actor}`,
             input: { acceptance: true, actor },
         },
@@ -64,7 +64,7 @@ export function bodyForFactory(factory, descriptor, actor) {
             runnerId: '${fixtures.platformRunner.id}',
             name: 'Acceptance Platform Runner',
             environment: '${environment}',
-            capabilities: ['market:noop'],
+            capabilities: ['control-plane:noop'],
             maxConcurrentJobs: 1,
         },
         platformRunnerHeartbeat: {

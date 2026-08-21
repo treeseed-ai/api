@@ -440,7 +440,7 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 		const publication = await store.createKnowledgePublication({ workspaceId: workspace.id, reviewId: review.id,
 			projectId: workspace.projectId, commitSha: review.commitSha, publishedRef });
 		const operation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'publish_review',
-			target: 'market_operations_runner', idempotencyKey: `knowledge-publication:${publication.id}`,
+			target: 'control_plane_operations_runner', idempotencyKey: `knowledge-publication:${publication.id}`,
 			input: { publicationId: publication.id, simulation: { ...simulationPolicy.simulation, operatorPrincipalId: access.principal.id } }, requestedByType: 'user', requestedById: access.principal.id });
 		return c.json({ ok: true, code: 'knowledge_publication_queued', message: 'Approved knowledge publication queued.',
 			payload: { publication, operation } }, 202);

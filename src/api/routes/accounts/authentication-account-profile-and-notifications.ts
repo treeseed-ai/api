@@ -1,7 +1,7 @@
 export function installAuthenticationAccountProfileAndNotificationsRoutes(context: any) {
-	const { NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, app, availabilityRateLimit, config, createMarketEmailConfirmation, createMarketWebSession, createOrResendUserEmailAddress, ensureMarketCredentialSchema, ensurePrincipal, exposeAuthTokenForTests, getUserEmailAddress, isValidPersonalThemeDraft, jsonError, listUserEmailAddresses, loadNotificationPreferences, marketAuthContext, normalizeAppearancePreference, normalizeEmail, normalizeNotificationPreferences, normalizeUsername, optionalTrimmedString, parseJsonObject, personalThemeFromRow, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, serializeUserEmailAddress, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, store, syncPrimaryEmailCaches, validatePublicUsername, verifiedEmailCount, webAuthPayload, webSessionData } = context;
+	const { NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, app, availabilityRateLimit, config, createControlPlaneEmailConfirmation, createControlPlaneWebSession, createOrResendUserEmailAddress, ensureControlPlaneCredentialSchema, ensurePrincipal, exposeAuthTokenForTests, getUserEmailAddress, isValidPersonalThemeDraft, jsonError, listUserEmailAddresses, loadNotificationPreferences, controlPlaneAuthContext, normalizeAppearancePreference, normalizeEmail, normalizeNotificationPreferences, normalizeUsername, optionalTrimmedString, parseJsonObject, personalThemeFromRow, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, serializeUserEmailAddress, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, store, syncPrimaryEmailCaches, validatePublicUsername, verifiedEmailCount, webAuthPayload, webSessionData } = context;
 	app.get('/v1/auth/availability/username', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const username = normalizeUsername(c.req.query('value'));
 					const retryAfterSeconds = availabilityRateLimit(c, 'username', username);
 					c.header('Cache-Control', 'no-store');
@@ -33,7 +33,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 				});
 	
 	app.get('/v1/auth/availability/email', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const email = normalizeEmail(c.req.query('value'));
 					const retryAfterSeconds = availabilityRateLimit(c, 'email', email);
 					c.header('Cache-Control', 'no-store');
@@ -45,14 +45,14 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 				});
 	
 	app.get('/v1/auth/web/emails', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					return c.json({ ok: true, payload: await listUserEmailAddresses(store, auth.principal.id) });
 				});
 	
 	app.get('/v1/auth/web/account/identity', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const user = await store.first(`SELECT id, username, display_name, metadata_json FROM users WHERE id = ? LIMIT 1`, [auth.principal.id]);
@@ -94,7 +94,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					} catch {
 						return jsonError(c, 409, 'Username is already taken.', { code: 'username_taken' });
 					}
-					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'username_claim'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createControlPlaneWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'username_claim'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: { ...webAuthPayload(session), username } });
 				});
 	
@@ -111,12 +111,12 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 				});
 	
 	app.post('/v1/auth/web/emails', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const body = await readJsonOrFormBody(c);
 					try {
-						const result = await createOrResendUserEmailAddress(store, marketAuthContext(c, config), auth.principal.id, {
+						const result = await createOrResendUserEmailAddress(store, controlPlaneAuthContext(c, config), auth.principal.id, {
 							email: body.email,
 							displayName: auth.principal.displayName,
 							returnTo: '/app/account',
@@ -125,7 +125,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						if (!result.ok) return jsonError(c, result.status, result.error);
 						return c.json({ ok: true, payload: result });
 					} catch (error) {
-						console.warn('[market-auth] Email verification setup failed:', error instanceof Error ? error.message : String(error));
+						console.warn('[control-plane-auth] Email verification setup failed:', error instanceof Error ? error.message : String(error));
 						return jsonError(c, 503, 'Email verification could not be sent. Please try again shortly.', {
 							code: 'email_verification_delivery_failed',
 						});
@@ -133,7 +133,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 				});
 	
 	app.post('/v1/auth/web/emails/:emailId/verify', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const row = await getUserEmailAddress(store, auth.principal.id, c.req.param('emailId'));
@@ -142,7 +142,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						return c.json({ ok: true, payload: { emailAddress: row, verificationSent: false } });
 					}
 					try {
-						const confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c, config), {
+						const confirmation = await createControlPlaneEmailConfirmation(store, controlPlaneAuthContext(c, config), {
 							email: row.email,
 							emailAddressId: row.id,
 							displayName: auth.principal.displayName,
@@ -158,7 +158,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 							},
 						});
 					} catch (error) {
-						console.warn('[market-auth] Email verification setup failed:', error instanceof Error ? error.message : String(error));
+						console.warn('[control-plane-auth] Email verification setup failed:', error instanceof Error ? error.message : String(error));
 						return jsonError(c, 503, 'Email verification could not be sent. Please try again shortly.', {
 							code: 'email_verification_delivery_failed',
 						});
@@ -166,17 +166,17 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 				});
 	
 	app.post('/v1/auth/web/emails/:emailId/primary', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const result = await setPrimaryEmailAddress(store, auth.principal.id, c.req.param('emailId'));
 					if (!result.ok) return jsonError(c, result.status, result.error);
-					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'email_primary_update'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createControlPlaneWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'email_primary_update'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: { ...webAuthPayload(session), emailAddress: result.emailAddress } });
 				});
 	
 	app.delete('/v1/auth/web/emails/:emailId', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const row = await getUserEmailAddress(store, auth.principal.id, c.req.param('emailId'));
@@ -350,7 +350,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						new Date().toISOString(),
 						auth.principal.id,
 					]);
-					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'appearance_update'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createControlPlaneWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'appearance_update'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: { ...webAuthPayload(session), ...appearance } });
 				});
 	

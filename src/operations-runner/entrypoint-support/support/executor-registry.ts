@@ -14,10 +14,10 @@ export function createExecutorsForOptions(options: any = {}) {
     const workflowExecutor = createGitHubWorkflowExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
     const workflowConfigurationExecutor = createGitHubConfigurationExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
     const noop = {
-        namespace: 'market',
+        namespace: 'control-plane',
         operation: 'noop',
         async run(_input, context) {
-            await context.checkpoint({ phase: 'diagnostic' }, { kind: 'market.noop', data: { runnerId: process.env.TREESEED_PLATFORM_RUNNER_ID ?? null } });
+            await context.checkpoint({ phase: 'diagnostic' }, { kind: 'control-plane.noop', data: { runnerId: process.env.TREESEED_PLATFORM_RUNNER_ID ?? null } });
             return {
                 ok: true,
                 message: 'Treeseed operations runner diagnostic completed.',

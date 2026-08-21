@@ -10,7 +10,7 @@ export class FeedbackRetentionScheduler {
 		const operation = await this.store.createPlatformOperation({
 			namespace: 'feedback',
 			operation: 'retention_cleanup',
-			target: 'market_operations_runner',
+			target: 'control_plane_operations_runner',
 			idempotencyKey: `feedback-retention:${day}`,
 			input: { scheduledAt: new Date(now).toISOString() },
 			requestedByType: 'service',

@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { authorizeApp,createTestApp,describe,expect,it,json,packageRoot } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('plans and applies staging seeds with audit records, then reports unchanged', async () => {
 		const app = createTestApp({ config: { repoRoot: resolve(packageRoot, 'tests/fixtures/seed-project') } });
 		const token = await authorizeApp(app, { siteRoles: ['platform_admin'] });

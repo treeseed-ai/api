@@ -1,5 +1,5 @@
 export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
-	const { AUTH_PROVIDERS, MARKET_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createMarketEmailConfirmation, createMarketWebSession, ensureMarketCredentialSchema, ensurePrincipal, exchangeProviderIdentity, exposeAuthTokenForTests, hashMarketPassword, jsonError, marketAuthContext, marketEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, requireConfiguredServiceCredential, resolveAuthApprovalBaseUrl, runtime, runtimeControlPlaneAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, validateMarketPassword, validatePublicUsername, verifiedEmailCount, verifyMarketPassword, webAuthPayload, webSessionData } = context;
+	const { AUTH_PROVIDERS, CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createControlPlaneEmailConfirmation, createControlPlaneWebSession, ensureControlPlaneCredentialSchema, ensurePrincipal, exchangeProviderIdentity, exposeAuthTokenForTests, hashControlPlanePassword, jsonError, controlPlaneAuthContext, controlPlaneEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, requireConfiguredServiceCredential, resolveAuthApprovalBaseUrl, runtime, runtimeControlPlaneAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, validateControlPlanePassword, validatePublicUsername, verifiedEmailCount, verifyControlPlanePassword, webAuthPayload, webSessionData } = context;
 	app.post('/v1/auth/device/start', async (c) => {
 					const body = await c.req.json().catch(() => ({}));
 					const started = await runtimeControlPlaneAuthProvider.startDeviceFlow({
@@ -40,7 +40,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 				});
 	
 	app.post('/v1/auth/web/sign-up', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
 					const email = normalizeEmail(body.email);
 					const username = normalizeUsername(body.username);
@@ -52,7 +52,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					const usernameValidation = validatePublicUsername(username);
 					if (!email || !email.includes('@')) return jsonError(c, 400, 'A valid email is required.');
 					if (!usernameValidation.ok) return jsonError(c, 400, usernameValidation.message);
-					if (!validateMarketPassword(password)) return jsonError(c, 400, 'Password must be at least 12 characters.');
+					if (!validateControlPlanePassword(password)) return jsonError(c, 400, 'Password must be at least 12 characters.');
 					const inviteProof = inviteToken ? await store.getPendingTeamInviteByToken(inviteToken) : null;
 					if (inviteToken && (!inviteProof?.ok || String(inviteProof.invite?.email ?? '').trim().toLowerCase() !== email)) {
 						return jsonError(c, 400, 'Team invite does not match this registration email.', { code: 'invite_email_mismatch' });
@@ -100,7 +100,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					await store.run(
 						`INSERT INTO control_plane_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
 						 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-						[synced.principal.id, email, username, hashMarketPassword(password), 'pending_email_confirmation', now, now],
+						[synced.principal.id, email, username, hashControlPlanePassword(password), 'pending_email_confirmation', now, now],
 					);
 					const emailAddressId = randomUUID();
 					await store.run(
@@ -111,7 +111,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					);
 					let confirmation;
 					try {
-						confirmation = await createMarketEmailConfirmation(store, marketAuthContext(c, config), {
+						confirmation = await createControlPlaneEmailConfirmation(store, controlPlaneAuthContext(c, config), {
 							email,
 							emailAddressId,
 							displayName,
@@ -121,8 +121,8 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					} catch (error) {
 						await store.run(`DELETE FROM control_plane_auth_credentials WHERE user_id = ?`, [synced.principal.id]).catch(() => null);
 						await store.run(`DELETE FROM user_email_addresses WHERE user_id = ?`, [synced.principal.id]).catch(() => null);
-						await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [`${MARKET_EMAIL_CONFIRMATION_PREFIX}${emailAddressId}`]).catch(() => null);
-						console.warn('[market-auth] Email confirmation setup failed:', error instanceof Error ? error.message : String(error));
+						await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [`${CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX}${emailAddressId}`]).catch(() => null);
+						console.warn('[control-plane-auth] Email confirmation setup failed:', error instanceof Error ? error.message : String(error));
 						const reason = authEmailDeliveryFailureReason(error);
 						return jsonError(c, 503, 'Email confirmation could not be sent. Please try again shortly.', {
 							code: 'email_confirmation_delivery_failed',
@@ -150,7 +150,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 	app.post('/v1/acceptance/auth/confirm-email', async (c) => {
 					const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
 					if (service.response) return service.response;
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
 					const email = normalizeEmail(body.email);
 					if (!email) return jsonError(c, 400, 'Email is required.');
@@ -192,7 +192,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							[now, credential.user_id],
 						).catch(() => null);
 					}
-					await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [`${MARKET_EMAIL_CONFIRMATION_PREFIX}${emailAddress.id}`]).catch(() => null);
+					await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [`${CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX}${emailAddress.id}`]).catch(() => null);
 					return c.json({
 						ok: true,
 						payload: {
@@ -205,19 +205,19 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 				});
 	
 	app.post('/v1/auth/web/confirm-email', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
 					const token = String(body.token ?? '').trim();
 					if (!token) return jsonError(c, 400, 'Email confirmation token is required.');
 					const row = await store.first(
 						`SELECT * FROM better_auth_verification WHERE value = ? AND identifier LIKE ? LIMIT 1`,
-						[marketEmailTokenHash(token), `${MARKET_EMAIL_CONFIRMATION_PREFIX}%`],
+						[controlPlaneEmailTokenHash(token), `${CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX}%`],
 					);
 					const expiresAt = authTokenTimestampMillis(row?.expiresAt ?? row?.expiresat ?? 0);
 					if (!row || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
 						return jsonError(c, 401, 'Email confirmation token is invalid or expired.');
 					}
-					const emailAddressId = String(row.identifier ?? '').slice(MARKET_EMAIL_CONFIRMATION_PREFIX.length);
+					const emailAddressId = String(row.identifier ?? '').slice(CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX.length);
 					const emailAddress = await store.first(`SELECT * FROM user_email_addresses WHERE id = ? LIMIT 1`, [emailAddressId]);
 					if (!emailAddress?.id) {
 						return jsonError(c, 401, 'Email confirmation token is invalid or expired.');
@@ -259,13 +259,13 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						).catch(() => null);
 					}
 					await store.run(`DELETE FROM better_auth_verification WHERE id = ?`, [row.id]).catch(() => null);
-					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, emailAddress.user_id, webSessionData(c, 'web_email_confirmed'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createControlPlaneWebSession(runtimeControlPlaneAuthProvider, emailAddress.user_id, webSessionData(c, 'web_email_confirmed'), { store, authSecret: runtime.resolved.config.authSecret });
 					await store.recordAuditEvent({
 						actorType: 'user', actorId: emailAddress.user_id, eventType: 'auth.email.verified',
 						targetType: 'user', targetId: emailAddress.user_id, data: { emailAddressId: emailAddress.id },
 					});
 					if (credential.status !== 'active') {
-						await sendWelcomeEmail(marketAuthContext(c, config), {
+						await sendWelcomeEmail(controlPlaneAuthContext(c, config), {
 							email,
 							displayName: credential.username ?? email,
 						}).catch((error) => {
@@ -276,7 +276,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 				});
 	
 	app.post('/v1/auth/web/sign-in', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
 					const identifier = normalizeEmail(body.email ?? body.login ?? body.username);
 					const password = String(body.password ?? '');
@@ -304,7 +304,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							[identifier],
 						);
 					}
-					if (!row || row.status === 'deleted' || !verifyMarketPassword(password, row.password_hash)) {
+					if (!row || row.status === 'deleted' || !verifyControlPlanePassword(password, row.password_hash)) {
 						return jsonError(c, 401, 'Authentication failed.');
 					}
 					if (row.status !== 'active' || (row.email_status && row.email_status !== 'verified')) {
@@ -312,7 +312,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							code: 'email_confirmation_required',
 						});
 					}
-						const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, row.user_id, webSessionData(c, 'web_sign_in'), { store, authSecret: runtime.resolved.config.authSecret });
+						const session = await createControlPlaneWebSession(runtimeControlPlaneAuthProvider, row.user_id, webSessionData(c, 'web_sign_in'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: webAuthPayload(session) });
 				});
 	
@@ -382,7 +382,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							const synced = await runtimeControlPlaneAuthProvider.syncUserIdentity({ provider, providerSubject: identity.subject, email: normalizedProviderEmail, emailVerified: true, displayName: identity.displayName, profile: identity.profile ?? {} });
 							userId = synced.principal.id;
 						}
-						const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, userId, webSessionData(c, `oauth_${provider}`), { store, authSecret: runtime.resolved.config.authSecret });
+						const session = await createControlPlaneWebSession(runtimeControlPlaneAuthProvider, userId, webSessionData(c, `oauth_${provider}`), { store, authSecret: runtime.resolved.config.authSecret });
 						if (row.purpose === 'reauthenticate') {
 							const grantId = randomUUID();
 							await store.run(`INSERT INTO auth_reauthentication_grants (id, user_id, session_id, action, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)`, [grantId, userId, session.principal.metadata?.sessionId ?? '', row.action ?? 'account_delete', new Date(Date.now() + 5 * 60_000).toISOString(), new Date().toISOString()]);

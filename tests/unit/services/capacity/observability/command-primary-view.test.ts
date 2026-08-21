@@ -5,7 +5,7 @@ describe('command primary view', () => {
 	it('projects proposal authorship and voting content without exposing an internal ID', async () => {
 		const first = vi.fn().mockResolvedValue({ display_name: 'Adrian Webb', email: 'adrian@example.test' });
 		const primary = await commandPrimaryView({ first }, 'proposal', {
-			kind: 'proposal', title: 'Guide direction', description: 'Summary', status: 'voting', projectName: 'Market', occurredAt: '2026-08-04T14:00:00.000Z',
+			kind: 'proposal', title: 'Guide direction', description: 'Summary', status: 'voting', projectName: 'API', occurredAt: '2026-08-04T14:00:00.000Z',
 		}, { body: 'Adopt the proposed editorial direction.\n\nAgent evidence:\n{\"mode\":\"plan\"}', proposal_type: 'editorial-test', created_by_type: 'user', created_by_id: 'opaque-user-id', created_at: '2026-08-04T13:00:00.000Z' });
 
 		expect(primary.actor.name).toBe('Adrian Webb');

@@ -1,6 +1,6 @@
 import { createTestApp,createTestPostgresDatabase,describe,expect,it,json } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('uses the Drizzle-owned web session schema before serving deep health', async () => {
 		const db = createTestPostgresDatabase();
 		const app = createTestApp({ db });

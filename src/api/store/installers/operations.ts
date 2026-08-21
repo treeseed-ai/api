@@ -5,7 +5,7 @@ import { assertPlatformOperationRunnerUpdateMethod } from '../operations/contrac
 import { checkpointPlatformOperationMethod } from '../operations/contracts/checkpoint-platform-operation.ts';
 import { createJobMethod } from '../operations/creation/create-job.ts';
 import { createPlatformOperationMethod } from '../operations/creation/create-platform-operation.ts';
-import { upsertMarketOperationRunnerMethod } from '../operations/creation/upsert-market-operation-runner.ts';
+import { upsertControlPlaneOperationRunnerMethod } from '../operations/creation/upsert-control-plane-operation-runner.ts';
 import { claimPlatformOperationMethod } from '../operations/lifecycle/claims/claim-platform-operation.ts';
 import { renewPlatformOperationLeaseMethod } from '../operations/lifecycle/claims/renew-platform-operation-lease.ts';
 import { completeJobMethod } from '../operations/lifecycle/jobs/complete-job.ts';
@@ -20,8 +20,8 @@ import { listJobEventsMethod } from '../operations/queries/jobs/list-job-events.
 import { findPlatformOperationByIdMethod } from '../operations/queries/platform-operations/find-platform-operation-by-id.ts';
 import { listPlatformOperationEventsMethod } from '../operations/queries/platform-operations/list-platform-operation-events.ts';
 import { listPlatformOperationsMethod } from '../operations/queries/platform-operations/list-platform-operations.ts';
-import { findMarketOperationRunnerByIdMethod } from '../operations/queries/runners/find-market-operation-runner-by-id.ts';
-import { listMarketOperationRunnersMethod } from '../operations/queries/runners/list-market-operation-runners.ts';
+import { findControlPlaneOperationRunnerByIdMethod } from '../operations/queries/runners/find-control-plane-operation-runner-by-id.ts';
+import { listControlPlaneOperationRunnersMethod } from '../operations/queries/runners/list-control-plane-operation-runners.ts';
 import { cancelJobMethod } from '../operations/retirement/cancel-job.ts';
 import { cancelPlatformOperationMethod } from '../operations/retirement/cancel-platform-operation.ts';
 import { recordJobProgressMethod } from '../operations/updates/record-job-progress.ts';
@@ -35,9 +35,9 @@ export function installOperationsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.cancelPlatformOperation = cancelPlatformOperationMethod;
 	prototype.retryPlatformOperation = retryPlatformOperationMethod;
 	prototype.assertPlatformOperationRunnerUpdate = assertPlatformOperationRunnerUpdateMethod;
-	prototype.upsertMarketOperationRunner = upsertMarketOperationRunnerMethod;
-	prototype.findMarketOperationRunnerById = findMarketOperationRunnerByIdMethod;
-	prototype.listMarketOperationRunners = listMarketOperationRunnersMethod;
+	prototype.upsertControlPlaneOperationRunner = upsertControlPlaneOperationRunnerMethod;
+	prototype.findControlPlaneOperationRunnerById = findControlPlaneOperationRunnerByIdMethod;
+	prototype.listControlPlaneOperationRunners = listControlPlaneOperationRunnersMethod;
 	prototype.claimPlatformOperation = claimPlatformOperationMethod;
 	prototype.renewPlatformOperationLease = renewPlatformOperationLeaseMethod;
 	prototype.checkpointPlatformOperation = checkpointPlatformOperationMethod;

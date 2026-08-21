@@ -1,8 +1,8 @@
 import { resolveApiConfig } from '@treeseed/sdk/api';
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
-import { AUTH_PROVIDERS,jsonError,marketAuthContext } from '../index.ts';
+import { AUTH_PROVIDERS,jsonError,controlPlaneAuthContext } from '../index.ts';
 export function providerConfigFor(c, provider) {
-    const config = getSiteAuthConfig(marketAuthContext(c));
+    const config = getSiteAuthConfig(controlPlaneAuthContext(c));
     const spec = AUTH_PROVIDERS[provider];
     const credentials = config.providers?.[provider];
     return spec && credentials?.clientId && credentials?.clientSecret ? { ...spec, ...credentials } : null;
@@ -28,7 +28,7 @@ export function defaultConfig(overrides: any = {}) {
     const resolved = resolveApiConfig();
     const config = {
         ...resolved,
-        projectId: overrides.projectId ?? resolved.projectId ?? 'treeseed-market',
+        projectId: overrides.projectId ?? resolved.projectId ?? 'treeseed-api',
         repoRoot: overrides.repoRoot ?? resolved.repoRoot ?? process.cwd(),
         d1DatabaseId: undefined,
         d1DatabaseName: undefined,

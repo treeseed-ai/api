@@ -1,6 +1,6 @@
 import { authorizeApp,createTeam,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json,unsignedTestJwt } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('exchanges GitHub OIDC for managed operation jobs without exposing provider secrets', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);

@@ -6,7 +6,7 @@ import { authTokenTimestampSeconds,confirmationUrlFor,exposeAuthTokenForTests,te
 export function normalizeEmail(value) {
     return String(value ?? '').trim().toLowerCase();
 }
-export const MARKET_EMAIL_CONFIRMATION_PREFIX = 'market_email_confirmation:';
+export const CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX = 'control_plane_email_confirmation:';
 export function shouldBypassAcceptanceAuthEmailDelivery(c, config) {
     if (process.env.NODE_ENV === 'test') {
         return true;
@@ -18,7 +18,7 @@ export function shouldBypassAcceptanceAuthEmailDelivery(c, config) {
         && serviceId === config.webServiceId
         && serviceSecret === config.webServiceSecret;
 }
-export function marketEmailTokenHash(token) {
+export function controlPlaneEmailTokenHash(token) {
     return createHash('sha256').update(String(token)).digest('hex');
 }
 export async function sendTeamInviteEmail(context, input) {
@@ -48,7 +48,7 @@ export async function sendTeamInviteEmail(context, input) {
         html,
     });
 }
-export async function createMarketEmailConfirmation(store, context, input) {
+export async function createControlPlaneEmailConfirmation(store, context, input) {
     const authConfig = getSiteAuthConfig(context);
     const token = `confirm_${randomBytes(24).toString('base64url')}`;
     const now = Date.now();
@@ -56,10 +56,10 @@ export async function createMarketEmailConfirmation(store, context, input) {
     const expiresAt = now + expiresInSeconds * 1000;
     const createdAt = authTokenTimestampSeconds(now);
     const storedExpiresAt = authTokenTimestampSeconds(expiresAt);
-    const identifier = `${MARKET_EMAIL_CONFIRMATION_PREFIX}${input.emailAddressId ?? input.email}`;
+    const identifier = `${CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX}${input.emailAddressId ?? input.email}`;
     await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [identifier]).catch(() => null);
     const verificationId = randomUUID();
-    const verificationValues = [verificationId, identifier, marketEmailTokenHash(token), storedExpiresAt, createdAt, createdAt];
+    const verificationValues = [verificationId, identifier, controlPlaneEmailTokenHash(token), storedExpiresAt, createdAt, createdAt];
     try {
         await store.run(`INSERT INTO better_auth_verification (id, identifier, value, "expiresAt", "createdAt", "updatedAt")
 			 VALUES (?, ?, ?, ?, ?, ?)`, verificationValues);
@@ -184,7 +184,7 @@ export async function createOrResendUserEmailAddress(store, context, userId, inp
     }
     let confirmation = null;
     if (row?.status !== 'verified') {
-        confirmation = await createMarketEmailConfirmation(store, context, {
+        confirmation = await createControlPlaneEmailConfirmation(store, context, {
             email: row.email,
             emailAddressId: row.id,
             displayName: input.displayName,

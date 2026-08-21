@@ -1,8 +1,8 @@
-import { PlatformRunnerClient } from '@treeseed/sdk';
 import { createPlatformOperationStoreFromEnv } from '@treeseed/sdk/platform-operation-store';
 import { createCapacityControlPlane } from '../../../api/capacity/control-plane.js';
 import { ControlPlaneStore } from '../../../api/persistence/store.js';
 import { createControlPlanePostgresDatabase } from '../../../api/support/control-plane-postgres.js';
+import { ControlPlaneRunnerClient } from '../../client/control-plane-runner-client.js';
 
 export function createClient(config) {
     if (config.apiDatabaseUrl) {
@@ -11,9 +11,9 @@ export function createClient(config) {
             initializeSchema: true,
         });
     }
-    return new PlatformRunnerClient({
-        marketUrl: config.serverUrl,
-        marketId: config.serverId,
+    return new ControlPlaneRunnerClient({
+        serverUrl: config.serverUrl,
+        serverId: config.serverId,
         runnerSecret: config.runnerSecret,
         userAgent: `treeseed-api-operations-runner/${process.version}`,
     });

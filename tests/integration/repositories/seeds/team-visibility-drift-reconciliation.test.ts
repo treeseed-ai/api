@@ -24,7 +24,7 @@ function createStore() {
 	const db = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
 	const store = new ControlPlaneStore({
 		repoRoot: packageRoot,
-		projectId: 'treeseed-market-test',
+		projectId: 'treeseed-api-test',
 		authSecret: 'test-auth-secret',
 		assertionSecret: 'test-assertion-secret',
 		serviceId: 'web',

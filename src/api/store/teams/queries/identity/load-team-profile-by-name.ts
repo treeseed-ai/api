@@ -10,7 +10,7 @@ export async function loadTeamProfileByNameMethod(this: ControlPlaneStore, name,
     const globallyAuthorized = !teamIsPrivate(team) && Boolean(principal
         && (principal.permissions?.includes?.('*:*:*')
             || principal.roles?.includes?.('platform_admin')
-            || principal.roles?.includes?.('market_admin')));
+            || principal.roles?.includes?.('platform_admin')));
     return {
         team: {
             ...(memberContext || globallyAuthorized ? { id: team.id } : {}),

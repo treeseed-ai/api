@@ -1,6 +1,6 @@
 import { createTestApp,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('lets trusted deploy services bootstrap the default public TreeDX federation team', async () => {
 		const app = createTestApp({
 			config: {

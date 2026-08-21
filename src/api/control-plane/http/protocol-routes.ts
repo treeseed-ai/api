@@ -24,7 +24,7 @@ export function installControlPlaneProtocolRoutes(
 			async verifyAccessToken(token) {
 				const authenticated = await authenticateBearerToken(token);
 				if (!authenticated) throw new OAuthError(OAuthErrorCode.InvalidToken, 'The access token is invalid, expired, or revoked.');
-				const admin = authenticated.principal.roles?.some((role) => ['admin', 'market_admin', 'team_owner'].includes(role))
+				const admin = authenticated.principal.roles?.some((role) => ['admin', 'platform_admin', 'team_owner'].includes(role))
 					|| authenticated.principal.permissions?.includes('*:*:*');
 				const scopes = authenticated.principal.scopes?.filter((scope) => scope.startsWith('treeseed:')) ?? [];
 				return {

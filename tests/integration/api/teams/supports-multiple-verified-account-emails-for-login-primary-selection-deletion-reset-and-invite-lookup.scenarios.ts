@@ -1,6 +1,6 @@
 import { authorizeApp,createTeam,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('supports multiple verified account emails for login, primary selection, deletion, reset, and invite lookup', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);

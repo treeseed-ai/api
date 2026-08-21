@@ -1,7 +1,7 @@
 
 
 export const API_ENDPOINT_GUARANTEE_FAMILIES = [
-    'health-and-markets',
+    'health-and-identity',
     'auth-and-sessions',
     'teams-and-members',
     'projects-and-workstreams',
@@ -20,8 +20,8 @@ export const API_ENDPOINT_GUARANTEE_FAMILIES = [
 ];
 
 export function endpointGuaranteeFamily(path) {
-    if (path === '/healthz/deep' || path.startsWith('/v1/markets') || path === '/v1/me' || path.startsWith('/v1/me/'))
-        return 'health-and-markets';
+    if (path === '/healthz/deep' || path === '/v1/me' || path.startsWith('/v1/me/'))
+        return 'health-and-identity';
     if (path.startsWith('/v1/auth/') || path.startsWith('/v1/team-invites/'))
         return 'auth-and-sessions';
     if (path.startsWith('/v1/ui/'))
@@ -52,7 +52,7 @@ export function endpointGuaranteeFamily(path) {
         return 'teams-and-members';
     if (path.startsWith('/v1/projects'))
         return 'projects-and-workstreams';
-    return 'health-and-markets';
+    return 'health-and-identity';
 }
 
 export function endpointGuaranteeCoverage(familyId) {

@@ -1,6 +1,6 @@
 import { createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('supports TreeSeed Commons governance participation', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);

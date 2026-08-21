@@ -123,7 +123,7 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/services/workday-scheduling-service.test.ts
     testName: attempts every required recovery record and reports incomplete evidence
-  api.endpoints.health-and-markets:
+  api.endpoints.health-and-identity:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"
     spec: scripts/support/api-acceptance.ts

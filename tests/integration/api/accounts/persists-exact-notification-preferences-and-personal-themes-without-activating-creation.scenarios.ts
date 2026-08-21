@@ -1,6 +1,6 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('persists exact notification preferences and personal themes without activating creation', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);

@@ -1,4 +1,4 @@
-const projectSlugs = ['market', 'admin', 'core', 'ui', 'sdk', 'api', 'cli', 'agent', 'treedx'];
+const projectSlugs = ['api', 'admin', 'core', 'ui', 'sdk', 'api', 'cli', 'agent', 'treedx'];
 
 export const seedTreeDxFetch: typeof fetch = async (input) => {
 	const url = new URL(typeof input === 'string' ? input : input.url);

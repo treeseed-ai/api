@@ -33,7 +33,7 @@ import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resour
 import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
 import { installContextualKnowledgeRoutes } from "../routes/support/contextual-knowledge.ts";
 import { installFoundationApprovalDecisionsRoutes } from "../routes/support/foundation-approval-decisions.ts";
-import { installFoundationCurrentUserMarketsRoutes } from "../routes/support/foundation-current-user-markets.ts";
+import { installFoundationCurrentUserRoutes } from "../routes/support/foundation-current-user.ts";
 import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
 import { installFoundationStewardTransitionCommonsProposalRoutes } from "../routes/support/foundation-stewardTransitionCommonsProposal.ts";
 import { installTeamServicesRoutes } from "../routes/teams/team-services.ts";
@@ -65,7 +65,7 @@ export function installPlatformRoutes(context: any): void {
   installAuthenticationDeviceSignupAndOauthRoutes(context);
   installAuthenticationAccountProfileAndNotificationsRoutes(context);
   installAuthenticationPasswordAndAccountSecurityRoutes(context);
-  installFoundationCurrentUserMarketsRoutes(context);
+  installFoundationCurrentUserRoutes(context);
   installGovernanceProjectionRoutes(context);
   installProjectionsInfrastructureKnowledgeAndWorkdaysRoutes(context);
   installTeamsDirectoryRoutes(context);

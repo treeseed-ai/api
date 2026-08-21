@@ -22,7 +22,7 @@ export async function createPlatformOperationMethod(this: ControlPlaneStore, inp
         input.namespace,
         input.operation,
         status,
-        input.target ?? 'market_operations_runner',
+        input.target ?? 'control_plane_operations_runner',
         input.idempotencyKey ?? null,
         JSON.stringify(input.input ?? {}),
         input.requestedByType ?? input.requestedBy?.type ?? 'service',
@@ -33,7 +33,7 @@ export async function createPlatformOperationMethod(this: ControlPlaneStore, inp
     await this.appendPlatformOperationEvent(id, 'created', {
         namespace: input.namespace,
         operation: input.operation,
-        target: input.target ?? 'market_operations_runner',
+        target: input.target ?? 'control_plane_operations_runner',
         status,
     });
     return this.findPlatformOperationById(id);

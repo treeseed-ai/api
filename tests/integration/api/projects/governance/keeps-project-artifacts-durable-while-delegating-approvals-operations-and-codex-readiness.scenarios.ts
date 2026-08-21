@@ -1,6 +1,6 @@
 import { authorizeApp,createTeamAndProject,createTestApp,describe,expect,it,json,vi } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('keeps project artifacts durable while delegating approvals, operations, and Codex readiness', async () => {
 		const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
 			const url = String(input);

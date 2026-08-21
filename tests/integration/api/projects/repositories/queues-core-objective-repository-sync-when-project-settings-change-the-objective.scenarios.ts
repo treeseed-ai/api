@@ -1,6 +1,6 @@
 import { authorizeApp,createTeamAndProject,createTestApp,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('requires a TreeDX changeset when project settings would mutate the core objective', async () => {
 		const app = createTestApp();
 		const token = await authorizeApp(app);

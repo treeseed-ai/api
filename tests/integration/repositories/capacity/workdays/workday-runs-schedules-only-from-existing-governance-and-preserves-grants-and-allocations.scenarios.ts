@@ -170,20 +170,20 @@ it('persists workday runs and ordered audit events', async () => {
             id: 'run-test',
             capacityProviderId: 'provider-local',
             status: 'queued',
-            parameters: { providerCredentialRef: 'secret://capacity/team-test', projects: ['market'], durationSeconds: 60 },
-            expected: { projects: ['market'] },
+            parameters: { providerCredentialRef: 'secret://capacity/team-test', projects: ['api'], durationSeconds: 60 },
+            expected: { projects: ['api'] },
         });
         expect(run).toMatchObject({
             id: 'run-test',
             teamId: 'team-test',
             status: 'queued',
             capacityProviderId: 'provider-local',
-            parameters: { providerCredentialRef: 'secret://capacity/team-test', projects: ['market'], durationSeconds: 60, deadlineAt: null },
+            parameters: { providerCredentialRef: 'secret://capacity/team-test', projects: ['api'], durationSeconds: 60, deadlineAt: null },
         });
         const first = await store.createCapacityWorkdayEvent('team-test', 'run-test', {
             eventType: 'command.started',
             title: 'Started',
-            parameters: { projects: ['market'] },
+            parameters: { projects: ['api'] },
         });
         const second = await store.createCapacityWorkdayEvent('team-test', 'run-test', {
             eventType: 'command.completed',

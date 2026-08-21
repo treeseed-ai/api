@@ -1,6 +1,6 @@
 import { authorizeApp,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('manages team profiles, invites, member roles, and guarded deletion', async () => {
 		const acceptanceHeaders = {
 			'x-treeseed-acceptance-email-bypass': '1',
@@ -66,8 +66,8 @@ it('manages team profiles, invites, member roles, and guarded deletion', async (
 				authorization: `Bearer ${token}`,
 			},
 			body: JSON.stringify({
-				displayName: 'Market User',
-				image: 'https://example.com/market-user.png',
+				displayName: 'API User',
+				image: 'https://example.com/api-user.png',
 			}),
 		}));
 		expect(profileUpdate.ok).toBe(true);
@@ -77,9 +77,9 @@ it('manages team profiles, invites, member roles, and guarded deletion', async (
 		const updateActivity = updatedHome.payload.auditEvents.find((event: { eventType: string }) => event.eventType === 'team.updated');
 		expect(updateActivity.actor).toMatchObject({
 			type: 'user',
-			displayName: 'Market User',
+			displayName: 'API User',
 			username: expect.any(String),
-			image: 'https://example.com/market-user.png',
+			image: 'https://example.com/api-user.png',
 		});
 		expect(updateActivity.data.changes).toEqual(expect.arrayContaining([
 			expect.objectContaining({ field: 'name', label: 'Team address', before: 'alpha-team', after: 'alpha-collective' }),
@@ -150,14 +150,14 @@ it('manages team profiles, invites, member roles, and guarded deletion', async (
 		});
 		expect(invitedHome.status).toBe(200);
 		const memberDirectory = await json(await app.request(
-			`/v1/teams/${created.payload.id}/members?q=Market&page=1&limit=25`,
+			`/v1/teams/${created.payload.id}/members?q=API&page=1&limit=25`,
 			{ headers: { authorization: `Bearer ${confirmed.payload.accessToken}` } },
 		));
 		expect(memberDirectory).toMatchObject({
 			ok: true,
 			payload: {
 				total: 1,
-				items: [expect.objectContaining({ userId: 'user-1', displayName: 'Market User' })],
+				items: [expect.objectContaining({ userId: 'user-1', displayName: 'API User' })],
 			},
 		});
 		const memberInviteDenied = await app.request(`/v1/teams/${created.payload.id}/invites`, {

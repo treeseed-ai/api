@@ -5,7 +5,7 @@ import { ControlPlaneStore,validateProjectSlug } from '../../../src/api/persiste
 import { createPlatformApiApp } from '../../../src/api/support/app.js';
 import { createControlPlanePostgresDatabase } from '../../../src/api/support/control-plane-postgres.js';
 import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS } from '../../../src/api/support/route-descriptors.js';
-import { main as runMarketOperationsRunner } from '../../../src/operations-runner/entrypoint.js';
+import { main as runAPIOperationsRunner } from '../../../src/operations-runner/entrypoint.js';
 
 function createNoopStore() {
 	return new Proxy({
@@ -24,7 +24,7 @@ describe('API package surface', () => {
 		expect(typeof ControlPlaneStore).toBe('function');
 		expect(typeof createControlPlanePostgresDatabase).toBe('function');
 		expect(typeof validateProjectSlug).toBe('function');
-		expect(typeof runMarketOperationsRunner).toBe('function');
+		expect(typeof runAPIOperationsRunner).toBe('function');
 	});
 
 	it('constructs the Hono app with injected backend dependencies', () => {
@@ -33,7 +33,7 @@ describe('API package surface', () => {
 			store: createNoopStore(),
 			config: {
 				repoRoot: process.cwd(),
-				projectId: 'treeseed-market-test',
+				projectId: 'treeseed-api-test',
 				baseUrl: 'http://127.0.0.1:3000',
 				issuer: 'http://127.0.0.1:3000',
 				authSecret: 'test-auth-secret',

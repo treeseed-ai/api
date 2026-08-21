@@ -1,13 +1,13 @@
 export function installAuthenticationPasswordAndAccountSecurityRoutes(context: any) {
-	const { accountDeletionBlockers, accountDeletionConfirmationMatches, app, config, consumeReauthentication, createHash, deleteTeamCapacityAggregate, ensureMarketCredentialSchema, ensurePrincipal, hashMarketPassword, jsonError, marketAuthContext, normalizeEmail, normalizeUsername, passwordResetUrlFor, randomBytes, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, sendAuthEmail, shouldBypassAcceptanceAuthEmailDelivery, store, validateMarketPassword, verifyMarketPassword } = context;
+	const { accountDeletionBlockers, accountDeletionConfirmationMatches, app, config, consumeReauthentication, createHash, deleteTeamCapacityAggregate, ensureControlPlaneCredentialSchema, ensurePrincipal, hashControlPlanePassword, jsonError, controlPlaneAuthContext, normalizeEmail, normalizeUsername, passwordResetUrlFor, randomBytes, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, sendAuthEmail, shouldBypassAcceptanceAuthEmailDelivery, store, validateControlPlanePassword, verifyControlPlanePassword } = context;
 	app.patch('/v1/auth/web/password', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const body = await readJsonOrFormBody(c);
 					const currentPassword = String(body.currentPassword ?? '');
 					const newPassword = String(body.newPassword ?? body.password ?? '');
-					if (!validateMarketPassword(newPassword)) return jsonError(c, 400, 'Password must be at least 12 characters.');
+					if (!validateControlPlanePassword(newPassword)) return jsonError(c, 400, 'Password must be at least 12 characters.');
 					const row = await store.first(`SELECT password_hash FROM control_plane_auth_credentials WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
 					if (!await consumeReauthentication(store, auth.principal, 'password_change', body)) return jsonError(c, 401, 'Reauthentication is required.', { code: 'reauthentication_required' });
 					if (!row) {
@@ -16,11 +16,11 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 						await store.run(
 							`INSERT INTO control_plane_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
 							 VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-							[auth.principal.id, email || `${auth.principal.id}@treeseed.local`, username || null, hashMarketPassword(newPassword), new Date().toISOString(), new Date().toISOString()],
+							[auth.principal.id, email || `${auth.principal.id}@treeseed.local`, username || null, hashControlPlanePassword(newPassword), new Date().toISOString(), new Date().toISOString()],
 						);
 					} else {
 						await store.run(`UPDATE control_plane_auth_credentials SET password_hash = ?, updated_at = ? WHERE user_id = ?`, [
-							hashMarketPassword(newPassword),
+							hashControlPlanePassword(newPassword),
 							new Date().toISOString(),
 							auth.principal.id,
 						]);
@@ -35,14 +35,14 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 					const action = ['password_change', 'account_delete'].includes(body.action) ? body.action : null;
 					if (!action) return jsonError(c, 400, 'A valid reauthentication action is required.');
 					const credential = await store.first(`SELECT password_hash FROM control_plane_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
-					if (!credential || !verifyMarketPassword(String(body.password ?? ''), credential.password_hash)) return jsonError(c, 401, 'Current password was not accepted.');
+					if (!credential || !verifyControlPlanePassword(String(body.password ?? ''), credential.password_hash)) return jsonError(c, 401, 'Current password was not accepted.');
 					const grantId = randomUUID();
 					await store.run(`INSERT INTO auth_reauthentication_grants (id, user_id, session_id, action, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)`, [grantId, auth.principal.id, auth.principal.metadata?.sessionId ?? '', action, new Date(Date.now() + 5 * 60_000).toISOString(), new Date().toISOString()]);
 					return c.json({ ok: true, payload: { grantId, action, expiresInSeconds: 300 } });
 				});
 	
 	app.post('/v1/auth/web/password-reset/request', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
 					const email = normalizeEmail(body.email);
 					const row = email
@@ -72,10 +72,10 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 								new Date().toISOString(),
 							],
 						);
-						const resetUrl = passwordResetUrlFor(marketAuthContext(c, config), resetToken);
+						const resetUrl = passwordResetUrlFor(controlPlaneAuthContext(c, config), resetToken);
 						try {
 							if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
-								await sendAuthEmail(marketAuthContext(c, config), {
+								await sendAuthEmail(controlPlaneAuthContext(c, config), {
 									to: email,
 									subject: 'Reset your TreeSeed password',
 									text: [
@@ -96,7 +96,7 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 								});
 							}
 						} catch (error) {
-							console.warn('[market-auth] Password reset email failed:', error instanceof Error ? error.message : String(error));
+							console.warn('[control-plane-auth] Password reset email failed:', error instanceof Error ? error.message : String(error));
 							return jsonError(c, 503, 'Password reset email could not be sent. Please try again shortly.', {
 								code: 'password_reset_delivery_failed',
 								...(process.env.NODE_ENV === 'test' ? { detail: error instanceof Error ? error.message : String(error) } : {}),
@@ -113,18 +113,18 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 				});
 	
 	app.post('/v1/auth/web/password-reset/complete', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
 					const token = String(body.token ?? '');
 					const newPassword = String(body.newPassword ?? body.password ?? '');
-					if (!token || !validateMarketPassword(newPassword)) return jsonError(c, 400, 'A valid reset token and password are required.');
+					if (!token || !validateControlPlanePassword(newPassword)) return jsonError(c, 400, 'A valid reset token and password are required.');
 					const row = await store.first(
 						`SELECT * FROM control_plane_auth_password_resets WHERE token_hash = ? AND used_at IS NULL LIMIT 1`,
 						[createHash('sha256').update(token).digest('hex')],
 					);
 					if (!row || new Date(row.expires_at).getTime() <= Date.now()) return jsonError(c, 401, 'Password reset token is invalid or expired.');
 					await store.run(`UPDATE control_plane_auth_credentials SET password_hash = ?, updated_at = ? WHERE user_id = ?`, [
-						hashMarketPassword(newPassword),
+						hashControlPlanePassword(newPassword),
 						new Date().toISOString(),
 						row.user_id,
 					]);
@@ -144,7 +144,7 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 				});
 	
 	app.delete('/v1/auth/web/account', async (c) => {
-					await ensureMarketCredentialSchema(store);
+					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const body = await readJsonOrFormBody(c);

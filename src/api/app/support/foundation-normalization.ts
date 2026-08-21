@@ -25,24 +25,6 @@ export function parseJsonObject(value, fallback: any = {}) {
 export function normalizeBaseUrl(baseUrl) {
     return String(baseUrl ?? '').trim().replace(/\/+$/u, '');
 }
-export function normalizeMarketProfile(value, fallbackTeamId = null) {
-    if (!value || typeof value !== 'object') {
-        return null;
-    }
-    const id = typeof value.id === 'string' && value.id.trim() ? value.id.trim() : null;
-    const baseUrl = typeof value.baseUrl === 'string' && value.baseUrl.trim() ? normalizeBaseUrl(value.baseUrl) : null;
-    if (!id || !baseUrl) {
-        return null;
-    }
-    return {
-        id,
-        label: typeof value.label === 'string' && value.label.trim() ? value.label.trim() : id,
-        baseUrl,
-        kind: value.kind === 'central' ? 'central' : 'specialized',
-        teamId: typeof value.teamId === 'string' && value.teamId.trim() ? value.teamId.trim() : fallbackTeamId,
-        alwaysAvailable: value.alwaysAvailable === true || value.kind === 'central',
-    };
-}
 export function parseBase64urlJson(value) {
     return JSON.parse(Buffer.from(String(value ?? ''), 'base64url').toString('utf8'));
 }

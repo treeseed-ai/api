@@ -60,8 +60,8 @@ describe('Agent Lab simulation draft', () => {
 					execution_provider_ids_json: JSON.stringify(['codex-sub', 'codex-key']),
 				} : null,
 			all: async () => [{
-				id: 'project-1', slug: 'market', name: 'Market', description: 'Market project',
-				metadata_json: JSON.stringify({ kind: 'market_app', repository: {}, architecture: {} }),
+				id: 'project-1', slug: 'api', name: 'API', description: 'API project',
+				metadata_json: JSON.stringify({ kind: 'api_app', repository: {}, architecture: {} }),
 			}],
 		};
 
@@ -89,7 +89,7 @@ describe('Agent Lab simulation draft', () => {
 					grant_metadata_json: JSON.stringify({ seedResourceKey: 'capacity-provider:treeseed/agents' }),
 					execution_provider_ids_json: JSON.stringify(['codex-sub']),
 				} : null,
-			all: async () => [{ id: 'project-1', slug: 'market', name: 'Market', metadata_json: '{}' }],
+			all: async () => [{ id: 'project-1', slug: 'api', name: 'API', metadata_json: '{}' }],
 		};
 
 		const draft = await agentLabSimulationDraft({ store } as never, 'team-1', 'project-1', {
@@ -124,7 +124,7 @@ describe('Agent Lab simulation draft', () => {
 					grant_metadata_json: JSON.stringify({ seedResourceKey: 'capacity-provider:treeseed/agents' }),
 					execution_provider_ids_json: JSON.stringify(['codex-sub']),
 				} : null,
-			all: async () => [{ id: 'project-1', slug: 'market', name: 'Market', metadata_json: '{}' }],
+			all: async () => [{ id: 'project-1', slug: 'api', name: 'API', metadata_json: '{}' }],
 		};
 
 		const draft = await agentLabSimulationDraft({ store } as never, 'team-1', 'project-1', {

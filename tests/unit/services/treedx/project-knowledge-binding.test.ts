@@ -16,10 +16,10 @@ describe('project knowledge binding reconciliation', () => {
 			store,
 			projectId: 'project-a',
 			teamId: 'team-a',
-			projectSlug: 'market',
+			projectSlug: 'api',
 			dependencyState: {
 				repositoryCatalog: Promise.resolve([{
-					name: 'treeseed-market',
+					name: 'treeseed-api',
 					repoId: 'repo-a',
 					defaultRef: 'refs/heads/main',
 				}]),
@@ -35,7 +35,7 @@ describe('project knowledge binding reconciliation', () => {
 		const upsertProjectTreeDxLibrary = vi.fn(async () => ({}));
 		const store = {
 			getProjectTreeDxLibrary: vi.fn(async () => ({
-				contentRepositoryUrl: 'https://github.com/knowledge-coop/market.git',
+				contentRepositoryUrl: 'https://github.com/knowledge-coop/api.git',
 				contentRepositoryDefaultBranch: 'main',
 				contentRepositoryRef: 'refs/heads/staging',
 			})),
@@ -44,17 +44,17 @@ describe('project knowledge binding reconciliation', () => {
 		};
 		await ensureProjectKnowledgeBinding({
 			store,
-			projectId: 'project-market',
+			projectId: 'project-api',
 			teamId: 'team-a',
-			projectSlug: 'market',
-			contentRepositoryUrl: 'https://github.com/treeseed-ai/market-content.git',
+			projectSlug: 'api',
+			contentRepositoryUrl: 'https://github.com/treeseed-ai/api-content.git',
 			contentRepositoryDefaultBranch: 'main',
 			dependencyState: { repositoryCatalog: Promise.resolve([{
-				name: 'treeseed-market', repoId: 'repo-market', defaultRef: 'refs/heads/main',
+				name: 'treeseed-api', repoId: 'repo-api', defaultRef: 'refs/heads/main',
 			}]) },
 		});
-		expect(upsertProjectTreeDxLibrary).toHaveBeenCalledWith('project-market', expect.objectContaining({
-			contentRepositoryUrl: 'https://github.com/treeseed-ai/market-content.git',
+		expect(upsertProjectTreeDxLibrary).toHaveBeenCalledWith('project-api', expect.objectContaining({
+			contentRepositoryUrl: 'https://github.com/treeseed-ai/api-content.git',
 			contentRepositoryDefaultBranch: 'main',
 		}));
 	});

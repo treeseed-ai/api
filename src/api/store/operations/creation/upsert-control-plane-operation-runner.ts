@@ -1,5 +1,5 @@
-import { isoNow,ControlPlaneStore,serializeMarketOperationRunner } from "../../../persistence/store.ts";
-export async function upsertMarketOperationRunnerMethod(this: ControlPlaneStore, input) {
+import { isoNow,ControlPlaneStore,serializeControlPlaneOperationRunner } from "../../../persistence/store.ts";
+export async function upsertControlPlaneOperationRunnerMethod(this: ControlPlaneStore, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.runnerId ?? input.id;
@@ -34,5 +34,5 @@ export async function upsertMarketOperationRunnerMethod(this: ControlPlaneStore,
         timestamp,
         timestamp,
     ]);
-    return serializeMarketOperationRunner(await this.first(`SELECT * FROM control_plane_operation_runners WHERE id = ?`, [id]));
+    return serializeControlPlaneOperationRunner(await this.first(`SELECT * FROM control_plane_operation_runners WHERE id = ?`, [id]));
 }

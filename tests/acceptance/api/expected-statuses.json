@@ -3,7 +3,7 @@
     "post.v1.operator.commands.read": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -15,7 +15,7 @@
     "post.v1.operator.commands.mutations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -27,7 +27,7 @@
     "get.v1.teams.teamId.agent-lab.activity": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -39,7 +39,7 @@
     "get.v1.teams.teamId.agent-lab.allocation": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -51,7 +51,7 @@
     "get.v1.teams.teamId.agent-lab.atlas": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -63,7 +63,7 @@
     "get.v1.teams.teamId.agent-lab.atlas.delta": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -75,7 +75,7 @@
     "get.v1.teams.teamId.agent-lab.atlas.events": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -87,7 +87,7 @@
     "get.v1.teams.teamId.agent-lab.atlas.events.stream": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -99,7 +99,7 @@
     "get.v1.teams.teamId.agent-lab.atlas.assignment-graphs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -111,7 +111,7 @@
     "get.v1.teams.teamId.agent-lab.atlas.details.kind.entityId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -123,7 +123,7 @@
     "get.v1.teams.teamId.agent-lab.surfaces.build.draft": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -135,7 +135,7 @@
     "post.v1.teams.teamId.agent-lab.questions.answer": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -147,7 +147,7 @@
     "post.v1.teams.teamId.agent-lab.surfaces.build.authoring-bundle": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -159,7 +159,7 @@
     "post.v1.teams.teamId.agent-lab.surfaces.build.authoring-group": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -171,7 +171,7 @@
     "post.v1.dx.projects.projectId.workspaces.workspaceId.changesets": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -183,7 +183,7 @@
     "post.v1.provider.assignments.assignmentId.signals": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -195,7 +195,7 @@
     "get.v1.teams.teamId.agent-lab.details.kind.entityId": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -207,7 +207,7 @@
     "get.v1.teams.teamId.agent-lab.entities": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -219,7 +219,7 @@
     "get.v1.teams.teamId.agent-lab.metric-series": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -231,7 +231,7 @@
     "get.v1.teams.teamId.agent-lab.overview": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -243,7 +243,7 @@
     "get.v1.teams.teamId.agent-lab.simulations.operationId.report": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -255,7 +255,7 @@
     "get.v1.teams.teamId.agent-lab.surfaces.surface": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -267,7 +267,7 @@
     "get.v1.teams.teamId.agent-lab.view-state": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -279,7 +279,7 @@
     "get.v1.teams.teamId.agent-lab.workday-context": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -291,7 +291,7 @@
     "patch.v1.teams.teamId.agent-lab.targets": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -303,7 +303,7 @@
     "patch.v1.teams.teamId.agent-lab.view-state": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -315,7 +315,7 @@
     "post.v1.teams.teamId.agent-lab.allocation": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -327,7 +327,7 @@
     "post.v1.teams.teamId.agent-lab.service-principal.reconcile": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -339,7 +339,7 @@
     "post.v1.teams.teamId.agent-lab.simulations": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -351,7 +351,7 @@
     "post.v1.teams.teamId.agent-lab.simulations.operationId.cancel": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -363,7 +363,7 @@
     "post.v1.teams.teamId.agent-lab.surfaces.build.authoring": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -375,7 +375,7 @@
     "get.v1.execution-runs.runId.transcript": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -387,7 +387,7 @@
     "get.v1.teams.teamId.workday-runs.runId.activity": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -399,7 +399,7 @@
     "get.v1.teams.teamId.workday-runs.runId.activity.stream": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -411,7 +411,7 @@
     "get.v1.teams.teamId.workday-schedules": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -423,7 +423,7 @@
     "get.v1.teams.teamId.workday-schedules.scheduleId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -435,7 +435,7 @@
     "patch.v1.teams.teamId.workday-schedules.scheduleId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -447,7 +447,7 @@
     "post.v1.projects.projectId.proposals.proposalId.discussion": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -459,7 +459,7 @@
     "get.v1.discussions": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -471,7 +471,7 @@
     "get.v1.session.events": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -483,7 +483,7 @@
     "post.v1.discussions": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -495,7 +495,7 @@
     "post.v1.teams.teamId.workday-schedules": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -507,7 +507,7 @@
     "post.v1.teams.teamId.workday-schedules.scheduleId.tick": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -519,7 +519,7 @@
     "post.v1.teams.teamId.capacity-grants.plan": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -531,7 +531,7 @@
     "post.v1.teams.teamId.capacity.allocation-sets.allocationSetId.explain": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -543,7 +543,7 @@
     "get.v1.teams.teamId.capacity.assignments.assignmentId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -555,7 +555,7 @@
     "get.v1.teams.teamId.capacity.assignments.assignmentId.authority-probe": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 403,
@@ -567,7 +567,7 @@
     "get.v1.teams.teamId.capacity.reservations": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -579,7 +579,7 @@
     "get.v1.teams.teamId.capacity.reservations.reservationId.explanation": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -591,7 +591,7 @@
     "get.v1.teams.teamId.capacity.usage": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -603,7 +603,7 @@
     "get.v1.teams.teamId.capacity.ledger": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -615,7 +615,7 @@
     "post.v1.teams.teamId.capacity.assignments.assignmentId.cancel": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -627,7 +627,7 @@
     "post.v1.teams.teamId.capacity.assignments.assignmentId.requeue": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -639,7 +639,7 @@
     "post.v1.teams.teamId.capacity.reservations.reservationId.overrun.approve": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -651,7 +651,7 @@
     "post.v1.teams.teamId.capacity.reservations.reservationId.overrun.reject": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -663,7 +663,7 @@
     "post.v1.teams.teamId.workday-runs.runId.tick": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -675,7 +675,7 @@
     "get.v1.projects.projectId.research-workflows": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -687,7 +687,7 @@
     "post.v1.projects.projectId.research-workflows": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -699,7 +699,7 @@
     "get.v1.research-workflows.workflowId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -711,7 +711,7 @@
     "post.v1.research-workflows.workflowId.stages.stage.complete": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -723,7 +723,7 @@
     "post.v1.structured-agent-estimates.estimateId.accept": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -735,7 +735,7 @@
     "post.v1.structured-agent-estimates.estimateId.reject": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -747,7 +747,7 @@
     "get.v1.teams.teamId.capacity-grants.grantId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -759,7 +759,7 @@
     "get.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -771,7 +771,7 @@
     "get.v1.teams.teamId.capacity-provider-memberships.membershipId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -783,7 +783,7 @@
     "post.v1.provider.assignments.assignmentId.settle": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -795,7 +795,7 @@
     "post.v1.provider.availability-sessions": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -807,7 +807,7 @@
     "post.v1.provider.availability-sessions.sessionId.close": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -819,7 +819,7 @@
     "put.v1.provider.availability-sessions.sessionId": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -831,7 +831,7 @@
     "post.v1.provider.credential-rotation": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -843,7 +843,7 @@
     "post.v1.provider.identity.rotate": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -855,7 +855,7 @@
     "post.v1.provider.membership.leave": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -867,7 +867,7 @@
     "post.v1.teams.teamId.capacity-grants.grantId.activate": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -879,7 +879,7 @@
     "post.v1.teams.teamId.capacity-grants.grantId.pause": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -891,7 +891,7 @@
     "post.v1.teams.teamId.capacity-grants.grantId.resume": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -903,7 +903,7 @@
     "post.v1.teams.teamId.capacity-grants.grantId.revoke": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -915,7 +915,7 @@
     "post.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials.credentialId.revoke": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -927,7 +927,7 @@
     "post.v1.teams.teamId.capacity-provider-memberships.membershipId.credentials.rotate": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -939,7 +939,7 @@
     "post.v1.teams.teamId.capacity.admissions": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -951,7 +951,7 @@
     "get.v1.provider-registrations.requestId": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -963,7 +963,7 @@
     "get.v1.teams.teamId.capacity-audit-events": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -975,7 +975,7 @@
     "get.v1.teams.teamId.capacity-provider-memberships": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -987,7 +987,7 @@
     "get.v1.teams.teamId.capacity-provider-requests": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -999,7 +999,7 @@
     "get.v1.teams.teamId.capacity-provider-requests.requestId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1011,7 +1011,7 @@
     "get.v1.teams.teamId.capacity-registration-key": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1023,7 +1023,7 @@
     "get.v1.teams.teamId.capacity-registration-key.reveal": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1035,7 +1035,7 @@
     "post.v1.provider-registrations": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -1047,7 +1047,7 @@
     "post.v1.provider-registrations.requestId.credential": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -1059,7 +1059,7 @@
     "post.v1.provider.access-tokens": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -1071,7 +1071,7 @@
     "post.v1.teams.teamId.capacity-provider-memberships.membershipId.resume": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1083,7 +1083,7 @@
     "post.v1.teams.teamId.capacity-provider-memberships.membershipId.revoke": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1095,7 +1095,7 @@
     "post.v1.teams.teamId.capacity-provider-memberships.membershipId.suspend": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1107,7 +1107,7 @@
     "post.v1.teams.teamId.capacity-provider-requests.requestId.approve": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1119,7 +1119,7 @@
     "post.v1.teams.teamId.capacity-provider-requests.requestId.cancel": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1131,7 +1131,7 @@
     "post.v1.teams.teamId.capacity-provider-requests.requestId.reject": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1143,7 +1143,7 @@
     "post.v1.teams.teamId.capacity-registration-key.disable": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1155,7 +1155,7 @@
     "post.v1.teams.teamId.capacity-registration-key.enable": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1167,7 +1167,7 @@
     "post.v1.teams.teamId.capacity-registration-key.rotate": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1179,7 +1179,7 @@
     "delete.v1.auth.web.providers.identityId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1191,7 +1191,7 @@
     "delete.v1.auth.web.themes.themeId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1203,7 +1203,7 @@
     "get.v1.auth.availability.email": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1215,7 +1215,7 @@
     "get.v1.auth.availability.username": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1227,7 +1227,7 @@
     "get.v1.auth.oauth.provider.start": {
       "anonymous": 501,
       "siteAdmin": 501,
-      "marketSteward": 501,
+      "platformSteward": 501,
       "teamOwner": 501,
       "teamOperator": 501,
       "teamViewer": 501,
@@ -1239,7 +1239,7 @@
     "get.v1.auth.providers": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1251,7 +1251,7 @@
     "get.v1.auth.web.account.identity": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1263,7 +1263,7 @@
     "get.v1.auth.web.notifications": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1275,7 +1275,7 @@
     "get.v1.auth.web.notifications.preferences": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1287,7 +1287,7 @@
     "get.v1.auth.web.themes": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1299,7 +1299,7 @@
     "patch.v1.auth.web.themes.themeId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1311,7 +1311,7 @@
     "patch.v1.auth.web.username": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -1323,7 +1323,7 @@
     "post.v1.auth.web.notifications.notificationId.read": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1335,7 +1335,7 @@
     "post.v1.auth.web.reauthenticate": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -1347,7 +1347,7 @@
     "post.v1.auth.web.themes": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -1359,7 +1359,7 @@
     "put.v1.auth.web.notifications.preferences": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1371,7 +1371,7 @@
     "delete.v1.auth.web.account": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -1383,7 +1383,7 @@
     "delete.v1.auth.web.emails.emailId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1395,7 +1395,7 @@
     "delete.v1.projects.projectId": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -1407,7 +1407,7 @@
     "delete.v1.teams.teamId": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1419,7 +1419,7 @@
     "delete.v1.teams.teamId.governance-delegations.delegationId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1431,7 +1431,7 @@
     "delete.v1.teams.teamId.members.membershipId": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1443,7 +1443,7 @@
     "get.v1.auth.device.approve": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1455,7 +1455,7 @@
     "get.v1.auth.web.account.deletion-blockers": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1467,7 +1467,7 @@
     "get.v1.auth.web.appearance": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1479,7 +1479,7 @@
     "get.v1.auth.web.preferences": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1491,7 +1491,7 @@
     "get.v1.auth.web.emails": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1503,7 +1503,7 @@
     "get.v1.auth.web.sessions": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1515,7 +1515,7 @@
     "get.v1.capacity-plans.capacityPlanId": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1527,7 +1527,7 @@
     "get.v1.catalog": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1539,7 +1539,7 @@
     "get.v1.catalog.itemId": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1551,7 +1551,7 @@
     "get.v1.catalog.itemId.artifacts": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1563,7 +1563,7 @@
     "get.v1.catalog.itemId.artifacts.version.download": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1575,7 +1575,7 @@
     "get.v1.commons.decisions": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1587,7 +1587,7 @@
     "get.v1.commons.delegations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1599,7 +1599,7 @@
     "get.v1.commons.events": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1611,7 +1611,7 @@
     "get.v1.commons.participants": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1623,7 +1623,7 @@
     "get.v1.commons.participants.me": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1635,7 +1635,7 @@
     "get.v1.commons.proposals": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1647,7 +1647,7 @@
     "get.v1.commons.proposals.proposalId": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1659,7 +1659,7 @@
     "get.v1.commons.proposals.proposalId.events": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1671,7 +1671,7 @@
     "get.v1.commons.questions": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1683,7 +1683,7 @@
     "get.v1.commons.questions.questionId": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1695,7 +1695,7 @@
     "get.v1.commons.summary": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1707,7 +1707,7 @@
     "get.v1.decision-assignment-graphs.graphId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1719,7 +1719,7 @@
     "get.v1.deliverable-manifests.manifestId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1731,7 +1731,7 @@
     "get.v1.decisions.decisionId.assignment-graphs": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1743,7 +1743,7 @@
     "get.v1.decisions.decisionId.capacity-plans": {
       "anonymous": 404,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1755,7 +1755,7 @@
     "get.v1.decisions.decisionId.estimates": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1767,7 +1767,7 @@
     "get.v1.decisions.decisionId.execution-inputs": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1779,7 +1779,7 @@
     "get.v1.decisions.decisionId.planning-status": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1791,7 +1791,7 @@
     "get.v1.dx.projects.projectId.workspaces.workspaceId.files": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1803,7 +1803,7 @@
     "get.v1.internal.treedx.public-federation.status": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -1815,7 +1815,7 @@
     "get.v1.jobs.jobId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1827,7 +1827,7 @@
     "get.v1.jobs.jobId.events": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1839,19 +1839,7 @@
     "get.v1.me": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
-      "teamOwner": 200,
-      "teamOperator": 200,
-      "teamViewer": 200,
-      "nonMember": 200,
-      "providerOperator": 200,
-      "providerAccessToken": 401,
-      "platformRunner": 401
-    },
-    "get.v1.me.markets": {
-      "anonymous": 401,
-      "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1863,7 +1851,7 @@
     "get.v1.platform.operations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -1875,7 +1863,7 @@
     "get.v1.platform.operations.operationId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1887,7 +1875,7 @@
     "get.v1.platform.operations.operationId.events": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1899,7 +1887,7 @@
     "get.v1.platform.runners.jobs.operationId": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -1911,7 +1899,7 @@
     "get.v1.projects": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1923,7 +1911,7 @@
     "get.v1.projects.projectId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1935,7 +1923,7 @@
     "get.v1.projects.projectId.access": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1947,7 +1935,7 @@
     "get.v1.projects.projectId.agent-artifacts": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -1959,7 +1947,7 @@
     "get.v1.projects.projectId.agent-artifacts.artifactId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1971,7 +1959,7 @@
     "get.v1.projects.projectId.agent-artifacts.artifactId.diff": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1983,7 +1971,7 @@
     "get.v1.projects.projectId.agent-artifacts.artifactId.source-map": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -1995,7 +1983,7 @@
     "get.v1.projects.projectId.agent-classes": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2007,7 +1995,7 @@
     "get.v1.projects.projectId.agent-classes.classId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2019,7 +2007,7 @@
     "get.v1.projects.projectId.agent-fallback-outputs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2031,7 +2019,7 @@
     "get.v1.projects.projectId.agent-mode-runs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2043,7 +2031,7 @@
     "get.v1.projects.projectId.agents": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2055,7 +2043,7 @@
     "get.v1.projects.projectId.agents.agentSlug": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2067,7 +2055,7 @@
     "get.v1.projects.projectId.agents.messages": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -2079,7 +2067,7 @@
     "get.v1.projects.projectId.approvals": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2091,7 +2079,7 @@
     "get.v1.projects.projectId.approvals.approvalId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2103,7 +2091,7 @@
     "get.v1.projects.projectId.assignments.assignmentId.timeline": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2115,7 +2103,7 @@
     "get.v1.projects.projectId.capacity": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2127,7 +2115,7 @@
     "get.v1.projects.projectId.capacity-diagnostics": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2139,7 +2127,7 @@
     "get.v1.projects.projectId.capacity-runtime-diagnostics": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2151,7 +2139,7 @@
     "get.v1.projects.projectId.ci.jobs.jobId": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -2163,7 +2151,7 @@
     "get.v1.projects.projectId.decisions": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2175,7 +2163,7 @@
     "get.v1.projects.projectId.decisions.decisionId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2187,7 +2175,7 @@
     "get.v1.projects.projectId.decisions.decisionId.events": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2199,7 +2187,7 @@
     "get.v1.projects.projectId.deletion-blockers": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2211,7 +2199,7 @@
     "get.v1.projects.projectId.direct": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2223,7 +2211,7 @@
     "get.v1.projects.projectId.environments": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2235,7 +2223,7 @@
     "get.v1.projects.projectId.governance-delegations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2247,7 +2235,7 @@
     "get.v1.projects.projectId.governance-policy": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2259,7 +2247,7 @@
     "get.v1.projects.projectId.hosting": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2271,7 +2259,7 @@
     "get.v1.projects.projectId.operations.events": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2283,7 +2271,7 @@
     "get.v1.projects.projectId.operations.grants": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2295,7 +2283,7 @@
     "get.v1.projects.projectId.proposals": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2307,7 +2295,7 @@
     "get.v1.projects.projectId.proposals.proposalId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2319,7 +2307,7 @@
     "get.v1.projects.projectId.proposals.proposalId.events": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2331,7 +2319,7 @@
     "get.v1.projects.projectId.providers.codex.readiness": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2343,7 +2331,7 @@
     "get.v1.projects.projectId.releases": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2355,7 +2343,7 @@
     "get.v1.projects.projectId.releases.releaseId": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -2367,7 +2355,7 @@
     "get.v1.projects.projectId.repository-topology": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2379,7 +2367,7 @@
     "get.v1.projects.projectId.repository-topology.status": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2391,7 +2379,7 @@
     "get.v1.projects.projectId.workflow-configuration.secrets.public-key": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2403,7 +2391,7 @@
     "get.v1.projects.projectId.workflow-operation-runs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2415,7 +2403,7 @@
     "get.v1.projects.projectId.workflow-operations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2427,7 +2415,7 @@
     "get.v1.provider-connectors.github.kind.callback": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2439,7 +2427,7 @@
     "get.v1.provider.assignments.assignmentId.workflow-runs.runId": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -2451,7 +2439,7 @@
     "get.v1.teams.teamId.services.connectionId.credential-authorities": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -2463,7 +2451,7 @@
     "get.v1.workflow-operation-runs.runId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2475,7 +2463,7 @@
     "get.v1.workflow-operation-runs.runId.artifacts": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2487,7 +2475,7 @@
     "get.v1.workflow-operation-runs.runId.artifacts.artifactId.download": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2499,7 +2487,7 @@
     "post.v1.internal.credential-deliveries.consume": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -2511,7 +2499,7 @@
     "post.v1.projects.projectId.workflow-operations.operationId.dispatch": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -2523,7 +2511,7 @@
     "post.v1.provider-connectors.github.kind.setup": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2535,7 +2523,7 @@
     "post.v1.provider-webhooks.github.kind": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2547,7 +2535,7 @@
     "post.v1.provider.assignments.assignmentId.workflow-operations.operationId.dispatch": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -2559,7 +2547,7 @@
     "post.v1.workflow-operation-runs.runId.cancel": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2571,7 +2559,7 @@
     "put.v1.projects.projectId.workflow-operations.operationId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -2583,7 +2571,7 @@
     "put.v1.teams.teamId.services.connectionId.credential-authorities.profileId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -2595,7 +2583,7 @@
     "get.v1.projects.projectId.resources": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2607,7 +2595,7 @@
     "get.v1.projects.projectId.runner.health": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -2619,7 +2607,7 @@
     "get.v1.projects.projectId.share": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2631,7 +2619,7 @@
     "get.v1.projects.projectId.summary": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2643,7 +2631,7 @@
     "get.v1.projects.projectId.treedx-library": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2655,7 +2643,7 @@
     "get.v1.projects.projectId.treedx-proxy-audit": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2667,7 +2655,7 @@
     "get.v1.projects.projectId.update-plans": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2679,7 +2667,7 @@
     "get.v1.projects.projectId.workspace-links": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2691,7 +2679,7 @@
     "get.v1.projects.projectId.workstreams": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2703,7 +2691,7 @@
     "get.v1.projects.projectId.workstreams.workstreamId": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -2715,7 +2703,7 @@
     "get.v1.provider.assignments.assignmentId": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -2727,7 +2715,7 @@
     "get.v1.provider.assignments.assignmentId.explanation": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -2739,7 +2727,7 @@
     "get.v1.seeds.runs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2751,7 +2739,7 @@
     "get.v1.seeds.runs.runId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2763,7 +2751,7 @@
     "get.v1.team-invites.token": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2775,7 +2763,7 @@
     "get.v1.teams": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2787,7 +2775,7 @@
     "get.v1.teams.by-name.name.profile": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2799,7 +2787,7 @@
     "get.v1.teams.teamId.approval-requests": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2811,7 +2799,7 @@
     "get.v1.teams.teamId.capacity-grants": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2823,7 +2811,7 @@
     "get.v1.teams.teamId.capacity.allocation-sets": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2835,7 +2823,7 @@
     "get.v1.teams.teamId.capacity.allocation-sets.allocationSetId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2847,7 +2835,7 @@
     "get.v1.teams.teamId.capacity.assignments": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2859,7 +2847,7 @@
     "get.v1.teams.teamId.capacity.assignments.assignmentId.explanation": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -2871,7 +2859,7 @@
     "get.v1.teams.teamId.capacity.execution-runs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2883,7 +2871,7 @@
     "get.v1.teams.teamId.capacity.availability-sessions": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2895,7 +2883,7 @@
     "get.v1.teams.teamId.deletion-blockers": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -2907,7 +2895,7 @@
     "get.v1.teams.teamId.governance-delegations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2919,7 +2907,7 @@
     "get.v1.teams.teamId.governance-policy": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2931,7 +2919,7 @@
     "get.v1.teams.teamId.home": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2943,7 +2931,7 @@
     "get.v1.teams.teamId.inbox": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2955,7 +2943,7 @@
     "get.v1.teams.teamId.members": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2967,7 +2955,7 @@
     "get.v1.teams.teamId.permissions": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2979,7 +2967,7 @@
     "get.v1.teams.teamId.products": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -2991,7 +2979,7 @@
     "get.v1.teams.teamId.storage": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3003,7 +2991,7 @@
     "get.v1.teams.teamId.treedx": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3015,7 +3003,7 @@
     "get.v1.teams.teamId.treedx.mirrors": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3027,7 +3015,7 @@
     "get.v1.teams.teamId.treedx.shares": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3039,7 +3027,7 @@
     "get.v1.teams.teamId.workday-runs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3051,7 +3039,7 @@
     "get.v1.teams.teamId.workday-runs.runId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3063,7 +3051,7 @@
     "get.v1.teams.teamId.workday-runs.runId.events": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3075,7 +3063,7 @@
     "get.v1.templates": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3087,7 +3075,7 @@
     "get.v1.ui.governance": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3099,7 +3087,7 @@
     "get.v1.ui.governance.approvalId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3111,7 +3099,7 @@
     "get.v1.ui.infrastructure": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3123,7 +3111,7 @@
     "get.v1.ui.knowledge": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3135,7 +3123,7 @@
     "get.v1.ui.knowledge.artifactId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3147,7 +3135,7 @@
     "get.v1.ui.workdays.workdayId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3159,7 +3147,7 @@
     "get.v1.users.by-username.username.profile": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3171,7 +3159,7 @@
     "get.v1.workdays.workdayId": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3183,7 +3171,7 @@
     "get.v1.workdays.workdayId.summary": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3195,7 +3183,7 @@
     "patch.v1.auth.web.appearance": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3207,7 +3195,7 @@
     "patch.v1.auth.web.preferences": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3219,7 +3207,7 @@
     "patch.v1.auth.web.password": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3231,7 +3219,7 @@
     "patch.v1.auth.web.profile": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3243,7 +3231,7 @@
     "patch.v1.projects.projectId.agent-classes.classId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3255,7 +3243,7 @@
     "patch.v1.projects.projectId.proposals.proposalId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3267,7 +3255,7 @@
     "patch.v1.teams.teamId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3279,7 +3267,7 @@
     "patch.v1.teams.teamId.members.membershipId": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3291,7 +3279,7 @@
     "patch.v1.teams.teamId.workday-runs.runId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3303,7 +3291,7 @@
     "post.v1.acceptance.auth.confirm-email": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -3315,7 +3303,7 @@
     "post.v1.acceptance.seed": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -3327,7 +3315,7 @@
     "post.v1.approval-requests.approvalRequestId.decide": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3339,7 +3327,7 @@
     "post.v1.auth.device.approve": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -3351,7 +3339,7 @@
     "post.v1.auth.device.poll": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -3363,7 +3351,7 @@
     "post.v1.auth.device.start": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3375,7 +3363,7 @@
     "post.v1.auth.logout": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3387,7 +3375,7 @@
     "post.v1.auth.token.refresh": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -3399,7 +3387,7 @@
     "post.v1.auth.web.confirm-email": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -3411,7 +3399,7 @@
     "post.v1.auth.web.emails": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3423,7 +3411,7 @@
     "post.v1.auth.web.emails.emailId.primary": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3435,7 +3423,7 @@
     "post.v1.auth.web.emails.emailId.verify": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3447,7 +3435,7 @@
     "post.v1.auth.web.password-reset.complete": {
       "anonymous": 200,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -3459,7 +3447,7 @@
     "post.v1.auth.web.password-reset.request": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3471,7 +3459,7 @@
     "post.v1.auth.web.sessions.sessionId.revoke": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3483,7 +3471,7 @@
     "post.v1.auth.web.sign-in": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3495,7 +3483,7 @@
     "post.v1.auth.web.sign-up": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3507,7 +3495,7 @@
     "post.v1.capacity-plans.capacityPlanId.accept": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3519,7 +3507,7 @@
     "post.v1.capacity-plans.capacityPlanId.request-revision": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3531,7 +3519,7 @@
     "post.v1.capacity-plans.capacityPlanId.schedule": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3543,7 +3531,7 @@
     "post.v1.capacity-plans.capacityPlanId.supersede": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3555,7 +3543,7 @@
     "post.v1.catalog.itemId.artifacts": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -3567,7 +3555,7 @@
     "post.v1.commons.delegations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3579,7 +3567,7 @@
     "post.v1.commons.delegations.delegationId.revoke": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3591,7 +3579,7 @@
     "post.v1.commons.participants.backfill": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3603,7 +3591,7 @@
     "post.v1.commons.proposals": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3615,7 +3603,7 @@
     "post.v1.commons.proposals.proposalId.archive": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3627,7 +3615,7 @@
     "post.v1.commons.proposals.proposalId.back": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3639,7 +3627,7 @@
     "post.v1.commons.proposals.proposalId.evaluate": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3651,7 +3639,7 @@
     "post.v1.commons.proposals.proposalId.review": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3663,7 +3651,7 @@
     "post.v1.commons.proposals.proposalId.start-voting": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3675,7 +3663,7 @@
     "post.v1.commons.proposals.proposalId.steward-decision": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3687,7 +3675,7 @@
     "post.v1.commons.proposals.proposalId.submit": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3699,7 +3687,7 @@
     "post.v1.commons.proposals.proposalId.vote": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3711,7 +3699,7 @@
     "post.v1.commons.questions": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3723,7 +3711,7 @@
     "post.v1.commons.questions.questionId.answer": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -3735,7 +3723,7 @@
     "post.v1.commons.questions.questionId.convert-to-proposal": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -3747,7 +3735,7 @@
     "post.v1.decision-execution-inputs.inputId.accept": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3759,7 +3747,7 @@
     "post.v1.decision-execution-inputs.inputId.request-revision": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3771,7 +3759,7 @@
     "post.v1.decisions.decisionId.assignment-graphs.compile": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -3783,7 +3771,7 @@
     "post.v1.decisions.decisionId.capacity-plans": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -3795,7 +3783,7 @@
     "post.v1.decisions.decisionId.estimates": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -3807,7 +3795,7 @@
     "post.v1.decisions.decisionId.execution-inputs": {
       "anonymous": 401,
       "siteAdmin": 201,
-      "marketSteward": 201,
+      "platformSteward": 201,
       "teamOwner": 201,
       "teamOperator": 201,
       "teamViewer": 201,
@@ -3819,7 +3807,7 @@
     "post.v1.decisions.decisionId.planning-input-requests": {
       "anonymous": 401,
       "siteAdmin": 201,
-      "marketSteward": 201,
+      "platformSteward": 201,
       "teamOwner": 201,
       "teamOperator": 201,
       "teamViewer": 201,
@@ -3831,7 +3819,7 @@
     "post.v1.deliverable-contracts.contractId.approve": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3843,7 +3831,7 @@
     "post.v1.deliverable-contracts.contractId.manifests": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3855,7 +3843,7 @@
     "post.v1.deliverable-contracts.contractId.reject": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3867,7 +3855,7 @@
     "post.v1.dx.projects.projectId.repos": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3879,7 +3867,7 @@
     "post.v1.dx.projects.projectId.repos.repoId.context.build": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3891,7 +3879,7 @@
     "post.v1.dx.projects.projectId.repos.repoId.files.read": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3903,7 +3891,7 @@
     "post.v1.dx.projects.projectId.repos.repoId.paths.list": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3915,7 +3903,7 @@
     "post.v1.dx.projects.projectId.repos.repoId.workspaces": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3927,7 +3915,7 @@
     "post.v1.dx.projects.projectId.workspaces.workspaceId.commit": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3939,7 +3927,7 @@
     "post.v1.dx.projects.projectId.workspaces.workspaceId.close": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3951,7 +3939,7 @@
     "post.v1.dx.projects.projectId.workspaces.workspaceId.search": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -3963,7 +3951,7 @@
     "post.v1.feedback": {
       "anonymous": 202,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -3975,7 +3963,7 @@
     "post.v1.internal.github.app.webhook": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -3987,7 +3975,7 @@
     "post.v1.internal.treedx.credentials.github": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -3999,7 +3987,7 @@
     "post.v1.internal.treedx.public-federation.provision": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4011,7 +3999,7 @@
     "post.v1.jobs.jobId.approve": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4023,7 +4011,7 @@
     "post.v1.jobs.jobId.cancel": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4035,7 +4023,7 @@
     "post.v1.jobs.jobId.complete": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4047,7 +4035,7 @@
     "post.v1.jobs.jobId.fail": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4059,7 +4047,7 @@
     "post.v1.jobs.jobId.progress": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4071,7 +4059,7 @@
     "post.v1.jobs.jobId.reject": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4083,7 +4071,7 @@
     "post.v1.jobs.jobId.resume": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4095,7 +4083,7 @@
     "post.v1.jobs.jobId.retry": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4107,7 +4095,7 @@
     "post.v1.platform.operations": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -4119,7 +4107,7 @@
     "post.v1.platform.operations.operationId.cancel": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4131,7 +4119,7 @@
     "post.v1.platform.operations.operationId.retry": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4143,7 +4131,7 @@
     "post.v1.platform.runners.heartbeat": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4155,7 +4143,7 @@
     "post.v1.platform.runners.jobs.claim": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4167,7 +4155,7 @@
     "post.v1.platform.runners.jobs.operationId.cancel": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4179,7 +4167,7 @@
     "post.v1.platform.runners.jobs.operationId.checkpoint": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4191,7 +4179,7 @@
     "post.v1.platform.runners.jobs.operationId.complete": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4203,7 +4191,7 @@
     "post.v1.platform.runners.jobs.operationId.events": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4215,7 +4203,7 @@
     "post.v1.platform.runners.jobs.operationId.fail": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4227,7 +4215,7 @@
     "post.v1.platform.runners.jobs.operationId.renew-lease": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4239,7 +4227,7 @@
     "post.v1.platform.runners.register": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4251,7 +4239,7 @@
     "post.v1.projects.projectId.agent-classes": {
       "anonymous": 401,
       "siteAdmin": 201,
-      "marketSteward": 201,
+      "platformSteward": 201,
       "teamOwner": 201,
       "teamOperator": 201,
       "teamViewer": 201,
@@ -4263,7 +4251,7 @@
     "post.v1.projects.projectId.approvals.approvalId.decision": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4275,7 +4263,7 @@
     "post.v1.projects.projectId.capabilities": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4287,7 +4275,7 @@
     "post.v1.projects.projectId.ci.oidc.exchange": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4299,7 +4287,7 @@
     "post.v1.projects.projectId.dispatch": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4311,7 +4299,7 @@
     "post.v1.projects.projectId.governance-policy": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4323,7 +4311,7 @@
     "post.v1.projects.projectId.operations.operation.plan": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4335,7 +4323,7 @@
     "post.v1.projects.projectId.private-knowledge.access": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4347,7 +4335,7 @@
     "post.v1.projects.projectId.proposals": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4359,7 +4347,7 @@
     "post.v1.projects.projectId.proposals.proposalId.admin-decision": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4371,7 +4359,7 @@
     "post.v1.projects.projectId.proposals.proposalId.evaluate": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4383,7 +4371,7 @@
     "post.v1.projects.projectId.proposals.proposalId.open": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4395,7 +4383,7 @@
     "post.v1.projects.projectId.proposals.proposalId.start-voting": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4407,7 +4395,7 @@
     "post.v1.projects.projectId.proposals.proposalId.supersede": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4419,7 +4407,7 @@
     "post.v1.projects.projectId.proposals.proposalId.vote": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4431,7 +4419,7 @@
     "post.v1.projects.projectId.proposals.proposalId.withdraw": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -4443,7 +4431,7 @@
     "post.v1.projects.projectId.releases": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4455,7 +4443,7 @@
     "post.v1.projects.projectId.releases.releaseId.publish": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -4467,7 +4455,7 @@
     "post.v1.projects.projectId.releases.releaseId.rollback": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4479,7 +4467,7 @@
     "post.v1.projects.projectId.repositories.role.initialize": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -4491,7 +4479,7 @@
     "post.v1.projects.projectId.resources": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4503,7 +4491,7 @@
     "post.v1.projects.projectId.runner.approval-requests": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4515,7 +4503,7 @@
     "post.v1.projects.projectId.runner.artifacts": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4527,7 +4515,7 @@
     "post.v1.projects.projectId.runner.jobs.pull": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4539,7 +4527,7 @@
     "post.v1.projects.projectId.runner.resources": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4551,7 +4539,7 @@
     "post.v1.projects.projectId.share.export": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4563,7 +4551,7 @@
     "post.v1.projects.projectId.share.package-template": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4575,7 +4563,7 @@
     "post.v1.projects.projectId.share.publish": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -4587,7 +4575,7 @@
     "post.v1.projects.projectId.treedx-library": {
       "anonymous": 401,
       "siteAdmin": 201,
-      "marketSteward": 201,
+      "platformSteward": 201,
       "teamOwner": 201,
       "teamOperator": 201,
       "teamViewer": 201,
@@ -4599,7 +4587,7 @@
     "post.v1.projects.projectId.update-plans": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -4611,7 +4599,7 @@
     "post.v1.projects.projectId.workspace-links": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -4623,7 +4611,7 @@
     "post.v1.projects.projectId.workstreams": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4635,7 +4623,7 @@
     "post.v1.projects.projectId.workstreams.workstreamId.archive": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4647,7 +4635,7 @@
     "post.v1.projects.projectId.workstreams.workstreamId.save": {
       "anonymous": 401,
       "siteAdmin": 409,
-      "marketSteward": 409,
+      "platformSteward": 409,
       "teamOwner": 409,
       "teamOperator": 409,
       "teamViewer": 409,
@@ -4659,7 +4647,7 @@
     "post.v1.projects.projectId.workstreams.workstreamId.stage": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 202,
       "teamOperator": 202,
       "teamViewer": 202,
@@ -4671,7 +4659,7 @@
     "post.v1.provider.assignments.assignmentId.complete": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4683,7 +4671,7 @@
     "post.v1.provider.assignments.assignmentId.completion-preflight": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4695,7 +4683,7 @@
     "post.v1.provider.assignments.assignmentId.fail": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4707,7 +4695,7 @@
     "post.v1.provider.assignments.assignmentId.events": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4719,7 +4707,7 @@
     "post.v1.provider.assignments.assignmentId.mode-runs": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4731,7 +4719,7 @@
     "post.v1.provider.assignments.assignmentId.renew": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4743,7 +4731,7 @@
     "post.v1.provider.assignments.assignmentId.return": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4755,7 +4743,7 @@
     "post.v1.provider.assignments.assignmentId.usage": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4767,7 +4755,7 @@
     "post.v1.provider.assignments.next": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -4779,7 +4767,7 @@
     "post.v1.seeds.name.apply": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4791,7 +4779,7 @@
     "post.v1.seeds.name.plan": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4803,7 +4791,7 @@
     "post.v1.seeds.resources.resolve": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -4815,7 +4803,7 @@
     "post.v1.team-invites.token.accept": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4827,7 +4815,7 @@
     "post.v1.teams": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4839,7 +4827,7 @@
     "post.v1.teams.teamId.api-keys": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -4851,7 +4839,7 @@
     "post.v1.teams.teamId.capacity-grants": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -4863,7 +4851,7 @@
     "post.v1.teams.teamId.catalog-items": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4875,7 +4863,7 @@
     "post.v1.teams.teamId.content-previews": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4887,7 +4875,7 @@
     "post.v1.teams.teamId.governance-delegations": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4899,7 +4887,7 @@
     "post.v1.teams.teamId.governance-policy": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4911,7 +4899,7 @@
     "post.v1.teams.teamId.hosting-audit": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4923,7 +4911,7 @@
     "post.v1.teams.teamId.invites": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -4935,7 +4923,7 @@
     "post.v1.teams.teamId.projects": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4947,7 +4935,7 @@
     "post.v1.teams.teamId.projects.import": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -4959,7 +4947,7 @@
     "post.v1.teams.teamId.seeds.export": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -4971,7 +4959,7 @@
     "post.v1.teams.teamId.treedx.mirrors": {
       "anonymous": 401,
       "siteAdmin": 201,
-      "marketSteward": 201,
+      "platformSteward": 201,
       "teamOwner": 201,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -4983,7 +4971,7 @@
     "post.v1.teams.teamId.treedx.mirrors.mirrorId.sync": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -4995,7 +4983,7 @@
     "post.v1.teams.teamId.treedx.provision": {
       "anonymous": 401,
       "siteAdmin": 202,
-      "marketSteward": 202,
+      "platformSteward": 202,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5007,7 +4995,7 @@
     "post.v1.teams.teamId.treedx.shares": {
       "anonymous": 401,
       "siteAdmin": 201,
-      "marketSteward": 201,
+      "platformSteward": 201,
       "teamOwner": 201,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5019,7 +5007,7 @@
     "post.v1.teams.teamId.workday-runs": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5031,7 +5019,7 @@
     "post.v1.teams.teamId.workday-runs.runId.events": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5043,7 +5031,7 @@
     "post.v1.ui.governance.approvalId.decision": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5055,7 +5043,7 @@
     "post.v1.workdays": {
       "anonymous": 401,
       "siteAdmin": 201,
-      "marketSteward": 201,
+      "platformSteward": 201,
       "teamOwner": 201,
       "teamOperator": 201,
       "teamViewer": 201,
@@ -5067,7 +5055,7 @@
     "post.v1.workdays.workdayId.complete": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5079,7 +5067,7 @@
     "post.v1.workdays.workdayId.pause": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5091,7 +5079,7 @@
     "post.v1.workdays.workdayId.resume": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5103,7 +5091,7 @@
     "post.v1.workdays.workdayId.cancel": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5115,7 +5103,7 @@
     "post.v1.workdays.workdayId.start": {
       "anonymous": 404,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5127,7 +5115,7 @@
     "put.v1.dx.projects.projectId.workspaces.workspaceId.files": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5139,7 +5127,7 @@
     "put.v1.projects.projectId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5151,7 +5139,7 @@
     "put.v1.projects.projectId.environments.environment": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5163,7 +5151,7 @@
     "put.v1.projects.projectId.hosting": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -5175,7 +5163,7 @@
     "put.v1.projects.projectId.repository-topology": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5187,7 +5175,7 @@
     "put.v1.projects.projectId.runner.environments.environment": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -5199,7 +5187,7 @@
     "put.v1.teams.teamId.storage": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5211,7 +5199,7 @@
     "put.v1.teams.teamId.treedx": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5223,7 +5211,7 @@
     "delete.v1.teams.teamId.invites.inviteId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5235,7 +5223,7 @@
     "delete.v1.teams.teamId.permanent-delete": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5247,7 +5235,7 @@
     "get.v1.acceptance.guarantees.team-state": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -5259,7 +5247,7 @@
     "get.v1.teams.teamId.access": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5271,7 +5259,7 @@
     "get.v1.teams.teamId.invites": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5283,7 +5271,7 @@
     "get.v1.teams.teamId.members.membershipId.removal-blockers": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5295,7 +5283,7 @@
     "get.v1.teams.teamId.deletion-readiness": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5307,7 +5295,7 @@
     "post.v1.teams.teamId.archive": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5319,7 +5307,7 @@
     "post.v1.teams.teamId.invites.inviteId.resend": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5331,7 +5319,7 @@
     "post.v1.teams.teamId.leave": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 400,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5343,7 +5331,7 @@
     "post.v1.teams.teamId.ownership-transfer": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5355,7 +5343,7 @@
     "post.v1.teams.teamId.restore": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5367,7 +5355,7 @@
     "delete.v1.teams.teamId.service-operation-leases.leaseId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5379,7 +5367,7 @@
     "delete.v1.teams.teamId.services.connectionId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5391,7 +5379,7 @@
     "delete.v1.teams.teamId.services.connectionId.external-vault-bindings.bindingId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5403,7 +5391,7 @@
     "delete.v1.teams.teamId.vault.grants.grantId": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5415,7 +5403,7 @@
     "get.v1.service-providers": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5427,7 +5415,7 @@
     "get.v1.teams.teamId.service-operation-leases.leaseId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5439,7 +5427,7 @@
     "get.v1.teams.teamId.services": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5451,7 +5439,7 @@
     "get.v1.teams.teamId.services.connectionId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -5463,7 +5451,7 @@
     "get.v1.teams.teamId.services.connectionId.credential-envelopes": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5475,7 +5463,7 @@
     "get.v1.teams.teamId.services.connectionId.external-vault-bindings": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5487,7 +5475,7 @@
     "get.v1.teams.teamId.vault": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5499,7 +5487,7 @@
     "get.v1.teams.teamId.vault.credential-envelopes": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5511,7 +5499,7 @@
     "get.v1.teams.teamId.vault.grant-candidates": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5523,7 +5511,7 @@
     "get.v1.users.me.vault-key": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5535,7 +5523,7 @@
     "post.v1.teams.teamId.service-operation-leases": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5547,7 +5535,7 @@
     "post.v1.teams.teamId.services": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5559,7 +5547,7 @@
     "post.v1.teams.teamId.services.connectionId.credential-envelopes": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5571,7 +5559,7 @@
     "post.v1.teams.teamId.services.connectionId.external-vault-bindings": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5583,7 +5571,7 @@
     "post.v1.teams.teamId.vault": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5595,7 +5583,7 @@
     "post.v1.teams.teamId.vault.grants": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5607,7 +5595,7 @@
     "post.v1.teams.teamId.vault.reset": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5619,7 +5607,7 @@
     "post.v1.teams.teamId.vault.rotate": {
       "anonymous": 401,
       "siteAdmin": 403,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5631,7 +5619,7 @@
     "put.v1.teams.teamId.service-operation-leases.leaseId.payload": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5643,7 +5631,7 @@
     "put.v1.teams.teamId.services.connectionId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5655,7 +5643,7 @@
     "put.v1.users.me.vault-key": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -5667,7 +5655,7 @@
     "delete.v1.knowledge.collections.collectionId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5679,7 +5667,7 @@
     "get.v1.admin.feedback": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5691,7 +5679,7 @@
     "get.v1.admin.feedback.exports.exportId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5703,7 +5691,7 @@
     "get.v1.admin.feedback.exports.exportId.download": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5715,7 +5703,7 @@
     "get.v1.admin.feedback.feedbackId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5727,7 +5715,7 @@
     "get.v1.admin.feedback.feedbackId.attachments.attachmentId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5739,7 +5727,7 @@
     "get.v1.knowledge.context": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5751,7 +5739,7 @@
     "get.v1.knowledge.library": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5763,7 +5751,7 @@
     "get.v1.knowledge.packs.buildId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5775,7 +5763,7 @@
     "get.v1.knowledge.packs.buildId.download": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5787,7 +5775,7 @@
     "get.v1.knowledge.pages.pageId": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5799,7 +5787,7 @@
     "get.v1.knowledge.reader": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5811,7 +5799,7 @@
     "get.v1.knowledge.search": {
       "anonymous": 200,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5823,7 +5811,7 @@
     "get.v1.knowledge.workspaces.workspaceId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5835,7 +5823,7 @@
     "get.v1.knowledge.workspaces.workspaceId.content": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5847,7 +5835,7 @@
     "get.v1.knowledge.workspaces.workspaceId.diff": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5859,7 +5847,7 @@
     "get.v1.knowledge.workspaces.workspaceId.relations.search": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5871,7 +5859,7 @@
     "get.v1.projects.projectId.knowledge.catalog": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5883,7 +5871,7 @@
     "get.v1.projects.projectId.knowledge.lifecycle": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5895,7 +5883,7 @@
     "get.v1.projects.projectId.knowledge.relations.search": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5907,7 +5895,7 @@
     "get.v1.teams.teamId.knowledge.catalog": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5919,7 +5907,7 @@
     "get.v1.teams.teamId.knowledge.collections": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5931,7 +5919,7 @@
     "get.v1.teams.teamId.knowledge.packs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5943,7 +5931,7 @@
     "get.v1.teams.teamId.knowledge.publication-status": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5955,7 +5943,7 @@
     "get.v1.teams.teamId.knowledge.reviews": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -5967,7 +5955,7 @@
     "patch.v1.admin.feedback.feedbackId.status": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5979,7 +5967,7 @@
     "post.v1.admin.feedback.exports": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 403,
+      "platformSteward": 403,
       "teamOwner": 403,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -5991,7 +5979,7 @@
     "post.v1.knowledge.packs.buildId.cancel": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6003,7 +5991,7 @@
     "post.v1.knowledge.review-comments.commentId.resolve": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6015,7 +6003,7 @@
     "post.v1.knowledge.reviews.reviewId.comments": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6027,7 +6015,7 @@
     "post.v1.knowledge.reviews.reviewId.decision": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6039,7 +6027,7 @@
     "post.v1.knowledge.reviews.reviewId.publish": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6051,7 +6039,7 @@
     "post.v1.knowledge.workspaces.workspaceId.abandon": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6063,7 +6051,7 @@
     "post.v1.knowledge.workspaces.workspaceId.presence": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6075,7 +6063,7 @@
     "post.v1.knowledge.workspaces.workspaceId.submit": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6087,7 +6075,7 @@
     "post.v1.projects.projectId.knowledge.lifecycle": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6099,7 +6087,7 @@
     "post.v1.projects.projectId.knowledge.workspaces": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6111,7 +6099,7 @@
     "post.v1.teams.teamId.knowledge.collections": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6123,7 +6111,7 @@
     "post.v1.teams.teamId.knowledge.packs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6135,7 +6123,7 @@
     "post.v1.teams.teamId.knowledge.packs.cleanup": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6147,7 +6135,7 @@
     "post.v1.teams.teamId.knowledge.publications.rollback": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6159,7 +6147,7 @@
     "put.v1.knowledge.collections.collectionId": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6171,7 +6159,7 @@
     "put.v1.knowledge.workspaces.workspaceId.content": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6183,7 +6171,7 @@
     "get.v1.client-sessions.sessionId.actions": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -6195,7 +6183,7 @@
     "get.v1.internal.treedx.authoring-journal.status": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6207,7 +6195,7 @@
     "get.v1.provider.assignments.assignmentId.activity": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6219,7 +6207,7 @@
     "get.v1.provider.assignments.assignmentId.discussions": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6231,7 +6219,7 @@
     "get.v1.teams.teamId.agent-deployments.deploymentId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -6243,7 +6231,7 @@
     "get.v1.teams.teamId.agent-invocations": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6255,7 +6243,7 @@
     "get.v1.teams.teamId.agent-invocations.invocationId": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -6267,7 +6255,7 @@
     "get.v1.teams.teamId.client-actions": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6279,7 +6267,7 @@
     "get.v1.teams.teamId.communication-status": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6291,7 +6279,7 @@
     "get.v1.teams.teamId.operation-handoffs": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6303,7 +6291,7 @@
     "get.v1.teams.teamId.project-inventory": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6315,7 +6303,7 @@
     "get.v1.teams.teamId.projects.projectId.context-query-checks": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6327,7 +6315,7 @@
     "post.v1.client-sessions": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 422,
       "teamViewer": 422,
@@ -6339,7 +6327,7 @@
     "post.v1.client-sessions.sessionId.actions.actionId.result": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 422,
       "teamViewer": 422,
@@ -6351,7 +6339,7 @@
     "post.v1.client-sessions.sessionId.heartbeat": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 404,
       "teamViewer": 404,
@@ -6363,7 +6351,7 @@
     "post.v1.discussions.discussionId.status": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -6375,7 +6363,7 @@
     "post.v1.governance.execution-authorities.validate": {
       "anonymous": 400,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -6387,7 +6375,7 @@
     "post.v1.internal.treedx.credential-deliveries.prepare": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6399,7 +6387,7 @@
     "post.v1.projects.projectId.archive": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6411,7 +6399,7 @@
     "post.v1.projects.projectId.restore": {
       "anonymous": 401,
       "siteAdmin": 200,
-      "marketSteward": 200,
+      "platformSteward": 200,
       "teamOwner": 200,
       "teamOperator": 200,
       "teamViewer": 200,
@@ -6423,7 +6411,7 @@
     "post.v1.provider.assignments.assignmentId.client-actions": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6435,7 +6423,7 @@
     "post.v1.provider.assignments.assignmentId.closeout-start": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6447,7 +6435,7 @@
     "post.v1.provider.assignments.assignmentId.discussions.handoffs": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6459,7 +6447,7 @@
     "post.v1.provider.assignments.assignmentId.discussions.responses": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6471,7 +6459,7 @@
     "post.v1.provider.assignments.assignmentId.execution-start": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6483,7 +6471,7 @@
     "post.v1.provider.assignments.assignmentId.operation-handoffs": {
       "anonymous": 401,
       "siteAdmin": 401,
-      "marketSteward": 401,
+      "platformSteward": 401,
       "teamOwner": 401,
       "teamOperator": 401,
       "teamViewer": 401,
@@ -6495,7 +6483,7 @@
     "post.v1.teams.teamId.agent-deployments.deploymentId.activate": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6507,7 +6495,7 @@
     "post.v1.teams.teamId.agent-deployments.deploymentId.upgrade": {
       "anonymous": 401,
       "siteAdmin": 404,
-      "marketSteward": 404,
+      "platformSteward": 404,
       "teamOwner": 404,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6519,7 +6507,7 @@
     "post.v1.teams.teamId.agent-deployments.execute": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6531,7 +6519,7 @@
     "post.v1.teams.teamId.agent-deployments.plan": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6543,7 +6531,7 @@
     "post.v1.teams.teamId.agent-invocations.invocationId.cancel": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6555,7 +6543,7 @@
     "post.v1.teams.teamId.capacity.assignments.assignmentId.content-abandonment": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6567,7 +6555,7 @@
     "post.v1.teams.teamId.capacity.assignments.assignmentId.content-integration": {
       "anonymous": 401,
       "siteAdmin": 422,
-      "marketSteward": 422,
+      "platformSteward": 422,
       "teamOwner": 422,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6579,7 +6567,7 @@
     "post.v1.teams.teamId.projects.projectId.context-query-checks": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 400,
       "teamViewer": 400,
@@ -6591,7 +6579,7 @@
     "post.v1.teams.teamId.workday-runs.preflight": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,
@@ -6603,7 +6591,7 @@
     "post.v1.teams.teamId.workday-runs.runId.close-admission": {
       "anonymous": 401,
       "siteAdmin": 400,
-      "marketSteward": 400,
+      "platformSteward": 400,
       "teamOwner": 400,
       "teamOperator": 403,
       "teamViewer": 403,

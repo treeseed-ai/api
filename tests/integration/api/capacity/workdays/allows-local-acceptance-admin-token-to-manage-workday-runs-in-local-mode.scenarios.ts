@@ -1,6 +1,6 @@
 import { createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json,vi } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('allows local acceptance admin token to manage workday runs in local mode', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);

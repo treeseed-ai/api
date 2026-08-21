@@ -1,5 +1,5 @@
 export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) {
-	const { app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, capacity, config, ensurePrincipal, exportSeedWithStore, isLocalAcceptanceServicePrincipal, isTeamApiPrincipal, jsonError, marketAuthContext, normalizeSeedEnvironments, requireTeamAccess, runtime, sendTeamInviteEmail, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, verifiedEmailCount } = context;
+	const { app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, capacity, config, ensurePrincipal, exportSeedWithStore, isLocalAcceptanceServicePrincipal, isTeamApiPrincipal, jsonError, controlPlaneAuthContext, normalizeSeedEnvironments, requireTeamAccess, runtime, sendTeamInviteEmail, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, verifiedEmailCount } = context;
 	const actorOwnsTeam = async (teamId: string, principal: any) => {
 		const teamContext = await store.resolvePrincipalTeamContext(teamId, principal);
 		return teamContext?.roles?.includes('team_owner') === true;
@@ -216,7 +216,7 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 						try {
 							if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
 								const team = await store.getTeam(c.req.param('teamId'));
-								await sendTeamInviteEmail(marketAuthContext(c, config), {
+								await sendTeamInviteEmail(controlPlaneAuthContext(c, config), {
 									invite: result.invite,
 									team,
 									token: result.token,

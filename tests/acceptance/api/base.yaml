@@ -12,8 +12,8 @@ seed:
   actors:
     siteAdmin:
       siteRoles: [platform_admin]
-    marketSteward:
-      siteRoles: [market_admin]
+    platformSteward:
+      siteRoles: [platform_admin]
     teamOwner:
       siteRoles: [member]
       teamRole: team_owner
@@ -37,7 +37,7 @@ seed:
 actors:
   anonymous: {}
   siteAdmin: {}
-  marketSteward: {}
+  platformSteward: {}
   teamOwner: {}
   teamAdmin: {}
   teamOperator: {}
@@ -54,7 +54,7 @@ descriptorMatrices:
   - id: descriptor-executable-role-matrix
     coverageOnly: true
     methods: [GET, POST, PUT, PATCH, DELETE]
-    actors: [anonymous, siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember, providerOperator, providerAccessToken, platformRunner]
+    actors: [anonymous, siteAdmin, platformSteward, teamOwner, teamOperator, teamViewer, nonMember, providerOperator, providerAccessToken, platformRunner]
     excludeProviderIngress: false
     excludeInternalRunner: false
     expectByDescriptor:
@@ -71,17 +71,11 @@ descriptorMatrices:
 
 roleMatrices:
   - id: site-role-matrix
-    actors: [siteAdmin, marketSteward, teamOwner, teamOperator, teamViewer, nonMember]
+    actors: [siteAdmin, platformSteward, teamOwner, teamOperator, teamViewer, nonMember]
     endpoints:
       - id: me
         method: GET
         path: ${apiVersionPath}/me
-        expect:
-          status: 200
-          envelope: { ok: true }
-      - id: markets
-        method: GET
-        path: ${apiVersionPath}/me/markets
         expect:
           status: 200
           envelope: { ok: true }
@@ -90,7 +84,7 @@ roleMatrices:
         path: ${apiVersionPath}/platform/operations
         expectByActor:
           siteAdmin: { status: 200, envelope: { ok: true } }
-          marketSteward: { status: 200, envelope: { ok: true } }
+          platformSteward: { status: 200, envelope: { ok: true } }
           teamOwner: { status: 403, envelope: { ok: false } }
           teamOperator: { status: 403, envelope: { ok: false } }
           teamViewer: { status: 403, envelope: { ok: false } }

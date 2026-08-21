@@ -1,10 +1,9 @@
-import { PlatformRunnerClient } from '@treeseed/sdk';
 import { runOnceWithClient } from '../../../../../src/operations-runner/entrypoint.ts';
-import { authorizeApp,createTeam,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json,vi,withEnv,withHttpMarketApp } from '../../../../support/api-harness.ts';
+import { authorizeApp,ControlPlaneRunnerClient,createTeam,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json,vi,withEnv,withHttpControlPlaneApp } from '../../../../support/api-harness.ts';
 
 import { packageRoot } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('runs TreeDX provisioning through Railway project, service, volume, variable, domain, and deploy adapters', async () => {
 		const db = createTestPostgresDatabase();
 		const store = createTestStore(db);
@@ -64,10 +63,10 @@ it('runs TreeDX provisioning through Railway project, service, volume, variable,
 		};
 
 		await withEnv({ TREESEED_PUBLIC_TREEDX_RAILWAY_PROJECT_NAME: 'treeseed-api' }, async () => {
-			await withHttpMarketApp(app, async (baseUrl) => {
-				const client = new PlatformRunnerClient({
-					marketUrl: baseUrl,
-					marketId: 'local',
+			await withHttpControlPlaneApp(app, async (baseUrl) => {
+				const client = new ControlPlaneRunnerClient({
+					serverUrl: baseUrl,
+					serverId: 'local',
 					runnerSecret: 'platform-runner-secret',
 				});
 				const result = await runOnceWithClient({

@@ -1,7 +1,7 @@
 import { createServer,type Server } from 'node:http';
 import { afterEach,describe,expect,it } from 'vitest';
 import { assertMailpitExpectation } from '../../../../scripts/api-acceptance-support/support/mailpit-assertions.ts';
-import { marketAuthContext } from '../../../../src/api/app/support/accounts/authentication-sessions.ts';
+import { controlPlaneAuthContext } from '../../../../src/api/app/support/accounts/authentication-sessions.ts';
 import { getSiteAuthConfig } from '../../../../src/auth/config.ts';
 
 const servers: Server[] = [];
@@ -35,7 +35,7 @@ async function mailpitServer(linkOrigin: string) {
 
 describe('Mailpit acceptance link origin', () => {
 	it('uses the configured site origin instead of the API request origin', () => {
-		const context = marketAuthContext({
+		const context = controlPlaneAuthContext({
 			env: {},
 			req: { url: 'http://127.0.0.1:3000/v1/auth/web/sign-up' },
 		}, {
@@ -46,18 +46,18 @@ describe('Mailpit acceptance link origin', () => {
 	});
 
 	it('keeps an explicit Mailpit transport independent from the public link origin', () => {
-		const context = marketAuthContext({
+		const context = controlPlaneAuthContext({
 			env: {
 				TREESEED_MAILPIT_SMTP_HOST: '127.0.0.1',
 				TREESEED_MAILPIT_SMTP_PORT: '1025',
 			},
 			req: { url: 'http://127.0.0.1:3000/v1/auth/web/sign-up' },
 		}, {
-			siteUrl: 'https://market.example.com',
+			siteUrl: 'https://api.example.com',
 		});
 
 		const config = getSiteAuthConfig(context);
-		expect(config.siteBaseUrl).toBe('https://market.example.com');
+		expect(config.siteBaseUrl).toBe('https://api.example.com');
 		expect(config.authEmail).toMatchObject({
 			localCapture: true,
 			host: '127.0.0.1',

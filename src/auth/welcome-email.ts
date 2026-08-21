@@ -71,7 +71,7 @@ function WelcomeEmail({ displayName, signInUrl }: { displayName: string; signInU
 					fontWeight: 800,
 					letterSpacing: 0,
 				},
-			}, `Welcome to Treeseed Market, ${displayName}.`),
+			}, `Welcome to TreeSeed, ${displayName}.`),
 			React.createElement('p', {
 				style: {
 					margin: '12px 0 0',
@@ -101,7 +101,7 @@ function WelcomeEmail({ displayName, signInUrl }: { displayName: string; signInU
 						fontWeight: 800,
 						fontSize: 14,
 					},
-				}, 'Sign in to Treeseed Market'),
+				}, 'Sign in to TreeSeed'),
 				React.createElement('div', {
 					style: {
 						marginTop: 24,
@@ -133,7 +133,7 @@ function WelcomeEmail({ displayName, signInUrl }: { displayName: string; signInU
 						fontSize: 12,
 						lineHeight: '18px',
 					},
-				}, 'You are receiving this because this email address was verified for a Treeseed Market account.'))))));
+				}, 'You are receiving this because this email address was verified for a TreeSeed account.'))))));
 }
 
 function firstName(value: string) {
@@ -156,7 +156,7 @@ export async function sendWelcomeEmail(
 	]);
 	await sendAuthEmail(context, {
 		to: email,
-		subject: 'Welcome to Treeseed Market',
+		subject: 'Welcome to TreeSeed',
 		text,
 		html,
 	});

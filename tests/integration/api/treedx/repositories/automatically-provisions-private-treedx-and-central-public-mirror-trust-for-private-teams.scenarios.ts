@@ -1,6 +1,6 @@
 import { authorizeApp,createTestApp,describe,expect,it,json } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('automatically provisions private TreeDX and central public mirror trust for private teams', async () => {
 		const app = createTestApp();
 		const token = await authorizeApp(app, { principalId: 'private-owner' });

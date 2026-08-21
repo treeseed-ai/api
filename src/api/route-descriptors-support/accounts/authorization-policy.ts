@@ -94,9 +94,9 @@ export function successActorsFor(path, method) {
     if (path.startsWith('/v1/acceptance/'))
         return [];
     if (path.startsWith('/v1/platform/operations/:operationId'))
-        return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+        return ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path === '/v1/platform/operations' && method !== 'get')
-        return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+        return ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/platform/operations'))
         return PLATFORM_ADMIN_ACTORS;
 	if (path === '/v1/discussions')
@@ -104,7 +104,7 @@ export function successActorsFor(path, method) {
     if (path.startsWith('/v1/admin/feedback'))
         return ['siteAdmin'];
     if (path === '/v1/feedback')
-        return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+        return ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path === '/v1/service-providers')
         return ACCEPTANCE_ACTORS;
     if (path === '/v1/knowledge/library' || path === '/v1/knowledge/reader'
@@ -119,7 +119,7 @@ export function successActorsFor(path, method) {
     if (path.startsWith('/v1/auth/web/sign-') || path.startsWith('/v1/auth/oauth/'))
         return ['anonymous'];
     if (path.startsWith('/v1/auth/'))
-        return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+        return ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/teams/:teamId')
         && (path.endsWith('/archive')
             || path.endsWith('/restore')
@@ -139,8 +139,8 @@ export function successActorsFor(path, method) {
         return method === 'get' ? PROJECT_MEMBER_ACTORS : PROJECT_MANAGER_ACTORS;
     if (path.startsWith('/v1/teams'))
         return method === 'get'
-            ? ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator']
-            : ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+            ? ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator']
+            : ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/capacity/'))
         return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
     if (path === '/v1/commons/summary')
@@ -160,10 +160,10 @@ export function successActorsFor(path, method) {
     if (path.startsWith('/v1/commons/questions/') && path.endsWith('/answer'))
         return TEAM_MANAGER_ACTORS;
     if (path.startsWith('/v1/commons/'))
-        return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+        return ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/seeds/') && method === 'get')
-        return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+        return ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/seeds/'))
-        return ['siteAdmin', 'marketSteward'];
-    return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
+        return ['siteAdmin', 'platformSteward'];
+    return ['siteAdmin', 'platformSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
 }

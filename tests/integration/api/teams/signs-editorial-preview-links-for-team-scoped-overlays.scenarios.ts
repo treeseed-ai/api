@@ -1,10 +1,10 @@
 import { authorizeApp,createTeamAndProject,createTestApp,describe,expect,it,json } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('signs editorial preview links for team-scoped overlays', async () => {
 		const app = createTestApp({
 			config: {
-				baseUrl: 'https://market.example.com',
+				baseUrl: 'https://api.example.com',
 			},
 		});
 		const token = await authorizeApp(app);

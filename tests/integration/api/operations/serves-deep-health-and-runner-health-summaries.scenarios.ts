@@ -1,6 +1,6 @@
 import { authorizeApp,createTeamAndProject,createTestApp,describe,expect,it,json } from '../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('serves deep health and runner health summaries', async () => {
 		const app = createTestApp();
 		const deepHealth = await json(await app.request('/healthz/deep'));

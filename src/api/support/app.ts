@@ -88,7 +88,7 @@ export function createPlatformApiApp(
 		return {
 			principal: {
 				id: 'team-key:local-capacity-acceptance', displayName: 'Local Capacity Acceptance',
-				roles: ['team_api_key', 'market_admin'], permissions: ['*:*:*', 'seeds:apply:global', 'teams:manage:team'],
+				roles: ['team_api_key', 'platform_admin'], permissions: ['*:*:*', 'seeds:apply:global', 'teams:manage:team'],
 				scopes: ['auth:me'], metadata: { localAcceptance: true },
 			},
 			credential: { type: 'service_token' as const, id: 'local-capacity-acceptance', label: 'Local Capacity Acceptance' },

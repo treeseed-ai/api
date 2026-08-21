@@ -1,6 +1,6 @@
 import { authorizeApp,createTeamAndProject,createTestApp,createTestPostgresDatabase,createTestStore,describe,expect,it,json,vi,withEnv } from '../../../../support/api-harness.ts';
 
-describe('market api', () => {
+describe('control-plane API', () => {
 it('does not proxy normal TreeDX project calls with static admin tokens or implicit local secrets', async () => {
 		await withEnv({
 			TREESEED_TREEDX_JWT_HS256_SECRET: undefined,

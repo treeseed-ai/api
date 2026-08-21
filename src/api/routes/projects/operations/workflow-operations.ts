@@ -99,7 +99,7 @@ async function queueRun(context: any, input: {
 			input.mode, input.assignmentId ?? null, input.handleId ?? null, input.sourceSha, input.ref, correlationId, now, now]);
 	try {
 		const operation = await store.createPlatformOperation({ id: correlationId, namespace: 'workflow', operation: 'dispatch',
-			target: 'market_operations_runner', idempotencyKey: input.idempotencyKey, requestedByType: input.actorType,
+			target: 'control_plane_operations_runner', idempotencyKey: input.idempotencyKey, requestedByType: input.actorType,
 			requestedById: input.actorId, input: { runId, inputs: validation.inputs, actorType: input.actorType,
 				actorId: input.actorId, mode: input.mode, assignmentId: input.assignmentId ?? null, handleId: input.handleId ?? null } });
 		await store.recordAuditEvent({ eventType: 'workflow.dispatch.queued', actorType: input.actorType, actorId: input.actorId,
