@@ -125,9 +125,7 @@ function createAcceptanceDatabase() {
 		implementation: (value: string) => `md5:${value}`,
 	});
 	const pg = memory.adapters.createPg();
-	const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-		? resolve(packageRoot, '../sdk/drizzle/market')
-		: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+	const migrationRoot = resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
 	return MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
 }
 

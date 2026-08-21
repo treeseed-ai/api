@@ -6,6 +6,18 @@ export function bodyForFactory(factory, descriptor, actor) {
     const stamp = 'acc-${runNonce}';
     const actorEmail = `treeseed+\${seed.namespace}-${String(actor).replace(/[^a-z0-9-]+/giu, '-').replace(/^-+|-+$/gu, '').toLowerCase() || 'actor'}@treeseed.ai`;
     const byFactory = {
+		operatorRead: {
+			schemaVersion: 'treeseed.operator-command-request/v1',
+			commandPath: ['capacity', 'status'],
+			arguments: [], options: {}, mode: 'execute',
+			context: { team: '${fixtures.team.id}' },
+		},
+		operatorMutation: {
+			schemaVersion: 'treeseed.operator-command-request/v1',
+			commandPath: ['workdays', 'cancel'],
+			arguments: ['acceptance-workday'], options: {}, mode: 'plan',
+			context: { team: '${fixtures.team.id}' },
+		},
         deviceStart: { clientId: 'treeseed-acceptance', scopes: ['auth:me'] },
         devicePoll: { deviceCode: `acceptance-device-${stamp}` },
         deviceApprove: { deviceCode: `acceptance-device-${stamp}` },

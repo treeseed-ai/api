@@ -10,6 +10,7 @@ import { installProjectAgentOperatorRoutes,type ProjectAgentOperatorRouteOptions
 import { installProjectDiagnosticsRoutes,type ProjectDiagnosticsRouteOptions } from './projects/projects-core/project-diagnostics.ts';
 import { installCapacityRuntimeRoutes } from './runtime/runtime.ts';
 import { installCapacityOperatorRoutes } from './support/operator.ts';
+import { installOperatorCommandRoute } from './support/operator-command.ts';
 import { installPlanningStateRoutes } from './support/planning-state.ts';
 import { installCapacityPolicyRoutes } from './support/policy.ts';
 import { installStructuredEstimateRoutes } from './support/structured-estimates.ts';
@@ -41,6 +42,7 @@ export function installCapacityRoutes(app: Hono, options: Parameters<typeof inst
 	installCapacityPolicyRoutes(app, options);
 	installCapacityRuntimeRoutes(app, options);
 	installCapacityOperatorRoutes(app, options);
+	installOperatorCommandRoute(app, options);
 	installProjectAgentOperatorRoutes(app, options);
 	installCapacityWorkdayRoutes(app, options);
 	installCapacityPlanRoutes(app, options);

@@ -1,7 +1,7 @@
 {
-  "routeCount": 592,
-  "descriptorCount": 592,
-  "coveredByGuarantee": 592,
+  "routeCount": 594,
+  "descriptorCount": 594,
+  "coveredByGuarantee": 594,
   "missingRoutes": [],
   "families": {
     "health-and-markets": [
@@ -23,6 +23,8 @@
       "post.v1.client-sessions.sessionId.heartbeat",
       "post.v1.discussions",
       "post.v1.discussions.discussionId.status",
+      "post.v1.operator.commands.mutations",
+      "post.v1.operator.commands.read",
       "post.v1.provider-connectors.github.kind.setup",
       "post.v1.provider-registrations",
       "post.v1.provider-registrations.requestId.credential",
