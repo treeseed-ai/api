@@ -1,12 +1,12 @@
 schemaVersion: treeseed.guarantee/v1
-id: guarantee.api.endpoints.catalog-templates-and-seeds.412
+id: guarantee.api.endpoints.seeds-and-artifacts.412
 journeyIndex: 412
 type: api
 subtype: endpoints
-journey: Catalog Template And Seed Endpoint Reliability
+journey: Seed And Artifact Endpoint Reliability
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
-summary: "Catalog, template, seed, and artifact endpoints are descriptor-covered and remain public where intended."
+summary: "Seed and artifact endpoints are descriptor-covered and remain public where intended."
 status: active
 actors:
   allowed: [anonymous_user, authenticated_user, team_owner]
@@ -16,12 +16,12 @@ preconditions:
   fixtures: [integrated_treeseed_project]
 api:
   required: true
-  verifierRefs: [api.endpoints.catalog-templates-and-seeds]
+  verifierRefs: [api.endpoints.seeds-and-artifacts]
 audit:
   required: true
-  verifierRefs: [api.endpoints.catalog-templates-and-seeds]
+  verifierRefs: [api.endpoints.seeds-and-artifacts]
 negativeCases:
   - id: descriptor-denied-actors-covered
-    verifierRefs: [api.endpoints.catalog-templates-and-seeds]
+    verifierRefs: [api.endpoints.seeds-and-artifacts]
 evidence:
   required: [guarantee_report, api_acceptance_report]

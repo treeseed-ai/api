@@ -15,8 +15,6 @@
       "get.v1.service-providers",
       "get.v1.session.events",
       "get.v1.workflow-operation-runs.runId",
-      "get.v1.workflow-operation-runs.runId.artifacts",
-      "get.v1.workflow-operation-runs.runId.artifacts.artifactId.download",
       "post.v1.client-sessions",
       "post.v1.client-sessions.sessionId.actions.actionId.result",
       "post.v1.client-sessions.sessionId.heartbeat",
@@ -485,9 +483,11 @@
       "post.v1.admin.feedback.exports",
       "post.v1.feedback"
     ],
-    "catalog-templates-and-seeds": [
+    "seeds-and-artifacts": [
       "get.v1.seeds.runs",
       "get.v1.seeds.runs.runId",
+      "get.v1.workflow-operation-runs.runId.artifacts",
+      "get.v1.workflow-operation-runs.runId.artifacts.artifactId.download",
       "post.v1.seeds.name.apply",
       "post.v1.seeds.name.plan",
       "post.v1.seeds.resources.resolve"

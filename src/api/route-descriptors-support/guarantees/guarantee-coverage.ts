@@ -14,7 +14,7 @@ export const API_ENDPOINT_GUARANTEE_FAMILIES = [
     'dx-repository-workspaces',
     'services-and-vaults',
     'feedback-management',
-    'catalog-templates-and-seeds',
+    'seeds-and-artifacts',
     'ui-projection-endpoints',
     'internal-webhooks-and-federation',
 ];
@@ -44,8 +44,8 @@ export function endpointGuaranteeFamily(path) {
         return 'knowledge-collaboration';
     if (path.includes('/services') || path.includes('/vault') || path.includes('/credential-profiles') || path.includes('/operation-leases') || path.includes('/external-vault'))
         return 'services-and-vaults';
-    if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates') || path.startsWith('/v1/seeds/'))
-		return 'catalog-templates-and-seeds';
+    if (path.startsWith('/v1/seeds/') || path.includes('/artifacts'))
+		return 'seeds-and-artifacts';
     if (path.startsWith('/v1/commons/') || path.includes('/governance') || path.includes('/proposals') || path.includes('/decisions') || path.includes('/approvals'))
         return 'governance-and-decisions';
     if (path.startsWith('/v1/teams/') || path === '/v1/teams' || path.startsWith('/v1/users/'))

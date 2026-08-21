@@ -5,6 +5,7 @@ import { controlPlaneOperations } from '../catalog/index.ts';
 import { createControlPlaneMcpHandler } from '../mcp/create-mcp-handler.ts';
 import { mcpCatalog, mcpCatalogDigest } from '../mcp/mcp-catalog.ts';
 import { generateOpenApi, openApiDigest } from '../openapi/generate-openapi.ts';
+import { installOAuthProtocolRoutes, type OAuthRuntimeProvider } from '../oauth/oauth-routes.ts';
 
 interface AuthenticatedPrincipal {
 	principal: { id: string; scopes?: string[]; roles?: string[]; permissions?: string[] };
@@ -14,6 +15,7 @@ interface AuthenticatedPrincipal {
 export function installControlPlaneProtocolRoutes(
 	app: Hono,
 	authenticateBearerToken: (token: string) => Promise<AuthenticatedPrincipal | null>,
+	oauthProvider?: OAuthRuntimeProvider,
 ) {
 	const document = generateOpenApi(controlPlaneOperations);
 	const digest = openApiDigest(document);
@@ -49,6 +51,7 @@ export function installControlPlaneProtocolRoutes(
 	app.get('/openapi.json', (context) => context.json(document, 200, { 'x-treeseed-contract-digest': digest }));
 	app.get('/mcp/catalog.json', (context) => context.json(mcpCatalog, 200, { 'x-treeseed-contract-digest': mcpDigest }));
 	app.get('/docs', (context) => context.html(`<!doctype html><html><head><title>TreeSeed Control Plane</title></head><body><main><h1>TreeSeed Control Plane</h1><p>OpenAPI 3.1.1 contract: <a href="/openapi.json">openapi.json</a> (<code>${digest}</code>)</p><p>MCP endpoint: <code>POST /mcp</code>, protocol <code>2026-07-28</code>. <a href="/mcp/catalog.json">MCP catalog</a> (<code>${mcpDigest}</code>).</p></main></body></html>`));
+	installOAuthProtocolRoutes(app, oauthProvider);
 	app.route('/mcp', protocolApp);
 
 	for (const operation of controlPlaneOperations.operations.values()) {

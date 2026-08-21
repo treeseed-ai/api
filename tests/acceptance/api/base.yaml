@@ -817,15 +817,3 @@ cases:
     path: ${apiVersionPath}/teams/${fixtures.team.id}/archive
     body: { lifecycleVersion: 1 }
     expect: { status: 403, envelope: { ok: false } }
-
-  - id: catalog-list-envelope
-    actor: anonymous
-    method: GET
-    path: ${apiVersionPath}/catalog
-    expect:
-      status: 200
-      envelope:
-        ok: true
-      json:
-        - path: payload
-          exists: true

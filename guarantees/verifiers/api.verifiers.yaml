@@ -188,11 +188,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/integration/api/feedback/feedback-management.test.ts
     testName: persists immutable trusted context and keeps attachments private
-  api.endpoints.catalog-templates-and-seeds:
-    kind: apiAcceptanceCase
+  api.endpoints.seeds-and-artifacts:
+    kind: vitestCase
     ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: catalog-list-envelope
+    testFile: tests/integration/api/seeds/plans-and-applies-staging-seeds-with-audit-records-then-reports-unchanged.scenarios.ts
+    testName: plans and applies staging seeds with audit records, then reports unchanged
   api.endpoints.ui-projection-endpoints:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"

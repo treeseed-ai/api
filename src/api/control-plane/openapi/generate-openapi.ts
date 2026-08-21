@@ -25,14 +25,20 @@ export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http:/
 			},
 		};
 	}
-	const scopes = ['treeseed:read', 'treeseed:knowledge:write', 'treeseed:governance:write', 'treeseed:projects:write', 'treeseed:execution', 'treeseed:admin'];
 	return {
 		openapi: '3.1.1',
 		info: { title: 'TreeSeed Control Plane', version: '0.8.0-rc.1' },
 		servers: [{ url: serverUrl }],
 		paths,
 		components: {
-			securitySchemes: { oauth: { type: 'oauth2', flows: { authorizationCode: { authorizationUrl: `${serverUrl}/oauth/authorize`, tokenUrl: `${serverUrl}/oauth/token`, scopes: Object.fromEntries(scopes.map((scope) => [scope, scope])) } } } },
+			securitySchemes: {
+				oauth: {
+					type: 'http',
+					scheme: 'bearer',
+					bearerFormat: 'opaque',
+					description: `Discover current OAuth capabilities at ${serverUrl}/.well-known/oauth-authorization-server.`,
+				},
+			},
 			responses: { Problem: { description: 'RFC 9457 problem', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } } },
 			schemas: { Problem: { type: 'object', required: ['type', 'title', 'status', 'code'], properties: { type: { type: 'string', format: 'uri-reference' }, title: { type: 'string' }, status: { type: 'integer' }, detail: { type: 'string' }, instance: { type: 'string', format: 'uri-reference' }, code: { type: 'string' }, requestId: { type: 'string' }, traceId: { type: 'string' } } } },
 		},

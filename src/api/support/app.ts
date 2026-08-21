@@ -142,7 +142,11 @@ export function createPlatformApiApp(
             store,
           };
           installPlatformRoutes(routeContext);
-          installControlPlaneProtocolRoutes(app, (token) => runtimeControlPlaneAuthProvider.authenticateBearerToken(token));
+          installControlPlaneProtocolRoutes(
+            app,
+            (token) => runtimeControlPlaneAuthProvider.authenticateBearerToken(token),
+            runtimeControlPlaneAuthProvider,
+          );
           options.extendApp?.(app, runtime);
         },
       }),
