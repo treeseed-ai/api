@@ -1,10 +1,10 @@
-import { runPlatformOperationOnce } from '@treeseed/sdk';
 import { randomUUID } from 'node:crypto';
 import { CapacityWorkdayMaintenanceScheduler } from '../../../api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.js';
 import { ContextQueryCheckMaintenanceScheduler } from '../../../api/capacity/services/capacity/agents/context-query-check-maintenance-service.js';
 import { ContextQueryCheckService } from '../../../api/capacity/services/capacity/agents/context-query-check-service.js';
 import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
 import { createClient,createControlPlaneStore,createExecutorsForOptions,loadConfig,packageVersion,registerAndHeartbeat } from '../index.js';
+import { runPlatformOperationOnce } from './operation-execution.js';
 
 export async function runOnceWithClient(config, client, version, options: any = {}) {
     const controlPlaneStore = options.controlPlaneStore ?? options.store ?? null;

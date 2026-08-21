@@ -1,15 +1,14 @@
-import { createPlatformOperationStoreFromEnv } from '@treeseed/sdk/platform-operation-store';
 import { createCapacityControlPlane } from '../../../api/capacity/control-plane.js';
 import { ControlPlaneStore } from '../../../api/persistence/store.js';
 import { createControlPlanePostgresDatabase } from '../../../api/support/control-plane-postgres.js';
 import { ControlPlaneRunnerClient } from '../../client/control-plane-runner-client.js';
+import { DirectControlPlaneRunnerClient } from '../../client/direct-control-plane-runner-client.js';
 
 export function createClient(config) {
     if (config.apiDatabaseUrl) {
-        return createPlatformOperationStoreFromEnv({
-            databaseUrl: config.apiDatabaseUrl,
-            initializeSchema: true,
-        });
+        const store = createControlPlaneStore(config);
+        if (!store) throw new Error('API database URL is required for a direct operations runner.');
+        return new DirectControlPlaneRunnerClient(store);
     }
     return new ControlPlaneRunnerClient({
         serverUrl: config.serverUrl,
