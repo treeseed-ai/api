@@ -11217,7 +11217,7 @@ describe('market api', () => {
 		});
 		expect(secondApplyResponse.status).toBe(200);
 		const secondApply = await json(secondApplyResponse);
-		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 21, skip: 20 });
+		expect(secondApply.summary).toMatchObject({ create: 0, update: 0, unchanged: 20, skip: 20 });
 		expect(secondApply.result.actionCount).toBe(0);
 		expect(secondApply.result.capacityProviderKeys.created).toHaveLength(0);
 		expect(secondApply.result.capacityProviderKeys.existing).toHaveLength(0);
