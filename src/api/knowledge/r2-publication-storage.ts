@@ -1,5 +1,5 @@
-import { createR2PublicationClient,type R2PublicationConfig } from '@treeseed/sdk/platform/published-content';
 import { parseKnowledgePublicationManifest,type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
+import { createR2PublicationClient,type R2PublicationConfig } from '../providers/cloudflare/r2-publication-client.ts';
 import type { KnowledgePublicationStorage } from './publication-storage.ts';
 
 const safeSegment = (value: string) => {
