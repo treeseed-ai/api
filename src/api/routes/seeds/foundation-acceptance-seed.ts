@@ -24,7 +24,7 @@ interface AcceptanceSeedRequest {
 }
 
 export function installFoundationAcceptanceSeedRoutes(context: any) {
-	const { app, capacity, config, createHash, createMarketWebSession, ensureMarketCredentialSchema, hashMarketPassword, normalizeEmail, normalizeUsername, optionalTrimmedString, randomUUID, requireConfiguredServiceCredential, resolve, resolvePlatformRunnerSecret, runtime, runtimeMarketAuthProvider, store } = context;
+	const { app, capacity, config, createHash, createMarketWebSession, ensureMarketCredentialSchema, hashMarketPassword, normalizeEmail, normalizeUsername, optionalTrimmedString, randomUUID, requireConfiguredServiceCredential, resolve, resolvePlatformRunnerSecret, runtime, runtimeControlPlaneAuthProvider, store } = context;
 	app.post('/v1/acceptance/seed', async (c) => {
 					const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
 					if (service.response) return service.response;
@@ -63,18 +63,18 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 							await store.run(`INSERT INTO user_identities (id, user_id, provider, provider_subject, email, email_verified, profile_json, created_at, updated_at) VALUES (?, ?, 'acceptance', ?, ?, 1, ?, ?, ?) ON CONFLICT (provider, provider_subject) DO UPDATE SET user_id = EXCLUDED.user_id, email = EXCLUDED.email, email_verified = 1, profile_json = EXCLUDED.profile_json, updated_at = EXCLUDED.updated_at`, [randomUUID(), requestedUserId, `${namespace}:${actorId}`, email, JSON.stringify({ acceptance: true, namespace, actorId }), timestamp, timestamp]);
 							synced = { principal: { id: requestedUserId, metadata: { username } } };
 						} else {
-							synced = await runtimeMarketAuthProvider.syncUserIdentity({
+							synced = await runtimeControlPlaneAuthProvider.syncUserIdentity({
 								provider: 'acceptance', providerSubject: `${namespace}:${actorId}`, email, emailVerified: true, username, displayName,
 								profile: { acceptance: true, namespace, actorId },
 							});
 						}
-						if (runtimeMarketAuthProvider.setUserRoles) {
-							await runtimeMarketAuthProvider.setUserRoles(synced.principal.id, Array.isArray(actorInput.siteRoles) ? actorInput.siteRoles.map(String) : ['viewer']);
+						if (runtimeControlPlaneAuthProvider.setUserRoles) {
+							await runtimeControlPlaneAuthProvider.setUserRoles(synced.principal.id, Array.isArray(actorInput.siteRoles) ? actorInput.siteRoles.map(String) : ['viewer']);
 						}
 						const now = new Date().toISOString();
-						await store.run(`DELETE FROM market_auth_credentials WHERE user_id = ? OR email = ? OR username = ?`, [synced.principal.id, email, username]);
+						await store.run(`DELETE FROM control_plane_auth_credentials WHERE user_id = ? OR email = ? OR username = ?`, [synced.principal.id, email, username]);
 						await store.run(
-							`INSERT INTO market_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
+							`INSERT INTO control_plane_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
 							 VALUES (?, ?, ?, ?, 'active', ?, ?)`,
 							[synced.principal.id, email, username, hashMarketPassword(password), now, now],
 						);
@@ -85,7 +85,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 							) VALUES (?, ?, ?, ?, 'verified', 1, ?, ?, ?, ?)`,
 							[randomUUID(), synced.principal.id, email, email, now, now, now, now],
 						).catch(() => null);
-						const session = await createMarketWebSession(runtimeMarketAuthProvider, synced.principal.id, {
+						const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, synced.principal.id, {
 							source: 'acceptance_seed',
 							namespace,
 							actorId,
@@ -280,25 +280,6 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 						maxConcurrentJobs: 1,
 						metadata: { acceptance: true, namespace, dataDir: platformRunnerDataDir },
 					}).catch(() => null);
-					const catalogItem = await store.upsertCatalogItem(team.id, {
-						id: `catalog-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
-						kind: 'template',
-						slug: `${namespace}-template`.replace(/[^a-z0-9-]+/gu, '-').slice(0, 64),
-						title: `Acceptance ${namespace} Template`,
-						summary: 'Reserved acceptance catalog fixture.',
-						visibility: 'public',
-						listingEnabled: true,
-						offerMode: 'public',
-						metadata: { acceptance: true, namespace },
-					}).catch(() => null);
-					const catalogArtifact = catalogItem ? await store.upsertCatalogArtifactVersion(team.id, catalogItem.id, {
-						id: `artifact-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
-						kind: 'template',
-						version: '1.0.0',
-						contentKey: `acceptance/${namespace}/template.tgz`,
-						manifestKey: `acceptance/${namespace}/manifest.json`,
-						metadata: { acceptance: true, namespace },
-					}).catch(() => null) : null;
 					const seedRun = await store.first(`SELECT * FROM seed_runs WHERE id = ? LIMIT 1`, [`seed-${namespace}`]).catch(() => null)
 						?? await store.createSeedRun({
 							id: `seed-${namespace}`.replace(/[^a-z0-9-]+/giu, '-').slice(0, 96),
@@ -365,7 +346,7 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 					}).catch(() => null);
 					const resetToken = `reset_acceptance_${namespace}`;
 					await store.run(
-						`INSERT INTO market_auth_password_resets (id, user_id, token_hash, expires_at, used_at, created_at)
+						`INSERT INTO control_plane_auth_password_resets (id, user_id, token_hash, expires_at, used_at, created_at)
 						 VALUES (?, ?, ?, ?, NULL, ?)
 						 ON CONFLICT(id) DO UPDATE SET token_hash = excluded.token_hash, expires_at = excluded.expires_at, used_at = NULL`,
 						[
@@ -411,8 +392,6 @@ export function installFoundationAcceptanceSeedRoutes(context: any) {
 								job: { id: operation?.id ?? `operation-${namespace}` },
 								platformOperation: { id: operation?.id ?? `operation-${namespace}` },
 								platformRunner: { id: platformRunner?.id ?? platformRunnerId },
-								catalogItem: { id: catalogItem?.id ?? `catalog-${namespace}`, slug: catalogItem?.slug ?? `${namespace}-template` },
-								catalogArtifact: { id: catalogArtifact?.id ?? `artifact-${namespace}`, version: catalogArtifact?.version ?? '1.0.0' },
 								seedRun: { id: seedRun?.id ?? `seed-${namespace}` },
 								invite: { id: invite?.invite?.id ?? null },
 								approvalRequest: { id: approvalRequest?.id ?? `approval-${namespace}` },

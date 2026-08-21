@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function renewPlatformOperationLeaseMethod(this: MarketControlPlaneStore, operationId, input: any = {}) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function renewPlatformOperationLeaseMethod(this: ControlPlaneStore, operationId, input: any = {}) {
     await this.ensureInitialized();
     await this.assertPlatformOperationRunnerUpdate(operationId, input.runnerId);
     const leaseSeconds = Math.max(30, Math.min(Number(input.leaseSeconds ?? 300), 3600));

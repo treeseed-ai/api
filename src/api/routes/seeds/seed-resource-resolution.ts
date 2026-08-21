@@ -1,4 +1,4 @@
-import { resolveSeedResource } from '../../../market/seeds/apply.js';
+import { resolveSeedResource } from '../../../control-plane/seeds/apply.js';
 
 function text(value: unknown) {
 	return typeof value === 'string' && value.trim() ? value.trim() : null;

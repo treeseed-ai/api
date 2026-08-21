@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe,expect,it } from 'vitest';
-import { MarketControlPlaneStore,validateProjectSlug } from '../../../src/api/persistence/store.js';
+import { ControlPlaneStore,validateProjectSlug } from '../../../src/api/persistence/store.js';
 import { createPlatformApiApp } from '../../../src/api/support/app.js';
-import { createMarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
-import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS,SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
+import { createControlPlanePostgresDatabase } from '../../../src/api/support/control-plane-postgres.js';
+import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS } from '../../../src/api/support/route-descriptors.js';
 import { main as runMarketOperationsRunner } from '../../../src/operations-runner/entrypoint.js';
 
 function createNoopStore() {
@@ -21,8 +21,8 @@ function createNoopStore() {
 describe('API package surface', () => {
 	it('exports the backend constructors used by deployment entrypoints', () => {
 		expect(typeof createPlatformApiApp).toBe('function');
-		expect(typeof MarketControlPlaneStore).toBe('function');
-		expect(typeof createMarketPostgresDatabase).toBe('function');
+		expect(typeof ControlPlaneStore).toBe('function');
+		expect(typeof createControlPlanePostgresDatabase).toBe('function');
 		expect(typeof validateProjectSlug).toBe('function');
 		expect(typeof runMarketOperationsRunner).toBe('function');
 	});
@@ -60,9 +60,6 @@ describe('route descriptors', () => {
 	it('covers the SDK route map with unique route ids', () => {
 		const ids = new Set(API_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.id));
 		expect(ids.size).toBe(API_ROUTE_DESCRIPTORS.length);
-		for (const routeId of Object.values(SDK_METHOD_ROUTE_MAP)) {
-			expect(ids.has(routeId)).toBe(true);
-		}
 	});
 
 	it('has expected acceptance statuses for every descriptor actor matrix entry', () => {

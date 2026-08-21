@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore,stringValue } from "../../../../persistence/store.ts";
-export async function answerCommonsQuestionMethod(this: MarketControlPlaneStore, questionId, input: any = {}) {
+import { isoNow,ControlPlaneStore,stringValue } from "../../../../persistence/store.ts";
+export async function answerCommonsQuestionMethod(this: ControlPlaneStore, questionId, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.getCommonsQuestion(questionId);
     if (!existing)

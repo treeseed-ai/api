@@ -109,7 +109,7 @@ export async function backfillUserEmailAddresses(store) {
 			id, user_id, email, normalized_email, status, is_primary, verification_requested_at, verified_at, created_at, updated_at
 		)
 		SELECT 'email_' || md5(user_id || ':' || LOWER(email)), user_id, email, LOWER(email), 'verified', 1, created_at, COALESCE(updated_at, created_at), created_at, updated_at
-		  FROM market_auth_credentials
+		  FROM control_plane_auth_credentials
 		 WHERE email IS NOT NULL
 		   AND email != ''
 		   AND status = 'active'
@@ -161,7 +161,7 @@ export async function syncPrimaryEmailCaches(store, userId) {
         userId,
     ]);
     await store.run(`UPDATE users SET email = ?, updated_at = ? WHERE id = ?`, [primary.email, now, userId]);
-    await store.run(`UPDATE market_auth_credentials SET email = ?, updated_at = ? WHERE user_id = ?`, [primary.email, now, userId]).catch(() => null);
+    await store.run(`UPDATE control_plane_auth_credentials SET email = ?, updated_at = ? WHERE user_id = ?`, [primary.email, now, userId]).catch(() => null);
     return serializeUserEmailAddress(await getUserEmailAddress(store, userId, primary.id));
 }
 export async function createOrResendUserEmailAddress(store, context, userId, input) {

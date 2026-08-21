@@ -1,5 +1,5 @@
-import { COMMONS_DELEGATED_WEIGHT_CAP,COMMONS_TOTAL_WEIGHT_CAP,MarketControlPlaneStore,numberValue,objectValue } from "../../../../persistence/store.ts";
-export function computeCommonsWeightsMethod(this: MarketControlPlaneStore, { verifiedEmail = false, participant = null, principal = null }: any = {}) {
+import { COMMONS_DELEGATED_WEIGHT_CAP,COMMONS_TOTAL_WEIGHT_CAP,ControlPlaneStore,numberValue,objectValue } from "../../../../persistence/store.ts";
+export function computeCommonsWeightsMethod(this: ControlPlaneStore, { verifiedEmail = false, participant = null, principal = null }: any = {}) {
     const metadata = objectValue(principal?.metadata, {});
     const baseWeight = 1;
     const verifiedEmailWeight = verifiedEmail ? 0.25 : 0;

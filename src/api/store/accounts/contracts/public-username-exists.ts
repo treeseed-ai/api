@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,missingSchemaError } from "../../../persistence/store.ts";
-export async function publicUsernameExistsMethod(this: MarketControlPlaneStore, username, excludeUserId = null) {
+import { ControlPlaneStore,missingSchemaError } from "../../../persistence/store.ts";
+export async function publicUsernameExistsMethod(this: ControlPlaneStore, username, excludeUserId = null) {
     await this.ensureInitialized();
     const value = String(username ?? '').trim().toLowerCase();
     if (!value)

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import { resolveKnowledgeGatewayConnection } from '../../src/api/knowledge/gateway-treedx-connection.ts';
-import { MarketControlPlaneStore } from '../../src/api/persistence/store.ts';
-import { createMarketPostgresDatabase } from '../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../src/api/persistence/store.ts';
+import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.ts';
 import { createLocalPrivateObjectStorage } from '../../src/api/storage/private-object-storage.ts';
 
 assert.equal(process.env.TREESEED_ACCEPTANCE_ENVIRONMENT, 'local', 'Knowledge record cleanup is local-only.');
@@ -10,9 +10,9 @@ const packageRoot = resolve(import.meta.dirname, '../..');
 process.env.TREESEED_PRIVATE_OBJECT_ROOT ||= resolve(packageRoot, '.treeseed/runtime/private-objects');
 const projectId = String(process.env.TREESEED_KNOWLEDGE_PROJECT_ID ?? '').trim();
 assert.match(projectId, /^[a-f0-9-]{36}$/u, 'An exact acceptance project ID is required.');
-const database = createMarketPostgresDatabase(process.env.TREESEED_DATABASE_URL
+const database = createControlPlanePostgresDatabase(process.env.TREESEED_DATABASE_URL
 	?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api');
-const store = new MarketControlPlaneStore({ environment: 'local', TREESEED_ENVIRONMENT: 'local',
+const store = new ControlPlaneStore({ environment: 'local', TREESEED_ENVIRONMENT: 'local',
 	baseUrl: 'http://127.0.0.1:3000', TREESEED_TREEDX_URL: process.env.TREESEED_TREEDX_URL ?? 'http://127.0.0.1:4000',
 	TREESEED_TREEDX_JWT_HS256_SECRET: process.env.TREESEED_TREEDX_JWT_HS256_SECRET ?? 'treeseed-local-treedx-jwt-secret' }, database);
 const objects = createLocalPrivateObjectStorage();

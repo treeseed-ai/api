@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,optionalStringValue,requireEnumValue } from "../../../../persistence/store.ts";
-export async function voteCommonsProposalMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
+import { isoNow,ControlPlaneStore,optionalStringValue,requireEnumValue } from "../../../../persistence/store.ts";
+export async function voteCommonsProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
     const vote = requireEnumValue(input.vote, new Set(['support', 'object', 'abstain']), 'Commons vote');
     const proposal = await this.getCommonsProposal(proposalId);
     if (!proposal)

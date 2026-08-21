@@ -1,8 +1,8 @@
 # @treeseed/api
 
-`@treeseed/api` runs the Treeseed backend control plane: HTTP API, PostgreSQL-backed state, backend auth, operation lifecycle, migrations, seed application, route descriptors, operations runner, durable capacity coordination records, assignment APIs, ecommerce backend workflows, TreeSeed Commons governance APIs, and public TreeDX federation hosting.
+`@treeseed/api` runs the TreeSeed control plane: typed REST operations, deterministic OpenAPI, the remote MCP endpoint, PostgreSQL-backed state, authentication, governance, operation lifecycle, seed application, capacity coordination, assignments, and TreeDX federation hosting.
 
-The package owns seed validation and application, not tenant topology. Set `TREESEED_SEED_ROOT` to the deployment-owned directory containing `seeds/*.yaml`; integrated Market development continues to resolve the Market repository root. No Market portfolio is bundled into the API repository.
+The package owns its control-plane database baseline and seed validation/application, not tenant topology. Set `TREESEED_SEED_ROOT` to the deployment-owned directory containing `seeds/*.yaml`. External product integrations are not bundled into this repository.
 
 Use this package when you operate or develop the Treeseed backend. Ordinary admin users interact with it through the web/admin UI or CLI, not by importing this package.
 
@@ -13,9 +13,9 @@ Use this package when you operate or develop the Treeseed backend. Ordinary admi
 - acceptance-test runners validating hosted API behavior
 - platform engineers wiring TreeDX federation into the Treeseed backend
 - platform engineers implementing provider sessions, assignment leases, mode-run persistence, and capacity ledger settlement
-- maintainers working on ecommerce registry, Stripe Connect/sync, checkout/order/entitlement, refunds, fulfillment, cooperative ownership, scoped services, capacity listing, seller monitoring, marketplace aggregation, or Commons governance APIs
+- maintainers working on accounts, projects, governance, knowledge, capacity, workdays, assignments, OpenAPI, OAuth, or MCP
 
-The root market/admin web app reaches this package through HTTP/proxy/client surfaces only.
+Site and external clients reach this package through its REST or MCP surfaces.
 
 ## Authentication and account ownership
 
@@ -59,7 +59,7 @@ Runtime scripts:
 
 ```bash
 npm run dev:api
-npm run dev:runner -- --market local --watch --operation project:web_deployment
+npm run dev:runner -- --server local --watch --operation project:web_deployment
 npm run dev:compose
 npm run start:api
 npm run start:runner
@@ -111,7 +111,7 @@ Runner:
 - `TREESEED_PLATFORM_RUNNER_ID`
 - `TREESEED_PLATFORM_RUNNER_DATA_DIR`
 - `TREESEED_PLATFORM_RUNNER_ENVIRONMENT`
-- `TREESEED_MANAGER_ID`
+- `TREESEED_SERVER_ID`
 
 Web/API trust:
 
@@ -130,17 +130,6 @@ API owns durable provider availability sessions, assignment leases, reservations
 
 Provider runners should receive project-scoped TreeDX proxy handles rather than raw TreeDX credentials. API owns authentication, project scope checks, TreeDX node resolution, credential holding, and forwarding allowed `/v1/dx/projects/:projectId/...` operations.
 
-## Ecommerce Boundary
-
-Ecommerce Stripe behavior uses API-owned server credentials:
-
-- `TREESEED_STRIPE_SECRET_KEY`
-- `TREESEED_STRIPE_WEBHOOK_SECRET`
-- `TREESEED_STRIPE_MODE`
-- `TREESEED_STRIPE_CONNECT_ACCOUNT_TYPE`
-
-`TREESEED_STRIPE_PUBLISHABLE_KEY` is non-secret and may be returned by the API to root-market buyer checkout pages. Admin must not use it to initialize Stripe Elements. Vendors never provide raw Stripe secret keys; TreeSeed creates and manages connected-account onboarding links through API routes.
-
 ## Public Exports
 
 ```text
@@ -148,7 +137,7 @@ Ecommerce Stripe behavior uses API-owned server credentials:
 @treeseed/api/api/app
 @treeseed/api/api/server
 @treeseed/api/api/store
-@treeseed/api/api/market-postgres
+@treeseed/api/api/control-plane-postgres
 @treeseed/api/operations-runner
 @treeseed/api/route-descriptors
 ```
@@ -164,8 +153,7 @@ treeseed-api-db-migrate
 ## How API Fits With Other Packages
 
 - `@treeseed/admin` renders admin UI and talks to API through HTTP/proxy/client facades.
-- `@treeseed/ui` owns reusable visual components used by admin/market.
-- root `@treeseed/market` hosts the web tenant, authenticated operational marketplace, checkout, service, capacity, Commons participant pages, and public marketing/profile/knowledge pages.
+- `@treeseed/ui` owns reusable visual components.
 - `@treeseed/sdk` owns shared contracts, reconciliation, config, and workflow primitives used by API.
 - `@treeseed/cli` exposes operator commands that call SDK/API surfaces.
 - `@treeseed/agent` owns capacity-provider runtime, provider manager/runner behavior, and AgentKernel execution; API owns backend control-plane routes, provider sessions, assignment leases, mode-run records, and usage settlement for that runtime.
@@ -175,7 +163,7 @@ treeseed-api-db-migrate
 
 - web/admin routes or Astro pages
 - reusable UI primitives
-- root market content, public messaging, authenticated operational buyer Astro pages, public marketing/profile/knowledge pages, or reusable UI components
+- site content, public messaging, or reusable UI components
 - CLI command UX
 - capacity provider manager/runner/worker implementation or AgentKernel execution
 - TreeDX internals

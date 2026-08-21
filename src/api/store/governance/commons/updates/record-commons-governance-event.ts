@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializeCommonsGovernanceEvent,stringValue } from "../../../../persistence/store.ts";
-export async function recordCommonsGovernanceEventMethod(this: MarketControlPlaneStore, input: any = {}) {
+import { isoNow,ControlPlaneStore,serializeCommonsGovernanceEvent,stringValue } from "../../../../persistence/store.ts";
+export async function recordCommonsGovernanceEventMethod(this: ControlPlaneStore, input: any = {}) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();

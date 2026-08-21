@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,optionalStringValue,serializeCommonsDecision } from "../../../../persistence/store.ts";
-export async function stewardDecisionForCommonsProposalMethod(this: MarketControlPlaneStore, proposalId, input: any = {}) {
+import { isoNow,ControlPlaneStore,optionalStringValue,serializeCommonsDecision } from "../../../../persistence/store.ts";
+export async function stewardDecisionForCommonsProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
     const status = ['accepted', 'rejected', 'deferred'].includes(input.status) ? input.status : 'accepted';
     const proposal = await this.transitionCommonsProposal(proposalId, status, input);
     if (!proposal)

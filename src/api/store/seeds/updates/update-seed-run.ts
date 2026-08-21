@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../persistence/store.ts";
-export async function updateSeedRunMethod(this: MarketControlPlaneStore, id, input) {
+import { isoNow,ControlPlaneStore } from "../../../persistence/store.ts";
+export async function updateSeedRunMethod(this: ControlPlaneStore, id, input) {
     await this.ensureInitialized();
     const existing = await this.getSeedRun(id);
     if (!existing)

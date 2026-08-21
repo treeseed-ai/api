@@ -1,5 +1,5 @@
-import { compareDatesDesc,latestDate,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function listTeamInboxItemsMethod(this: MarketControlPlaneStore, teamId, principal = null) {
+import { compareDatesDesc,latestDate,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function listTeamInboxItemsMethod(this: ControlPlaneStore, teamId, principal = null) {
     const team = await this.getTeam(teamId);
     if (!team) {
         return [];
@@ -23,10 +23,7 @@ export async function listTeamInboxItemsMethod(this: MarketControlPlaneStore, te
         updatedAt?: string | null;
     }> = [...persistedItems];
     for (const project of projects) {
-        const [jobs, products] = await Promise.all([
-            this.listRecentJobsForProject(project.id, 10),
-            this.listCatalogArtifactVersions(project.id),
-        ]);
+        const jobs = await this.listRecentJobsForProject(project.id, 10);
         const failedJob = jobs.find((job) => job.status === 'failed');
         if (failedJob) {
             items.push({
@@ -39,19 +36,6 @@ export async function listTeamInboxItemsMethod(this: MarketControlPlaneStore, te
                 summary: `The latest ${failedJob.namespace}:${failedJob.operation} run failed and needs review.`,
                 href: `/app/projects/${project.id}/settings`,
                 createdAt: latestDate(failedJob.finishedAt, failedJob.updatedAt, failedJob.createdAt),
-            });
-        }
-        if (products.length > 0) {
-            items.push({
-                id: `share:${project.id}`,
-                teamId,
-                projectId: project.id,
-                kind: 'share',
-                state: 'informational',
-                title: `${project.name}: artifacts available`,
-                summary: 'Release artifacts exist for this project and can be packaged as operational resources.',
-                href: '/app/knowledge/artifacts',
-                createdAt: products[0].publishedAt,
             });
         }
     }

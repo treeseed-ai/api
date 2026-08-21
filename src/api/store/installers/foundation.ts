@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { allMethod } from '../all.ts';
 import { upsertHubContentSourceMethod } from '../content/creation/upsert-hub-content-source.ts';
 import { getHubContentSourceMethod } from '../content/queries/get-hub-content-source.ts';
@@ -13,7 +13,7 @@ import { listHubRepositoriesMethod } from '../support/queries/list-hub-repositor
 import { listRecentAuditEventsMethod } from '../support/queries/list-recent-audit-events.ts';
 import { recordAuditEventMethod } from '../support/updates/record-audit-event.ts';
 
-export function installFoundationStoreMethods(prototype: MarketControlPlaneStore) {
+export function installFoundationStoreMethods(prototype: ControlPlaneStore) {
 	prototype.run = runMethod;
 	prototype.first = firstMethod;
 	prototype.all = allMethod;

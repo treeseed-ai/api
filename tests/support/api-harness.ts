@@ -18,96 +18,15 @@ import { AgentSdk,PlatformRunnerClient } from '@treeseed/sdk';
 
 import { createPlatformApiApp } from '../../src/api/support/app.js';
 
-import { MarketPostgresDatabase } from '../../src/api/support/market-postgres.js';
+import { ControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.js';
 
-import { MarketControlPlaneStore } from '../../src/api/persistence/store.js';
+import { ControlPlaneStore } from '../../src/api/persistence/store.js';
 
 import { runOnceWithClient } from '../../src/operations-runner/entrypoint.js';
 
-vi.mock('@treeseed/sdk', async (importOriginal) => {
-    return {
-        ...(await importOriginal<typeof import('@treeseed/sdk')>()),
-        COMMERCE_PRODUCT_KINDS: [
-            'template',
-            'knowledge_pack',
-            'ui_library',
-            'admin_interface',
-            'api_platform',
-            'hosted_project',
-            'professional_hosting',
-            'scoped_service',
-            'capacity_listing',
-        ],
-        COMMERCE_OFFER_MODES: [
-            'free',
-            'private',
-            'contact',
-            'one_time',
-            'one_time_current_version',
-            'subscription',
-            'subscription_updates',
-            'professional_hosting',
-            'scoped_contract',
-            'external',
-        ],
-        COMMERCE_VENDOR_TRUST_LEVELS: [
-            'public_publisher',
-            'verified_seller',
-            'trusted_service_vendor',
-            'trusted_capacity_vendor',
-            'integration_partner',
-        ],
-        COMMERCE_GOVERNANCE_STATES: [
-            'draft',
-            'submitted',
-            'approved',
-            'rejected',
-            'suspended',
-            'archived',
-        ],
-        COMMERCE_OWNERSHIP_MODELS: [
-            'team_owned',
-            'individual_contributor_owned',
-            'multi_contributor_attributed',
-            'steward_maintained',
-            'cooperative_owned',
-            'community_governed',
-            'foundation_or_trust_held',
-            'transferred_or_succeeded',
-        ],
-        COMMERCE_STEWARDSHIP_ROLES: [
-            'owner',
-            'seller',
-            'maintainer',
-            'governance_steward',
-            'support_steward',
-            'security_steward',
-            'community_steward',
-            'successor',
-        ],
-        COMMERCE_STRIPE_ACCOUNT_STATUSES: [
-            'not_started',
-            'pending',
-            'restricted',
-            'enabled',
-            'disabled',
-        ],
-        COMMERCE_STRIPE_ENVIRONMENTS: ['test', 'live'],
-        COMMERCE_STRIPE_ONBOARDING_STATUSES: [
-            'not_started',
-            'started',
-            'returned',
-            'completed',
-            'expired',
-        ],
-    };
-});
-
 export const packageRoot = process.cwd();
 
-export const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-    ? resolve(packageRoot, '../sdk/drizzle/market')
-    : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+export const controlPlaneMigrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 
 export async function withEnv<T>(values: Record<string, string | undefined>, action: () => T | Promise<T>) {
     const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
@@ -160,17 +79,16 @@ export function createTestPostgresDatabase() {
 		implementation: (left: string, right: string) => left === right ? null : left,
 	});
     const pg = memory.adapters.createPg();
-    return MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot: marketMigrationRoot });
+    return ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot: controlPlaneMigrationRoot });
 }
 
 export type ApiTestOptions = {
     db?: ReturnType<typeof createTestPostgresDatabase>;
-    store?: MarketControlPlaneStore;
+    store?: ControlPlaneStore;
     sdk?: AgentSdk;
     config?: Record<string, unknown>;
     fetchImpl?: typeof fetch;
     logRequests?: boolean;
-    stripeConnectService?: any;
     clock?: { now: () => Date };
 	feedbackStorage?: any;
 };
@@ -200,7 +118,7 @@ export function createTestApp(options: ApiTestOptions = {}) {
 }
 
 export function createTestStore(db = createTestPostgresDatabase()) {
-    return new MarketControlPlaneStore({
+    return new ControlPlaneStore({
         repoRoot: packageRoot,
         authSecret: 'test-secret',
         baseUrl: 'https://market.example.com',
@@ -330,6 +248,7 @@ export async function createTeamAndProject(app: ReturnType<typeof createTestApp>
         },
         body: JSON.stringify(projectInput),
     }));
+    if (!project.payload?.project) throw new Error(`Project fixture creation failed: ${JSON.stringify(project)}`);
     return {
         team: team.payload,
         project: project.payload.project,
@@ -351,4 +270,4 @@ export async function createTeam(app: ReturnType<typeof createTestApp>, token: s
 afterEach(() => {
     vi.restoreAllMocks();
 });
-export { afterEach,AgentSdk,Core,createPlatformApiApp,createServer,DataType,describe,execFileSync,existsSync,expect,it,MarketControlPlaneStore,MarketPostgresDatabase,mkdirSync,mkdtempSync,newDb,PlatformRunnerClient,resolve,rmSync,runOnceWithClient,tmpdir,vi,writeFileSync };
+export { afterEach,AgentSdk,Core,createPlatformApiApp,createServer,DataType,describe,execFileSync,existsSync,expect,it,ControlPlaneStore,ControlPlanePostgresDatabase,mkdirSync,mkdtempSync,newDb,PlatformRunnerClient,resolve,rmSync,runOnceWithClient,tmpdir,vi,writeFileSync };

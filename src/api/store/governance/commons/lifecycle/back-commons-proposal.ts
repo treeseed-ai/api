@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { COMMONS_BACKING_THRESHOLD,COMMONS_WEIGHT_THRESHOLD,isoNow,MarketControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
-export async function backCommonsProposalMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
+import { COMMONS_BACKING_THRESHOLD,COMMONS_WEIGHT_THRESHOLD,isoNow,ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
+export async function backCommonsProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
     const proposal = await this.getCommonsProposal(proposalId);
     if (!proposal)
         return null;

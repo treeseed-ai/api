@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,stringValue } from "../../../../persistence/store.ts";
-export async function createCommonsQuestionMethod(this: MarketControlPlaneStore, principal, input: any = {}) {
+import { isoNow,ControlPlaneStore,stringValue } from "../../../../persistence/store.ts";
+export async function createCommonsQuestionMethod(this: ControlPlaneStore, principal, input: any = {}) {
     const participant = await this.ensureCommonsParticipantForPrincipal(principal);
     const title = stringValue(input.title);
     const body = stringValue(input.body);

@@ -4,11 +4,7 @@ import {
   createApiApp as createSdkApiApp,
 } from "@treeseed/sdk/api";
 import { createCapacityControlPlane } from "../capacity/control-plane.ts";
-import {
-  createStripeConnectService,
-  resolveStripeEnvironment,
-} from "../commerce/commerce-core/stripe-connect.js";
-import { MarketControlPlaneStore } from "../persistence/store.js";
+import { ControlPlaneStore } from "../persistence/store.js";
 import {
   POSTGRES_AUTH_PROVIDER_ID,
   createApiExtension,
@@ -20,10 +16,11 @@ import {
   resolveAuthApprovalBaseUrl,
   shouldLogApiRequests,
 } from "../app/support/index.ts";
-import { createMarketPostgresDatabase } from "./market-postgres.js";
+import { createControlPlanePostgresDatabase } from "./control-plane-postgres.js";
 import { routeDependencies } from "./route-dependencies.ts";
 import { installPlatformRoutes } from "./route-installers.ts";
 import { SessionEventService } from "../realtime/session-events.ts";
+import { installControlPlaneProtocolRoutes } from "../control-plane/http/protocol-routes.ts";
 
 export * from "../app/support/index.ts";
 
@@ -38,10 +35,10 @@ export function createPlatformApiApp(
       "TREESEED_DATABASE_URL is required for the Treeseed PostgreSQL control-plane database.",
     );
   }
-  const db = options.db ?? createMarketPostgresDatabase(apiDatabaseUrl);
+  const db = options.db ?? createControlPlanePostgresDatabase(apiDatabaseUrl);
   const store =
     options.store ??
-    new MarketControlPlaneStore(
+    new ControlPlaneStore(
       {
         ...config,
         assertionSecret: config.webAssertionSecret,
@@ -86,13 +83,6 @@ export function createPlatformApiApp(
         }
       : { ...(options.runtimeProviders ?? {}) };
   const logRequests = shouldLogApiRequests(config, options);
-  const stripeConnectService =
-    options.stripeConnectService ??
-    createStripeConnectService({
-      config,
-      environment: resolveStripeEnvironment(config),
-    });
-
 	const authenticateBearerOverride = async (token: string) => {
 		if (!localAcceptanceAuthEnabled({ resolved: { config } }) || token !== localAcceptanceAdminToken()) return null;
 		return {
@@ -120,7 +110,7 @@ export function createPlatformApiApp(
       createApiExtension({
         mount(app, runtime) {
           if (logRequests) installApiRequestLogger(app);
-          const runtimeMarketAuthProvider = new DatabaseAuthProvider(
+          const runtimeControlPlaneAuthProvider = new DatabaseAuthProvider(
             {
               ...authConfig,
               ...runtime.resolved.config,
@@ -145,14 +135,14 @@ export function createPlatformApiApp(
             logRequests,
             options,
             runtime,
-            runtimeMarketAuthProvider,
+            runtimeControlPlaneAuthProvider,
             runtimeProviders,
             sharedSdk,
             sessionEvents,
             store,
-            stripeConnectService,
           };
           installPlatformRoutes(routeContext);
+          installControlPlaneProtocolRoutes(app, (token) => runtimeControlPlaneAuthProvider.authenticateBearerToken(token));
           options.extendApp?.(app, runtime);
         },
       }),

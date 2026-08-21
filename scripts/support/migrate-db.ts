@@ -1,4 +1,4 @@
-import { createMarketPostgresDatabase } from '../../src/api/support/market-postgres.js';
+import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.js';
 
 const databaseUrl = process.env.TREESEED_DATABASE_URL;
 if (!databaseUrl?.trim()) {
@@ -6,7 +6,7 @@ if (!databaseUrl?.trim()) {
 	process.exit(1);
 }
 
-const database = createMarketPostgresDatabase(databaseUrl);
+const database = createControlPlanePostgresDatabase(databaseUrl);
 try {
 	await database.migrate();
 	console.log('Applied Treeseed PostgreSQL Drizzle migrations.');

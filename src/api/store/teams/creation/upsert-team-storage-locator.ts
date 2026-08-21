@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,parseJson } from "../../../persistence/store.ts";
-export async function upsertTeamStorageLocatorMethod(this: MarketControlPlaneStore, teamId, input) {
+import { isoNow,ControlPlaneStore,parseJson } from "../../../persistence/store.ts";
+export async function upsertTeamStorageLocatorMethod(this: ControlPlaneStore, teamId, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const existing = await this.first(`SELECT * FROM team_storage_locators WHERE team_id = ?`, [teamId]);

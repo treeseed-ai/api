@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	hubRepositoryCurrentPayload,
 	projectCurrentPayload,
-} from '../../../src/market/seeds/apply-support/support/resource-state.ts';
+} from '../../../src/control-plane/seeds/apply-support/support/resource-state.ts';
 
 const repositoryPolicy = {
 	visibility: 'public',

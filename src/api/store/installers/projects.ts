@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { getProjectAccessSummaryMethod } from '../projects/access/queries/get-project-access-summary.ts';
 import { getProjectWorkstreamsSummaryMethod } from '../projects/delivery/queries/get-project-workstreams-summary.ts';
 import { projectArchitectureContentBindingsMethod } from '../projects/projects-core/contracts/project-architecture-content-bindings.ts';
@@ -22,7 +22,7 @@ import { getProjectSummaryMethod } from '../projects/queries/summaries/get-proje
 import { upsertProjectRepositoryTopologyMethod } from '../projects/repositories/creation/upsert-project-repository-topology.ts';
 import { getProjectRepositoryTopologyMethod } from '../projects/repositories/queries/get-project-repository-topology.ts';
 
-export function installProjectsStoreMethods(prototype: MarketControlPlaneStore) {
+export function installProjectsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.getProjectAccessSummary = getProjectAccessSummaryMethod;
 	prototype.getProjectRepositoryTopology = getProjectRepositoryTopologyMethod;
 	prototype.upsertProjectRepositoryTopology = upsertProjectRepositoryTopologyMethod;

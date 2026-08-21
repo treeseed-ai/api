@@ -1,5 +1,5 @@
-import { equalHash,isoNow,MarketControlPlaneStore,serializeTeamInvite,stableHash,tokenPrefix } from "../../../persistence/store.ts";
-export async function acceptTeamInviteMethod(this: MarketControlPlaneStore, token, userId) {
+import { equalHash,isoNow,ControlPlaneStore,serializeTeamInvite,stableHash,tokenPrefix } from "../../../persistence/store.ts";
+export async function acceptTeamInviteMethod(this: ControlPlaneStore, token, userId) {
     await this.ensureInitialized();
     const prefix = tokenPrefix(String(token ?? ''));
     const rows = await this.all(`SELECT * FROM team_invites WHERE token_prefix = ? ORDER BY created_at DESC`, [prefix]);

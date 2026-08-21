@@ -64,13 +64,13 @@ it('plans and applies staging seeds with audit records, then reports unchanged',
 				'content-type': 'application/json',
 				authorization: `Bearer ${token}`,
 			},
-			body: JSON.stringify({ keys: ['team:treeseed', 'project:treeseed/market'] }),
+			body: JSON.stringify({ keys: ['team:treeseed', 'project:treeseed/api'] }),
 		});
 		expect(resolvedResponse.status).toBe(200);
 		const resolved = await json(resolvedResponse);
 		expect(resolved.payload).toEqual([
 			expect.objectContaining({ key: 'team:treeseed', kind: 'team', id: team.id }),
-			expect.objectContaining({ key: 'project:treeseed/market', kind: 'project', teamId: team.id }),
+			expect.objectContaining({ key: 'project:treeseed/api', kind: 'project', teamId: team.id }),
 		]);
 		const staleResolution = await app.request('/v1/seeds/resources/resolve', {
 			method: 'POST',
@@ -153,8 +153,6 @@ it('plans and applies staging seeds with audit records, then reports unchanged',
 		expect(exportResponse.status).toBe(200);
 		const exported = await json(exportResponse);
 		expect(exported.ok).toBe(true);
-		expect(exported.yaml).toContain('products:');
-		expect(exported.yaml).toContain('catalogArtifacts:');
 		expect(exported.yaml).not.toMatch(/encryptedPayload|BEGIN PRIVATE KEY|ghp_/u);
 	});
 });

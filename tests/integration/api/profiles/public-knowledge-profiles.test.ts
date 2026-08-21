@@ -41,47 +41,17 @@ describe('public knowledge profiles', () => {
 				description: 'Must never appear.',
 				metadata: { visibility: 'private' },
 			});
-			const publicItem = await store.upsertCatalogItem(team.id, {
-				id: 'public-template',
-				kind: 'template',
-				slug: 'public-template',
-				title: 'Public Research Template',
-				summary: 'A reusable public workflow.',
-				visibility: 'public',
-				listingEnabled: true,
-				offerMode: 'free',
-			});
-			await store.upsertCatalogItem(team.id, {
-				id: 'private-template',
-				kind: 'template',
-				slug: 'private-template',
-				title: 'Private Research Template',
-				summary: 'Must never appear.',
-				visibility: 'private',
-				listingEnabled: false,
-			});
-			await store.run(`INSERT INTO commerce_contributions
-				(id, product_id, contributor_type, contributor_id, role, summary, attribution_visibility, effective_at, metadata_json, created_at, updated_at)
-				VALUES (?, ?, 'user', ?, 'researcher', 'Prepared the public method.', 'public', ?, '{}', ?, ?)`, [
-				'public-contribution',
-				publicItem.id,
-				'profile-user',
-				now,
-				now,
-				now,
-			]);
-
 			const teamProfile = await store.loadTeamProfileByName(team.name);
 			expect(teamProfile).toMatchObject({
 				team: { name: team.name },
 				knowledge: {
-					stats: { templates: 1, projects: 1 },
-					catalog: [{ title: 'Public Research Template' }],
+					stats: { templates: 0, projects: 1 },
+					catalog: [],
 					projects: [{ name: 'Public Project' }],
 				},
 			});
 			expect(teamProfile?.team).not.toHaveProperty('id');
-			expect(JSON.stringify(teamProfile)).not.toMatch(/Private Project|Private Research Template|membership|email|role/iu);
+			expect(JSON.stringify(teamProfile)).not.toMatch(/Private Project|membership|email|role/iu);
 
 			const userProfile = await store.loadUserProfileByUsername('profile-author');
 			expect(userProfile).toMatchObject({
@@ -91,12 +61,12 @@ describe('public knowledge profiles', () => {
 					expertise: ['Research', 'Knowledge systems'],
 				},
 				knowledge: {
-					stats: { contributions: 1, templates: 1 },
-					contributions: [{ role: 'researcher', item: { title: 'Public Research Template' } }],
+					stats: { contributions: 0, templates: 0 },
+					contributions: [],
 				},
 			});
 			expect(userProfile?.user).not.toHaveProperty('id');
-			expect(JSON.stringify(userProfile)).not.toMatch(/profile-user|private@example|Public Profile Team|membership|Private Project|Private Research Template/iu);
+			expect(JSON.stringify(userProfile)).not.toMatch(/profile-user|private@example|Public Profile Team|membership|Private Project/iu);
 		} finally {
 			db.close();
 		}

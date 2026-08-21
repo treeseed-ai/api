@@ -340,11 +340,11 @@ function installServicePrincipalRoutes(app: Hono, dependencies: WorkdayRouteDepe
 			|| process.env.TREESEED_API_ENVIRONMENT === 'local'
 			|| process.env.TREESEED_ENVIRONMENT === 'local'
 			|| process.env.LOCAL_DEV_MODE === '1';
-		if (!localRuntime || !dependencies.runtimeMarketAuthProvider) return c.json({ ok: false, code: 'agent_lab_service_principal_local_only', error: 'Agent Lab service principals are available only in the managed local environment.' }, 403);
+		if (!localRuntime || !dependencies.runtimeControlPlaneAuthProvider) return c.json({ ok: false, code: 'agent_lab_service_principal_local_only', error: 'Agent Lab service principals are available only in the managed local environment.' }, 403);
 		const body = await readCapacityRequestObject(c); const resourceKey = text(body.resourceKey); const name = text(body.name, 'Agent Lab Operations Runner');
 		if (!/^service-principal:[a-z0-9._/-]+$/u.test(resourceKey)) return c.json({ ok: false, code: 'agent_lab_service_principal_key_invalid', error: 'Provide a stable service-principal resource key.' }, 422);
 		const serviceId = `agent-lab-${createHash('sha256').update(`${c.req.param('teamId')}:${resourceKey}`).digest('hex').slice(0, 24)}`;
-		const credential = await dependencies.runtimeMarketAuthProvider.createServiceToken({ serviceId, name, roles: [], permissions: [] });
+		const credential = await dependencies.runtimeControlPlaneAuthProvider.createServiceToken({ serviceId, name, roles: [], permissions: [] });
 		const membership = await dependencies.store.upsertTeamMember(c.req.param('teamId'), serviceId, 'team_owner');
 		const team = await dependencies.store.first(`SELECT metadata_json FROM teams WHERE id = ? LIMIT 1`, [c.req.param('teamId')]); const metadata = object(typeof team?.metadata_json === 'string' ? (() => { try { return JSON.parse(team.metadata_json); } catch { return {}; } })() : {});
 		metadata.agentLab = { ...object(metadata.agentLab), servicePrincipalId: serviceId, servicePrincipalResourceKey: resourceKey };

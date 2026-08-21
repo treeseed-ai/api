@@ -9,6 +9,5 @@ export * from './support/mailpit-assertions.js';
 export * from './support/request-body-factories.js';
 export * from './support/response-assertions.js';
 export * from './support/route-matrix.js';
-export * from './support/sdk-method-matrix.js';
 export * from './support/spec-loader.js';
 export * from './testing/fixture-values.js';

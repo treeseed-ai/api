@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 
 const RESTORE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const ARCHIVE_BLOCKER_CODES = new Set([
@@ -7,11 +7,10 @@ const ARCHIVE_BLOCKER_CODES = new Set([
 	'active_workday',
 	'active_assignment',
 	'capacity_reservation',
-	'commerce_obligation',
 ]);
 
 export async function archiveTeamMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	input: { actorId: string; lifecycleVersion: number; now?: Date },
 ) {
@@ -42,7 +41,7 @@ export async function archiveTeamMethod(
 }
 
 export async function restoreTeamMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	input: { lifecycleVersion: number; now?: Date },
 ) {
@@ -64,7 +63,7 @@ export async function restoreTeamMethod(
 	return { ok: true, team: await this.getTeam(teamId) };
 }
 
-export async function getTeamDeletionReadinessMethod(this: MarketControlPlaneStore, teamId: string) {
+export async function getTeamDeletionReadinessMethod(this: ControlPlaneStore, teamId: string) {
 	await this.ensureInitialized();
 	const team = await this.getTeam(teamId);
 	if (!team) return { ok: false, code: 'missing', message: 'Team not found.' };

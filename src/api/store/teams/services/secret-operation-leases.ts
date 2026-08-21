@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 
 function lease(row: any) {
 	if (!row) return null;
@@ -22,7 +22,7 @@ function lease(row: any) {
 	};
 }
 
-export async function createSecretOperationLeaseMethod(this: MarketControlPlaneStore, teamId: string, input: any) {
+export async function createSecretOperationLeaseMethod(this: ControlPlaneStore, teamId: string, input: any) {
 	await this.ensureInitialized();
 	const existing = await this.first(
 		`SELECT * FROM secret_operation_leases WHERE team_id = ? AND idempotency_key = ?`,
@@ -50,7 +50,7 @@ export async function createSecretOperationLeaseMethod(this: MarketControlPlaneS
 	return lease(await this.first(`SELECT * FROM secret_operation_leases WHERE id = ?`, [id]));
 }
 
-export async function listAwaitingSecretOperationLeasesMethod(this: MarketControlPlaneStore) {
+export async function listAwaitingSecretOperationLeasesMethod(this: ControlPlaneStore) {
 	await this.ensureInitialized();
 	const now = new Date().toISOString();
 	return (await this.all(
@@ -61,7 +61,7 @@ export async function listAwaitingSecretOperationLeasesMethod(this: MarketContro
 }
 
 export async function registerSecretOperationLeaseKeyMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	leaseId: string,
 	publicKey: string,
 ) {
@@ -76,12 +76,12 @@ export async function registerSecretOperationLeaseKeyMethod(
 	return row?.status === 'pending' && row?.public_key === publicKey ? lease(row) : null;
 }
 
-export async function getSecretOperationLeaseMethod(this: MarketControlPlaneStore, teamId: string, leaseId: string) {
+export async function getSecretOperationLeaseMethod(this: ControlPlaneStore, teamId: string, leaseId: string) {
 	await this.ensureInitialized();
 	return lease(await this.first(`SELECT * FROM secret_operation_leases WHERE team_id = ? AND id = ?`, [teamId, leaseId]));
 }
 
-export async function submitSecretOperationPayloadMethod(this: MarketControlPlaneStore, teamId: string, leaseId: string, actorUserId: string, sealedPayload: string) {
+export async function submitSecretOperationPayloadMethod(this: ControlPlaneStore, teamId: string, leaseId: string, actorUserId: string, sealedPayload: string) {
 	await this.ensureInitialized();
 	const current: any = await this.first(`SELECT * FROM secret_operation_leases WHERE team_id = ? AND id = ?`, [teamId, leaseId]);
 	if (!current) return { ok: false, error: 'not_found' };
@@ -99,7 +99,7 @@ export async function submitSecretOperationPayloadMethod(this: MarketControlPlan
 	return { ok: true, payload: await this.getSecretOperationLease(teamId, leaseId) };
 }
 
-export async function consumeSecretOperationLeaseMethod(this: MarketControlPlaneStore, leaseId: string) {
+export async function consumeSecretOperationLeaseMethod(this: ControlPlaneStore, leaseId: string) {
 	await this.ensureInitialized();
 	const current: any = await this.first(`SELECT * FROM secret_operation_leases WHERE id = ?`, [leaseId]);
 	if (!current || current.status !== 'ready' || Date.parse(current.expires_at) <= Date.now()) return null;
@@ -117,7 +117,7 @@ export async function consumeSecretOperationLeaseMethod(this: MarketControlPlane
 }
 
 export async function cancelSecretOperationLeaseMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	leaseId: string,
 	actorUserId: string,

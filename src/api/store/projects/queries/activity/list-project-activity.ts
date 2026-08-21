@@ -1,5 +1,5 @@
-import { compareDatesDesc,latestDate,MarketControlPlaneStore,toActivityItem } from "../../../../persistence/store.ts";
-export async function listProjectActivityMethod(this: MarketControlPlaneStore, projectId, limit = 12) {
+import { compareDatesDesc,latestDate,ControlPlaneStore,toActivityItem } from "../../../../persistence/store.ts";
+export async function listProjectActivityMethod(this: ControlPlaneStore, projectId, limit = 12) {
     const jobs = await this.listRecentJobsForProject(projectId, limit);
     return [
         ...jobs.map((job) => toActivityItem('job', {

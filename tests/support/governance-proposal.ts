@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../src/api/persistence/store.ts';
+import type { ControlPlaneStore } from '../../src/api/persistence/store.ts';
 
 export function completeGovernanceProposalInput(overrides: Record<string, unknown> = {}) {
 	return {
@@ -33,7 +33,7 @@ export function completeGovernanceProposalInput(overrides: Record<string, unknow
 }
 
 export async function bindGovernanceTreeDx(
-	store: MarketControlPlaneStore,
+	store: ControlPlaneStore,
 	teamId: string,
 	projectId: string,
 ) {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializeHubContentSource } from "../../../persistence/store.ts";
-export async function upsertHubContentSourceMethod(this: MarketControlPlaneStore, hubId, input) {
+import { isoNow,ControlPlaneStore,serializeHubContentSource } from "../../../persistence/store.ts";
+export async function upsertHubContentSourceMethod(this: ControlPlaneStore, hubId, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const project = await this.getProject(hubId);

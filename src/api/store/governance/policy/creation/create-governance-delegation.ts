@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { arrayValue,isoNow,MarketControlPlaneStore,optionalStringValue,serializeGovernanceDelegation,stringValue } from "../../../../persistence/store.ts";
-export async function createGovernanceDelegationMethod(this: MarketControlPlaneStore, principal, input: any = {}) {
+import { arrayValue,isoNow,ControlPlaneStore,optionalStringValue,serializeGovernanceDelegation,stringValue } from "../../../../persistence/store.ts";
+export async function createGovernanceDelegationMethod(this: ControlPlaneStore, principal, input: any = {}) {
     await this.ensureInitialized();
     const teamId = stringValue(input.teamId);
     const toUserId = stringValue(input.toUserId);

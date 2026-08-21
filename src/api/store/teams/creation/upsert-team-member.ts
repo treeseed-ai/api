@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,normalizeTeamRoleKey } from "../../../persistence/store.ts";
-export async function upsertTeamMemberMethod(this: MarketControlPlaneStore, teamId, userId, roleKey = 'contributor') {
+import { isoNow,ControlPlaneStore,normalizeTeamRoleKey } from "../../../persistence/store.ts";
+export async function upsertTeamMemberMethod(this: ControlPlaneStore, teamId, userId, roleKey = 'contributor') {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const role = normalizeTeamRoleKey(roleKey);

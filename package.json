@@ -1,6 +1,6 @@
 {
   "name": "@treeseed/api",
-  "version": "0.7.0-rc.2",
+  "version": "0.8.0-rc.1",
   "description": "TreeSeed Treeseed backend API and operations runner.",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -26,6 +26,7 @@
   "files": [
     "README.md",
     "dist",
+    "drizzle/control-plane",
     "scripts/support/verify-driver.ts",
     "LICENSE",
     "COMMERCIAL.md"
@@ -52,9 +53,9 @@
       "types": "./dist/api/persistence/store.d.ts",
       "default": "./dist/api/persistence/store.js"
     },
-    "./api/market-postgres": {
-      "types": "./dist/api/support/market-postgres.d.ts",
-      "default": "./dist/api/support/market-postgres.js"
+    "./api/control-plane-postgres": {
+      "types": "./dist/api/support/control-plane-postgres.d.ts",
+      "default": "./dist/api/support/control-plane-postgres.js"
     },
     "./operations-runner": {
       "types": "./dist/operations-runner/entrypoint.d.ts",
@@ -99,19 +100,23 @@
     "release:publish": "node --import tsx ./scripts/packages/publish-package.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/hono": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "0.13.0-rc.5",
+    "@treeseed/sdk": "0.13.0-rc.6",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.8.2",
+    "hono": "4.13.3",
     "libsodium-wrappers": "0.7.15",
     "libsodium-wrappers-sumo": "0.7.15",
     "octokit": "^5.0.5",
     "pg": "^8.21.0",
-    "stripe": "^22.3.0",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "zod": "4.4.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "^24.6.0",
     "esbuild": "^0.28.0",
     "pg-mem": "^3.0.14",

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow, type MarketControlPlaneStore } from '../../../../persistence/store.ts';
+import { isoNow, type ControlPlaneStore } from '../../../../persistence/store.ts';
 
 const PLATFORM_LIBRARY_ID = 'treeseed-platform-library';
 const PLATFORM_LIBRARY_BOOK_IDS = [
@@ -7,7 +7,7 @@ const PLATFORM_LIBRARY_BOOK_IDS = [
 	'treeseed-credential-security', 'treeseed-feedback-and-support', 'treeseed-platform-architecture-development',
 ];
 
-async function syncPlatformLibrary(store: MarketControlPlaneStore, teamId: string, administratorIds: string[], timestamp: string) {
+async function syncPlatformLibrary(store: ControlPlaneStore, teamId: string, administratorIds: string[], timestamp: string) {
 	const existing = await store.first(`SELECT id, book_ids_json FROM book_collections WHERE id = ? LIMIT 1`, [PLATFORM_LIBRARY_ID]);
 	const bookIdsJson = JSON.stringify(PLATFORM_LIBRARY_BOOK_IDS);
 	if (!existing) {
@@ -24,7 +24,7 @@ async function syncPlatformLibrary(store: MarketControlPlaneStore, teamId: strin
 	return true;
 }
 
-export async function syncPlatformAdminOwnersMethod(this: MarketControlPlaneStore) {
+export async function syncPlatformAdminOwnersMethod(this: ControlPlaneStore) {
 	const team = await this.first(`SELECT id FROM teams WHERE lower(slug) = 'treeseed' OR lower(name) = 'treeseed' LIMIT 1`);
 	if (!team?.id) return { added: 0, removed: 0 };
 	const ownerRole = await this.first(`SELECT id FROM roles WHERE key = 'team_owner' LIMIT 1`);

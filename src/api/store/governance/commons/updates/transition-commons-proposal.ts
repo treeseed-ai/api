@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function transitionCommonsProposalMethod(this: MarketControlPlaneStore, proposalId, nextState, input: any = {}) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function transitionCommonsProposalMethod(this: ControlPlaneStore, proposalId, nextState, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.getCommonsProposal(proposalId);
     if (!existing)

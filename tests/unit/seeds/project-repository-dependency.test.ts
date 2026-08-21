@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ensureProjectSeedDependencies } from '../../../src/market/seeds/apply-support/projects/projects-core/project-dependencies.ts';
+import { ensureProjectSeedDependencies } from '../../../src/control-plane/seeds/apply-support/projects/projects-core/project-dependencies.ts';
 
 describe('project seed repository dependency', () => {
 	it('repairs an existing primary repository onto the declared staging branch', async () => {

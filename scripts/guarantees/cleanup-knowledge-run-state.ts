@@ -6,8 +6,8 @@ import { createKnowledgePublicationStorage } from '../../src/api/knowledge/publi
 import { buildKnowledgePublication } from '../../src/api/knowledge/build-publication.ts';
 import { resolveKnowledgeGatewayConnection } from '../../src/api/knowledge/gateway-treedx-connection.ts';
 import { loadKnowledgeSnapshotProjects } from '../../src/api/knowledge/snapshot-projects.ts';
-import { MarketControlPlaneStore } from '../../src/api/persistence/store.ts';
-import { createMarketPostgresDatabase } from '../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../src/api/persistence/store.ts';
+import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.ts';
 import { createLocalPrivateObjectStorage } from '../../src/api/storage/private-object-storage.ts';
 
 type RunValue = { value?: Record<string, unknown>; device?: string };
@@ -29,8 +29,8 @@ for (const item of expected) {
 	assert.match(item.pageId, /^guarantee-page-[a-z0-9]+-(desktop|tablet|mobile)(?:-chromium)?$/u);
 }
 
-const database = createMarketPostgresDatabase(databaseUrl);
-const store = new MarketControlPlaneStore({
+const database = createControlPlanePostgresDatabase(databaseUrl);
+const store = new ControlPlaneStore({
 	environment: 'local', TREESEED_ENVIRONMENT: 'local', baseUrl: 'http://127.0.0.1:3000',
 	TREESEED_TREEDX_URL: process.env.TREESEED_TREEDX_URL ?? 'http://127.0.0.1:4000',
 	TREESEED_TREEDX_JWT_HS256_SECRET: process.env.TREESEED_TREEDX_JWT_HS256_SECRET ?? 'treeseed-local-treedx-jwt-secret',

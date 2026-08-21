@@ -1,8 +1,8 @@
 export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
-	const { AUTH_PROVIDERS, MARKET_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createMarketEmailConfirmation, createMarketWebSession, ensureMarketCredentialSchema, ensurePrincipal, exchangeProviderIdentity, exposeAuthTokenForTests, hashMarketPassword, jsonError, marketAuthContext, marketEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, requireConfiguredServiceCredential, resolveAuthApprovalBaseUrl, runtime, runtimeMarketAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, validateMarketPassword, validatePublicUsername, verifiedEmailCount, verifyMarketPassword, webAuthPayload, webSessionData } = context;
+	const { AUTH_PROVIDERS, MARKET_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createMarketEmailConfirmation, createMarketWebSession, ensureMarketCredentialSchema, ensurePrincipal, exchangeProviderIdentity, exposeAuthTokenForTests, hashMarketPassword, jsonError, marketAuthContext, marketEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, requireConfiguredServiceCredential, resolveAuthApprovalBaseUrl, runtime, runtimeControlPlaneAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, validateMarketPassword, validatePublicUsername, verifiedEmailCount, verifyMarketPassword, webAuthPayload, webSessionData } = context;
 	app.post('/v1/auth/device/start', async (c) => {
 					const body = await c.req.json().catch(() => ({}));
-					const started = await runtimeMarketAuthProvider.startDeviceFlow({
+					const started = await runtimeControlPlaneAuthProvider.startDeviceFlow({
 						clientName: typeof body.clientName === 'string' ? body.clientName : 'treeseed-cli',
 						scopes: Array.isArray(body.scopes) ? body.scopes.map(String) : ['auth:me'],
 					});
@@ -11,7 +11,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 	
 	app.post('/v1/auth/device/poll', async (c) => {
 					const body = await c.req.json().catch(() => ({}));
-					const response = await runtimeMarketAuthProvider.pollDeviceFlow({ deviceCode: String(body.deviceCode ?? '') });
+					const response = await runtimeControlPlaneAuthProvider.pollDeviceFlow({ deviceCode: String(body.deviceCode ?? '') });
 					return c.json(response, { status: response.ok ? 200 : response.status === 'expired' ? 410 : 400 });
 				});
 	
@@ -27,7 +27,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					if (auth.response) return auth.response;
 					const body = await c.req.json().catch(() => ({}));
 					try {
-						return c.json(await runtimeMarketAuthProvider.approveDeviceFlow({
+						return c.json(await runtimeControlPlaneAuthProvider.approveDeviceFlow({
 							userCode: String(body.userCode ?? ''),
 							principalId: auth.principal.id,
 							displayName: auth.principal.displayName,
@@ -58,12 +58,12 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						return jsonError(c, 400, 'Team invite does not match this registration email.', { code: 'invite_email_mismatch' });
 					}
 					const existingEmailCredential = await store.first(
-						`SELECT user_id FROM market_auth_credentials WHERE email = ? LIMIT 1`,
+						`SELECT user_id FROM control_plane_auth_credentials WHERE email = ? LIMIT 1`,
 						[email],
 					);
 					if (existingEmailCredential) return jsonError(c, 409, 'This email can’t be used.', { code: 'email_unavailable' });
 					const existingUsernameCredential = await store.first(
-						`SELECT user_id FROM market_auth_credentials WHERE username = ? LIMIT 1`,
+						`SELECT user_id FROM control_plane_auth_credentials WHERE username = ? LIMIT 1`,
 						[username],
 					);
 					if (existingUsernameCredential) return jsonError(c, 409, 'Username is already taken.');
@@ -76,7 +76,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						[email],
 					);
 					if (existingEmailAddress) return jsonError(c, 409, 'This email can’t be used.', { code: 'email_unavailable' });
-					const synced = await runtimeMarketAuthProvider.syncUserIdentity({
+					const synced = await runtimeControlPlaneAuthProvider.syncUserIdentity({
 						provider: 'credential',
 						providerSubject: email,
 						email,
@@ -98,7 +98,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					]).catch(() => null);
 					const now = new Date().toISOString();
 					await store.run(
-						`INSERT INTO market_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
+						`INSERT INTO control_plane_auth_credentials (user_id, email, username, password_hash, status, created_at, updated_at)
 						 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 						[synced.principal.id, email, username, hashMarketPassword(password), 'pending_email_confirmation', now, now],
 					);
@@ -119,7 +119,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							skipDelivery: shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config),
 						});
 					} catch (error) {
-						await store.run(`DELETE FROM market_auth_credentials WHERE user_id = ?`, [synced.principal.id]).catch(() => null);
+						await store.run(`DELETE FROM control_plane_auth_credentials WHERE user_id = ?`, [synced.principal.id]).catch(() => null);
 						await store.run(`DELETE FROM user_email_addresses WHERE user_id = ?`, [synced.principal.id]).catch(() => null);
 						await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [`${MARKET_EMAIL_CONFIRMATION_PREFIX}${emailAddressId}`]).catch(() => null);
 						console.warn('[market-auth] Email confirmation setup failed:', error instanceof Error ? error.message : String(error));
@@ -160,7 +160,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					);
 					if (!emailAddress?.id) return jsonError(c, 404, 'Email confirmation record not found.');
 					const credential = await store.first(
-						`SELECT user_id, email, username, status FROM market_auth_credentials WHERE user_id = ? LIMIT 1`,
+						`SELECT user_id, email, username, status FROM control_plane_auth_credentials WHERE user_id = ? LIMIT 1`,
 						[emailAddress.user_id],
 					);
 					if (!credential || credential.status === 'deleted') return jsonError(c, 404, 'Email confirmation record not found.');
@@ -184,7 +184,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					}
 					if (credential.status !== 'active') {
 						await store.run(
-							`UPDATE market_auth_credentials SET status = 'active', updated_at = ? WHERE user_id = ?`,
+							`UPDATE control_plane_auth_credentials SET status = 'active', updated_at = ? WHERE user_id = ?`,
 							[now, credential.user_id],
 						);
 						await store.run(
@@ -224,7 +224,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					}
 					const email = String(emailAddress.email ?? '').trim().toLowerCase();
 					const credential = await store.first(
-						`SELECT user_id, email, username, status FROM market_auth_credentials WHERE user_id = ? LIMIT 1`,
+						`SELECT user_id, email, username, status FROM control_plane_auth_credentials WHERE user_id = ? LIMIT 1`,
 						[emailAddress.user_id],
 					);
 					if (!credential || credential.status === 'deleted') {
@@ -250,7 +250,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					}
 					if (credential.status !== 'active') {
 						await store.run(
-							`UPDATE market_auth_credentials SET status = 'active', updated_at = ? WHERE user_id = ?`,
+							`UPDATE control_plane_auth_credentials SET status = 'active', updated_at = ? WHERE user_id = ?`,
 							[now, credential.user_id],
 						);
 						await store.run(
@@ -259,7 +259,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 						).catch(() => null);
 					}
 					await store.run(`DELETE FROM better_auth_verification WHERE id = ?`, [row.id]).catch(() => null);
-					const session = await createMarketWebSession(runtimeMarketAuthProvider, emailAddress.user_id, webSessionData(c, 'web_email_confirmed'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, emailAddress.user_id, webSessionData(c, 'web_email_confirmed'), { store, authSecret: runtime.resolved.config.authSecret });
 					await store.recordAuditEvent({
 						actorType: 'user', actorId: emailAddress.user_id, eventType: 'auth.email.verified',
 						targetType: 'user', targetId: emailAddress.user_id, data: { emailAddressId: emailAddress.id },
@@ -282,23 +282,23 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 					const password = String(body.password ?? '');
 					if (!identifier || !password) return jsonError(c, 400, 'Email or username and password are required.');
 					let row = await store.first(
-						`SELECT market_auth_credentials.user_id, market_auth_credentials.password_hash, market_auth_credentials.status
-						   FROM market_auth_credentials
+						`SELECT control_plane_auth_credentials.user_id, control_plane_auth_credentials.password_hash, control_plane_auth_credentials.status
+						   FROM control_plane_auth_credentials
 						   LEFT JOIN user_email_addresses
-						     ON user_email_addresses.user_id = market_auth_credentials.user_id
+						     ON user_email_addresses.user_id = control_plane_auth_credentials.user_id
 						    AND user_email_addresses.normalized_email = ?
 						    AND user_email_addresses.status = 'verified'
-						  WHERE market_auth_credentials.username = ?
+						  WHERE control_plane_auth_credentials.username = ?
 						     OR user_email_addresses.id IS NOT NULL
 						  LIMIT 1`,
 						[identifier, identifier],
 					);
 					if (!row) {
 						row = await store.first(
-							`SELECT market_auth_credentials.user_id, market_auth_credentials.password_hash, market_auth_credentials.status, user_email_addresses.status AS email_status
-							   FROM market_auth_credentials
+							`SELECT control_plane_auth_credentials.user_id, control_plane_auth_credentials.password_hash, control_plane_auth_credentials.status, user_email_addresses.status AS email_status
+							   FROM control_plane_auth_credentials
 							   INNER JOIN user_email_addresses
-							      ON user_email_addresses.user_id = market_auth_credentials.user_id
+							      ON user_email_addresses.user_id = control_plane_auth_credentials.user_id
 							     AND user_email_addresses.normalized_email = ?
 							  LIMIT 1`,
 							[identifier],
@@ -312,7 +312,7 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							code: 'email_confirmation_required',
 						});
 					}
-						const session = await createMarketWebSession(runtimeMarketAuthProvider, row.user_id, webSessionData(c, 'web_sign_in'), { store, authSecret: runtime.resolved.config.authSecret });
+						const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, row.user_id, webSessionData(c, 'web_sign_in'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: webAuthPayload(session) });
 				});
 	
@@ -379,10 +379,10 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							const now = new Date().toISOString();
 							await store.run(`INSERT INTO user_identities (id, user_id, provider, provider_subject, email, email_verified, profile_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`, [randomUUID(), row.link_user_id, provider, identity.subject, normalizedProviderEmail, JSON.stringify(identity.profile ?? {}), now, now]);
 						} else if (!userId) {
-							const synced = await runtimeMarketAuthProvider.syncUserIdentity({ provider, providerSubject: identity.subject, email: normalizedProviderEmail, emailVerified: true, displayName: identity.displayName, profile: identity.profile ?? {} });
+							const synced = await runtimeControlPlaneAuthProvider.syncUserIdentity({ provider, providerSubject: identity.subject, email: normalizedProviderEmail, emailVerified: true, displayName: identity.displayName, profile: identity.profile ?? {} });
 							userId = synced.principal.id;
 						}
-						const session = await createMarketWebSession(runtimeMarketAuthProvider, userId, webSessionData(c, `oauth_${provider}`), { store, authSecret: runtime.resolved.config.authSecret });
+						const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, userId, webSessionData(c, `oauth_${provider}`), { store, authSecret: runtime.resolved.config.authSecret });
 						if (row.purpose === 'reauthenticate') {
 							const grantId = randomUUID();
 							await store.run(`INSERT INTO auth_reauthentication_grants (id, user_id, session_id, action, expires_at, consumed_at, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?)`, [grantId, userId, session.principal.metadata?.sessionId ?? '', row.action ?? 'account_delete', new Date(Date.now() + 5 * 60_000).toISOString(), new Date().toISOString()]);

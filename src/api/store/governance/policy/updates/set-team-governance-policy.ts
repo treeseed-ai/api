@@ -1,6 +1,6 @@
 import { governanceVotingProvider } from '@treeseed/sdk';
-import { isoNow,MarketControlPlaneStore,objectValue,optionalStringValue,serializeGovernancePolicy } from "../../../../persistence/store.ts";
-export async function setTeamGovernancePolicyMethod(this: MarketControlPlaneStore, teamId, input: any = {}) {
+import { isoNow,ControlPlaneStore,objectValue,optionalStringValue,serializeGovernancePolicy } from "../../../../persistence/store.ts";
+export async function setTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId, input: any = {}) {
     await this.ensureInitialized();
     const scope = optionalStringValue(input.scope, 'team');
     const provider = governanceVotingProvider(optionalStringValue(input.providerId, 'admin_approval_v1'));

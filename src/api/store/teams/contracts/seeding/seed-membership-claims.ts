@@ -1,5 +1,5 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { isoNow,type MarketControlPlaneStore } from '../../../../persistence/store.ts';
+import { isoNow,type ControlPlaneStore } from '../../../../persistence/store.ts';
 
 type ClaimInput = { seedName: string; resourceKey: string; teamId: string; email: string; roles: string[] };
 
@@ -12,7 +12,7 @@ function bindingId(input: ClaimInput, role: string) {
 	return `seed-member:${createHash('sha256').update(`${input.seedName}\0${input.resourceKey}\0${role}`).digest('hex').slice(0, 32)}`;
 }
 
-async function removeOwnedBindings(store: MarketControlPlaneStore, claim: Record<string, unknown> | null, retain: Set<string>) {
+async function removeOwnedBindings(store: ControlPlaneStore, claim: Record<string, unknown> | null, retain: Set<string>) {
 	for (const id of strings(claim?.binding_ids_json)) {
 		if (retain.has(id)) continue;
 		const binding = await store.first(`SELECT roles.key, team_role_bindings.team_membership_id FROM team_role_bindings INNER JOIN roles ON roles.id = team_role_bindings.role_id WHERE team_role_bindings.id = ? LIMIT 1`, [id]);
@@ -24,12 +24,12 @@ async function removeOwnedBindings(store: MarketControlPlaneStore, claim: Record
 	}
 }
 
-export async function getSeedTeamMembershipClaimMethod(this: MarketControlPlaneStore, seedName: string, resourceKey: string) {
+export async function getSeedTeamMembershipClaimMethod(this: ControlPlaneStore, seedName: string, resourceKey: string) {
 	await this.ensureInitialized();
 	return this.first(`SELECT * FROM seed_team_membership_claims WHERE seed_name = ? AND resource_key = ? LIMIT 1`, [seedName, resourceKey]);
 }
 
-export async function reconcileSeedTeamMembershipClaimMethod(this: MarketControlPlaneStore, input: ClaimInput) {
+export async function reconcileSeedTeamMembershipClaimMethod(this: ControlPlaneStore, input: ClaimInput) {
 	await this.ensureInitialized();
 	const email = input.email.trim().toLowerCase();
 	const roles = [...new Set(input.roles)].sort();
@@ -63,7 +63,7 @@ export async function reconcileSeedTeamMembershipClaimMethod(this: MarketControl
 	return { id, seedName: input.seedName, resourceKey: input.resourceKey, teamId: input.teamId, email, roles, status: user?.id ? 'bound' : 'pending', userId: user?.id ?? null, membershipId: membership?.id ?? null, bindingIds: [...desiredIds] };
 }
 
-export async function claimSeedTeamMembershipsForVerifiedEmailMethod(this: MarketControlPlaneStore, userId: string, email: string) {
+export async function claimSeedTeamMembershipsForVerifiedEmailMethod(this: ControlPlaneStore, userId: string, email: string) {
 	await this.ensureInitialized();
 	const normalized = email.trim().toLowerCase();
 	const verified = await this.first(`SELECT id FROM user_email_addresses WHERE user_id = ? AND normalized_email = ? AND status = 'verified' LIMIT 1`, [userId, normalized]);
@@ -72,7 +72,7 @@ export async function claimSeedTeamMembershipsForVerifiedEmailMethod(this: Marke
 	return Promise.all(claims.map((claim) => this.reconcileSeedTeamMembershipClaim({ seedName: String(claim.seed_name), resourceKey: String(claim.resource_key), teamId: String(claim.team_id), email: normalized, roles: strings(claim.roles_json) })));
 }
 
-export async function retireUndeclaredSeedTeamMembershipClaimsMethod(this: MarketControlPlaneStore, seedName: string, declaredKeys: string[]) {
+export async function retireUndeclaredSeedTeamMembershipClaimsMethod(this: ControlPlaneStore, seedName: string, declaredKeys: string[]) {
 	await this.ensureInitialized();
 	const retained = new Set(declaredKeys);
 	const claims = await this.all(`SELECT * FROM seed_team_membership_claims WHERE seed_name = ? AND status <> 'removed' ORDER BY resource_key`, [seedName]);

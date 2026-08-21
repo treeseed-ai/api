@@ -5,8 +5,8 @@ import { buildKnowledgePublication } from '../../src/api/knowledge/build-publica
 import { resolveKnowledgeGatewayConnection } from '../../src/api/knowledge/gateway-treedx-connection.ts';
 import { createKnowledgePublicationStorage } from '../../src/api/knowledge/publication-storage.ts';
 import { loadKnowledgeSnapshotProjects } from '../../src/api/knowledge/snapshot-projects.ts';
-import { MarketControlPlaneStore } from '../../src/api/persistence/store.ts';
-import { createMarketPostgresDatabase } from '../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../src/api/persistence/store.ts';
+import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.ts';
 
 assert.equal(process.env.TREESEED_ACCEPTANCE_ENVIRONMENT, 'local', 'Knowledge history cleanup is local-only.');
 const packageRoot = resolve(import.meta.dirname, '../..');
@@ -14,9 +14,9 @@ process.env.TREESEED_PUBLISHED_KNOWLEDGE_ROOT ||= resolve(packageRoot, '.treesee
 const teamId = String(process.env.TREESEED_KNOWLEDGE_TEAM_ID ?? '').trim();
 assert.match(teamId, /^[a-f0-9-]{36}$/u, 'An exact acceptance team ID is required.');
 const acceptanceId = /^guarantee-(book|page)-[a-z0-9]+-(desktop|tablet|mobile)(?:-chromium)?$/u;
-const database = createMarketPostgresDatabase(process.env.TREESEED_DATABASE_URL
+const database = createControlPlanePostgresDatabase(process.env.TREESEED_DATABASE_URL
 	?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api');
-const store = new MarketControlPlaneStore({ environment: 'local', TREESEED_ENVIRONMENT: 'local',
+const store = new ControlPlaneStore({ environment: 'local', TREESEED_ENVIRONMENT: 'local',
 	baseUrl: 'http://127.0.0.1:3000', TREESEED_TREEDX_URL: process.env.TREESEED_TREEDX_URL ?? 'http://127.0.0.1:4000',
 	TREESEED_TREEDX_JWT_HS256_SECRET: process.env.TREESEED_TREEDX_JWT_HS256_SECRET ?? 'treeseed-local-treedx-jwt-secret' }, database);
 const storage = createKnowledgePublicationStorage({ environment: 'local' });

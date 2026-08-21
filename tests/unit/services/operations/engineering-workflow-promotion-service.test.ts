@@ -7,21 +7,19 @@ import { projectCompletedAssignmentDeliverable } from '../../../../src/api/capac
 import { tickCapacityWorkdayRun } from '../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-tick-service.ts';
 import { resolveWorkdayPlanningGraphSnapshot } from '../../../../src/api/capacity/services/capacity/workdays/policy/workday-planning-graph-policy.ts';
 import { promoteEngineeringWorkflows } from '../../../../src/api/capacity/services/operations/engineering-workflow-promotion-service.ts';
-import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.ts';
-import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { ControlPlanePostgresDatabase } from '../../../../src/api/support/control-plane-postgres.ts';
 
 const packageRoot = process.cwd();
-const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-	? resolve(packageRoot, '../sdk/drizzle/market')
-	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 
 function harness() {
 	const memory = newDb();
 	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
-	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-	return { database, store: createCapacityControlPlane(new MarketControlPlaneStore({ repoRoot: packageRoot }, database)) };
+	const database = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	return { database, store: createCapacityControlPlane(new ControlPlaneStore({ repoRoot: packageRoot }, database)) };
 }
 
 const roles = {

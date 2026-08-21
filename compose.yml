@@ -29,7 +29,7 @@ services:
       TREESEED_LOCAL_DEV_MODE: "1"
       TREESEED_DATABASE_URL: ${TREESEED_DATABASE_URL:?TREESEED_DATABASE_URL must be injected by trsd for local Docker Compose.}
       TREESEED_API_BASE_URL: ${TREESEED_API_BASE_URL:-http://localhost:3000}
-      TREESEED_API_PROVIDER_AUTH: market-postgres
+      TREESEED_API_PROVIDER_AUTH: control-plane-postgres
       TREESEED_API_AUTH_SECRET: ${TREESEED_API_AUTH_SECRET:?TREESEED_API_AUTH_SECRET must be injected by trsd for local Docker Compose.}
       TREESEED_API_WEB_SERVICE_ID: ${TREESEED_API_WEB_SERVICE_ID:-web}
       TREESEED_API_WEB_SERVICE_SECRET: ${TREESEED_API_WEB_SERVICE_SECRET:?TREESEED_API_WEB_SERVICE_SECRET must be injected by trsd for local Docker Compose.}
@@ -57,7 +57,7 @@ services:
       TREESEED_LOCAL_DEV_MODE: "1"
       TREESEED_DATABASE_URL: ${TREESEED_DATABASE_URL:?TREESEED_DATABASE_URL must be injected by trsd for local Docker Compose.}
       TREESEED_API_BASE_URL: ${TREESEED_API_INTERNAL_BASE_URL:-http://api:3000}
-      TREESEED_API_PROVIDER_AUTH: market-postgres
+      TREESEED_API_PROVIDER_AUTH: control-plane-postgres
       TREESEED_API_AUTH_SECRET: ${TREESEED_API_AUTH_SECRET:?TREESEED_API_AUTH_SECRET must be injected by trsd for local Docker Compose.}
       TREESEED_API_WEB_SERVICE_ID: ${TREESEED_API_WEB_SERVICE_ID:-web}
       TREESEED_API_WEB_SERVICE_SECRET: ${TREESEED_API_WEB_SERVICE_SECRET:?TREESEED_API_WEB_SERVICE_SECRET must be injected by trsd for local Docker Compose.}

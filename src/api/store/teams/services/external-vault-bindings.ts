@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 
 function serialize(row: any) {
 	if (!row) return null;
@@ -18,7 +18,7 @@ function serialize(row: any) {
 }
 
 export async function listExternalVaultBindingsMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	connectionId: string,
 ) {
@@ -33,7 +33,7 @@ export async function listExternalVaultBindingsMethod(
 }
 
 export async function createExternalVaultBindingMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	connectionId: string,
 	input: any,
@@ -60,7 +60,7 @@ export async function createExternalVaultBindingMethod(
 }
 
 export async function removeExternalVaultBindingMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	bindingId: string,
 	actorUserId: string,

@@ -48,24 +48,6 @@ export function authClass(path, method = 'get') {
         return 'team-member';
     if (path.startsWith('/v1/commons/'))
         return 'user';
-    if (path.startsWith('/v1/commerce/products') && path.includes(':productId') && method === 'get')
-        return 'public';
-    if (path === '/v1/commerce/products' && method === 'get')
-        return 'public';
-    if (path === '/v1/commerce/webhooks/stripe')
-        return 'service-webhook';
-    if (path.startsWith('/v1/commerce/marketplace'))
-        return 'public';
-    if (path.startsWith('/v1/commerce/capacity-listings/') && (path.endsWith('/approve') || path.endsWith('/reject') || path.endsWith('/suspend')))
-        return 'platform-admin';
-    if (path.startsWith('/v1/commerce/capacity-listings') && method === 'get')
-        return 'public';
-    if (path.startsWith('/v1/commerce/capacity-listings/'))
-        return 'team-member';
-    if (path.startsWith('/v1/commerce/capacity-listing-inquiries'))
-        return 'team-member';
-    if (path.startsWith('/v1/commerce/'))
-        return path.includes('/approve') ? 'platform-admin' : 'team-member';
     if (path.startsWith('/v1/ui/'))
         return 'user';
     if (path.startsWith('/v1/teams/:teamId'))
@@ -179,70 +161,6 @@ export function successActorsFor(path, method) {
         return TEAM_MANAGER_ACTORS;
     if (path.startsWith('/v1/commons/'))
         return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
-    if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/approve'))
-        return PLATFORM_ADMIN_ACTORS;
-    if (path.startsWith('/v1/commerce/products/') && path.endsWith('/approve'))
-        return PLATFORM_ADMIN_ACTORS;
-    if (path.startsWith('/v1/commerce/products/') && path.includes('/versions/') && path.endsWith('/approve'))
-        return PLATFORM_ADMIN_ACTORS;
-    if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/approve'))
-        return PLATFORM_ADMIN_ACTORS;
-    if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/stripe/status'))
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/offers/') && path.endsWith('/stripe/reconcile'))
-        return TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/prices/') && path.endsWith('/stripe/reconcile'))
-        return TEAM_MANAGER_ACTORS;
-    if (path === '/v1/commerce/webhooks/stripe')
-        return [];
-    if (path.startsWith('/v1/commerce/vendors/') && path.includes('/sales/'))
-        return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/vendors/') && path.endsWith('/monitoring'))
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/marketplace'))
-        return ACCEPTANCE_ACTORS;
-    if (path.startsWith('/v1/commerce/orders/') && path.endsWith('/refunds'))
-        return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/order-items/') && path.endsWith('/fulfillment/artifact'))
-        return TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/entitlements/') && path.endsWith('/revoke'))
-        return TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/cart') || path.startsWith('/v1/commerce/checkout') || path.startsWith('/v1/commerce/payment-groups'))
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/orders') || path.startsWith('/v1/commerce/entitlements'))
-        return TEAM_MEMBER_ACTORS;
-    if (path === '/v1/commerce/stripe/config')
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/capacity-listings/') && (path.endsWith('/approve') || path.endsWith('/reject') || path.endsWith('/suspend')))
-        return PLATFORM_ADMIN_ACTORS;
-    if (path.startsWith('/v1/commerce/capacity-listings/') && path.endsWith('/inquiries'))
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/capacity-listings/') && method !== 'get')
-        return TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/capacity-listing-inquiries/') && (path.endsWith('/review') || path.endsWith('/approve-for-scoping') || path.endsWith('/decline')))
-        return TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/capacity-listing-inquiries'))
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/capacity-listings'))
-        return method === 'get' ? ACCEPTANCE_ACTORS : TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/services/contracts/') && (path.endsWith('/link-work') || path.endsWith('/fulfill')))
-        return TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/services/requests/') && (path.endsWith('/scoping') || path.endsWith('/quotes')))
-        return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/services/quotes/') && (path.endsWith('/submit') || path.endsWith('/vendor-approve')))
-        return TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/commerce/services/'))
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/products') && method === 'get')
-        return ACCEPTANCE_ACTORS;
-    if (path.startsWith('/v1/commerce/offers') && method === 'get')
-        return ACCEPTANCE_ACTORS;
-    if (path.startsWith('/v1/commerce/governance-events'))
-        return TEAM_MEMBER_ACTORS;
-    if (path.startsWith('/v1/commerce/'))
-        return method === 'get' ? TEAM_MEMBER_ACTORS : TEAM_MANAGER_ACTORS;
-    if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates'))
-        return ACCEPTANCE_ACTORS;
     if (path.startsWith('/v1/seeds/') && method === 'get')
         return ['siteAdmin', 'marketSteward', 'teamOwner', 'teamOperator', 'teamViewer', 'nonMember', 'providerOperator'];
     if (path.startsWith('/v1/seeds/'))

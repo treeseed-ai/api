@@ -19,7 +19,7 @@ export interface WorkdayRouteDependencies {
 	notFound(c: Context, message: string): Response;
 	operatorError(error: unknown): Response;
 	requireTeamAccess(c: Context, teamId: string): Promise<Access>;
-	runtimeMarketAuthProvider?: { createServiceToken(input: { serviceId: string; name: string; roles?: string[]; permissions?: string[] }): Promise<{ id: string; serviceId: string; secret: string }> };
+	runtimeControlPlaneAuthProvider?: { createServiceToken(input: { serviceId: string; name: string; roles?: string[]; permissions?: string[] }): Promise<{ id: string; serviceId: string; secret: string }> };
 	environment?: string;
 }
 

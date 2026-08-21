@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializeJob } from "../../../persistence/store.ts";
-export async function createJobMethod(this: MarketControlPlaneStore, input) {
+import { isoNow,ControlPlaneStore,serializeJob } from "../../../persistence/store.ts";
+export async function createJobMethod(this: ControlPlaneStore, input) {
     await this.ensureInitialized();
     if (input.idempotencyKey) {
         const existing = await this.first(`SELECT * FROM remote_jobs WHERE project_id = ? AND idempotency_key = ? ORDER BY created_at DESC LIMIT 1`, [input.projectId, input.idempotencyKey]);

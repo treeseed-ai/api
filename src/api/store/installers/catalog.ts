@@ -1,13 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
-import { principalCanAccessCatalogItemMethod } from '../commerce/catalog/contracts/principal-can-access-catalog-item.ts';
-import { upsertCatalogItemMethod } from '../commerce/catalog/creation/upsert-catalog-item.ts';
-import { getCatalogItemBySlugMethod } from '../commerce/catalog/queries/catalog/get-catalog-item-by-slug.ts';
-import { getCatalogItemMethod } from '../commerce/catalog/queries/catalog/get-catalog-item.ts';
-import { listCatalogItemsMethod } from '../commerce/catalog/queries/catalog/list-catalog-items.ts';
-import { upsertCatalogArtifactVersionMethod } from '../commerce/orders/creation/upsert-catalog-artifact-version.ts';
-import { getCatalogArtifactVersionByIdMethod } from '../commerce/orders/queries/get-catalog-artifact-version-by-id.ts';
-import { getCatalogArtifactVersionMethod } from '../commerce/orders/queries/get-catalog-artifact-version.ts';
-import { listCatalogArtifactVersionsMethod } from '../commerce/orders/queries/list-catalog-artifact-versions.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { readRuntimeArtifactContentMethod } from '../content/queries/read-runtime-artifact-content.ts';
 import { uploadRuntimeArtifactMethod } from '../runtime/creation/upload-runtime-artifact.ts';
 import { createSeedRunMethod } from '../seeds/creation/create-seed-run.ts';
@@ -16,21 +7,12 @@ import { listSeedRunsMethod } from '../seeds/queries/list-seed-runs.ts';
 import { updateSeedRunMethod } from '../seeds/updates/update-seed-run.ts';
 import { setArtifactBucketMethod } from '../support/updates/set-artifact-bucket.ts';
 
-export function installCatalogStoreMethods(prototype: MarketControlPlaneStore) {
+export function installCatalogStoreMethods(prototype: ControlPlaneStore) {
 	prototype.setArtifactBucket = setArtifactBucketMethod;
-	prototype.principalCanAccessCatalogItem = principalCanAccessCatalogItemMethod;
 	prototype.createSeedRun = createSeedRunMethod;
 	prototype.updateSeedRun = updateSeedRunMethod;
 	prototype.getSeedRun = getSeedRunMethod;
 	prototype.listSeedRuns = listSeedRunsMethod;
-	prototype.upsertCatalogItem = upsertCatalogItemMethod;
-	prototype.getCatalogItem = getCatalogItemMethod;
-	prototype.getCatalogItemBySlug = getCatalogItemBySlugMethod;
-	prototype.listCatalogItems = listCatalogItemsMethod;
-	prototype.upsertCatalogArtifactVersion = upsertCatalogArtifactVersionMethod;
-	prototype.listCatalogArtifactVersions = listCatalogArtifactVersionsMethod;
-	prototype.getCatalogArtifactVersion = getCatalogArtifactVersionMethod;
-	prototype.getCatalogArtifactVersionById = getCatalogArtifactVersionByIdMethod;
 	prototype.uploadRuntimeArtifact = uploadRuntimeArtifactMethod;
 	prototype.readRuntimeArtifactContent = readRuntimeArtifactContentMethod;
 }

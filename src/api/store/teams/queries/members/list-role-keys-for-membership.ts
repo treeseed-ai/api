@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,uniqueStrings } from "../../../../persistence/store.ts";
-export async function listRoleKeysForMembershipMethod(this: MarketControlPlaneStore, teamMembershipId) {
+import { ControlPlaneStore,uniqueStrings } from "../../../../persistence/store.ts";
+export async function listRoleKeysForMembershipMethod(this: ControlPlaneStore, teamMembershipId) {
     await this.ensureInitialized();
     const rows = await this.all(`SELECT roles.key
 			 FROM team_role_bindings

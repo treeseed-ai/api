@@ -6,7 +6,7 @@ import { describe,expect,it } from 'vitest';
 
 const packageRoot = process.cwd();
 const capacityRoot = resolve(packageRoot, 'src/api/capacity');
-const productionFiles = [...walk(capacityRoot), resolve(packageRoot, 'src/api/support/market-postgres.ts')].sort();
+const productionFiles = [...walk(capacityRoot), resolve(packageRoot, 'src/api/support/control-plane-postgres.ts')].sort();
 const compilerSuppression = /@ts-(?:nocheck|ignore|expect-error)|eslint-disable|biome-ignore/gu;
 const explicitAny = /\bany\b/gu;
 const forbiddenBoundaryImport = /from\s+['"]@treeseed\/(?:admin|agent|cli|core|ui)(?:\/[^'"]*)?['"]/gu;

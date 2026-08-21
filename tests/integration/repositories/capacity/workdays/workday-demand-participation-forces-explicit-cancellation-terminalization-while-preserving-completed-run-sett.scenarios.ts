@@ -15,12 +15,10 @@ import { evaluateDurableWorkdayContinuation } from '../../../../../src/api/capac
 import { workdayTerminalizationPreserveUntil } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { compileWorkdayPlanningGraphSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-planning-graph-policy.ts';
 import { listActingDemandSources } from '../../../../../src/api/capacity/services/support/acting-demand-source.ts';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import { ControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
 const packageRoot = process.cwd();
-const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-    ? resolve(packageRoot, '../sdk/drizzle/market')
-    : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 function workdayRun(input: Partial<CapacityWorkdayRunRecord> = {}): CapacityWorkdayRunRecord {
     const now = '2026-07-18T12:00:00.000Z';
     return {
@@ -35,14 +33,14 @@ function harness() {
 	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
     memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
     const pg = memory.adapters.createPg();
-    const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-    const store = new MarketControlPlaneStore({
+    const database = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+    const store = new ControlPlaneStore({
         repoRoot: packageRoot, authSecret: 'demand-test-auth-secret', assertionSecret: 'demand-test-assertion-secret',
         serviceId: 'web', serviceSecret: 'demand-test-service-secret',
     }, database);
     return { database, store };
 }
-async function seed(database: MarketControlPlaneStore) {
+async function seed(database: ControlPlaneStore) {
     const now = '2026-07-18T12:00:00.000Z';
     await database.ensureInitialized();
     await database.run(`INSERT INTO teams (id, slug, name, created_at, updated_at) VALUES ('team-a', 'team-a', 'Team A', ?, ?)`, [now, now]);
@@ -54,7 +52,7 @@ async function seed(database: MarketControlPlaneStore) {
     await database.run(`INSERT INTO structured_agent_estimates (id, team_id, project_id, decision_id, agent_class, status, estimate_json, metadata_json, created_at) VALUES ('estimate-a', 'team-a', 'project-a', 'decision-a', 'class-a', 'accepted', '{}', '{}', ?)`, [now]);
     return now;
 }
-async function seedAdmittedAssignment(database: MarketControlPlaneStore, status: 'pending' | 'leased' | 'failed' = 'pending') {
+async function seedAdmittedAssignment(database: ControlPlaneStore, status: 'pending' | 'leased' | 'failed' = 'pending') {
     const now = await seed(database);
     const leased = status === 'leased';
     await database.run(`INSERT INTO capacity_providers (id, fingerprint, public_jwk_json, display_name, identity_version, status, metadata_json, created_at, updated_at) VALUES ('provider-a', 'sha256:provider-a', '{}', 'Provider A', 1, 'active', '{}', ?, ?)`, [now, now]);

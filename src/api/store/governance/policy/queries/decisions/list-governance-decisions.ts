@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeGovernanceDecision } from "../../../../../persistence/store.ts";
-export async function listGovernanceDecisionsMethod(this: MarketControlPlaneStore, filters: any = {}) {
+import { ControlPlaneStore,serializeGovernanceDecision } from "../../../../../persistence/store.ts";
+export async function listGovernanceDecisionsMethod(this: ControlPlaneStore, filters: any = {}) {
     await this.ensureInitialized();
     const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
     const clauses = [];

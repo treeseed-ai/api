@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { appendJobEventMethod } from '../operations/contracts/append-job-event.ts';
 import { appendPlatformOperationEventMethod } from '../operations/contracts/append-platform-operation-event.ts';
 import { assertPlatformOperationRunnerUpdateMethod } from '../operations/contracts/assert-platform-operation-runner-update.ts';
@@ -26,7 +26,7 @@ import { cancelJobMethod } from '../operations/retirement/cancel-job.ts';
 import { cancelPlatformOperationMethod } from '../operations/retirement/cancel-platform-operation.ts';
 import { recordJobProgressMethod } from '../operations/updates/record-job-progress.ts';
 
-export function installOperationsStoreMethods(prototype: MarketControlPlaneStore) {
+export function installOperationsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.appendPlatformOperationEvent = appendPlatformOperationEventMethod;
 	prototype.listPlatformOperationEvents = listPlatformOperationEventsMethod;
 	prototype.findPlatformOperationById = findPlatformOperationByIdMethod;

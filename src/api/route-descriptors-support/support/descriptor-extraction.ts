@@ -1,13 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { authClass } from '../accounts/authorization-policy.js';
-import { safeProduction } from '../commerce/catalog/production-safety.js';
-import { ownerDomain,routeId,runtimePlane } from '../commerce/ownership/route-ownership.js';
 import { endpointGuarantee } from '../guarantees/guarantee-coverage.js';
 import { fixtureRequirements } from '../testing/fixture-requirements.js';
 import { acceptancePolicy } from './acceptance-policy.js';
 import { mutability } from './mutability-policy.js';
+import { ownerDomain,routeId,runtimePlane,safeProduction } from './route-policy.js';
 import { applicationRouteSourcePaths,appSourcePath,capacityRouteSourcePaths } from './route-source-discovery.js';
-import { SDK_METHOD_ROUTE_MAP } from './sdk-route-map.js';
 
 export function extractActiveApiRoutes(source = [
     appSourcePath,
@@ -40,12 +38,7 @@ export function extractActiveApiRoutes(source = [
     return routes.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-export const API_ROUTE_DESCRIPTORS = extractActiveApiRoutes().map((descriptor) => {
-    const sdkMethods = Object.entries(SDK_METHOD_ROUTE_MAP)
-        .filter(([, routeIdValue]) => routeIdValue === descriptor.id)
-        .map(([method]) => method);
-    return sdkMethods.length > 0 ? { ...descriptor, sdkMethods } : descriptor;
-});
+export const API_ROUTE_DESCRIPTORS = extractActiveApiRoutes();
 
 export function descriptorById(id) {
     return API_ROUTE_DESCRIPTORS.find((descriptor) => descriptor.id === id) ?? null;

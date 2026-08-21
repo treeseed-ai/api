@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../persistence/store.ts";
-export async function bindRoleToMembershipMethod(this: MarketControlPlaneStore, teamMembershipId, roleKey) {
+import { isoNow,ControlPlaneStore } from "../../../persistence/store.ts";
+export async function bindRoleToMembershipMethod(this: ControlPlaneStore, teamMembershipId, roleKey) {
     await this.ensureInitialized();
     const roleId = await this.roleIdForKey(roleKey);
     if (!roleId)

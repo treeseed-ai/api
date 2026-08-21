@@ -1,7 +1,7 @@
 import { decisionDependencyReferencesAreComplete,governanceVotingProvider,normalizeDecisionDependencyReferences,normalizeGovernanceProposalPlan } from '@treeseed/sdk';
 import { randomUUID } from 'node:crypto';
-import { COMMONS_TEAM_SLUG,governanceContentHash,governanceSlug,isoNow,MarketControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
-export async function createGovernanceProposalMethod(this: MarketControlPlaneStore, principal, input: any = {}) {
+import { COMMONS_TEAM_SLUG,governanceContentHash,governanceSlug,isoNow,ControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
+export async function createGovernanceProposalMethod(this: ControlPlaneStore, principal, input: any = {}) {
     await this.ensureInitialized();
     const title = stringValue(input.title);
     const summary = stringValue(input.summary);

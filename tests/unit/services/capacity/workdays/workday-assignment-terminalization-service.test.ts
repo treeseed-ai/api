@@ -4,13 +4,11 @@ import { DataType,newDb } from 'pg-mem';
 import { describe,expect,it,vi } from 'vitest';
 import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { terminalizeCapacityWorkdayAssignments } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import { ControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
 
 const packageRoot = process.cwd();
-const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-	? resolve(packageRoot, '../sdk/drizzle/market')
-	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 
 function harness() {
 	const memory = newDb();
@@ -18,11 +16,11 @@ function harness() {
 		implementation: (value: string,search: string,replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
-	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-	return { database, store: new MarketControlPlaneStore({ repoRoot: packageRoot }, database) };
+	const database = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	return { database, store: new ControlPlaneStore({ repoRoot: packageRoot }, database) };
 }
 
-async function seedExpiredAssignment(store: MarketControlPlaneStore,now: string) {
+async function seedExpiredAssignment(store: ControlPlaneStore,now: string) {
 	await store.ensureInitialized();
 	await store.createTeam({ id: 'team-a', slug: 'team-a', name: 'team-a' });
 	await store.run(`INSERT INTO capacity_providers (id, fingerprint, public_jwk_json, display_name, identity_version, status, metadata_json, created_at, updated_at) VALUES ('provider-a', 'sha256:provider-a', '{}', 'Provider A', 1, 'active', '{}', ?, ?)`, [now,now]);

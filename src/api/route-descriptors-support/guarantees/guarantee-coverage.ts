@@ -14,7 +14,6 @@ export const API_ENDPOINT_GUARANTEE_FAMILIES = [
     'dx-repository-workspaces',
     'services-and-vaults',
     'feedback-management',
-    'commerce-marketplace',
     'catalog-templates-and-seeds',
     'ui-projection-endpoints',
     'internal-webhooks-and-federation',
@@ -45,8 +44,6 @@ export function endpointGuaranteeFamily(path) {
         return 'knowledge-collaboration';
     if (path.includes('/services') || path.includes('/vault') || path.includes('/credential-profiles') || path.includes('/operation-leases') || path.includes('/external-vault'))
         return 'services-and-vaults';
-    if (path.startsWith('/v1/commerce/'))
-        return 'commerce-marketplace';
     if (path.startsWith('/v1/catalog') || path.startsWith('/v1/templates') || path.startsWith('/v1/seeds/'))
 		return 'catalog-templates-and-seeds';
     if (path.startsWith('/v1/commons/') || path.includes('/governance') || path.includes('/proposals') || path.includes('/decisions') || path.includes('/approvals'))
@@ -59,7 +56,7 @@ export function endpointGuaranteeFamily(path) {
 }
 
 export function endpointGuaranteeCoverage(familyId) {
-    if (familyId === 'agent-graphs-and-workdays' || familyId === 'capacity-and-provider-control-plane' || familyId === 'auth-and-sessions' || familyId === 'commerce-marketplace')
+    if (familyId === 'agent-graphs-and-workdays' || familyId === 'capacity-and-provider-control-plane' || familyId === 'auth-and-sessions')
         return 'descriptor-and-workflow';
     return 'descriptor-matrix';
 }

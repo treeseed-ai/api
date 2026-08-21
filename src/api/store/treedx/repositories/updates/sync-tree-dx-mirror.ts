@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore,objectValue,serializeTreeDxMirror } from "../../../../persistence/store.ts";
-export async function syncTreeDxMirrorMethod(this: MarketControlPlaneStore, teamId, mirrorId, input: any = {}) {
+import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxMirror } from "../../../../persistence/store.ts";
+export async function syncTreeDxMirrorMethod(this: ControlPlaneStore, teamId, mirrorId, input: any = {}) {
     await this.ensureInitialized();
     const existing = serializeTreeDxMirror(await this.first(`SELECT * FROM treedx_mirrors WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, mirrorId]));
     if (!existing)

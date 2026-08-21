@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function retryJobMethod(this: MarketControlPlaneStore, jobId, input: any = {}) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function retryJobMethod(this: ControlPlaneStore, jobId, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.findJobById(jobId);
     if (!existing)

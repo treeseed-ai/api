@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializeApprovalRequest } from "../../../persistence/store.ts";
-export async function createApprovalRequestMethod(this: MarketControlPlaneStore, input) {
+import { isoNow,ControlPlaneStore,serializeApprovalRequest } from "../../../persistence/store.ts";
+export async function createApprovalRequestMethod(this: ControlPlaneStore, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();

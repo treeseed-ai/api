@@ -1,7 +1,7 @@
 import { createHash,randomUUID } from 'node:crypto';
 import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences,normalizeGovernanceProposalPlan } from '@treeseed/sdk';
-import { governanceContentHash,isoNow,MarketControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
-async function ensureVersionEvidence(store: MarketControlPlaneStore,input: { proposal:any;version:number;hash:string;metadata:Record<string,any>;proposalTypes:string[];changeReason:string;createdById:string|null;createdByType:string;priorState:string;nextState:string;priorHash:string }) {
+import { governanceContentHash,isoNow,ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
+async function ensureVersionEvidence(store: ControlPlaneStore,input: { proposal:any;version:number;hash:string;metadata:Record<string,any>;proposalTypes:string[];changeReason:string;createdById:string|null;createdByType:string;priorState:string;nextState:string;priorHash:string }) {
 	const timestamp=isoNow();const proposalId=String(input.proposal.id);
 	if(input.proposal.projectId){const signalId=`signal:proposal-version:${createHash('sha256').update(`${proposalId}:${input.version}:${input.hash}`).digest('hex')}`;const provenance=input.metadata.contentProvenance&&typeof input.metadata.contentProvenance==='object'?input.metadata.contentProvenance:{};const commitSha=optionalStringValue(provenance.commitSha);const contentPath=optionalStringValue(provenance.contentPath);
 		await store.run(`INSERT INTO agent_signals (id,contract_id,subject_kind,subject_id,team_id,project_id,workday_run_id,assignment_id,agent_id,activity_type,capacity_provider_id,causation_id,correlation_id,origin,commit_sha,immutable_ref,digest,changed_paths_json,change_summary,evidence_ref,payload_json,metadata_json,created_at) VALUES (?,'proposal-version-published','proposal',?,?,?,?,NULL,NULL,NULL,NULL,?,?,'deterministic-handler',?,?,?, ?,?,?,?, '{}',?) ON CONFLICT(id) DO NOTHING`,[signalId,proposalId,input.proposal.teamId,input.proposal.projectId,optionalStringValue(input.metadata.workdayRunId),`proposal:${proposalId}:version:${input.version}`,`proposal:${proposalId}`,commitSha,commitSha,input.hash,JSON.stringify(contentPath?[contentPath]:[]),input.changeReason,`governance-proposal-version:${proposalId}:${input.version}`,JSON.stringify({proposalId,version:input.version,proposalTypes:input.proposalTypes,objectives:input.metadata.relatedObjectives??[],authorId:input.createdById}),timestamp]);}
@@ -9,7 +9,7 @@ async function ensureVersionEvidence(store: MarketControlPlaneStore,input: { pro
 	const event=await store.first(`SELECT id FROM governance_events WHERE proposal_id = ? AND proposal_version = ? AND event_type = ? LIMIT 1`,[proposalId,input.version,eventType]);
 	if(!event)await store.recordGovernanceEvent({eventType,actorType:input.createdByType,actorId:input.createdById,teamId:input.proposal.teamId,projectId:input.proposal.projectId,proposalId,proposalVersion:input.version,priorState:input.priorState,nextState:input.nextState,evidence:{priorHash:input.priorHash,nextHash:input.hash}});
 }
-export async function updateGovernanceProposalDraftMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.getGovernanceProposal(proposalId);
     if (!existing)

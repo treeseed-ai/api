@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../persistence/store.ts";
-export async function assertPlatformOperationRunnerUpdateMethod(this: MarketControlPlaneStore, operationId, runnerId) {
+import { ControlPlaneStore } from "../../../persistence/store.ts";
+export async function assertPlatformOperationRunnerUpdateMethod(this: ControlPlaneStore, operationId, runnerId) {
     const operation = await this.findPlatformOperationById(operationId);
     if (!operation) {
         const error: Error & Record<string, any> = new Error(`Unknown platform operation "${operationId}".`);

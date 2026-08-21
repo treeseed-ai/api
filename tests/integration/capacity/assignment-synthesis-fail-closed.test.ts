@@ -6,15 +6,13 @@ import { createCapacityControlPlane } from '../../../src/api/capacity/control-pl
 import { CapacityWorkdayDemandRepository } from '../../../src/api/capacity/repositories/capacity/workdays/workday-demand.ts';
 import { compileProviderWorkdayDemand } from '../../../src/api/capacity/services/build/demand-compiler.ts';
 import { assignNextCompiledDemand } from '../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
-import { MarketControlPlaneStore } from '../../../src/api/persistence/store.ts';
-import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../../src/api/persistence/store.ts';
+import { ControlPlanePostgresDatabase } from '../../../src/api/support/control-plane-postgres.ts';
 
 const packageRoot = process.cwd();
-const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-	? resolve(packageRoot, '../sdk/drizzle/market')
-	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 const now = '2026-07-18T12:00:00.000Z';
-const openDatabases: MarketPostgresDatabase[] = [];
+const openDatabases: ControlPlanePostgresDatabase[] = [];
 
 async function harness() {
 	const memory = newDb();
@@ -26,9 +24,9 @@ async function harness() {
 		implementation: (value: string) => `md5:${value}`,
 	});
 	const pg = memory.adapters.createPg();
-	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	const database = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
 	openDatabases.push(database);
-	const store = new MarketControlPlaneStore({
+	const store = new ControlPlaneStore({
 		repoRoot: packageRoot,
 		authSecret: 'synthesis-test-auth-secret',
 		assertionSecret: 'synthesis-test-assertion-secret',

@@ -4,19 +4,19 @@ import { DataType,newDb } from 'pg-mem';
 import { describe,expect,it } from 'vitest';
 import { CapacityGovernanceError } from '../../../../../src/api/capacity/database.ts';
 import { WorkdayCapacityEnvelopeRepository,serializeWorkdayCapacityEnvelopeRow } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-envelope.ts';
-import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
-import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
+import { ControlPlaneStore } from '../../../../../src/api/persistence/store.js';
+import { ControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.js';
 
 const packageRoot = process.cwd();
-const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market')) ? resolve(packageRoot, '../sdk/drizzle/market') : resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 
 function harness() {
 	const memory = newDb();
 	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
-	const database = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-	const store = new MarketControlPlaneStore({ repoRoot: packageRoot }, database);
+	const database = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	const store = new ControlPlaneStore({ repoRoot: packageRoot }, database);
 	return { database, store, repository: new WorkdayCapacityEnvelopeRepository(store) };
 }
 

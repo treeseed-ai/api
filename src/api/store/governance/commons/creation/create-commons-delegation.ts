@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,numberValue,optionalStringValue,serializeCommonsDelegation,stringValue } from "../../../../persistence/store.ts";
-export async function createCommonsDelegationMethod(this: MarketControlPlaneStore, principal, input: any = {}) {
+import { isoNow,ControlPlaneStore,numberValue,optionalStringValue,serializeCommonsDelegation,stringValue } from "../../../../persistence/store.ts";
+export async function createCommonsDelegationMethod(this: ControlPlaneStore, principal, input: any = {}) {
     const from = await this.ensureCommonsParticipantForPrincipal(principal);
     const toParticipantId = stringValue(input.toParticipantId);
     if (!toParticipantId || toParticipantId === from.id) {

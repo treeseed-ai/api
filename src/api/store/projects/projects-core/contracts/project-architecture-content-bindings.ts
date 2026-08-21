@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,projectArchitectureContentSource } from "../../../../persistence/store.ts";
-export async function projectArchitectureContentBindingsMethod(this: MarketControlPlaneStore, projectId, architecture) {
+import { ControlPlaneStore,projectArchitectureContentSource } from "../../../../persistence/store.ts";
+export async function projectArchitectureContentBindingsMethod(this: ControlPlaneStore, projectId, architecture) {
     const project = await this.getProject(projectId);
     if (!project || !architecture)
         return null;

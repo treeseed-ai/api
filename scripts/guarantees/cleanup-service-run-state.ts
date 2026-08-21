@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createMarketPostgresDatabase } from '../../src/api/support/market-postgres.ts';
+import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.ts';
 
 type RunValue = {
 	value?: Record<string, unknown>;
@@ -16,7 +16,7 @@ const teamNames = [...new Set(Object.entries(runState)
 	.map(([, entry]) => String(entry.value!.name)))];
 assert.ok(teamNames.length > 0, 'Run state contains no UI-created team identifiers.');
 
-const database = createMarketPostgresDatabase(databaseUrl);
+const database = createControlPlanePostgresDatabase(databaseUrl);
 const connectionOwnedTables = [
 	'team_service_connections',
 	'team_service_capability_bindings',

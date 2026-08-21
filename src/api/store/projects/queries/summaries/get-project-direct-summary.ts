@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function getProjectDirectSummaryMethod(this: MarketControlPlaneStore, projectId, principal = null) {
+import { ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function getProjectDirectSummaryMethod(this: ControlPlaneStore, projectId, principal = null) {
     const project = await this.getProject(projectId);
     if (!project) {
         return null;

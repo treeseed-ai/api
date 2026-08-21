@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore,optionalStringValue,principalIsAdmin,serializeCommonsDelegation } from "../../../../persistence/store.ts";
-export async function revokeCommonsDelegationMethod(this: MarketControlPlaneStore, principal, delegationId, input: any = {}) {
+import { isoNow,ControlPlaneStore,optionalStringValue,principalIsAdmin,serializeCommonsDelegation } from "../../../../persistence/store.ts";
+export async function revokeCommonsDelegationMethod(this: ControlPlaneStore, principal, delegationId, input: any = {}) {
     const participant = await this.ensureCommonsParticipantForPrincipal(principal);
     const existing = await this.first(`SELECT * FROM commons_delegations WHERE id = ? LIMIT 1`, [delegationId]);
     if (!existing?.id)

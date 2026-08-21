@@ -6,11 +6,10 @@ assertCoverage,
 bodyForFactory,
 expandDescriptorMatrices,
 expandRoleMatrices,
-expandSdkMethodMatrices,
 loadSpec,
 usesHostedAcceptanceEmailBypass,
 } from '../../../scripts/support/api-acceptance.ts';
-import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS,SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.js';
+import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS } from '../../../src/api/support/route-descriptors.js';
 
 describe('API acceptance framework', () => {
 	it('refuses hosted acceptance runs against local dev URLs', () => {
@@ -88,12 +87,12 @@ describe('API acceptance framework', () => {
 		}
 	});
 
-	it('enables hosted email bypass for generated SDK email methods only outside local runs', () => {
-		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'webSignUp' }, 'staging')).toBe(true);
-		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'requestWebPasswordReset' }, 'prod')).toBe(true);
-		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'addWebEmail' }, 'staging')).toBe(true);
-		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'me' }, 'staging')).toBe(false);
-		expect(usesHostedAcceptanceEmailBypass({ sdkMethod: 'webSignUp' }, 'local')).toBe(false);
+	it('enables hosted email bypass for email-producing REST operations only outside local runs', () => {
+		expect(usesHostedAcceptanceEmailBypass({ method: 'POST', path: '/v1/auth/web/sign-up' }, 'staging')).toBe(true);
+		expect(usesHostedAcceptanceEmailBypass({ method: 'POST', path: '/v1/auth/web/password-reset/request' }, 'prod')).toBe(true);
+		expect(usesHostedAcceptanceEmailBypass({ method: 'POST', path: '/v1/auth/web/emails' }, 'staging')).toBe(true);
+		expect(usesHostedAcceptanceEmailBypass({ method: 'GET', path: '/v1/me' }, 'staging')).toBe(false);
+		expect(usesHostedAcceptanceEmailBypass({ method: 'POST', path: '/v1/auth/web/sign-up' }, 'local')).toBe(false);
 	});
 
 	it('generates safe request bodies for non-GET route descriptors', () => {
@@ -107,33 +106,12 @@ describe('API acceptance framework', () => {
 		}
 	});
 
-	it('expands SDK method cases from the descriptor map and enforces coverage', () => {
-		const spec = loadSpec('tests/acceptance/api/base.yaml');
-		const allCases = [
-			...(spec.cases ?? []),
-			...expandRoleMatrices(spec),
-			...expandDescriptorMatrices(spec),
-			...expandSdkMethodMatrices(spec),
-		];
-		assertCoverage(spec, allCases);
-		const sdkMethods = new Set(allCases.map((entry) => entry.sdkMethod).filter(Boolean));
-		expect([...sdkMethods].sort()).toEqual(Object.keys(SDK_METHOD_ROUTE_MAP).sort());
-	});
-
-	it('targets seeded resources for successful SDK deletion-blocker cases', () => {
-		const spec = loadSpec('tests/acceptance/api/base.yaml');
-		const cases = expandSdkMethodMatrices(spec);
-		expect(cases.find((entry) => entry.sdkMethod === 'teamDeletionBlockers')?.sdkArgs).toEqual(['${fixtures.team.id}']);
-		expect(cases.find((entry) => entry.sdkMethod === 'projectDeletionBlockers')?.sdkArgs).toEqual(['${fixtures.project.id}']);
-	});
-
 	it('filters generated cases by explicit case id before expansion', () => {
 		const spec = loadSpec('tests/acceptance/api/base.yaml');
 		expect(expandRoleMatrices(spec, 'site-role-matrix.me.teamOwner').map((entry) => entry.id)).toEqual(['site-role-matrix.me.teamOwner']);
 		expect(expandDescriptorMatrices(spec, undefined, 'descriptor-executable-role-matrix.get.v1.me.teamOwner').map((entry) => entry.id)).toEqual([
 			'descriptor-executable-role-matrix.get.v1.me.teamOwner',
 		]);
-		expect(expandSdkMethodMatrices(spec, undefined, 'sdk.me.teamOwner').map((entry) => entry.id)).toEqual(['sdk.me.teamOwner']);
 	});
 
 	it('defines team guarantee verifier cases against stable seeded fixture fields', () => {
@@ -155,7 +133,6 @@ describe('API acceptance framework', () => {
 			...((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean),
 			...expandRoleMatrices(spec).map((entry) => entry.id).filter(Boolean),
 			...expandDescriptorMatrices(spec).map((entry) => entry.id).filter(Boolean),
-			...expandSdkMethodMatrices(spec).map((entry) => entry.id).filter(Boolean),
 		]);
 		const verifierText = readFileSync('guarantees/verifiers/api.verifiers.yaml', 'utf8');
 		const verifiers = new Map<string, { kind: string | null; caseId: string | null; testFile: string | null; testName: string | null }>();
@@ -219,7 +196,6 @@ describe('API acceptance framework', () => {
 			...((spec.cases ?? []) as Array<{ id?: string }>).map((entry) => entry.id).filter(Boolean),
 			...expandRoleMatrices(spec).map((entry) => entry.id).filter(Boolean),
 			...expandDescriptorMatrices(spec).map((entry) => entry.id).filter(Boolean),
-			...expandSdkMethodMatrices(spec).map((entry) => entry.id).filter(Boolean),
 		]);
 		const workspaceRoot = resolve(process.cwd(), '..', '..');
 		const files: string[] = [];

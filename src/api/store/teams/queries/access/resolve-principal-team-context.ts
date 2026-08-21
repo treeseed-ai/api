@@ -1,5 +1,5 @@
-import { ALL_TEAM_CAPABILITIES,MarketControlPlaneStore,uniqueCapabilities } from "../../../../persistence/store.ts";
-export async function resolvePrincipalTeamContextMethod(this: MarketControlPlaneStore, teamId, principal) {
+import { ALL_TEAM_CAPABILITIES,ControlPlaneStore,uniqueCapabilities } from "../../../../persistence/store.ts";
+export async function resolvePrincipalTeamContextMethod(this: ControlPlaneStore, teamId, principal) {
     await this.ensureInitialized();
     if (!principal)
         return null;

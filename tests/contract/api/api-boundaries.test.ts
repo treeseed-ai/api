@@ -11,7 +11,7 @@ describe('API backend boundaries', () => {
 	it('keeps migration ownership in the PostgreSQL adapter boundary', () => {
 		const storeSource = readFileSync('src/api/persistence/store.ts', 'utf8');
 		const appSource = readFileSync('src/api/support/app.ts', 'utf8');
-		const adapterSource = readFileSync('src/api/support/market-postgres.ts', 'utf8');
+		const adapterSource = readFileSync('src/api/support/control-plane-postgres.ts', 'utf8');
 		const testSource = readFileSync('tests/support/api-harness.ts', 'utf8');
 		expect(storeSource).not.toMatch(/migrations\/|migrationPaths|loadMigrationSql|PostgresD1Database/u);
 		expect(storeSource).not.toMatch(/\bCREATE\s+TABLE\b|\bALTER\s+TABLE\b|PRAGMA\s+table_info/iu);

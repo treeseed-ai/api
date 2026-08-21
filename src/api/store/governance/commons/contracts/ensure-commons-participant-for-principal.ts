@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { COMMONS_WEIGHT_POLICY_VERSION,isoNow,MarketControlPlaneStore,optionalStringValue,parseJson } from "../../../../persistence/store.ts";
-export async function ensureCommonsParticipantForPrincipalMethod(this: MarketControlPlaneStore, principal, input: any = {}) {
+import { COMMONS_WEIGHT_POLICY_VERSION,isoNow,ControlPlaneStore,optionalStringValue,parseJson } from "../../../../persistence/store.ts";
+export async function ensureCommonsParticipantForPrincipalMethod(this: ControlPlaneStore, principal, input: any = {}) {
     await this.ensureInitialized();
     if (!principal?.id) {
         const error: Error & Record<string, any> = new Error('Authenticated Commons participant is required.');

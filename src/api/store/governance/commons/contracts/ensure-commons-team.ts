@@ -1,5 +1,5 @@
-import { COMMONS_TEAM_SLUG,isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function ensureCommonsTeamMethod(this: MarketControlPlaneStore) {
+import { COMMONS_TEAM_SLUG,isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function ensureCommonsTeamMethod(this: ControlPlaneStore) {
     await this.ensureInitialized();
     const existing = await this.getTeamBySlug(COMMONS_TEAM_SLUG);
     if (existing?.id)

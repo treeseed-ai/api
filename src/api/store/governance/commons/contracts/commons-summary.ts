@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function commonsSummaryMethod(this: MarketControlPlaneStore, principal = null) {
+import { ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function commonsSummaryMethod(this: ControlPlaneStore, principal = null) {
     await this.ensureInitialized();
     const [participants, proposals, questions, decisions] = await Promise.all([
         this.first(`SELECT COUNT(*) AS count FROM commons_participants WHERE status = 'active'`),

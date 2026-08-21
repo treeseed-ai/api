@@ -1,4 +1,4 @@
-import { API_ROUTE_DESCRIPTORS,SDK_METHOD_ROUTE_MAP } from '../../../src/api/support/route-descriptors.ts';
+import { API_ROUTE_DESCRIPTORS } from '../../../src/api/support/route-descriptors.ts';
 
 export function assertCoverage(spec, cases) {
     const required = Array.isArray(spec.coverage?.requiredCaseIds) ? spec.coverage.requiredCaseIds : [];
@@ -14,15 +14,6 @@ export function assertCoverage(spec, cases) {
             .filter((descriptor) => !(spec.coverage.exemptDescriptorIds ?? []).includes(descriptor.id));
         if (missingDescriptors.length > 0) {
             throw new Error(`Acceptance spec is missing descriptor coverage for: ${missingDescriptors.map((entry) => entry.id).join(', ')}`);
-        }
-    }
-    if (spec.coverage?.requireAllSdkMethods) {
-        const mappedSdkMethods = new Set(cases.map((entry) => entry.sdkMethod).filter(Boolean));
-        const missingSdkMethods = Object.keys(SDK_METHOD_ROUTE_MAP)
-            .filter((method) => !mappedSdkMethods.has(method))
-            .filter((method) => !(spec.coverage.exemptSdkMethods ?? []).includes(method));
-        if (missingSdkMethods.length > 0) {
-            throw new Error(`Acceptance spec is missing SDK method cases for: ${missingSdkMethods.join(', ')}`);
         }
     }
     const looseGenerated = cases

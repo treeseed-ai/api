@@ -1,6 +1,6 @@
 import { governanceVotingProvider } from '@treeseed/sdk';
-import { COMMONS_TEAM_SLUG,isoNow,MarketControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
-export async function ensureDefaultTeamGovernancePolicyMethod(this: MarketControlPlaneStore, teamId, scope = 'team') {
+import { COMMONS_TEAM_SLUG,isoNow,ControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
+export async function ensureDefaultTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId, scope = 'team') {
     await this.ensureInitialized();
     const existing = await this.first(`SELECT * FROM team_governance_policies
 			 WHERE team_id = ? AND scope = ? AND active = 1

@@ -90,7 +90,7 @@ it('supports multiple verified account emails for login, primary selection, dele
 		expect(primary.ok).toBe(true);
 		expect(primary.payload.emailAddress).toMatchObject({ email: 'multi-secondary@example.com', isPrimary: true });
 		expect(await store.all(`SELECT email FROM users WHERE id = ?`, [userId])).toEqual([{ email: 'multi-secondary@example.com' }]);
-		expect(await store.all(`SELECT email FROM market_auth_credentials WHERE user_id = ?`, [userId])).toEqual([{ email: 'multi-secondary@example.com' }]);
+		expect(await store.all(`SELECT email FROM control_plane_auth_credentials WHERE user_id = ?`, [userId])).toEqual([{ email: 'multi-secondary@example.com' }]);
 
 		const reset = await json(await app.request('/v1/auth/web/password-reset/request', {
 			method: 'POST',

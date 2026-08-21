@@ -1,6 +1,6 @@
-import { MarketControlPlaneStore,parseJson,principalIsAdmin } from "../../../persistence/store.ts";
+import { ControlPlaneStore,parseJson,principalIsAdmin } from "../../../persistence/store.ts";
 import { publicUserKnowledgeProfile,publicUserProfileMetadata } from '../../public-profiles/knowledge-profile.ts';
-export async function loadUserProfileByUsernameMethod(this: MarketControlPlaneStore, username, principal = null) {
+export async function loadUserProfileByUsernameMethod(this: ControlPlaneStore, username, principal = null) {
     await this.ensureInitialized();
     const normalized = String(username ?? '').trim().toLowerCase();
     if (!normalized

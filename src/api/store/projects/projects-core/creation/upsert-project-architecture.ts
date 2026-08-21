@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,normalizeProjectArchitecture } from "../../../../persistence/store.ts";
-export async function upsertProjectArchitectureMethod(this: MarketControlPlaneStore, projectId, input: any = {}) {
+import { ControlPlaneStore,normalizeProjectArchitecture } from "../../../../persistence/store.ts";
+export async function upsertProjectArchitectureMethod(this: ControlPlaneStore, projectId, input: any = {}) {
     await this.ensureInitialized();
     const project = await this.getProject(projectId);
     if (!project)

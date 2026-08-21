@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializePlatformOperation } from "../../../persistence/store.ts";
-export async function createPlatformOperationMethod(this: MarketControlPlaneStore, input) {
+import { isoNow,ControlPlaneStore,serializePlatformOperation } from "../../../persistence/store.ts";
+export async function createPlatformOperationMethod(this: ControlPlaneStore, input) {
     await this.ensureInitialized();
     if (input.idempotencyKey) {
         const existing = await this.first(`SELECT * FROM platform_operations

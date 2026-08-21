@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeCommonsProposal } from "../../../../../persistence/store.ts";
-export async function listCommonsProposalsMethod(this: MarketControlPlaneStore, filters: any = {}) {
+import { ControlPlaneStore,serializeCommonsProposal } from "../../../../../persistence/store.ts";
+export async function listCommonsProposalsMethod(this: ControlPlaneStore, filters: any = {}) {
     await this.ensureInitialized();
     const limit = Math.max(1, Math.min(200, Number(filters.limit) || 100));
     const clauses = [];

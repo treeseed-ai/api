@@ -1,10 +1,10 @@
-import { isoNow,MarketControlPlaneStore,serializeMarketOperationRunner } from "../../../persistence/store.ts";
-export async function upsertMarketOperationRunnerMethod(this: MarketControlPlaneStore, input) {
+import { isoNow,ControlPlaneStore,serializeMarketOperationRunner } from "../../../persistence/store.ts";
+export async function upsertMarketOperationRunnerMethod(this: ControlPlaneStore, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.runnerId ?? input.id;
     const runnerKey = input.runnerKey ?? id;
-    await this.run(`INSERT INTO market_operation_runners (
+    await this.run(`INSERT INTO control_plane_operation_runners (
 				id, runner_key, name, environment, status, version, capabilities_json,
 				active_job_count, max_concurrent_jobs, heartbeat_at, metadata_json, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -34,5 +34,5 @@ export async function upsertMarketOperationRunnerMethod(this: MarketControlPlane
         timestamp,
         timestamp,
     ]);
-    return serializeMarketOperationRunner(await this.first(`SELECT * FROM market_operation_runners WHERE id = ?`, [id]));
+    return serializeMarketOperationRunner(await this.first(`SELECT * FROM control_plane_operation_runners WHERE id = ?`, [id]));
 }

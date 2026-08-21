@@ -1,8 +1,8 @@
 import { PlatformRunnerClient } from '@treeseed/sdk';
 import { createPlatformOperationStoreFromEnv } from '@treeseed/sdk/platform-operation-store';
 import { createCapacityControlPlane } from '../../../api/capacity/control-plane.js';
-import { MarketControlPlaneStore } from '../../../api/persistence/store.js';
-import { createMarketPostgresDatabase } from '../../../api/support/market-postgres.js';
+import { ControlPlaneStore } from '../../../api/persistence/store.js';
+import { createControlPlanePostgresDatabase } from '../../../api/support/control-plane-postgres.js';
 
 export function createClient(config) {
     if (config.apiDatabaseUrl) {
@@ -12,8 +12,8 @@ export function createClient(config) {
         });
     }
     return new PlatformRunnerClient({
-        marketUrl: config.marketUrl,
-        marketId: config.marketId,
+        marketUrl: config.serverUrl,
+        marketId: config.serverId,
         runnerSecret: config.runnerSecret,
         userAgent: `treeseed-api-operations-runner/${process.version}`,
     });
@@ -22,6 +22,6 @@ export function createClient(config) {
 export function createControlPlaneStore(config) {
     if (!config.apiDatabaseUrl)
         return null;
-    const db = createMarketPostgresDatabase(config.apiDatabaseUrl);
-    return createCapacityControlPlane(new MarketControlPlaneStore(config, db));
+    const db = createControlPlanePostgresDatabase(config.apiDatabaseUrl);
+    return createCapacityControlPlane(new ControlPlaneStore(config, db));
 }

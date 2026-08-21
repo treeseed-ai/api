@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { createKnowledgePublicationStorage } from '../../src/api/knowledge/publication-storage.ts';
 import { createLocalPrivateObjectStorage } from '../../src/api/storage/private-object-storage.ts';
-import { createMarketPostgresDatabase } from '../../src/api/support/market-postgres.ts';
+import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.ts';
 
 type RunValue = { value?: Record<string, unknown>; device?: string };
 type ExpectedKnowledge = { device: string; bookId: string; pageId: string; collectionName: string };
@@ -29,7 +29,7 @@ assert.ok(expected.length, 'Run state contains no UI-created knowledge identifie
 
 const databaseUrl = process.env.TREESEED_DATABASE_URL
 	?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api';
-const database = createMarketPostgresDatabase(databaseUrl);
+const database = createControlPlanePostgresDatabase(databaseUrl);
 const publications = createKnowledgePublicationStorage({ environment: 'local' });
 const privateObjects = createLocalPrivateObjectStorage();
 const verified: Array<Record<string, unknown>> = [];

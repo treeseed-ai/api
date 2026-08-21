@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ensureProjectKnowledgeBinding } from '../../../../src/market/seeds/apply-support/projects/projects-core/project-knowledge-binding.ts';
+import { ensureProjectKnowledgeBinding } from '../../../../src/control-plane/seeds/apply-support/projects/projects-core/project-knowledge-binding.ts';
 
 describe('project knowledge binding reconciliation', () => {
 	it('preserves an explicitly selected publication ref across local seed reconciliation', async () => {

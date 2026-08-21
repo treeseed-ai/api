@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import {
 	completeKnowledgePublicationMethod, createKnowledgePublicationMethod, createKnowledgeReviewMethod, createKnowledgeWorkspaceRecordMethod,
 	getKnowledgeReviewByWorkspaceMethod, submitKnowledgeWorkspaceMethod,
@@ -15,7 +15,7 @@ import {
 import { createKnowledgeReviewCommentMethod, heartbeatKnowledgeWorkspaceMethod, listKnowledgeReviewCommentsMethod,
 	listKnowledgeWorkspacePresenceMethod, resolveKnowledgeReviewCommentMethod } from '../knowledge/review-collaboration.ts';
 
-export function installKnowledgeStoreMethods(prototype: MarketControlPlaneStore) {
+export function installKnowledgeStoreMethods(prototype: ControlPlaneStore) {
 	prototype.createKnowledgeWorkspaceRecord = createKnowledgeWorkspaceRecordMethod;
 	prototype.getKnowledgeWorkspace = getKnowledgeWorkspaceMethod;
 	prototype.updateKnowledgeWorkspace = updateKnowledgeWorkspaceMethod;

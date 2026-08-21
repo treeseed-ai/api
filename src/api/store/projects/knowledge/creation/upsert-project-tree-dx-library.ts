@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,objectValue,serializeTreeDxInstance } from "../../../../persistence/store.ts";
+import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxInstance } from "../../../../persistence/store.ts";
 
 export function mergeRepositoryTopologyMetadata(existing: unknown, requested: unknown) {
     const current = objectValue(existing, {});
@@ -17,7 +17,7 @@ export function mergeRepositoryTopologyMetadata(existing: unknown, requested: un
     };
 }
 
-export async function upsertProjectTreeDxLibraryMethod(this: MarketControlPlaneStore, projectId, input: any = {}) {
+export async function upsertProjectTreeDxLibraryMethod(this: ControlPlaneStore, projectId, input: any = {}) {
     await this.ensureInitialized();
     const project = await this.getProject(projectId);
     if (!project)

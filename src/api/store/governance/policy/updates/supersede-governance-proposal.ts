@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,objectValue,optionalStringValue } from "../../../../persistence/store.ts";
-export async function supersedeGovernanceProposalMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
+import { ControlPlaneStore,objectValue,optionalStringValue } from "../../../../persistence/store.ts";
+export async function supersedeGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
     return this.transitionGovernanceProposal(proposalId, 'superseded', {
         actorType: 'user',
         actorId: principal?.id ?? null,

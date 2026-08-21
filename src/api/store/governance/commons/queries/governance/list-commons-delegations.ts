@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeCommonsDelegation } from "../../../../../persistence/store.ts";
-export async function listCommonsDelegationsMethod(this: MarketControlPlaneStore, principal = null) {
+import { ControlPlaneStore,serializeCommonsDelegation } from "../../../../../persistence/store.ts";
+export async function listCommonsDelegationsMethod(this: ControlPlaneStore, principal = null) {
     await this.ensureInitialized();
     if (!principal?.id)
         return [];

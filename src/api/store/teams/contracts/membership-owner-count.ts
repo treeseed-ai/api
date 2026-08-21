@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../persistence/store.ts";
-export async function membershipOwnerCountMethod(this: MarketControlPlaneStore, teamId) {
+import { ControlPlaneStore } from "../../../persistence/store.ts";
+export async function membershipOwnerCountMethod(this: ControlPlaneStore, teamId) {
     await this.ensureInitialized();
     const row = await this.first(`SELECT COUNT(*) AS count
 			 FROM team_memberships

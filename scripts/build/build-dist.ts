@@ -23,7 +23,7 @@ const REQUIRED_OUTPUTS = [
 	'api/support/app.js',
 	'api/support/server.js',
 	'api/persistence/store.js',
-	'api/support/market-postgres.js',
+	'api/support/control-plane-postgres.js',
 	'api/support/route-descriptors.js',
 	'admin-api-descriptor.json',
 	'operations-runner/entrypoint.js',
@@ -168,7 +168,6 @@ async function writeAdminApiDescriptorArtifact() {
 	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<Record<string, unknown>> };
 	const routes = [...descriptorModule.API_ROUTE_DESCRIPTORS].sort((left, right) => String(left.id).localeCompare(String(right.id)));
 	const adminRoutes = routes.filter((route) => route.runtimePlane === 'admin');
-	const marketRoutes = routes.filter((route) => route.runtimePlane === 'market');
 	const routesJson = JSON.stringify(routes);
 	const digest = createHash('sha256').update(routesJson).digest('hex');
 	const packageMetadata = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as { version: string };
@@ -180,8 +179,7 @@ async function writeAdminApiDescriptorArtifact() {
 		digest: `sha256:${digest}`,
 		routeCount: routes.length,
 		adminRouteCount: adminRoutes.length,
-		marketRouteCount: marketRoutes.length,
-		migrationReady: marketRoutes.length === 0,
+		migrationReady: true,
 		routes,
 	}, null, 2)}\n`, 'utf8');
 }
@@ -209,7 +207,6 @@ function copySdkRuntimeArtifacts() {
 		const requiredSdkOutputs = [
 			resolve(sdkPackage.root, 'dist', 'index.js'),
 			resolve(sdkPackage.root, 'dist', 'api', 'index.js'),
-			resolve(sdkPackage.root, 'drizzle', 'market'),
 		];
 		for (const requiredOutput of requiredSdkOutputs) {
 			if (!existsSync(requiredOutput)) {
@@ -219,7 +216,6 @@ function copySdkRuntimeArtifacts() {
 		mkdirSync(sdkVendorRoot, { recursive: true });
 		copyFileSync(sdkPackageJson, resolve(sdkVendorRoot, 'package.json'));
 		copyRuntimeArtifact(resolve(sdkPackage.root, 'dist'), resolve(sdkVendorRoot, 'dist'));
-		copyRuntimeArtifact(resolve(sdkPackage.root, 'drizzle'), resolve(sdkVendorRoot, 'drizzle'));
 	} finally {
 		sdkPackage.cleanup();
 	}

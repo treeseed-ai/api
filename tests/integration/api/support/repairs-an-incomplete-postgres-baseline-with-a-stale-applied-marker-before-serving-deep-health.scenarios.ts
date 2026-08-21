@@ -1,16 +1,16 @@
 import { createTestApp,createTestPostgresDatabase,describe,expect,it,json } from '../../../support/api-harness.ts';
 
 
-describe('market api', () => {
+describe('control-plane API database', () => {
 it('repairs an incomplete Postgres baseline with a stale applied marker before serving deep health', async () => {
 		const db = createTestPostgresDatabase();
-		await db.pool.query(`CREATE TABLE IF NOT EXISTS treeseed_market_schema_migrations (
+		await db.pool.query(`CREATE TABLE IF NOT EXISTS treeseed_control_plane_schema_migrations (
 			name text PRIMARY KEY,
 			applied_at text NOT NULL
 		)`);
 		await db.pool.query(
-			`INSERT INTO treeseed_market_schema_migrations (name, applied_at) VALUES ($1, $2)`,
-			['0000_market_control_plane.sql', new Date().toISOString()],
+			`INSERT INTO treeseed_control_plane_schema_migrations (name, applied_at) VALUES ($1, $2)`,
+			['0000_control_plane.sql', new Date().toISOString()],
 		);
 		const app = createTestApp({ db });
 		const deepHealth = await json(await app.request('/healthz/deep'));

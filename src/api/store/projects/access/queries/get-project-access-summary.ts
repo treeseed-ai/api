@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function getProjectAccessSummaryMethod(this: MarketControlPlaneStore, projectId, principal) {
+import { ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function getProjectAccessSummaryMethod(this: ControlPlaneStore, projectId, principal) {
     await this.ensureInitialized();
     const details = await this.getProjectDetails(projectId);
     if (!details)

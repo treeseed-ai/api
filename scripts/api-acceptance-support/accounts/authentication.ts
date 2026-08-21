@@ -16,10 +16,6 @@ export function actorHeaders(actor: any = {}) {
     return headers;
 }
 
-export async function loadMarketClient() {
-    return import('@treeseed/sdk/market-client');
-}
-
 export function serviceHeaders(spec) {
     const environment = process.env.TREESEED_ACCEPTANCE_ENVIRONMENT || process.env.TREESEED_ENVIRONMENT || 'local';
     const serviceId = process.env[spec.seed?.serviceIdEnv ?? 'TREESEED_ACCEPTANCE_SERVICE_ID']
@@ -65,9 +61,10 @@ export function usesHostedAcceptanceEmailBypass(caseSpec, environment) {
         return false;
     if (caseSpec?.expect?.mailpit)
         return true;
-    return [
-        'webSignUp',
-        'addWebEmail',
-        'requestWebPasswordReset',
-    ].includes(caseSpec?.sdkMethod);
+    const path = String(caseSpec?.path ?? '');
+    return caseSpec?.method === 'POST' && (
+        path.endsWith('/auth/web/sign-up')
+        || path.endsWith('/auth/web/emails')
+        || path.endsWith('/auth/web/password-reset/request')
+    );
 }

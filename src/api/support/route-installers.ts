@@ -3,17 +3,6 @@ import { installAuthenticationDeviceSignupAndOauthRoutes } from "../routes/accou
 import { installAuthenticationPasswordAndAccountSecurityRoutes } from "../routes/accounts/authentication-password-and-account-security.ts";
 import { installFoundationUsersByUsernameItemProfileRoutes } from "../routes/accounts/foundation-users-by-username-item-profile.ts";
 import { installProjectionsInfrastructureKnowledgeAndWorkdaysRoutes } from "../routes/capacity/workdays/projections-infrastructure-knowledge-and-workdays.ts";
-import { installCommerceProductGovernanceAndCapacityListingsRoutes } from "../routes/commerce/capacity/commerce-product-governance-and-capacity-listings.ts";
-import { installCatalogSeedRunLifecycleRoutes } from "../routes/commerce/catalog/catalog-seed-run-lifecycle.ts";
-import { installCatalogTemplateRoutes } from "../routes/commerce/catalog/catalog-templates.ts";
-import { installCommerceCapacityInquiriesProductVersionsAndOffersRoutes } from "../routes/commerce/catalog/commerce-capacity-inquiries-product-versions-and-offers.ts";
-import { installCommerceStripePriceReconciliationAndGovernanceEventsRoutes } from "../routes/commerce/catalog/commerce-stripe-price-reconciliation-and-governance-events.ts";
-import { installTeamsTeamsItemCatalogItemsRoutes } from "../routes/commerce/catalog/teams-teams-item-catalog-items.ts";
-import { installCatalogCatalogItemArtifactsRoutes } from "../routes/commerce/orders/catalog-catalog-item-artifacts.ts";
-import { installCatalogItemsAndArtifactsRoutes } from "../routes/commerce/orders/catalog-items-and-artifacts.ts";
-import { installCommerceSalesFulfillmentAndProductCatalogRoutes } from "../routes/commerce/orders/commerce-sales-fulfillment-and-product-catalog.ts";
-import { installCommerceServiceRequestsContractsAndOrdersRoutes } from "../routes/commerce/services/commerce-service-requests-contracts-and-orders.ts";
-import { installCommerceVendorOnboardingStripeAndCheckoutRoutes } from "../routes/commerce/vendors/commerce-vendor-onboarding-stripe-and-checkout.ts";
 import { installFeedbackAdministrationRoutes } from "../routes/feedback/administration.ts";
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installDiscussionRoutes } from "../routes/discussions/discussions.ts";
@@ -41,10 +30,11 @@ import { installGitHubConnectorRoutes } from "../routes/providers/github-connect
 import { installGitHubWebhookRoutes } from "../routes/providers/github-webhooks.ts";
 import { installFoundationAcceptanceSeedRoutes } from "../routes/seeds/foundation-acceptance-seed.ts";
 import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resource-resolution.ts";
+import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
 import { installContextualKnowledgeRoutes } from "../routes/support/contextual-knowledge.ts";
 import { installFoundationApprovalDecisionsRoutes } from "../routes/support/foundation-approval-decisions.ts";
 import { installFoundationCurrentUserMarketsRoutes } from "../routes/support/foundation-current-user-markets.ts";
-import { installFoundationHealthAndMarketRoutes } from "../routes/support/foundation-health-and-market.ts";
+import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
 import { installFoundationStewardTransitionCommonsProposalRoutes } from "../routes/support/foundation-stewardTransitionCommonsProposal.ts";
 import { installTeamServicesRoutes } from "../routes/teams/team-services.ts";
 import { installTeamServiceAuthorityRoutes } from "../routes/teams/team-service-authorities.ts";
@@ -57,7 +47,7 @@ import { installTreedxInternalTreedxPublicFederationStatusRoutes } from "../rout
 import { installTreedxTeamServiceAndPublicFederationRoutes } from "../routes/treedx/repositories/treedx-team-service-and-public-federation.ts";
 
 export function installPlatformRoutes(context: any): void {
-  installFoundationHealthAndMarketRoutes(context);
+  installFoundationHealthAndControlPlaneRoutes(context);
   installFeedbackSubmissionRoutes(context);
   installDiscussionRoutes(context);
   installSessionEventRoutes(context);
@@ -70,6 +60,7 @@ export function installPlatformRoutes(context: any): void {
   installKnowledgeLifecycleRoutes(context);
   installFoundationAcceptanceSeedRoutes(context);
   installSeedResourceResolutionRoutes(context);
+  installSeedRunLifecycleRoutes(context);
   installOperationsPlatformRunnersAndJobsRoutes(context);
   installAuthenticationDeviceSignupAndOauthRoutes(context);
   installAuthenticationAccountProfileAndNotificationsRoutes(context);
@@ -79,7 +70,6 @@ export function installPlatformRoutes(context: any): void {
   installProjectionsInfrastructureKnowledgeAndWorkdaysRoutes(context);
   installTeamsDirectoryRoutes(context);
   installFoundationUsersByUsernameItemProfileRoutes(context);
-  installCatalogSeedRunLifecycleRoutes(context);
   installTeamsInvitationsMembershipAndApiKeysRoutes(context);
   installTeamsLifecycleAndConsentRoutes(context);
   installTreedxTeamServiceAndPublicFederationRoutes(context);
@@ -103,15 +93,5 @@ export function installPlatformRoutes(context: any): void {
   installGovernanceCommonsProposalsQuestionsAndVotesRoutes(context);
   installFoundationStewardTransitionCommonsProposalRoutes(context);
   installGovernanceCommonsReviewsDecisionsAndDelegationsRoutes(context);
-  installCommerceVendorOnboardingStripeAndCheckoutRoutes(context);
-  installCommerceServiceRequestsContractsAndOrdersRoutes(context);
-  installCommerceSalesFulfillmentAndProductCatalogRoutes(context);
-  installCommerceProductGovernanceAndCapacityListingsRoutes(context);
-  installCommerceCapacityInquiriesProductVersionsAndOffersRoutes(context);
-  installCommerceStripePriceReconciliationAndGovernanceEventsRoutes(context);
-  installCatalogItemsAndArtifactsRoutes(context);
-  installTeamsTeamsItemCatalogItemsRoutes(context);
-  installCatalogCatalogItemArtifactsRoutes(context);
   installTeamsStorageAndContentPreviewsRoutes(context);
-  installCatalogTemplateRoutes(context);
 }

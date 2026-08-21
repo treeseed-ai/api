@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { upsertProjectTreeDxLibraryMethod } from '../projects/knowledge/creation/upsert-project-tree-dx-library.ts';
 import { getProjectTreeDxLibraryMethod } from '../projects/knowledge/queries/get-project-tree-dx-library.ts';
 import { ensureHubContentSourceTreeDxMethod } from '../treedx/repositories/contracts/ensure-hub-content-source-tree-dx.ts';
@@ -14,7 +14,7 @@ import { listTreeDxSharesMethod } from '../treedx/repositories/queries/list-tree
 import { syncTreeDxMirrorMethod } from '../treedx/repositories/updates/sync-tree-dx-mirror.ts';
 import { updateTreeDxDeploymentMethod } from '../treedx/repositories/updates/update-tree-dx-deployment.ts';
 
-export function installTreedxStoreMethods(prototype: MarketControlPlaneStore) {
+export function installTreedxStoreMethods(prototype: ControlPlaneStore) {
 	prototype.getPrimaryTreeDxInstance = getPrimaryTreeDxInstanceMethod;
 	prototype.getTeamTreeDx = getTeamTreeDxMethod;
 	prototype.upsertTeamTreeDx = upsertTeamTreeDxMethod;

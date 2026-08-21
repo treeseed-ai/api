@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync,mkdirSync,writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { actorForCase,actorHeaders,addOptionalAcceptanceServiceHeaders,assertAcceptanceTarget,assertCase,assertCoverage,assertMailpitExpectation,expandDescriptorMatrices,expandRoleMatrices,expandSdkMethodMatrices,fetchWithTimeout,interpolate,junit,loadExpectedStatuses,loadMarketClient,loadSpec,matchesCaseFilter,parseArgs,record,sanitizeDiagnosticValue,serviceHeaders,usesHostedAcceptanceEmailBypass,type AcceptanceActor } from '../index.js';
+import { actorForCase,actorHeaders,addOptionalAcceptanceServiceHeaders,assertAcceptanceTarget,assertCase,assertCoverage,assertMailpitExpectation,expandDescriptorMatrices,expandRoleMatrices,fetchWithTimeout,interpolate,junit,loadExpectedStatuses,loadSpec,matchesCaseFilter,parseArgs,record,sanitizeDiagnosticValue,serviceHeaders,usesHostedAcceptanceEmailBypass,type AcceptanceActor } from '../index.js';
 
 export async function main() {
     const args = parseArgs(process.argv.slice(2));
@@ -70,7 +70,6 @@ export async function main() {
         ...explicitCases,
         ...expandRoleMatrices(spec, args.caseId),
         ...expandDescriptorMatrices(spec, expectedStatuses, args.caseId),
-        ...expandSdkMethodMatrices(spec, expectedStatuses, args.caseId),
     ];
     if (!args.caseId)
         assertCoverage(spec, allCases);
@@ -98,7 +97,6 @@ export async function main() {
                 actor: entry.actor ?? 'anonymous',
                 method: entry.method ?? 'GET',
                 path: entry.path ?? null,
-                sdkMethod: entry.sdkMethod ?? null,
                 expect: entry.expect ?? {},
             })),
         }, null, 2)}\n`);
@@ -154,49 +152,12 @@ export async function main() {
                     headers.set('content-type', 'application/json');
 				if (caseSpec.path === '/v1/feedback')
 					headers.set('x-idempotency-key', `acceptance-${String(caseSpec.id).replace(/[^a-z0-9_-]+/giu, '-').slice(0, 96)}`);
-                if (caseSpec.sdkMethod) {
-                    const { MarketClient } = await loadMarketClient();
-                    let sdkResponseStatus = null;
-                    const sdkFetch = async (url, init: any = {}) => {
-                        const sdkHeaders = new Headers(init.headers ?? {});
-                        addOptionalAcceptanceServiceHeaders(sdkHeaders, { environment: args.environment, enabled: emailBypass });
-                        const sdkResponse = await fetchWithTimeout(url, { ...init, headers: sdkHeaders }, `${caseSpec.sdkMethod} ${url}`);
-                        sdkResponseStatus = sdkResponse.status;
-                        return sdkResponse;
-                    };
-                    const client = new MarketClient({
-                        profile: {
-                            id: args.environment,
-                            label: args.environment,
-                            baseUrl: variables.baseUrl,
-                            kind: 'specialized',
-                        },
-                        accessToken: actor.token ?? null,
-                        fetchImpl: sdkFetch,
-                        userAgent: 'treeseed-acceptance/1',
-                    });
-                    try {
-                        body = await client[caseSpec.sdkMethod](...(caseSpec.sdkArgs ?? []));
-                        response = { status: sdkResponseStatus ?? 0 };
-                    }
-                    catch (error) {
-                        if (typeof error?.status === 'number') {
-                            body = error.payload ?? { ok: false, error: error.message };
-                            response = { status: error.status };
-                        }
-                        else {
-                            throw error;
-                        }
-                    }
-                }
-                else {
-                    response = await fetchWithTimeout(`${variables.baseUrl}${caseSpec.path}`, {
+                response = await fetchWithTimeout(`${variables.baseUrl}${caseSpec.path}`, {
                         method: caseSpec.method ?? 'GET',
                         headers,
                         body: caseSpec.body === undefined ? undefined : JSON.stringify(caseSpec.body),
                     }, `${caseSpec.method ?? 'GET'} ${caseSpec.path}`);
                     body = await response.json().catch(() => null);
-                }
                 failures = assertCase(caseSpec, response, body);
                 failures.push(...await assertMailpitExpectation(caseSpec.expect?.mailpit, args.environment));
             }

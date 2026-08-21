@@ -6,8 +6,6 @@ export function fixtureValue(name) {
         projectId: '${fixtures.project.id}',
         providerId: '${fixtures.provider.id}',
         operationId: '${fixtures.platformOperation.id}',
-        itemId: '${fixtures.catalogItem.id}',
-        artifactId: '${fixtures.catalogArtifact.id}',
         runId: '${fixtures.seedRun.id}',
         sessionId: '${fixtures.session.id}',
         membershipId: '${fixtures.membership.id}',
@@ -23,7 +21,6 @@ export function fixtureValue(name) {
         jobId: '${fixtures.job.id}',
         executionProviderId: '${fixtures.provider.id}:codex-subscription:acceptance-native-capacity',
         collection: 'decisions',
-        version: '${fixtures.catalogArtifact.version}',
         username: '${actors.teamOwner.username}',
         name: 'acceptance',
     };

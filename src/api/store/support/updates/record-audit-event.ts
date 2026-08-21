@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { redactSensitiveValue } from "../../../../security/redact-sensitive-value.ts";
-import { isoNow,MarketControlPlaneStore,serializeAuditEvent } from "../../../persistence/store.ts";
-export async function recordAuditEventMethod(this: MarketControlPlaneStore, input: any = {}) {
+import { isoNow,ControlPlaneStore,serializeAuditEvent } from "../../../persistence/store.ts";
+export async function recordAuditEventMethod(this: ControlPlaneStore, input: any = {}) {
     await this.ensureInitialized();
     const timestamp = input.createdAt ?? isoNow();
     const id = input.id ?? randomUUID();

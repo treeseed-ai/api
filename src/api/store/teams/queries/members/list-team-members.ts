@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeTeamMember,TEAM_ROLE_CAPABILITIES,TEAM_ROLE_DESCRIPTIONS,uniqueStrings } from "../../../../persistence/store.ts";
-export async function listTeamMembersMethod(this: MarketControlPlaneStore, teamId) {
+import { ControlPlaneStore,serializeTeamMember,TEAM_ROLE_CAPABILITIES,TEAM_ROLE_DESCRIPTIONS,uniqueStrings } from "../../../../persistence/store.ts";
+export async function listTeamMembersMethod(this: ControlPlaneStore, teamId) {
     await this.ensureInitialized();
     const rows = await this.all(`SELECT team_memberships.*, users.display_name, users.email
 			 FROM team_memberships

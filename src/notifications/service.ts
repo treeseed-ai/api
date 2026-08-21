@@ -1,6 +1,6 @@
 import { NOTIFICATION_CONTENT_CAPABILITIES,normalizeNotificationPreferences } from '@treeseed/sdk/account-contracts';
 import { createHash,randomUUID } from 'node:crypto';
-import type { MarketControlPlaneStore } from '../api/persistence/store.js';
+import type { ControlPlaneStore } from '../api/persistence/store.js';
 import { sendAuthEmail } from '../auth/email.js';
 
 export interface ContentNotificationEventInput {
@@ -46,7 +46,7 @@ function digestDueAt(cadence: 'immediate' | 'daily' | 'weekly', timeZone: string
 	return new Date(desiredLocal.getTime() - (renderedAsUtc - probe.getTime())).toISOString();
 }
 
-async function preferencesFor(store: MarketControlPlaneStore, userId: string) {
+async function preferencesFor(store: ControlPlaneStore, userId: string) {
 	const settings = await store.first<{ email_cadence: 'immediate' | 'daily' | 'weekly' }>(
 		`SELECT email_cadence FROM user_notification_preferences WHERE user_id = ? LIMIT 1`,
 		[userId],
@@ -68,7 +68,7 @@ async function preferencesFor(store: MarketControlPlaneStore, userId: string) {
 	};
 }
 
-export async function recordContentNotificationEvent(store: MarketControlPlaneStore, input: ContentNotificationEventInput) {
+export async function recordContentNotificationEvent(store: ControlPlaneStore, input: ContentNotificationEventInput) {
 	const capability = NOTIFICATION_CONTENT_CAPABILITIES.find((entry) => entry.id === input.contentType && entry.eventTypes.includes(input.eventType));
 	if (!capability) throw Object.assign(new Error('The content notification event is not registered.'), { status: 400, code: 'unregistered_notification_event' });
 	if (!input.targetUrl.startsWith('/') || input.targetUrl.startsWith('//')) throw Object.assign(new Error('Notification target must be a safe application path.'), { status: 400 });
@@ -94,7 +94,7 @@ export async function recordContentNotificationEvent(store: MarketControlPlaneSt
 	return { id: eventId, created: true, recipients };
 }
 
-export async function drainNotificationEmailOutbox(store: MarketControlPlaneStore, limit = 20) {
+export async function drainNotificationEmailOutbox(store: ControlPlaneStore, limit = 20) {
 	const deliveries = await store.all<{
 		id: string;
 		user_id: string;

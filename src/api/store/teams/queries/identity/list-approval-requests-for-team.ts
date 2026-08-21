@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeApprovalRequest } from "../../../../persistence/store.ts";
-export async function listApprovalRequestsForTeamMethod(this: MarketControlPlaneStore, teamId, options: any = {}) {
+import { ControlPlaneStore,serializeApprovalRequest } from "../../../../persistence/store.ts";
+export async function listApprovalRequestsForTeamMethod(this: ControlPlaneStore, teamId, options: any = {}) {
     await this.ensureInitialized();
     const limit = Math.max(1, Math.min(200, Number(options.limit) || 50));
     const kind = typeof options.kind === 'string' && options.kind.trim() ? options.kind.trim() : null;

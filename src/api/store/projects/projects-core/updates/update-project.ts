@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore,normalizeProjectArchitecture,parseJson } from "../../../../persistence/store.ts";
-export async function updateProjectMethod(this: MarketControlPlaneStore, projectId, input) {
+import { isoNow,ControlPlaneStore,normalizeProjectArchitecture,parseJson } from "../../../../persistence/store.ts";
+export async function updateProjectMethod(this: ControlPlaneStore, projectId, input) {
     await this.ensureInitialized();
     const existing = await this.first(`SELECT * FROM projects WHERE id = ? LIMIT 1`, [projectId]);
     if (!existing) {
@@ -20,26 +20,6 @@ export async function updateProjectMethod(this: MarketControlPlaneStore, project
         timestamp,
         projectId,
     ]);
-    const existingCatalogItem = await this.getCatalogItem(projectId);
-    if (existingCatalogItem) {
-        await this.upsertCatalogItem(existing.team_id, {
-            id: projectId,
-            kind: 'project',
-            slug: nextSlug,
-            title: nextName,
-            summary: nextDescription,
-            visibility: existingCatalogItem.visibility,
-            listingEnabled: existingCatalogItem.listingEnabled,
-            offerMode: existingCatalogItem.offerMode,
-            manifestKey: existingCatalogItem.manifestKey,
-            artifactKey: existingCatalogItem.artifactKey,
-            searchText: [nextName, nextDescription].filter(Boolean).join(' ').trim() || null,
-            metadata: {
-                ...(existingCatalogItem.metadata ?? {}),
-                ...metadata,
-            },
-        });
-    }
     if (metadata?.architecture) {
         await this.projectArchitectureContentBindings(projectId, normalizeProjectArchitecture(metadata.architecture)).catch(() => null);
     }

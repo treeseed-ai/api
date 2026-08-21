@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { COMMONS_WEIGHT_POLICY_VERSION,isoNow,MarketControlPlaneStore,serializeCommonsWeightSnapshot } from "../../../../persistence/store.ts";
-export async function createCommonsWeightSnapshotMethod(this: MarketControlPlaneStore, participantId, evidence: any = {}) {
+import { COMMONS_WEIGHT_POLICY_VERSION,isoNow,ControlPlaneStore,serializeCommonsWeightSnapshot } from "../../../../persistence/store.ts";
+export async function createCommonsWeightSnapshotMethod(this: ControlPlaneStore, participantId, evidence: any = {}) {
     await this.ensureInitialized();
     const participant = await this.getCommonsParticipant(participantId);
     if (!participant)

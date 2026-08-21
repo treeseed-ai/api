@@ -3,13 +3,11 @@ import { resolve } from 'node:path';
 import { DataType,newDb } from 'pg-mem';
 import { describe,expect,it } from 'vitest';
 import { compileAssignmentCapabilityContext } from '../../../src/api/capacity/services/capacity/assignments/admission/assignment-capability-service.js';
-import { MarketControlPlaneStore } from '../../../src/api/persistence/store.js';
-import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.js';
+import { ControlPlaneStore } from '../../../src/api/persistence/store.js';
+import { ControlPlanePostgresDatabase } from '../../../src/api/support/control-plane-postgres.js';
 
 const packageRoot = process.cwd();
-const marketMigrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-	? resolve(packageRoot, '../sdk/drizzle/market')
-	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const controlPlaneMigrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 
 function createTestPostgresDatabase() {
 	const memory = newDb();
@@ -21,11 +19,11 @@ function createTestPostgresDatabase() {
 		implementation: (value: string) => `md5:${value}`,
 	});
 	const pg = memory.adapters.createPg();
-	return MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot: marketMigrationRoot });
+	return ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot: controlPlaneMigrationRoot });
 }
 
 function createTestStore() {
-	return new MarketControlPlaneStore({
+	return new ControlPlaneStore({
 		repoRoot: packageRoot,
 		authSecret: 'test-secret',
 		baseUrl: 'https://market.example.com',

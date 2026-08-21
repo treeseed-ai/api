@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,TEAM_MANAGEMENT_ROLES } from "../../../persistence/store.ts";
-export async function principalCanManageTeamMethod(this: MarketControlPlaneStore, principal, teamId) {
+import { ControlPlaneStore,TEAM_MANAGEMENT_ROLES } from "../../../persistence/store.ts";
+export async function principalCanManageTeamMethod(this: ControlPlaneStore, principal, teamId) {
     if (!principal)
         return false;
     const context = await this.resolvePrincipalTeamContext(teamId, principal);

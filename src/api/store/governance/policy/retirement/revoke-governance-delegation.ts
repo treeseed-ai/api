@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore,optionalStringValue,principalIsAdmin,serializeGovernanceDelegation } from "../../../../persistence/store.ts";
-export async function revokeGovernanceDelegationMethod(this: MarketControlPlaneStore, principal, delegationId, input: any = {}) {
+import { isoNow,ControlPlaneStore,optionalStringValue,principalIsAdmin,serializeGovernanceDelegation } from "../../../../persistence/store.ts";
+export async function revokeGovernanceDelegationMethod(this: ControlPlaneStore, principal, delegationId, input: any = {}) {
     await this.ensureInitialized();
     const existing = serializeGovernanceDelegation(await this.first(`SELECT * FROM governance_delegations WHERE id = ? LIMIT 1`, [delegationId]));
     if (!existing)

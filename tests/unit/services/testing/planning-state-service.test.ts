@@ -3,21 +3,19 @@ import { resolve } from 'node:path';
 import { DataType,newDb } from 'pg-mem';
 import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../src/api/capacity/control-plane.ts';
-import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.ts';
-import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../../../src/api/persistence/store.ts';
+import { ControlPlanePostgresDatabase } from '../../../../src/api/support/control-plane-postgres.ts';
 
 const packageRoot = process.cwd();
-const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-	? resolve(packageRoot, '../sdk/drizzle/market')
-	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 
 function createStore() {
 	const memory = newDb();
 	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
-	const db = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-	const store = createCapacityControlPlane(new MarketControlPlaneStore({ repoRoot: packageRoot, authSecret: 'test', assertionSecret: 'test', serviceId: 'web', serviceSecret: 'test' }, db));
+	const db = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	const store = createCapacityControlPlane(new ControlPlaneStore({ repoRoot: packageRoot, authSecret: 'test', assertionSecret: 'test', serviceId: 'web', serviceSecret: 'test' }, db));
 	return { db, store };
 }
 

@@ -22,18 +22,18 @@ resources:
       missingUser: defer
 
   projects:
-    - key: project:treeseed/market
+    - key: project:treeseed/api
       team: team:treeseed
-      slug: market
-      name: TreeSeed Market
+      slug: api
+      name: TreeSeed API
       description: Seed reconciliation fixture project.
-      kind: market_app
+      kind: software_package
       repository:
         role: primary
         provider: github
         owner: treeseed-ai
-        name: market
-        gitUrl: https://github.com/treeseed-ai/market.git
+        name: api
+        gitUrl: https://github.com/treeseed-ai/api.git
         defaultBranch: main
         checkoutPath: .
       architecture:

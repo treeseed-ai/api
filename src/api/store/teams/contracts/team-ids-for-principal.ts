@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../persistence/store.ts";
-export async function teamIdsForPrincipalMethod(this: MarketControlPlaneStore, principal) {
+import { ControlPlaneStore } from "../../../persistence/store.ts";
+export async function teamIdsForPrincipalMethod(this: ControlPlaneStore, principal) {
     await this.ensureInitialized();
     if (!principal)
         return [];

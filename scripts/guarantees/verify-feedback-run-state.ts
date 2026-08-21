@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createLocalPrivateObjectStorage } from '../../src/api/storage/private-object-storage.ts';
-import { createMarketPostgresDatabase } from '../../src/api/support/market-postgres.ts';
+import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.ts';
 
 type RunValue = { value?: Record<string, unknown>; device?: string };
 
@@ -14,7 +14,7 @@ const messages = [...new Set(Object.entries(runState)
 assert.ok(messages.length > 0, 'Run state contains no UI-created feedback identifiers.');
 const allMessages = [...messages, ...messages.map((message) => message.replace(/^Feedback run/u, 'Feedback text run'))];
 const databaseUrl = process.env.TREESEED_DATABASE_URL ?? 'postgresql://treeseed:treeseed-local-dev@127.0.0.1:54329/treeseed_api';
-const database = createMarketPostgresDatabase(databaseUrl);
+const database = createControlPlanePostgresDatabase(databaseUrl);
 const storage = createLocalPrivateObjectStorage();
 const verified: Array<Record<string, unknown>> = [];
 

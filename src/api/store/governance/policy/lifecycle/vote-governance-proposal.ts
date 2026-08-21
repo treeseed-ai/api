@@ -1,8 +1,8 @@
 import { governanceVotingProvider } from '@treeseed/sdk';
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,objectValue,optionalStringValue,principalIsAdmin,requireEnumValue } from "../../../../persistence/store.ts";
+import { isoNow,ControlPlaneStore,objectValue,optionalStringValue,principalIsAdmin,requireEnumValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
-export async function voteGovernanceProposalMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function voteGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)

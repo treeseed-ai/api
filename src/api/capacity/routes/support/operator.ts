@@ -47,7 +47,7 @@ export interface CapacityOperatorStore extends CapacityGovernanceDatabase {
 interface CapacityOperatorRouteOptions {
 	store: CapacityGovernanceDatabase;
 	requireTeamAccess(c: Context, store: CapacityGovernanceDatabase, teamId: string, permission: string): Promise<{ response?: Response | null; principal?: { id?: string } }>;
-	runtimeMarketAuthProvider?: { createServiceToken(input: { serviceId: string; name: string; roles?: string[]; permissions?: string[] }): Promise<{ id: string; serviceId: string; secret: string }> };
+	runtimeControlPlaneAuthProvider?: { createServiceToken(input: { serviceId: string; name: string; roles?: string[]; permissions?: string[] }): Promise<{ id: string; serviceId: string; secret: string }> };
 	config?: { environment?: string };
 }
 
@@ -114,7 +114,7 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 	const diagnose = (c: Context) => options.requireTeamAccess(c, options.store, c.req.param('teamId'), 'workday:diagnose');
 	const workdayDependencies = {
 		store, read, manage, diagnose, query, page, notFound, operatorError,
-		runtimeMarketAuthProvider: options.runtimeMarketAuthProvider,
+		runtimeControlPlaneAuthProvider: options.runtimeControlPlaneAuthProvider,
 		environment: options.config?.environment,
 		requireTeamAccess: (c: Context, teamId: string) => options.requireTeamAccess(c, options.store, teamId, 'projects:read:team'),
 	};

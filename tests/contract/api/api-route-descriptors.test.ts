@@ -6,28 +6,13 @@ import {
 ACCEPTANCE_ACTORS,
 API_ENDPOINT_GUARANTEE_FAMILIES,
 API_ROUTE_DESCRIPTORS,
-MARKET_SDK_METHOD_ROUTE_MAP,
 PROJECT_MANAGER_ACTORS,
 PROJECT_MEMBER_ACTORS,
-SDK_METHOD_ROUTE_MAP,
 TEAM_MANAGER_ACTORS,
 TEAM_MEMBER_ACTORS,
 extractActiveApiRoutes,
 } from '../../../src/api/support/route-descriptors.js';
 import { API_COMMAND_AUTHORITY,validateApiCommandAuthority } from '../../../src/api/capacity/operator-command-authority.js';
-
-function publicMarketClientMethods() {
-	const sourcePath = existsSync(resolve(process.cwd(), '../sdk/src/entrypoints/clients/market-client.ts'))
-		? resolve(process.cwd(), '../sdk/src/entrypoints/clients/market-client.ts')
-		: resolve(process.cwd(), 'node_modules/@treeseed/sdk/dist/entrypoints/clients/market-client.js');
-	const source = readFileSync(sourcePath, 'utf8');
-	const classStart = source.indexOf('export class MarketClient');
-	const classSource = source.slice(classStart);
-	const methodNames = [...classSource.matchAll(/^\s+([a-zA-Z][a-zA-Z0-9_]*)\([^)]*\)\s*\{/gmu)]
-		.map((match) => match[1])
-		.filter((name) => !['constructor', 'headers', 'url', 'baseUrlForPath', 'request', 'tryRequest'].includes(name));
-	return [...new Set(methodNames)];
-}
 
 describe('API route descriptors', () => {
 	it('binds API-owned authorization only to canonical SDK command paths and active routes', () => {
@@ -58,20 +43,15 @@ describe('API route descriptors', () => {
 		expect(new Set(API_ROUTE_DESCRIPTORS.map((route) => route.id)).size).toBe(API_ROUTE_DESCRIPTORS.length);
 		expect(API_ROUTE_DESCRIPTORS.find((route) => route.id === 'get.v1.users.by-username.username.profile')).toMatchObject({
 			authClass: 'user',
-			ownerDomain: 'market',
+			ownerDomain: 'control-plane',
 		});
 	});
 
-	it('records the runtime plane that blocks sovereign migration until Market extraction completes', () => {
+	it('classifies all retained legacy routes as control-plane migration inputs', () => {
 		const byPath = new Map(API_ROUTE_DESCRIPTORS.map((route) => [route.path, route]));
-		expect(byPath.get('/v1/commerce/products')?.runtimePlane).toBe('market');
-		expect(byPath.get('/v1/catalog')?.runtimePlane).toBe('market');
-		expect(byPath.get('/v1/seeds/:name/plan')?.runtimePlane).toBe('market');
-		expect(byPath.get('/v1/teams')?.runtimePlane).toBe('admin');
-		expect(byPath.get('/v1/projects')?.runtimePlane).toBe('admin');
-		expect(byPath.get('/v1/ui/governance')?.runtimePlane).toBe('admin');
-		expect(API_ROUTE_DESCRIPTORS.filter((route) => route.runtimePlane === 'market').length).toBeGreaterThan(0);
-		expect(API_ROUTE_DESCRIPTORS.every((route) => route.runtimePlane === 'admin' || route.runtimePlane === 'market')).toBe(true);
+		expect(byPath.has('/v1/commerce/products')).toBe(false);
+		expect(byPath.has('/v1/catalog')).toBe(false);
+		expect(API_ROUTE_DESCRIPTORS.every((route) => route.runtimePlane === 'control-plane')).toBe(true);
 	});
 
 	it('discovers routes from every focused capacity route owner', () => {
@@ -190,23 +170,9 @@ describe('API route descriptors', () => {
 		writeFileSync(resolve(process.cwd(), 'reports/api-endpoint-guarantee-coverage.json'), `${JSON.stringify(report, null, 2)}\n`);
 	});
 
-	it('maps every public MarketClient method to an active descriptor-backed endpoint', () => {
-		const descriptorIds = new Set(API_ROUTE_DESCRIPTORS.map((route) => route.id));
-		const methods = publicMarketClientMethods();
-		const missingMappings = methods.filter((method) => !(method in SDK_METHOD_ROUTE_MAP) && !(method in MARKET_SDK_METHOD_ROUTE_MAP));
-		const staleMappings = Object.entries(SDK_METHOD_ROUTE_MAP)
-			.filter(([, routeId]) => !descriptorIds.has(routeId))
-			.map(([method, routeId]) => `${method}:${routeId}`);
-		expect(missingMappings).toEqual([]);
-		expect(staleMappings).toEqual([]);
-		expect(MARKET_SDK_METHOD_ROUTE_MAP).toEqual({ currentMarket: 'get.v1.market.profile' });
-		expect(descriptorIds.has(MARKET_SDK_METHOD_ROUTE_MAP.currentMarket)).toBe(false);
-	});
-
 	it('keeps live acceptance descriptor-covered with explicit email delivery coverage', () => {
 		const spec = parse(readFileSync('tests/acceptance/api/base.yaml', 'utf8')) as any;
 		expect(spec.coverage?.requireAllDescriptors).toBe(true);
-		expect(spec.coverage?.requireAllSdkMethods).toBe(true);
 		expect(spec.descriptorMatrices).toEqual(expect.arrayContaining([
 			expect.objectContaining({
 				id: 'descriptor-executable-role-matrix',

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 import { isoNow,serializeTeamInvite,stableHash,tokenPrefix } from '../../support/index.ts';
 
-export async function resendTeamInviteMethod(this: MarketControlPlaneStore, teamId: string, inviteId: string) {
+export async function resendTeamInviteMethod(this: ControlPlaneStore, teamId: string, inviteId: string) {
 	await this.ensureInitialized();
 	const invite = await this.first(`SELECT * FROM team_invites WHERE id = ? AND team_id = ? LIMIT 1`, [inviteId, teamId]);
 	if (!invite?.id) return { ok: false, code: 'missing', message: 'Invitation not found.' };

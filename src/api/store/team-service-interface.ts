@@ -1,5 +1,5 @@
 declare module '../persistence/store.ts' {
-	interface MarketControlPlaneStore {
+	interface ControlPlaneStore {
 		principalCanManageServices: OmitThisParameter<typeof import('./teams/services/service-permissions.ts').principalCanManageServicesMethod>;
 		principalCanManageServiceVault: OmitThisParameter<typeof import('./teams/services/service-permissions.ts').principalCanManageServiceVaultMethod>;
 		listTeamServiceConnections: OmitThisParameter<typeof import('./teams/services/service-connections.ts').listTeamServiceConnectionsMethod>;

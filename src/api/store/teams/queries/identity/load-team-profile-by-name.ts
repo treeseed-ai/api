@@ -1,6 +1,6 @@
-import { MarketControlPlaneStore,teamIsPrivate } from "../../../../persistence/store.ts";
+import { ControlPlaneStore,teamIsPrivate } from "../../../../persistence/store.ts";
 import { publicTeamKnowledgeProfile } from '../../../public-profiles/knowledge-profile.ts';
-export async function loadTeamProfileByNameMethod(this: MarketControlPlaneStore, name, principal = null) {
+export async function loadTeamProfileByNameMethod(this: ControlPlaneStore, name, principal = null) {
     const team = await this.getTeamByName(name);
     if (!team || team.status !== 'active')
         return null;

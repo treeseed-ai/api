@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializePlatformOperationEvent } from "../../../persistence/store.ts";
-export async function appendPlatformOperationEventMethod(this: MarketControlPlaneStore, operationId, kind, data: any = {}) {
+import { isoNow,ControlPlaneStore,serializePlatformOperationEvent } from "../../../persistence/store.ts";
+export async function appendPlatformOperationEventMethod(this: ControlPlaneStore, operationId, kind, data: any = {}) {
     await this.ensureInitialized();
     const row = await this.first(`SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM platform_operation_events WHERE operation_id = ?`, [operationId]);
     const seq = Number(row?.next_seq ?? 1);

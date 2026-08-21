@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { DataType,newDb } from 'pg-mem';
 import { createPlatformApiApp } from '../../src/api/support/app.js';
-import { MarketPostgresDatabase } from '../../src/api/support/market-postgres.js';
+import { ControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.js';
 import { startAcceptanceMailCapture } from './acceptance-mail-capture.ts';
 import { packageRoot } from './package-tools.ts';
 
@@ -125,8 +125,8 @@ function createAcceptanceDatabase() {
 		implementation: (value: string) => `md5:${value}`,
 	});
 	const pg = memory.adapters.createPg();
-	const migrationRoot = resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
-	return MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
+	return ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
 }
 
 function hasRequestBody(method = 'GET') {
@@ -254,12 +254,12 @@ async function smokeImportDist() {
 	const app = await import(pathToFileURL(resolve(packageRoot, 'dist/api/support/app.js')).href);
 	const server = await import(pathToFileURL(resolve(packageRoot, 'dist/api/support/server.js')).href);
 	const store = await import(pathToFileURL(resolve(packageRoot, 'dist/api/persistence/store.js')).href);
-	const pg = await import(pathToFileURL(resolve(packageRoot, 'dist/api/support/market-postgres.js')).href);
+	const pg = await import(pathToFileURL(resolve(packageRoot, 'dist/api/support/control-plane-postgres.js')).href);
 	const runner = await import(pathToFileURL(resolve(packageRoot, 'dist/operations-runner/entrypoint.js')).href);
 	if (typeof app.createPlatformApiApp !== 'function') throw new Error('missing createPlatformApiApp');
 	if (typeof server.createApiServer !== 'function') throw new Error('missing createApiServer');
-	if (typeof store.MarketControlPlaneStore !== 'function') throw new Error('missing MarketControlPlaneStore');
-	if (typeof pg.createMarketPostgresDatabase !== 'function') throw new Error('missing createMarketPostgresDatabase');
+	if (typeof store.ControlPlaneStore !== 'function') throw new Error('missing ControlPlaneStore');
+	if (typeof pg.createControlPlanePostgresDatabase !== 'function') throw new Error('missing createControlPlanePostgresDatabase');
 	if (typeof runner.main !== 'function') throw new Error('missing operations runner main');
 }
 

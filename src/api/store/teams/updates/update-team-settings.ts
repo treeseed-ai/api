@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
-export async function updateTeamSettingsMethod(this: MarketControlPlaneStore, teamId, input) {
+import { isoNow,ControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
+export async function updateTeamSettingsMethod(this: ControlPlaneStore, teamId, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const existing = await this.getTeam(teamId);

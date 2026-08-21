@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { artifactStorageRoot,getNodeBuiltin,isoNow,MarketControlPlaneStore,safeStoragePathSegment } from "../../../persistence/store.ts";
-export async function uploadRuntimeArtifactMethod(this: MarketControlPlaneStore, projectId, input) {
+import { artifactStorageRoot,getNodeBuiltin,isoNow,ControlPlaneStore,safeStoragePathSegment } from "../../../persistence/store.ts";
+export async function uploadRuntimeArtifactMethod(this: ControlPlaneStore, projectId, input) {
     await this.ensureInitialized();
     const fs = getNodeBuiltin('fs');
     const path = getNodeBuiltin('path');

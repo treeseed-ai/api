@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,objectValue,serializeTreeDxInstance,serializeTreeDxShare } from "../../../../persistence/store.ts";
-export async function createTreeDxShareMethod(this: MarketControlPlaneStore, teamId, input: any = {}) {
+import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxInstance,serializeTreeDxShare } from "../../../../persistence/store.ts";
+export async function createTreeDxShareMethod(this: ControlPlaneStore, teamId, input: any = {}) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const instance = input.instanceId

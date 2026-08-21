@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { centralTreeDxRegistryUrl,isoNow,MarketControlPlaneStore,objectValue,teamIsPrivate } from "../../../../persistence/store.ts";
-export async function provisionTeamTreeDxMethod(this: MarketControlPlaneStore, teamId, input: any = {}) {
+import { centralTreeDxRegistryUrl,isoNow,ControlPlaneStore,objectValue,teamIsPrivate } from "../../../../persistence/store.ts";
+export async function provisionTeamTreeDxMethod(this: ControlPlaneStore, teamId, input: any = {}) {
     const team = await this.getTeam(teamId);
     if (!team)
         return null;

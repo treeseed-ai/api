@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,stableHash,tokenPrefix } from "../../../persistence/store.ts";
-export async function createTeamApiKeyMethod(this: MarketControlPlaneStore, teamId, input) {
+import { isoNow,ControlPlaneStore,stableHash,tokenPrefix } from "../../../persistence/store.ts";
+export async function createTeamApiKeyMethod(this: ControlPlaneStore, teamId, input) {
     await this.ensureInitialized();
     const token = `tsk_${randomUUID().replaceAll('-', '')}`;
     const timestamp = isoNow();

@@ -1,7 +1,7 @@
 import { governanceVotingProvider } from '@treeseed/sdk';
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion, simulationEvidence } from '../support/simulation-evidence.ts';
-export async function evaluateGovernanceProposalMethod(this: MarketControlPlaneStore, proposalId, input: any = {}) {
+export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)

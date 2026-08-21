@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializeJobEvent } from "../../../persistence/store.ts";
-export async function appendJobEventMethod(this: MarketControlPlaneStore, jobId, kind, data: any = {}) {
+import { isoNow,ControlPlaneStore,serializeJobEvent } from "../../../persistence/store.ts";
+export async function appendJobEventMethod(this: ControlPlaneStore, jobId, kind, data: any = {}) {
     await this.ensureInitialized();
     const row = await this.first(`SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM remote_job_events WHERE job_id = ?`, [jobId]);
     const seq = Number(row?.next_seq ?? 1);

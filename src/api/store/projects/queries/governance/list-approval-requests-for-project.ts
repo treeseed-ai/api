@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeApprovalRequest } from "../../../../persistence/store.ts";
-export async function listApprovalRequestsForProjectMethod(this: MarketControlPlaneStore, projectId, limit = 50) {
+import { ControlPlaneStore,serializeApprovalRequest } from "../../../../persistence/store.ts";
+export async function listApprovalRequestsForProjectMethod(this: ControlPlaneStore, projectId, limit = 50) {
     await this.ensureInitialized();
     const rows = await this.all(`SELECT * FROM approval_requests
 			 WHERE project_id = ?

@@ -188,11 +188,6 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/integration/api/feedback/feedback-management.test.ts
     testName: persists immutable trusted context and keeps attachments private
-  api.endpoints.commerce-marketplace:
-    kind: apiAcceptanceCase
-    ownerPackage: "@treeseed/api"
-    spec: scripts/support/api-acceptance.ts
-    caseId: descriptor-executable-role-matrix.get.v1.commerce.marketplace.anonymous
   api.endpoints.catalog-templates-and-seeds:
     kind: apiAcceptanceCase
     ownerPackage: "@treeseed/api"

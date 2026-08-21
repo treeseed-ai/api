@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { authenticateTeamApiKeyMethod } from '../teams/contracts/authenticate-team-api-key.ts';
 import { ensurePersonalResearchTeamForUserMethod } from '../teams/contracts/ensure-personal-research-team-for-user.ts';
 import { evaluateTeamDeletionBlockersMethod } from '../teams/contracts/evaluate-team-deletion-blockers.ts';
@@ -85,7 +85,7 @@ import { replaceMembershipRoleMethod } from '../teams/updates/replace-membership
 import { updateTeamMemberRoleMethod } from '../teams/updates/update-team-member-role.ts';
 import { updateTeamSettingsMethod } from '../teams/updates/update-team-settings.ts';
 
-export function installTeamsStoreMethods(prototype: MarketControlPlaneStore) {
+export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.seedTeamRoles = seedTeamRolesMethod;
 	prototype.syncPlatformAdminOwners = syncPlatformAdminOwnersMethod;
 	prototype.getSeedTeamMembershipClaim = getSeedTeamMembershipClaimMethod;

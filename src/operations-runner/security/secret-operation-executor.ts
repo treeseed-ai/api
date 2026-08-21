@@ -3,7 +3,7 @@ clearServiceVaultKey,
 createServiceVaultUserKeyPair,
 openSecretOperationPayload,
 } from '@treeseed/sdk/secrets-capability';
-import type { MarketControlPlaneStore } from '../../api/persistence/store.ts';
+import type { ControlPlaneStore } from '../../api/persistence/store.ts';
 import { validateProviderConnection } from './service-validation.ts';
 
 type KeyEntry = {
@@ -20,7 +20,7 @@ function clearEntry(leaseId: string) {
 	keys.delete(leaseId);
 }
 
-async function prepareLeases(store: MarketControlPlaneStore) {
+async function prepareLeases(store: ControlPlaneStore) {
 	for (const lease of await store.listAwaitingSecretOperationLeases()) {
 		const pair = await createServiceVaultUserKeyPair();
 		const registered = await store.registerSecretOperationLeaseKey(lease.id, pair.publicKey);
@@ -36,7 +36,7 @@ async function prepareLeases(store: MarketControlPlaneStore) {
 	}
 }
 
-async function executeReadyLease(store: MarketControlPlaneStore, leaseId: string, key: KeyEntry) {
+async function executeReadyLease(store: ControlPlaneStore, leaseId: string, key: KeyEntry) {
 	const lease = await store.consumeSecretOperationLease(leaseId);
 	if (!lease?.sealedPayload) return;
 	const values = await openSecretOperationPayload(lease.sealedPayload, key.publicKey, key.privateKey);
@@ -70,7 +70,7 @@ async function executeReadyLease(store: MarketControlPlaneStore, leaseId: string
 	});
 }
 
-export async function runSecretOperationExecutor(store: MarketControlPlaneStore) {
+export async function runSecretOperationExecutor(store: ControlPlaneStore) {
 	await prepareLeases(store);
 	for (const [leaseId, key] of keys) {
 		const lease = await store.first<{ status: string; expires_at: string }>(

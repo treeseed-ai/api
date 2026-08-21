@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeTreeDxDeployment } from "../../../../persistence/store.ts";
-export async function listTreeDxDeploymentsMethod(this: MarketControlPlaneStore, teamId, instanceId = null) {
+import { ControlPlaneStore,serializeTreeDxDeployment } from "../../../../persistence/store.ts";
+export async function listTreeDxDeploymentsMethod(this: ControlPlaneStore, teamId, instanceId = null) {
     await this.ensureInitialized();
     let rows = instanceId
         ? await this.all(`SELECT * FROM treedx_deployments WHERE team_id = ? AND instance_id = ? ORDER BY created_at DESC`, [teamId, instanceId])

@@ -1,8 +1,8 @@
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 import { principalIsAdmin,SERVICE_MANAGEMENT_ROLES } from '../../../persistence/store.ts';
 
 export async function principalCanManageServicesMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	principal: unknown,
 	teamId: string,
 ) {
@@ -13,7 +13,7 @@ export async function principalCanManageServicesMethod(
 }
 
 export async function principalCanManageServiceVaultMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	principal: unknown,
 	teamId: string,
 ) {

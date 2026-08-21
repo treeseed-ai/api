@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,normalizeTeamRoleKey,serializeTeamInvite,stableHash,tokenPrefix } from "../../../persistence/store.ts";
-export async function createTeamInviteMethod(this: MarketControlPlaneStore, teamId, input) {
+import { isoNow,ControlPlaneStore,normalizeTeamRoleKey,serializeTeamInvite,stableHash,tokenPrefix } from "../../../persistence/store.ts";
+export async function createTeamInviteMethod(this: ControlPlaneStore, teamId, input) {
     await this.ensureInitialized();
     const email = String(input.email ?? '').trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {

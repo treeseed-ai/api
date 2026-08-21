@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeTreeDxInstance } from "../../../../persistence/store.ts";
-export async function getPrimaryTreeDxInstanceMethod(this: MarketControlPlaneStore, teamId) {
+import { ControlPlaneStore,serializeTreeDxInstance } from "../../../../persistence/store.ts";
+export async function getPrimaryTreeDxInstanceMethod(this: ControlPlaneStore, teamId) {
     await this.ensureInitialized();
     const primary = serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE team_id = ? AND COALESCE("primary", 1) != 0 AND status != 'disabled' ORDER BY updated_at DESC LIMIT 1`, [teamId]));
     if (primary)

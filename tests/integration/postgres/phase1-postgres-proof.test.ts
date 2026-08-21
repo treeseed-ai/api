@@ -19,8 +19,8 @@ import { CapacityAllocationService } from '../../../src/api/capacity/services/ca
 import { CapacityWorkdayEventService } from '../../../src/api/capacity/services/capacity/workdays/content/workday-event-service.ts';
 import { CapacityWorkdayRunService } from '../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { commitCapacityAdmission } from '../../../src/api/capacity/services/support/admission-service.ts';
-import { MarketControlPlaneStore } from '../../../src/api/persistence/store.ts';
-import { MarketPostgresDatabase } from '../../../src/api/support/market-postgres.ts';
+import { ControlPlaneStore } from '../../../src/api/persistence/store.ts';
+import { ControlPlanePostgresDatabase } from '../../../src/api/support/control-plane-postgres.ts';
 
 const { Pool } = pg;
 const sourceUrl = process.env.TREESEED_PHASE1_POSTGRES_URL?.trim();
@@ -66,10 +66,10 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 	it('initializes only the clean baseline and enforces rollback, uniqueness, and concurrent hard caps', async () => {
 		const name = safeDatabaseName('baseline');
 		await createDatabase(name);
-		const database = new MarketPostgresDatabase(databaseUrl(name));
+		const database = new ControlPlanePostgresDatabase(databaseUrl(name));
 		try {
 			await database.migrate();
-			const store = createCapacityControlPlane(new MarketControlPlaneStore({ repoRoot: process.cwd() }, database));
+			const store = createCapacityControlPlane(new ControlPlaneStore({ repoRoot: process.cwd() }, database));
 			const canonicalTables = await database.pool.query(
 				`SELECT table_name FROM information_schema.tables
 				 WHERE table_schema = 'public' AND table_name = ANY($1::text[])
@@ -213,8 +213,8 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 	it('serializes workday events and enforces run, allocation, and graph concurrency through the domain owners', async () => {
 		const name = safeDatabaseName('domains');
 		await createDatabase(name);
-		const database = new MarketPostgresDatabase(databaseUrl(name));
-		const store = createCapacityControlPlane(new MarketControlPlaneStore({ repoRoot: process.cwd() }, database));
+		const database = new ControlPlanePostgresDatabase(databaseUrl(name));
+		const store = createCapacityControlPlane(new ControlPlaneStore({ repoRoot: process.cwd() }, database));
 		try {
 			await store.ensureInitialized();
 			const now = new Date().toISOString();
@@ -343,8 +343,8 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 	it('atomically admits exactly the configured number of concurrent registration attempts', async () => {
 		const name = safeDatabaseName('registration_rate_limit');
 		await createDatabase(name);
-		const database = new MarketPostgresDatabase(databaseUrl(name));
-		const store = createCapacityControlPlane(new MarketControlPlaneStore({ repoRoot: process.cwd() }, database));
+		const database = new ControlPlanePostgresDatabase(databaseUrl(name));
+		const store = createCapacityControlPlane(new ControlPlaneStore({ repoRoot: process.cwd() }, database));
 		try {
 			await store.ensureInitialized();
 			const repository = new CapacityRegistrationSecurityRepository(store);
@@ -402,7 +402,7 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 			'INSERT INTO missing_probe (id) VALUES (\'failure\')',
 		].join(';\n'));
 		await createDatabase(name);
-		const database = new MarketPostgresDatabase(databaseUrl(name), { migrationRoot });
+		const database = new ControlPlanePostgresDatabase(databaseUrl(name), { migrationRoot });
 		try {
 			await expect(database.migrate()).rejects.toThrow(/0001_rollback\.sql/u);
 			const tables = await database.pool.query(
@@ -411,7 +411,7 @@ describe.skipIf(!sourceUrl)('Phase 1 real PostgreSQL proof', () => {
 				 ORDER BY table_name`,
 			);
 			expect(tables.rows.map((row) => row.table_name)).toEqual(['committed_probe']);
-			const applied = await database.pool.query(`SELECT name FROM treeseed_market_schema_migrations ORDER BY name`);
+			const applied = await database.pool.query(`SELECT name FROM treeseed_control_plane_schema_migrations ORDER BY name`);
 			expect(applied.rows.map((row) => row.name)).toEqual(['0000_probe.sql']);
 		} finally {
 			await database.close();

@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { answerCommonsQuestionMethod } from '../governance/commons/contracts/answer-commons-question.ts';
 import { commonsSummaryMethod } from '../governance/commons/contracts/commons-summary.ts';
 import { computeCommonsWeightsMethod } from '../governance/commons/contracts/compute-commons-weights.ts';
@@ -67,7 +67,7 @@ import { decideApprovalRequestMethod } from '../support/lifecycle/decide-approva
 import { getApprovalRequestMethod } from '../support/queries/get-approval-request.ts';
 import { listApprovalRequestsForTeamMethod } from '../teams/queries/identity/list-approval-requests-for-team.ts';
 
-export function installGovernanceStoreMethods(prototype: MarketControlPlaneStore) {
+export function installGovernanceStoreMethods(prototype: ControlPlaneStore) {
 	prototype.recordGovernanceEvent = recordGovernanceEventMethod;
 	prototype.getTeamGovernancePolicy = getTeamGovernancePolicyMethod;
 	prototype.ensureDefaultTeamGovernancePolicy = ensureDefaultTeamGovernancePolicyMethod;

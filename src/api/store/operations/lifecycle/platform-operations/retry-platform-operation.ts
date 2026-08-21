@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function retryPlatformOperationMethod(this: MarketControlPlaneStore, operationId, input: any = {}) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function retryPlatformOperationMethod(this: ControlPlaneStore, operationId, input: any = {}) {
     await this.ensureInitialized();
     const existing = await this.findPlatformOperationById(operationId);
     if (!existing)

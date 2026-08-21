@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 
-export async function getUserVaultKeyMethod(this: MarketControlPlaneStore, userId: string) {
+export async function getUserVaultKeyMethod(this: ControlPlaneStore, userId: string) {
 	await this.ensureInitialized();
 	const row: any = await this.first(
 		`SELECT * FROM user_vault_keys WHERE user_id = ? AND status = 'active' ORDER BY version DESC LIMIT 1`,
@@ -20,7 +20,7 @@ export async function getUserVaultKeyMethod(this: MarketControlPlaneStore, userI
 	};
 }
 
-export async function upsertUserVaultKeyMethod(this: MarketControlPlaneStore, userId: string, input: any) {
+export async function upsertUserVaultKeyMethod(this: ControlPlaneStore, userId: string, input: any) {
 	await this.ensureInitialized();
 	const existing = await this.getUserVaultKey(userId);
 	const now = new Date().toISOString();
@@ -46,7 +46,7 @@ export async function upsertUserVaultKeyMethod(this: MarketControlPlaneStore, us
 	return this.getUserVaultKey(userId);
 }
 
-export async function getTeamVaultSummaryMethod(this: MarketControlPlaneStore, teamId: string, userId?: string) {
+export async function getTeamVaultSummaryMethod(this: ControlPlaneStore, teamId: string, userId?: string) {
 	await this.ensureInitialized();
 	const vault: any = await this.first(`SELECT * FROM team_vaults WHERE team_id = ?`, [teamId]);
 	if (!vault) return null;
@@ -91,7 +91,7 @@ export async function getTeamVaultSummaryMethod(this: MarketControlPlaneStore, t
 	};
 }
 
-export async function initializeTeamVaultMethod(this: MarketControlPlaneStore, teamId: string, input: any) {
+export async function initializeTeamVaultMethod(this: ControlPlaneStore, teamId: string, input: any) {
 	await this.ensureInitialized();
 	if (await this.first(`SELECT team_id FROM team_vaults WHERE team_id = ?`, [teamId])) {
 		throw new Error('The team service vault is already initialized.');
@@ -124,7 +124,7 @@ export async function initializeTeamVaultMethod(this: MarketControlPlaneStore, t
 	return this.getTeamVaultSummary(teamId, input.actorUserId);
 }
 
-export async function createTeamVaultGrantMethod(this: MarketControlPlaneStore, teamId: string, input: any) {
+export async function createTeamVaultGrantMethod(this: ControlPlaneStore, teamId: string, input: any) {
 	await this.ensureInitialized();
 	const vault: any = await this.first(`SELECT * FROM team_vaults WHERE team_id = ? AND status = 'active'`, [teamId]);
 	if (!vault) throw new Error('The team service vault is not initialized.');
@@ -153,7 +153,7 @@ export async function createTeamVaultGrantMethod(this: MarketControlPlaneStore, 
 	return this.getTeamVaultSummary(teamId, input.userId);
 }
 
-export async function revokeTeamVaultGrantMethod(this: MarketControlPlaneStore, teamId: string, grantId: string, actorUserId: string) {
+export async function revokeTeamVaultGrantMethod(this: ControlPlaneStore, teamId: string, grantId: string, actorUserId: string) {
 	await this.ensureInitialized();
 	const now = new Date().toISOString();
 	const grant: any = await this.first(`SELECT * FROM team_vault_grants WHERE team_id = ? AND id = ? AND status = 'active'`, [teamId, grantId]);
@@ -175,7 +175,7 @@ export async function revokeTeamVaultGrantMethod(this: MarketControlPlaneStore, 
 	return { ok: true };
 }
 
-export async function upsertServiceCredentialEnvelopeMethod(this: MarketControlPlaneStore, teamId: string, input: any) {
+export async function upsertServiceCredentialEnvelopeMethod(this: ControlPlaneStore, teamId: string, input: any) {
 	await this.ensureInitialized();
 	const profile: any = await this.first(
 		`SELECT * FROM team_service_credential_profiles WHERE team_id = ? AND connection_id = ? AND definition_id = ?`,
@@ -215,7 +215,7 @@ export async function upsertServiceCredentialEnvelopeMethod(this: MarketControlP
 	return { id, credentialProfileId: profileId, fingerprint: input.envelope.fingerprint, status: 'active' };
 }
 
-export async function listServiceCredentialEnvelopesMethod(this: MarketControlPlaneStore, teamId: string, connectionId: string) {
+export async function listServiceCredentialEnvelopesMethod(this: ControlPlaneStore, teamId: string, connectionId: string) {
 	await this.ensureInitialized();
 	const rows: any[] = await this.all(
 		`SELECT envelope.id, envelope.credential_profile_id, profile.definition_id, envelope.field_key, envelope.envelope_json,
@@ -239,7 +239,7 @@ export async function listServiceCredentialEnvelopesMethod(this: MarketControlPl
 	}));
 }
 
-export async function listTeamCredentialEnvelopesMethod(this: MarketControlPlaneStore, teamId: string) {
+export async function listTeamCredentialEnvelopesMethod(this: ControlPlaneStore, teamId: string) {
 	await this.ensureInitialized();
 	const rows: any[] = await this.all(
 		`SELECT id, connection_id, credential_profile_id, field_key, envelope_json, fingerprint, key_version
@@ -257,7 +257,7 @@ export async function listTeamCredentialEnvelopesMethod(this: MarketControlPlane
 	}));
 }
 
-export async function rotateTeamVaultMethod(this: MarketControlPlaneStore, teamId: string, input: any) {
+export async function rotateTeamVaultMethod(this: ControlPlaneStore, teamId: string, input: any) {
 	await this.ensureInitialized();
 	const vault: any = await this.first(`SELECT * FROM team_vaults WHERE team_id = ? AND status = 'active'`, [teamId]);
 	if (!vault) throw new Error('The team service vault is not initialized.');
@@ -303,7 +303,7 @@ export async function rotateTeamVaultMethod(this: MarketControlPlaneStore, teamI
 	return this.getTeamVaultSummary(teamId, input.actorUserId);
 }
 
-export async function resetTeamVaultMethod(this: MarketControlPlaneStore, teamId: string, input: any) {
+export async function resetTeamVaultMethod(this: ControlPlaneStore, teamId: string, input: any) {
 	await this.ensureInitialized();
 	const vault: any = await this.first(`SELECT * FROM team_vaults WHERE team_id = ?`, [teamId]);
 	if (!vault) throw new Error('The team service vault is not initialized.');

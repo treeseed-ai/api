@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 
 function json(value: unknown, fallback: unknown = {}) {
 	if (value && typeof value === 'object') return value;
@@ -61,7 +61,7 @@ function profile(row: any) {
 	};
 }
 
-export async function listTeamServiceConnectionsMethod(this: MarketControlPlaneStore, teamId: string) {
+export async function listTeamServiceConnectionsMethod(this: ControlPlaneStore, teamId: string) {
 	await this.ensureInitialized();
 	const rows = await this.all(
 		`SELECT * FROM team_service_connections WHERE team_id = ? AND status <> 'disconnected' ORDER BY updated_at DESC`,
@@ -80,7 +80,7 @@ export async function listTeamServiceConnectionsMethod(this: MarketControlPlaneS
 	})));
 }
 
-export async function getTeamServiceConnectionMethod(this: MarketControlPlaneStore, teamId: string, connectionId: string) {
+export async function getTeamServiceConnectionMethod(this: ControlPlaneStore, teamId: string, connectionId: string) {
 	await this.ensureInitialized();
 	const row = await this.first(`SELECT * FROM team_service_connections WHERE team_id = ? AND id = ? LIMIT 1`, [teamId, connectionId]);
 	if (!row) return null;
@@ -95,7 +95,7 @@ export async function getTeamServiceConnectionMethod(this: MarketControlPlaneSto
 	};
 }
 
-export async function createTeamServiceConnectionMethod(this: MarketControlPlaneStore, teamId: string, input: any) {
+export async function createTeamServiceConnectionMethod(this: ControlPlaneStore, teamId: string, input: any) {
 	await this.ensureInitialized();
 	const id = input.id ?? randomUUID();
 	const now = new Date().toISOString();
@@ -120,7 +120,7 @@ export async function createTeamServiceConnectionMethod(this: MarketControlPlane
 	return this.getTeamServiceConnection(teamId, id);
 }
 
-export async function updateTeamServiceConnectionMethod(this: MarketControlPlaneStore, teamId: string, connectionId: string, input: any) {
+export async function updateTeamServiceConnectionMethod(this: ControlPlaneStore, teamId: string, connectionId: string, input: any) {
 	await this.ensureInitialized();
 	const existing = await this.getTeamServiceConnection(teamId, connectionId);
 	if (!existing) return null;
@@ -160,7 +160,7 @@ export async function updateTeamServiceConnectionMethod(this: MarketControlPlane
 }
 
 export async function upsertTeamServiceCapabilityMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	connectionId: string,
 	input: any,
@@ -188,7 +188,7 @@ export async function upsertTeamServiceCapabilityMethod(
 	return capability(await this.first(`SELECT * FROM team_service_capability_bindings WHERE id = ?`, [id]));
 }
 
-export async function disconnectTeamServiceConnectionMethod(this: MarketControlPlaneStore, teamId: string, connectionId: string, actorUserId: string) {
+export async function disconnectTeamServiceConnectionMethod(this: ControlPlaneStore, teamId: string, connectionId: string, actorUserId: string) {
 	await this.ensureInitialized();
 	const existing = await this.getTeamServiceConnection(teamId, connectionId);
 	if (!existing) return { ok: false, error: 'not_found' };

@@ -12,12 +12,12 @@ import * as emailConfirmation from "../../auth/email-confirmation.ts";
 import * as authEmail from "../../auth/email.ts";
 import { validateUsername as validatePublicUsername } from "../../auth/profile-validation.ts";
 import * as welcomeEmail from "../../auth/welcome-email.ts";
-import * as workdayProjection from "../../market/capacity/workdays/workday-projection.js";
-import * as contentRelations from "../../market/content/content-relations.js";
-import * as knowledgeProjection from "../../market/projects/knowledge/knowledge-projection.js";
-import * as governanceProjection from "../../market/projects/projects-core/governance-projection.js";
-import * as seedApply from "../../market/seeds/apply.js";
-import * as infrastructureSeeds from "../../market/seeds/infrastructure-seeds.js";
+import * as workdayProjection from "../../control-plane/capacity/workdays/workday-projection.js";
+import * as contentRelations from "../../control-plane/content/content-relations.js";
+import * as knowledgeProjection from "../../control-plane/projects/knowledge/knowledge-projection.js";
+import * as governanceProjection from "../../control-plane/projects/projects-core/governance-projection.js";
+import * as seedApply from "../../control-plane/seeds/apply.js";
+import * as infrastructureSeeds from "../../control-plane/seeds/infrastructure-seeds.js";
 import * as notifications from "../../notifications/service.ts";
 import * as knowledgeContent from "../../view-models/knowledge-content.js";
 import * as requestAuth from "../accounts/request-auth.ts";
@@ -26,9 +26,8 @@ import * as capacityControlPlane from "../capacity/control-plane.ts";
 import * as capacityRoutes from "../capacity/routes/index.ts";
 import * as capacityRequest from "../capacity/routes/support/request-json.ts";
 import * as teamCapacityDeletion from "../capacity/services/teams/team-deletion-service.ts";
-import * as stripeConnect from "../commerce/commerce-core/stripe-connect.js";
 import * as persistence from "../persistence/store.js";
-import * as postgres from "./market-postgres.js";
+import * as postgres from "./control-plane-postgres.js";
 
 /** Static dependencies exposed to bounded route installers. */
 export const routeDependencies: Record<string, any> = {
@@ -55,7 +54,6 @@ export const routeDependencies: Record<string, any> = {
   ...capacityRoutes,
   ...capacityRequest,
   ...teamCapacityDeletion,
-  ...stripeConnect,
   ...persistence,
   ...postgres,
   ...support,

@@ -2,24 +2,22 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DataType, newDb } from 'pg-mem';
 import { describe, expect, it } from 'vitest';
-import { MarketControlPlaneStore } from '../../../../src/api/persistence/store.js';
-import { MarketPostgresDatabase } from '../../../../src/api/support/market-postgres.js';
-import { applyLocalSeedFromCli } from '../../../../src/market/seeds/apply.js';
+import { ControlPlaneStore } from '../../../../src/api/persistence/store.js';
+import { ControlPlanePostgresDatabase } from '../../../../src/api/support/control-plane-postgres.js';
+import { applyLocalSeedFromCli } from '../../../../src/control-plane/seeds/apply.js';
 import { seedTreeDxFetch } from '../../../support/seed-treedx.js';
 
 const packageRoot = process.cwd();
 const seedRoot = resolve(packageRoot, 'tests/fixtures/seed-project');
-const migrationRoot = existsSync(resolve(packageRoot, '../sdk/drizzle/market'))
-	? resolve(packageRoot, '../sdk/drizzle/market')
-	: resolve(packageRoot, 'node_modules/@treeseed/sdk/drizzle/market');
+const migrationRoot = resolve(packageRoot, 'drizzle/control-plane');
 
 function fixture() {
 	const memory = newDb();
 	memory.public.registerFunction({ name: "replace", args: [DataType.text, DataType.text, DataType.text], returns: DataType.text, implementation: (value: string, search: string, replacement: string) => value.split(search).join(replacement) });
 	memory.public.registerFunction({ name: 'md5', args: [DataType.text], returns: DataType.text, implementation: (value: string) => `md5:${value}` });
 	const pg = memory.adapters.createPg();
-	const db = MarketPostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
-	return { db, store: new MarketControlPlaneStore({ repoRoot: packageRoot, projectId: 'membership-seed-test', authSecret: 'test', assertionSecret: 'test', serviceId: 'web', serviceSecret: 'test', fetchImpl: seedTreeDxFetch }, db) };
+	const db = ControlPlanePostgresDatabase.fromPool(new pg.Pool(), { migrationRoot });
+	return { db, store: new ControlPlaneStore({ repoRoot: packageRoot, projectId: 'membership-seed-test', authSecret: 'test', assertionSecret: 'test', serviceId: 'web', serviceSecret: 'test', fetchImpl: seedTreeDxFetch }, db) };
 }
 
 describe('seed team membership claims', () => {

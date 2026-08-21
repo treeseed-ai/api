@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,parseJson } from "../../../../persistence/store.ts";
-export async function getTeamHomeSummaryMethod(this: MarketControlPlaneStore, teamId, principal = null, capacity) {
+import { ControlPlaneStore,parseJson } from "../../../../persistence/store.ts";
+export async function getTeamHomeSummaryMethod(this: ControlPlaneStore, teamId, principal = null, capacity) {
     const team = await this.getTeam(teamId);
     if (!team) {
         return null;
@@ -7,10 +7,9 @@ export async function getTeamHomeSummaryMethod(this: MarketControlPlaneStore, te
     if (principal && !(await this.principalCanAccessTeam(principal, teamId))) {
         return null;
     }
-    const [members, projects, products, inbox, pendingInvitations, services, auditEvents, access, contentActivityRows] = await Promise.all([
+    const [members, projects, inbox, pendingInvitations, services, auditEvents, access, contentActivityRows] = await Promise.all([
         this.listTeamMembers(teamId),
         this.listTeamProjects(teamId),
-        this.listTeamProducts(teamId, principal),
         this.listTeamInboxItems(teamId, principal),
         this.listTeamInvites(teamId),
         this.listTeamServiceConnections(teamId),
@@ -39,7 +38,6 @@ export async function getTeamHomeSummaryMethod(this: MarketControlPlaneStore, te
           LIMIT 720`, [teamId]),
     ]);
     const projectSummaries = (await Promise.all(projects.map((project) => this.getProjectSummary(project.id, principal)))).filter(Boolean);
-    const publishedProducts = products.filter((item) => item.visibility === 'public' && item.listingEnabled);
     const agentSummaries = await Promise.all(projects.map((project) => capacity.getProjectAgentsSummary(project.id, principal)));
     const activeAgents = agentSummaries.flatMap((summary) => Array.isArray(summary?.agents)
         ? summary.agents.filter((agent) => ['active', 'running', 'ready'].includes(String(agent?.status ?? '').toLowerCase()))
@@ -92,7 +90,6 @@ export async function getTeamHomeSummaryMethod(this: MarketControlPlaneStore, te
         counts: {
             projects: projects.length,
             activeAgents: activeAgents.length,
-            liveListings: publishedProducts.length,
             inbox: inbox.length,
             members: members.length,
             pendingInvitations: pendingInvitations.length,
@@ -105,13 +102,11 @@ export async function getTeamHomeSummaryMethod(this: MarketControlPlaneStore, te
             services: { label: 'Services', count: services.length, href: '/app/services' },
             capacity: { count: activeAgents.length, href: '/app/capacity' },
             knowledge: { count: inbox.length, href: '/app/knowledge' },
-            catalog: { count: publishedProducts.length, href: '/app/market' },
         },
         contentActivity,
         auditEvents: projectedAuditEvents,
         continueWorking: projectSummaries.slice(0, 6),
         activeAgents,
-        publishedProducts,
         inbox,
     };
 }

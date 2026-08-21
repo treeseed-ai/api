@@ -1,7 +1,7 @@
 import { pbkdf2Sync,randomBytes,timingSafeEqual } from 'node:crypto';
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
 export async function consumeReauthentication(store, principal, action, body) {
-    const credential = await store.first(`SELECT password_hash FROM market_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [principal.id]);
+    const credential = await store.first(`SELECT password_hash FROM control_plane_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [principal.id]);
     if (credential && typeof body.currentPassword === 'string' && verifyMarketPassword(body.currentPassword, credential.password_hash))
         return true;
     const grantId = String(body.reauthenticationGrantId ?? '');

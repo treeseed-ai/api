@@ -1,5 +1,5 @@
 export function installAuthenticationAccountProfileAndNotificationsRoutes(context: any) {
-	const { NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, app, availabilityRateLimit, config, createMarketEmailConfirmation, createMarketWebSession, createOrResendUserEmailAddress, ensureMarketCredentialSchema, ensurePrincipal, exposeAuthTokenForTests, getUserEmailAddress, isValidPersonalThemeDraft, jsonError, listUserEmailAddresses, loadNotificationPreferences, marketAuthContext, normalizeAppearancePreference, normalizeEmail, normalizeNotificationPreferences, normalizeUsername, optionalTrimmedString, parseJsonObject, personalThemeFromRow, randomUUID, readJsonOrFormBody, runtime, runtimeMarketAuthProvider, serializeUserEmailAddress, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, store, syncPrimaryEmailCaches, validatePublicUsername, verifiedEmailCount, webAuthPayload, webSessionData } = context;
+	const { NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, app, availabilityRateLimit, config, createMarketEmailConfirmation, createMarketWebSession, createOrResendUserEmailAddress, ensureMarketCredentialSchema, ensurePrincipal, exposeAuthTokenForTests, getUserEmailAddress, isValidPersonalThemeDraft, jsonError, listUserEmailAddresses, loadNotificationPreferences, marketAuthContext, normalizeAppearancePreference, normalizeEmail, normalizeNotificationPreferences, normalizeUsername, optionalTrimmedString, parseJsonObject, personalThemeFromRow, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, serializeUserEmailAddress, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, store, syncPrimaryEmailCaches, validatePublicUsername, verifiedEmailCount, webAuthPayload, webSessionData } = context;
 	app.get('/v1/auth/availability/username', async (c) => {
 					await ensureMarketCredentialSchema(store);
 					const username = normalizeUsername(c.req.query('value'));
@@ -18,7 +18,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 							},
 						});
 					}
-					const row = await store.first(`SELECT user_id FROM market_auth_credentials WHERE username = ? LIMIT 1`, [username]);
+					const row = await store.first(`SELECT user_id FROM control_plane_auth_credentials WHERE username = ? LIMIT 1`, [username]);
 					const userTaken = row ? true : await store.publicUsernameExists(username);
 					const teamTaken = userTaken ? false : await store.teamPublicNameExists(username);
 					return c.json({
@@ -40,7 +40,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					if (retryAfterSeconds) return c.json({ ok: true, payload: { value: email, available: false, status: 'throttled', message: 'Please wait before checking again.', retryAfterSeconds } });
 					if (!email || !email.includes('@')) return c.json({ ok: true, payload: { value: email, available: false, status: 'invalid', message: 'Enter a valid email address.' } });
 					const existing = await store.first(`SELECT user_id FROM user_email_addresses WHERE normalized_email = ? LIMIT 1`, [email])
-						?? await store.first(`SELECT user_id FROM market_auth_credentials WHERE email = ? LIMIT 1`, [email]);
+						?? await store.first(`SELECT user_id FROM control_plane_auth_credentials WHERE email = ? LIMIT 1`, [email]);
 					return c.json({ ok: true, payload: { value: email, available: !existing, status: existing ? 'taken' : 'available', message: existing ? 'This email can’t be used.' : 'Email is available.' } });
 				});
 	
@@ -56,7 +56,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
 					const user = await store.first(`SELECT id, username, display_name, metadata_json FROM users WHERE id = ? LIMIT 1`, [auth.principal.id]);
-					const credential = await store.first(`SELECT user_id FROM market_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
+					const credential = await store.first(`SELECT user_id FROM control_plane_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
 					const identities = await store.all(`SELECT id, provider, email, created_at FROM user_identities WHERE user_id = ? AND provider <> 'credential' ORDER BY created_at`, [auth.principal.id]);
 					const metadata = parseJsonObject(user?.metadata_json);
 					const usableMethods = identities.length + (credential ? 1 : 0);
@@ -94,7 +94,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					} catch {
 						return jsonError(c, 409, 'Username is already taken.', { code: 'username_taken' });
 					}
-					const session = await createMarketWebSession(runtimeMarketAuthProvider, auth.principal.id, webSessionData(c, 'username_claim'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'username_claim'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: { ...webAuthPayload(session), username } });
 				});
 	
@@ -103,7 +103,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					if (auth.response) return auth.response;
 					const identity = await store.first(`SELECT * FROM user_identities WHERE id = ? AND user_id = ? LIMIT 1`, [c.req.param('identityId'), auth.principal.id]);
 					if (!identity) return jsonError(c, 404, 'Connected identity was not found.');
-					const credential = await store.first(`SELECT user_id FROM market_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
+					const credential = await store.first(`SELECT user_id FROM control_plane_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
 					const identityCount = await store.first(`SELECT COUNT(*) AS count FROM user_identities WHERE user_id = ?`, [auth.principal.id]);
 					if (!credential && Number(identityCount?.count ?? 0) <= 1) return jsonError(c, 409, 'Keep at least one sign-in method connected.', { code: 'last_authentication_method' });
 					await store.run(`DELETE FROM user_identities WHERE id = ? AND user_id = ?`, [identity.id, auth.principal.id]);
@@ -171,7 +171,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					if (auth.response) return auth.response;
 					const result = await setPrimaryEmailAddress(store, auth.principal.id, c.req.param('emailId'));
 					if (!result.ok) return jsonError(c, result.status, result.error);
-					const session = await createMarketWebSession(runtimeMarketAuthProvider, auth.principal.id, webSessionData(c, 'email_primary_update'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'email_primary_update'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: { ...webAuthPayload(session), emailAddress: result.emailAddress } });
 				});
 	
@@ -350,7 +350,7 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						new Date().toISOString(),
 						auth.principal.id,
 					]);
-					const session = await createMarketWebSession(runtimeMarketAuthProvider, auth.principal.id, webSessionData(c, 'appearance_update'), { store, authSecret: runtime.resolved.config.authSecret });
+					const session = await createMarketWebSession(runtimeControlPlaneAuthProvider, auth.principal.id, webSessionData(c, 'appearance_update'), { store, authSecret: runtime.resolved.config.authSecret });
 					return c.json({ ok: true, payload: { ...webAuthPayload(session), ...appearance } });
 				});
 	

@@ -1,6 +1,6 @@
-import { MarketControlPlaneStore } from "../../../../persistence/store.ts";
+import { ControlPlaneStore } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
-export async function adminDecideGovernanceProposalMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function adminDecideGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal) return null;
     assertExpectedProposalVersion(input, proposal.activeVersion);
