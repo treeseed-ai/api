@@ -23,7 +23,8 @@ vi.mock('../../../../../src/api/capacity/routes/support/agent-lab/repository-def
 	validateAgentDefinitionSource: () => ({ ok: true, diagnostics: [], references: [] }),
 }));
 
-import { agentClassProjectionIdempotencyKey,agentLabSimulationDraft } from '../../../../../src/api/capacity/routes/support/agent-lab/authoring.ts';
+import { agentClassProjectionIdempotencyKey } from '../../../../../src/api/capacity/routes/support/agent-lab/deployment-support/projection-identity.ts';
+import { agentLabSimulationDraft } from '../../../../../src/api/capacity/routes/support/agent-lab/simulation-draft.ts';
 import { parseAgentLabSimulationDraftOptions } from '../../../../../src/api/capacity/routes/support/agent-lab/simulation-draft-options.ts';
 
 const planningClassPage = {
