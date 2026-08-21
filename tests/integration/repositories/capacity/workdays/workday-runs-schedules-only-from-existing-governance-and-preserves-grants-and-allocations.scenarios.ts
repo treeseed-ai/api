@@ -92,6 +92,10 @@ it('schedules only from existing governance and preserves grants and allocations
             allocations: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_allocation_sets WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
         };
 		const workdays=new WorkdayPreflightService(store);
+		await expect(workdays.preflight('team-governed',{
+			schemaVersion:'treeseed.workday-intent/v1',teamId:'team-governed',profileId:'unknown-profile',projects:['agent'],
+			startsAt:new Date(Date.now()+60_000).toISOString(),durationSeconds:900,operatorConstraints:{providerIds:['provider-governed'],maxConcurrency:1,reservePercent:0},
+		},'owner-a')).rejects.toMatchObject({code:'workday_profile_not_indexed'});
 		const preflight=await workdays.preflight('team-governed',{
 			schemaVersion:'treeseed.workday-intent/v1',teamId:'team-governed',profileId:allocation.id,projects:['agent'],
 			startsAt:new Date(Date.now()+60_000).toISOString(),durationSeconds:900,operatorConstraints:{providerIds:['provider-governed'],maxConcurrency:1,reservePercent:0},
@@ -104,6 +108,12 @@ it('schedules only from existing governance and preserves grants and allocations
 			participants: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_planning_participants`, []))?.count ?? 0),
 			waves: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_planning_waves`, []))?.count ?? 0),
 		}).toEqual({ runs: 0, envelopes: 0, events: 0, participants: 0, waves: 0 });
+		const storedRow=await store.first(`SELECT response_json FROM capacity_operation_receipts WHERE team_id=? AND resource_type='workday_preflight' AND resource_id=?`,['team-governed',preflight.id]);
+		const tampered=JSON.parse(String(storedRow!.response_json));
+		tampered.receipt.maxConcurrency=2;
+		await store.run(`UPDATE capacity_operation_receipts SET response_json=? WHERE team_id=? AND resource_type='workday_preflight' AND resource_id=?`,[JSON.stringify(tampered),'team-governed',preflight.id]);
+		await expect(workdays.start('team-governed',{preflightId:preflight.id,preflightDigest:preflight.preflightDigest,idempotencyKey:'start-tampered'},'owner-a')).rejects.toMatchObject({code:'workday_preflight_integrity_invalid'});
+		await store.run(`UPDATE capacity_operation_receipts SET response_json=? WHERE team_id=? AND resource_type='workday_preflight' AND resource_id=?`,[storedRow!.response_json,'team-governed',preflight.id]);
 		const started=await workdays.start('team-governed',{preflightId:preflight.id,preflightDigest:preflight.preflightDigest,idempotencyKey:'start-governed'},'owner-a');
 		const run=await store.getCapacityWorkdayRun('team-governed',started.workdayId);
 		expect(run).toMatchObject({

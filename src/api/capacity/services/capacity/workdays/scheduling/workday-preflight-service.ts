@@ -67,7 +67,7 @@ export class WorkdayPreflightService {
 	private async compile(teamId:string,intent:WorkdayIntent,requestedById:string|null,id:string):Promise<StoredPreflight> {
 		await this.store.ensureInitialized();
 		const providerId=await this.providerId(teamId,intent);
-		const allocation=await this.store.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND (id = ? OR status = 'active') ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, activated_at DESC, created_at DESC LIMIT 1`,[teamId,intent.profileId,intent.profileId]);
+		const allocation=await this.store.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND id = ? AND status = 'active' LIMIT 1`,[teamId,intent.profileId]);
 		if(!allocation) throw new CapacityGovernanceError('workday_profile_not_indexed','The selected repository allocation profile has not been indexed into an accepted allocation generation.',409,{profileId:intent.profileId});
 		const startsAt=intent.startsAt;
 		const endsAt=intent.endsAt??new Date(Date.parse(startsAt)+(intent.durationSeconds??0)*1000).toISOString();
@@ -142,6 +142,8 @@ export class WorkdayPreflightService {
 		if(!row) throw new CapacityGovernanceError('workday_preflight_not_found','Unknown workday preflight.',404);
 		const stored=JSON.parse(String(row.response_json)) as StoredPreflight;
 		if(stored.receipt.preflightDigest!==request.preflightDigest) throw new CapacityGovernanceError('workday_preflight_digest_mismatch','Workday start must bind the exact preflight digest.',409);
+		const {preflightDigest,...preflightPayload}=stored.receipt;
+		if(digest(preflightPayload)!==preflightDigest) throw new CapacityGovernanceError('workday_preflight_integrity_invalid','Stored workday preflight evidence does not match its digest; generate a fresh plan.',409);
 		const diagnostics=validateWorkdayPreflight(stored.receipt);
 		if(diagnostics.length) throw new CapacityGovernanceError('workday_preflight_stale','Workday preflight is expired or invalid; generate a fresh plan.',409,{diagnostics});
 		const current=await this.compile(teamId,stored.intent,requestedById,stored.receipt.id);
