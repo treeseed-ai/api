@@ -5,6 +5,7 @@ import { describe,expect,it } from 'vitest';
 import { createCapacityControlPlane } from '../../../../../src/api/capacity/control-plane.ts';
 import { aggregateNativeReservationDebits } from '../../../../../src/api/capacity/services/capacity/accounting/native-reservation-aggregation-service.ts';
 import { CapacityGrantService } from '../../../../../src/api/capacity/services/capacity/allocations/grant-service.ts';
+import { WorkdayPreflightService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 import { MarketControlPlaneStore } from '../../../../../src/api/persistence/store.js';
 import { MarketPostgresDatabase } from '../../../../../src/api/support/market-postgres.js';
 const packageRoot = process.cwd();
@@ -90,15 +91,12 @@ it('schedules only from existing governance and preserves grants and allocations
             grants: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_grants WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
             allocations: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_allocation_sets WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
         };
-		const request = {
-			id: 'run-governed', capacityProviderId: 'provider-governed', environment: 'local', status: 'running',
-			parameters: { projects: ['agent'], durationSeconds: 900, allocationSetId: allocation.id, availableSeconds: 900, planningSession: { rounds: 1, assignmentTimeboxSeconds: 60 } },
-		};
-		expect(await store.preflightCapacityWorkdayRunRequest('team-governed', request)).toMatchObject({
-			ok: true, providerId: 'provider-governed', allocationSetId: allocation.id,
-			projects: [{ id: 'project-agent', slug: 'agent', repositoryId: 'treeseed-agent', agentProfiles: 1 }],
-			availableSeconds: 900, planningSeconds: 180, requiredSeconds: 60, rounds: 1, waves: 1, participants: 1,
-		});
+		const workdays=new WorkdayPreflightService(store);
+		const preflight=await workdays.preflight('team-governed',{
+			schemaVersion:'treeseed.workday-intent/v1',teamId:'team-governed',profileId:allocation.id,projects:['agent'],
+			startsAt:new Date(Date.now()+60_000).toISOString(),durationSeconds:900,operatorConstraints:{providerIds:['provider-governed'],maxConcurrency:1,reservePercent:0},
+		},'owner-a');
+		expect(preflight).toMatchObject({schemaVersion:'treeseed.workday-preflight/v1',teamId:'team-governed',profileId:allocation.id,profileGeneration:1,maxConcurrency:1,reserveSeconds:0});
 		expect({
 			runs: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_workday_runs WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
 			envelopes: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_capacity_envelopes WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
@@ -106,11 +104,10 @@ it('schedules only from existing governance and preserves grants and allocations
 			participants: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_planning_participants`, []))?.count ?? 0),
 			waves: Number((await store.first(`SELECT COUNT(*) AS count FROM workday_planning_waves`, []))?.count ?? 0),
 		}).toEqual({ runs: 0, envelopes: 0, events: 0, participants: 0, waves: 0 });
-        const run = await store.createCapacityWorkdayRun('team-governed', {
-			...request,
-        });
-        expect(run).toMatchObject({
-            id: 'run-governed', status: 'running',
+		const started=await workdays.start('team-governed',{preflightId:preflight.id,preflightDigest:preflight.preflightDigest,idempotencyKey:'start-governed'},'owner-a');
+		const run=await store.getCapacityWorkdayRun('team-governed',started.workdayId);
+		expect(run).toMatchObject({
+			id: started.workdayId, status: 'running',
             parameters: {
                 allocationSetId: allocation.id,
                 scheduledProjectIds: ['project-agent'],
@@ -118,15 +115,15 @@ it('schedules only from existing governance and preserves grants and allocations
                 repositoryIdsByProjectId: { 'project-agent': 'treeseed-agent' },
             },
         });
-        expect(await store.getWorkdayCapacityEnvelope('workday-run-governed-agent')).toMatchObject({
-            status: 'active', workdayRunId: 'run-governed', allocationSetId: allocation.id, metadata: { grantId: grant!.id },
+		expect(await store.getWorkdayCapacityEnvelope(`workday-${started.workdayId}-agent`)).toMatchObject({
+			status: 'active', workdayRunId: started.workdayId, allocationSetId: allocation.id, metadata: { grantId: grant!.id },
         });
         expect({
             grants: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_grants WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
             allocations: Number((await store.first(`SELECT COUNT(*) AS count FROM capacity_allocation_sets WHERE team_id = ?`, ['team-governed']))?.count ?? 0),
         }).toEqual(before);
-        await store.updateCapacityWorkdayRun('team-governed', 'run-governed', { status: 'completed' });
-        expect(await store.getWorkdayCapacityEnvelope('workday-run-governed-agent')).toMatchObject({ status: 'completed' });
+		await store.updateCapacityWorkdayRun('team-governed', started.workdayId, { status: 'completed' });
+		expect(await store.getWorkdayCapacityEnvelope(`workday-${started.workdayId}-agent`)).toMatchObject({ status: 'completed' });
         expect(await grantService.get('team-governed', grant!.id)).toMatchObject({ status: 'active' });
     }
     finally {

@@ -5,7 +5,6 @@ DurableAgentCapacityPlanStatus,
 import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { readCapacityRequestObject } from '../../support/request-json.ts';
 
 const STATUSES = new Set<DurableAgentCapacityPlanStatus>([
 	'draft', 'accepted', 'revision_requested', 'deferred', 'scheduled', 'active', 'completed', 'superseded',
@@ -14,9 +13,7 @@ const STATUSES = new Set<DurableAgentCapacityPlanStatus>([
 interface CapacityPlanStore extends CapacityGovernanceDatabase {
 	getDecisionPlanningStatus(decisionId: string): Promise<{ projectId: string } | null>;
 	listAgentCapacityPlans(decisionId: string, filters: { status: DurableAgentCapacityPlanStatus | null }): Promise<AgentCapacityPlanRecord[]>;
-	createAgentCapacityPlan(decisionId: string, input: Record<string, unknown>): Promise<AgentCapacityPlanRecord | null>;
 	getAgentCapacityPlan(planId: string): Promise<AgentCapacityPlanRecord | null>;
-	updateAgentCapacityPlanStatus(planId: string, status: DurableAgentCapacityPlanStatus, input: Record<string, unknown>): Promise<AgentCapacityPlanRecord | null>;
 }
 
 export interface CapacityPlanRouteOptions {
@@ -37,14 +34,6 @@ function requestedStatus(value: unknown): DurableAgentCapacityPlanStatus | null 
 	return candidate;
 }
 
-function mutationInput(c: Context, body: Record<string, unknown>) {
-	const idempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()
-		? body.idempotencyKey.trim()
-		: c.req.header('Idempotency-Key')?.trim();
-	if (!idempotencyKey) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
-	return { ...body, idempotencyKey };
-}
-
 export function installCapacityPlanRoutes(app: Hono, options: CapacityPlanRouteOptions) {
 	const store = options.store as CapacityPlanStore;
 
@@ -56,16 +45,6 @@ export function installCapacityPlanRoutes(app: Hono, options: CapacityPlanRouteO
 		return c.json({ ok: true, payload: await store.listAgentCapacityPlans(c.req.param('decisionId'), { status: requestedStatus(c.req.query('status')) }) });
 	});
 
-	app.post('/v1/decisions/:decisionId/capacity-plans', async (c) => {
-		const body = await readCapacityRequestObject(c, { optional: true });
-		const projectId = typeof body.projectId === 'string' ? body.projectId : '';
-		if (!projectId) return error(c, 400, 'projectId is required.');
-		const access = await options.requireProjectAccess(c, options.store, projectId, 'projects:manage:team');
-		if (access.response) return access.response;
-		const plan = await store.createAgentCapacityPlan(c.req.param('decisionId'), mutationInput(c, body));
-		return plan ? c.json({ ok: true, payload: plan }, { status: 201 }) : error(c, 404, 'Unknown project.');
-	});
-
 	app.get('/v1/capacity-plans/:capacityPlanId', async (c) => {
 		const plan = await store.getAgentCapacityPlan(c.req.param('capacityPlanId'));
 		if (!plan) return error(c, 404, 'Unknown capacity plan.');
@@ -74,17 +53,4 @@ export function installCapacityPlanRoutes(app: Hono, options: CapacityPlanRouteO
 		return c.json({ ok: true, payload: plan });
 	});
 
-	const transition = (status: DurableAgentCapacityPlanStatus) => async (c: Context) => {
-		const plan = await store.getAgentCapacityPlan(c.req.param('capacityPlanId'));
-		if (!plan) return error(c, 404, 'Unknown capacity plan.');
-		const access = await options.requireProjectAccess(c, options.store, plan.projectId, 'projects:manage:team');
-		if (access.response) return access.response;
-		const body = mutationInput(c, await readCapacityRequestObject(c, { optional: true }));
-		return c.json({ ok: true, payload: await store.updateAgentCapacityPlanStatus(plan.id, status, body) });
-	};
-
-	app.post('/v1/capacity-plans/:capacityPlanId/accept', transition('accepted'));
-	app.post('/v1/capacity-plans/:capacityPlanId/request-revision', transition('revision_requested'));
-	app.post('/v1/capacity-plans/:capacityPlanId/schedule', transition('scheduled'));
-	app.post('/v1/capacity-plans/:capacityPlanId/supersede', transition('superseded'));
 }

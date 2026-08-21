@@ -1,7 +1,7 @@
 import { encodeCapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { Hono } from 'hono';
 import { describe,expect,it } from 'vitest';
-import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
+import type { CapacityGovernanceDatabase } from '../../../../../src/api/capacity/database.ts';
 import { installCapacityOperatorRoutes } from '../../../../../src/api/capacity/routes/support/operator.ts';
 
 describe('capacity operator routes', () => {
@@ -9,16 +9,20 @@ describe('capacity operator routes', () => {
 		const app = new Hono();
 		let creates = 0;
 		const calls: Array<Record<string, unknown>> = [];
-		const preflight = {
+		const schedulerProjection = {
 			ok: true, teamId: 'team-a', providerId: 'provider-a', allocationSetId: 'allocation-a',
 			projects: [{ id: 'project-a', slug: 'market', repositoryId: 'repo-a', planningGraphRevision: 'revision-a', agentProfiles: 6 }],
 			availableSeconds: 6_000, planningSeconds: 5_400, requiredSeconds: 5_100, rounds: 3, waves: 5, participants: 6,
 		};
 		const store = {
+			async ensureInitialized() {},
+			async first(query:string) { return query.includes('capacity_allocation_sets')?{id:'allocation-a',state_version:2,status:'active'}:null; },
+			async all(query:string) { return query.includes('capacity_provider_team_memberships')?[{capacity_provider_id:'provider-a'}]:[]; },
+			async run() {},
 			async createCapacityWorkdayRun() { creates += 1; return {}; },
 			async preflightCapacityWorkdayRunRequest(teamId: string, input: Record<string, unknown>) {
 				calls.push({ teamId, ...input });
-				return preflight;
+				return schedulerProjection;
 			},
 		} as unknown as CapacityGovernanceDatabase;
 		installCapacityOperatorRoutes(app, {
@@ -31,36 +35,35 @@ describe('capacity operator routes', () => {
 		const response = await app.request('/v1/teams/team-a/workday-runs/preflight', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ status: 'running', parameters: { durationSeconds: 3_000 } }),
+			body: JSON.stringify({ schemaVersion:'treeseed.workday-intent/v1',profileId:'allocation-a',projects:['market'],startsAt:new Date(Date.now()+60_000).toISOString(),durationSeconds:3_000 }),
 		});
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ ok: true, payload: preflight });
-		expect(calls).toEqual([{ teamId: 'team-a', status: 'running', parameters: { durationSeconds: 3_000 }, requestedById: 'owner-a' }]);
+		const responseBody=await response.json() as any;
+		expect(responseBody).toMatchObject({ok:true,payload:{schemaVersion:'treeseed.workday-preflight/v1',teamId:'team-a',profileId:'allocation-a',profileGeneration:2,maxConcurrency:1}});
+		expect(responseBody.payload.preflightDigest).toMatch(/^sha256:[A-Za-z0-9_-]{43}$/u);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]).toMatchObject({teamId:'team-a',capacityProviderId:'provider-a',status:'running',requestedById:'owner-a',parameters:{allocationSetId:'allocation-a',durationSeconds:3_000,planningOnly:false}});
 		expect(creates).toBe(0);
 	});
 
-	it('preserves fail-closed workday governance status and code at the HTTP boundary', async () => {
+	it('rejects raw derived workday fields before any scheduler mutation', async () => {
 		const app = new Hono();
+		let creates=0;
 		const store = {
-			async createCapacityWorkdayRun() {
-				throw new CapacityGovernanceError('capacity_workday_treedx_binding_missing', 'Workday requires a configured TreeDX repository.', 409);
-			},
+			async createCapacityWorkdayRun() { creates+=1; return {}; },
 		} as unknown as CapacityGovernanceDatabase;
 		installCapacityOperatorRoutes(app, {
 			store,
 			async requireTeamAccess() { return { principal: { id: 'owner-a' } }; },
 		});
-		const response = await app.request('/v1/teams/team-a/workday-runs', {
+		const response = await app.request('/v1/teams/team-a/workday-runs/preflight', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ status: 'running' }),
+			body: JSON.stringify({ profileId:'profile-a',projects:'all',startsAt:new Date().toISOString(),durationSeconds:300,status:'running',parameters:{} }),
 		});
-		expect(response.status).toBe(409);
-		expect(await response.json()).toEqual({
-			ok: false,
-			error: 'Workday requires a configured TreeDX repository.',
-			code: 'capacity_workday_treedx_binding_missing',
-		});
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({ok:false,code:'workday_intent_derived_fields_forbidden'});
+		expect(creates).toBe(0);
 	});
 
 	it('serves the assignment-owned explanation without a duplicate explanation repository', async () => {
@@ -194,7 +197,7 @@ describe('capacity operator routes', () => {
 		expect(await response.json()).toMatchObject({ payload: { cursor: 4, items: [{ sequence: 4, agentId: 'writer', summary: 'Drafted.' }] } });
 	});
 
-	it('routes idempotent tick, cancellation, and safe requeue with the managing actor', async () => {
+	it('keeps scheduler internals private while routing assignment cancellation and retry', async () => {
 		const app = new Hono(); const calls: Array<Record<string, unknown>> = [];
 		const store = {
 			async tickCapacityWorkdayRun(teamId: string, runId: string, now: string | undefined, idempotencyKey: string) {
@@ -212,16 +215,27 @@ describe('capacity operator routes', () => {
 		} as unknown as CapacityGovernanceDatabase;
 		installCapacityOperatorRoutes(app, { store, async requireTeamAccess() { return { principal: { id: 'owner-a' } }; } });
 		const tick = await app.request('/v1/teams/team-a/workday-runs/run-a/tick', { method: 'POST', headers: { 'Idempotency-Key': 'tick-a' } });
-		const missingFenceKey = await app.request('/v1/teams/team-a/workday-runs/run-a/close-admission',{ method: 'POST' });
 		const fence = await app.request('/v1/teams/team-a/workday-runs/run-a/close-admission',{ method: 'POST',headers: { 'Idempotency-Key': 'fence-a' } });
 		const cancel = await app.request('/v1/teams/team-a/capacity/assignments/assignment-a/cancel', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'cancel-a', reason: 'No longer needed.' }) });
 		const requeue = await app.request('/v1/teams/team-a/capacity/assignments/assignment-a/requeue', { method: 'POST', headers: { 'Idempotency-Key': 'retry-a' } });
-		expect([tick.status,missingFenceKey.status,fence.status,cancel.status,requeue.status]).toEqual([200,400,200,200,200]);
+		expect([tick.status,fence.status,cancel.status,requeue.status]).toEqual([404,404,200,200]);
 		expect(calls).toEqual([
-			{ operation: 'tick', teamId: 'team-a', runId: 'run-a', now: undefined, idempotencyKey: 'tick-a' },
-			{ operation: 'close-admission',teamId: 'team-a',runId: 'run-a' },
 			{ operation: 'cancel', teamId: 'team-a', assignmentId: 'assignment-a', idempotencyKey: 'cancel-a', actorId: 'owner-a', reason: 'No longer needed.' },
 			{ operation: 'requeue', teamId: 'team-a', assignmentId: 'assignment-a', idempotencyKey: 'retry-a', actorId: 'owner-a' },
 		]);
+	});
+
+	it('does not expose raw workday, definition-authoring, or deployment mutation routes', async () => {
+		const app=new Hono(); let writes=0;
+		const store={async run(){writes+=1;},async updateCapacityWorkdayRun(){writes+=1;},async createCapacityWorkdayEvent(){writes+=1;}} as unknown as CapacityGovernanceDatabase;
+		installCapacityOperatorRoutes(app,{store,async requireTeamAccess(){return {principal:{id:'owner-a'}};}});
+		for(const [method,path] of [
+			['PATCH','/v1/teams/team-a/workday-runs/run-a'],
+			['POST','/v1/teams/team-a/workday-runs/run-a/events'],
+			['POST','/v1/teams/team-a/agent-lab/surfaces/build/authoring'],
+			['POST','/v1/teams/team-a/agent-deployments/plan'],
+			['POST','/v1/teams/team-a/agent-deployments/execute'],
+		] as const) expect((await app.request(path,{method,headers:{'content-type':'application/json'},body:'{}'})).status,path).toBe(404);
+		expect(writes).toBe(0);
 	});
 });

@@ -24,22 +24,17 @@ it('allows local acceptance admin token to manage workday runs in local mode', a
 				'content-type': 'application/json',
 				authorization: 'Bearer tsk_local_treeseed_acceptance_admin',
 			};
-			const created = await app.request('/v1/teams/treeseed/workday-runs', {
+			const now=new Date().toISOString();
+			await store.run(`INSERT INTO capacity_workday_runs (id,team_id,capacity_provider_id,scenario_id,status,environment,execution_kind,trigger_kind,hidden,requested_by_id,parameters_json,summary_json,metrics_json,expected_json,actual_json,report_refs_json,error_json,started_at,completed_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
+				'run-local-acceptance','treeseed','provider-local','local-auth','queued','local','workday','manual',0,'team-key:local-capacity-acceptance',JSON.stringify({authMode:'local_acceptance_admin',durationSeconds:60}),'{}','{}','{}','{}','{}','{}',null,null,now,now,
+			]);
+			const preflight = await app.request('/v1/teams/treeseed/workday-runs/preflight', {
 				method: 'POST',
 				headers,
-				body: JSON.stringify({
-					id: 'run-local-acceptance',
-					capacityProviderId: 'provider-local',
-					status: 'queued',
-					parameters: { authMode: 'local_acceptance_admin', durationSeconds: 60 },
-				}),
+				body: JSON.stringify({status:'queued',parameters:{durationSeconds:60}}),
 			});
-			expect(created.status).toBe(201);
-			const createdPayload = await json(created);
-			expect(createdPayload.payload).toMatchObject({
-				id: 'run-local-acceptance',
-				requestedById: 'team-key:local-capacity-acceptance',
-			});
+			expect(preflight.status).toBe(400);
+			expect(await json(preflight)).toMatchObject({code:'workday_intent_derived_fields_forbidden'});
 			expect(persistedKeyLookup).not.toHaveBeenCalled();
 
 			const event = await app.request('/v1/teams/treeseed/workday-runs/run-local-acceptance/events', {
@@ -50,7 +45,7 @@ it('allows local acceptance admin token to manage workday runs in local mode', a
 					title: 'Started with local acceptance auth',
 				}),
 			});
-			expect(event.status).toBe(201);
+			expect(event.status).toBe(404);
 
 			const isolatedTeam = await app.request('/v1/teams', {
 				method: 'POST',

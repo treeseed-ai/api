@@ -339,22 +339,7 @@ sdkMethodMatrices:
     expect:
       status: 404
       envelope: { ok: false }
-  - method: createWorkdayRun
-    actor: teamOwner
-    expect:
-      status: 201
-      envelope: { ok: true }
   - method: workdayRun
-    actor: teamOwner
-    expect:
-      status: 404
-      envelope: { ok: false }
-  - method: updateWorkdayRun
-    actor: teamOwner
-    expect:
-      status: 404
-      envelope: { ok: false }
-  - method: tickWorkdayRun
     actor: teamOwner
     expect:
       status: 404

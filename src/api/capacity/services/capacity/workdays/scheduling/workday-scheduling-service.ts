@@ -20,6 +20,7 @@ import { compileWorkdayAtlasTopology } from '../policy/workday-atlas-topology-po
 import { compileCooperativePlanningSession,initializeCooperativePlanningSession } from './cooperative-planning-session-service.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 import { ContextQueryCheckService } from '../../agents/context-query-check-service.ts';
+import { listActingDemandSources } from '../../../support/acting-demand-source.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -167,6 +168,8 @@ async function resolveCapacityWorkdayPreflight(
 
 export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, run: DurableCapacityWorkdayRun) {
 	const resolved = await resolveCapacityWorkdayPreflight(store, run);
+	const actingDemands=resolved.parameters.planningOnly===true?[]:(await Promise.all(resolved.projects.map(async(project)=>
+		(await listActingDemandSources(store,run,project,`preflight:${run.id}:${project.id}`)).map((source)=>({projectId:project.id,...source}))))).flat();
 	return {
 		ok: true,
 		teamId: run.teamId,
@@ -185,6 +188,8 @@ export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, r
 		rounds: resolved.rounds,
 		waves: resolved.planning.compiled.waves.length,
 		participants: resolved.planning.participants.length,
+		planningParticipants: resolved.planning.participants,
+		actingDemands,
 	};
 }
 

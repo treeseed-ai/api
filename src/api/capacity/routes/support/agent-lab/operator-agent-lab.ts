@@ -15,7 +15,6 @@ import { RelationContentValidationError,searchRelations } from '../../../../rout
 import { CapacityAllocationService } from '../../../services/capacity/allocations/allocation-service.ts';
 import { agentLabRepositoryDefinitions,matchesAgentDefinition,unmatchedAgentDefinitions } from './repository-definitions.ts';
 import { agentLabInboxQuestions } from './inbox-questions.ts';
-import { installOperatorAgentLabAuthoringRoutes } from './authoring.ts';
 import { installOperatorAgentAtlasRoutes } from './atlas.ts';
 import { installAgentLabTargetRoutes } from './target-routes.ts';
 import { installContextQueryCheckRoutes } from './context-query-checks.ts';
@@ -429,7 +428,7 @@ function installDetailRoutes(app: Hono, dependencies: WorkdayRouteDependencies) 
 			if (!text(file.content)) return dependencies.notFound(c, 'Unknown repository definition.');
 			const title = path.split('/').at(-1)?.replace(/\.ya?ml$/u, '').replace(/[-_]/gu, ' ') ?? path;
 			const language = path.endsWith('.mdx') ? 'mdx' : 'yaml'; const source = text(file.content); const expectedBase = text(read?.resolvedRef, connection?.baseRef);
-			const payload = { id: entityId, kind, title, description: path, status: 'repository definition', projectId, projectName: text(project.name), primary: { actor: { label: 'Repository owner', name: text(project.name, 'Project team'), detail: 'project' }, content: { label: 'Definition', body: `${title} is the active repository-backed ${kind.replace(/-/gu, ' ')} definition.`, classification: kind.replace(/-/gu, ' '), missing: false }, facts: [{ label: 'Project', value: text(project.name) }, { label: 'Path', value: path }] }, permissions: { note: true, question: true, edit: true }, metrics: [{ label: 'Bytes', value: Buffer.byteLength(source, 'utf8') }], sections: [{ id: 'source', title: 'Canonical repository source', fields: [{ label: 'Immutable base ref', value: expectedBase }, { label: 'Path', value: path }, { label: `${language.toUpperCase()} source`, value: source }] }], timeline: [], related: await knowledgeConversation(dependencies, projectId, entityId), data: { projectId, path, ref: expectedBase, source, authoring: { source, path, language, expectedBase, projectId, projectName: text(project.name) } } };
+			const payload = { id: entityId, kind, title, description: path, status: 'repository definition', projectId, projectName: text(project.name), primary: { actor: { label: 'Repository owner', name: text(project.name, 'Project team'), detail: 'project' }, content: { label: 'Definition', body: `${title} is the active repository-backed ${kind.replace(/-/gu, ' ')} definition.`, classification: kind.replace(/-/gu, ' '), missing: false }, facts: [{ label: 'Project', value: text(project.name) }, { label: 'Path', value: path }] }, permissions: { note: true, question: true, edit: false }, metrics: [{ label: 'Bytes', value: Buffer.byteLength(source, 'utf8') }], sections: [{ id: 'source', title: 'Canonical repository source', fields: [{ label: 'Immutable base ref', value: expectedBase }, { label: 'Path', value: path }, { label: `${language.toUpperCase()} source`, value: source }] }], timeline: [], related: await knowledgeConversation(dependencies, projectId, entityId), data: { projectId, path, ref: expectedBase, source } };
 			return response(c, payload, new AgentLabCommandService(dependencies.store).revision(payload));
 		}
 		if (entityId.startsWith('treedx:')) {
@@ -488,7 +487,6 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 	installEntityRoutes(app, dependencies);
 	installSurfaceRoutes(app, dependencies);
 	installViewStateRoutes(app, dependencies);
-	installOperatorAgentLabAuthoringRoutes(app, dependencies);
 	installServicePrincipalRoutes(app, dependencies);
 	installSimulationRoutes(app, dependencies);
 	installDetailRoutes(app, dependencies);
