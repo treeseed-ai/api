@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
 import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
-import { semanticArtifactChecks,type SemanticArtifactExpectation } from './semantic-artifact-checks.ts';
+import { semanticArtifactChecks,type SemanticArtifactExpectation } from './semantic/artifact-checks.ts';
 
 type Row=Record<string,unknown>;
 type Store=CapacityGovernanceDatabase&WorkdayTreeDxConnectionStore&{
