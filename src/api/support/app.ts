@@ -21,6 +21,7 @@ import { routeDependencies } from "./route-dependencies.ts";
 import { installPlatformRoutes } from "./route-installers.ts";
 import { SessionEventService } from "../realtime/session-events.ts";
 import { installControlPlaneProtocolRoutes } from "../control-plane/http/protocol-routes.ts";
+import { createApiControlPlaneOperations } from "../control-plane/catalog/index.ts";
 
 export * from "../app/support/index.ts";
 
@@ -146,6 +147,7 @@ export function createPlatformApiApp(
             app,
             (token) => runtimeControlPlaneAuthProvider.authenticateBearerToken(token),
             runtimeControlPlaneAuthProvider,
+            createApiControlPlaneOperations({ store }),
           );
           options.extendApp?.(app, runtime);
         },

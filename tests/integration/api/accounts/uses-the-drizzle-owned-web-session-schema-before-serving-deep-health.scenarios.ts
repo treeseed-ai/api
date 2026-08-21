@@ -6,10 +6,9 @@ it('uses the Drizzle-owned web session schema before serving deep health', async
 		const app = createTestApp({ db });
 		const deepHealth = await json(await app.request('/healthz/deep'));
 		expect(deepHealth).toMatchObject({
-			ok: true,
-			status: 'ok',
-			checks: {
-				database: true,
+			data: {
+				status: 'ok',
+				checks: { database: true },
 			},
 		});
 

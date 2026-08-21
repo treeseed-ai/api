@@ -2,10 +2,12 @@ import { createMcpHonoApp, hostHeaderValidation } from '@modelcontextprotocol/ho
 import { OAuthError, OAuthErrorCode, requireBearerAuth } from '@modelcontextprotocol/server';
 import type { Hono } from 'hono';
 import { controlPlaneOperations } from '../catalog/index.ts';
+import { ControlPlaneOperationError, type OperationRegistry } from '../catalog/operation-registry.ts';
 import { createControlPlaneMcpHandler } from '../mcp/create-mcp-handler.ts';
-import { mcpCatalog, mcpCatalogDigest } from '../mcp/mcp-catalog.ts';
+import { createMcpCatalog, mcpCatalogDigest } from '../mcp/mcp-catalog.ts';
 import { generateOpenApi, openApiDigest } from '../openapi/generate-openapi.ts';
 import { installOAuthProtocolRoutes, type OAuthRuntimeProvider } from '../oauth/oauth-routes.ts';
+import { ZodError } from 'zod';
 
 interface AuthenticatedPrincipal {
 	principal: { id: string; scopes?: string[]; roles?: string[]; permissions?: string[] };
@@ -16,11 +18,13 @@ export function installControlPlaneProtocolRoutes(
 	app: Hono,
 	authenticateBearerToken: (token: string) => Promise<AuthenticatedPrincipal | null>,
 	oauthProvider?: OAuthRuntimeProvider,
+	registry: OperationRegistry = controlPlaneOperations,
 ) {
-	const document = generateOpenApi(controlPlaneOperations);
+	const document = generateOpenApi(registry);
 	const digest = openApiDigest(document);
-	const mcpDigest = mcpCatalogDigest();
-	const mcpHandler = createControlPlaneMcpHandler(controlPlaneOperations);
+	const mcpCatalog = createMcpCatalog(registry);
+	const mcpDigest = mcpCatalogDigest(mcpCatalog);
+	const mcpHandler = createControlPlaneMcpHandler(registry);
 	const bearerGate = requireBearerAuth({
 		verifier: {
 			async verifyAccessToken(token) {
@@ -54,12 +58,12 @@ export function installControlPlaneProtocolRoutes(
 	installOAuthProtocolRoutes(app, oauthProvider);
 	app.route('/mcp', protocolApp);
 
-	for (const operation of controlPlaneOperations.operations.values()) {
+	for (const operation of registry.operations.values()) {
 		if (operation.descriptor.rest?.method !== 'GET') continue;
 		app.get(operation.descriptor.rest.path, async (context) => {
-			const authInfo = await bearerGate(context.req.raw);
+			const authInfo = operation.descriptor.oauthScopes.length > 0 ? await bearerGate(context.req.raw) : undefined;
 			if (authInfo instanceof Response) return authInfo;
-			const missingScope = operation.descriptor.oauthScopes.find((scope) => !authInfo.scopes.includes(scope));
+			const missingScope = operation.descriptor.oauthScopes.find((scope) => !authInfo?.scopes.includes(scope));
 			if (missingScope) return context.json({
 				type: 'https://treeseed.dev/problems/insufficient-scope',
 				title: 'Insufficient scope',
@@ -67,13 +71,24 @@ export function installControlPlaneProtocolRoutes(
 				code: 'oauth_scope_insufficient',
 				detail: `The operation requires ${missingScope}.`,
 			}, 403, { 'content-type': 'application/problem+json' });
-			const output = await operation.handler(operation.inputSchema.parse({}), {
-				interface: 'rest',
-				requestId: context.req.header('x-request-id') ?? crypto.randomUUID(),
-				traceparent: context.req.header('traceparent'),
-				authInfo,
-			});
-			return context.json({ data: operation.outputSchema.parse(output) }, 200, { 'x-treeseed-contract-digest': digest });
+			const requestId = context.req.header('x-request-id') ?? crypto.randomUUID();
+			try {
+				const output = await operation.handler(operation.inputSchema.parse({}), {
+					interface: 'rest', requestId, traceparent: context.req.header('traceparent'), authInfo,
+				});
+				return context.json({ data: operation.outputSchema.parse(output) }, 200, { 'x-treeseed-contract-digest': digest, 'x-request-id': requestId });
+			} catch (error) {
+				const problem = error instanceof ControlPlaneOperationError
+					? error
+					: error instanceof ZodError
+						? new ControlPlaneOperationError(400, 'operation_input_invalid', 'The operation input is invalid.')
+						: new ControlPlaneOperationError(500, 'operation_failed', 'The operation failed.');
+				return context.json({
+					type: `https://treeseed.dev/problems/${problem.code}`,
+					title: problem.status === 503 ? 'Service unavailable' : problem.status === 400 ? 'Invalid request' : 'Operation failed',
+					status: problem.status, code: problem.code, detail: problem.message, requestId,
+				}, problem.status, { 'content-type': 'application/problem+json', 'x-request-id': requestId });
+			}
 		});
 	}
 }

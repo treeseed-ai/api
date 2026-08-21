@@ -1,6 +1,6 @@
 import { CONTROL_PLANE_OPERATION_SCHEMA_VERSION } from '@treeseed/sdk/operator-contracts';
 import { z } from 'zod';
-import type { BoundOperation } from './operation-registry.ts';
+import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
 
 const statusInput = z.object({}).strict();
 const statusOutput = z.object({
@@ -37,3 +37,45 @@ export const statusOperation: BoundOperation<z.infer<typeof statusInput>, z.infe
 		return { service: 'control-plane', status: 'ok', contractVersion: 'treeseed.control-plane-operation/v1', mcpProtocolVersion: '2026-07-28' };
 	},
 };
+
+const deepHealthInput = z.object({}).strict();
+const deepHealthOutput = z.object({
+	status: z.enum(['ok', 'unavailable']),
+	checks: z.object({ database: z.boolean() }),
+});
+
+export interface DeepHealthDependencies {
+	store: {
+		ensureInitialized(): Promise<unknown>;
+		first(query: string): Promise<Record<string, unknown> | null | undefined>;
+	};
+}
+
+export function createDeepHealthOperation(dependencies: DeepHealthDependencies): BoundOperation<z.infer<typeof deepHealthInput>, z.infer<typeof deepHealthOutput>> {
+	return {
+		descriptor: {
+			schemaVersion: CONTROL_PLANE_OPERATION_SCHEMA_VERSION,
+			operationId: 'health.deep',
+			description: 'Read authoritative control-plane database readiness.',
+			rest: { method: 'GET', path: '/healthz/deep' },
+			schemas: { input: 'treeseed.health.deep.input/v1', output: 'treeseed.health.deep.output/v1', errors: 'treeseed.problem/v1' },
+			capability: 'health.read', oauthScopes: [], kind: 'read', riskClass: 'ordinary', confirmation: 'never',
+			idempotency: { required: false, header: 'Idempotency-Key' },
+			concurrency: { required: false, readHeader: 'ETag', writeHeader: 'If-Match' },
+			surfaces: ['rest'], cacheScope: 'private', pagination: 'none', audited: false, receipt: false, redactedPaths: [],
+		},
+		inputSchema: deepHealthInput,
+		outputSchema: deepHealthOutput,
+		async handler() {
+			try {
+				await dependencies.store.ensureInitialized();
+				const probe = await dependencies.store.first('SELECT 1 AS ok');
+				const database = probe?.ok === 1 || probe?.ok === '1';
+				if (!database) throw new Error('Readiness probe failed.');
+				return { status: 'ok', checks: { database: true } };
+			} catch {
+				throw new ControlPlaneOperationError(503, 'control_plane_database_unavailable', 'The control-plane database is unavailable.');
+			}
+		},
+	};
+}

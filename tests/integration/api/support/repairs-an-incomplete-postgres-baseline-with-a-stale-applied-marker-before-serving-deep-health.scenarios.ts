@@ -15,10 +15,9 @@ it('repairs an incomplete Postgres baseline with a stale applied marker before s
 		const app = createTestApp({ db });
 		const deepHealth = await json(await app.request('/healthz/deep'));
 		expect(deepHealth).toMatchObject({
-			ok: true,
-			status: 'ok',
-			checks: {
-				database: true,
+			data: {
+				status: 'ok',
+				checks: { database: true },
 			},
 		});
 		const table = await db.pool.query(

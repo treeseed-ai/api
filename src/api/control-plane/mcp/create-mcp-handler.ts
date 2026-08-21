@@ -1,9 +1,10 @@
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { OperationRegistry } from '../catalog/operation-registry.ts';
-import { mcpCatalog } from './mcp-catalog.ts';
+import { createMcpCatalog } from './mcp-catalog.ts';
 
 export function createControlPlaneMcpHandler(registry: OperationRegistry) {
+	const mcpCatalog = createMcpCatalog(registry);
 	return createMcpHandler((requestContext) => {
 		const server = new McpServer({ name: 'treeseed-control-plane', version: '0.8.0-rc.1' });
 		for (const operation of registry.operations.values()) {

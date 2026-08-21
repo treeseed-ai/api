@@ -12,10 +12,9 @@ it('adopts an existing baseline Postgres schema before serving deep health', asy
 		const app = createTestApp({ db });
 		const deepHealth = await json(await app.request('/healthz/deep'));
 		expect(deepHealth, JSON.stringify(deepHealth)).toMatchObject({
-			ok: true,
-			status: 'ok',
-			checks: {
-				database: true,
+			data: {
+				status: 'ok',
+				checks: { database: true },
 			},
 		});
 		const migration = await db.pool.query(

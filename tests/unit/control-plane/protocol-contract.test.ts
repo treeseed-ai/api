@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { controlPlaneOperations } from '../../../src/api/control-plane/catalog/index.ts';
+import { controlPlaneOperations, createApiControlPlaneOperations } from '../../../src/api/control-plane/catalog/index.ts';
 import { installControlPlaneProtocolRoutes } from '../../../src/api/control-plane/http/protocol-routes.ts';
 import { generateOpenApi, openApiDigest } from '../../../src/api/control-plane/openapi/generate-openapi.ts';
 
@@ -47,6 +47,26 @@ describe('control-plane protocol contract', () => {
 		expect(specification.headers.get('x-treeseed-contract-digest')).toMatch(/^sha256:[a-f0-9]{64}$/u);
 		const mcpCatalog = await app.request('/mcp/catalog.json');
 		expect(mcpCatalog.headers.get('x-treeseed-contract-digest')).toMatch(/^sha256:[a-f0-9]{64}$/u);
+	});
+
+	it('binds dependency-backed deep health directly through the catalog', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations({ store: { async ensureInitialized() {}, async first() { return { ok: 1 }; } } });
+		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
+		const response = await app.request('/healthz/deep');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
+		const specification = await app.request('/openapi.json');
+		expect((await specification.json() as any).paths['/healthz/deep'].get.operationId).toBe('health.deep');
+		const unavailableApp = new Hono();
+		const unavailable = createApiControlPlaneOperations({ store: { async ensureInitialized() { throw new Error('private database detail'); }, async first() { return null; } } });
+		installControlPlaneProtocolRoutes(unavailableApp, authenticate, oauthProvider, unavailable);
+		const failed = await unavailableApp.request('/healthz/deep');
+		const failedText = await failed.text();
+		expect(failed.status).toBe(503);
+		expect(failed.headers.get('content-type')).toContain('application/problem+json');
+		expect(JSON.parse(failedText)).toMatchObject({ status: 503, code: 'control_plane_database_unavailable' });
+		expect(failedText).not.toContain('private database detail');
 	});
 
 	it('publishes truthful OAuth resource metadata and RFC 8628 device exchange', async () => {

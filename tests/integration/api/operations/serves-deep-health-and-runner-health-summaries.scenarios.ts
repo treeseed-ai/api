@@ -5,10 +5,9 @@ it('serves deep health and runner health summaries', async () => {
 		const app = createTestApp();
 		const deepHealth = await json(await app.request('/healthz/deep'));
 		expect(deepHealth, JSON.stringify(deepHealth)).toMatchObject({
-			ok: true,
-			status: 'ok',
-			checks: {
-				database: true,
+			data: {
+				status: 'ok',
+				checks: { database: true },
 			},
 		});
 
