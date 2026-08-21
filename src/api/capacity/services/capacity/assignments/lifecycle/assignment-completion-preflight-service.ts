@@ -1,10 +1,10 @@
-import { agentLabArtifactChecks,type AgentLabArtifactExpectation } from '@treeseed/sdk/scenes';
 import { validateAgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
 import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
 import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
+import { semanticArtifactChecks,type SemanticArtifactExpectation } from './semantic-artifact-checks.ts';
 
 type Row=Record<string,unknown>;
 type Store=CapacityGovernanceDatabase&WorkdayTreeDxConnectionStore&{
@@ -32,7 +32,7 @@ export async function preflightProviderAssignmentCompletion(store:Store,principa
 	const manifest=record(input.artifactManifest);const validation=validateAgentArtifactManifest(manifest as never);
 	if(!validation.ok)throw new CapacityGovernanceError('assignment_completion_manifest_invalid',validation.reason??'Completion artifact manifest is invalid.',409,{assignmentId});
 	if(text(manifest.assignmentId)!==assignmentId||text(manifest.projectId)!==text(assignment.projectId))throw new CapacityGovernanceError('assignment_completion_manifest_scope_invalid','Completion manifest does not belong to the exact assignment and project.',409,{assignmentId});
-	const payload=record(record(assignment.decisionInput).input);const expectations=records(payload.semanticArtifactExpectations) as AgentLabArtifactExpectation[];
+	const payload=record(record(assignment.decisionInput).input);const expectations=records(payload.semanticArtifactExpectations) as SemanticArtifactExpectation[];
 	const references=records(manifest.contentReferences);const runId=text(record(assignment.metadata).workdayRunId,assignment.workDayId);
 	const results:Row[]=[];
 	if(expectations.length){
@@ -45,7 +45,7 @@ export async function preflightProviderAssignmentCompletion(store:Store,principa
 			for(const reference of candidates){
 				const ref=text(reference.ref,reference.commitSha,record(manifest.commit).sha);const path=text(reference.contentPath);
 				const response=await client.readRepositoryFiles({ref,paths:[path],encoding:'utf8',parseFrontmatter:true});const file=record(response.files?.[0]??response.results?.[0]??response.file);
-				const artifact={...reference,...file,content:text(file.content,file.body)};attempts.push({path,ref,checks:agentLabArtifactChecks(artifact,expectation)});
+				const artifact={...reference,...file,content:text(file.content,file.body)};attempts.push({path,ref,checks:semanticArtifactChecks(artifact,expectation)});
 			}
 			const passed=attempts.some((attempt)=>Object.values(attempt.checks).every(Boolean));results.push({id:expectation.id,passed,attempts});
 			if(!passed)throw new CapacityGovernanceError('assignment_semantic_artifact_preflight_failed',`Artifact ${expectation.id} failed semantic preflight before settlement.`,409,{assignmentId,expectationId:expectation.id,attempts});
