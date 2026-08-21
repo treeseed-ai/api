@@ -65,9 +65,12 @@ describe('GitHub Connector security boundary', () => {
 	it('waits for and re-reads a successful exact staging check before fetching a repository profile',async()=>{
 		vi.stubEnv('TREESEED_GITHUB_TOKEN_PROFILE_TEST','token-not-exposed');
 		const exactCommit='c'.repeat(40);
-		const fetchImpl=vi.fn(async(url:string|URL|Request)=>String(url).includes('/check-runs/')
-			?Response.json({id:91,name:'verify',status:'completed',conclusion:'success',head_sha:exactCommit,check_suite:{head_branch:'staging'},app:{slug:'github-actions'}})
-			:new Response('',{status:404}));
+		const fetchImpl=vi.fn(async(url:string|URL|Request)=>{
+			const href=String(url);
+			if(href.includes('/check-runs/')) return Response.json({id:91,name:'verify',status:'completed',conclusion:'success',head_sha:exactCommit,check_suite:{head_branch:'staging'},app:{slug:'github-actions'}});
+			if(href.includes('/git/ref/heads/staging')) return Response.json({ref:'refs/heads/staging',object:{sha:exactCommit}});
+			return new Response('',{status:404});
+		});
 		vi.stubGlobal('fetch',fetchImpl);
 		const store={first:vi.fn(async(query:string)=>query.includes('LOWER(owner)')
 			?{id:'binding-a',team_id:'team-a',project_id:'project-sdk',provider_repository_id:'77',owner:'treeseed-ai',name:'sdk',publication_ref:'staging',authority_id:'authority-a'}
@@ -76,8 +79,13 @@ describe('GitHub Connector security boundary', () => {
 		expect(fetchImpl).not.toHaveBeenCalled();
 		await expect(reconcileRepositoryPush(store,{ref:'refs/heads/main',after:exactCommit,repository:{id:77,full_name:'treeseed-ai/sdk'}})).resolves.toBeNull();
 		await expect(reconcileRepositoryCheckRun(store,{repository:{id:77,full_name:'treeseed-ai/sdk'},check_run:{id:91}})).resolves.toEqual({repository:'treeseed-ai/sdk',observedCommit:exactCommit,status:'no-profile'});
-		expect(fetchImpl).toHaveBeenCalledTimes(2);
-		expect(fetchImpl).toHaveBeenNthCalledWith(2,expect.stringContaining(`ref=${exactCommit}`),expect.objectContaining({headers:expect.objectContaining({authorization:'Bearer token-not-exposed'})}));
+		expect(fetchImpl).toHaveBeenCalledTimes(3);
+		expect(fetchImpl).toHaveBeenNthCalledWith(3,expect.stringContaining(`ref=${exactCommit}`),expect.objectContaining({headers:expect.objectContaining({authorization:'Bearer token-not-exposed'})}));
+
+		fetchImpl.mockImplementation(async(url:string|URL|Request)=>String(url).includes('/check-runs/')
+			?Response.json({id:91,name:'verify',status:'completed',conclusion:'success',head_sha:exactCommit,check_suite:{head_branch:'staging'},app:{slug:'github-actions'}})
+			:Response.json({ref:'refs/heads/staging',object:{sha:'d'.repeat(40)}}));
+		await expect(reconcileRepositoryCheckRun(store,{repository:{id:77,full_name:'treeseed-ai/sdk'},check_run:{id:91}})).resolves.toEqual({repository:'treeseed-ai/sdk',observedCommit:exactCommit,status:'stale-required-check'});
 	});
 
 	it('starts setup only for an authorized GitHub service connection and persists no secret', async () => {

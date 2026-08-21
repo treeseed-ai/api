@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
-	normalizeWorkdayAllocationProfile,
+	normalizeRepositoryWorkdayProfileBundle,
 	validateOneClassPerProjectAgent,
-	validateWorkdayAllocationProfile,
+	validateRepositoryWorkdayProfileBundle,
 	type ProjectAgentClassMembership,
+	type RepositoryWorkdayProfileBundle,
 	type RepositoryProfileGenerationReceipt,
 	type RepositoryProfileReconciliationReceipt,
 	type WorkdayAllocationProfile,
@@ -14,7 +15,7 @@ import { CapacityOperationReceiptRepository } from '../../../../repositories/ope
 import { canonicalJson,sha256 } from '../../../../security.ts';
 
 type Row = Record<string,unknown>;
-type IndexedGeneration = {generation:RepositoryProfileGenerationReceipt;allocationSetId:string};
+type IndexedGeneration = {generation:RepositoryProfileGenerationReceipt;allocationSetId:string;active:boolean};
 
 export const REPOSITORY_WORKDAY_PROFILE_PATH='.treeseed/workdays/allocation-profile.json';
 
@@ -31,10 +32,12 @@ function text(value:unknown):string { return value==null?'':String(value).trim()
 function record(value:unknown):Row { return value&&typeof value==='object'&&!Array.isArray(value)?value as Row:{}; }
 function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(value))}`; }
 function safeJson(value:unknown):Row { try { return record(JSON.parse(String(value??'{}'))); } catch { return {}; } }
-function profileFrom(content:string):WorkdayAllocationProfile {
+function bundleFrom(content:string):RepositoryWorkdayProfileBundle {
 	let parsed:unknown;
 	try { parsed=JSON.parse(content); } catch { throw new CapacityGovernanceError('repository_workday_profile_json_invalid','Repository workday profile JSON is invalid.',400); }
-	return normalizeWorkdayAllocationProfile(parsed as WorkdayAllocationProfile);
+	const candidate=record(parsed);
+	if(candidate.schemaVersion!=='treeseed.workday-allocation-profile-bundle/v1'||!Array.isArray(candidate.profiles)) throw new CapacityGovernanceError('repository_workday_profile_bundle_invalid','Repository workday profile content must be a versioned profile bundle.',400);
+	return candidate as unknown as RepositoryWorkdayProfileBundle;
 }
 function repositoryIdentity(value:string):{owner:string;name:string} {
 	const [owner,name,...rest]=value.trim().toLowerCase().split('/');
@@ -50,7 +53,7 @@ export class RepositoryWorkdayProfileService {
 	private readonly receipts:CapacityOperationReceiptRepository;
 	constructor(private readonly database:CapacityGovernanceDatabase) { this.receipts=new CapacityOperationReceiptRepository(database); }
 
-	async reconcile(observation:RepositoryWorkdayProfileObservation):Promise<RepositoryProfileReconciliationReceipt> {
+	async reconcile(observation:RepositoryWorkdayProfileObservation):Promise<RepositoryProfileReconciliationReceipt[]> {
 		await this.database.ensureInitialized();
 		const repository=repositoryIdentity(observation.repository);
 		if(!/^refs\/heads\/[A-Za-z0-9._/-]+$/u.test(observation.ref)) throw new CapacityGovernanceError('repository_workday_profile_ref_invalid','An exact accepted branch ref is required.',400);
@@ -60,39 +63,50 @@ export class RepositoryWorkdayProfileService {
 		if(!binding) throw new CapacityGovernanceError('repository_workday_profile_binding_missing','Repository is not bound to a TreeSeed project.',409,{repository:observation.repository});
 		const acceptedRef=`refs/heads/${text(binding.publication_ref)}`;
 		if(observation.ref!==acceptedRef) throw new CapacityGovernanceError('repository_workday_profile_ref_not_accepted','Only the repository publication ref can create an accepted profile generation.',409,{acceptedRef});
-		const request={...observation,observedAt:undefined,contentDigest:digest(observation.content)};
-		const operation={teamId:text(binding.team_id),operation:'repository-workday-profile.reconcile',idempotencyKey:`${observation.repository}:${observation.commit}:${observation.path}`,request};
+		const candidate=bundleFrom(observation.content);
+		const allProjects=await this.database.all<Row>(`SELECT id,slug FROM projects WHERE team_id=? ORDER BY slug,id`,[binding.team_id]);
+		const classes=await this.database.all<Row>(`SELECT * FROM project_agent_classes WHERE team_id=? ORDER BY project_id,slug,id`,[binding.team_id]);
+		const catalogs=allProjects.flatMap((project)=>{
+			const projectId=text(project.id); const slug=text(project.slug); const classSlugs=classes.filter((entry)=>text(entry.project_id)===projectId&&text(entry.status)==='active').map((entry)=>text(entry.slug));
+			return [...new Set([projectId,slug].filter(Boolean))].map((key)=>({projectId:key,classSlugs}));
+		});
+		const memberships:ProjectAgentClassMembership[]=classes.flatMap((entry)=>configuredAgents(entry).map((agent)=>({projectId:text(entry.project_id),agentId:agent.slug,classSlug:text(entry.slug),status:(['active','paused','archived'].includes(text(entry.status))?text(entry.status):'archived') as ProjectAgentClassMembership['status']})));
+		const diagnostics=[...validateRepositoryWorkdayProfileBundle(candidate,catalogs),...validateOneClassPerProjectAgent(memberships,memberships.map(({projectId,agentId})=>({projectId,agentId})))];
+		if(diagnostics.length) throw new CapacityGovernanceError('repository_workday_profile_invalid','Repository workday profile is incompatible with the accepted project agent catalog.',409,{diagnostics});
+		const bundle=normalizeRepositoryWorkdayProfileBundle(candidate);
+		const projectSets=[] as Array<Array<{id:string;slug:string;key:string}>>;
+		for(const profile of bundle.profiles) projectSets.push(await this.resolveProjects(text(binding.team_id),profile,binding,allProjects));
+		const responses:RepositoryProfileReconciliationReceipt[]=[];
+		for(const [index,profile] of bundle.profiles.entries()) responses.push(await this.reconcileProfile(observation,binding,profile,projectSets[index]!,classes));
+		await this.retireRemovedProfiles(observation,binding,new Set(bundle.profiles.map((profile)=>profile.id)));
+		return responses;
+	}
+
+	private async reconcileProfile(observation:RepositoryWorkdayProfileObservation,binding:Row,profile:WorkdayAllocationProfile,projects:Array<{id:string;slug:string;key:string}>,classes:Row[]) {
+		const profileDigest=digest(profile);
+		const request={...observation,observedAt:undefined,content:undefined,contentDigest:digest(observation.content),profileId:profile.id,profileDigest};
+		const operation={teamId:text(binding.team_id),operation:'repository-workday-profile.reconcile',idempotencyKey:`${observation.repository}:${observation.commit}:${observation.path}:${profile.id}`,request};
 		const replay=await this.receipts.replay<RepositoryProfileReconciliationReceipt>(operation);
 		if(replay.found) return replay.response;
-
-		const profile=profileFrom(observation.content);
-		const projects=await this.resolveProjects(text(binding.team_id),profile,binding);
-		const classes=await this.database.all<Row>(`SELECT * FROM project_agent_classes WHERE team_id=? AND project_id IN (${projects.map(()=>'?').join(',')}) ORDER BY project_id,slug,id`,[binding.team_id,...projects.map((project)=>project.id)]);
-		const catalogs=projects.map((project)=>({projectId:project.key,classSlugs:classes.filter((entry)=>text(entry.project_id)===project.id&&text(entry.status)==='active').map((entry)=>text(entry.slug))}));
-		const memberships:ProjectAgentClassMembership[]=classes.flatMap((entry)=>configuredAgents(entry).map((agent)=>({projectId:text(entry.project_id),agentId:agent.slug,classSlug:text(entry.slug),status:(['active','paused','archived'].includes(text(entry.status))?text(entry.status):'archived') as ProjectAgentClassMembership['status']})));
-		const diagnostics=[...validateWorkdayAllocationProfile(profile,catalogs),...validateOneClassPerProjectAgent(memberships,memberships.map(({projectId,agentId})=>({projectId,agentId})))];
-		if(diagnostics.length) throw new CapacityGovernanceError('repository_workday_profile_invalid','Repository workday profile is incompatible with the accepted project agent catalog.',409,{diagnostics});
-
-		const profileDigest=digest(profile);
 		const previous=await this.previous(text(binding.team_id),observation.repository,observation.path,profile.id);
 		const observedAt=observation.observedAt??new Date().toISOString();
-		if(previous?.generation.profileDigest===profileDigest) return this.recordUnchanged(operation,observation,profile,previous,observedAt);
+		if(previous?.active&&previous.generation.profileDigest===profileDigest) return this.recordUnchanged(operation,observation,profile,previous,observedAt);
 		const version=Number((await this.database.first<Row>(`SELECT COALESCE(MAX(version),0)+1 AS version FROM capacity_allocation_sets WHERE team_id=?`,[binding.team_id]))?.version??1);
-		const allocationId=`profile-${sha256(`${observation.repository}:${profile.id}:${profileDigest}`).slice(0,32)}`;
+		const allocationId=`profile-${sha256(`${observation.repository}:${observation.commit}:${profile.id}:${profileDigest}`).slice(0,32)}`;
 		const generation:RepositoryProfileGenerationReceipt={schemaVersion:'treeseed.repository-profile-generation/v1',repository:observation.repository,ref:observation.ref,commit:observation.commit,path:observation.path,profileId:profile.id,profileVersion:profile.version,profileDigest,generation:version,indexedAt:observedAt};
 		const response=this.reconciliation(observation,previous?.generation.generation??null,generation,allocationId,previous?'updated':'created',[]);
 		const allocation=this.allocation(profile,projects,classes,allocationId,version,generation,observedAt);
 		await this.database.batch([
 			{query:'SELECT id FROM teams WHERE id=? FOR UPDATE',params:[binding.team_id]},
 			{query:`INSERT INTO capacity_allocation_sets (id,team_id,version,status,effective_from,effective_until,reserve_policy_json,slices_json,borrowing_rules_json,metadata_json,created_by_id,activated_at,superseded_by_id,created_at,updated_at) VALUES (?,?,?,'active',?,NULL,?,?,?,?,NULL,?,NULL,?,?)`,params:[allocationId,binding.team_id,version,observedAt,JSON.stringify(allocation.reservePolicy),JSON.stringify(allocation.slices),JSON.stringify(allocation.borrowingRules),JSON.stringify(allocation.metadata),observedAt,observedAt,observedAt]},
-			{query:`UPDATE capacity_allocation_sets SET status='superseded',superseded_by_id=?,updated_at=? WHERE team_id=? AND id<>? AND status='active'`,params:[allocationId,observedAt,binding.team_id,allocationId]},
+			...(previous?.active?[{query:`UPDATE capacity_allocation_sets SET status='superseded',superseded_by_id=?,updated_at=? WHERE team_id=? AND id=? AND status='active'`,params:[allocationId,observedAt,binding.team_id,previous.allocationSetId]}]:[]),
 			this.receipts.insertOperation(operation,'repository-workday-profile',`${observation.repository}:${observation.path}:${profile.id}`,response,observedAt),
 		]);
 		return response;
 	}
 
-	private async resolveProjects(teamId:string,profile:WorkdayAllocationProfile,binding:Row) {
-		const rows=await this.database.all<Row>(`SELECT id,slug FROM projects WHERE team_id=? ORDER BY slug,id`,[teamId]);
+	private async resolveProjects(teamId:string,profile:WorkdayAllocationProfile,binding:Row,knownRows?:Row[]) {
+		const rows=knownRows??await this.database.all<Row>(`SELECT id,slug FROM projects WHERE team_id=? ORDER BY slug,id`,[teamId]);
 		const selected=profile.projects==='all'?rows:profile.projects.map((key)=>rows.find((row)=>text(row.id)===key||text(row.slug)===key)).filter(Boolean) as Row[];
 		if(!selected.length) throw new CapacityGovernanceError('repository_workday_profile_projects_missing','Profile project scope does not resolve to this team.',409);
 		if(!selected.some((project)=>text(project.id)===text(binding.project_id))) throw new CapacityGovernanceError('repository_workday_profile_binding_scope_invalid','Profile must include the repository-bound project.',409);
@@ -102,7 +116,34 @@ export class RepositoryWorkdayProfileService {
 	private async previous(teamId:string,repository:string,path:string,profileId:string):Promise<IndexedGeneration|null> {
 		const row=await this.database.first<Row>(`SELECT response_json FROM capacity_operation_receipts WHERE team_id=? AND operation='repository-workday-profile.reconcile' AND resource_id=? ORDER BY created_at DESC LIMIT 1`,[teamId,`${repository}:${path}:${profileId}`]);
 		if(!row) return null;
-		try { const receipt=JSON.parse(String(row.response_json)) as RepositoryProfileReconciliationReceipt&Partial<IndexedGeneration>; return receipt.generation&&text(receipt.allocationSetId)?{generation:receipt.generation,allocationSetId:text(receipt.allocationSetId)}:null; } catch { throw new CapacityGovernanceError('repository_workday_profile_receipt_invalid','Stored repository profile receipt is invalid.',500); }
+		try {
+			const receipt=JSON.parse(String(row.response_json)) as RepositoryProfileReconciliationReceipt&Partial<IndexedGeneration>;
+			if(!receipt.generation||!text(receipt.allocationSetId)) return null;
+			const allocation=await this.database.first<Row>(`SELECT status FROM capacity_allocation_sets WHERE team_id=? AND id=? LIMIT 1`,[teamId,text(receipt.allocationSetId)]);
+			return {generation:receipt.generation,allocationSetId:text(receipt.allocationSetId),active:text(allocation?.status)==='active'};
+		} catch { throw new CapacityGovernanceError('repository_workday_profile_receipt_invalid','Stored repository profile receipt is invalid.',500); }
+	}
+
+	private async retireRemovedProfiles(observation:RepositoryWorkdayProfileObservation,binding:Row,desiredProfileIds:Set<string>) {
+		const rows=await this.database.all<Row>(`SELECT resource_id,response_json FROM capacity_operation_receipts WHERE team_id=? AND operation='repository-workday-profile.reconcile' AND resource_id LIKE ? ORDER BY created_at DESC`,[binding.team_id,`${observation.repository}:${observation.path}:%`]);
+		const seen=new Set<string>(); const now=observation.observedAt??new Date().toISOString();
+		for(const row of rows) {
+			let receipt:Row; try { receipt=record(JSON.parse(String(row.response_json))); } catch { throw new CapacityGovernanceError('repository_workday_profile_receipt_invalid','Stored repository profile receipt is invalid.',500); }
+			const generation=record(receipt.generation); const profileId=text(generation.profileId); const allocationSetId=text(receipt.allocationSetId);
+			if(!profileId||seen.has(profileId)) continue; seen.add(profileId);
+			if(desiredProfileIds.has(profileId)||!allocationSetId) continue;
+			const allocation=await this.database.first<Row>(`SELECT status FROM capacity_allocation_sets WHERE team_id=? AND id=? LIMIT 1`,[binding.team_id,allocationSetId]);
+			if(text(allocation?.status)!=='active') continue;
+			const request={repository:observation.repository,commit:observation.commit,path:observation.path,profileId,allocationSetId};
+			const operation={teamId:text(binding.team_id),operation:'repository-workday-profile.retire',idempotencyKey:`${observation.repository}:${observation.commit}:${observation.path}:${profileId}`,request};
+			const replay=await this.receipts.replay<Row>(operation); if(replay.found) continue;
+			const response={schemaVersion:'treeseed.repository-profile-retirement/v1',repository:observation.repository,observedCommit:observation.commit,profileId,allocationSetId,status:'archived',retiredAt:now};
+			await this.database.batch([
+				{query:'SELECT id FROM teams WHERE id=? FOR UPDATE',params:[binding.team_id]},
+				{query:`UPDATE capacity_allocation_sets SET status='archived',updated_at=? WHERE team_id=? AND id=? AND status='active'`,params:[now,binding.team_id,allocationSetId]},
+				this.receipts.insertOperation(operation,'repository-workday-profile',`${observation.repository}:${observation.path}:${profileId}`,response,now),
+			]);
+		}
 	}
 
 	private reconciliation(observation:RepositoryWorkdayProfileObservation,previousGeneration:number|null,generation:RepositoryProfileGenerationReceipt,allocationSetId:string,status:RepositoryProfileReconciliationReceipt['status'],diagnostics:string[]) {

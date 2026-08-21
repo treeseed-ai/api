@@ -153,6 +153,12 @@ export async function reconcileRepositoryCheckRun(store:any,payload:any) {
 		||String(check.check_suite?.head_branch??'')!==String(binding.publication_ref??'')||String(check.app?.slug??'')!=='github-actions'
 		||!/^[a-f0-9]{40}$/u.test(commit)||/^0{40}$/u.test(commit)) return null;
 	const ref=`refs/heads/${String(binding.publication_ref??'')}`;
+	const refResponse=await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/ref/heads/${String(binding.publication_ref??'').split('/').map(encodeURIComponent).join('/')}`,{
+		headers:{accept:'application/vnd.github+json',authorization:`Bearer ${credential.token}`,'user-agent':'treeseed-provider-webhook','x-github-api-version':'2022-11-28'},
+	});
+	if(!refResponse.ok) throw new Error(`GitHub publication-ref read-back failed (HTTP ${refResponse.status}).`);
+	const currentRef:any=await refResponse.json();
+	if(String(currentRef.object?.sha??'').toLowerCase()!==commit) return {repository:fullName,observedCommit:commit,status:'stale-required-check'};
 	const response=await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${REPOSITORY_WORKDAY_PROFILE_PATH.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(commit)}`,{
 		headers:{accept:'application/vnd.github.raw+json',authorization:`Bearer ${credential.token}`,'user-agent':'treeseed-provider-webhook','x-github-api-version':'2022-11-28'},
 	});
