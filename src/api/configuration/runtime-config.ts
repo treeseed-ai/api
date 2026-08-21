@@ -69,6 +69,6 @@ export function resolveApiConfig(env: NodeJS.ProcessEnv = process.env) {
 		refreshTokenTtlSeconds: integer(env.TREESEED_API_REFRESH_TOKEN_TTL, local ? LOCAL_AUTH_TTL_SECONDS : REFRESH_TOKEN_TTL_SECONDS),
 		deviceCodeTtlSeconds: integer(env.TREESEED_API_DEVICE_CODE_TTL, 600), deviceCodePollIntervalSeconds: integer(env.TREESEED_API_DEVICE_CODE_POLL_INTERVAL, 5),
 		templateCatalogPath: env.TREESEED_API_TEMPLATE_CATALOG_PATH?.trim() || undefined,
-		providers: { auth: 'postgres', agents: { execution: env.TREESEED_API_PROVIDER_AGENT_EXECUTION?.trim() || 'codex', queue: env.TREESEED_API_PROVIDER_AGENT_QUEUE?.trim() || 'memory', notification: env.TREESEED_API_PROVIDER_AGENT_NOTIFICATION?.trim() || 'sdk_message', repository: env.TREESEED_API_PROVIDER_AGENT_REPOSITORY?.trim() || 'git', verification: env.TREESEED_API_PROVIDER_AGENT_VERIFICATION?.trim() || 'local' } },
+		providers: { auth: 'control-plane-postgres', agents: { execution: env.TREESEED_API_PROVIDER_AGENT_EXECUTION?.trim() || 'codex', queue: env.TREESEED_API_PROVIDER_AGENT_QUEUE?.trim() || 'memory', notification: env.TREESEED_API_PROVIDER_AGENT_NOTIFICATION?.trim() || 'sdk_message', repository: env.TREESEED_API_PROVIDER_AGENT_REPOSITORY?.trim() || 'git', verification: env.TREESEED_API_PROVIDER_AGENT_VERIFICATION?.trim() || 'local' } },
 	};
 }
