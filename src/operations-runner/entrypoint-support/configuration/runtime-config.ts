@@ -1,4 +1,4 @@
-import { resolveApiDatabaseUrl } from '@treeseed/sdk/api';
+import { resolveApiDatabaseUrl } from '../../../api/configuration/runtime-config.ts';
 import { mkdir,readFile,rm,writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { readArg } from '../index.js';

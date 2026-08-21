@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { resolveApiConfig } from '@treeseed/sdk/api';
+import { resolveApiConfig } from '../configuration/runtime-config.ts';
 import type { Server } from 'node:http';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';

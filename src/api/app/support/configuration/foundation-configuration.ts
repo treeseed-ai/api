@@ -1,4 +1,4 @@
-import { resolveApiConfig } from '@treeseed/sdk/api';
+import { resolveApiConfig } from '../../../configuration/runtime-config.ts';
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
 import { AUTH_PROVIDERS,jsonError,controlPlaneAuthContext } from '../index.ts';
 export function providerConfigFor(c, provider) {

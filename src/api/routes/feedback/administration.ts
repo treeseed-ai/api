@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isFeedbackStatus, isFeedbackType, type FeedbackCollectionFilters } from '@treeseed/sdk/feedback';
-import { principalHasPlatformPermission } from '@treeseed/sdk/api';
+import { principalHasPlatformPermission } from '../../security/permissions.ts';
 import { createPrivateObjectStorage } from '../../storage/private-object-storage.ts';
 import { changeFeedbackStatus, feedbackDetail, feedbackWhere, jsonValue, listFeedback } from '../../feedback/repository.ts';
 

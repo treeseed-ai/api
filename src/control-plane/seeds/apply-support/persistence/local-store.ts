@@ -1,4 +1,4 @@
-import { resolveApiDatabaseUrl } from '@treeseed/sdk/api';
+import { resolveApiDatabaseUrl } from '../../../../api/configuration/runtime-config.ts';
 import { ControlPlaneStore } from '../../../../api/persistence/store.js';
 import { createControlPlanePostgresDatabase } from '../../../../api/support/control-plane-postgres.js';
 
