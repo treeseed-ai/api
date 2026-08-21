@@ -1,5 +1,5 @@
-import { loadAndPlanSeed } from '@treeseed/sdk/seeds';
 import { resolve } from 'node:path';
+import { loadAndPlanCoreSeed } from '../../planning/load-core-seed-plan.ts';
 import { createLocalSeedStore,createSeedRunIfAvailable,manifestHashFor,manifestRefIsAllowed,mutationActions,reconcilePlanWithStore,seedRunInput } from '../index.js';
 
 export async function planSeedWithStore(input) {
@@ -15,7 +15,7 @@ export async function planSeedWithStore(input) {
             plan: null,
         };
     }
-    const planned = loadAndPlanSeed({
+    const planned = loadAndPlanCoreSeed({
         projectRoot: input.projectRoot,
         seedName: input.seedName,
         environments: input.environments,
