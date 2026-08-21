@@ -80,6 +80,17 @@ describe('control-plane protocol contract', () => {
 		expect(failedText).not.toContain('private database detail');
 	});
 
+	it('binds the readiness probe through the same catalog and database check', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations({ store: operationStore() });
+		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
+		const response = await app.request('/readyz');
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
+		const specification = await app.request('/openapi.json');
+		expect((await specification.json() as any).paths['/readyz'].get.operationId).toBe('health.ready');
+	});
+
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {
 		const calls: Array<{ input: unknown; requestId: string; traceparent?: string }> = [];
 		const input = z.object({ projectId: z.string().min(1), name: z.string().min(1) }).strict();

@@ -79,3 +79,17 @@ export function createDeepHealthOperation(dependencies: DeepHealthDependencies):
 		},
 	};
 }
+
+export function createReadinessOperation(dependencies: DeepHealthDependencies): BoundOperation<z.infer<typeof deepHealthInput>, z.infer<typeof deepHealthOutput>> {
+	const operation = createDeepHealthOperation(dependencies);
+	return {
+		...operation,
+		descriptor: {
+			...operation.descriptor,
+			operationId: 'health.ready',
+			description: 'Read authoritative control-plane readiness.',
+			rest: { method: 'GET', path: '/readyz' },
+			schemas: { ...operation.descriptor.schemas, output: 'treeseed.health.ready.output/v1' },
+		},
+	};
+}
