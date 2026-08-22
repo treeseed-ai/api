@@ -8,46 +8,30 @@ import { editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedE
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { KnowledgeOperationError } from './knowledge-operation-error.ts';
+import { createKnowledgeAuthorization, type KnowledgePrincipal } from './knowledge-authorization.ts';
 
-type Principal = { id: string; roles?: string[]; permissions?: string[] } | undefined;
-
-export function createKnowledgeWorkspaceService(store: any, reader: { projectCatalog(principal: Principal, projectId: string): Promise<Record<string, any>> }) {
-	async function projectAccess(principal: Principal, projectId: string, permission: string) {
-		if (!principal) throw new KnowledgeOperationError(401, 'authentication_required', 'Authentication is required.');
-		const details = await store.getProjectDetails(projectId);
-		if (!details?.project) throw new KnowledgeOperationError(404, 'project_not_found', 'The project was not found.');
-		const administrator = principal.roles?.some((role) => ['admin', 'platform_admin'].includes(role))
-			|| principal.permissions?.includes('*:*:*');
-		if (!administrator && !await store.principalCanAccessTeam(principal, details.project.teamId)) {
-			throw new KnowledgeOperationError(403, 'knowledge_access_denied', 'The principal cannot access this project.');
-		}
-		const access = administrator ? { permissions: ['*:*:*'] } : await store.getTeamAccessSummary(details.project.teamId, principal);
-		if (!administrator && !access.permissions.includes(permission)) {
-			throw new KnowledgeOperationError(403, 'knowledge_permission_denied', `${permission} authority is required.`);
-		}
-		return { principal, project: details.project };
-	}
-
-	async function workspaceAccess(principal: Principal, workspaceId: string, permission: string) {
+export function createKnowledgeWorkspaceService(store: any, reader: { projectCatalog(principal: KnowledgePrincipal, projectId: string): Promise<Record<string, any>> }) {
+	const authorization = createKnowledgeAuthorization(store);
+	async function workspaceAccess(principal: KnowledgePrincipal, workspaceId: string, permission: string) {
 		const workspace = await store.getKnowledgeWorkspace(workspaceId);
 		if (!workspace) throw new KnowledgeOperationError(404, 'knowledge_workspace_not_found', 'Knowledge workspace not found.');
 		let access;
-		try { access = await projectAccess(principal, workspace.projectId, permission); }
+		try { access = await authorization.project(principal, workspace.projectId, permission); }
 		catch (error) {
 			if (permission === 'knowledge:read') {
-				try { access = await projectAccess(principal, workspace.projectId, 'knowledge:review'); }
+				try { access = await authorization.project(principal, workspace.projectId, 'knowledge:review'); }
 				catch { throw new KnowledgeOperationError(404, 'knowledge_workspace_not_found', 'Knowledge workspace not found.'); }
 			} else throw error;
 		}
 		if (permission === 'knowledge:read' && workspace.actorUserId !== access.principal.id) {
-			await projectAccess(principal, workspace.projectId, 'knowledge:review');
+			await authorization.project(principal, workspace.projectId, 'knowledge:review');
 		}
 		return { ...access, workspace };
 	}
 
 	return {
-		async create(principal: Principal, projectId: string, input: Record<string, unknown>) {
-			const access = await projectAccess(principal, projectId, 'knowledge:author');
+		async create(principal: KnowledgePrincipal, projectId: string, input: Record<string, unknown>) {
+			const access = await authorization.project(principal, projectId, 'knowledge:author');
 			const supplied = typeof input.requestId === 'string' ? input.requestId.trim() : '';
 			const id = supplied || randomUUID();
 			if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(id)) {
@@ -78,12 +62,12 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			return workspace;
 		},
 
-		async show(principal: Principal, workspaceId: string) {
+		async show(principal: KnowledgePrincipal, workspaceId: string) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:read');
 			return { ...access.workspace, presence: await store.listKnowledgeWorkspacePresence(workspaceId) };
 		},
 
-		async readContent(principal: Principal, workspaceId: string, pathValue: unknown) {
+		async readContent(principal: KnowledgePrincipal, workspaceId: string, pathValue: unknown) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:read');
 			const path = text(pathValue);
 			if (!allowedPath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'Choose a knowledge file in this project workspace.');
@@ -104,7 +88,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			}
 		},
 
-		async updateContent(principal: Principal, workspaceId: string, input: Record<string, unknown>) {
+		async updateContent(principal: KnowledgePrincipal, workspaceId: string, input: Record<string, unknown>) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:author');
 			if (access.workspace.actorUserId !== access.principal.id) throw new KnowledgeOperationError(403, 'knowledge_workspace_author_required', 'Only the workspace author can edit this draft.');
 			if (!['draft', 'changes-requested'].includes(access.workspace.status)) throw new KnowledgeOperationError(409, 'knowledge_workspace_locked', 'This draft is locked while it is in review or publication.');
@@ -141,7 +125,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			return { result, workspace: updated.workspace };
 		},
 
-		async submit(principal: Principal, workspaceId: string, input: Record<string, unknown>) {
+		async submit(principal: KnowledgePrincipal, workspaceId: string, input: Record<string, unknown>) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:author');
 			if (access.workspace.actorUserId !== access.principal.id) throw new KnowledgeOperationError(403, 'knowledge_workspace_author_required', 'Only the workspace author can submit this draft.');
 			const existingReview = await store.getKnowledgeReviewByWorkspace(workspaceId);
@@ -185,7 +169,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			return { review: submitted.review, commit, replayed: false };
 		},
 
-		async diff(principal: Principal, workspaceId: string) {
+		async diff(principal: KnowledgePrincipal, workspaceId: string) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:read');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
 				write: false, workspaceRefs: [access.workspace.branchName] });
@@ -193,7 +177,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			return connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId });
 		},
 
-		async abandon(principal: Principal, workspaceId: string, input: Record<string, unknown>) {
+		async abandon(principal: KnowledgePrincipal, workspaceId: string, input: Record<string, unknown>) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:author');
 			if (access.workspace.actorUserId !== access.principal.id) throw new KnowledgeOperationError(403, 'knowledge_workspace_author_required', 'Only the workspace author can abandon this draft.');
 			if (!['draft', 'changes-requested'].includes(access.workspace.status)) throw new KnowledgeOperationError(409, 'knowledge_workspace_locked', 'A submitted or published workspace cannot be abandoned.');
