@@ -40,6 +40,8 @@ describe('control-plane protocol contract', () => {
 		async resolvePrincipalTeamContext() { return { roles: ['project_lead'] }; },
 		async listTeamMembers() { return []; },
 		async listTeamInvites() { return []; },
+		async createTeamInvite(teamId: string, input: Record<string, unknown>) { return { ok: true, invite: { id: 'invite-new', teamId, email: input.email, roleKey: input.roleKey }, token: 'secret-token' }; },
+		async revokeTeamInvite() { return { ok: true }; },
 		async getTeamInviteByToken(token: string) { return { ok: true, invite: { id: 'invite-1', token, email: 'member@example.test', roleKey: 'contributor', status: 'pending', expiresAt: '2026-08-23T00:00:00Z' }, team: { id: 'team-a', name: 'treeseed', displayName: 'TreeSeed' } }; },
 		async acceptTeamInvite() { return { ok: true, invite: { id: 'invite-1', teamId: 'team-a' }, team: { id: 'team-a' }, membership: { id: 'membership-1' } }; },
 		async createTeam(input: Record<string, unknown>) { return { id: 'team-new', ...input }; },
@@ -62,10 +64,8 @@ describe('control-plane protocol contract', () => {
 		async recordAuditEvent() {},
 		...overrides,
 	});
-	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({
-		store: operationStore(overrides),
-		capacity: { async evaluateProjectDeletionBlockers() { return []; } },
-	});
+	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides),
+		capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {} });
 	const confirmationService = () => {
 		const consumed = new Set<string>();
 		return new ConfirmationService('test-confirmation-secret', { async consume(nonce) {

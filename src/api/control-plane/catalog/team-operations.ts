@@ -12,6 +12,8 @@ export interface TeamOperationDependencies {
 		resolvePrincipalTeamContext(teamId: string, principal: Record<string, unknown>): Promise<{ roles?: string[] } | null>;
 		listTeamMembers(teamId: string): Promise<Array<Record<string, any>>>;
 		listTeamInvites(teamId: string): Promise<Array<Record<string, unknown>>>;
+		createTeamInvite(teamId: string, input: { email: unknown; roleKey: unknown; invitedByUserId: string }): Promise<Record<string, any>>;
+		revokeTeamInvite(teamId: string, inviteId: string): Promise<Record<string, any>>;
 		getTeamInviteByToken(token: string): Promise<Record<string, any>>;
 		acceptTeamInvite(token: string, principalId: string): Promise<Record<string, any>>;
 		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
@@ -27,6 +29,7 @@ export interface TeamOperationDependencies {
 		leaveTeam(teamId: string, userId: string): Promise<Record<string, any>>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
+	deliverTeamInvite(input: { invite: Record<string, any>; team: Record<string, unknown>; token: string }): Promise<void>;
 }
 
 function authenticatedPrincipal(context: { principal?: Record<string, any> }) {
@@ -126,6 +129,32 @@ export function createTeamInvitesOperation(dependencies: TeamOperationDependenci
 			const offset = Math.max(0, Number(input.query.cursor ?? 0) || 0);
 			const nextOffset = offset + limit;
 			return { items: invites.slice(offset, nextOffset), total: invites.length, cursor: nextOffset < invites.length ? String(nextOffset) : null };
+		},
+	};
+}
+
+export function createTeamInviteOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.invite> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.invite,
+		async handler(input, context) {
+			const access = await requireTeamManagement(dependencies, input.path.teamId, context);
+			if (access.team.status === 'archived') throw new ControlPlaneOperationError(409, 'team_archived', 'Archived teams are read-only.');
+			const body = input.body as Record<string, unknown>;
+			const result = await dependencies.store.createTeamInvite(input.path.teamId, {
+				email: body.email, roleKey: body.roleKey ?? body.role, invitedByUserId: access.principal.id,
+			});
+			if (!result.ok) teamMutationFailure(result, 'team_invite_failed', 'The team invitation could not be created.');
+			if (!result.invite || !result.token) throw new ControlPlaneOperationError(500, 'team_invite_incomplete', 'The invitation receipt is incomplete.');
+			try {
+				await dependencies.deliverTeamInvite({ invite: result.invite, team: access.team, token: result.token });
+			} catch {
+				await dependencies.store.revokeTeamInvite(input.path.teamId, result.invite.id);
+				throw new ControlPlaneOperationError(503, 'team_invite_delivery_failed', 'The team invitation could not be delivered. Try again shortly.');
+			}
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
+				eventType: 'team.invitation.created', targetType: 'team', targetId: input.path.teamId,
+				data: { invitationId: result.invite.id, recipientEmail: result.invite.email, roleKey: result.invite.roleKey } });
+			return { ok: true, invite: result.invite };
 		},
 	};
 }

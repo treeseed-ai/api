@@ -1,5 +1,5 @@
 export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) {
-	const { app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, capacity, config, exportSeedWithStore, jsonError, controlPlaneAuthContext, normalizeSeedEnvironments, requireTeamAccess, runtime, sendTeamInviteEmail, shouldExposeNonProductionAuthDiagnostics, store } = context;
+	const { app, capacity, exportSeedWithStore, jsonError, normalizeSeedEnvironments, requireTeamAccess, store } = context;
 	const actorOwnsTeam = async (teamId: string, principal: any) => {
 		const teamContext = await store.resolvePrincipalTeamContext(teamId, principal);
 		return teamContext?.roles?.includes('team_owner') === true;
@@ -73,47 +73,6 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 						principal: access.principal,
 					});
 					return c.json(result, result.ok ? 200 : 400);
-				});
-	
-	app.post('/v1/teams/:teamId/invites', async (c) => {
-					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
-					if (access.response) return access.response;
-					if ((await store.getTeam(c.req.param('teamId')))?.status === 'archived') return jsonError(c, 409, 'Archived teams are read-only.', { code: 'team_archived' });
-					const body = await c.req.json().catch(() => ({}));
-					const result = await store.createTeamInvite(c.req.param('teamId'), {
-						email: body.email,
-						roleKey: body.roleKey ?? body.role,
-						invitedByUserId: access.principal.id,
-					});
-					if (result.ok && result.invite && result.token) {
-						try {
-							const team = await store.getTeam(c.req.param('teamId'));
-							await sendTeamInviteEmail(controlPlaneAuthContext(c, config), {
-								invite: result.invite,
-								team,
-								token: result.token,
-							});
-						} catch (error) {
-							console.warn('[team-invite] Email delivery failed:', error instanceof Error ? error.message : String(error));
-							await store.revokeTeamInvite(c.req.param('teamId'), result.invite.id);
-							const reason = authEmailDeliveryFailureReason(error);
-							return jsonError(c, 503, 'Team invite email could not be sent. Please try again shortly.', {
-								code: 'team_invite_delivery_failed',
-								reason,
-								...(shouldExposeNonProductionAuthDiagnostics(c, runtime) ? { detail: authEmailDeliveryFailureDetail(error) } : {}),
-							});
-						}
-						await store.recordAuditEvent({
-							actorType: 'user', actorId: access.principal.id, eventType: 'team.invitation.created',
-							targetType: 'team', targetId: c.req.param('teamId'),
-							data: {
-								invitationId: result.invite.id,
-								recipientEmail: result.invite.email,
-								roleKey: result.invite.roleKey,
-							},
-						});
-					}
-					return c.json(result, teamMutationStatus(result));
 				});
 	
 	app.get('/v1/teams/:teamId/members/:membershipId/removal-blockers', async (c) => {

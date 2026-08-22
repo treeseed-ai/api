@@ -163,8 +163,13 @@ export function createPlatformApiApp(options: any = {}) {
 		store,
 	};
 	installPlatformRoutes(routeContext);
+	const invitationContext = { locals: { runtime: { env: { ...process.env,
+		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
+		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
-		createApiControlPlaneOperations({ store, capacity }), confirmations);
+		createApiControlPlaneOperations({ store, capacity,
+			deliverTeamInvite: (input) => routeDependencies.sendTeamInviteEmail(invitationContext, input),
+		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));
