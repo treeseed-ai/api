@@ -75,38 +75,6 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					return c.json(result, result.ok ? 200 : 400);
 				});
 	
-	app.patch('/v1/teams/:teamId', async (c) => {
-					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
-					if (access.response) return access.response;
-					const existingTeam = await store.getTeam(c.req.param('teamId'));
-					if (existingTeam?.status === 'archived') return jsonError(c, 409, 'Archived teams are read-only.', { code: 'team_archived' });
-					const body = await c.req.json().catch(() => ({}));
-					const result = await store.updateTeamSettings(c.req.param('teamId'), {
-							name: typeof body.name === 'string' ? body.name : undefined,
-							displayName: typeof body.displayName === 'string' ? body.displayName : undefined,
-							logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : undefined,
-							profileSummary: typeof body.profileSummary === 'string' ? body.profileSummary : typeof body.description === 'string' ? body.description : undefined,
-							metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
-							expectedUpdatedAt: typeof body.expectedUpdatedAt === 'string' ? body.expectedUpdatedAt : undefined,
-						});
-					if (!result) return jsonError(c, 404, 'Team not found.', { code: 'team_missing' });
-					if (result.ok) {
-						const fields = [
-							{ field: 'name', label: 'Team address', before: existingTeam?.name, after: result.team?.name },
-							{ field: 'displayName', label: 'Display name', before: existingTeam?.displayName, after: result.team?.displayName },
-							{ field: 'logoUrl', label: 'Logo', before: existingTeam?.logoUrl, after: result.team?.logoUrl },
-							{ field: 'profileSummary', label: 'Profile summary', before: existingTeam?.profileSummary, after: result.team?.profileSummary },
-							{ field: 'visibility', label: 'Visibility', before: existingTeam?.metadata?.visibility, after: result.team?.metadata?.visibility },
-						].filter((change) => change.before !== change.after);
-						await store.recordAuditEvent({
-							actorType: 'user', actorId: access.principal.id, eventType: 'team.updated',
-							targetType: 'team', targetId: c.req.param('teamId'),
-							data: { changes: fields },
-						});
-					}
-					return c.json({ ...result }, teamMutationStatus(result));
-				});
-	
 	app.post('/v1/teams/:teamId/invites', async (c) => {
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 					if (access.response) return access.response;

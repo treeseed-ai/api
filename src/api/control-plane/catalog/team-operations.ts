@@ -7,6 +7,7 @@ export interface TeamOperationDependencies {
 		loadTeamProfileByName(name: string, principal: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 		getTeam(teamId: string): Promise<Record<string, unknown> | null>;
 		principalCanAccessTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
+		principalCanManageTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
 		getTeamAccessSummary(teamId: string, principal: Record<string, unknown>): Promise<Record<string, unknown>>;
 		resolvePrincipalTeamContext(teamId: string, principal: Record<string, unknown>): Promise<{ roles?: string[] } | null>;
 		listTeamMembers(teamId: string): Promise<Array<Record<string, any>>>;
@@ -16,6 +17,7 @@ export interface TeamOperationDependencies {
 		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
 		createTeam(input: Record<string, unknown>): Promise<Record<string, any>>;
 		getTeamDeletionReadiness(teamId: string): Promise<Record<string, any>>;
+		updateTeamSettings(teamId: string, input: Record<string, unknown>): Promise<Record<string, any> | null>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 }
@@ -188,6 +190,35 @@ export function createTeamDeletionReadinessOperation(dependencies: TeamOperation
 		async handler(input, context) {
 			await requireTeamOwner(dependencies, input.path.teamId, context);
 			return dependencies.store.getTeamDeletionReadiness(input.path.teamId);
+		},
+	};
+}
+
+export function createTeamUpdateOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.update> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.update,
+		async handler(input, context) {
+			const access = await requireTeamRead(dependencies, input.path.teamId, context);
+			const administrator = access.principal.roles?.some((role: string) => role === 'admin' || role === 'platform_admin');
+			if (!administrator && !await dependencies.store.principalCanManageTeam(access.principal, input.path.teamId)) {
+				throw new ControlPlaneOperationError(403, 'team_management_denied', 'Team management authority is required.');
+			}
+			if (access.team.status === 'archived') throw new ControlPlaneOperationError(409, 'team_archived', 'Archived teams are read-only.');
+			const body = input.body as Record<string, any>;
+			const result = await dependencies.store.updateTeamSettings(input.path.teamId, {
+				name: typeof body.name === 'string' ? body.name : undefined,
+				displayName: typeof body.displayName === 'string' ? body.displayName : undefined,
+				logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : undefined,
+				profileSummary: typeof body.profileSummary === 'string' ? body.profileSummary : typeof body.description === 'string' ? body.description : undefined,
+				metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+				expectedUpdatedAt: context.ifMatch,
+			});
+			if (!result) throw new ControlPlaneOperationError(404, 'team_missing', 'The team was not found.');
+			if (!result.ok) throw new ControlPlaneOperationError(String(result.code) === 'stale' ? 409 : 400,
+				String(result.code ?? 'team_update_failed'), 'The team could not be updated.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
+				eventType: 'team.updated', targetType: 'team', targetId: input.path.teamId });
+			return result;
 		},
 	};
 }

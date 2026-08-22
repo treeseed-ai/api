@@ -13,6 +13,8 @@ export interface OperationInvocationContext {
 	interface: 'rest' | 'cli' | 'mcp' | 'internal';
 	requestId: string;
 	traceparent?: string;
+	idempotencyKey?: string;
+	ifMatch?: string;
 	authInfo?: AuthInfo;
 	principal?: {
 		id: string;

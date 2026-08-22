@@ -33,7 +33,7 @@ describe('control-plane protocol contract', () => {
 		async listTeamProjects() { return []; },
 		async listTeamsForPrincipal() { return []; },
 		async loadTeamProfileByName() { return null; },
-		async getTeam(teamId: string) { return { id: teamId, name: 'TreeSeed' }; },
+		async getTeam(teamId: string) { return { id: teamId, name: 'TreeSeed', updatedAt: 'revision-1' }; },
 		async principalCanAccessTeam() { return true; },
 		async getTeamAccessSummary(teamId: string) { return { teamId, roles: ['project_lead'] }; },
 		async resolvePrincipalTeamContext() { return { roles: ['project_lead'] }; },
@@ -43,6 +43,7 @@ describe('control-plane protocol contract', () => {
 		async acceptTeamInvite() { return { ok: true, invite: { id: 'invite-1', teamId: 'team-a' }, team: { id: 'team-a' }, membership: { id: 'membership-1' } }; },
 		async createTeam(input: Record<string, unknown>) { return { id: 'team-new', ...input }; },
 		async getTeamDeletionReadiness(teamId: string) { return { ok: true, ready: true, team: { id: teamId, name: 'treeseed' }, blockers: [] }; },
+		async updateTeamSettings(teamId: string, input: Record<string, unknown>) { return { ok: true, team: { id: teamId, updatedAt: 'revision-2', ...input } }; },
 		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
@@ -149,7 +150,7 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const headers = { authorization: 'Bearer test-token' };
 		expect(await (await app.request('/v1/teams/team-a/access', { headers })).json()).toEqual({ data: {
-			team: { id: 'team-a', name: 'TreeSeed' }, access: { teamId: 'team-a', roles: ['project_lead'] },
+			team: { id: 'team-a', name: 'TreeSeed', updatedAt: 'revision-1' }, access: { teamId: 'team-a', roles: ['project_lead'] },
 		} });
 		expect(await (await app.request('/v1/teams/team-a/members?limit=1', { headers })).json()).toEqual({ data: {
 			items: [{ id: 'member-1', displayName: 'Adrian', roles: ['team_owner'] }], total: 1, ownerCount: 1, cursor: null,
@@ -205,6 +206,21 @@ describe('control-plane protocol contract', () => {
 		expect(registry.require('teams.deletion.readiness').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.deletionReadiness);
 	});
 
+	it('updates a team with the durable revision supplied through If-Match', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies());
+		installControlPlaneProtocolRoutes(app, async () => ({
+			principal: { id: 'user_1', scopes: ['treeseed:projects:write'], roles: [], permissions: [] }, credential: { id: 'client_1' },
+		}), oauthProvider, registry);
+		const response = await app.request('/v1/teams/team-a', { method: 'PATCH', headers: {
+			authorization: 'Bearer test-token', 'content-type': 'application/json', 'idempotency-key': 'team-update-1', 'if-match': '"revision-1"',
+		}, body: JSON.stringify({ displayName: 'TreeSeed Cooperative' }) });
+		expect(response.status).toBe(200);
+		expect(response.headers.get('etag')).toBe('"revision-2"');
+		expect(await response.json()).toMatchObject({ data: { ok: true, team: { id: 'team-a', displayName: 'TreeSeed Cooperative', expectedUpdatedAt: 'revision-1' } } });
+		expect(registry.require('teams.update').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.update);
+	});
+
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {
 		const calls: Array<{ input: unknown; requestId: string; traceparent?: string }> = [];
 		const operation: BoundOperation<typeof CONTROL_PLANE_OPERATIONS.projects.update> = {
@@ -229,7 +245,7 @@ describe('control-plane protocol contract', () => {
 			body: JSON.stringify({ name: 'Example' }),
 		});
 		expect(accepted.status).toBe(200);
-		expect(accepted.headers.get('etag')).toMatch(/^"sha256:[a-f0-9]{64}"$/u);
+		expect(accepted.headers.get('etag')).toBe('"2"');
 		expect(await accepted.json()).toEqual({ data: { projectId: 'project-a', name: 'Example', revision: 2 } });
 		expect(calls).toEqual([{ input: { path: { projectId: 'project-a' }, query: {}, body: { name: 'Example' } }, requestId: 'request-1', traceparent: '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' }]);
 	});

@@ -27,6 +27,12 @@ function problem(context: Context, error: ControlPlaneOperationError, requestId:
 }
 
 function etag(value: unknown) {
+	if (value && typeof value === 'object') {
+		const record = value as Record<string, any>;
+		const revision = record.updatedAt ?? record.revision ?? record.version
+			?? record.team?.updatedAt ?? record.project?.updatedAt;
+		if (typeof revision === 'string' || typeof revision === 'number') return `"${String(revision).replaceAll('"', '')}"`;
+	}
 	return `"sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}"`;
 }
 
@@ -64,6 +70,8 @@ export function createOperationHttpHandler(
 				interface: 'rest',
 				requestId,
 				traceparent: context.req.header('traceparent'),
+				idempotencyKey: context.req.header(descriptor.idempotency.header),
+				ifMatch: context.req.header(descriptor.concurrency.writeHeader)?.replace(/^"|"$/gu, ''),
 				authInfo,
 				principal: authInfo?.extra?.principal as { id: string; roles?: string[]; permissions?: string[] } | undefined,
 			}));
