@@ -23,7 +23,6 @@ import { installGitHubConnectorRoutes } from "../routes/providers/github-connect
 import { installGitHubWebhookRoutes } from "../routes/providers/github-webhooks.ts";
 import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resource-resolution.ts";
 import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
-import { installContextualKnowledgeRoutes } from "../routes/support/contextual-knowledge.ts";
 import { installFoundationApprovalDecisionsRoutes } from "../routes/support/foundation-approval-decisions.ts";
 import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
 import { installFoundationStewardTransitionCommonsProposalRoutes } from "../routes/support/foundation-stewardTransitionCommonsProposal.ts";
@@ -41,7 +40,6 @@ export function installPlatformRoutes(context: any): void {
   installSessionEventRoutes(context);
   installClientActionRoutes(context);
   installFeedbackAdministrationRoutes(context);
-  installContextualKnowledgeRoutes(context);
   installKnowledgeAuthoringRoutes(context);
   installKnowledgePackRoutes(context);
   installKnowledgePublicationRoutes(context);

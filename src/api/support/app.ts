@@ -8,6 +8,7 @@ import { ConfirmationService } from '../control-plane/confirmation/confirmation-
 import { createAccountEmailService } from '../control-plane/accounts/account-email-service.ts';
 import { createAccountRegistrationService } from '../control-plane/accounts/account-registration-service.ts';
 import { createAccountSecurityService } from '../control-plane/accounts/account-security-service.ts';
+import { createKnowledgeReaderService } from '../control-plane/knowledge/knowledge-reader-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -176,6 +177,7 @@ export function createPlatformApiApp(options: any = {}) {
 			accountEmails: createAccountEmailService(store, invitationContext),
 			accountRegistration: createAccountRegistrationService(store, authProvider, invitationContext),
 			accountSecurity: createAccountSecurityService(store, invitationContext),
+			knowledgeReader: createKnowledgeReaderService({ store, options }),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
