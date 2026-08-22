@@ -3,6 +3,7 @@ import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, c
 import { createCapacityPlanOperations, type CapacityPlanOperationDependencies } from './capacity/plans.ts';
 import { createAgentOperations, type AgentOperationDependencies } from './capacity/agents.ts';
 import { createCapacityQueryOperations, type CapacityQueryOperationDependencies } from './capacity/capacity.ts';
+import { createAssignmentOperations, type AssignmentOperationDependencies } from './capacity/assignments.ts';
 import { createWorkdayOperations, type WorkdayOperationDependencies } from './capacity/workdays.ts';
 import { createDeepHealthOperation, createReadinessOperation, statusOperation, type DeepHealthDependencies } from './core-operations.ts';
 import { createDiscussionOperations, type DiscussionOperationDependencies } from './discussion-operations.ts';
@@ -17,7 +18,7 @@ export * from './operation-registry.ts';
 
 export const controlPlaneOperations = new OperationRegistry([statusOperation]);
 
-export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CapacityPlanOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies) {
+export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CapacityPlanOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies & AssignmentOperationDependencies) {
 	return new OperationRegistry([
 		statusOperation,
 		createReadinessOperation(dependencies),
@@ -39,6 +40,7 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		...createWorkdayOperations(dependencies),
 		...createAgentOperations(dependencies),
 		...createCapacityQueryOperations(dependencies),
+		...createAssignmentOperations(dependencies),
 		createAccountIdentityOperation(dependencies),
 		createAccountEmailsOperation(dependencies),
 		createAccountEmailAddOperation(dependencies),
