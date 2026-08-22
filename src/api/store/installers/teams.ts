@@ -19,7 +19,6 @@ import { upsertTeamInboxItemMethod } from '../teams/creation/upsert-team-inbox-i
 import { upsertTeamMemberMethod } from '../teams/creation/upsert-team-member.ts';
 import { upsertTeamStorageLocatorMethod } from '../teams/creation/upsert-team-storage-locator.ts';
 import { acceptTeamInviteMethod } from '../teams/lifecycle/accept-team-invite.ts';
-import { resendTeamInviteMethod } from '../teams/lifecycle/manage-team-invitation.ts';
 import { archiveTeamMethod,getTeamDeletionReadinessMethod,restoreTeamMethod } from '../teams/lifecycle/manage-team-lifecycle.ts';
 import { leaveTeamMethod,transferTeamOwnershipMethod } from '../teams/lifecycle/manage-team-ownership.ts';
 import { getTeamAccessSummaryMethod } from '../teams/queries/access/get-team-access-summary.ts';
@@ -125,7 +124,6 @@ export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.getTeamInviteByToken = getTeamInviteByTokenMethod;
 	prototype.revokeTeamInvite = revokeTeamInviteMethod;
 	prototype.acceptTeamInvite = acceptTeamInviteMethod;
-	prototype.resendTeamInvite = resendTeamInviteMethod;
 	prototype.archiveTeam = archiveTeamMethod;
 	prototype.restoreTeam = restoreTeamMethod;
 	prototype.getTeamDeletionReadiness = getTeamDeletionReadinessMethod;

@@ -17,7 +17,6 @@ declare module '../persistence/store.ts' {
 		listRoleKeysForMembership: OmitThisParameter<typeof import('./teams/queries/members/list-role-keys-for-membership.ts').listRoleKeysForMembershipMethod>;
 		resolvePrincipalTeamContext: OmitThisParameter<typeof import('./teams/queries/access/resolve-principal-team-context.ts').resolvePrincipalTeamContextMethod>;
 		getTeamAccessSummary: OmitThisParameter<typeof import('./teams/queries/access/get-team-access-summary.ts').getTeamAccessSummaryMethod>;
-		resendTeamInvite: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-invitation.ts').resendTeamInviteMethod>;
 		archiveTeam: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-lifecycle.ts').archiveTeamMethod>;
 		restoreTeam: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-lifecycle.ts').restoreTeamMethod>;
 		getTeamDeletionReadiness: OmitThisParameter<typeof import('./teams/lifecycle/manage-team-lifecycle.ts').getTeamDeletionReadinessMethod>;

@@ -34,7 +34,6 @@ import { installFoundationStewardTransitionCommonsProposalRoutes } from "../rout
 import { installTeamServicesRoutes } from "../routes/teams/team-services.ts";
 import { installTeamServiceAuthorityRoutes } from "../routes/teams/team-service-authorities.ts";
 import { installTeamsInvitationsMembershipAndApiKeysRoutes } from "../routes/teams/teams-invitations-membership-and-api-keys.ts";
-import { installTeamsLifecycleAndConsentRoutes } from "../routes/teams/teams-lifecycle-and-consent.ts";
 import { installTeamsStorageAndContentPreviewsRoutes } from "../routes/teams/teams-storage-and-content-previews.ts";
 import { installTreedxCredentialsMirrorsAndSharesRoutes } from "../routes/treedx/repositories/treedx-credentials-mirrors-and-shares.ts";
 import { installTreedxInternalTreedxPublicFederationStatusRoutes } from "../routes/treedx/repositories/treedx-internal-treedx-public-federation-status.ts";
@@ -60,7 +59,6 @@ export function installPlatformRoutes(context: any): void {
   installAuthenticationPasswordAndAccountSecurityRoutes(context);
   installFoundationUsersByUsernameItemProfileRoutes(context);
   installTeamsInvitationsMembershipAndApiKeysRoutes(context);
-  installTeamsLifecycleAndConsentRoutes(context);
   installTreedxTeamServiceAndPublicFederationRoutes(context);
   installTreedxInternalTreedxPublicFederationStatusRoutes(context);
   installTreedxCredentialsMirrorsAndSharesRoutes(context);
