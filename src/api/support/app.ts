@@ -12,6 +12,7 @@ import { createKnowledgeReaderService } from '../control-plane/knowledge/knowled
 import { createKnowledgeWorkspaceService } from '../control-plane/knowledge/knowledge-workspace-service.ts';
 import { createKnowledgeReviewService } from '../control-plane/knowledge/knowledge-review-service.ts';
 import { createDiscussionService } from '../discussions/discussion-service.ts';
+import { createGovernanceReaderService } from '../control-plane/governance/governance-reader-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -185,6 +186,7 @@ export function createPlatformApiApp(options: any = {}) {
 			knowledgeWorkspaces: createKnowledgeWorkspaceService(store, knowledgeReader),
 			knowledgeReviews: createKnowledgeReviewService(store),
 			discussions: createDiscussionService({ store, capacity, sessionEvents }),
+			governanceReader: createGovernanceReaderService(store),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

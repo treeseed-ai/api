@@ -4,16 +4,6 @@ import { commitProposalVersionContent } from './proposal-version-content.ts';
 
 export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 	const { app, isTeamApiPrincipal, jsonError, jsonThrownError, optionalTrimmedString, readJsonOrFormBody, requireProjectAccess, store } = context;
-	app.get('/v1/projects/:projectId/proposals', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					return c.json({ ok: true, payload: await store.listGovernanceProposals({
-						projectId: access.details.project.id,
-						status: optionalTrimmedString(c.req.query('status')),
-						limit: c.req.query('limit'),
-					}) });
-				});
-	
 	app.post('/v1/projects/:projectId/proposals', async (c) => {
 					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 					if (access.response) return access.response;
@@ -30,20 +20,6 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 					} catch (error) {
 						return jsonThrownError(c, error, 400);
 					}
-				});
-	
-	app.get('/v1/projects/:projectId/proposals/:proposalId', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					const proposal = await store.getGovernanceProposal(c.req.param('proposalId'));
-					if (!proposal || proposal.projectId !== access.details.project.id) return jsonError(c, 404, 'Unknown governance proposal.');
-					return c.json({ ok: true, payload: {
-						...proposal,
-						votes: await store.listGovernanceProposalVotes(proposal.id),
-						events: await store.listGovernanceEvents({ proposalId: proposal.id, limit: 100 }),
-						readiness: await store.governanceProposalReadiness(proposal.id),
-						decision: proposal.decisionId ? await store.getGovernanceDecision(proposal.decisionId) : null,
-					} });
 				});
 	
 	app.patch('/v1/projects/:projectId/proposals/:proposalId', async (c) => {
@@ -193,37 +169,4 @@ export function installProjectsProposalsAndDecisionsRoutes(context: any) {
 					return c.json({ ok: true, payload: await store.supersedeGovernanceProposal(access.principal, existing.id, body) });
 				});
 	
-	app.get('/v1/projects/:projectId/proposals/:proposalId/events', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					const proposal = await store.getGovernanceProposal(c.req.param('proposalId'));
-					if (!proposal || proposal.projectId !== access.details.project.id) return jsonError(c, 404, 'Unknown governance proposal.');
-					return c.json({ ok: true, payload: await store.listGovernanceEvents({ proposalId: proposal.id, limit: c.req.query('limit') }) });
-				});
-	
-	app.get('/v1/projects/:projectId/decisions', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					return c.json({ ok: true, payload: await store.listGovernanceDecisions({
-						projectId: access.details.project.id,
-						status: optionalTrimmedString(c.req.query('status')),
-						limit: c.req.query('limit'),
-					}) });
-				});
-	
-	app.get('/v1/projects/:projectId/decisions/:decisionId', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					const decision = await store.getGovernanceDecision(c.req.param('decisionId'));
-					if (!decision || decision.projectId !== access.details.project.id) return jsonError(c, 404, 'Unknown governance decision.');
-					return c.json({ ok: true, payload: decision });
-				});
-	
-	app.get('/v1/projects/:projectId/decisions/:decisionId/events', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					const decision = await store.getGovernanceDecision(c.req.param('decisionId'));
-					if (!decision || decision.projectId !== access.details.project.id) return jsonError(c, 404, 'Unknown governance decision.');
-					return c.json({ ok: true, payload: await store.listGovernanceEvents({ decisionId: decision.id, limit: c.req.query('limit') }) });
-				});
 }
