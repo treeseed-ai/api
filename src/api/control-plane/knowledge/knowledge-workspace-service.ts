@@ -9,6 +9,7 @@ import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repos
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { KnowledgeOperationError } from './knowledge-operation-error.ts';
 import { createKnowledgeAuthorization, type KnowledgePrincipal } from './knowledge-authorization.ts';
+import { allowedKnowledgePath } from './knowledge-path.ts';
 
 export function createKnowledgeWorkspaceService(store: any, reader: { projectCatalog(principal: KnowledgePrincipal, projectId: string): Promise<Record<string, any>> }) {
 	const authorization = createKnowledgeAuthorization(store);
@@ -70,7 +71,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 		async readContent(principal: KnowledgePrincipal, workspaceId: string, pathValue: unknown) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:read');
 			const path = text(pathValue);
-			if (!allowedPath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'Choose a knowledge file in this project workspace.');
+			if (!allowedKnowledgePath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'Choose a knowledge file in this project workspace.');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
 				write: false, workspaceRefs: [access.workspace.branchName] });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
@@ -112,7 +113,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			const derivedPath = input.kind === 'book' ? `${connection.contentPath}/books/${slug}.md`
 				: `${connection.contentPath}/knowledge/${text(input.bookId)}/${slug}.md`;
 			const path = sourcePath || derivedPath;
-			if (!allowedPath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The knowledge path is outside this workspace.');
+			if (!allowedKnowledgePath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The knowledge path is outside this workspace.');
 			if (sourcePath && path !== derivedPath) throw new KnowledgeOperationError(422, 'knowledge_path_move_required', 'Changing a knowledge path requires an explicit move operation.');
 			const result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
 				baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: [{ path, before, after: content }],
@@ -197,11 +198,6 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 const list = (value: unknown) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : []).map(String).map((item) => item.trim()).filter(Boolean);
-
-function allowedPath(workspace: any, path: string) {
-	return Boolean(path && !path.startsWith('/') && !path.split('/').some((part) => !part || part === '.' || part === '..')
-		&& workspace.allowedPaths.some((pattern: string) => path.startsWith(pattern.replace(/\*\*$/u, ''))));
-}
 
 function canonicalPath(page: any) {
 	return `/t/${encodeURIComponent(page.source.teamSlug)}/books/${encodeURIComponent(page.source.bookSlug ?? page.bookId)}/${page.slug.split('/').map(encodeURIComponent).join('/')}`;

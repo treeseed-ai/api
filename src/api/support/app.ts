@@ -10,6 +10,7 @@ import { createAccountRegistrationService } from '../control-plane/accounts/acco
 import { createAccountSecurityService } from '../control-plane/accounts/account-security-service.ts';
 import { createKnowledgeReaderService } from '../control-plane/knowledge/knowledge-reader-service.ts';
 import { createKnowledgeWorkspaceService } from '../control-plane/knowledge/knowledge-workspace-service.ts';
+import { createKnowledgeReviewService } from '../control-plane/knowledge/knowledge-review-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -181,6 +182,7 @@ export function createPlatformApiApp(options: any = {}) {
 			accountSecurity: createAccountSecurityService(store, invitationContext),
 			knowledgeReader,
 			knowledgeWorkspaces: createKnowledgeWorkspaceService(store, knowledgeReader),
+			knowledgeReviews: createKnowledgeReviewService(store),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

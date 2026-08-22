@@ -20,7 +20,8 @@ describe('knowledge catalog operations', () => {
 			diff: vi.fn(async () => ({ changedPaths: [] })), abandon: vi.fn(async () => ({ id: 'workspace-1', status: 'abandoned' })),
 			submit: vi.fn(async () => ({ review: { id: 'review-1' }, commit: { commitSha: 'abc' } })),
 		};
-		const operations = createKnowledgeOperations({ knowledgeReader: service, knowledgeWorkspaces: workspaces });
+		const reviews = { list: vi.fn(async () => ({ items: [] })), comment: vi.fn(async () => ({ id: 'comment-1' })) };
+		const operations = createKnowledgeOperations({ knowledgeReader: service, knowledgeWorkspaces: workspaces, knowledgeReviews: reviews });
 		expect(operations.map((operation) => operation.binding)).toEqual([
 			CONTROL_PLANE_OPERATIONS.knowledge.teamCatalog, CONTROL_PLANE_OPERATIONS.knowledge.projectCatalog,
 			CONTROL_PLANE_OPERATIONS.knowledge.library, CONTROL_PLANE_OPERATIONS.knowledge.reader,
@@ -30,6 +31,7 @@ describe('knowledge catalog operations', () => {
 			CONTROL_PLANE_OPERATIONS.knowledge.workspaceContent, CONTROL_PLANE_OPERATIONS.knowledge.updateWorkspaceContent,
 			CONTROL_PLANE_OPERATIONS.knowledge.workspaceDiff, CONTROL_PLANE_OPERATIONS.knowledge.abandonWorkspace,
 			CONTROL_PLANE_OPERATIONS.knowledge.submitWorkspace,
+			CONTROL_PLANE_OPERATIONS.knowledge.reviews, CONTROL_PLANE_OPERATIONS.knowledge.commentReview,
 		]);
 		const page = operations[5];
 		await page.handler({ path: { pageId: 'page-1' }, query: {}, body: undefined }, {

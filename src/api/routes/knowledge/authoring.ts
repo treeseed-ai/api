@@ -1,8 +1,8 @@
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
-import { createRevisionWorkspace, currentReviewIds, discardRevisionWorkspace, reviewWorkspaceAvailable } from '../../knowledge/review-revision.ts';
+import { createRevisionWorkspace, discardRevisionWorkspace } from '../../knowledge/review-revision.ts';
 import { editorialReviewGate } from '../../knowledge/editorial-review.ts';
 import { RelationContentValidationError,relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
-import { allowedWorkspacePath, assertSimulatedProductionPolicy, list, text, workspaceAccess } from './authoring-support.ts';
+import { assertSimulatedProductionPolicy, list, text, workspaceAccess } from './authoring-support.ts';
 export { reviewPathsMatch, searchRelations } from './relation-search.ts';
 
 export function installKnowledgeAuthoringRoutes(context: any) {
@@ -44,57 +44,6 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 			if (error instanceof RelationContentValidationError) return jsonError(c,error.status,error.message,{code:error.code,diagnostics:error.diagnostics});
 			return jsonError(c, 503, 'Knowledge relationship search is unavailable.', { code: 'knowledge_relation_search_unavailable' });
 		}
-	});
-
-	app.get('/v1/teams/:teamId/knowledge/reviews', async (c: any) => {
-		const access = await context.requireTeamAccess(c, store, c.req.param('teamId'), 'knowledge:review');
-		if (access.response) return access.response;
-		const reviews = await store.listKnowledgeReviews(c.req.param('teamId'));
-		const currentIds = currentReviewIds(reviews);
-		return c.json({ ok: true, payload: await Promise.all(reviews.map(async (review: any) => {
-			const workspace = await store.getKnowledgeWorkspace(review.workspaceId);
-			const publicationAccess = workspace ? await context.requireProjectAccess(c, store, workspace.projectId, 'knowledge:publish') : null;
-			const hasPublicationAuthority = Boolean(publicationAccess && !publicationAccess.response);
-			const isCurrentRevision = currentIds.has(review.id);
-			const workspaceAvailable = Boolean(workspace && isCurrentRevision
-				&& reviewWorkspaceAvailable(review.status, workspace.status));
-			return { ...review, comments: await store.listKnowledgeReviewComments(review.id),
-				presence: await store.listKnowledgeWorkspacePresence(review.workspaceId),
-				isCurrentRevision, workspaceAvailable,
-				canDecide: Boolean(workspaceAvailable && review.status === 'open' && workspace.actorUserId !== access.principal.id),
-				canApproveEditorial: Boolean(workspaceAvailable && review.status === 'open' && workspace.actorUserId !== access.principal.id
-					&& hasPublicationAuthority),
-				canPublish: Boolean(workspaceAvailable && review.status === 'approved' && hasPublicationAuthority) };
-		})) });
-	});
-
-	app.post('/v1/knowledge/reviews/:reviewId/comments', async (c: any) => {
-		const review = await store.getKnowledgeReview(c.req.param('reviewId'));
-		if (!review) return jsonError(c, 404, 'Knowledge review not found.');
-		const workspace = await store.getKnowledgeWorkspace(review.workspaceId);
-		if (!workspace) return jsonError(c, 409, 'The review workspace is no longer available.');
-		const access = await requireProjectAccess(c, store, workspace.projectId, 'knowledge:review');
-		if (access.response) return access.response;
-		const body = await c.req.json().catch(() => ({}));
-		const message = text(body.body);
-		const path = text(body.path);
-		if (!message || message.length > 4_000) return jsonError(c, 422, 'Enter a review comment of 4,000 characters or fewer.',
-			{ fieldErrors: { body: 'Enter a review comment.' } });
-		if (!allowedWorkspacePath(workspace, path)) return jsonError(c, 422, 'Choose a changed knowledge file.',
-			{ fieldErrors: { path: 'Choose a file in this review.' } });
-		const connection = await resolveKnowledgeGatewayConnection(store, {
-			projectId: workspace.projectId, write: false, workspaceRefs: [workspace.branchName],
-		});
-		if (!connection) return jsonError(c, 503, 'The review diff is unavailable.');
-		const diff = await connection.client.diff({ workspaceId: workspace.treeDxWorkspaceId });
-		if (!diff.changedPaths.includes(path)) return jsonError(c, 422, 'Review comments must refer to a changed file.',
-			{ fieldErrors: { path: 'Choose a changed file in this review.' } });
-		const created = await store.createKnowledgeReviewComment({ reviewId: review.id, authorUserId: access.principal.id,
-			path, lineStart: Number(body.lineStart) || null, lineEnd: Number(body.lineEnd) || null, body: message });
-		await store.recordAuditEvent({ eventType: 'knowledge.review.comment_added', actorType: 'user', actorId: access.principal.id,
-			targetType: 'knowledge_review', targetId: review.id, data: { workspaceId: workspace.id,
-				projectId: workspace.projectId, commentId: created.id, path } });
-		return c.json({ ok: true, payload: created }, 201);
 	});
 
 	app.post('/v1/knowledge/review-comments/:commentId/resolve', async (c: any) => {

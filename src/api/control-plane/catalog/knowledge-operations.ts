@@ -21,6 +21,10 @@ export interface KnowledgeOperationDependencies {
 		diff(principal: OperationInvocationContext['principal'], workspaceId: string): Promise<Record<string, any>>;
 		abandon(principal: OperationInvocationContext['principal'], workspaceId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
 	};
+	knowledgeReviews: {
+		list(principal: OperationInvocationContext['principal'], teamId: string): Promise<Record<string, any>>;
+		comment(principal: OperationInvocationContext['principal'], reviewId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
+	};
 }
 
 function result<T>(call: () => Promise<T>) {
@@ -43,5 +47,7 @@ export function createKnowledgeOperations(dependencies: KnowledgeOperationDepend
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.workspaceDiff, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.diff(context.principal, input.path.workspaceId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.abandonWorkspace, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.abandon(context.principal, input.path.workspaceId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.submitWorkspace, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.submit(context.principal, input.path.workspaceId, input.body as Record<string, unknown>)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.reviews, handler: (input, context) => result(() => dependencies.knowledgeReviews.list(context.principal, input.path.teamId)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.commentReview, handler: (input, context) => result(() => dependencies.knowledgeReviews.comment(context.principal, input.path.reviewId, input.body as Record<string, unknown>)) },
 	];
 }
