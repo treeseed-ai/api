@@ -7,8 +7,7 @@ function statusFor(result: { ok?: boolean; code?: string }) {
 }
 
 export function installTeamsLifecycleAndConsentRoutes(context: any) {
-	const { app, config, consumeReauthentication, deleteTeamCapacityAggregate, ensurePrincipal, jsonError, controlPlaneAuthContext, options, sendTeamInviteEmail, store } = context;
-	const clockNow = () => options?.clock?.now?.() ?? new Date();
+	const { app, config, consumeReauthentication, deleteTeamCapacityAggregate, ensurePrincipal, jsonError, controlPlaneAuthContext, sendTeamInviteEmail, store } = context;
 
 	const requireTeamRole = async (c: any, teamId: string, roles: string[]) => {
 		const auth = await ensurePrincipal(c);
@@ -66,39 +65,6 @@ export function installTeamsLifecycleAndConsentRoutes(context: any) {
 		return c.json(result, statusFor(result));
 	});
 
-	app.post('/v1/teams/:teamId/archive', async (c: any) => {
-		const teamId = c.req.param('teamId');
-		const access = await requireTeamRole(c, teamId, ['team_owner']);
-		if (access.response) return access.response;
-		const body = await c.req.json().catch(() => ({}));
-		const result = await store.archiveTeam(teamId, {
-			actorId: access.principal.id,
-			lifecycleVersion: Number(body.lifecycleVersion),
-			now: clockNow(),
-		});
-		if (result.ok) await store.recordAuditEvent({
-			actorType: 'user', actorId: access.principal.id, eventType: 'team.archived',
-			targetType: 'team', targetId: teamId,
-		});
-		return c.json(result, statusFor(result));
-	});
-
-	app.post('/v1/teams/:teamId/restore', async (c: any) => {
-		const teamId = c.req.param('teamId');
-		const access = await requireTeamRole(c, teamId, ['team_owner']);
-		if (access.response) return access.response;
-		const body = await c.req.json().catch(() => ({}));
-		const result = await store.restoreTeam(teamId, {
-			lifecycleVersion: Number(body.lifecycleVersion),
-			now: clockNow(),
-		});
-		if (result.ok) await store.recordAuditEvent({
-			actorType: 'user', actorId: access.principal.id, eventType: 'team.restored',
-			targetType: 'team', targetId: teamId,
-		});
-		return c.json(result, statusFor(result));
-	});
-
 	app.delete('/v1/teams/:teamId/permanent-delete', async (c: any) => {
 		const teamId = c.req.param('teamId');
 		const access = await requireTeamRole(c, teamId, ['team_owner']);
@@ -119,34 +85,4 @@ export function installTeamsLifecycleAndConsentRoutes(context: any) {
 		return c.json(result, statusFor(result));
 	});
 
-	app.post('/v1/teams/:teamId/ownership-transfer', async (c: any) => {
-		const teamId = c.req.param('teamId');
-		const access = await requireTeamRole(c, teamId, ['team_owner']);
-		if (access.response) return access.response;
-		const body = await c.req.json().catch(() => ({}));
-		const members = await store.listTeamMembers(teamId);
-		const actor = members.find((member: any) => member.userId === access.principal.id);
-		if (!actor) return jsonError(c, 403, 'Owner membership not found.');
-		const result = await store.transferTeamOwnership(teamId, {
-			fromMembershipId: actor.id,
-			toMembershipId: String(body.membershipId ?? ''),
-			expectedVersion: typeof body.expectedVersion === 'string' ? body.expectedVersion : undefined,
-		});
-		if (result.ok) await store.recordAuditEvent({
-			actorType: 'user', actorId: access.principal.id, eventType: 'team.ownership.transferred',
-			targetType: 'team', targetId: teamId, data: { membershipId: body.membershipId },
-		});
-		return c.json(result, statusFor(result));
-	});
-
-	app.post('/v1/teams/:teamId/leave', async (c: any) => {
-		const auth = await ensurePrincipal(c);
-		if (auth.response) return auth.response;
-		const result = await store.leaveTeam(c.req.param('teamId'), auth.principal.id);
-		if (result.ok) await store.recordAuditEvent({
-			actorType: 'user', actorId: auth.principal.id, eventType: 'team.member.left',
-			targetType: 'team', targetId: c.req.param('teamId'),
-		});
-		return c.json(result, statusFor(result));
-	});
 }

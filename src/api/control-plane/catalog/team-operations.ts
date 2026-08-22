@@ -20,6 +20,11 @@ export interface TeamOperationDependencies {
 		updateTeamSettings(teamId: string, input: Record<string, unknown>): Promise<Record<string, any> | null>;
 		listRoleKeysForMembership(membershipId: string): Promise<string[]>;
 		updateTeamMemberRole(teamId: string, membershipId: string, roleKey: string, expectedVersion?: string): Promise<Record<string, any>>;
+		removeTeamMember(teamId: string, membershipId: string, expectedVersion?: string): Promise<Record<string, any>>;
+		archiveTeam(teamId: string, input: { actorId: string; lifecycleVersion: number; now?: Date }): Promise<Record<string, any>>;
+		restoreTeam(teamId: string, input: { lifecycleVersion: number; now?: Date }): Promise<Record<string, any>>;
+		transferTeamOwnership(teamId: string, input: { fromMembershipId: string; toMembershipId: string; expectedVersion?: string }): Promise<Record<string, any>>;
+		leaveTeam(teamId: string, userId: string): Promise<Record<string, any>>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 }
@@ -248,6 +253,99 @@ export function createTeamMemberUpdateOperation(dependencies: TeamOperationDepen
 			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
 				eventType: 'team.member.role_changed', targetType: 'team', targetId: input.path.teamId,
 				data: { membershipId: input.path.membershipId, roleKey: role } });
+			return result;
+		},
+	};
+}
+
+function teamMutationFailure(result: Record<string, any>, fallbackCode: string, fallbackDetail: string): never {
+	const code = String(result.code ?? fallbackCode);
+	const status = code === 'missing' ? 404 : ['stale', 'stale_or_expired'].includes(code) ? 409 : code === 'blocked' ? 422 : 400;
+	throw new ControlPlaneOperationError(status, code, String(result.message ?? fallbackDetail));
+}
+
+export function createTeamMemberRemoveOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.removeMember> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.removeMember,
+		async handler(input, context) {
+			const access = await requireTeamManagement(dependencies, input.path.teamId, context);
+			if (access.team.status === 'archived') throw new ControlPlaneOperationError(409, 'team_archived', 'Archived teams are read-only.');
+			const members = await dependencies.store.listTeamMembers(input.path.teamId);
+			const target = members.find((member) => member.id === input.path.membershipId);
+			if (!target) throw new ControlPlaneOperationError(404, 'member_missing', 'The team member was not found.');
+			const targetRoles = await dependencies.store.listRoleKeysForMembership(input.path.membershipId);
+			if (targetRoles.includes('team_owner')) await requireTeamOwner(dependencies, input.path.teamId, context);
+			const result = await dependencies.store.removeTeamMember(input.path.teamId, input.path.membershipId, context.ifMatch);
+			if (!result.ok) teamMutationFailure(result, 'team_member_remove_failed', 'The team member could not be removed.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
+				eventType: 'team.member.removed', targetType: 'team', targetId: input.path.teamId,
+				data: { membershipId: input.path.membershipId, subjectDisplayName: target.displayName, subjectEmail: target.email, roleKey: target.roleKey } });
+			return { ok: true, membershipId: input.path.membershipId };
+		},
+	};
+}
+
+function lifecycleVersion(context: { ifMatch?: string }) {
+	const version = Number(context.ifMatch);
+	if (!Number.isSafeInteger(version) || version < 0) throw new ControlPlaneOperationError(400, 'team_version_invalid', 'If-Match must contain the current numeric lifecycle version.');
+	return version;
+}
+
+export function createTeamArchiveOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.archive> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.archive,
+		async handler(input, context) {
+			const access = await requireTeamOwner(dependencies, input.path.teamId, context);
+			const result = await dependencies.store.archiveTeam(input.path.teamId, { actorId: access.principal.id, lifecycleVersion: lifecycleVersion(context) });
+			if (!result.ok) teamMutationFailure(result, 'team_archive_failed', 'The team could not be archived.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id, eventType: 'team.archived', targetType: 'team', targetId: input.path.teamId });
+			return result;
+		},
+	};
+}
+
+export function createTeamRestoreOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.restore> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.restore,
+		async handler(input, context) {
+			const access = await requireTeamOwner(dependencies, input.path.teamId, context);
+			const result = await dependencies.store.restoreTeam(input.path.teamId, { lifecycleVersion: lifecycleVersion(context) });
+			if (!result.ok) teamMutationFailure(result, 'team_restore_failed', 'The team could not be restored.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id, eventType: 'team.restored', targetType: 'team', targetId: input.path.teamId });
+			return result;
+		},
+	};
+}
+
+export function createTeamOwnershipTransferOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.transferOwnership> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.transferOwnership,
+		async handler(input, context) {
+			const access = await requireTeamOwner(dependencies, input.path.teamId, context);
+			const members = await dependencies.store.listTeamMembers(input.path.teamId);
+			const actor = members.find((member) => member.userId === access.principal.id);
+			if (!actor) throw new ControlPlaneOperationError(403, 'owner_membership_missing', 'The owner membership was not found.');
+			const membershipId = String((input.body as Record<string, unknown>).membershipId ?? '');
+			if (!membershipId) throw new ControlPlaneOperationError(400, 'membership_required', 'A destination membership is required.');
+			const result = await dependencies.store.transferTeamOwnership(input.path.teamId, {
+				fromMembershipId: actor.id, toMembershipId: membershipId, expectedVersion: context.ifMatch,
+			});
+			if (!result.ok) teamMutationFailure(result, 'ownership_transfer_failed', 'Team ownership could not be transferred.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id, eventType: 'team.ownership.transferred',
+				targetType: 'team', targetId: input.path.teamId, data: { membershipId } });
+			return result;
+		},
+	};
+}
+
+export function createTeamLeaveOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.leave> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.leave,
+		async handler(input, context) {
+			const principal = authenticatedPrincipal(context);
+			const result = await dependencies.store.leaveTeam(input.path.teamId, principal.id);
+			if (!result.ok) teamMutationFailure(result, 'team_leave_failed', 'The team could not be left.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: principal.id, eventType: 'team.member.left', targetType: 'team', targetId: input.path.teamId });
 			return result;
 		},
 	};

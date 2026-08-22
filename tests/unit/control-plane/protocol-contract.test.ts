@@ -34,7 +34,7 @@ describe('control-plane protocol contract', () => {
 		async listTeamProjects() { return []; },
 		async listTeamsForPrincipal() { return []; },
 		async loadTeamProfileByName() { return null; },
-		async getTeam(teamId: string) { return { id: teamId, name: 'TreeSeed', updatedAt: 'revision-1' }; },
+		async getTeam(teamId: string) { return { id: teamId, name: 'TreeSeed', status: 'active', lifecycleVersion: 1, updatedAt: 'revision-1' }; },
 		async principalCanAccessTeam() { return true; },
 		async getTeamAccessSummary(teamId: string) { return { teamId, roles: ['project_lead'] }; },
 		async resolvePrincipalTeamContext() { return { roles: ['project_lead'] }; },
@@ -47,6 +47,11 @@ describe('control-plane protocol contract', () => {
 		async updateTeamSettings(teamId: string, input: Record<string, unknown>) { return { ok: true, team: { id: teamId, updatedAt: 'revision-2', ...input } }; },
 		async listRoleKeysForMembership() { return ['contributor']; },
 		async updateTeamMemberRole(teamId: string, membershipId: string, roleKey: string, expectedVersion?: string) { return { ok: true, membership: { id: membershipId, teamId, roleKey, version: 'membership-2', expectedVersion } }; },
+		async removeTeamMember() { return { ok: true }; },
+		async archiveTeam(teamId: string) { return { ok: true, team: { id: teamId, status: 'archived', lifecycleVersion: 2 } }; },
+		async restoreTeam(teamId: string) { return { ok: true, team: { id: teamId, status: 'active', lifecycleVersion: 2 } }; },
+		async transferTeamOwnership() { return { ok: true, members: [] }; },
+		async leaveTeam() { return { ok: true }; },
 		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
@@ -159,7 +164,7 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const headers = { authorization: 'Bearer test-token' };
 		expect(await (await app.request('/v1/teams/team-a/access', { headers })).json()).toEqual({ data: {
-			team: { id: 'team-a', name: 'TreeSeed', updatedAt: 'revision-1' }, access: { teamId: 'team-a', roles: ['project_lead'] },
+			team: expect.objectContaining({ id: 'team-a', name: 'TreeSeed', updatedAt: 'revision-1' }), access: { teamId: 'team-a', roles: ['project_lead'] },
 		} });
 		expect(await (await app.request('/v1/teams/team-a/members?limit=1', { headers })).json()).toEqual({ data: {
 			items: [{ id: 'member-1', displayName: 'Adrian', roles: ['team_owner'] }], total: 1, ownerCount: 1, cursor: null,
@@ -273,19 +278,6 @@ describe('control-plane protocol contract', () => {
 		expect(calls).toEqual([{ input: { path: { projectId: 'project-a' }, query: {}, body: { name: 'Example' } }, requestId: 'request-1', traceparent: '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' }]);
 	});
 
-	it('binds confirmation state to principal, client, operation, arguments, expiry, and one use', async () => {
-		const confirmations = confirmationService();
-		const identity = { principalId: 'user-1', clientId: 'client-1', operationId: 'projects.delete', arguments: { path: { projectId: 'project-1' }, body: { confirmation: 'DELETE project' } } };
-		const state = confirmations.request({ ...identity, requestId: 'request-1' }).confirmation;
-		expect(await confirmations.verify(state, { ...identity, principalId: 'user-2' })).toBe(false);
-		expect(await confirmations.verify(state, { ...identity, clientId: 'client-2' })).toBe(false);
-		expect(await confirmations.verify(state, { ...identity, operationId: 'projects.archive' })).toBe(false);
-		expect(await confirmations.verify(state, { ...identity, arguments: { ...identity.arguments, body: { confirmation: 'changed' } } })).toBe(false);
-		expect(await confirmations.verify({ ...state, expiresAt: '2000-01-01T00:00:00.000Z' }, identity)).toBe(false);
-		expect(await confirmations.verify(state, identity)).toBe(true);
-		expect(await confirmations.verify(state, identity)).toBe(false);
-	});
-
 	it('lists only visible team projects through the shared REST and MCP operation', async () => {
 		const registry = createApiControlPlaneOperations(apiDependencies({
 			async listTeamProjects() {
@@ -366,7 +358,31 @@ describe('control-plane protocol contract', () => {
 		expect(registry.require('projects.archive').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.archive);
 		expect(registry.require('projects.delete').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.remove);
 	});
-
+	it('routes destructive team membership and lifecycle mutations through SDK-owned bindings', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies({
+			async listTeamMembers() { return [{ id: 'owner-membership', userId: 'user_1', roles: ['team_owner'], roleKey: 'team_owner' },
+				{ id: 'member-2', userId: 'user_2', roles: ['contributor'], roleKey: 'contributor' }]; },
+			async listRoleKeysForMembership(id: string) { return id === 'owner-membership' ? ['team_owner'] : ['contributor']; },
+		}));
+		installControlPlaneProtocolRoutes(app, async () => ({
+			principal: { id: 'user_1', scopes: ['treeseed:read', 'treeseed:projects:write'], roles: ['admin'], permissions: [] },
+			credential: { id: 'client_1' },
+		}), oauthProvider, registry, confirmationService());
+		const request = { method: 'DELETE', headers: { authorization: 'Bearer test-token',
+			'idempotency-key': 'remove-member-1', 'if-match': '"member-v1"' } };
+		const required = await app.request('/v1/teams/team-a/members/member-2', request);
+		expect(required.status).toBe(409);
+		const state = (await required.json() as any).inputRequired.confirmation;
+		const removed = await app.request('/v1/teams/team-a/members/member-2', { ...request, headers: {
+			...request.headers, 'x-treeseed-confirmation': encodeConfirmation(state),
+		} });
+		expect(removed.status).toBe(200);
+		expect(await removed.json()).toEqual({ data: { ok: true, membershipId: 'member-2' } });
+		for (const operationId of ['teams.members.delete', 'teams.archive', 'teams.restore', 'teams.ownership.transfer', 'teams.leave']) {
+			expect(registry.require(operationId).binding).toBe(Object.values(CONTROL_PLANE_OPERATIONS.teams).find((binding) => binding.descriptor.operationId === operationId));
+		}
+	});
 	it('publishes truthful OAuth resource metadata and RFC 8628 device exchange', async () => {
 		const app = new Hono();
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider);

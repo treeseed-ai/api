@@ -142,35 +142,6 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					return c.json({ ok: true, payload: { membershipId, eligible: blockers.length === 0, blockers } });
 				});
 	
-	app.delete('/v1/teams/:teamId/members/:membershipId', async (c) => {
-					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
-					if (access.response) return access.response;
-					if ((await store.getTeam(c.req.param('teamId')))?.status === 'archived') return jsonError(c, 409, 'Archived teams are read-only.', { code: 'team_archived' });
-					const body = await c.req.json().catch(() => ({}));
-					const members = await store.listTeamMembers(c.req.param('teamId'));
-					const targetMember = members.find((member) => member.id === c.req.param('membershipId'));
-					const targetRoles = await store.listRoleKeysForMembership(c.req.param('membershipId'));
-					if (targetRoles.includes('team_owner') && !await actorOwnsTeam(c.req.param('teamId'), access.principal)) {
-						return jsonError(c, 403, 'Only team owners can remove an owner.', { code: 'owner_required' });
-					}
-					const result = await store.removeTeamMember(
-						c.req.param('teamId'),
-						c.req.param('membershipId'),
-						typeof body.expectedVersion === 'string' ? body.expectedVersion : undefined,
-					);
-					if (result.ok) await store.recordAuditEvent({
-						actorType: 'user', actorId: access.principal.id, eventType: 'team.member.removed',
-						targetType: 'team', targetId: c.req.param('teamId'),
-						data: {
-							membershipId: c.req.param('membershipId'),
-							subjectDisplayName: targetMember?.displayName,
-							subjectEmail: targetMember?.email,
-							roleKey: targetMember?.roleKey,
-						},
-					});
-					return c.json(result, teamMutationStatus(result));
-				});
-	
 	app.get('/v1/teams/:teamId/deletion-blockers', async (c) => {
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'teams:manage:team');
 					if (access.response) return access.response;
