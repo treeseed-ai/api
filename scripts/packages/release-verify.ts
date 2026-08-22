@@ -14,6 +14,13 @@ const removedApiRouteFragments = [
 	'/v1/auth/device/poll',
 	'/v1/auth/device/approve',
 ];
+const removedAcceptanceAuthorities = [
+	'TREESEED_ACCEPTANCE_EXPOSE',
+	'TREESEED_CAPACITY_ACCEPTANCE_ADMIN_TOKEN',
+	'x-treeseed-acceptance',
+	'localAcceptance',
+	'liveAcceptance',
+];
 const acceptanceRouteRegistration = /app\.(?:get|post|put|patch|delete|on)\([^\n]*['"]\/v1\/acceptance\//u;
 
 function run(command: string, args: string[]) {
@@ -68,6 +75,9 @@ function assertCleanBuild() {
 		const source = readFileSync(filePath, 'utf8');
 		if (acceptanceRouteRegistration.test(source)) {
 			throw new Error(`${relative(packageRoot, filePath)} registers a removed /v1/acceptance route.`);
+		}
+		for (const authority of removedAcceptanceAuthorities) {
+			if (source.includes(authority)) throw new Error(`${relative(packageRoot, filePath)} contains removed acceptance authority ${authority}.`);
 		}
 		for (const route of removedApiRouteFragments) {
 			if (source.includes(route)) throw new Error(`${relative(packageRoot, filePath)} contains removed API route ${route}.`);

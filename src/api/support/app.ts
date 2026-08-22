@@ -10,8 +10,6 @@ import { SessionEventService } from '../realtime/session-events.ts';
 import {
 	defaultConfig,
 	installApiRequestLogger,
-	localAcceptanceAdminToken,
-	localAcceptanceAuthEnabled,
 	resolveAgentArtifactBucket,
 	resolveAuthApprovalBaseUrl,
 	shouldLogApiRequests,
@@ -113,12 +111,7 @@ export function createPlatformApiApp(options: any = {}) {
 	app.use('*', async (context, next) => {
 		const token = bearerToken(context.req.raw);
 		if (token) {
-			if (localAcceptanceAuthEnabled({ resolved: { config } }) && token === localAcceptanceAdminToken()) {
-				setAuthentication(context, {
-					principal: { id: 'team-key:local-capacity-acceptance', displayName: 'Local Capacity Acceptance', roles: ['team_api_key', 'platform_admin'], permissions: ['*:*:*', 'seeds:apply:global', 'teams:manage:team'], scopes: ['auth:me'], metadata: { localAcceptance: true } },
-					credential: { type: 'service_token', id: 'local-capacity-acceptance', label: 'Local Capacity Acceptance' },
-				}, 'service');
-			} else if (sameSecret(token, config.projectApiKey)) {
+			if (sameSecret(token, config.projectApiKey)) {
 				setAuthentication(context, { principal: projectPrincipal(config), credential: { type: 'project_api_key', id: config.projectId, label: config.projectApiLabel } }, 'project');
 			} else if (typeof authProvider.authenticateBearerToken === 'function') {
 				const authenticated = await authProvider.authenticateBearerToken(token);

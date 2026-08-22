@@ -1,5 +1,5 @@
 export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
-	const { AUTH_PROVIDERS, CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createControlPlaneEmailConfirmation, createControlPlaneWebSession, ensureControlPlaneCredentialSchema, ensurePrincipal, exchangeProviderIdentity, exposeAuthTokenForTests, hashControlPlanePassword, jsonError, controlPlaneAuthContext, controlPlaneEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, resolveAuthApprovalBaseUrl, runtime, runtimeControlPlaneAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, validateControlPlanePassword, validatePublicUsername, verifiedEmailCount, verifyControlPlanePassword, webAuthPayload, webSessionData } = context;
+	const { AUTH_PROVIDERS, CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createControlPlaneEmailConfirmation, createControlPlaneWebSession, ensureControlPlaneCredentialSchema, ensurePrincipal, exchangeProviderIdentity, hashControlPlanePassword, jsonError, controlPlaneAuthContext, controlPlaneEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, resolveAuthApprovalBaseUrl, runtime, runtimeControlPlaneAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldExposeNonProductionAuthDiagnostics, store, validateControlPlanePassword, validatePublicUsername, verifiedEmailCount, verifyControlPlanePassword, webAuthPayload, webSessionData } = context;
 	app.post('/v1/auth/web/sign-up', async (c) => {
 					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
@@ -77,7 +77,6 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							emailAddressId,
 							displayName,
 							returnTo,
-							skipDelivery: shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config),
 						});
 					} catch (error) {
 						await store.run(`DELETE FROM control_plane_auth_credentials WHERE user_id = ?`, [synced.principal.id]).catch(() => null);
@@ -103,7 +102,6 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							confirmationRequired: true,
 							email,
 							expiresInSeconds: confirmation.expiresInSeconds,
-							confirmationToken: exposeAuthTokenForTests(c, runtime.resolved.config) ? confirmation.token : undefined,
 						},
 					});
 				});

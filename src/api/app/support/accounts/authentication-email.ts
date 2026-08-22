@@ -2,22 +2,11 @@ import { createHash,randomBytes,randomUUID } from 'node:crypto';
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
 import { sendEmailConfirmation } from '../../../../auth/email-confirmation.ts';
 import { sendAuthEmail } from '../../../../auth/email.ts';
-import { authTokenTimestampSeconds,confirmationUrlFor,exposeAuthTokenForTests,teamInviteAcceptUrlFor } from '../index.ts';
+import { authTokenTimestampSeconds,confirmationUrlFor,teamInviteAcceptUrlFor } from '../index.ts';
 export function normalizeEmail(value) {
     return String(value ?? '').trim().toLowerCase();
 }
 export const CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX = 'control_plane_email_confirmation:';
-export function shouldBypassAcceptanceAuthEmailDelivery(c, config) {
-    if (process.env.NODE_ENV === 'test') {
-        return true;
-    }
-    const serviceId = c.req.header('x-treeseed-service-id') ?? '';
-    const serviceSecret = c.req.header('x-treeseed-service-secret') ?? '';
-    return c.req.header('x-treeseed-acceptance-email-bypass') === '1'
-        && Boolean(config.webServiceId && config.webServiceSecret)
-        && serviceId === config.webServiceId
-        && serviceSecret === config.webServiceSecret;
-}
 export function controlPlaneEmailTokenHash(token) {
     return createHash('sha256').update(String(token)).digest('hex');
 }
@@ -197,6 +186,5 @@ export async function createOrResendUserEmailAddress(store, context, userId, inp
         ok: true,
         emailAddress: serializeUserEmailAddress(row),
         verificationSent: Boolean(confirmation),
-        confirmationToken: exposeAuthTokenForTests() ? confirmation?.token : undefined,
     };
 }

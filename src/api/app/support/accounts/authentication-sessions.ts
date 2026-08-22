@@ -1,6 +1,6 @@
 import { normalizeNotificationPreferences } from '@treeseed/sdk/account-contracts';
 import { createHash,randomUUID } from 'node:crypto';
-import { isLoopbackUrl,normalizeBaseUrl,optionalTrimmedString,requestClientIp,shouldBypassAcceptanceAuthEmailDelivery,trimmedHeaderValue } from '../index.ts';
+import { isLoopbackUrl,normalizeBaseUrl,optionalTrimmedString,requestClientIp,trimmedHeaderValue } from '../index.ts';
 export async function loadNotificationPreferences(store, userId) {
     const settings = await store.first(`SELECT * FROM user_notification_preferences WHERE user_id = ? LIMIT 1`, [userId]);
     const globalRows = await store.all(`SELECT content_type FROM user_notification_global_content_types WHERE user_id = ? ORDER BY content_type`, [userId]);
@@ -52,11 +52,6 @@ export function controlPlaneAuthContext(c, config: any = {}) {
         },
         url: new URL(c.req.url),
     };
-}
-export function exposeAuthTokenForTests(c = null, config: any = {}) {
-    return process.env.NODE_ENV === 'test'
-        || process.env.TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS === '1'
-        || (c ? shouldBypassAcceptanceAuthEmailDelivery(c, config) : false);
 }
 export function authTokenTimestampSeconds(value = Date.now()) {
     return Math.floor(Number(value) / 1000);
@@ -154,9 +149,4 @@ export function resolveAuthApprovalBaseUrl(config) {
         return 'https://treeseed.dev';
     }
     return normalized || baseUrl;
-}
-export function localAcceptanceAuthEnabled(runtime) {
-    const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
-    const baseUrl = String(runtime?.resolved?.config?.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? '').trim();
-    return environment === 'local' || process.env.LOCAL_DEV_MODE === '1' || isLoopbackUrl(baseUrl);
 }

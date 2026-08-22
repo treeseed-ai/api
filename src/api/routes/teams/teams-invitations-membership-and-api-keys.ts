@@ -1,5 +1,5 @@
 export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) {
-	const { app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, capacity, config, ensurePrincipal, exportSeedWithStore, isLocalAcceptanceServicePrincipal, isTeamApiPrincipal, jsonError, controlPlaneAuthContext, normalizeSeedEnvironments, requireTeamAccess, runtime, sendTeamInviteEmail, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, verifiedEmailCount } = context;
+	const { app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, capacity, config, ensurePrincipal, exportSeedWithStore, isTeamApiPrincipal, jsonError, controlPlaneAuthContext, normalizeSeedEnvironments, requireTeamAccess, runtime, sendTeamInviteEmail, shouldExposeNonProductionAuthDiagnostics, store, verifiedEmailCount } = context;
 	const actorOwnsTeam = async (teamId: string, principal: any) => {
 		const teamContext = await store.resolvePrincipalTeamContext(teamId, principal);
 		return teamContext?.roles?.includes('team_owner') === true;
@@ -134,11 +134,10 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 	app.post('/v1/teams', async (c) => {
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
-					const localAcceptanceService = isLocalAcceptanceServicePrincipal(c, auth.principal);
-					if ((isTeamApiPrincipal(auth.principal) && !localAcceptanceService) || c.get('actorType') === 'project') {
+					if (isTeamApiPrincipal(auth.principal) || c.get('actorType') === 'project') {
 						return jsonError(c, 403, 'Permission denied.');
 					}
-					if (!localAcceptanceService && await verifiedEmailCount(store, auth.principal.id) < 1) {
+					if (await verifiedEmailCount(store, auth.principal.id) < 1) {
 						return jsonError(c, 403, 'Verify an email address before creating a team.', { code: 'verified_email_required' });
 					}
 					const body = await c.req.json().catch(() => ({}));
@@ -153,7 +152,7 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 							logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : null,
 							profileSummary: typeof body.profileSummary === 'string' ? body.profileSummary : typeof body.description === 'string' ? body.description : null,
 							metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
-							ownerUserId: !localAcceptanceService && typeof auth.principal.id === 'string' ? auth.principal.id : null,
+							ownerUserId: typeof auth.principal.id === 'string' ? auth.principal.id : null,
 						});
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error);
@@ -214,14 +213,12 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					});
 					if (result.ok && result.invite && result.token) {
 						try {
-							if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
-								const team = await store.getTeam(c.req.param('teamId'));
-								await sendTeamInviteEmail(controlPlaneAuthContext(c, config), {
-									invite: result.invite,
-									team,
-									token: result.token,
-								});
-							}
+							const team = await store.getTeam(c.req.param('teamId'));
+							await sendTeamInviteEmail(controlPlaneAuthContext(c, config), {
+								invite: result.invite,
+								team,
+								token: result.token,
+							});
 						} catch (error) {
 							console.warn('[team-invite] Email delivery failed:', error instanceof Error ? error.message : String(error));
 							await store.revokeTeamInvite(c.req.param('teamId'), result.invite.id);

@@ -1,5 +1,5 @@
 export function installAuthenticationAccountProfileAndNotificationsRoutes(context: any) {
-	const { NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, app, availabilityRateLimit, config, createControlPlaneEmailConfirmation, createControlPlaneWebSession, createOrResendUserEmailAddress, ensureControlPlaneCredentialSchema, ensurePrincipal, exposeAuthTokenForTests, getUserEmailAddress, isValidPersonalThemeDraft, jsonError, listUserEmailAddresses, loadNotificationPreferences, controlPlaneAuthContext, normalizeAppearancePreference, normalizeEmail, normalizeNotificationPreferences, normalizeUsername, optionalTrimmedString, parseJsonObject, personalThemeFromRow, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, serializeUserEmailAddress, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, store, syncPrimaryEmailCaches, validatePublicUsername, verifiedEmailCount, webAuthPayload, webSessionData } = context;
+	const { NOTIFICATION_CONTENT_CAPABILITIES, PERSONAL_THEME_COMPILER_VERSION, app, availabilityRateLimit, config, createControlPlaneEmailConfirmation, createControlPlaneWebSession, createOrResendUserEmailAddress, ensureControlPlaneCredentialSchema, ensurePrincipal, getUserEmailAddress, isValidPersonalThemeDraft, jsonError, listUserEmailAddresses, loadNotificationPreferences, controlPlaneAuthContext, normalizeAppearancePreference, normalizeEmail, normalizeNotificationPreferences, normalizeUsername, optionalTrimmedString, parseJsonObject, personalThemeFromRow, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, serializeUserEmailAddress, setPrimaryEmailAddress, store, syncPrimaryEmailCaches, validatePublicUsername, verifiedEmailCount, webAuthPayload, webSessionData } = context;
 	app.get('/v1/auth/availability/username', async (c) => {
 					await ensureControlPlaneCredentialSchema(store);
 					const username = normalizeUsername(c.req.query('value'));
@@ -120,7 +120,6 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 							email: body.email,
 							displayName: auth.principal.displayName,
 							returnTo: '/app/account',
-							skipDelivery: shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config),
 						});
 						if (!result.ok) return jsonError(c, result.status, result.error);
 						return c.json({ ok: true, payload: result });
@@ -147,14 +146,12 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 							emailAddressId: row.id,
 							displayName: auth.principal.displayName,
 							returnTo: '/app/account',
-							skipDelivery: shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config),
 						});
 						return c.json({
 							ok: true,
 							payload: {
 								emailAddress: serializeUserEmailAddress(await getUserEmailAddress(store, auth.principal.id, row.id)),
 								verificationSent: true,
-								confirmationToken: exposeAuthTokenForTests() ? confirmation.token : undefined,
 							},
 						});
 					} catch (error) {

@@ -113,11 +113,6 @@ export function principalIsSeedAdmin(principal) {
 export function isTeamApiPrincipal(principal) {
     return Boolean(principal?.roles?.includes?.('team_api_key'));
 }
-export function isLocalAcceptanceServicePrincipal(c, principal) {
-    return c.get('actorType') === 'service'
-        && principal?.metadata?.localAcceptance === true
-        && principalHasPermission(principal, '*:*:*');
-}
 export function decorateJob(baseUrl, job) {
     if (!job)
         return null;

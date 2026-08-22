@@ -1,5 +1,5 @@
 export function installAuthenticationPasswordAndAccountSecurityRoutes(context: any) {
-	const { accountDeletionBlockers, accountDeletionConfirmationMatches, app, config, consumeReauthentication, createHash, deleteTeamCapacityAggregate, ensureControlPlaneCredentialSchema, ensurePrincipal, hashControlPlanePassword, jsonError, controlPlaneAuthContext, normalizeEmail, normalizeUsername, passwordResetUrlFor, randomBytes, randomUUID, readJsonOrFormBody, runtime, runtimeControlPlaneAuthProvider, sendAuthEmail, shouldBypassAcceptanceAuthEmailDelivery, store, validateControlPlanePassword, verifyControlPlanePassword } = context;
+	const { accountDeletionBlockers, accountDeletionConfirmationMatches, app, config, consumeReauthentication, createHash, deleteTeamCapacityAggregate, ensureControlPlaneCredentialSchema, ensurePrincipal, hashControlPlanePassword, jsonError, controlPlaneAuthContext, normalizeEmail, normalizeUsername, passwordResetUrlFor, randomBytes, randomUUID, readJsonOrFormBody, runtimeControlPlaneAuthProvider, sendAuthEmail, store, validateControlPlanePassword, verifyControlPlanePassword } = context;
 	app.patch('/v1/auth/web/password', async (c) => {
 					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
@@ -74,8 +74,7 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 						);
 						const resetUrl = passwordResetUrlFor(controlPlaneAuthContext(c, config), resetToken);
 						try {
-							if (!shouldBypassAcceptanceAuthEmailDelivery(c, runtime.resolved.config)) {
-								await sendAuthEmail(controlPlaneAuthContext(c, config), {
+							await sendAuthEmail(controlPlaneAuthContext(c, config), {
 									to: email,
 									subject: 'Reset your TreeSeed password',
 									text: [
@@ -93,8 +92,7 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 										'<p>If you did not request a password reset, you can ignore this email.</p>',
 										'</div>',
 									].join(''),
-								});
-							}
+							});
 						} catch (error) {
 							console.warn('[control-plane-auth] Password reset email failed:', error instanceof Error ? error.message : String(error));
 							return jsonError(c, 503, 'Password reset email could not be sent. Please try again shortly.', {
@@ -107,7 +105,6 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 						ok: true,
 						payload: {
 							sent: true,
-							resetToken: process.env.NODE_ENV === 'test' || process.env.TREESEED_ACCEPTANCE_EXPOSE_RESET_TOKENS === '1' ? resetToken : undefined,
 						},
 					});
 				});

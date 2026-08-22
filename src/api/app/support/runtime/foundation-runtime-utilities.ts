@@ -201,9 +201,6 @@ export function scheduleBackgroundBootstrap(c, task) {
 export function base64urlJson(value) {
     return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
-export function localAcceptanceAdminToken() {
-    return process.env.TREESEED_CAPACITY_ACCEPTANCE_ADMIN_TOKEN || 'tsk_local_treeseed_acceptance_admin';
-}
 export function canonicalArchitectureTopology(value) {
     if (value === 'combined_compatibility')
         return 'single_repository_site';

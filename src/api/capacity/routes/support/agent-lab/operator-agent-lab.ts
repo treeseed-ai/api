@@ -350,9 +350,7 @@ function installServicePrincipalRoutes(app: Hono, dependencies: WorkdayRouteDepe
 		metadata.agentLab = { ...object(metadata.agentLab), servicePrincipalId: serviceId, servicePrincipalResourceKey: resourceKey };
 		const now = new Date().toISOString(); await dependencies.store.run(`UPDATE teams SET metadata_json = ?, updated_at = ? WHERE id = ?`, [JSON.stringify(metadata), now, c.req.param('teamId')]);
 		await dependencies.store.run(`INSERT INTO audit_events (id, actor_type, actor_id, event_type, target_type, target_id, data_json, created_at) VALUES (?, 'user', ?, 'agent_lab.service_principal.reconciled', 'team', ?, ?, ?)`, [randomUUID(), access.principal?.id ?? null, c.req.param('teamId'), JSON.stringify({ resourceKey, serviceId, membershipId: membership?.id ?? null, credentialId: credential.id }), now]);
-		const bearer=c.req.header('authorization')?.replace(/^Bearer\s+/iu,'').trim();
-		const localOperatorToken=process.env.TREESEED_CAPACITY_ACCEPTANCE_ADMIN_TOKEN?.trim();
-		return c.json({ ok: true, payload: { serviceId, credentialId: credential.id, membershipId: membership?.id ?? null, roles: ['team_owner'], credentialStored: true, ...(bearer && localOperatorToken && bearer === localOperatorToken ? { credential: credential.secret } : {}) } });
+		return c.json({ ok: true, payload: { serviceId, credentialId: credential.id, membershipId: membership?.id ?? null, roles: ['team_owner'], credentialStored: true } });
 	});
 }
 
