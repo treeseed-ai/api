@@ -21,7 +21,6 @@ import { installGovernanceTeamProjectDelegationsAndApprovalsRoutes } from "../ro
 import { installGovernanceTeamProjectPolicyRoutes } from "../routes/projects/governance/governance-team-project-policy.ts";
 import { installProjectsProposalsAndDecisionsRoutes } from "../routes/projects/governance/projects-proposals-and-decisions.ts";
 import { installOperationsProjectJobsRoutes } from "../routes/projects/operations/operations-project-jobs.ts";
-import { installProjectsCollectionRoutes } from "../routes/projects/projects-collection.ts";
 import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/projects-settings-and-summaries.ts";
 import { installProjectsRepositoryTopologyRoutes } from "../routes/projects/repositories/projects-repository-topology.ts";
 import { installProjectWorkflowOperationRoutes } from "../routes/projects/operations/workflow-operations.ts";
@@ -71,7 +70,6 @@ export function installPlatformRoutes(context: any): void {
   installTreedxCredentialsMirrorsAndSharesRoutes(context);
   installTeamServicesRoutes(context);
   installTeamServiceAuthorityRoutes(context);
-  installProjectsCollectionRoutes(context);
   installProjectsRepositoryTopologyRoutes(context);
   installProjectWorkflowOperationRoutes(context);
   installProjectWorkflowConfigurationRoutes(context);

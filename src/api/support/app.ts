@@ -155,7 +155,7 @@ export function createPlatformApiApp(options: any = {}) {
 		store,
 	};
 	installPlatformRoutes(routeContext);
-	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider, createApiControlPlaneOperations({ store }));
+	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider, createApiControlPlaneOperations({ store, capacity }));
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));

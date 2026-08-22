@@ -34,10 +34,19 @@ describe('control-plane protocol contract', () => {
 		async listTeamsForPrincipal() { return []; },
 		async loadTeamProfileByName() { return null; },
 		async principalCanAccessTeam() { return true; },
-		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a' }, repositories: [] }; },
+		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
+		async principalCanManageTeam() { return true; },
+		async createProject(teamId: string, input: Record<string, unknown>) { return { id: 'project-new', teamId, ...input }; },
+		async updateProject(projectId: string, input: Record<string, unknown>) { return { id: projectId, ...input }; },
+		async run() {},
+		async recordAuditEvent() {},
 		...overrides,
+	});
+	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({
+		store: operationStore(overrides),
+		capacity: { async evaluateProjectDeletionBlockers() { return []; } },
 	});
 
 	it('binds status to one catalog operation and deterministic OpenAPI 3.1.1', () => {
@@ -66,7 +75,7 @@ describe('control-plane protocol contract', () => {
 
 	it('binds dependency-backed deep health directly through the catalog', async () => {
 		const app = new Hono();
-		const registry = createApiControlPlaneOperations({ store: operationStore() });
+		const registry = createApiControlPlaneOperations(apiDependencies());
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/health/deep');
 		expect(response.status).toBe(200);
@@ -74,7 +83,7 @@ describe('control-plane protocol contract', () => {
 		const specification = await app.request('/openapi.json');
 		expect((await specification.json() as any).paths['/v1/health/deep'].get.operationId).toBe('health.deep');
 		const unavailableApp = new Hono();
-		const unavailable = createApiControlPlaneOperations({ store: operationStore({ async ensureInitialized() { throw new Error('private database detail'); } }) });
+		const unavailable = createApiControlPlaneOperations(apiDependencies({ async ensureInitialized() { throw new Error('private database detail'); } }));
 		installControlPlaneProtocolRoutes(unavailableApp, authenticate, oauthProvider, unavailable);
 		const failed = await unavailableApp.request('/v1/health/deep');
 		const failedText = await failed.text();
@@ -86,7 +95,7 @@ describe('control-plane protocol contract', () => {
 
 	it('binds the readiness probe through the same catalog and database check', async () => {
 		const app = new Hono();
-		const registry = createApiControlPlaneOperations({ store: operationStore() });
+		const registry = createApiControlPlaneOperations(apiDependencies());
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/health/ready');
 		expect(response.status).toBe(200);
@@ -97,9 +106,9 @@ describe('control-plane protocol contract', () => {
 
 	it('serves the current account through the SDK-owned operation binding', async () => {
 		const app = new Hono();
-		const registry = createApiControlPlaneOperations({ store: operationStore({
+		const registry = createApiControlPlaneOperations(apiDependencies({
 			async listTeamsForPrincipal() { return [{ id: 'team-a', name: 'TreeSeed' }]; },
-		}) });
+		}));
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/me', { headers: { authorization: 'Bearer test-token' } });
 		expect(response.status).toBe(200);
@@ -109,10 +118,10 @@ describe('control-plane protocol contract', () => {
 
 	it('serves team discovery through SDK-owned operation bindings', async () => {
 		const app = new Hono();
-		const registry = createApiControlPlaneOperations({ store: operationStore({
+		const registry = createApiControlPlaneOperations(apiDependencies({
 			async listTeamsForPrincipal() { return [{ id: 'team-a', name: 'TreeSeed' }]; },
 			async loadTeamProfileByName(name: string) { return name === 'treeseed' ? { id: 'team-a', name: 'TreeSeed' } : null; },
-		}) });
+		}));
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const headers = { authorization: 'Bearer test-token' };
 		expect(await (await app.request('/v1/teams', { headers })).json()).toEqual({ data: { teams: [{ id: 'team-a', name: 'TreeSeed' }] } });
@@ -152,11 +161,11 @@ describe('control-plane protocol contract', () => {
 	});
 
 	it('lists only visible team projects through the shared REST and MCP operation', async () => {
-		const registry = createApiControlPlaneOperations({ store: operationStore({
+		const registry = createApiControlPlaneOperations(apiDependencies({
 			async listTeamProjects() {
 				return [{ id: 'active', metadata: {} }, { id: 'archived', metadata: { inventory: { status: 'archived' } } }];
 			},
-		}) });
+		}));
 		const app = new Hono();
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer test-token' } });
@@ -167,11 +176,11 @@ describe('control-plane protocol contract', () => {
 		const catalog = await app.request('/mcp/catalog.json');
 		expect((await catalog.json() as any).tools.map((tool: { name: string }) => tool.name)).toContain('projects.list');
 		const adminApp = new Hono();
-		const adminRegistry = createApiControlPlaneOperations({ store: operationStore({ async principalCanAccessTeam() { return false; } }) });
+		const adminRegistry = createApiControlPlaneOperations(apiDependencies({ async principalCanAccessTeam() { return false; } }));
 		installControlPlaneProtocolRoutes(adminApp, async () => ({ principal: { id: 'admin', scopes: ['treeseed:read'], roles: ['admin'], permissions: [] }, credential: { id: 'admin-client' } }), oauthProvider, adminRegistry);
 		expect((await adminApp.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer admin' } })).status).toBe(200);
 		const deniedApp = new Hono();
-		const deniedRegistry = createApiControlPlaneOperations({ store: operationStore({ async principalCanAccessTeam() { return false; } }) });
+		const deniedRegistry = createApiControlPlaneOperations(apiDependencies({ async principalCanAccessTeam() { return false; } }));
 		installControlPlaneProtocolRoutes(deniedApp, authenticate, oauthProvider, deniedRegistry);
 		const denied = await deniedApp.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer test-token' } });
 		expect(denied.status).toBe(403);
@@ -180,7 +189,7 @@ describe('control-plane protocol contract', () => {
 
 	it('serves project identity, access, and summary through SDK-owned bindings', async () => {
 		const app = new Hono();
-		const registry = createApiControlPlaneOperations({ store: operationStore() });
+		const registry = createApiControlPlaneOperations(apiDependencies());
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const headers = { authorization: 'Bearer test-token' };
 		expect(await (await app.request('/v1/projects/project-a', { headers })).json()).toMatchObject({ data: { project: { id: 'project-a' } } });
@@ -189,6 +198,29 @@ describe('control-plane protocol contract', () => {
 		expect(registry.require('projects.show').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.show);
 		expect(registry.require('projects.access.show').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.access);
 		expect(registry.require('projects.summary.show').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.summary);
+	});
+
+	it('routes project lifecycle mutations through SDK-owned bindings', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies());
+		installControlPlaneProtocolRoutes(app, async () => ({
+			principal: { id: 'user_1', scopes: ['treeseed:read', 'treeseed:projects:write'], roles: ['admin'], permissions: [] },
+			credential: { id: 'client_1' },
+		}), oauthProvider, registry);
+		const mutationHeaders = { authorization: 'Bearer test-token', 'content-type': 'application/json', 'idempotency-key': 'project-lifecycle-1' };
+		const created = await app.request('/v1/teams/team-a/projects', { method: 'POST', headers: mutationHeaders, body: JSON.stringify({ slug: 'new', name: 'New Project' }) });
+		expect(created.status).toBe(200);
+		expect(await created.json()).toMatchObject({ data: { id: 'project-new', teamId: 'team-a', slug: 'new' } });
+		const archive = await app.request('/v1/projects/project-a/archive', { method: 'POST', headers: { ...mutationHeaders, 'if-match': '"project-a"' }, body: '{}' });
+		expect(archive.status).toBe(200);
+		const blockers = await app.request('/v1/projects/project-a/deletion-blockers', { headers: { authorization: 'Bearer test-token' } });
+		expect(await blockers.json()).toEqual({ data: { blockers: [] } });
+		const removed = await app.request('/v1/projects/project-a', { method: 'DELETE', headers: { ...mutationHeaders, 'if-match': '"project-a"' }, body: JSON.stringify({ confirmation: 'DELETE sdk' }) });
+		expect(removed.status).toBe(200);
+		expect(await removed.json()).toEqual({ data: { id: 'project-a', deleted: true } });
+		expect(registry.require('projects.create').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.create);
+		expect(registry.require('projects.archive').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.archive);
+		expect(registry.require('projects.delete').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.remove);
 	});
 
 	it('publishes truthful OAuth resource metadata and RFC 8628 device exchange', async () => {

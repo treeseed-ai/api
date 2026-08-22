@@ -2,6 +2,9 @@ import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
 
 export interface ProjectOperationDependencies {
+	capacity: {
+		evaluateProjectDeletionBlockers(projectId: string): Promise<Array<Record<string, unknown>>>;
+	};
 	store: {
 		listProjectsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, any>>>;
 		listTeamProjects(teamId: string): Promise<Array<Record<string, any>>>;
@@ -9,6 +12,11 @@ export interface ProjectOperationDependencies {
 		getProjectDetails(projectId: string): Promise<Record<string, any> | null>;
 		getProjectAccessSummary(projectId: string, principal: Record<string, unknown>): Promise<Record<string, unknown>>;
 		getProjectSummary(projectId: string, principal: Record<string, unknown>): Promise<Record<string, unknown>>;
+		principalCanManageTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
+		createProject(teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
+		updateProject(projectId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
+		run(query: string, parameters?: unknown[]): Promise<unknown>;
+		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 }
 
@@ -31,6 +39,30 @@ async function projectAccess(dependencies: ProjectOperationDependencies, project
 		throw new ControlPlaneOperationError(403, 'project_permission_denied', 'The credential cannot read this project.');
 	}
 	return { principal, details };
+}
+
+async function teamManageAccess(dependencies: ProjectOperationDependencies, teamId: string, context: { principal?: Record<string, any> }) {
+	const principal = context.principal;
+	if (!principal) throw new ControlPlaneOperationError(401, 'authentication_required', 'Authentication is required.');
+	const administrator = principal.roles?.some((role: string) => role === 'admin' || role === 'platform_admin')
+		|| principal.permissions?.includes('*:*:*');
+	if (!administrator && !await dependencies.store.principalCanAccessTeam(principal, teamId)) {
+		throw new ControlPlaneOperationError(403, 'team_access_denied', 'The principal cannot access this team.');
+	}
+	if (principal.roles?.includes('team_api_key')) {
+		if (!principal.permissions?.some((permission: string) => permission === '*:*:*' || permission === 'projects:manage:team')) {
+			throw new ControlPlaneOperationError(403, 'team_permission_denied', 'The credential cannot manage projects.');
+		}
+	} else if (!administrator && !await dependencies.store.principalCanManageTeam(principal, teamId)) {
+		throw new ControlPlaneOperationError(403, 'team_management_denied', 'The principal cannot manage this team.');
+	}
+	return principal;
+}
+
+async function projectManageAccess(dependencies: ProjectOperationDependencies, projectId: string, context: { principal?: Record<string, any> }) {
+	const access = await projectAccess(dependencies, projectId, context);
+	await teamManageAccess(dependencies, access.details.project.teamId, context);
+	return access;
 }
 
 export function createProjectShowOperation(dependencies: ProjectOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.projects.show> {
@@ -58,6 +90,87 @@ export function createProjectSummaryOperation(dependencies: ProjectOperationDepe
 		async handler(input, context) {
 			const access = await projectAccess(dependencies, input.path.projectId, context);
 			return dependencies.store.getProjectSummary(input.path.projectId, access.principal);
+		},
+	};
+}
+
+export function createProjectCreateOperation(dependencies: ProjectOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.projects.create> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.projects.create,
+		async handler(input, context) {
+			await teamManageAccess(dependencies, input.path.teamId, context);
+			const body = input.body as Record<string, unknown>;
+			const slug = String(body.slug ?? '').trim();
+			const name = String(body.name ?? '').trim();
+			if (!slug || !name) throw new ControlPlaneOperationError(400, 'project_input_invalid', 'Project slug and name are required.');
+			try {
+				return await dependencies.store.createProject(input.path.teamId, {
+					...(typeof body.id === 'string' ? { id: body.id } : {}), slug, name,
+					description: typeof body.description === 'string' ? body.description : null,
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+					entitlementTier: typeof body.entitlementTier === 'string' ? body.entitlementTier : 'free',
+				});
+			} catch (error) {
+				const message = error instanceof Error ? error.message : 'The project could not be created.';
+				throw new ControlPlaneOperationError(/already in use/u.test(message) ? 409 : 400, /already in use/u.test(message) ? 'project_slug_taken' : 'project_input_invalid', message);
+			}
+		},
+	};
+}
+
+function projectInventoryOperation(
+	binding: typeof CONTROL_PLANE_OPERATIONS.projects.archive | typeof CONTROL_PLANE_OPERATIONS.projects.restore,
+	status: 'active' | 'archived',
+): (dependencies: ProjectOperationDependencies) => BoundOperation<any> {
+	return (dependencies) => ({
+		binding,
+		async handler(input, context) {
+			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			if (status === 'archived') {
+				const blockers = await dependencies.capacity.evaluateProjectDeletionBlockers(input.path.projectId);
+				if (blockers.length) throw new ControlPlaneOperationError(409, 'project_blocked', 'The project still has active work and cannot be archived.');
+			}
+			const now = new Date().toISOString();
+			const updated = await dependencies.store.updateProject(input.path.projectId, {
+				metadata: { ...access.details.project.metadata, inventory: status === 'archived'
+					? { status, archivedAt: now, archivedBy: access.principal.id }
+					: { status, restoredAt: now, restoredBy: access.principal.id } },
+			});
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
+				eventType: `project.${status === 'archived' ? 'archived' : 'restored'}`, targetType: 'project', targetId: input.path.projectId });
+			return updated;
+		},
+	});
+}
+
+export const createProjectArchiveOperation = projectInventoryOperation(CONTROL_PLANE_OPERATIONS.projects.archive, 'archived');
+export const createProjectRestoreOperation = projectInventoryOperation(CONTROL_PLANE_OPERATIONS.projects.restore, 'active');
+
+export function createProjectDeletionBlockersOperation(dependencies: ProjectOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.projects.deletionBlockers> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.projects.deletionBlockers,
+		async handler(input, context) {
+			await projectManageAccess(dependencies, input.path.projectId, context);
+			return { blockers: await dependencies.capacity.evaluateProjectDeletionBlockers(input.path.projectId) };
+		},
+	};
+}
+
+export function createProjectDeleteOperation(dependencies: ProjectOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.projects.remove> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.projects.remove,
+		async handler(input, context) {
+			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			const expected = `DELETE ${access.details.project.slug}`;
+			if ((input.body as Record<string, unknown>).confirmation !== expected) {
+				throw new ControlPlaneOperationError(400, 'confirmation_invalid', `Type ${expected} to confirm.`);
+			}
+			const blockers = await dependencies.capacity.evaluateProjectDeletionBlockers(input.path.projectId);
+			if (blockers.length) throw new ControlPlaneOperationError(409, 'project_blocked', 'The project still has active work and cannot be deleted.');
+			await dependencies.store.run('DELETE FROM projects WHERE id = ?', [input.path.projectId]);
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
+				eventType: 'project.deleted', targetType: 'project', targetId: input.path.projectId });
+			return { id: input.path.projectId, deleted: true };
 		},
 	};
 }
