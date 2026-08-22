@@ -3,8 +3,6 @@ import { CapacityGovernanceError } from '../database.ts';
 import { installProviderAssignmentRoutes } from './capacity/assignments/provider-assignments.ts';
 import { installCapacityGovernanceRoutes } from './governance/policy/governance.ts';
 import { installResearchWorkflowRoutes } from './operations/research-workflows.ts';
-import { installProjectAgentObservabilityRoutes,type ProjectAgentObservabilityRouteOptions } from './projects/projects-core/project-agent-observability.ts';
-import { installProjectAgentOperatorRoutes,type ProjectAgentOperatorRouteOptions } from './projects/projects-core/project-agent-operator.ts';
 import { installProjectDiagnosticsRoutes,type ProjectDiagnosticsRouteOptions } from './projects/projects-core/project-diagnostics.ts';
 import { installCapacityRuntimeRoutes } from './runtime/runtime.ts';
 import { installCapacityOperatorRoutes } from './support/operator.ts';
@@ -33,19 +31,17 @@ function installCapacityErrorBoundary(app: Hono) {
 	});
 }
 
-export function installCapacityRoutes(app: Hono, options: Parameters<typeof installCapacityGovernanceRoutes>[1] & ProjectAgentOperatorRouteOptions & ProjectDiagnosticsRouteOptions & ProjectAgentObservabilityRouteOptions & TreeDxProxyRouteOptions & Parameters<typeof installProviderAssignmentRoutes>[1]) {
+export function installCapacityRoutes(app: Hono, options: Parameters<typeof installCapacityGovernanceRoutes>[1] & ProjectDiagnosticsRouteOptions & TreeDxProxyRouteOptions & Parameters<typeof installProviderAssignmentRoutes>[1]) {
 	installCapacityErrorBoundary(app);
 	installCapacityGovernanceRoutes(app, options);
 	installCapacityPolicyRoutes(app, options);
 	installCapacityRuntimeRoutes(app, options);
 	installCapacityOperatorRoutes(app, options);
-	installProjectAgentOperatorRoutes(app, options);
 	installPlanningStateRoutes(app, options);
 	installStructuredEstimateRoutes(app, options);
 	installDecisionWorkGraphRoutes(app, options);
 	installResearchWorkflowRoutes(app, options);
 	installProviderAssignmentRoutes(app, options);
 	installProjectDiagnosticsRoutes(app, options);
-	installProjectAgentObservabilityRoutes(app, options);
 	installTreeDxProxyRoutes(app, options);
 }

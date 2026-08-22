@@ -1,9 +1,7 @@
-import { Hono } from 'hono';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DataType,newDb } from 'pg-mem';
 import { describe,expect,it } from 'vitest';
-import { installProjectAgentOperatorRoutes } from '../../../../../src/api/capacity/routes/projects/projects-core/project-agent-operator.ts';
 import { ProjectAgentClassService } from '../../../../../src/api/capacity/services/projects/agents/project-agent-class-service.ts';
 import { ControlPlaneStore } from '../../../../../src/api/persistence/store.js';
 import { ControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.js';
@@ -104,24 +102,4 @@ describe('project agent class service', () => {
 		} finally { await database.close(); }
 	});
 
-	it('serves create, get, and update through the single project-agent route owner', async () => {
-		const { database, store } = harness();
-		try {
-			await seed(store);
-			const app = new Hono();
-			installProjectAgentOperatorRoutes(app, { store, async requireProjectAccess() { return {}; } });
-			const missingKey = await app.request('/v1/projects/project-a/agent-classes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'missing-key', slug: 'missing-key' }) });
-			expect(missingKey.status).toBe(400);
-			expect(await missingKey.json()).toMatchObject({ code: 'capacity_idempotency_key_required' });
-			const created = await app.request('/v1/projects/project-a/agent-classes', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'route-create' }, body: JSON.stringify({ id: 'class-route', slug: 'reviewer', allowedModes: ['planning'] }) });
-			expect(created.status).toBe(201);
-			expect(await created.json()).toMatchObject({ payload: { id: 'class-route', status: 'active' } });
-			const updated = await app.request('/v1/projects/project-a/agent-classes/class-route', { method: 'PATCH', headers: { 'content-type': 'application/json', 'idempotency-key': 'route-update' }, body: JSON.stringify({ status: 'paused' }) });
-			expect(updated.status).toBe(200);
-			expect(await updated.json()).toMatchObject({ payload: { id: 'class-route', status: 'paused' } });
-			const read = await app.request('/v1/projects/project-a/agent-classes/class-route');
-			expect(read.status).toBe(200);
-			expect(await read.json()).toMatchObject({ payload: { id: 'class-route', status: 'paused' } });
-		} finally { await database.close(); }
-	});
 });
