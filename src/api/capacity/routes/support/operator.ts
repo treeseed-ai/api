@@ -7,7 +7,6 @@ type CapacityPageCursor,
 import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { optionalAvailabilityStatus } from '../../services/accounts/availability-session-service.ts';
 import { CapacityOverrunService } from '../../services/capacity/accounting/overrun-service.ts';
 import { CapacityOperatorEvidenceService } from '../../services/support/operator-evidence-service.ts';
 import { readCapacityRequestObject } from './request-json.ts';
@@ -122,15 +121,6 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 	installOperatorAgentLabRoutes(app, workdayDependencies);
 	installOperatorAssignmentContentRoutes(app,{ store,manage,operatorError });
 
-	app.get('/v1/teams/:teamId/capacity/availability-sessions', async (c) => {
-		const access = await read(c); if (access.response) return access.response;
-		try {
-			return c.json({ ok: true, payload: await store.listProviderAvailabilitySessionsPage(c.req.param('teamId'), { providerId: query(c, 'providerId'), status: optionalAvailabilityStatus(query(c, 'status')), ...page(c) }) });
-		} catch (error) {
-			return operatorError(error);
-		}
-	});
-
 	app.get('/v1/teams/:teamId/capacity/assignments', async (c) => {
 		const access = await read(c); if (access.response) return access.response;
 		try {
@@ -217,19 +207,6 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 			return c.json({ ok: true, payload: await evidence.explainReservation(c.req.param('teamId'), c.req.param('reservationId')) });
 		} catch (error) { return operatorError(error); }
 	});
-	app.get('/v1/teams/:teamId/capacity/usage', async (c) => {
-		const access = await read(c); if (access.response) return access.response;
-		try {
-			return c.json({ ok: true, payload: await evidence.listUsage(c.req.param('teamId'), evidencePage(c)) });
-		} catch (error) { return operatorError(error); }
-	});
-	app.get('/v1/teams/:teamId/capacity/ledger', async (c) => {
-		const access = await read(c); if (access.response) return access.response;
-		try {
-			return c.json({ ok: true, payload: await evidence.listLedger(c.req.param('teamId'), evidencePage(c)) });
-		} catch (error) { return operatorError(error); }
-	});
-
 	app.post('/v1/teams/:teamId/capacity/assignments/:assignmentId/cancel', async (c) => {
 		const access = await manage(c); if (access.response) return access.response;
 		try {

@@ -22,6 +22,7 @@ import { createServiceConnectionService } from '../control-plane/repositories/se
 import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
 import { createWorkdayService } from '../control-plane/repositories/capacity/workday-service.ts';
 import { createAgentQueryService } from '../control-plane/repositories/capacity/agent-query-service.ts';
+import { createCapacityQueryService } from '../control-plane/repositories/capacity/capacity-query-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -189,6 +190,7 @@ export function createPlatformApiApp(options: any = {}) {
 			plans: createCapacityPlanService(capacity),
 			workdays: createWorkdayService(capacity),
 			agents: createAgentQueryService(capacity),
+			capacityQueries: createCapacityQueryService(capacity),
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),
