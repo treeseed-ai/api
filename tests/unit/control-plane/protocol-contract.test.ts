@@ -401,7 +401,7 @@ describe('control-plane protocol contract', () => {
 
 	it('serves discovery and tools through the official modern client', async () => {
 		const app = new Hono();
-		installControlPlaneProtocolRoutes(app, authenticate);
+		installControlPlaneProtocolRoutes(app, authenticate, undefined, createApiControlPlaneOperations(apiDependencies()));
 		const transport = new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
 			authProvider: { token: async () => 'test-token' },
 			fetch: async (input, init) => {
@@ -422,12 +422,22 @@ describe('control-plane protocol contract', () => {
 			expect(result.structuredContent).toEqual(expect.objectContaining({ status: 'ok' }));
 			const resources = await client.listResources();
 			expect(resources.resources.map((resource) => resource.uri)).toContain('treeseed://status');
+			const templates = await client.listResourceTemplates();
+			expect(templates.resourceTemplates).toHaveLength(27);
+			expect(templates.resourceTemplates.map((resource) => resource.uriTemplate)).toEqual(expect.arrayContaining([
+				'treeseed://projects/{projectId}', 'treeseed://plans/{capacityPlanId}', 'treeseed://operations/{operationId}',
+			]));
 			const statusResource = await client.readResource({ uri: 'treeseed://status' });
 			expect(statusResource.contents[0]).toMatchObject({ uri: 'treeseed://status', mimeType: 'application/json' });
 			const prompts = await client.listPrompts();
 			expect(prompts.prompts.map((prompt) => prompt.name)).toEqual(expect.arrayContaining(['operate', 'research', 'governance-review', 'workday-planning', 'project-agent-chat']));
 			const prompt = await client.getPrompt({ name: 'operate', arguments: { objective: 'Inspect status.' } });
 			expect(prompt.messages[0]?.content).toMatchObject({ type: 'text' });
+			const promptCompletion = await client.complete({ ref: { type: 'ref/prompt', name: 'operate' }, argument: { name: 'objective', value: 'Inspect' } });
+			expect(promptCompletion.completion.values).toContain('Inspect current control-plane status');
+			const resourceCompletion = await client.complete({ ref: { type: 'ref/resource', uri: 'treeseed://projects/{projectId}' },
+				argument: { name: 'projectId', value: 'project' }, context: { arguments: { projectId: 'project-a' } } });
+			expect(resourceCompletion.completion.values).toContain('project-a');
 		} finally {
 			await client.close();
 		}

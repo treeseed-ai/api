@@ -66,4 +66,5 @@ export function installControlPlaneProtocolRoutes(
 		const honoPath = rest.path.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/gu, ':$1');
 		app.on(rest.method, honoPath, createOperationHttpHandler(operation, bearerGate, digest, confirmations));
 	}
+	return { mcpHandler, openApiDigest: digest, mcpCatalogDigest: mcpDigest };
 }

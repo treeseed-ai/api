@@ -3,6 +3,7 @@ import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { Context } from 'hono';
 import { ZodError } from 'zod';
 import { ControlPlaneOperationError, type BoundOperation } from '../catalog/operation-registry.ts';
+import { enforceOperationAuthorization } from '../authorization/invocation-policy.ts';
 import { decodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
 
 type Authenticate = (request: Request) => Promise<AuthInfo | Response>;
@@ -69,8 +70,7 @@ export function createOperationHttpHandler(
 				|| (descriptor.authentication === 'oauth_or_provider' && !providerAuth?.principal)
 				? await authenticate(context.req.raw) : undefined;
 			if (authInfo instanceof Response) return authInfo;
-			const missingScope = authInfo ? descriptor.oauthScopes.find((scope) => !authInfo.scopes.includes(scope)) : undefined;
-			if (missingScope) throw new ControlPlaneOperationError(403, 'oauth_scope_insufficient', `The operation requires ${missingScope}.`);
+			enforceOperationAuthorization(descriptor, authInfo, { providerAuthenticated: Boolean(providerAuth?.principal) });
 			if (descriptor.idempotency.required && !idempotencyKey) {
 				throw new ControlPlaneOperationError(400, 'idempotency_key_required', `${descriptor.idempotency.header} is required.`);
 			}
