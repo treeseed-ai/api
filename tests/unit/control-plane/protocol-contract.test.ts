@@ -44,6 +44,8 @@ describe('control-plane protocol contract', () => {
 		async createTeam(input: Record<string, unknown>) { return { id: 'team-new', ...input }; },
 		async getTeamDeletionReadiness(teamId: string) { return { ok: true, ready: true, team: { id: teamId, name: 'treeseed' }, blockers: [] }; },
 		async updateTeamSettings(teamId: string, input: Record<string, unknown>) { return { ok: true, team: { id: teamId, updatedAt: 'revision-2', ...input } }; },
+		async listRoleKeysForMembership() { return ['contributor']; },
+		async updateTeamMemberRole(teamId: string, membershipId: string, roleKey: string, expectedVersion?: string) { return { ok: true, membership: { id: membershipId, teamId, roleKey, version: 'membership-2', expectedVersion } }; },
 		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
@@ -219,6 +221,20 @@ describe('control-plane protocol contract', () => {
 		expect(response.headers.get('etag')).toBe('"revision-2"');
 		expect(await response.json()).toMatchObject({ data: { ok: true, team: { id: 'team-a', displayName: 'TreeSeed Cooperative', expectedUpdatedAt: 'revision-1' } } });
 		expect(registry.require('teams.update').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.update);
+	});
+
+	it('updates team membership through the SDK-owned operation binding', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies({
+			async listTeamMembers() { return [{ id: 'membership-1', userId: 'user-2', roles: ['contributor'] }]; },
+		}));
+		installControlPlaneProtocolRoutes(app, async () => ({ principal: { id: 'user_1', scopes: ['treeseed:projects:write'], roles: [], permissions: [] }, credential: { id: 'client_1' } }), oauthProvider, registry);
+		const response = await app.request('/v1/teams/team-a/members/membership-1', { method: 'PATCH', headers: {
+			authorization: 'Bearer test-token', 'content-type': 'application/json', 'idempotency-key': 'member-update-1', 'if-match': '"membership-1"',
+		}, body: JSON.stringify({ roleKey: 'project_lead' }) });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ data: { ok: true, membership: { id: 'membership-1', roleKey: 'project_lead', expectedVersion: 'membership-1' } } });
+		expect(registry.require('teams.members.update').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.updateMember);
 	});
 
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {

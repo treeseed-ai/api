@@ -18,6 +18,8 @@ export interface TeamOperationDependencies {
 		createTeam(input: Record<string, unknown>): Promise<Record<string, any>>;
 		getTeamDeletionReadiness(teamId: string): Promise<Record<string, any>>;
 		updateTeamSettings(teamId: string, input: Record<string, unknown>): Promise<Record<string, any> | null>;
+		listRoleKeysForMembership(membershipId: string): Promise<string[]>;
+		updateTeamMemberRole(teamId: string, membershipId: string, roleKey: string, expectedVersion?: string): Promise<Record<string, any>>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 }
@@ -218,6 +220,34 @@ export function createTeamUpdateOperation(dependencies: TeamOperationDependencie
 				String(result.code ?? 'team_update_failed'), 'The team could not be updated.');
 			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
 				eventType: 'team.updated', targetType: 'team', targetId: input.path.teamId });
+			return result;
+		},
+	};
+}
+
+export function createTeamMemberUpdateOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.updateMember> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.updateMember,
+		async handler(input, context) {
+			const access = await requireTeamRead(dependencies, input.path.teamId, context);
+			if (access.team.status === 'archived') throw new ControlPlaneOperationError(409, 'team_archived', 'Archived teams are read-only.');
+			const administrator = access.principal.roles?.some((role: string) => role === 'admin' || role === 'platform_admin');
+			if (!administrator && !await dependencies.store.principalCanManageTeam(access.principal, input.path.teamId)) {
+				throw new ControlPlaneOperationError(403, 'team_management_denied', 'Team management authority is required.');
+			}
+			const members = await dependencies.store.listTeamMembers(input.path.teamId);
+			const target = members.find((member) => member.id === input.path.membershipId);
+			if (!target) throw new ControlPlaneOperationError(404, 'member_missing', 'The team member was not found.');
+			const body = input.body as Record<string, any>;
+			const role = String(body.roleKey ?? body.role ?? 'contributor');
+			const targetRoles = await dependencies.store.listRoleKeysForMembership(input.path.membershipId);
+			if (role === 'team_owner' || targetRoles.includes('team_owner')) await requireTeamOwner(dependencies, input.path.teamId, context);
+			const result = await dependencies.store.updateTeamMemberRole(input.path.teamId, input.path.membershipId, role, context.ifMatch);
+			if (!result.ok) throw new ControlPlaneOperationError(String(result.code) === 'stale' ? 409 : 400,
+				String(result.code ?? 'team_member_update_failed'), 'The team member could not be updated.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
+				eventType: 'team.member.role_changed', targetType: 'team', targetId: input.path.teamId,
+				data: { membershipId: input.path.membershipId, roleKey: role } });
 			return result;
 		},
 	};
