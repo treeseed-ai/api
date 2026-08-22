@@ -1,5 +1,8 @@
 import { ENGINEERING_HANDLER_KINDS,type AgentActivityProfile,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
-import { compileAgentAuthoritySnapshot,compileDefaultChatActivityProfile,selectWorkdayAgents,type AgentAuthorityPresetId } from '@treeseed/sdk/agent-capacity';
+import { type AgentAuthorityPresetId } from '@treeseed/sdk/agent-capacity';
+import { compileAgentAuthoritySnapshot } from '../../../../policy/authority/agent-authority-presets.ts';
+import { compileDefaultChatActivityProfile } from '../../../../policy/workdays/chat-activity-profile.ts';
+import { selectWorkdayAgents } from '../../../../policy/workdays/workday.ts';
 import { projectAgentActivityRefs,type ProjectAgentActivityRef } from '../../../projects/projects-core/project-agent-activity-refs.ts';
 
 type UnknownRecord = Record<string, unknown>;

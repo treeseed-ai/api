@@ -1,5 +1,5 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { evaluateMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
+import { evaluateMinimumAssignmentDuration } from '../../../policy/timing/assignment-duration.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 
 type Row = Record<string, unknown>;

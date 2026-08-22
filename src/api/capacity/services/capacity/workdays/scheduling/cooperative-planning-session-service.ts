@@ -1,4 +1,5 @@
-import { compileCooperativePlanningWaves, type AgentPlanningGraph } from '@treeseed/sdk/agent-capacity';
+import { type AgentPlanningGraph } from '@treeseed/sdk/agent-capacity';
+import { compileCooperativePlanningWaves } from '../../../../policy/workdays/cooperative-planning.ts';
 import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';

@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { parseKnowledgePublicationManifest, type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
+import { type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
+import { parseKnowledgePublicationManifest } from './runtime/publication-manifest.ts';
 import { createR2KnowledgePublicationStorage } from './r2-publication-storage.ts';
 
 export interface KnowledgePublicationStorage {

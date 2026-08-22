@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { KNOWLEDGE_PUBLICATION_SCHEMA_VERSION, type KnowledgePublicationManifest, type KnowledgeVisibility } from '@treeseed/sdk/knowledge';
+import { type KnowledgePublicationManifest, type KnowledgeVisibility } from '@treeseed/sdk/knowledge';
+const KNOWLEDGE_PUBLICATION_SCHEMA_VERSION = 'treeseed.knowledge-publication/v1' as const;
 import type { KnowledgeSnapshotProject } from './packs/knowledge-pack-builder.ts';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');

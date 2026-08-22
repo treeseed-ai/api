@@ -1,4 +1,5 @@
-import { evaluateAssignmentAuthorityProbe,type AgentActivityType } from '@treeseed/sdk/agent-capacity';
+import { type AgentActivityType } from '@treeseed/sdk/agent-capacity';
+import { evaluateAssignmentAuthorityProbe } from '../../../../policy/authority/assignment-authority-probe.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 
 function record(value: unknown): Record<string, unknown> {

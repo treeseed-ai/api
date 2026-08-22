@@ -2,7 +2,7 @@ import {
 clearServiceVaultKey,
 createServiceVaultUserKeyPair,
 openSecretOperationPayload,
-} from '@treeseed/sdk/secrets-capability';
+} from './service-vault-crypto.ts';
 import type { ControlPlaneStore } from '../../api/persistence/store.ts';
 import { validateProviderConnection } from './service-validation.ts';
 

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { deriveAgentRuntimeStatus, type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
+import { type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
 import type { Context, Hono } from 'hono';
 import { AgentLabProjectionService } from '../../../services/capacity/observability/agent-lab-projection-service.ts';
 import { AgentLabCommandService } from '../../../services/capacity/observability/agent-lab-command-service.ts';
@@ -21,6 +21,11 @@ const commandKinds = new Set(['proposal', 'decision', 'question', 'artifact', 'e
 function object(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function jsonObject(value: unknown) { if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return object(value); }
 function text(...values: unknown[]) { return String(values.find((value) => typeof value === 'string' && value) ?? ''); }
+function deriveAgentRuntimeStatus(evidence: Record<string, unknown>) {
+	if (!evidence.enabled) return 'dormant'; if (evidence.valid === false || evidence.syncBlocked || evidence.hardBlocked) return 'blocked';
+	if (evidence.activeRunStatus === 'running') return 'running'; if (['waiting','retrying','awaiting_human','awaiting_external'].includes(String(evidence.activeRunStatus ?? ''))) return 'waiting';
+	if (['pending','admitted','leased','queued'].includes(String(evidence.assignmentStatus ?? ''))) return 'queued'; if (['failed','expired','returned'].includes(String(evidence.latestTerminalStatus ?? '')) || evidence.settlementIssue) return 'degraded'; return 'idle';
+}
 
 function relationValidationIssue(error: RelationContentValidationError,projectId: string,projectName = '') {
 	return { id:`treedx:${projectId}:validation:${createHash('sha256').update(JSON.stringify(error.diagnostics)).digest('hex').slice(0,16)}`,kind:'error',title:'Invalid repository content',description:error.message,status:'blocked',projectId,projectName,actionable:true,tags:['TreeDX','validation'],data:{ source:'treedx',code:error.code,diagnostics:error.diagnostics } };

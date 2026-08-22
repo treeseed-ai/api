@@ -1,5 +1,6 @@
 import type { CapacityWorkdayRunRecord,CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
-import { normalizeWorkdayAgentSelection,parseAgentWorkExecutionMode } from '@treeseed/sdk/agent-capacity';
+import { parseAgentWorkExecutionMode } from '@treeseed/sdk/agent-capacity';
+import { normalizeWorkdayAgentSelection } from '../../../../policy/workdays/workday.ts';
 import { randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { CapacityWorkdayRunWriteRepository } from '../../../../repositories/capacity/workdays/workday-run-write.ts';

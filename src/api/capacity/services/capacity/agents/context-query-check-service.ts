@@ -2,7 +2,7 @@ import { createHash,randomUUID } from 'node:crypto';
 import {
 	contextQueryReadiness,executeContextQuerySetTest,executeContextQueryTest,
 	type ContextQuerySetDefinition,type ContextQueryTestDefinition,type DeclarativeContextQuery,
-} from '../../../../knowledge/context-query-runtime.ts';
+} from '../../../../knowledge/runtime/context-query-runtime.ts';
 import { validateContentFrontmatter } from '@treeseed/sdk/content-validation';
 import { parseFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';

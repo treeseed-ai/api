@@ -1,6 +1,7 @@
-import { parseKnowledgePublicationManifest,type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
+import { type KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
 import { createR2PublicationClient,type R2PublicationConfig } from '../providers/cloudflare/r2-publication-client.ts';
 import type { KnowledgePublicationStorage } from './publication-storage.ts';
+import { parseKnowledgePublicationManifest } from './runtime/publication-manifest.ts';
 
 const safeSegment = (value: string) => {
 	const result = String(value).trim();

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { normalizeWorkdayAgentSelection, validateWorkdayTimePolicy, type CapacityWorkdayRunRecord, type CapacityWorkdayScheduleRecord } from '@treeseed/sdk/agent-capacity';
+import { validateWorkdayTimePolicy, type CapacityWorkdayRunRecord, type CapacityWorkdayScheduleRecord } from '@treeseed/sdk/agent-capacity';
+import { normalizeWorkdayAgentSelection } from '../../../../policy/workdays/workday.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { WorkdayProject } from '../policy/workday-project-policy.ts';

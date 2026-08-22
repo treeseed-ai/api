@@ -1,4 +1,5 @@
-import { validateAgentActivityProfilesConfiguration,validateAgentDefinitionModel,validateAgentSignalContract,validateProposalTypeContract,validateGroupDefinition,validateGroupEdgeDefinition } from '@treeseed/sdk/agent-capacity';
+import { validateAgentActivityProfilesConfiguration,validateAgentDefinitionModel,validateAgentSignalContract,validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
+import { validateGroupDefinition,validateGroupEdgeDefinition } from '../../../policy/group-definition.ts';
 import { createHash } from 'node:crypto';
 import { parseFrontmatterDocument,serializeFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import { parse as parseYaml } from 'yaml';

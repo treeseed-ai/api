@@ -1,9 +1,9 @@
 import {
-buildAgentCapacityPlanDraft,
 type AgentCapacityPlanRecord,
 type DecisionExecutionInputRecord,
 type DurableAgentCapacityPlanStatus,
 } from '@treeseed/sdk/agent-capacity';
+import { buildAgentCapacityPlanDraft } from '../../../policy/planning.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import {

@@ -1,4 +1,5 @@
-import { validateArtifactMutationReceipt,type AgentSignalContract } from '@treeseed/sdk/agent-capacity';
+import { type AgentSignalContract } from '@treeseed/sdk/agent-capacity';
+import { validateArtifactMutationReceipt } from '../../../policy/artifact-mutation-receipt.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 
 type Row = Record<string, unknown>;

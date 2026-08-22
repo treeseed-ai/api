@@ -1,4 +1,5 @@
-import { parseBook, parseKnowledgePage, serializeBookDraft, serializeKnowledgePageDraft } from '@treeseed/sdk/knowledge';
+import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
+import { serializeBookDraft, serializeKnowledgePageDraft } from '../../knowledge/runtime/authoring.ts';
 import { simulationEvidence } from '../../store/governance/policy/support/simulation-evidence.ts';
 
 export const list = (value: unknown) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [])

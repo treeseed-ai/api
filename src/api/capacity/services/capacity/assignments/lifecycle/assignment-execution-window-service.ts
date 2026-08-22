@@ -2,7 +2,7 @@ import type { CapacityProviderAccessPrincipal } from '../../../../routes/capacit
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
-import { evaluateMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
+import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
 
 type JsonRecord = Record<string,unknown>;
 function record(value:unknown):JsonRecord { return value&&typeof value==='object'&&!Array.isArray(value)?value as JsonRecord:{}; }

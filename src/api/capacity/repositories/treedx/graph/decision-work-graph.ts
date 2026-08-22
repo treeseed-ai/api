@@ -4,7 +4,7 @@ DecisionPlanningStatus,
 DeliverableContractRecord,
 DeliverableManifestRecord,
 } from '@treeseed/sdk/agent-capacity';
-import { validateDecisionAssignmentGraph,validateDeliverableContract,validateDeliverableManifest } from '@treeseed/sdk/agent-capacity';
+import { validateDecisionAssignmentGraph,validateDeliverableContract,validateDeliverableManifest } from '../../../policy/decision-work.ts';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonObject } from '../../../durable-json.ts';

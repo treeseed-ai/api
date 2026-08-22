@@ -6,7 +6,8 @@ EngineeringAssignmentGraphRoles,
 StructuredAgentEstimate,
 StructuredAgentEstimateStatus,
 } from '@treeseed/sdk/agent-capacity';
-import { activateDecisionAssignmentGraph,advanceDecisionAssignmentGraph,compileDecisionAssignmentGraphFromEstimates,compileEngineeringAssignmentGraph,compileEngineeringRevisionCycle,compileGovernedRevisionCycle,validateDecisionAssignmentGraph,validateDeliverableManifest } from '@treeseed/sdk/agent-capacity';
+import { activateDecisionAssignmentGraph,advanceDecisionAssignmentGraph,compileDecisionAssignmentGraphFromEstimates,compileEngineeringAssignmentGraph,validateDecisionAssignmentGraph,validateDeliverableManifest } from '../../../policy/decision-work.ts';
+import { compileEngineeringRevisionCycle,compileGovernedRevisionCycle } from '../../../policy/revision-cycle.ts';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';

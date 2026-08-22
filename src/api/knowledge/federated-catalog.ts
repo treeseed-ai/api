@@ -1,4 +1,5 @@
-import { parseBook, parseKnowledgePage, type BookDefinition, type KnowledgePageDefinition } from '@treeseed/sdk/knowledge';
+import { type BookDefinition, type KnowledgePageDefinition } from '@treeseed/sdk/knowledge';
+import { parseBook, parseKnowledgePage } from './runtime/catalog.ts';
 import { resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
 import { createKnowledgePublicationStorage } from './publication-storage.ts';
 import { loadPublishedTeamCatalog } from './published-catalog.ts';

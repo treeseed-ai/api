@@ -1,4 +1,4 @@
-import { evaluateTreeDxProxyHandleAccess } from '@treeseed/sdk/agent-capacity';
+import { evaluateTreeDxProxyHandleAccess } from '../../../policy/treedx-proxy-access.ts';
 import type { Context } from 'hono';
 import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';

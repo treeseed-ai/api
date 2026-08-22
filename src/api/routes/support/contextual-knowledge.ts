@@ -1,10 +1,9 @@
 import {
-	knowledgePageSummary,
-	resolveKnowledgePage,
 	type KnowledgePageDefinition,
 	type KnowledgeNavigationEntry,
 	type KnowledgeVisibility,
 } from '@treeseed/sdk/knowledge';
+import { knowledgePageSummary,resolveKnowledgePage } from '../../knowledge/runtime/catalog.ts';
 import { createHash } from 'node:crypto';
 import { loadFederatedKnowledgeCatalog, relatedFederatedKnowledge, searchFederatedKnowledgeCatalog, type FederatedKnowledgePage } from '../../knowledge/federated-catalog.ts';
 

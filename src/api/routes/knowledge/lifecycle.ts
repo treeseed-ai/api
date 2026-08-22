@@ -1,4 +1,5 @@
-import { parseBook, parseKnowledgePage, serializeBookDraft, serializeKnowledgePageDraft } from '@treeseed/sdk/knowledge';
+import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
+import { serializeBookDraft, serializeKnowledgePageDraft } from '../../knowledge/runtime/authoring.ts';
 import { loadFederatedKnowledgeCatalog } from '../../knowledge/federated-catalog.ts';
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspace-identity.ts';

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { validateArtifactMutationReceipt,type ArtifactMutationReceipt } from '@treeseed/sdk/agent-capacity';
+import { type ArtifactMutationReceipt } from '@treeseed/sdk/agent-capacity';
+import { validateArtifactMutationReceipt } from '../../../../policy/artifact-mutation-receipt.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../knowledge/gateway-treedx-connection.ts';
 import { listUnpublishedTreeDxAuthoringState,recordTreeDxAuthoringState } from '../../../treedx/repositories/treedx-authoring-journal.ts';

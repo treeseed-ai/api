@@ -4,7 +4,7 @@ StructuredAgentEstimate,
 StructuredAgentEstimateRecord,
 StructuredAgentEstimateStatus,
 } from '@treeseed/sdk/agent-capacity';
-import { validateStructuredAgentEstimate } from '@treeseed/sdk/agent-capacity';
+import { validateStructuredAgentEstimate } from '../../policy/decision-work.ts';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { decodeDurableJsonObject } from '../../durable-json.ts';
