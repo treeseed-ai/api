@@ -9,12 +9,12 @@ const forbiddenSourceReferences = [
 	/['"`][^'"`\n]*\/packages\/[^'"`\n]*\/src\/[^'"`\n]*['"`]/,
 	/['"`](?:\.\.\/)+(?:sdk|core|agent|cli)\/src\/[^'"`\n]*['"`]/,
 ];
-const removedApiRoutes = [
-	'/v1/acceptance/auth/confirm-email',
+const removedApiRouteFragments = [
 	'/v1/auth/device/start',
 	'/v1/auth/device/poll',
 	'/v1/auth/device/approve',
 ];
+const acceptanceRouteRegistration = /app\.(?:get|post|put|patch|delete|on)\([^\n]*['"]\/v1\/acceptance\//u;
 
 function run(command: string, args: string[]) {
 	const result = spawnSync(command, args, {
@@ -66,7 +66,10 @@ function assertCleanBuild() {
 		if (relative(distRoot, filePath).startsWith('node_modules/')) continue;
 		if (!textExtensions.has(extname(filePath))) continue;
 		const source = readFileSync(filePath, 'utf8');
-		for (const route of removedApiRoutes) {
+		if (acceptanceRouteRegistration.test(source)) {
+			throw new Error(`${relative(packageRoot, filePath)} registers a removed /v1/acceptance route.`);
+		}
+		for (const route of removedApiRouteFragments) {
 			if (source.includes(route)) throw new Error(`${relative(packageRoot, filePath)} contains removed API route ${route}.`);
 		}
 		for (const pattern of forbiddenSourceReferences) {
