@@ -2,17 +2,14 @@ import { createHash } from 'node:crypto';
 import type { KnowledgeNavigationEntry, KnowledgePageDefinition, KnowledgeVisibility } from '@treeseed/sdk/knowledge';
 import { loadFederatedKnowledgeCatalog, relatedFederatedKnowledge, searchFederatedKnowledgeCatalog, type FederatedKnowledgePage } from '../../knowledge/federated-catalog.ts';
 import { knowledgePageSummary, resolveKnowledgePage } from '../../knowledge/runtime/catalog.ts';
+import { KnowledgeOperationError } from './knowledge-operation-error.ts';
 
 type Principal = { id: string; roles?: string[] } | undefined;
-
-export class KnowledgeReaderError extends Error {
-	constructor(readonly status: 401 | 403 | 404 | 503, readonly code: string, message: string) { super(message); }
-}
 
 export function createKnowledgeReaderService(context: any) {
 	async function catalog(principal: Principal) {
 		const result = await loadFederatedKnowledgeCatalog(context, { get: (key: string) => key === 'principal' ? principal : undefined }).catch(() => null);
-		if (!result) throw new KnowledgeReaderError(503, 'knowledge_runtime_unavailable', 'Knowledge is unavailable.');
+		if (!result) throw new KnowledgeOperationError(503, 'knowledge_runtime_unavailable', 'Knowledge is unavailable.');
 		return result;
 	}
 
@@ -35,11 +32,11 @@ export function createKnowledgeReaderService(context: any) {
 
 		async projectCatalog(principal: Principal, projectId: string) {
 			const details = await context.store.getProjectDetails(projectId);
-			if (!details?.project) throw new KnowledgeReaderError(404, 'project_not_found', 'The project was not found.');
+			if (!details?.project) throw new KnowledgeOperationError(404, 'project_not_found', 'The project was not found.');
 			const access = await knowledgeAccess(context.store, principal, details.project.teamId);
 			const loaded = await loadFederatedKnowledgeCatalog(context, { get: (key: string) => key === 'principal' ? principal : undefined }, projectId)
 				.catch(() => null);
-			if (!loaded) throw new KnowledgeReaderError(503, 'knowledge_runtime_unavailable', 'The project knowledge catalog is unavailable.');
+			if (!loaded) throw new KnowledgeOperationError(503, 'knowledge_runtime_unavailable', 'The project knowledge catalog is unavailable.');
 			return catalogProjection(loaded.books, loaded.pages, access);
 		},
 
@@ -55,7 +52,7 @@ export function createKnowledgeReaderService(context: any) {
 			const search = text(query.q).slice(0, 120);
 			if (search.length >= 2) {
 				const ranked = await searchFederatedKnowledgeCatalog(context, { ...loaded, pages }, search)
-					.catch(() => { throw new KnowledgeReaderError(503, 'knowledge_search_unavailable', 'Knowledge search is unavailable.'); });
+					.catch(() => { throw new KnowledgeOperationError(503, 'knowledge_search_unavailable', 'Knowledge search is unavailable.'); });
 				const matching = new Set(ranked.map(({ page }) => page.bookId));
 				books = books.filter((book) => matching.has(book.id));
 			}
@@ -67,12 +64,12 @@ export function createKnowledgeReaderService(context: any) {
 			const teamSlug = text(query.teamSlug), bookSlug = text(query.bookSlug);
 			const pageSlug = text(query.pageSlug).replace(/^\/+|\/+$/gu, '');
 			const book = loaded.books.find((candidate) => candidate.source.teamSlug === teamSlug && candidate.slug === bookSlug);
-			if (!book) throw new KnowledgeReaderError(404, 'knowledge_book_not_found', 'Book not found.');
+			if (!book) throw new KnowledgeOperationError(404, 'knowledge_book_not_found', 'Book not found.');
 			const pages = (await readable(principal, loaded.pages.filter((page) => page.bookId === book.id)))
 				.sort((left, right) => left.order - right.order || left.title.localeCompare(right.title));
-			if (!pages.length) throw new KnowledgeReaderError(404, 'knowledge_book_not_found', 'Book not found.');
+			if (!pages.length) throw new KnowledgeOperationError(404, 'knowledge_book_not_found', 'Book not found.');
 			const page = pageSlug ? pages.find((candidate) => candidate.slug === pageSlug) : undefined;
-			if (pageSlug && !page) throw new KnowledgeReaderError(404, 'knowledge_page_not_found', 'Knowledge page not found.');
+			if (pageSlug && !page) throw new KnowledgeOperationError(404, 'knowledge_page_not_found', 'Knowledge page not found.');
 			return { book, navigation: pages.map(navigationEntry), page, revision: page?.revision ?? catalogRevision(pages) };
 		},
 
@@ -83,7 +80,7 @@ export function createKnowledgeReaderService(context: any) {
 				pageId: text(query.pageId), capabilityId: text(query.capabilityId), routePattern: text(query.routePattern),
 				resourceType: text(query.resourceType), teamId: text(query.teamId), projectId: text(query.projectId), locale: text(query.locale) || 'en',
 			});
-			if (!page) throw new KnowledgeReaderError(404, 'knowledge_page_not_found', 'Knowledge page not found.');
+			if (!page) throw new KnowledgeOperationError(404, 'knowledge_page_not_found', 'Knowledge page not found.');
 			return relatedResponse(context, loaded, pages, page);
 		},
 
@@ -91,7 +88,7 @@ export function createKnowledgeReaderService(context: any) {
 			const loaded = await catalog(principal);
 			const pages = await readable(principal, loaded.pages);
 			const page = pages.find((candidate) => candidate.id === pageId);
-			if (!page) throw new KnowledgeReaderError(404, 'knowledge_page_not_found', 'Knowledge page not found.');
+			if (!page) throw new KnowledgeOperationError(404, 'knowledge_page_not_found', 'Knowledge page not found.');
 			return relatedResponse(context, loaded, pages, page);
 		},
 
@@ -102,7 +99,7 @@ export function createKnowledgeReaderService(context: any) {
 			if (value.length < 2) return { results: [], revision };
 			const scope = text(query.scope, 'global') as KnowledgeVisibility | 'global';
 			const ranked = await searchFederatedKnowledgeCatalog(context, { ...loaded, pages }, value)
-				.catch(() => { throw new KnowledgeReaderError(503, 'knowledge_search_unavailable', 'Knowledge search is unavailable.'); });
+				.catch(() => { throw new KnowledgeOperationError(503, 'knowledge_search_unavailable', 'Knowledge search is unavailable.'); });
 			return { results: ranked.map(({ page }) => page).filter((page) => scope === 'global' || page.visibility === scope)
 				.slice(0, 10).map(knowledgePageSummary), revision };
 		},
@@ -110,14 +107,14 @@ export function createKnowledgeReaderService(context: any) {
 }
 
 async function knowledgeAccess(store: any, principal: Principal, teamId: string) {
-	if (!principal) throw new KnowledgeReaderError(401, 'authentication_required', 'Authentication is required.');
+	if (!principal) throw new KnowledgeOperationError(401, 'authentication_required', 'Authentication is required.');
 	const administrator = principal.roles?.some((role) => ['admin', 'platform_admin'].includes(role)) ?? false;
 	if (!administrator && !await store.principalCanAccessTeam(principal, teamId)) {
-		throw new KnowledgeReaderError(403, 'knowledge_access_denied', 'The principal cannot access this knowledge catalog.');
+		throw new KnowledgeOperationError(403, 'knowledge_access_denied', 'The principal cannot access this knowledge catalog.');
 	}
 	const summary = administrator ? { permissions: ['*:*:*'] } : await store.getTeamAccessSummary(teamId, principal);
 	if (!administrator && !summary.permissions.includes('knowledge:read')) {
-		throw new KnowledgeReaderError(403, 'knowledge_permission_denied', 'Knowledge read authority is required.');
+		throw new KnowledgeOperationError(403, 'knowledge_permission_denied', 'Knowledge read authority is required.');
 	}
 	return { administrator, permissions: new Set<string>(summary.permissions) };
 }
@@ -153,7 +150,7 @@ function canonicalPath(page: FederatedKnowledgePage) {
 
 async function relatedResponse(context: any, catalog: any, readable: FederatedKnowledgePage[], page: FederatedKnowledgePage) {
 	const graph = await relatedFederatedKnowledge(context, catalog, page)
-		.catch(() => { throw new KnowledgeReaderError(503, 'knowledge_graph_unavailable', 'Knowledge relationships are unavailable.'); });
+		.catch(() => { throw new KnowledgeOperationError(503, 'knowledge_graph_unavailable', 'Knowledge relationships are unavailable.'); });
 	const explicit = readable.filter((candidate) => page.relatedKnowledgeIds.includes(candidate.id) || candidate.relatedKnowledgeIds.includes(page.id));
 	const related = [...new Map([...explicit, ...graph.filter((candidate) => readable.some((item) => item.id === candidate.id))]
 		.map((candidate) => [candidate.id, candidate])).values()];

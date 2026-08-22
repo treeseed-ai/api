@@ -9,6 +9,7 @@ import { createAccountEmailService } from '../control-plane/accounts/account-ema
 import { createAccountRegistrationService } from '../control-plane/accounts/account-registration-service.ts';
 import { createAccountSecurityService } from '../control-plane/accounts/account-security-service.ts';
 import { createKnowledgeReaderService } from '../control-plane/knowledge/knowledge-reader-service.ts';
+import { createKnowledgeWorkspaceService } from '../control-plane/knowledge/knowledge-workspace-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -178,6 +179,7 @@ export function createPlatformApiApp(options: any = {}) {
 			accountRegistration: createAccountRegistrationService(store, authProvider, invitationContext),
 			accountSecurity: createAccountSecurityService(store, invitationContext),
 			knowledgeReader: createKnowledgeReaderService({ store, options }),
+			knowledgeWorkspaces: createKnowledgeWorkspaceService(store),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

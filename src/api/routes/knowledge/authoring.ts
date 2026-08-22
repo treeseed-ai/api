@@ -1,10 +1,9 @@
 import { loadFederatedKnowledgeCatalog } from '../../knowledge/federated-catalog.ts';
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { createRevisionWorkspace, currentReviewIds, discardRevisionWorkspace, reviewWorkspaceAvailable } from '../../knowledge/review-revision.ts';
-import { treeDxWorkspaceId } from '../../knowledge/workspace-identity.ts';
 import { editorialReviewGate, editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedEditorialContextTrace } from '../../knowledge/editorial-review.ts';
 import { RelationContentValidationError,relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
-import { allowedWorkspacePath, assertSimulatedProductionPolicy, authorizedCatalog, bookDocument, list, pageDocument, parseBook, parseKnowledgePage, requestId, text, workspaceAccess } from './authoring-support.ts';
+import { allowedWorkspacePath, assertSimulatedProductionPolicy, authorizedCatalog, bookDocument, list, pageDocument, parseBook, parseKnowledgePage, text, workspaceAccess } from './authoring-support.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
@@ -27,53 +26,6 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 			if (error instanceof RelationContentValidationError) return jsonError(c,error.status,error.message,{code:error.code,diagnostics:error.diagnostics});
 			return jsonError(c, 503, 'Knowledge relationship search is unavailable.', { code: 'knowledge_relation_search_unavailable' });
 		}
-	});
-
-	app.post('/v1/projects/:projectId/knowledge/workspaces', async (c: any) => {
-		const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'knowledge:author');
-		if (access.response) return access.response;
-		const body = await c.req.json().catch(() => ({}));
-		const suppliedRequestId = text(body.requestId);
-		const id = suppliedRequestId ? requestId(suppliedRequestId) : crypto.randomUUID();
-		if (!id) return jsonError(c, 422, 'A valid authoring request identifier is required.', { code: 'knowledge_request_id_invalid' });
-		const existing = await store.getKnowledgeWorkspace(id);
-		if (existing) {
-			if (existing.projectId !== access.details.project.id || existing.actorUserId !== access.principal.id) {
-				return jsonError(c, 409, 'This authoring request identifier is already in use.', { code: 'knowledge_request_id_conflict' });
-			}
-			return c.json({ ok: true, code: 'knowledge_workspace_already_created', payload: existing });
-		}
-		const branchName = `refs/heads/knowledge/${id}`;
-		const connection = await resolveKnowledgeGatewayConnection(store, {
-			projectId: access.details.project.id, write: true, workspaceRefs: [branchName],
-		});
-		if (!connection) return jsonError(c, 503, 'The project knowledge repository is unavailable.', { code: 'knowledge_repository_unavailable' });
-		let remote;
-		try {
-			remote = await connection.client.createWorkspace({ workspaceId: treeDxWorkspaceId(id),
-				repoId: connection.repositoryId, baseRef: connection.baseRef, branchName,
-				mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 86_400,
-			});
-		} catch {
-			return jsonError(c, 503, 'The project knowledge workspace could not be created.', { code: 'knowledge_workspace_unavailable' });
-		}
-		const workspace = await store.createKnowledgeWorkspaceRecord({ id,
-			teamId: access.details.project.teamId, projectId: access.details.project.id,
-			repositoryId: connection.repositoryId, treeDxWorkspaceId: remote.workspaceId,
-			actorUserId: access.principal.id, baseRef: remote.baseRef, baseCommitSha: remote.baseCommitSha,
-			branchName: remote.branchName ?? branchName, allowedPaths: connection.allowedPaths,
-		});
-		await store.recordAuditEvent({ id: `knowledge-workspace-created-${workspace.id}`,
-			eventType: 'knowledge.workspace.created', actorType: 'user', actorId: access.principal.id,
-			targetType: 'knowledge_workspace', targetId: workspace.id, data: { teamId: workspace.teamId, projectId: workspace.projectId, repositoryId: workspace.repositoryId } });
-		return c.json({ ok: true, payload: workspace }, 201);
-	});
-
-	app.get('/v1/knowledge/workspaces/:workspaceId', async (c: any) => {
-		const access = await workspaceAccess(context, c, 'knowledge:read');
-		if (access.response) return access.response;
-		return c.json({ ok: true, payload: { ...access.workspace,
-			presence: await store.listKnowledgeWorkspacePresence(access.workspace.id) } });
 	});
 
 	app.post('/v1/knowledge/workspaces/:workspaceId/presence', async (c: any) => {
@@ -173,35 +125,6 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 		await store.recordAuditEvent({ eventType: body.kind === 'book' ? 'knowledge.book.updated' : 'knowledge.page.updated', actorType: 'user', actorId: access.principal.id,
 			targetType: body.kind === 'book' ? 'book' : 'knowledge_page', targetId: text(body.id), data: { workspaceId: access.workspace.id, projectId: access.workspace.projectId, path } });
 		return c.json({ ok: true, payload: { result, workspace: updated.workspace } });
-	});
-
-	app.get('/v1/knowledge/workspaces/:workspaceId/diff', async (c: any) => {
-		const access = await workspaceAccess(context, c, 'knowledge:read');
-		if (access.response) return access.response;
-		const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-			write: false, workspaceRefs: [access.workspace.branchName] });
-		if (!connection) return jsonError(c, 503, 'The project knowledge repository is unavailable.');
-		return c.json({ ok: true, payload: await connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId }) });
-	});
-
-	app.post('/v1/knowledge/workspaces/:workspaceId/abandon', async (c: any) => {
-		const access = await workspaceAccess(context, c, 'knowledge:author');
-		if (access.response) return access.response;
-		if (access.workspace.actorUserId !== access.principal.id) return jsonError(c, 403, 'Only the workspace author can abandon this draft.');
-		if (!['draft', 'changes-requested'].includes(access.workspace.status)) {
-			return jsonError(c, 409, 'A submitted or published workspace cannot be abandoned.', { code: 'knowledge_workspace_locked' });
-		}
-		const body = await c.req.json().catch(() => ({}));
-		if (Number(body.version) !== access.workspace.version) return jsonError(c, 409, 'The draft changed. Reload before abandoning it.', { code: 'stale_workspace' });
-		const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-			write: true, workspaceRefs: [access.workspace.branchName] });
-		if (!connection) return jsonError(c, 503, 'The project knowledge repository is unavailable.');
-		await connection.client.closeWorkspace(access.workspace.treeDxWorkspaceId);
-		const updated = await store.updateKnowledgeWorkspace(access.workspace.id, { version: access.workspace.version, status: 'abandoned' });
-		if (!updated.ok) return jsonError(c, 409, 'The draft changed. Reload before abandoning it.', { code: 'stale_workspace' });
-		await store.recordAuditEvent({ eventType: 'knowledge.workspace.abandoned', actorType: 'user', actorId: access.principal.id,
-			targetType: 'knowledge_workspace', targetId: access.workspace.id, data: { projectId: access.workspace.projectId } });
-		return c.json({ ok: true, payload: updated.workspace });
 	});
 
 	app.post('/v1/knowledge/workspaces/:workspaceId/submit', async (c: any) => {

@@ -13,17 +13,27 @@ describe('knowledge catalog operations', () => {
 			page: vi.fn(async () => ({ page: { id: 'page-1' }, relatedPages: [], revision: 'r1' })),
 			search: vi.fn(async () => ({ results: [], revision: 'r1' })),
 		};
-		const operations = createKnowledgeOperations({ knowledgeReader: service });
+		const workspaces = {
+			create: vi.fn(async () => ({ id: 'workspace-1' })), show: vi.fn(async () => ({ id: 'workspace-1', presence: [] })),
+			diff: vi.fn(async () => ({ changedPaths: [] })), abandon: vi.fn(async () => ({ id: 'workspace-1', status: 'abandoned' })),
+		};
+		const operations = createKnowledgeOperations({ knowledgeReader: service, knowledgeWorkspaces: workspaces });
 		expect(operations.map((operation) => operation.binding)).toEqual([
 			CONTROL_PLANE_OPERATIONS.knowledge.teamCatalog, CONTROL_PLANE_OPERATIONS.knowledge.projectCatalog,
 			CONTROL_PLANE_OPERATIONS.knowledge.library, CONTROL_PLANE_OPERATIONS.knowledge.reader,
 			CONTROL_PLANE_OPERATIONS.knowledge.context, CONTROL_PLANE_OPERATIONS.knowledge.page,
 			CONTROL_PLANE_OPERATIONS.knowledge.search,
+			CONTROL_PLANE_OPERATIONS.knowledge.createWorkspace, CONTROL_PLANE_OPERATIONS.knowledge.workspace,
+			CONTROL_PLANE_OPERATIONS.knowledge.workspaceDiff, CONTROL_PLANE_OPERATIONS.knowledge.abandonWorkspace,
 		]);
 		const page = operations[5];
 		await page.handler({ path: { pageId: 'page-1' }, query: {}, body: undefined }, {
 			interface: 'rest', requestId: 'request-1', principal: { id: 'user-1' },
 		});
 		expect(service.page).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'page-1');
+		await operations[10].handler({ path: { workspaceId: 'workspace-1' }, query: {}, body: { version: 1 } }, {
+			interface: 'rest', requestId: 'request-2', principal: { id: 'user-1' },
+		});
+		expect(workspaces.abandon).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'workspace-1', { version: 1 });
 	});
 });
