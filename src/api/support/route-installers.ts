@@ -1,10 +1,6 @@
 import { installFeedbackAdministrationRoutes } from "../routes/feedback/administration.ts";
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
-import { installSessionEventRoutes } from "../routes/realtime/session-events.ts";
-import { installClientActionRoutes } from "../routes/realtime/client-actions.ts";
 import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/projects-settings-and-summaries.ts";
-import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resource-resolution.ts";
-import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
 import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
 import { installTeamsStorageAndContentPreviewsRoutes } from "../routes/teams/teams-storage-and-content-previews.ts";
 import { installTreedxCredentialsMirrorsAndSharesRoutes } from "../routes/treedx/repositories/treedx-credentials-mirrors-and-shares.ts";
@@ -14,11 +10,7 @@ import { installTreedxTeamServiceAndPublicFederationRoutes } from "../routes/tre
 export function installPlatformRoutes(context: any): void {
   installFoundationHealthAndControlPlaneRoutes(context);
   installFeedbackSubmissionRoutes(context);
-  installSessionEventRoutes(context);
-  installClientActionRoutes(context);
   installFeedbackAdministrationRoutes(context);
-  installSeedResourceResolutionRoutes(context);
-  installSeedRunLifecycleRoutes(context);
   installTreedxTeamServiceAndPublicFederationRoutes(context);
   installTreedxInternalTreedxPublicFederationStatusRoutes(context);
   installTreedxCredentialsMirrorsAndSharesRoutes(context);

@@ -30,6 +30,8 @@ import { createProviderAssignmentService } from '../control-plane/repositories/p
 import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
+import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
+import { createSeedOperationService } from '../control-plane/seeds/seed-operation-service.ts';
 import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
@@ -214,6 +216,8 @@ export function createPlatformApiApp(options: any = {}) {
 			providerSignals,
 			providerWorkflows,
 			treeDxProxy,
+			realtime: createRealtimeOperationService(store, sessionEvents),
+			seeds: createSeedOperationService(store, config),
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),
