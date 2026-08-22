@@ -15,6 +15,7 @@ export interface TeamOperationDependencies {
 		acceptTeamInvite(token: string, principalId: string): Promise<Record<string, any>>;
 		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
 		createTeam(input: Record<string, unknown>): Promise<Record<string, any>>;
+		getTeamDeletionReadiness(teamId: string): Promise<Record<string, any>>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 }
@@ -41,6 +42,14 @@ async function requireTeamManagement(dependencies: TeamOperationDependencies, te
 	if (!membership?.roles?.some((role) => role === 'team_owner' || role === 'project_lead')) {
 		throw new ControlPlaneOperationError(403, 'team_role_forbidden', 'Team management authority is required.');
 	}
+	return access;
+}
+
+async function requireTeamOwner(dependencies: TeamOperationDependencies, teamId: string, context: { principal?: Record<string, any> }) {
+	const access = await requireTeamRead(dependencies, teamId, context);
+	if (access.principal.roles?.some((role: string) => role === 'admin' || role === 'platform_admin')) return access;
+	const membership = await dependencies.store.resolvePrincipalTeamContext(teamId, access.principal);
+	if (!membership?.roles?.includes('team_owner')) throw new ControlPlaneOperationError(403, 'team_owner_required', 'Team owner authority is required.');
 	return access;
 }
 
@@ -169,6 +178,16 @@ export function createTeamCreateOperation(dependencies: TeamOperationDependencie
 				const conflict = /already taken|already used/u.test(message);
 				throw new ControlPlaneOperationError(conflict ? 409 : 400, conflict ? 'namespace_taken' : 'invalid_team', message);
 			}
+		},
+	};
+}
+
+export function createTeamDeletionReadinessOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.deletionReadiness> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.deletionReadiness,
+		async handler(input, context) {
+			await requireTeamOwner(dependencies, input.path.teamId, context);
+			return dependencies.store.getTeamDeletionReadiness(input.path.teamId);
 		},
 	};
 }

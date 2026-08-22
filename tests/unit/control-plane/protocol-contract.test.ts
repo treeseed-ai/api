@@ -42,6 +42,7 @@ describe('control-plane protocol contract', () => {
 		async getTeamInviteByToken(token: string) { return { ok: true, invite: { id: 'invite-1', token, email: 'member@example.test', roleKey: 'contributor', status: 'pending', expiresAt: '2026-08-23T00:00:00Z' }, team: { id: 'team-a', name: 'treeseed', displayName: 'TreeSeed' } }; },
 		async acceptTeamInvite() { return { ok: true, invite: { id: 'invite-1', teamId: 'team-a' }, team: { id: 'team-a' }, membership: { id: 'membership-1' } }; },
 		async createTeam(input: Record<string, unknown>) { return { id: 'team-new', ...input }; },
+		async getTeamDeletionReadiness(teamId: string) { return { ok: true, ready: true, team: { id: teamId, name: 'treeseed' }, blockers: [] }; },
 		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
@@ -192,6 +193,16 @@ describe('control-plane protocol contract', () => {
 		expect(response.status).toBe(200);
 		expect(await response.json()).toMatchObject({ data: { id: 'team-new', name: 'treeseed-labs', displayName: 'treeseed-labs', ownerUserId: 'user_1' } });
 		expect(registry.require('teams.create').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.create);
+	});
+
+	it('reads team deletion readiness through the SDK-owned operation binding', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies({ async resolvePrincipalTeamContext() { return { roles: ['team_owner'] }; } }));
+		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
+		const response = await app.request('/v1/teams/team-a/deletion-readiness', { headers: { authorization: 'Bearer test-token' } });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { ok: true, ready: true, team: { id: 'team-a', name: 'treeseed' }, blockers: [] } });
+		expect(registry.require('teams.deletion.readiness').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.deletionReadiness);
 	});
 
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {

@@ -99,12 +99,6 @@ export function installTeamsLifecycleAndConsentRoutes(context: any) {
 		return c.json(result, statusFor(result));
 	});
 
-	app.get('/v1/teams/:teamId/deletion-readiness', async (c: any) => {
-		const access = await requireTeamRole(c, c.req.param('teamId'), ['team_owner']);
-		if (access.response) return access.response;
-		return c.json(await store.getTeamDeletionReadiness(c.req.param('teamId')));
-	});
-
 	app.delete('/v1/teams/:teamId/permanent-delete', async (c: any) => {
 		const teamId = c.req.param('teamId');
 		const access = await requireTeamRole(c, teamId, ['team_owner']);
