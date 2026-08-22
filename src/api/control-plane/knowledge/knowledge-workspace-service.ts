@@ -4,6 +4,9 @@ import { treeDxWorkspaceId } from '../../knowledge/workspace-identity.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
 import { serializeBookDraft, serializeKnowledgePageDraft } from '../../knowledge/runtime/authoring.ts';
+import { editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedEditorialContextTrace } from '../../knowledge/editorial-review.ts';
+import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { KnowledgeOperationError } from './knowledge-operation-error.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[] } | undefined;
@@ -136,6 +139,50 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				actorType: 'user', actorId: access.principal.id, targetType: input.kind === 'book' ? 'book' : 'knowledge_page',
 				targetId: text(input.id), data: { workspaceId, projectId: access.workspace.projectId, path } });
 			return { result, workspace: updated.workspace };
+		},
+
+		async submit(principal: Principal, workspaceId: string, input: Record<string, unknown>) {
+			const access = await workspaceAccess(principal, workspaceId, 'knowledge:author');
+			if (access.workspace.actorUserId !== access.principal.id) throw new KnowledgeOperationError(403, 'knowledge_workspace_author_required', 'Only the workspace author can submit this draft.');
+			const existingReview = await store.getKnowledgeReviewByWorkspace(workspaceId);
+			if (access.workspace.status === 'submitted' && existingReview) {
+				return { review: existingReview, commit: { commitSha: existingReview.commitSha, branchName: access.workspace.branchName,
+					changedPaths: existingReview.changedPaths, status: 'committed' }, replayed: true };
+			}
+			if (!['draft', 'changes-requested'].includes(access.workspace.status)) throw new KnowledgeOperationError(409, 'knowledge_workspace_locked', 'This workspace has already been submitted.');
+			if (Number(input.version) !== access.workspace.version) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before submitting.');
+			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
+				write: true, workspaceRefs: [access.workspace.branchName] });
+			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
+			const diff = await connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId });
+			if (!diff.changedPaths.length) throw new KnowledgeOperationError(422, 'empty_knowledge_draft', 'The draft has no changes.');
+			const editorial = editorialSubmissionRequirements(diff.changedPaths, input.contextDigest);
+			if (editorial.error) throw new KnowledgeOperationError(422, 'editorial_context_required', editorial.error);
+			if (editorial.requiresEditorialReview && !await verifiedEditorialContextTrace(store, access.workspace.projectId, editorial.contextDigest)) {
+				throw new KnowledgeOperationError(409, 'editorial_context_trace_required', 'The editorial context digest is not backed by a successful Guide authoring trace for this project.');
+			}
+			const remoteStatus = await connection.client.status({ workspaceId: access.workspace.treeDxWorkspaceId });
+			const commit = remoteStatus.status === 'committed' && remoteStatus.commitSha
+				? { repoId: access.workspace.repositoryId, workspaceId: access.workspace.treeDxWorkspaceId,
+					branchName: remoteStatus.branchName ?? access.workspace.branchName, commitSha: remoteStatus.commitSha,
+					changedPaths: diff.changedPaths, status: 'committed' as const }
+				: await connection.client.commit({ workspaceId: access.workspace.treeDxWorkspaceId,
+					message: text(input.message) || 'Update knowledge', author: { name: access.principal.id,
+						email: `${access.principal.id}@users.treeseed.local` } });
+			await recordTreeDxAuthoringState(store, 'unpublished', { projectId: access.workspace.projectId,
+				repositoryId: access.workspace.repositoryId, commitSha: commit.commitSha, ref: commit.branchName,
+				changedPaths: diff.changedPaths, actorType: 'user', actorId: access.principal.id });
+			await projectTreeDxCommitSignals(store, { projectId: access.workspace.projectId, commitSha: commit.commitSha,
+				immutableRef: commit.branchName, changedPaths: diff.changedPaths, changeSummary: text(input.message) || 'Update knowledge',
+				actorType: 'user', actorId: access.principal.id });
+			const submitted = await store.submitKnowledgeWorkspace({ workspaceId, workspaceVersion: access.workspace.version,
+				submittedByUserId: access.principal.id, notes: text(input.notes) || null, commitSha: commit.commitSha,
+				changedPaths: diff.changedPaths, requiredReviewerIds: requiredRevisionReviewerIds(existingReview), ...editorial });
+			if (!submitted.ok || !submitted.review) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed while it was submitted. Reload before trying again.');
+			await store.recordAuditEvent({ id: `knowledge-review-submitted-${submitted.review.id}`, eventType: 'knowledge.review.submitted',
+				actorType: 'user', actorId: access.principal.id, targetType: 'knowledge_review', targetId: submitted.review.id,
+				data: { workspaceId, projectId: access.workspace.projectId, commitSha: commit.commitSha } });
+			return { review: submitted.review, commit, replayed: false };
 		},
 
 		async diff(principal: Principal, workspaceId: string) {

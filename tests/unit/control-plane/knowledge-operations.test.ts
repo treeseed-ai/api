@@ -18,6 +18,7 @@ describe('knowledge catalog operations', () => {
 			readContent: vi.fn(async () => ({ kind: 'page', path: 'knowledge/page.md' })),
 			updateContent: vi.fn(async () => ({ workspace: { id: 'workspace-1' } })),
 			diff: vi.fn(async () => ({ changedPaths: [] })), abandon: vi.fn(async () => ({ id: 'workspace-1', status: 'abandoned' })),
+			submit: vi.fn(async () => ({ review: { id: 'review-1' }, commit: { commitSha: 'abc' } })),
 		};
 		const operations = createKnowledgeOperations({ knowledgeReader: service, knowledgeWorkspaces: workspaces });
 		expect(operations.map((operation) => operation.binding)).toEqual([
@@ -28,6 +29,7 @@ describe('knowledge catalog operations', () => {
 			CONTROL_PLANE_OPERATIONS.knowledge.createWorkspace, CONTROL_PLANE_OPERATIONS.knowledge.workspace,
 			CONTROL_PLANE_OPERATIONS.knowledge.workspaceContent, CONTROL_PLANE_OPERATIONS.knowledge.updateWorkspaceContent,
 			CONTROL_PLANE_OPERATIONS.knowledge.workspaceDiff, CONTROL_PLANE_OPERATIONS.knowledge.abandonWorkspace,
+			CONTROL_PLANE_OPERATIONS.knowledge.submitWorkspace,
 		]);
 		const page = operations[5];
 		await page.handler({ path: { pageId: 'page-1' }, query: {}, body: undefined }, {

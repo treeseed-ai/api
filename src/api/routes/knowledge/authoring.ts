@@ -1,10 +1,8 @@
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { createRevisionWorkspace, currentReviewIds, discardRevisionWorkspace, reviewWorkspaceAvailable } from '../../knowledge/review-revision.ts';
-import { editorialReviewGate, editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedEditorialContextTrace } from '../../knowledge/editorial-review.ts';
+import { editorialReviewGate } from '../../knowledge/editorial-review.ts';
 import { RelationContentValidationError,relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
 import { allowedWorkspacePath, assertSimulatedProductionPolicy, list, text, workspaceAccess } from './authoring-support.ts';
-import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
-import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 export { reviewPathsMatch, searchRelations } from './relation-search.ts';
 
 export function installKnowledgeAuthoringRoutes(context: any) {
@@ -46,59 +44,6 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 			if (error instanceof RelationContentValidationError) return jsonError(c,error.status,error.message,{code:error.code,diagnostics:error.diagnostics});
 			return jsonError(c, 503, 'Knowledge relationship search is unavailable.', { code: 'knowledge_relation_search_unavailable' });
 		}
-	});
-
-	app.post('/v1/knowledge/workspaces/:workspaceId/submit', async (c: any) => {
-		const access = await workspaceAccess(context, c, 'knowledge:author');
-		if (access.response) return access.response;
-		if (access.workspace.actorUserId !== access.principal.id) return jsonError(c, 403, 'Only the workspace author can submit this draft.');
-		const existingReview = await store.getKnowledgeReviewByWorkspace(access.workspace.id);
-		if (access.workspace.status === 'submitted' && existingReview) {
-			await store.recordAuditEvent({ id: `knowledge-review-submitted-${existingReview.id}`,
-				eventType: 'knowledge.review.submitted', actorType: 'user', actorId: access.principal.id,
-				targetType: 'knowledge_review', targetId: existingReview.id, data: { workspaceId: access.workspace.id,
-					projectId: access.workspace.projectId, commitSha: existingReview.commitSha } });
-			return c.json({ ok: true, code: 'knowledge_review_already_submitted',
-				payload: { review: existingReview, commit: { commitSha: existingReview.commitSha,
-					branchName: access.workspace.branchName, changedPaths: existingReview.changedPaths, status: 'committed' } } });
-		}
-		if (!['draft', 'changes-requested'].includes(access.workspace.status)) {
-			return jsonError(c, 409, 'This workspace has already been submitted.', { code: 'knowledge_workspace_locked' });
-		}
-		const body = await c.req.json().catch(() => ({}));
-		if (Number(body.version) !== access.workspace.version) return jsonError(c, 409, 'The draft changed. Reload before submitting.', { code: 'stale_workspace' });
-		const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-			write: true, workspaceRefs: [access.workspace.branchName] });
-		if (!connection) return jsonError(c, 503, 'The project knowledge repository is unavailable.');
-		const diff = await connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId });
-		if (!diff.changedPaths.length) return jsonError(c, 422, 'The draft has no changes.', { code: 'empty_knowledge_draft' });
-		const editorial = editorialSubmissionRequirements(diff.changedPaths, body.contextDigest);
-		if (editorial.error) return jsonError(c, 422, editorial.error, { code: 'editorial_context_required' });
-		if (editorial.requiresEditorialReview && !(await verifiedEditorialContextTrace(store, access.workspace.projectId, editorial.contextDigest))) {
-			return jsonError(c, 409, 'The editorial context digest is not backed by a successful Guide authoring trace for this project.', { code: 'editorial_context_trace_required' });
-		}
-		const remoteStatus = await connection.client.status({ workspaceId: access.workspace.treeDxWorkspaceId });
-		const commit = remoteStatus.status === 'committed' && remoteStatus.commitSha
-			? { repoId: access.workspace.repositoryId, workspaceId: access.workspace.treeDxWorkspaceId,
-				branchName: remoteStatus.branchName ?? access.workspace.branchName, commitSha: remoteStatus.commitSha,
-				changedPaths: diff.changedPaths, status: 'committed' as const }
-			: await connection.client.commit({ workspaceId: access.workspace.treeDxWorkspaceId,
-				message: text(body.message) || 'Update knowledge', author: { name: text(access.principal.name) || access.principal.id,
-					email: text(access.principal.email) || `${access.principal.id}@users.treeseed.local` } });
-		const requiredReviewerIds = requiredRevisionReviewerIds(existingReview);
-		await recordTreeDxAuthoringState(store,'unpublished',{ projectId:access.workspace.projectId,repositoryId:access.workspace.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:diff.changedPaths,actorType:'user',actorId:access.principal.id });
-		await projectTreeDxCommitSignals(store, { projectId: access.workspace.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: diff.changedPaths, changeSummary: text(body.message) || 'Update knowledge', actorType: 'user', actorId: access.principal.id });
-		const submitted = await store.submitKnowledgeWorkspace({ workspaceId: access.workspace.id,
-			workspaceVersion: access.workspace.version, submittedByUserId: access.principal.id,
-			notes: text(body.notes) || null, commitSha: commit.commitSha, changedPaths: diff.changedPaths,
-			requiredReviewerIds, ...editorial });
-		if (!submitted.ok || !submitted.review) return jsonError(c, 409,
-			'The draft changed while it was submitted. Reload before trying again.', { code: 'stale_workspace' });
-		await store.recordAuditEvent({ id: `knowledge-review-submitted-${submitted.review.id}`,
-			eventType: 'knowledge.review.submitted', actorType: 'user', actorId: access.principal.id,
-			targetType: 'knowledge_review', targetId: submitted.review.id, data: { workspaceId: access.workspace.id,
-				projectId: access.workspace.projectId, commitSha: commit.commitSha } });
-		return c.json({ ok: true, payload: { review: submitted.review, commit } }, 201);
 	});
 
 	app.get('/v1/teams/:teamId/knowledge/reviews', async (c: any) => {
