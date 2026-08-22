@@ -7,6 +7,19 @@ function jsonSchema(operation: BoundOperation, direction: 'input' | 'output') {
 	return sdkSchemaJson(schema);
 }
 
+function parameters(operation: BoundOperation) {
+	const descriptor = operation.binding.descriptor;
+	if (!descriptor.rest) return [];
+	const requiredPath = new Set([...descriptor.rest.path.matchAll(/\{([A-Za-z][A-Za-z0-9]*)\}/gu)].map((match) => match[1]));
+	const path = sdkSchemaJson(operation.binding.schema.path) as { properties?: Record<string, unknown> };
+	const query = sdkSchemaJson(operation.binding.schema.query) as { properties?: Record<string, unknown>; required?: string[] };
+	const requiredQuery = new Set(query.required ?? []);
+	return [
+		...[...requiredPath].map((name) => ({ name, in: 'path', required: true, schema: path.properties?.[name] ?? { type: 'string' } })),
+		...Object.entries(query.properties ?? {}).map(([name, schema]) => ({ name, in: 'query', required: requiredQuery.has(name), schema })),
+	];
+}
+
 export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http://127.0.0.1:3002') {
 	const paths: Record<string, Record<string, unknown>> = {};
 	for (const operation of registry.operations.values()) {
@@ -22,6 +35,7 @@ export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http:/
 			security: descriptor.authentication === 'oauth' ? [{ oauth: descriptor.oauthScopes }]
 				: descriptor.authentication === 'oauth_or_provider' ? [{ oauth: descriptor.oauthScopes }, { providerProtocol: [] }]
 				: descriptor.authentication === 'provider' ? [{ providerProtocol: [] }] : [],
+			parameters: parameters(operation),
 			...(descriptor.kind === 'mutation' ? { requestBody: { required: true, content: { 'application/json': { schema: jsonSchema(operation, 'input') } } } } : {}),
 			responses: {
 				'200': { description: 'Successful operation', content: { 'application/json': { schema: { type: 'object', required: ['data'], properties: { data: jsonSchema(operation, 'output'), meta: { type: 'object' }, links: { type: 'object' } } } } } },

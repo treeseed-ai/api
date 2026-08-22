@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { TokenRefreshResponse } from "../../../../types.ts";
 import { addSeconds,PostgresAuthStore,isoNow,now,stableHash } from "../../../postgres-store.ts";
 import { nextOpaqueToken } from "../../../tokens.ts";
+import { boundScopes } from "../../support/principals/scopes-for-principal.ts";
 export async function issueUserSessionMethod(this: PostgresAuthStore, userId: string, options: {
     sessionType?: string;
     scopes?: string[];
@@ -16,7 +17,7 @@ export async function issueUserSessionMethod(this: PostgresAuthStore, userId: st
     const accessTokenHash = stableHash(accessToken, this.config.authSecret);
     const expiresAt = addSeconds(now(), this.config.accessTokenTtlSeconds);
     const refreshExpiresAt = addSeconds(now(), this.config.refreshTokenTtlSeconds);
-    const requestedScopes = options.scopes && options.scopes.length > 0 ? [...new Set(options.scopes)] : principalRecord.principal.scopes;
+    const requestedScopes = boundScopes(options.scopes?.length ? options.scopes : principalRecord.principal.scopes, principalRecord.principal.scopes);
     await this.run(`INSERT INTO auth_sessions (id, user_id, session_type, access_token_hash, access_expires_at, refresh_token_hash, scopes_json, expires_at, revoked_at, data_json, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`, [
         sessionId,

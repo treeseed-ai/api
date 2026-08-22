@@ -5,6 +5,7 @@ function fixture(proposalProjectId = 'project-1') {
 	const store = {
 		getProjectDetails: vi.fn(async () => ({ project: { id: 'project-1', teamId: 'team-1' } })),
 		principalCanAccessTeam: vi.fn(async () => true),
+		getTeamAccessSummary: vi.fn(async () => ({ permissions: ['projects:read:team', 'projects:manage:team'] })),
 		getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', projectId: proposalProjectId, activeVersion: 3, metadata: {} })),
 		updateGovernanceProposalDraft: vi.fn(async () => ({ id: 'proposal-1', activeVersion: 3 })),
 		getApprovalRequest: vi.fn(async () => ({ id: 'approval-1', projectId: 'project-1', updatedAt: '2026-08-22T12:00:00.000Z' })),
@@ -58,5 +59,13 @@ describe('governance service mutation boundaries', () => {
 				status: 403, code: 'service_approval_decision_forbidden',
 			});
 		expect(store.decideApprovalRequest).not.toHaveBeenCalled();
+	});
+
+	it('rejects governance mutation when a member lacks project management authority', async () => {
+		const { store, service, principal } = fixture();
+		store.getTeamAccessSummary.mockResolvedValue({ permissions: ['projects:read:team'] });
+		await expect(service.createProposal(principal, 'project-1', { title: 'Unauthorized' })).rejects.toMatchObject({
+			status: 403, code: 'project_permission_denied',
+		});
 	});
 });

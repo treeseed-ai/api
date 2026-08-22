@@ -13,7 +13,7 @@ describe('OAuth Client ID Metadata Documents', () => {
 		}), { headers: { 'content-type': 'application/json' } }));
 		const client = await resolveOAuthClient(clientId, {
 			fetch: fetchClient as typeof fetch,
-			lookup: vi.fn(async () => [{ address: '203.0.113.10', family: 4 }]) as never,
+			lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) as never,
 		});
 		expect(clientAllowsRedirect(client, 'https://assistant.example.test/oauth/callback')).toBe(true);
 		expect(clientAllowsRedirect(client, 'https://attacker.example.test/callback')).toBe(false);
@@ -26,12 +26,15 @@ describe('OAuth Client ID Metadata Documents', () => {
 			lookup: vi.fn(async () => [{ address: '127.0.0.1', family: 4 }]) as never,
 		})).rejects.toThrow('public addresses');
 		await expect(resolveOAuthClient(clientId, {
-			lookup: vi.fn(async () => [{ address: '203.0.113.10', family: 4 }]) as never,
+			lookup: vi.fn(async () => [{ address: '::ffff:127.0.0.1', family: 6 }]) as never,
+		})).rejects.toThrow('public addresses');
+		await expect(resolveOAuthClient(clientId, {
+			lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) as never,
 			fetch: vi.fn(async () => new Response(JSON.stringify({ client_id: 'https://different.example.test/client.json' }),
 				{ headers: { 'content-type': 'application/json' } })) as typeof fetch,
 		})).rejects.toThrow('incomplete or inconsistent');
 		await expect(resolveOAuthClient(clientId, {
-			lookup: vi.fn(async () => [{ address: '203.0.113.10', family: 4 }]) as never,
+			lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]) as never,
 			fetch: vi.fn(async () => new Response('{}', { headers: { 'content-type': 'application/json', 'content-length': '65537' } })) as typeof fetch,
 		})).rejects.toThrow('64 KiB');
 	});

@@ -30,4 +30,14 @@ describe('realtime catalog operations', () => {
 		await expect(service.createSession({ id: 'user-1' }, { projectId: 'project-1', route: '/projects/project-1', capabilities: ['navigate'] }))
 			.rejects.toMatchObject({ status: 403, code: 'project_access_denied' });
 	});
+
+	it('accepts PostgreSQL meta change receipts for heartbeat and action settlement', async () => {
+		const store = {
+			async run() { return { meta: { changes: 1 } }; },
+			async first(query: string) { return query.includes('agent_client_sessions') ? { id: 'session-1' } : { id: 'action-1', status: 'completed' }; },
+		} as any;
+		const service = createRealtimeOperationService(store, {} as any);
+		await expect(service.heartbeat({ id: 'user-1' }, 'session-1')).resolves.toMatchObject({ id: 'session-1' });
+		await expect(service.actionResult({ id: 'user-1' }, 'session-1', 'action-1', { status: 'completed' })).resolves.toMatchObject({ id: 'action-1' });
+	});
 });

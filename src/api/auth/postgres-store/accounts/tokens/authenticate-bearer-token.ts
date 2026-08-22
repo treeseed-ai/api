@@ -1,5 +1,6 @@
 import type { ApiCredential,ApiPrincipal } from "../../../../types.ts";
 import { PostgresAuthStore,isoNow,parseJson,stableHash } from "../../../postgres-store.ts";
+import { boundScopes } from "../../support/principals/scopes-for-principal.ts";
 export async function authenticateBearerTokenMethod(this: PostgresAuthStore, token: string): Promise<{
     principal: ApiPrincipal;
     credential: ApiCredential;
@@ -21,7 +22,7 @@ export async function authenticateBearerTokenMethod(this: PostgresAuthStore, tok
         await this.run(`UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, [isoNow(), pat.id]);
         const principal = (await this.principalForUser(pat.user_id)).principal;
         return {
-            principal: { ...principal, scopes: parseJson<string[]>(pat.scopes_json, principal.scopes) },
+            principal: { ...principal, scopes: boundScopes(parseJson<string[]>(pat.scopes_json, principal.scopes), principal.scopes) },
             credential: { type: pat.kind === 'personal_access_token' ? 'personal_access_token' : 'access_token', id: pat.id, label: pat.name },
         };
     }
@@ -33,7 +34,7 @@ export async function authenticateBearerTokenMethod(this: PostgresAuthStore, tok
     await this.run(`UPDATE auth_sessions SET updated_at = ? WHERE id = ?`, [isoNow(), session.id]);
     const principal = (await this.principalForUser(session.user_id)).principal;
     return {
-        principal: { ...principal, scopes: parseJson<string[]>(session.scopes_json, principal.scopes), metadata: {
+        principal: { ...principal, scopes: boundScopes(parseJson<string[]>(session.scopes_json, principal.scopes), principal.scopes), metadata: {
             ...(principal.metadata ?? {}), ...parseJson<Record<string, unknown>>(session.data_json, {}), sessionId: session.id,
         } },
         credential: { type: 'access_token', id: session.id, label: 'oauth-session' },

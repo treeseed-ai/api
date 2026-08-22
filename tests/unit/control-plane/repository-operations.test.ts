@@ -56,11 +56,12 @@ describe('repository catalog operations', () => {
 		await operations[9].handler({ path: { projectId: 'project-1', operationId: 'workflow-1' }, query: {}, body: { ref: 'refs/heads/staging' } },
 			{ interface: 'rest', requestId: 'request-2', principal, idempotencyKey: 'dispatch-1' });
 		expect(workflows.dispatch).toHaveBeenCalledWith(principal, 'project-1', 'workflow-1', { ref: 'refs/heads/staging' }, 'dispatch-1');
-		const variable = { repositoryBindingId: 'repository-1', workflowBindingId: 'binding-1', value: 'enabled' };
-		await operations[18].handler({ path: { projectId: 'project-1', name: 'FEATURE_FLAG' }, query: {}, body: variable },
+		const query = { repositoryBindingId: 'repository-1', workflowBindingId: 'binding-1' };
+		const variable = { value: 'enabled' };
+		await operations[18].handler({ path: { projectId: 'project-1', name: 'FEATURE_FLAG' }, query, body: variable },
 			{ interface: 'rest', requestId: 'request-3', principal, idempotencyKey: 'variable-1', ifMatch: '0' });
 		expect(workflowConfiguration.put).toHaveBeenCalledWith(principal, 'project-1', 'variables', 'FEATURE_FLAG',
-			variable, variable, 'variable-1', '0');
+			query, variable, 'variable-1', '0');
 		await operations[2].handler({ path: { kind: 'repository' }, query: {}, body: { action: 'ping' } }, {
 			interface: 'rest', requestId: 'request-4', rawBody: '{"action":"ping"}',
 			requestHeaders: { 'x-github-delivery': 'delivery-1' },

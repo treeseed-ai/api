@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
+import { createAccountSecurityService } from '../../../src/api/control-plane/accounts/account-security-service.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
 	interface: 'rest' as const, requestId: 'request-1' };
@@ -124,5 +125,33 @@ describe('account catalog operations', () => {
 		expect(await createAccountPasswordResetCompleteOperation(fixture.value).handler({ path: {}, query: {}, body: { token: 'redacted', password: 'redacted-new-password' } }, context)).toMatchObject({ changed: true });
 		expect(await createAccountDeletionBlockersOperation(fixture.value).handler({ path: {}, query: {}, body: undefined }, context)).toEqual({ blockers: [], canDelete: true });
 		expect(await createAccountDeleteOperation(fixture.value).handler({ path: {}, query: {}, body: { confirmation: 'DELETE MY ACCOUNT' } }, context)).toMatchObject({ deleted: true });
+	});
+
+	it('claims a password reset token atomically before changing the credential', async () => {
+		const statements: string[] = [];
+		const store = {
+			ensureInitialized: vi.fn(),
+			async first(query: string) {
+				statements.push(query);
+				return query.startsWith('UPDATE control_plane_auth_password_resets') ? { id: 'reset-1', user_id: 'user-1' } : null;
+			},
+			async run(query: string) { statements.push(query); },
+			recordAuditEvent: vi.fn(),
+		};
+		const service = createAccountSecurityService(store, {});
+		await expect(service.completePasswordReset({ token: 'reset_secret', password: 'a sufficiently long password' }))
+			.resolves.toMatchObject({ ok: true, changed: true });
+		expect(statements[0]).toContain('used_at IS NULL');
+		expect(statements[0]).toContain('RETURNING id, user_id');
+		expect(statements[1]).toContain('UPDATE control_plane_auth_credentials');
+	});
+
+	it('does not change a password when the atomic reset claim loses a race', async () => {
+		const run = vi.fn();
+		const service = createAccountSecurityService({ ensureInitialized: vi.fn(), first: vi.fn(async () => null), run,
+			recordAuditEvent: vi.fn() }, {});
+		await expect(service.completePasswordReset({ token: 'reset_secret', password: 'a sufficiently long password' }))
+			.resolves.toMatchObject({ ok: false, status: 401, code: 'invalid_password_reset' });
+		expect(run).not.toHaveBeenCalled();
 	});
 });

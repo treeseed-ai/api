@@ -21,7 +21,7 @@ export async function updateProjectMethod(this: ControlPlaneStore, projectId, in
 		projectId,
 		...(input.expectedRevision ? [input.expectedRevision] : []),
     ]);
-	if (input.expectedRevision && !updated.changes) return null;
+	if (input.expectedRevision && (updated.meta?.changes ?? updated.changes ?? 0) !== 1) return null;
     if (metadata?.architecture) {
         await this.projectArchitectureContentBindings(projectId, normalizeProjectArchitecture(metadata.architecture)).catch(() => null);
     }

@@ -69,11 +69,11 @@ export function createAccountSecurityService(store: any, emailContext: any) {
 			const token = String(input.token ?? '');
 			const password = String(input.password ?? input.newPassword ?? '');
 			if (!token || !validateControlPlanePassword(password)) return fail(400, 'invalid_password_reset', 'A valid reset token and password are required.');
-			const row = await store.first('SELECT * FROM control_plane_auth_password_resets WHERE token_hash = ? AND used_at IS NULL LIMIT 1', [digest(token)]);
-			if (!row || new Date(row.expires_at).getTime() <= Date.now()) return fail(401, 'invalid_password_reset', 'Password reset token is invalid or expired.');
 			const now = new Date().toISOString();
+			const row = await store.first(`UPDATE control_plane_auth_password_resets SET used_at = ?
+				WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? RETURNING id, user_id`, [now, digest(token), now]);
+			if (!row) return fail(401, 'invalid_password_reset', 'Password reset token is invalid or expired.');
 			await store.run('UPDATE control_plane_auth_credentials SET password_hash = ?, updated_at = ? WHERE user_id = ?', [hashControlPlanePassword(password), now, row.user_id]);
-			await store.run('UPDATE control_plane_auth_password_resets SET used_at = ? WHERE id = ?', [now, row.id]);
 			await store.recordAuditEvent({ actorType: 'user', actorId: row.user_id, eventType: 'auth.password.reset', targetType: 'user', targetId: row.user_id });
 			return { ok: true, changed: true };
 		},

@@ -237,7 +237,7 @@ export function createPlatformApiApp(options: any = {}) {
 		}), confirmations, async (principal) => {
 			const teams = await store.listTeamsForPrincipal(principal);
 			return new SessionEventMcpBus(sessionEvents, teams.map((team) => String(team.id)).filter(Boolean));
-		});
+		}, config.baseUrl);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));

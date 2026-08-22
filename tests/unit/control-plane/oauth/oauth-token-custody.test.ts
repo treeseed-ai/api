@@ -8,6 +8,8 @@ import { exchangeTrustedUserAssertionMethod } from '../../../../src/api/auth/pos
 import { exchangeAuthorizationCodeMethod } from '../../../../src/api/auth/postgres-store/runtime/exchange-authorization-code.ts';
 import { startAuthorizationCodeMethod } from '../../../../src/api/auth/postgres-store/runtime/start-authorization-code.ts';
 import { startDeviceFlowMethod } from '../../../../src/api/auth/postgres-store/runtime/start-device-flow.ts';
+import { approveDeviceFlowMethod } from '../../../../src/api/auth/postgres-store/runtime/approve-device-flow.ts';
+import { pollDeviceFlowMethod } from '../../../../src/api/auth/postgres-store/runtime/poll-device-flow.ts';
 
 const principal = {
 	id: 'user-a', displayName: 'User A', scopes: ['treeseed:read'], roles: ['member'], permissions: [], metadata: {},
@@ -80,6 +82,34 @@ describe('OAuth token custody', () => {
 		expect(lookups.flatMap(({ params }) => params)).not.toContain('access_secret');
 	});
 
+	it('removes scopes from existing access and refresh credentials after authority is reduced', async () => {
+		const reduced = { ...principal, scopes: ['treeseed:read'] };
+		const sessionStore = {
+			config, ensureInitialized: vi.fn(), principalForUser: vi.fn(async () => ({ principal: reduced })), run: vi.fn(),
+			async first(query: string) {
+				if (query.includes('FROM api_tokens')) return null;
+				return { id: 'session-a', user_id: 'user-a', scopes_json: '["treeseed:read","treeseed:admin"]',
+					access_expires_at: '2099-01-01T00:00:00.000Z', revoked_at: null, data_json: '{}' };
+			},
+		};
+		const authenticated = await authenticateBearerTokenMethod.call(sessionStore as never, 'access_secret');
+		expect(authenticated?.principal.scopes).toEqual(['treeseed:read']);
+
+		const refreshQueries: Array<{ query: string; params: unknown[] }> = [];
+		const refreshStore = {
+			config, ensureInitialized: vi.fn(), principalForUser: vi.fn(async () => ({ principal: reduced })),
+			async first(query: string, params: unknown[]) {
+				refreshQueries.push({ query, params });
+				return query.startsWith('UPDATE') ? { id: 'session-a' } : {
+					id: 'session-a', user_id: 'user-a', scopes_json: '["treeseed:read","treeseed:admin"]', expires_at: '2099-01-01T00:00:00.000Z',
+				};
+			},
+		};
+		const refreshed = await refreshAccessTokenMethod.call(refreshStore as never, { refreshToken: 'refresh_original' });
+		expect(refreshed.principal.scopes).toEqual(['treeseed:read']);
+		expect(refreshQueries.find(({ query }) => query.startsWith('UPDATE'))?.params).toContain('["treeseed:read"]');
+	});
+
 	it('stores short-lived site delegation as a revocable opaque credential', async () => {
 		const writes: Array<{ query: string; params: unknown[] }> = [];
 		const store = {
@@ -124,6 +154,27 @@ describe('OAuth token custody', () => {
 		expect(result.userCode).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}$/u);
 		expect(writes[0].query).toContain('device_code_hash');
 		expect(writes[0].params).not.toContain(result.deviceCode);
+	});
+
+	it('approves and consumes a device code only through compare-and-swap state changes', async () => {
+		let state: 'pending' | 'approved' | 'used' = 'pending';
+		const row = { id: 'device-a', client_id: 'trsd', user_id: 'user-a', requested_scopes_json: '["treeseed:read","treeseed:admin"]',
+			device_code_hash: 'hash', user_code: 'ABCD-EFGH', status: state, interval_seconds: 5, expires_at: '2099-01-01T00:00:00.000Z', created_at: '', updated_at: '' };
+		const store = {
+			config, ensureInitialized: vi.fn(), loadUser: vi.fn(async () => ({ id: 'user-a' })), assignRole: vi.fn(), writeAuditEvent: vi.fn(),
+			principalForUser: vi.fn(async () => ({ principal })), run: vi.fn(),
+			async first(query: string) {
+				if (query.startsWith('SELECT')) return { ...row, status: state };
+				if (query.includes("status = 'approved'") && state === 'pending') { state = 'approved'; return { id: row.id }; }
+				if (query.includes("status = 'used'") && state === 'approved') { state = 'used'; return { id: row.id }; }
+				return null;
+			},
+		};
+		await expect(approveDeviceFlowMethod.call(store as never, { userCode: 'ABCD-EFGH', principalId: 'user-a' })).resolves.toEqual({ ok: true });
+		await expect(approveDeviceFlowMethod.call(store as never, { userCode: 'ABCD-EFGH', principalId: 'user-a' })).rejects.toThrow('no longer pending');
+		const tokens = await pollDeviceFlowMethod.call(store as never, { deviceCode: 'device_secret' });
+		expect(tokens).toMatchObject({ status: 'approved', principal: { scopes: ['treeseed:read'] } });
+		await expect(pollDeviceFlowMethod.call(store as never, { deviceCode: 'device_secret' })).resolves.toMatchObject({ status: 'already_used' });
 	});
 
 	it('consumes a matching PKCE code once before issuing the bound session', async () => {

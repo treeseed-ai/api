@@ -20,9 +20,11 @@ async function projectFor(store: any, principal: Principal, projectId: string, p
 	if (!administrator(principal) && !await store.principalCanAccessTeam(principal, details.project.teamId)) {
 		throw new GovernanceServiceError(403, 'project_access_denied', 'Project access is required.');
 	}
-	if (!administrator(principal) && principal.roles?.includes('team_api_key') && permission
-		&& !principal.permissions?.some((value) => value === permission || value === '*:*:*')) {
-		throw new GovernanceServiceError(403, 'project_permission_denied', `The operation requires ${permission}.`);
+	if (!administrator(principal) && permission) {
+		const access = await store.getTeamAccessSummary(details.project.teamId, principal);
+		if (!access.permissions?.some((value: string) => value === permission || value === '*:*:*')) {
+			throw new GovernanceServiceError(403, 'project_permission_denied', `The operation requires ${permission}.`);
+		}
 	}
 	return details.project;
 }

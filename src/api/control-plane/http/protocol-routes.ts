@@ -11,7 +11,7 @@ import { createOperationHttpHandler } from './operation-http-handler.ts';
 import type { ConfirmationService } from '../confirmation/confirmation-service.ts';
 
 interface AuthenticatedPrincipal {
-	principal: { id: string; scopes?: string[]; roles?: string[]; permissions?: string[] };
+	principal: { id: string; displayName?: string; scopes?: string[]; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> };
 	credential: { id: string };
 }
 
@@ -22,8 +22,9 @@ export function installControlPlaneProtocolRoutes(
 	registry: OperationRegistry = controlPlaneOperations,
 	confirmations?: ConfirmationService,
 	mcpBusForPrincipal?: (principal: AuthenticatedPrincipal['principal']) => Promise<ServerEventBus | undefined>,
+	publicBaseUrl = process.env.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3002',
 ) {
-	const document = generateOpenApi(registry);
+	const document = generateOpenApi(registry, publicBaseUrl.replace(/\/+$/u, ''));
 	const digest = openApiDigest(document);
 	const mcpCatalog = createMcpCatalog(registry);
 	const mcpDigest = mcpCatalogDigest(mcpCatalog);
@@ -48,7 +49,8 @@ export function installControlPlaneProtocolRoutes(
 		resourceMetadataUrl: '/.well-known/oauth-protected-resource/mcp',
 	});
 	const protocolApp = createMcpHonoApp();
-	protocolApp.use('*', hostHeaderValidation(['127.0.0.1', 'localhost', '[::1]']));
+	const publicHostname = new URL(publicBaseUrl).hostname;
+	protocolApp.use('*', hostHeaderValidation([...new Set(['127.0.0.1', 'localhost', '[::1]', publicHostname])]));
 	protocolApp.post('/', async (context) => {
 		const authInfo = await bearerGate(context.req.raw);
 		if (authInfo instanceof Response) return authInfo;

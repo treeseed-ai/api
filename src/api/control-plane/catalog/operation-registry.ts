@@ -23,6 +23,7 @@ export interface OperationInvocationContext {
 	authInfo?: AuthInfo;
 	principal?: {
 		id: string;
+		scopes?: string[];
 		roles?: string[];
 		permissions?: string[];
 		metadata?: Record<string, unknown>;

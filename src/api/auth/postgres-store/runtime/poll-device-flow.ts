@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { DeviceCodePollRequest,DeviceCodePollResponse } from "../../../types.ts";
 import { addSeconds,PostgresAuthStore,DeviceCodeRow,isoNow,now,parseJson,stableHash } from "../../postgres-store.ts";
 import { nextOpaqueToken } from "../../tokens.ts";
+import { boundScopes } from "../support/principals/scopes-for-principal.ts";
 export async function pollDeviceFlowMethod(this: PostgresAuthStore, request: DeviceCodePollRequest): Promise<DeviceCodePollResponse> {
     await this.ensureInitialized();
     const row = await this.first<DeviceCodeRow>(`SELECT * FROM device_codes WHERE device_code_hash = ?`, [stableHash(request.deviceCode, this.config.authSecret)]);
@@ -27,6 +28,7 @@ export async function pollDeviceFlowMethod(this: PostgresAuthStore, request: Dev
     const accessTokenHash = stableHash(accessToken, this.config.authSecret);
     const expiresAt = addSeconds(now(), this.config.accessTokenTtlSeconds);
     const refreshExpiresAt = addSeconds(now(), this.config.refreshTokenTtlSeconds);
+    const requestedScopes = boundScopes(parseJson<string[]>(row.requested_scopes_json, principalRecord.principal.scopes), principalRecord.principal.scopes);
     await this.run(`INSERT INTO auth_sessions (id, user_id, session_type, access_token_hash, access_expires_at, refresh_token_hash, scopes_json, expires_at, revoked_at, data_json, created_at, updated_at)
 			 VALUES (?, ?, 'device', ?, ?, ?, ?, ?, NULL, ?, ?, ?)`, [
         sessionId,
@@ -34,13 +36,12 @@ export async function pollDeviceFlowMethod(this: PostgresAuthStore, request: Dev
         accessTokenHash,
         expiresAt.toISOString(),
         refreshTokenHash,
-        row.requested_scopes_json,
+        JSON.stringify(requestedScopes),
         refreshExpiresAt.toISOString(),
         JSON.stringify({ deviceCodeId: row.id, clientId: row.client_id }),
         isoNow(),
         isoNow(),
     ]);
-    const requestedScopes = parseJson<string[]>(row.requested_scopes_json, principalRecord.principal.scopes);
     return {
         ok: true,
         status: 'approved',

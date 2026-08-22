@@ -1,6 +1,7 @@
 import type { TokenRefreshRequest,TokenRefreshResponse } from "../../../../types.ts";
 import { addSeconds,PostgresAuthStore,isoNow,now,parseJson,stableHash } from "../../../postgres-store.ts";
 import { nextOpaqueToken } from "../../../tokens.ts";
+import { boundScopes } from "../../support/principals/scopes-for-principal.ts";
 export async function refreshAccessTokenMethod(this: PostgresAuthStore, request: TokenRefreshRequest): Promise<TokenRefreshResponse> {
     await this.ensureInitialized();
     const refreshHash = stableHash(request.refreshToken, this.config.authSecret);
@@ -19,12 +20,12 @@ export async function refreshAccessTokenMethod(this: PostgresAuthStore, request:
     const nextRefreshHash = stableHash(nextRefreshToken, this.config.authSecret);
     const accessTokenHash = stableHash(accessToken, this.config.authSecret);
     const nextRefreshExpiresAt = addSeconds(now(), this.config.refreshTokenTtlSeconds);
-    const requestedScopes = parseJson<string[]>(row.scopes_json, principalRecord.principal.scopes);
+    const requestedScopes = boundScopes(parseJson<string[]>(row.scopes_json, principalRecord.principal.scopes), principalRecord.principal.scopes);
     const expiresAt = addSeconds(now(), this.config.accessTokenTtlSeconds);
     const rotated = await this.first<{ id: string }>(`UPDATE auth_sessions
-        SET access_token_hash = ?, access_expires_at = ?, refresh_token_hash = ?, expires_at = ?, updated_at = ?
+        SET access_token_hash = ?, access_expires_at = ?, refresh_token_hash = ?, scopes_json = ?, expires_at = ?, updated_at = ?
         WHERE id = ? AND refresh_token_hash = ? AND revoked_at IS NULL RETURNING id`, [
-        accessTokenHash, expiresAt.toISOString(), nextRefreshHash, nextRefreshExpiresAt.toISOString(), isoNow(), row.id, refreshHash,
+        accessTokenHash, expiresAt.toISOString(), nextRefreshHash, JSON.stringify(requestedScopes), nextRefreshExpiresAt.toISOString(), isoNow(), row.id, refreshHash,
     ]);
     if (!rotated) throw new Error('Refresh token replay detected.');
     return {

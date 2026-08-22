@@ -14,6 +14,7 @@ describe('control-plane protocol contract', () => {
 		credential: { id: 'client_1' },
 	} : null;
 	const oauthProvider = {
+		async approveDeviceFlow() { return { ok: true as const }; },
 		async startDeviceFlow() {
 			return { deviceCode: 'device-code', userCode: 'ABCD-EFGH', verificationUri: 'http://localhost/approve', verificationUriComplete: 'http://localhost/approve?user_code=ABCD-EFGH', intervalSeconds: 5, expiresInSeconds: 600 };
 		},
@@ -86,6 +87,12 @@ describe('control-plane protocol contract', () => {
 		expect(first.components.securitySchemes.oauth).toMatchObject({ type: 'http', scheme: 'bearer', bearerFormat: 'opaque' });
 		expect(first.components.securitySchemes.oauth).not.toHaveProperty('flows');
 		expect(openApiDigest(first)).toBe(openApiDigest(second));
+		const complete = generateOpenApi(createApiControlPlaneOperations(apiDependencies()));
+		expect((complete.paths['/v1/projects/{projectId}']?.get as any).parameters).toEqual(expect.arrayContaining([
+			expect.objectContaining({ name: 'projectId', in: 'path', required: true }),
+		]));
+		const hosted = generateOpenApi(controlPlaneOperations, 'https://api.example.test');
+		expect(hosted.servers).toEqual([{ url: 'https://api.example.test' }]);
 	});
 
 	it('serves the shared REST projection and contract digest', async () => {

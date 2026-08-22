@@ -24,6 +24,7 @@ interface ApprovedTokenResult {
 
 export interface OAuthRuntimeProvider {
 	startDeviceFlow(request: { clientName: string; scopes: string[] }): Promise<DeviceStartResult>;
+	approveDeviceFlow(request: { userCode: string; principalId: string; displayName?: string; metadata?: Record<string, unknown> }): Promise<{ ok: true }>;
 	pollDeviceFlow(request: { deviceCode: string }): Promise<ApprovedTokenResult | { ok?: boolean; status: string; intervalSeconds?: number; error?: string }>;
 	refreshAccessToken(request: { refreshToken: string }): Promise<ApprovedTokenResult>;
 	startAuthorizationCode(request: { clientId: string; userId: string; redirectUri: string; codeChallenge: string; scopes: string[] }): Promise<{ code: string; expiresInSeconds: number }>;
@@ -31,7 +32,7 @@ export interface OAuthRuntimeProvider {
 	revokeOAuthToken(token: string): Promise<void>;
 }
 
-type AuthenticateBearer = (token: string) => Promise<{ principal: { id: string } } | null>;
+type AuthenticateBearer = (token: string) => Promise<{ principal: { id: string; displayName?: string; scopes?: string[]; metadata?: Record<string, unknown> } } | null>;
 
 async function requestBody(context: any): Promise<Record<string, unknown>> {
 	const contentType = context.req.header('content-type') ?? '';
@@ -57,9 +58,37 @@ function tokenResponse(context: any, result: ApprovedTokenResult) {
 	}, 200, { 'cache-control': 'no-store', pragma: 'no-cache' });
 }
 
+function authorizedScopes(requested: string[], permitted: string[] | undefined) {
+	const allowed = new Set(permitted ?? []);
+	return requested.length > 0 && requested.every((scope) => allowed.has(scope));
+}
+
 export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimeProvider, authenticateBearer?: AuthenticateBearer) {
 	app.get('/.well-known/oauth-protected-resource/mcp', (context) => context.json(protectedResourceMetadata(context.req.url)));
 	app.get('/.well-known/oauth-authorization-server', (context) => context.json(authorizationServerMetadata(context.req.url)));
+
+	app.get('/auth/device/approve', (context) => context.json({
+		approval_required: true,
+		user_code: context.req.query('user_code') ?? null,
+		submit: '/auth/device/approve',
+	}, 200, { 'cache-control': 'no-store', pragma: 'no-cache' }));
+
+	app.post('/auth/device/approve', async (context) => {
+		if (!provider || !authenticateBearer) return oauthError(context, 503, 'temporarily_unavailable', 'OAuth device approval is not configured.');
+		const authorization = context.req.header('authorization') ?? '';
+		const authenticated = authorization.startsWith('Bearer ') ? await authenticateBearer(authorization.slice(7).trim()) : null;
+		if (!authenticated) return oauthError(context, 401, 'invalid_token', 'An authenticated user session is required.');
+		const body = await requestBody(context);
+		const userCode = String(body.user_code ?? body.userCode ?? '').trim();
+		if (!userCode) return oauthError(context, 400, 'invalid_request', 'user_code is required.');
+		try {
+			await provider.approveDeviceFlow({ userCode, principalId: authenticated.principal.id,
+				displayName: authenticated.principal.displayName, metadata: authenticated.principal.metadata });
+			return context.json({ approved: true }, 200, { 'cache-control': 'no-store', pragma: 'no-cache' });
+		} catch {
+			return oauthError(context, 400, 'invalid_grant', 'The device code is unknown, expired, or no longer pending.');
+		}
+	});
 
 	app.get('/oauth/authorize', async (context) => {
 		const clientId = context.req.query('client_id')?.trim() ?? '';
@@ -92,6 +121,7 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 		}
 		const { scopes, unsupported } = normalizeRequestedScopes(body.scope);
 		if (unsupported.length > 0) return oauthError(context, 400, 'invalid_scope', `Unsupported scopes: ${unsupported.join(', ')}`);
+		if (!authorizedScopes(scopes, authenticated.principal.scopes)) return oauthError(context, 403, 'invalid_scope', 'One or more requested scopes exceed the current user authority.');
 		if (String(body.decision ?? '') !== 'approve') return oauthError(context, 400, 'access_denied', 'The user did not approve the requested scopes.');
 		const issued = await provider.startAuthorizationCode({ clientId, userId: authenticated.principal.id, redirectUri, codeChallenge: challenge, scopes });
 		return context.json({ code: issued.code, redirect_uri: redirectUri, state: body.state ?? null, expires_in: issued.expiresInSeconds },
@@ -120,14 +150,14 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 		if (!provider) return oauthError(context, 503, 'temporarily_unavailable', 'OAuth token issuance is not configured.');
 		const body = await requestBody(context);
 		const clientId = String(body.client_id ?? '').trim();
-		if (!isFirstPartyOAuthClient(clientId)) return oauthError(context, 401, 'invalid_client', 'The OAuth client is not registered.');
 		const grantType = String(body.grant_type ?? '').trim();
 		try {
+			const client = await resolveOAuthClient(clientId).catch(() => null);
+			if (!client || !client.grantTypes.includes(grantType)) return oauthError(context, 401, 'invalid_client', 'The OAuth client is not registered for this grant.');
 			if (grantType === 'authorization_code') {
 				const code = String(body.code ?? '').trim();
 				const redirectUri = String(body.redirect_uri ?? '').trim();
 				const codeVerifier = String(body.code_verifier ?? '').trim();
-				const client = await resolveOAuthClient(clientId).catch(() => null);
 				if (!code || !client || !clientAllowsRedirect(client, redirectUri) || !/^[A-Za-z0-9._~-]{43,128}$/u.test(codeVerifier)) {
 					return oauthError(context, 400, 'invalid_request', 'code, registered redirect_uri, and PKCE code_verifier are required.');
 				}
@@ -158,7 +188,8 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 		if (!provider) return oauthError(context, 503, 'temporarily_unavailable', 'OAuth revocation is not configured.');
 		const body = await requestBody(context);
 		const clientId = String(body.client_id ?? '').trim();
-		if (!isFirstPartyOAuthClient(clientId)) return oauthError(context, 401, 'invalid_client', 'The OAuth client is not registered.');
+		const client = await resolveOAuthClient(clientId).catch(() => null);
+		if (!client) return oauthError(context, 401, 'invalid_client', 'The OAuth client is not registered.');
 		const token = String(body.token ?? '').trim();
 		if (!token) return oauthError(context, 400, 'invalid_request', 'token is required.');
 		await provider.revokeOAuthToken(token);

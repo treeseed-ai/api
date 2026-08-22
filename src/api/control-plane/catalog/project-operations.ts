@@ -169,7 +169,9 @@ function projectInventoryOperation(
 				metadata: { ...access.details.project.metadata, inventory: status === 'archived'
 					? { status, archivedAt: now, archivedBy: access.principal.id }
 					: { status, restoredAt: now, restoredBy: access.principal.id } },
+				expectedRevision: context.ifMatch,
 			});
+			if (!updated) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed while its lifecycle state was being updated.');
 			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
 				eventType: `project.${status === 'archived' ? 'archived' : 'restored'}`, targetType: 'project', targetId: input.path.projectId });
 			return updated;

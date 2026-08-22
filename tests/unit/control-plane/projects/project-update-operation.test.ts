@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createProjectUpdateOperation } from '../../../../src/api/control-plane/catalog/project-operations.ts';
+import { createProjectArchiveOperation, createProjectRestoreOperation, createProjectUpdateOperation } from '../../../../src/api/control-plane/catalog/project-operations.ts';
 
 const dependencies = (overrides: Record<string, unknown> = {}) => ({
 	capacity: { async evaluateProjectDeletionBlockers() { return []; } },
@@ -27,5 +27,16 @@ describe('project update operation', () => {
 		const operation = createProjectUpdateOperation(dependencies());
 		await expect(operation.handler({ path: { projectId: 'project-1' }, query: {}, body: { name: 'Portable SDK' } }, { interface: 'rest', requestId: 'request-1', ifMatch: 'stale', principal: { id: 'user-1' } }))
 			.rejects.toMatchObject({ status: 412, code: 'project_revision_changed' });
+	});
+
+	it('carries If-Match into archive and restore persistence', async () => {
+		const updates: Array<Record<string, unknown>> = [];
+		const fixture = dependencies({ async updateProject(id: string, input: Record<string, unknown>) { updates.push(input); return { id, ...input }; } });
+		const invocation = { path: { projectId: 'project-1' }, query: {}, body: {} };
+		const context = { interface: 'rest' as const, requestId: 'request-1', ifMatch: 'revision-1', principal: { id: 'user-1' } };
+		await createProjectArchiveOperation(fixture).handler(invocation, context);
+		await createProjectRestoreOperation(fixture).handler(invocation, context);
+		expect(updates).toHaveLength(2);
+		expect(updates.every((update) => update.expectedRevision === 'revision-1')).toBe(true);
 	});
 });

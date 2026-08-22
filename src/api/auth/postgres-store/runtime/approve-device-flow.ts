@@ -1,5 +1,6 @@
 import type { DeviceCodeApproveRequest } from "../../../types.ts";
-import { PostgresAuthStore,DeviceCodeRow,isoNow } from "../../postgres-store.ts";
+import { PostgresAuthStore,DeviceCodeRow,isoNow,parseJson } from "../../postgres-store.ts";
+import { boundScopes } from "../support/principals/scopes-for-principal.ts";
 export async function approveDeviceFlowMethod(this: PostgresAuthStore, request: DeviceCodeApproveRequest): Promise<{
     ok: true;
 }> {
@@ -15,7 +16,12 @@ export async function approveDeviceFlowMethod(this: PostgresAuthStore, request: 
 				 VALUES (?, NULL, ?, 'active', ?, ?, ?)`, [userId, request.displayName ?? null, JSON.stringify(request.metadata ?? {}), createdAt, createdAt]);
         await this.assignRole(userId, 'member');
     }
-    await this.run(`UPDATE device_codes SET status = 'approved', user_id = ?, updated_at = ? WHERE id = ?`, [userId, isoNow(), row.id]);
+    const principal = await this.principalForUser(userId);
+    const scopes = boundScopes(parseJson<string[]>(row.requested_scopes_json, principal.principal.scopes), principal.principal.scopes);
+    const approved = await this.first<{ id: string }>(`UPDATE device_codes
+        SET status = 'approved', user_id = ?, requested_scopes_json = ?, updated_at = ?
+        WHERE id = ? AND status = 'pending' AND expires_at > ? RETURNING id`, [userId, JSON.stringify(scopes), isoNow(), row.id, isoNow()]);
+    if (!approved) throw new Error('Device code approval failed because the code is no longer pending.');
     await this.writeAuditEvent({
         actorType: 'user',
         actorId: userId,
@@ -25,4 +31,3 @@ export async function approveDeviceFlowMethod(this: PostgresAuthStore, request: 
     });
     return { ok: true };
 }
-

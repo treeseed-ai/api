@@ -9,14 +9,15 @@ type Store = {
 	resolvePrincipalTeamContext(teamId: string, principal: Principal): Promise<unknown>;
 	first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null | undefined>;
 	all(query: string, parameters?: unknown[]): Promise<Record<string, any>[]>;
-	run(query: string, parameters?: unknown[]): Promise<{ changes?: number } | unknown>;
+	run(query: string, parameters?: unknown[]): Promise<{ changes?: number; meta?: { changes?: number } } | unknown>;
 };
 
 const ACTION_KINDS = new Set(['navigate', 'reveal-resource', 'set-view-filter', 'populate-draft', 'present-confirmation']);
 const RESULTS = new Set(['completed', 'rejected', 'failed']);
 const object = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
-const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value) ?? 'null').digest('hex');
+const affected = (value: { changes?: number; meta?: { changes?: number } }) => value.meta?.changes ?? value.changes ?? 0;
 
 function requirePrincipal(principal: OperationInvocationContext['principal']): Principal {
 	if (!principal) throw new RealtimeOperationError(401, 'authentication_required', 'An authenticated user is required.');
@@ -53,8 +54,8 @@ export function createRealtimeOperationService(store: Store, sessionEvents: Sess
 
 		async heartbeat(principalValue: OperationInvocationContext['principal'], sessionId: string) {
 			const principal = requirePrincipal(principalValue); const now = new Date();
-			const result = await store.run(`UPDATE agent_client_sessions SET heartbeat_at=?,expires_at=?,updated_at=? WHERE id=? AND user_id=? AND status='active'`, [now.toISOString(), new Date(now.getTime() + 45_000).toISOString(), now.toISOString(), sessionId, principal.id]) as { changes?: number };
-			if (!result.changes) throw new RealtimeOperationError(404, 'client_session_not_found', 'Unknown active client session.');
+			const result = await store.run(`UPDATE agent_client_sessions SET heartbeat_at=?,expires_at=?,updated_at=? WHERE id=? AND user_id=? AND status='active'`, [now.toISOString(), new Date(now.getTime() + 45_000).toISOString(), now.toISOString(), sessionId, principal.id]) as { changes?: number; meta?: { changes?: number } };
+			if (affected(result) !== 1) throw new RealtimeOperationError(404, 'client_session_not_found', 'Unknown active client session.');
 			return await store.first('SELECT * FROM agent_client_sessions WHERE id=?', [sessionId]) ?? {};
 		},
 
@@ -70,8 +71,8 @@ export function createRealtimeOperationService(store: Store, sessionEvents: Sess
 			const principal = requirePrincipal(principalValue); const body = object(bodyValue); const status = text(body.status);
 			if (!RESULTS.has(status)) throw new RealtimeOperationError(422, 'client_action_result_invalid', 'Client action result must be completed, rejected, or failed.');
 			const now = new Date().toISOString();
-			const result = await store.run(`UPDATE agent_client_actions SET status=?,result_json=?,completed_at=?,updated_at=? WHERE id=? AND session_id=? AND user_id=? AND status='pending'`, [status, JSON.stringify({ detail: object(body.detail), digest: digest(body.detail) }), now, now, actionId, sessionId, principal.id]) as { changes?: number };
-			if (!result.changes) {
+			const result = await store.run(`UPDATE agent_client_actions SET status=?,result_json=?,completed_at=?,updated_at=? WHERE id=? AND session_id=? AND user_id=? AND status='pending'`, [status, JSON.stringify({ detail: object(body.detail), digest: digest(body.detail) }), now, now, actionId, sessionId, principal.id]) as { changes?: number; meta?: { changes?: number } };
+			if (affected(result) !== 1) {
 				const replay = await store.first('SELECT * FROM agent_client_actions WHERE id=? AND session_id=? AND user_id=?', [actionId, sessionId, principal.id]);
 				if (replay?.status === status) return { ...replay, replayed: true };
 				throw new RealtimeOperationError(409, 'client_action_state_conflict', 'Client action is missing, terminal, expired, or outside this user session.');
