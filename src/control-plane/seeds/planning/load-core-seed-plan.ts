@@ -132,9 +132,6 @@ export function loadAndPlanCoreSeed(input: { projectRoot: string; seedName: stri
 	const manifest = validated.manifest as any;
 	if (!manifest) return { ok: false, plan: null, diagnostics, manifestPath };
 	if (manifest.name !== input.seedName) diagnostics.push(error('seed.name_mismatch', `Manifest name ${manifest.name} does not match requested seed ${input.seedName}.`, 'name'));
-	if (manifest.resources.products.length || manifest.resources.catalogArtifacts.length) {
-		diagnostics.push(error('seed.unsupported_commerce_resource', 'Core control-plane seeds cannot contain products or catalog artifacts.', 'resources'));
-	}
 	const selected = selectEnvironments(manifest, input.environments);
 	for (const message of selected.errors) diagnostics.push(error('seed.environment_selection', message, 'environments'));
 	if (hasErrors(diagnostics)) return { ok: false, plan: null, diagnostics, manifestPath };

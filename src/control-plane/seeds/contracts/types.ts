@@ -7,9 +7,7 @@ export type SeedResourceKind =
 	| 'team'
 	| 'teamMembership'
 	| 'project'
-	| 'hubRepository'
-	| 'product'
-	| 'catalogArtifact';
+	| 'hubRepository';
 
 export type SeedOperationRecipeChannel = 'cli' | 'ui' | 'api' | 'provider-runtime' | 'system-check';
 
@@ -84,8 +82,6 @@ export type SeedManifestResources = {
 	projects: SeedProjectResource[];
 	hubRepositories: SeedHubRepositoryResource[];
 	supportRepositories: SeedSupportRepositoryResource[];
-	products: SeedProductResource[];
-	catalogArtifacts: SeedCatalogArtifactResource[];
 };
 
 export type SeedTeamMembershipResource = SeedResourceBase & {
@@ -170,31 +166,6 @@ export type SeedSupportRepositoryResource = SeedResourceBase & {
 	description?: string;
 	metadata?: Record<string, unknown>;
 	repositoryPolicy?: SeedRepositoryPolicy;
-};
-
-export type SeedProductResource = SeedResourceBase & {
-	team: string;
-	kind: string;
-	slug: string;
-	title: string;
-	summary?: string;
-	visibility?: string;
-	listingEnabled?: boolean;
-	offerMode?: string;
-	manifestKey?: string;
-	artifactKey?: string;
-	searchText?: string;
-	metadata?: Record<string, unknown>;
-};
-
-export type SeedCatalogArtifactResource = SeedResourceBase & {
-	product: string;
-	version: string;
-	kind: string;
-	contentKey: string;
-	manifestKey?: string;
-	publishedAt?: string;
-	metadata?: Record<string, unknown>;
 };
 
 export type SeedOperationRecipeCommand = {

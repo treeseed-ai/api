@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { createSeedOperations } from '../../../../src/api/control-plane/catalog/seeds/index.ts';
 import { createSeedOperationService } from '../../../../src/api/control-plane/seeds/seed-operation-service.ts';
+import { validateSeedSource } from '../../../../src/control-plane/seeds/contracts/index.ts';
 
 describe('seed catalog operations', () => {
 	it('binds all five SDK-owned seed operations', () => {
@@ -25,5 +26,12 @@ describe('seed catalog operations', () => {
 		const service = createSeedOperationService({} as any, { repoRoot: '/tmp/unused' });
 		await expect(service.resolveResources({ id: 'user-1', roles: [], permissions: [] }, { keys: ['team:treeseed'] }))
 			.rejects.toMatchObject({ status: 403, code: 'seed_global_access_denied' });
+	});
+
+	it('rejects removed resource families instead of retaining dormant schemas', () => {
+		const result = validateSeedSource(`name: clean\nversion: 1\nenvironments: [local]\nresources:\n  teams: []\n  teamMemberships: []\n  projects: []\n  hubRepositories: []\n  supportRepositories: []\n  products: []\n`);
+		expect(result).toMatchObject({ ok: false, diagnostics: [expect.objectContaining({
+			code: 'seed.unsupported_resource_kind', path: 'resources.products',
+		})] });
 	});
 });

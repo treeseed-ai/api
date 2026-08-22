@@ -1,20 +1,18 @@
 import { errorDiagnostic,warningDiagnostic } from '../errors.js';
 import {
-type SeedCatalogArtifactResource,
 type SeedDiagnostic,
 type SeedHubRepositoryResource,
 type SeedManifest,
 type SeedManifestResources,
 type SeedOperationRecipe,
 type SeedOperationRecipeStep,
-type SeedProductResource,
 type SeedProjectResource,
 type SeedTeamMembershipResource,
 type SeedCapacityProviderPrerequisite,
 type SeedSupportRepositoryResource,
 type SeedTeamResource,
 } from '../types.js';
-import { parseCatalogArtifact,parseHubRepository,parseOperationRecipe,parseProduct,parseProject,parseSupportRepository,walkForSecrets } from './parse-project.ts';
+import { parseHubRepository,parseOperationRecipe,parseProject,parseSupportRepository,walkForSecrets } from './parse-project.ts';
 import { RESOURCE_BUCKETS,SUPPORTED_BUCKETS,asString,isRecord,parseEnvironments,parseTeam,parseTeamMembership,requireString,stringArrayField } from './resource-buckets.ts';
 
 function parseCapacityProvider(value: unknown, index: number, diagnostics: SeedDiagnostic[]): SeedCapacityProviderPrerequisite | null {
@@ -65,15 +63,12 @@ export function validateResourceKeys(manifest: SeedManifest, diagnostics: SeedDi
 	manifest.resources.projects.forEach((project, index) => visit(project.key, `resources.projects[${index}].key`));
 	manifest.resources.hubRepositories.forEach((repository, index) => visit(repository.key, `resources.hubRepositories[${index}].key`));
 	manifest.resources.supportRepositories.forEach((repository, index) => visit(repository.key, `resources.supportRepositories[${index}].key`));
-	manifest.resources.products.forEach((product, index) => visit(product.key, `resources.products[${index}].key`));
-	manifest.resources.catalogArtifacts.forEach((artifact, index) => visit(artifact.key, `resources.catalogArtifacts[${index}].key`));
 	manifest.runtime.capacityProviders.forEach((provider, index) => visit(provider.key, `runtime.capacityProviders[${index}].key`));
 }
 
 export function validateReferences(manifest: SeedManifest, diagnostics: SeedDiagnostic[]) {
 	const teamKeys = new Set([...manifest.resources.teams.map((team) => team.key), ...manifest.references]);
 	const projectKeys = new Set([...manifest.resources.projects.map((project) => project.key), ...manifest.references]);
-	const productKeys = new Set([...manifest.resources.products.map((product) => product.key), ...manifest.references]);
 
 	manifest.resources.projects.forEach((project, index) => {
 		if (!teamKeys.has(project.team)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown team reference: ${project.team}.`, `resources.projects[${index}].team`));
@@ -89,12 +84,6 @@ export function validateReferences(manifest: SeedManifest, diagnostics: SeedDiag
 	manifest.resources.hubRepositories.forEach((repository, index) => {
 		if (!projectKeys.has(repository.project)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown project reference: ${repository.project}.`, `resources.hubRepositories[${index}].project`));
 	});
-	manifest.resources.products.forEach((product, index) => {
-		if (!teamKeys.has(product.team)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown team reference: ${product.team}.`, `resources.products[${index}].team`));
-	});
-	manifest.resources.catalogArtifacts.forEach((artifact, index) => {
-		if (!productKeys.has(artifact.product)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown product reference: ${artifact.product}.`, `resources.catalogArtifacts[${index}].product`));
-	});
 }
 
 export function allResourceKeys(manifest: SeedManifest) {
@@ -104,8 +93,6 @@ export function allResourceKeys(manifest: SeedManifest) {
 		...manifest.resources.projects.map((project) => project.key),
 		...manifest.resources.hubRepositories.map((repository) => repository.key),
 		...manifest.resources.supportRepositories.map((repository) => repository.key),
-		...manifest.resources.products.map((product) => product.key),
-		...manifest.resources.catalogArtifacts.map((artifact) => artifact.key),
 	]);
 }
 
@@ -214,8 +201,6 @@ export function parseSeedManifest(value: unknown, diagnostics: SeedDiagnostic[])
 		projects: arrayBucket(resourcesValue, 'projects', diagnostics).map((entry, index) => parseProject(entry, `resources.projects[${index}]`, diagnostics)).filter((project): project is SeedProjectResource => Boolean(project)),
 		hubRepositories: arrayBucket(resourcesValue, 'hubRepositories', diagnostics).map((entry, index) => parseHubRepository(entry, `resources.hubRepositories[${index}]`, diagnostics)).filter((repository): repository is SeedHubRepositoryResource => Boolean(repository)),
 		supportRepositories: arrayBucket(resourcesValue, 'supportRepositories', diagnostics).map((entry, index) => parseSupportRepository(entry, `resources.supportRepositories[${index}]`, diagnostics)).filter((repository): repository is SeedSupportRepositoryResource => Boolean(repository)),
-		products: arrayBucket(resourcesValue, 'products', diagnostics).map((entry, index) => parseProduct(entry, `resources.products[${index}]`, diagnostics)).filter((product): product is SeedProductResource => Boolean(product)),
-		catalogArtifacts: arrayBucket(resourcesValue, 'catalogArtifacts', diagnostics).map((entry, index) => parseCatalogArtifact(entry, `resources.catalogArtifacts[${index}]`, diagnostics)).filter((artifact): artifact is SeedCatalogArtifactResource => Boolean(artifact)),
 	};
 	const runtimeValue = value.runtime === undefined ? {} : isRecord(value.runtime) ? value.runtime : {};
 	if (value.runtime !== undefined && !isRecord(value.runtime)) diagnostics.push(errorDiagnostic('seed.invalid_runtime', 'runtime must be an object.', 'runtime'));

@@ -26,8 +26,6 @@ export const RESOURCE_BUCKETS = [
 	'projects',
 	'hubRepositories',
 	'supportRepositories',
-	'products',
-	'catalogArtifacts',
 ] as const;
 
 export const SUPPORTED_BUCKETS = new Set(RESOURCE_BUCKETS);

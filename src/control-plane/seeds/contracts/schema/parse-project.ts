@@ -1,6 +1,5 @@
 import { errorDiagnostic } from '../errors.js';
 import {
-type SeedCatalogArtifactResource,
 type SeedDiagnostic,
 type SeedEnvironment,
 type SeedHubRepositoryResource,
@@ -10,7 +9,6 @@ type SeedOperationRecipeAssertion,
 type SeedOperationRecipeChannel,
 type SeedOperationRecipeCommand,
 type SeedOperationRecipeStep,
-type SeedProductResource,
 type SeedProjectRepository,
 type SeedProjectResource,
 type SeedSupportRepositoryResource,
@@ -105,48 +103,6 @@ export function parseSupportRepository(value: unknown, path: string, diagnostics
 	};
 	validateRepository({ role: 'support', ...repository }, path, diagnostics);
 	return repository;
-}
-
-export function parseProduct(value: unknown, path: string, diagnostics: SeedDiagnostic[]): SeedProductResource | null {
-	if (!isRecord(value)) {
-		diagnostics.push(errorDiagnostic('seed.invalid_resource', 'Expected product resource to be an object.', path));
-		return null;
-	}
-	return {
-		...keyBase(value, path, diagnostics),
-		team: requireString(value, 'team', path, diagnostics),
-		kind: requireString(value, 'kind', path, diagnostics),
-		slug: requireString(value, 'slug', path, diagnostics),
-		title: requireString(value, 'title', path, diagnostics),
-		summary: asString(value.summary) || undefined,
-		visibility: asString(value.visibility) || undefined,
-		listingEnabled: typeof value.listingEnabled === 'boolean' ? value.listingEnabled : undefined,
-		offerMode: asString(value.offerMode) || undefined,
-		manifestKey: asString(value.manifestKey) || undefined,
-		artifactKey: asString(value.artifactKey) || undefined,
-		searchText: asString(value.searchText) || undefined,
-		metadata: objectField(value, 'metadata', path, diagnostics),
-	};
-}
-
-export function parseCatalogArtifact(value: unknown, path: string, diagnostics: SeedDiagnostic[]): SeedCatalogArtifactResource | null {
-	if (!isRecord(value)) {
-		diagnostics.push(errorDiagnostic('seed.invalid_resource', 'Expected catalog artifact resource to be an object.', path));
-		return null;
-	}
-	if (value.content !== undefined || value.bytes !== undefined || value.data !== undefined) {
-		diagnostics.push(errorDiagnostic('seed.inline_artifact_content', 'Catalog artifact resources must reference content keys, not inline bytes/content.', path));
-	}
-	return {
-		...keyBase(value, path, diagnostics),
-		product: requireString(value, 'product', path, diagnostics),
-		version: requireString(value, 'version', path, diagnostics),
-		kind: requireString(value, 'kind', path, diagnostics),
-		contentKey: requireString(value, 'contentKey', path, diagnostics),
-		manifestKey: asString(value.manifestKey) || undefined,
-		publishedAt: asString(value.publishedAt) || undefined,
-		metadata: objectField(value, 'metadata', path, diagnostics),
-	};
 }
 
 export function parseRecipeCommand(value: unknown, path: string, diagnostics: SeedDiagnostic[]): SeedOperationRecipeCommand | undefined {
