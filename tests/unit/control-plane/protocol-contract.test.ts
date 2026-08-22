@@ -39,6 +39,8 @@ describe('control-plane protocol contract', () => {
 		async resolvePrincipalTeamContext() { return { roles: ['project_lead'] }; },
 		async listTeamMembers() { return []; },
 		async listTeamInvites() { return []; },
+		async getTeamInviteByToken(token: string) { return { ok: true, invite: { id: 'invite-1', token, email: 'member@example.test', roleKey: 'contributor', status: 'pending', expiresAt: '2026-08-23T00:00:00Z' }, team: { id: 'team-a', name: 'treeseed', displayName: 'TreeSeed' } }; },
+		async acceptTeamInvite() { return { ok: true, invite: { id: 'invite-1', teamId: 'team-a' }, team: { id: 'team-a' }, membership: { id: 'membership-1' } }; },
 		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
@@ -156,6 +158,25 @@ describe('control-plane protocol contract', () => {
 		expect(registry.require('teams.access.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.access);
 		expect(registry.require('teams.members.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.members);
 		expect(registry.require('teams.invites.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.invites);
+	});
+
+	it('shows and accepts team invitations through SDK-owned operation bindings', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies());
+		installControlPlaneProtocolRoutes(app, async () => ({
+			principal: { id: 'user_1', scopes: ['treeseed:read', 'treeseed:projects:write'], roles: [], permissions: [] },
+			credential: { id: 'client_1' },
+		}), oauthProvider, registry);
+		const shown = await app.request('/v1/team-invites/invite-token');
+		expect(shown.status).toBe(200);
+		expect(await shown.json()).toMatchObject({ data: { invite: { id: 'invite-1' }, team: { id: 'team-a' } } });
+		const accepted = await app.request('/v1/team-invites/invite-token/accept', {
+			method: 'POST', headers: { authorization: 'Bearer test-token', 'content-type': 'application/json', 'idempotency-key': 'accept-1' }, body: '{}',
+		});
+		expect(accepted.status).toBe(200);
+		expect(await accepted.json()).toMatchObject({ data: { ok: true, membership: { id: 'membership-1' } } });
+		expect(registry.require('teams.invites.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.inviteShow);
+		expect(registry.require('teams.invites.accept').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.inviteAccept);
 	});
 
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {

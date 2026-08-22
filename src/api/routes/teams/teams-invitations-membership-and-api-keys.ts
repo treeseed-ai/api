@@ -11,40 +11,6 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 		if (['stale', 'invite_already_pending', 'namespace_taken', 'taken'].includes(String(result.code))) return 409;
 		return 400;
 	};
-	app.post('/v1/team-invites/:token/accept', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const result = await store.acceptTeamInvite(c.req.param('token'), auth.principal.id);
-					if (result.ok) await store.recordAuditEvent({
-						actorType: 'user', actorId: auth.principal.id, eventType: 'team.invitation.accepted',
-						targetType: 'team', targetId: result.team?.id ?? result.invite?.teamId ?? null,
-						data: { invitationId: result.invite?.id ?? null },
-					});
-					return c.json(result, result.ok ? 200 : 400);
-				});
-	
-	app.get('/v1/team-invites/:token', async (c) => {
-					const result = await store.getTeamInviteByToken(c.req.param('token'));
-					if (!result.ok) return c.json(result, 404);
-					return c.json({
-						ok: true,
-						payload: {
-							invite: {
-								id: result.invite.id,
-								email: result.invite.email,
-								roleKey: result.invite.roleKey,
-								status: result.invite.status,
-								expiresAt: result.invite.expiresAt,
-							},
-							team: result.team ? {
-								id: result.team.id,
-								name: result.team.name,
-								displayName: result.team.displayName,
-							} : null,
-						},
-					});
-				});
-	
 	app.get('/v1/teams/:teamId/home', async (c) => {
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 					if (access.response) return access.response;

@@ -11,6 +11,9 @@ export interface TeamOperationDependencies {
 		resolvePrincipalTeamContext(teamId: string, principal: Record<string, unknown>): Promise<{ roles?: string[] } | null>;
 		listTeamMembers(teamId: string): Promise<Array<Record<string, any>>>;
 		listTeamInvites(teamId: string): Promise<Array<Record<string, unknown>>>;
+		getTeamInviteByToken(token: string): Promise<Record<string, any>>;
+		acceptTeamInvite(token: string, principalId: string): Promise<Record<string, any>>;
+		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 }
 
@@ -103,6 +106,36 @@ export function createTeamInvitesOperation(dependencies: TeamOperationDependenci
 			const offset = Math.max(0, Number(input.query.cursor ?? 0) || 0);
 			const nextOffset = offset + limit;
 			return { items: invites.slice(offset, nextOffset), total: invites.length, cursor: nextOffset < invites.length ? String(nextOffset) : null };
+		},
+	};
+}
+
+export function createTeamInviteShowOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.inviteShow> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.inviteShow,
+		async handler(input) {
+			const result = await dependencies.store.getTeamInviteByToken(input.path.token);
+			if (!result.ok) throw new ControlPlaneOperationError(404, 'team_invite_missing', 'The team invitation was not found.');
+			return { invite: { id: result.invite.id, email: result.invite.email, roleKey: result.invite.roleKey,
+				status: result.invite.status, expiresAt: result.invite.expiresAt },
+				team: result.team ? { id: result.team.id, name: result.team.name, displayName: result.team.displayName } : null };
+		},
+	};
+}
+
+export function createTeamInviteAcceptOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.inviteAccept> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.inviteAccept,
+		async handler(input, context) {
+			const principal = authenticatedPrincipal(context);
+			const result = await dependencies.store.acceptTeamInvite(input.path.token, principal.id);
+			if (!result.ok) throw new ControlPlaneOperationError(
+				['stale', 'stale_or_expired', 'already_accepted'].includes(String(result.code)) ? 409 : 400,
+				String(result.code ?? 'team_invite_invalid'), 'The team invitation could not be accepted.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: principal.id,
+				eventType: 'team.invitation.accepted', targetType: 'team', targetId: result.team?.id ?? result.invite?.teamId ?? null,
+				data: { invitationId: result.invite?.id ?? null } });
+			return result;
 		},
 	};
 }
