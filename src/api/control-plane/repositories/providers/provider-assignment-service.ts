@@ -4,7 +4,7 @@ import { settleCapacityReservationExactlyOnce, type CapacitySettlementRequest } 
 import { startAssignmentCloseoutWindow, startAssignmentExecutionWindow } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { modeRunActivityEvent } from '../../../capacity/services/capacity/workdays/content/mode-run-activity-event.ts';
-import { redactTranscriptValue } from '../../../capacity/routes/support/workday-activity.ts';
+import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
 import { assignmentActivityType, assignmentRecord as record, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
 

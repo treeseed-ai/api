@@ -3,7 +3,7 @@ import { resolveEffectiveGroupMembership } from '../../../governance/group-membe
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { recordPlanningParticipantRequest, validatePlanningParticipantRequest } from '../../../capacity/services/capacity/workdays/scheduling/planning-participant-request-service.ts';
 import { decodeWorkdayPlanningGraphSnapshot } from '../../../capacity/services/capacity/workdays/policy/workday-planning-graph-policy.ts';
-import { redactTranscriptValue } from '../../../capacity/routes/support/workday-activity.ts';
+import { redactTranscriptValue } from './transcript-redaction.ts';
 import { enforceProviderSignalContract, resolveSignalSubjectGroups } from './provider-signal-policy.ts';
 import { providerPrincipal } from './provider-runtime-service.ts';
 import { assignmentActivityType, assignmentRecord as record, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';

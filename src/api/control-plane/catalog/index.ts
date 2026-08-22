@@ -1,6 +1,9 @@
 import { OperationRegistry } from './operation-registry.ts';
 import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation, createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
 import { createCapacityPlanOperations, type CapacityPlanOperationDependencies } from './capacity/plans.ts';
+import { createPlanningAndEstimateOperations, type PlanningAndEstimateOperationDependencies } from './capacity/planning-and-estimates.ts';
+import { createAgentGovernanceOperations, type AgentGovernanceOperationDependencies } from './capacity/agent-governance.ts';
+import { createCommunicationOperations, type CommunicationOperationDependencies } from './capacity/communications.ts';
 import { createAgentOperations, type AgentOperationDependencies } from './capacity/agents.ts';
 import { createCapacityQueryOperations, type CapacityQueryOperationDependencies } from './capacity/capacity.ts';
 import { createAssignmentOperations, type AssignmentOperationDependencies } from './capacity/assignments.ts';
@@ -25,7 +28,7 @@ export * from './operation-registry.ts';
 
 export const controlPlaneOperations = new OperationRegistry([statusOperation]);
 
-export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CapacityPlanOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies & AssignmentOperationDependencies & PlatformOperationDependencies & ProviderOperationDependencies & ProviderAssignmentOperationDependencies & TreeDxOperationDependencies & RealtimeOperationDependencies & SeedOperationDependencies & FeedbackOperationDependencies) {
+export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CapacityPlanOperationDependencies & PlanningAndEstimateOperationDependencies & AgentGovernanceOperationDependencies & CommunicationOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies & AssignmentOperationDependencies & PlatformOperationDependencies & ProviderOperationDependencies & ProviderAssignmentOperationDependencies & TreeDxOperationDependencies & RealtimeOperationDependencies & SeedOperationDependencies & FeedbackOperationDependencies) {
 	return new OperationRegistry([
 		statusOperation,
 		createReadinessOperation(dependencies),
@@ -44,6 +47,9 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		...createRepositoryOperations(dependencies),
 		...createServiceOperations(dependencies),
 		...createCapacityPlanOperations(dependencies),
+		...createPlanningAndEstimateOperations(dependencies),
+		...createAgentGovernanceOperations(dependencies),
+		...createCommunicationOperations(dependencies),
 		...createWorkdayOperations(dependencies),
 		...createAgentOperations(dependencies),
 		...createCapacityQueryOperations(dependencies),

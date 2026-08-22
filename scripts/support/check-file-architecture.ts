@@ -91,9 +91,6 @@ for (const path of repositoryFiles()) {
 	if (/-\d{1,2}\.(?:scenarios|spec|test)\.[^.]+$/u.test(basename)) {
 		violations.push(`${path}: ordinal test or scenario suffix`);
 	}
-	if (path.startsWith('src/api/routes/') && basename.includes('-through-')) {
-		violations.push(`${path}: route-order range name`);
-	}
 	if (/split-(?:class-methods|large-tests|module-declarations)\.[^.]+$/u.test(basename)) {
 		violations.push(`${path}: mechanical split script`);
 	}

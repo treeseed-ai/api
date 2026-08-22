@@ -20,6 +20,9 @@ import { createGitHubConnectorService } from '../control-plane/repositories/gith
 import { createGitHubWebhookService } from '../control-plane/repositories/github-webhook-service.ts';
 import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
 import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
+import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
+import { createAgentGovernanceService } from '../control-plane/repositories/capacity/agent-governance-service.ts';
+import { createCommunicationService } from '../control-plane/repositories/capacity/communication-service.ts';
 import { createWorkdayService } from '../control-plane/repositories/capacity/workday-service.ts';
 import { createAgentQueryService } from '../control-plane/repositories/capacity/agent-query-service.ts';
 import { createCapacityQueryService } from '../control-plane/repositories/capacity/capacity-query-service.ts';
@@ -44,8 +47,7 @@ import {
 	shouldLogApiRequests,
 } from '../app/support/index.ts';
 import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
-import { routeDependencies } from './route-dependencies.ts';
-import { installFoundationHealthAndControlPlaneRoutes } from '../routes/support/foundation-health-and-control-plane.ts';
+import { listUserEmailAddresses, sendTeamInviteEmail } from '../app/support/accounts/authentication-email.ts';
 
 export * from '../app/support/index.ts';
 
@@ -173,24 +175,17 @@ export function createPlatformApiApp(options: any = {}) {
 
 	if (shouldLogApiRequests(config, options)) installApiRequestLogger(app);
 	store.setArtifactBucket(resolveAgentArtifactBucket(runtime));
-	const routeContext = {
-		...routeDependencies,
-		apiDatabaseUrl,
-		app,
-		authConfig: { ...config, baseUrl: resolveAuthApprovalBaseUrl(config) },
-		authProviderId: config.providers?.auth ?? 'control-plane-postgres',
-		capacity,
-		config,
-		configuredAuthProviderId: config.providers?.auth ?? 'control-plane-postgres',
-		db,
-		logRequests: shouldLogApiRequests(config, options),
-		options,
-		runtime,
-		runtimeControlPlaneAuthProvider: authProvider,
-		runtimeProviders,
-		sessionEvents,
-		store,
-	};
+	app.use('/v1/*', async (context, next) => {
+		const token = bearerToken(context.req.raw);
+		if (!context.get('principal') && token) {
+			const match = await store.authenticateTeamApiKey(token);
+			if (match) setAuthentication(context, {
+				principal: match.principal,
+				credential: { type: 'team_api_key', id: match.keyId, label: 'Team API Key' },
+			}, 'service');
+		}
+		await next();
+	});
 	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config });
 	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents);
 	const providerSignals = createProviderSignalService(capacity);
@@ -199,7 +194,6 @@ export function createPlatformApiApp(options: any = {}) {
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
-	installFoundationHealthAndControlPlaneRoutes(routeContext);
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
@@ -207,6 +201,9 @@ export function createPlatformApiApp(options: any = {}) {
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
 			plans: createCapacityPlanService(capacity),
+			planningAndEstimates: createPlanningAndEstimateService(capacity),
+			agentGovernance: createAgentGovernanceService(capacity),
+			communications: createCommunicationService(capacity),
 			workdays: createWorkdayService(capacity),
 			agents: createAgentQueryService(capacity),
 			capacityQueries: createCapacityQueryService(capacity),
@@ -223,8 +220,8 @@ export function createPlatformApiApp(options: any = {}) {
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),
-			deliverTeamInvite: (input) => routeDependencies.sendTeamInviteEmail(invitationContext, input),
-			listUserEmailAddresses: (userId) => routeDependencies.listUserEmailAddresses(store, userId),
+			deliverTeamInvite: (input) => sendTeamInviteEmail(invitationContext, input),
+			listUserEmailAddresses: (userId) => listUserEmailAddresses(store, userId),
 			accountEmails: createAccountEmailService(store, invitationContext),
 			accountRegistration: createAccountRegistrationService(store, authProvider, invitationContext),
 			accountSecurity: createAccountSecurityService(store, invitationContext),
