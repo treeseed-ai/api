@@ -32,6 +32,7 @@ describe('control-plane protocol contract', () => {
 		async listProjectsForPrincipal() { return []; },
 		async listTeamProjects() { return []; },
 		async listTeamsForPrincipal() { return []; },
+		async loadTeamProfileByName() { return null; },
 		async principalCanAccessTeam() { return true; },
 		...overrides,
 	});
@@ -101,6 +102,21 @@ describe('control-plane protocol contract', () => {
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ data: { principal: expect.objectContaining({ id: 'user_1' }), teams: [{ id: 'team-a', name: 'TreeSeed' }] } });
 		expect(registry.require('accounts.current.show').binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.current);
+	});
+
+	it('serves team discovery through SDK-owned operation bindings', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations({ store: operationStore({
+			async listTeamsForPrincipal() { return [{ id: 'team-a', name: 'TreeSeed' }]; },
+			async loadTeamProfileByName(name: string) { return name === 'treeseed' ? { id: 'team-a', name: 'TreeSeed' } : null; },
+		}) });
+		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
+		const headers = { authorization: 'Bearer test-token' };
+		expect(await (await app.request('/v1/teams', { headers })).json()).toEqual({ data: { teams: [{ id: 'team-a', name: 'TreeSeed' }] } });
+		expect(await (await app.request('/v1/teams/by-name/treeseed/profile', { headers })).json()).toEqual({ data: { id: 'team-a', name: 'TreeSeed' } });
+		expect((await app.request('/v1/teams/by-name/missing/profile', { headers })).status).toBe(404);
+		expect(registry.require('teams.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.list);
+		expect(registry.require('teams.profile.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.profile);
 	});
 
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {

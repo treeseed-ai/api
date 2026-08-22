@@ -2,17 +2,20 @@ import { OperationRegistry } from './operation-registry.ts';
 import { createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
 import { createDeepHealthOperation, createReadinessOperation, statusOperation, type DeepHealthDependencies } from './core-operations.ts';
 import { createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
+import { createTeamProfileOperation, createTeamsListOperation, type TeamOperationDependencies } from './team-operations.ts';
 
 export * from './operation-registry.ts';
 
 export const controlPlaneOperations = new OperationRegistry([statusOperation]);
 
-export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies) {
+export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies) {
 	return new OperationRegistry([
 		statusOperation,
 		createReadinessOperation(dependencies),
 		createDeepHealthOperation(dependencies),
 		createCurrentAccountOperation(dependencies),
+		createTeamsListOperation(dependencies),
+		createTeamProfileOperation(dependencies),
 		createProjectsListOperation(dependencies),
 	]);
 }

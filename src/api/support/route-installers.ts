@@ -36,7 +36,6 @@ import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/
 import { installFoundationStewardTransitionCommonsProposalRoutes } from "../routes/support/foundation-stewardTransitionCommonsProposal.ts";
 import { installTeamServicesRoutes } from "../routes/teams/team-services.ts";
 import { installTeamServiceAuthorityRoutes } from "../routes/teams/team-service-authorities.ts";
-import { installTeamsDirectoryRoutes } from "../routes/teams/teams-directory.ts";
 import { installTeamsInvitationsMembershipAndApiKeysRoutes } from "../routes/teams/teams-invitations-membership-and-api-keys.ts";
 import { installTeamsLifecycleAndConsentRoutes } from "../routes/teams/teams-lifecycle-and-consent.ts";
 import { installTeamsStorageAndContentPreviewsRoutes } from "../routes/teams/teams-storage-and-content-previews.ts";
@@ -64,7 +63,6 @@ export function installPlatformRoutes(context: any): void {
   installAuthenticationPasswordAndAccountSecurityRoutes(context);
   installGovernanceProjectionRoutes(context);
   installProjectionsInfrastructureKnowledgeAndWorkdaysRoutes(context);
-  installTeamsDirectoryRoutes(context);
   installFoundationUsersByUsernameItemProfileRoutes(context);
   installTeamsInvitationsMembershipAndApiKeysRoutes(context);
   installTeamsLifecycleAndConsentRoutes(context);
