@@ -1,5 +1,3 @@
-import { installFeedbackAdministrationRoutes } from "../routes/feedback/administration.ts";
-import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/projects-settings-and-summaries.ts";
 import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
 import { installTeamsStorageAndContentPreviewsRoutes } from "../routes/teams/teams-storage-and-content-previews.ts";
@@ -9,8 +7,6 @@ import { installTreedxTeamServiceAndPublicFederationRoutes } from "../routes/tre
 
 export function installPlatformRoutes(context: any): void {
   installFoundationHealthAndControlPlaneRoutes(context);
-  installFeedbackSubmissionRoutes(context);
-  installFeedbackAdministrationRoutes(context);
   installTreedxTeamServiceAndPublicFederationRoutes(context);
   installTreedxInternalTreedxPublicFederationStatusRoutes(context);
   installTreedxCredentialsMirrorsAndSharesRoutes(context);

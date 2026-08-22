@@ -1,5 +1,5 @@
 import { objectValue,treeDxRailway,treeDxRailwayNames,treeDxSecretBase } from '../index.js';
-import { createFeedbackExecutors } from '../../feedback/executors.ts';
+import { createFeedbackRetentionExecutor } from '../../feedback/retention-executor.ts';
 import { createKnowledgePublicationExecutor } from '../../knowledge/publication-executor.ts';
 import { createKnowledgePackCleanupExecutor, createKnowledgePackExecutor } from '../../knowledge/pack-executor.ts';
 import { createGitHubWorkflowExecutor } from '../../workflows/github-workflow-executor.ts';
@@ -274,7 +274,7 @@ export function createExecutorsForOptions(options: any = {}) {
         noop,
         diagnostic,
 		treeDxProvisionExecutor,
-		...createFeedbackExecutors(options),
+		createFeedbackRetentionExecutor(options),
 		createKnowledgePublicationExecutor(options),
 		createKnowledgePackExecutor(options),
 		createKnowledgePackCleanupExecutor(options),

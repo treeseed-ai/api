@@ -100,11 +100,12 @@ export function createOperationHttpHandler(
 			const output = operation.binding.schema.output.parse(await operation.handler(input, {
 				interface: 'rest',
 				requestId,
+				requestUrl: context.req.url,
 				traceparent: context.req.header('traceparent'),
 				idempotencyKey,
 				ifMatch: context.req.header(descriptor.concurrency.writeHeader)?.replace(/^"|"$/gu, ''),
 				rawBody: parsed.rawBody,
-				requestHeaders: Object.fromEntries(['content-type', 'content-length', 'x-hub-signature-256',
+				requestHeaders: Object.fromEntries(['content-type', 'content-length', 'referer', 'x-treeseed-feedback-path', 'x-hub-signature-256',
 					'x-github-delivery', 'x-github-event', 'authorization', 'x-treeseed-provider-proof',
 					'x-treeseed-assignment-id', 'x-treeseed-treedx-proxy-handle-id', 'x-treeseed-treedx-proxy-handle',
 					'cf-connecting-ip', 'x-forwarded-for'].map((name) => [name, context.req.header(name) ?? ''])),

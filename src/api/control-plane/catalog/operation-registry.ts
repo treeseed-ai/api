@@ -12,6 +12,7 @@ import { validateControlPlaneCatalog } from '@treeseed/sdk/operator-contracts';
 export interface OperationInvocationContext {
 	interface: 'rest' | 'cli' | 'mcp' | 'internal';
 	requestId: string;
+	requestUrl?: string;
 	traceparent?: string;
 	idempotencyKey?: string;
 	ifMatch?: string;

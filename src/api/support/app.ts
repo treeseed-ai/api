@@ -32,6 +32,7 @@ import { createProviderWorkflowService } from '../control-plane/repositories/pro
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
 import { createSeedOperationService } from '../control-plane/seeds/seed-operation-service.ts';
+import { createFeedbackOperationService } from '../control-plane/feedback/feedback-operation-service.ts';
 import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
@@ -218,6 +219,7 @@ export function createPlatformApiApp(options: any = {}) {
 			treeDxProxy,
 			realtime: createRealtimeOperationService(store, sessionEvents),
 			seeds: createSeedOperationService(store, config),
+			feedback: createFeedbackOperationService(store, options),
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),

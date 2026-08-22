@@ -27,7 +27,6 @@ export function feedbackWhere(filters: FeedbackCollectionFilters) {
 	if (filters.type) { conditions.push('f.type = ?'); values.push(filters.type); }
 	if (filters.teamId) { conditions.push('f.team_id = ?'); values.push(filters.teamId); }
 	if (filters.hasScreenshot !== undefined) conditions.push(filters.hasScreenshot ? 'EXISTS (SELECT 1 FROM feedback_attachments a WHERE a.feedback_id = f.id AND a.expired_at IS NULL)' : 'NOT EXISTS (SELECT 1 FROM feedback_attachments a WHERE a.feedback_id = f.id AND a.expired_at IS NULL)');
-	if (filters.exported !== undefined) conditions.push(filters.exported ? 'EXISTS (SELECT 1 FROM feedback_export_items ei WHERE ei.feedback_id = f.id)' : 'NOT EXISTS (SELECT 1 FROM feedback_export_items ei WHERE ei.feedback_id = f.id)');
 	if (filters.from) { conditions.push('f.created_at >= ?'); values.push(filters.from); }
 	if (filters.to) { conditions.push('f.created_at <= ?'); values.push(filters.to); }
 	if (filters.cursor) { conditions.push('f.created_at < ?'); values.push(filters.cursor); }
@@ -51,11 +50,8 @@ export async function listFeedback(store: any, filters: FeedbackCollectionFilter
 		LEFT JOIN users u ON u.id = f.submitter_user_id
 		${clause} ORDER BY f.created_at DESC LIMIT ?`, [...values, limit + 1]);
 	const enriched = await Promise.all(rows.map(async (row: any) => {
-		const [attachment, exportItem] = await Promise.all([
-			store.first('SELECT id FROM feedback_attachments WHERE feedback_id = ? AND expired_at IS NULL LIMIT 1', [row.id]),
-			store.first('SELECT feedback_id FROM feedback_export_items WHERE feedback_id = ? LIMIT 1', [row.id]),
-		]);
-		return { ...row, has_screenshot: Boolean(attachment), exported: Boolean(exportItem) };
+		const attachment = await store.first('SELECT id FROM feedback_attachments WHERE feedback_id = ? AND expired_at IS NULL LIMIT 1', [row.id]);
+		return { ...row, has_screenshot: Boolean(attachment) };
 	}));
 	const counts = await store.all('SELECT status, COUNT(*) AS count FROM feedback_submissions GROUP BY status');
 	const teams = await store.all(`SELECT DISTINCT t.id, t.slug, COALESCE(t.display_name, t.name, t.slug) AS label FROM teams t JOIN feedback_submissions f ON f.team_id = t.id ORDER BY label ASC LIMIT 500`);
@@ -65,12 +61,11 @@ export async function listFeedback(store: any, filters: FeedbackCollectionFilter
 export async function feedbackDetail(store: any, id: string) {
 	const feedback = await store.first('SELECT * FROM feedback_submissions WHERE id = ?', [id]);
 	if (!feedback) return null;
-	const [attachments, history, exportItem] = await Promise.all([
+	const [attachments, history] = await Promise.all([
 		store.all('SELECT * FROM feedback_attachments WHERE feedback_id = ? ORDER BY created_at ASC', [id]),
 		store.all(`SELECT e.*, COALESCE(u.display_name, u.username, e.actor_user_id) AS actor_label FROM feedback_status_events e LEFT JOIN users u ON u.id = e.actor_user_id WHERE e.feedback_id = ? ORDER BY e.created_at ASC`, [id]),
-		store.first('SELECT feedback_id FROM feedback_export_items WHERE feedback_id = ? LIMIT 1', [id]),
 	]);
-	return { feedback: { ...feedback, has_screenshot: attachments.some((item: any) => !item.expired_at), exported: Boolean(exportItem) }, attachments, history };
+	return { feedback: { ...feedback, has_screenshot: attachments.some((item: any) => !item.expired_at) }, attachments, history };
 }
 
 export async function changeFeedbackStatus(store: any, input: { id: string; actorId: string; status: FeedbackStatus; note?: string; version: number }) {
