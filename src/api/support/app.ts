@@ -14,6 +14,8 @@ import { createKnowledgeReviewService } from '../control-plane/knowledge/knowled
 import { createDiscussionService } from '../discussions/discussion-service.ts';
 import { createGovernanceService } from '../control-plane/governance/governance-service.ts';
 import { createProjectRepositoryService } from '../control-plane/repositories/project-repository-service.ts';
+import { createWorkflowService } from '../control-plane/repositories/workflow-service.ts';
+import { createWorkflowConfigurationService } from '../control-plane/repositories/workflow-configuration-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -189,6 +191,8 @@ export function createPlatformApiApp(options: any = {}) {
 			discussions: createDiscussionService({ store, capacity, sessionEvents }),
 			governance: createGovernanceService(store),
 			repositories: createProjectRepositoryService(store),
+			workflows: createWorkflowService(store),
+			workflowConfiguration: createWorkflowConfigurationService(store),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

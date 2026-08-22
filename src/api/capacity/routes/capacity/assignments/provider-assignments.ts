@@ -4,7 +4,7 @@ import { CapacityGovernanceError } from '../../../database.ts';
 import { readCapacityRequestObject } from '../../support/request-json.ts';
 import { requireProviderPrincipal,type CapacityProviderAccessPrincipal } from '../providers/provider-auth.ts';
 import { observeWorkflowRun, queueRun, serializeWorkflowOperation,
-	serializeWorkflowOperationRun } from '../../../../routes/projects/operations/workflow-operations.ts';
+	serializeWorkflowOperationRun } from '../../../../control-plane/repositories/workflow-service.ts';
 import { modeRunActivityEvent } from '../../../services/capacity/workdays/content/mode-run-activity-event.ts';
 import { redactTranscriptValue } from '../../support/workday-activity.ts';
 import { filterWorkdayActivity } from '../../support/workday-activity.ts';
