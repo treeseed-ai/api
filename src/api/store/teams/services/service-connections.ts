@@ -193,9 +193,6 @@ export async function disconnectTeamServiceConnectionMethod(this: ControlPlaneSt
 	const existing = await this.getTeamServiceConnection(teamId, connectionId);
 	if (!existing) return { ok: false, error: 'not_found' };
 	await this.batch([
-		{ query: `DELETE FROM secret_operation_leases WHERE team_id = ? AND connection_id = ?`, params: [teamId, connectionId] },
-		{ query: `DELETE FROM external_vault_bindings WHERE team_id = ? AND connection_id = ?`, params: [teamId, connectionId] },
-		{ query: `DELETE FROM credential_envelopes WHERE team_id = ? AND connection_id = ?`, params: [teamId, connectionId] },
 		{ query: `DELETE FROM team_service_credential_profiles WHERE team_id = ? AND connection_id = ?`, params: [teamId, connectionId] },
 		{ query: `DELETE FROM team_service_capability_bindings WHERE team_id = ? AND connection_id = ?`, params: [teamId, connectionId] },
 		{ query: `DELETE FROM team_service_connections WHERE team_id = ? AND id = ?`, params: [teamId, connectionId] },

@@ -8,8 +8,6 @@ import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/pr
 import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resource-resolution.ts";
 import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
 import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
-import { installTeamServicesRoutes } from "../routes/teams/team-services.ts";
-import { installTeamServiceAuthorityRoutes } from "../routes/teams/team-service-authorities.ts";
 import { installTeamsStorageAndContentPreviewsRoutes } from "../routes/teams/teams-storage-and-content-previews.ts";
 import { installTreedxCredentialsMirrorsAndSharesRoutes } from "../routes/treedx/repositories/treedx-credentials-mirrors-and-shares.ts";
 import { installTreedxInternalTreedxPublicFederationStatusRoutes } from "../routes/treedx/repositories/treedx-internal-treedx-public-federation-status.ts";
@@ -27,8 +25,6 @@ export function installPlatformRoutes(context: any): void {
   installTreedxTeamServiceAndPublicFederationRoutes(context);
   installTreedxInternalTreedxPublicFederationStatusRoutes(context);
   installTreedxCredentialsMirrorsAndSharesRoutes(context);
-  installTeamServicesRoutes(context);
-  installTeamServiceAuthorityRoutes(context);
   installProjectsSettingsAndSummariesRoutes(context);
   installOperationsProjectJobsRoutes(context);
   installTeamsStorageAndContentPreviewsRoutes(context);

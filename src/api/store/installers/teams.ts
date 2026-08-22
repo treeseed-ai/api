@@ -41,20 +41,6 @@ import { deleteTeamInboxItemsByItemKeyMethod } from '../teams/retirement/delete-
 import { removeTeamMemberMethod } from '../teams/retirement/remove-team-member.ts';
 import { revokeTeamInviteMethod } from '../teams/retirement/revoke-team-invite.ts';
 import {
-createExternalVaultBindingMethod,
-listExternalVaultBindingsMethod,
-removeExternalVaultBindingMethod,
-} from '../teams/services/external-vault-bindings.ts';
-import {
-cancelSecretOperationLeaseMethod,
-consumeSecretOperationLeaseMethod,
-createSecretOperationLeaseMethod,
-getSecretOperationLeaseMethod,
-listAwaitingSecretOperationLeasesMethod,
-registerSecretOperationLeaseKeyMethod,
-submitSecretOperationPayloadMethod,
-} from '../teams/services/secret-operation-leases.ts';
-import {
 createTeamServiceConnectionMethod,
 disconnectTeamServiceConnectionMethod,
 getTeamServiceConnectionMethod,
@@ -62,20 +48,7 @@ listTeamServiceConnectionsMethod,
 updateTeamServiceConnectionMethod,
 upsertTeamServiceCapabilityMethod,
 } from '../teams/services/service-connections.ts';
-import { principalCanManageServicesMethod,principalCanManageServiceVaultMethod } from '../teams/services/service-permissions.ts';
-import {
-createTeamVaultGrantMethod,
-getTeamVaultSummaryMethod,
-getUserVaultKeyMethod,
-initializeTeamVaultMethod,
-listServiceCredentialEnvelopesMethod,
-listTeamCredentialEnvelopesMethod,
-resetTeamVaultMethod,
-revokeTeamVaultGrantMethod,
-rotateTeamVaultMethod,
-upsertServiceCredentialEnvelopeMethod,
-upsertUserVaultKeyMethod,
-} from '../teams/services/service-vaults.ts';
+import { principalCanManageServicesMethod } from '../teams/services/service-permissions.ts';
 import { bindRoleToMembershipMethod } from '../teams/updates/bind-role-to-membership.ts';
 import { replaceMembershipRoleMethod } from '../teams/updates/replace-membership-role.ts';
 import { updateTeamMemberRoleMethod } from '../teams/updates/update-team-member-role.ts';
@@ -97,7 +70,6 @@ export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.principalCanAccessTeam = principalCanAccessTeamMethod;
 	prototype.principalCanManageTeam = principalCanManageTeamMethod;
 	prototype.principalCanManageServices = principalCanManageServicesMethod;
-	prototype.principalCanManageServiceVault = principalCanManageServiceVaultMethod;
 	prototype.authenticateTeamApiKey = authenticateTeamApiKeyMethod;
 	prototype.createTeam = createTeamMethod;
 	prototype.getTeam = getTeamMethod;
@@ -141,25 +113,4 @@ export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.updateTeamServiceConnection = updateTeamServiceConnectionMethod;
 	prototype.upsertTeamServiceCapability = upsertTeamServiceCapabilityMethod;
 	prototype.disconnectTeamServiceConnection = disconnectTeamServiceConnectionMethod;
-	prototype.getUserVaultKey = getUserVaultKeyMethod;
-	prototype.upsertUserVaultKey = upsertUserVaultKeyMethod;
-	prototype.getTeamVaultSummary = getTeamVaultSummaryMethod;
-	prototype.initializeTeamVault = initializeTeamVaultMethod;
-	prototype.createTeamVaultGrant = createTeamVaultGrantMethod;
-	prototype.revokeTeamVaultGrant = revokeTeamVaultGrantMethod;
-	prototype.resetTeamVault = resetTeamVaultMethod;
-	prototype.upsertServiceCredentialEnvelope = upsertServiceCredentialEnvelopeMethod;
-	prototype.listServiceCredentialEnvelopes = listServiceCredentialEnvelopesMethod;
-	prototype.listTeamCredentialEnvelopes = listTeamCredentialEnvelopesMethod;
-	prototype.rotateTeamVault = rotateTeamVaultMethod;
-	prototype.createSecretOperationLease = createSecretOperationLeaseMethod;
-	prototype.listAwaitingSecretOperationLeases = listAwaitingSecretOperationLeasesMethod;
-	prototype.registerSecretOperationLeaseKey = registerSecretOperationLeaseKeyMethod;
-	prototype.getSecretOperationLease = getSecretOperationLeaseMethod;
-	prototype.submitSecretOperationPayload = submitSecretOperationPayloadMethod;
-	prototype.consumeSecretOperationLease = consumeSecretOperationLeaseMethod;
-	prototype.cancelSecretOperationLease = cancelSecretOperationLeaseMethod;
-	prototype.listExternalVaultBindings = listExternalVaultBindingsMethod;
-	prototype.createExternalVaultBinding = createExternalVaultBindingMethod;
-	prototype.removeExternalVaultBinding = removeExternalVaultBindingMethod;
 }

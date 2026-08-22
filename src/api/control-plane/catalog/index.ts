@@ -6,13 +6,14 @@ import { createGovernanceOperations, type GovernanceOperationDependencies } from
 import { createKnowledgeOperations, type KnowledgeOperationDependencies } from './knowledge-operations.ts';
 import { createProjectAccessOperation, createProjectArchiveOperation, createProjectCreateOperation, createProjectDeleteOperation, createProjectDeletionBlockersOperation, createProjectRestoreOperation, createProjectShowOperation, createProjectSummaryOperation, createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
 import { createRepositoryOperations, type RepositoryOperationDependencies } from './repositories/index.ts';
+import { createServiceOperations, type ServiceOperationDependencies } from './services/index.ts';
 import { createTeamAccessOperation, createTeamArchiveOperation, createTeamCreateOperation, createTeamDeletionReadinessOperation, createTeamInviteAcceptOperation, createTeamInviteOperation, createTeamInvitesOperation, createTeamInviteShowOperation, createTeamLeaveOperation, createTeamMembersOperation, createTeamMemberRemoveOperation, createTeamMemberUpdateOperation, createTeamOwnershipTransferOperation, createTeamProfileOperation, createTeamRestoreOperation, createTeamsListOperation, createTeamUpdateOperation, type TeamOperationDependencies } from './team-operations.ts';
 
 export * from './operation-registry.ts';
 
 export const controlPlaneOperations = new OperationRegistry([statusOperation]);
 
-export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & RepositoryOperationDependencies) {
+export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies) {
 	return new OperationRegistry([
 		statusOperation,
 		createReadinessOperation(dependencies),
@@ -29,6 +30,7 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		...createDiscussionOperations(dependencies),
 		...createGovernanceOperations(dependencies),
 		...createRepositoryOperations(dependencies),
+		...createServiceOperations(dependencies),
 		createAccountIdentityOperation(dependencies),
 		createAccountEmailsOperation(dependencies),
 		createAccountEmailAddOperation(dependencies),

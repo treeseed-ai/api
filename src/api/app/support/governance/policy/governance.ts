@@ -28,11 +28,6 @@ export async function requireTeamAccess(c, store, teamId, permission = null) {
             response: jsonError(c, 403, 'Permission denied.', { permission }),
         };
     }
-    if (permission === 'vault:manage:team' && !isTeamApiPrincipal(principal) && !(await store.principalCanManageServiceVault(principal, teamId))) {
-        return {
-            response: jsonError(c, 403, 'Permission denied.', { permission }),
-        };
-    }
     if (permission?.startsWith?.('knowledge:') && !isTeamApiPrincipal(principal)) {
         const access = await store.getTeamAccessSummary(teamId, principal);
         if (!access.permissions.includes(permission)) {

@@ -18,6 +18,7 @@ import { createWorkflowService } from '../control-plane/repositories/workflow-se
 import { createWorkflowConfigurationService } from '../control-plane/repositories/workflow-configuration-service.ts';
 import { createGitHubConnectorService } from '../control-plane/repositories/github-connector-service.ts';
 import { createGitHubWebhookService } from '../control-plane/repositories/github-webhook-service.ts';
+import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -184,6 +185,7 @@ export function createPlatformApiApp(options: any = {}) {
 		createApiControlPlaneOperations({ store, capacity,
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
+			services: createServiceConnectionService(store),
 			deliverTeamInvite: (input) => routeDependencies.sendTeamInviteEmail(invitationContext, input),
 			listUserEmailAddresses: (userId) => routeDependencies.listUserEmailAddresses(store, userId),
 			accountEmails: createAccountEmailService(store, invitationContext),

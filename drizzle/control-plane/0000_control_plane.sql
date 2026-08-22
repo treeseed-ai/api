@@ -433,55 +433,6 @@ CREATE TABLE "user_notifications" (
 	"created_at" text NOT NULL
 );
 
-CREATE TABLE "credential_envelopes" (
-	"id" text PRIMARY KEY NOT NULL,
-	"team_id" text NOT NULL,
-	"connection_id" text NOT NULL,
-	"credential_profile_id" text NOT NULL,
-	"field_key" text NOT NULL,
-	"envelope_json" text NOT NULL,
-	"fingerprint" text NOT NULL,
-	"key_version" integer NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"created_at" text NOT NULL,
-	"updated_at" text NOT NULL
-);
-
-CREATE TABLE "external_vault_bindings" (
-	"id" text PRIMARY KEY NOT NULL,
-	"team_id" text NOT NULL,
-	"connection_id" text NOT NULL,
-	"provider" text NOT NULL,
-	"reference_json" text NOT NULL,
-	"auth_mode" text NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"last_validated_at" text,
-	"created_at" text NOT NULL,
-	"updated_at" text NOT NULL
-);
-
-CREATE TABLE "secret_operation_leases" (
-	"id" text PRIMARY KEY NOT NULL,
-	"team_id" text NOT NULL,
-	"connection_id" text NOT NULL,
-	"capability_type" text NOT NULL,
-	"purpose" text NOT NULL,
-	"resource_scope_json" text DEFAULT '{}' NOT NULL,
-	"credential_profile_id" text NOT NULL,
-	"actor_user_id" text NOT NULL,
-	"required_fields_json" text NOT NULL,
-	"public_key" text NOT NULL,
-	"sealed_payload" text,
-	"status" text DEFAULT 'pending' NOT NULL,
-	"operation_correlation_id" text NOT NULL,
-	"idempotency_key" text NOT NULL,
-	"expires_at" text NOT NULL,
-	"consumed_at" text,
-	"cancelled_at" text,
-	"created_at" text NOT NULL,
-	"updated_at" text NOT NULL
-);
-
 CREATE TABLE "team_service_capability_bindings" (
 	"id" text PRIMARY KEY NOT NULL,
 	"team_id" text NOT NULL,
@@ -520,43 +471,6 @@ CREATE TABLE "team_service_credential_profiles" (
 	"fingerprint" text,
 	"last_rotated_at" text,
 	"last_validated_at" text,
-	"created_at" text NOT NULL,
-	"updated_at" text NOT NULL
-);
-
-CREATE TABLE "team_vault_grants" (
-	"id" text PRIMARY KEY NOT NULL,
-	"team_id" text NOT NULL,
-	"user_id" text NOT NULL,
-	"user_vault_key_id" text NOT NULL,
-	"key_version" integer NOT NULL,
-	"wrapped_team_vault_key" text NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"granted_by_user_id" text NOT NULL,
-	"revoked_by_user_id" text,
-	"revoked_at" text,
-	"created_at" text NOT NULL,
-	"updated_at" text NOT NULL
-);
-
-CREATE TABLE "team_vaults" (
-	"team_id" text PRIMARY KEY NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"encryption_version" text NOT NULL,
-	"active_key_version" integer DEFAULT 1 NOT NULL,
-	"recovery_mode" text DEFAULT 'administrator-regrant' NOT NULL,
-	"created_by_user_id" text NOT NULL,
-	"created_at" text NOT NULL,
-	"updated_at" text NOT NULL
-);
-
-CREATE TABLE "user_vault_keys" (
-	"id" text PRIMARY KEY NOT NULL,
-	"user_id" text NOT NULL,
-	"public_key" text NOT NULL,
-	"encrypted_private_key_envelope_json" text NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"version" integer DEFAULT 1 NOT NULL,
 	"created_at" text NOT NULL,
 	"updated_at" text NOT NULL
 );
@@ -3048,16 +2962,6 @@ CREATE UNIQUE INDEX "idx_user_notifications_event" ON "user_notifications" USING
 
 CREATE INDEX "idx_user_notifications_user" ON "user_notifications" USING btree ("user_id","read_at","created_at");
 
-CREATE INDEX "idx_credential_envelopes_connection_status" ON "credential_envelopes" USING btree ("connection_id","status");
-
-CREATE UNIQUE INDEX "idx_credential_envelopes_profile_field" ON "credential_envelopes" USING btree ("credential_profile_id","field_key","key_version");
-
-CREATE INDEX "idx_external_vault_bindings_team_status" ON "external_vault_bindings" USING btree ("team_id","status");
-
-CREATE INDEX "idx_secret_operation_leases_team_status" ON "secret_operation_leases" USING btree ("team_id","status","expires_at");
-
-CREATE UNIQUE INDEX "idx_secret_operation_leases_idempotency" ON "secret_operation_leases" USING btree ("team_id","idempotency_key");
-
 CREATE INDEX "idx_team_service_capabilities_team_type" ON "team_service_capability_bindings" USING btree ("team_id","capability_type","status");
 
 CREATE UNIQUE INDEX "idx_team_service_capabilities_connection_type" ON "team_service_capability_bindings" USING btree ("connection_id","capability_type");
@@ -3069,14 +2973,6 @@ CREATE UNIQUE INDEX "idx_team_service_connections_team_provider_name" ON "team_s
 CREATE INDEX "idx_team_service_credentials_connection" ON "team_service_credential_profiles" USING btree ("connection_id","status");
 
 CREATE UNIQUE INDEX "idx_team_service_credentials_connection_definition" ON "team_service_credential_profiles" USING btree ("connection_id","definition_id");
-
-CREATE INDEX "idx_team_vault_grants_team_status" ON "team_vault_grants" USING btree ("team_id","status");
-
-CREATE UNIQUE INDEX "idx_team_vault_grants_team_user_key" ON "team_vault_grants" USING btree ("team_id","user_id","key_version");
-
-CREATE INDEX "idx_user_vault_keys_user_status" ON "user_vault_keys" USING btree ("user_id","status");
-
-CREATE UNIQUE INDEX "idx_user_vault_keys_user_version" ON "user_vault_keys" USING btree ("user_id","version");
 
 CREATE INDEX "idx_agent_fallback_outputs_project_created" ON "agent_fallback_outputs" USING btree ("project_id","created_at");
 
