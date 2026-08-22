@@ -1,7 +1,6 @@
 import type { Hono } from 'hono';
 import { CapacityGovernanceError } from '../database.ts';
 import { installProviderAssignmentRoutes } from './capacity/assignments/provider-assignments.ts';
-import { installCapacityPlanRoutes } from './capacity/planning/capacity-plans.ts';
 import { installCapacityWorkdayRoutes } from './capacity/workdays/workdays.ts';
 import { installCapacityGovernanceRoutes } from './governance/policy/governance.ts';
 import { installResearchWorkflowRoutes } from './operations/research-workflows.ts';
@@ -43,7 +42,6 @@ export function installCapacityRoutes(app: Hono, options: Parameters<typeof inst
 	installCapacityOperatorRoutes(app, options);
 	installProjectAgentOperatorRoutes(app, options);
 	installCapacityWorkdayRoutes(app, options);
-	installCapacityPlanRoutes(app, options);
 	installPlanningStateRoutes(app, options);
 	installStructuredEstimateRoutes(app, options);
 	installDecisionWorkGraphRoutes(app, options);
