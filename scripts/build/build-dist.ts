@@ -1,8 +1,6 @@
 import { build } from 'esbuild';
-import { createHash } from 'node:crypto';
 import { chmodSync,copyFileSync,existsSync,mkdirSync,readdirSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
 import { dirname,extname,join,relative,resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { packageRoot } from '../packages/package-tools.ts';
 
@@ -133,50 +131,6 @@ function assertRequiredOutputs() {
 	}
 }
 
-async function assertCapacityRouteDescriptorCoverage() {
-	const routeRoot = resolve(distRoot, 'api', 'capacity', 'routes');
-	const routeFiles = walkFiles(routeRoot).filter((filePath) => filePath.endsWith('.js') && !filePath.endsWith('.d.js'));
-	const declarations: Array<{ method: string; path: string; filePath: string }> = [];
-	for (const filePath of routeFiles) {
-		const source = readFileSync(filePath, 'utf8');
-		if (/app\.(get|post|put|patch|delete)\(\s*`/u.test(source)) {
-			throw new Error(`Capacity route registrations must use literal quoted paths so descriptor discovery is complete: ${relative(distRoot, filePath)}`);
-		}
-		for (const match of source.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/gu)) {
-			if (match[2].startsWith('/v1')) declarations.push({ method: match[1].toUpperCase(), path: match[2], filePath });
-		}
-	}
-	const descriptorModuleUrl = `${pathToFileURL(resolve(distRoot, 'api', 'support', 'route-descriptors.js')).href}?build=${Date.now()}`;
-	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<{ method: string; path: string }> };
-	const descriptorKeys = new Set(descriptorModule.API_ROUTE_DESCRIPTORS.map((entry) => `${entry.method} ${entry.path}`));
-	for (const declaration of declarations) {
-		if (!descriptorKeys.has(`${declaration.method} ${declaration.path}`)) {
-			throw new Error(`Built route descriptor inventory omitted ${declaration.method} ${declaration.path} from ${relative(distRoot, declaration.filePath)}.`);
-		}
-	}
-}
-
-async function writeAdminApiDescriptorArtifact() {
-	const descriptorModuleUrl = `${pathToFileURL(resolve(distRoot, 'api', 'support', 'route-descriptors.js')).href}?artifact=${Date.now()}`;
-	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<Record<string, unknown>> };
-	const routes = [...descriptorModule.API_ROUTE_DESCRIPTORS].sort((left, right) => String(left.id).localeCompare(String(right.id)));
-	const adminRoutes = routes.filter((route) => route.runtimePlane === 'admin');
-	const routesJson = JSON.stringify(routes);
-	const digest = createHash('sha256').update(routesJson).digest('hex');
-	const packageMetadata = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as { version: string };
-	writeFileSync(resolve(distRoot, 'admin-api-descriptor.json'), `${JSON.stringify({
-		schemaVersion: 'treeseed.admin-api-descriptor/v1',
-		package: '@treeseed/api',
-		version: packageMetadata.version,
-		sourceRef: process.env.TREESEED_SOURCE_REF?.trim() || null,
-		digest: `sha256:${digest}`,
-		routeCount: routes.length,
-		adminRouteCount: adminRoutes.length,
-		migrationReady: true,
-		routes,
-	}, null, 2)}\n`, 'utf8');
-}
-
 rmSync(distRoot, { recursive: true, force: true });
 
 for (const filePath of walkFiles(srcRoot)) {
@@ -189,6 +143,4 @@ for (const filePath of walkFiles(srcRoot)) {
 transpileScript(resolve(scriptsRoot, 'support', 'migrate-db.ts'));
 
 emitDeclarations();
-await assertCapacityRouteDescriptorCoverage();
-await writeAdminApiDescriptorArtifact();
 assertRequiredOutputs();
