@@ -1,24 +1,26 @@
 import { createHash } from 'node:crypto';
-import { z } from 'zod';
 import type { BoundOperation, OperationRegistry } from '../catalog/operation-registry.ts';
+import { sdkSchemaJson } from '../catalog/sdk-standard-schema.ts';
 
 function jsonSchema(operation: BoundOperation, direction: 'input' | 'output') {
-	return z.toJSONSchema(direction === 'input' ? operation.inputSchema : operation.outputSchema, { target: 'draft-2020-12' });
+	const schema = direction === 'output' ? operation.binding.schema.output : operation.binding.schema.body;
+	return sdkSchemaJson(schema);
 }
 
 export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http://127.0.0.1:3002') {
 	const paths: Record<string, Record<string, unknown>> = {};
 	for (const operation of registry.operations.values()) {
-		if (!operation.descriptor.rest) continue;
-		const rest = operation.descriptor.rest;
-		const path = rest.path.replace(/:([A-Za-z][A-Za-z0-9]*)/gu, '{$1}');
+		const descriptor = operation.binding.descriptor;
+		if (!descriptor.rest) continue;
+		const rest = descriptor.rest;
+		const path = rest.path;
 		paths[path] ??= {};
 		paths[path]![rest.method.toLowerCase()] = {
-			operationId: operation.descriptor.operationId,
-			description: operation.descriptor.description,
-			tags: [operation.descriptor.operationId.split('.')[0]],
-			security: operation.descriptor.oauthScopes.length > 0 ? [{ oauth: operation.descriptor.oauthScopes }] : [],
-			...(operation.descriptor.kind === 'mutation' ? { requestBody: { required: true, content: { 'application/json': { schema: jsonSchema(operation, 'input') } } } } : {}),
+			operationId: descriptor.operationId,
+			description: descriptor.description,
+			tags: [descriptor.operationId.split('.')[0]],
+			security: descriptor.oauthScopes.length > 0 ? [{ oauth: descriptor.oauthScopes }] : [],
+			...(descriptor.kind === 'mutation' ? { requestBody: { required: true, content: { 'application/json': { schema: jsonSchema(operation, 'input') } } } } : {}),
 			responses: {
 				'200': { description: 'Successful operation', content: { 'application/json': { schema: { type: 'object', required: ['data'], properties: { data: jsonSchema(operation, 'output'), meta: { type: 'object' }, links: { type: 'object' } } } } } },
 				'default': { $ref: '#/components/responses/Problem' },

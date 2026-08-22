@@ -59,8 +59,9 @@ export function installControlPlaneProtocolRoutes(
 	app.route('/mcp', protocolApp);
 
 	for (const operation of registry.operations.values()) {
-		const rest = operation.descriptor.rest;
+		const rest = operation.binding.descriptor.rest;
 		if (!rest) continue;
-		app.on(rest.method, rest.path, createOperationHttpHandler(operation, bearerGate, digest));
+		const honoPath = rest.path.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/gu, ':$1');
+		app.on(rest.method, honoPath, createOperationHttpHandler(operation, bearerGate, digest));
 	}
 }

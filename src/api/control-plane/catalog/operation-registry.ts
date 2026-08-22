@@ -1,7 +1,13 @@
 import type { AuthInfo } from '@modelcontextprotocol/server';
-import type { ControlPlaneCatalog, ControlPlaneOperationDescriptor } from '@treeseed/sdk/operator-contracts';
+import type {
+	ControlPlaneCatalog,
+	ControlPlaneOperationBinding,
+	ControlPlaneOperationBody,
+	ControlPlaneOperationOutput,
+	ControlPlaneOperationPath,
+	ControlPlaneOperationQuery,
+} from '@treeseed/sdk/operator-contracts';
 import { validateControlPlaneCatalog } from '@treeseed/sdk/operator-contracts';
-import type { z } from 'zod';
 
 export interface OperationInvocationContext {
 	interface: 'rest' | 'cli' | 'mcp' | 'internal';
@@ -16,11 +22,13 @@ export interface OperationInvocationContext {
 	};
 }
 
-export interface BoundOperation<TInput = unknown, TOutput = unknown> {
-	descriptor: ControlPlaneOperationDescriptor;
-	inputSchema: z.ZodType<TInput>;
-	outputSchema: z.ZodType<TOutput>;
-	handler(input: TInput, context: OperationInvocationContext): Promise<TOutput>;
+export interface BoundOperation<TBinding extends ControlPlaneOperationBinding<any, any, any, any> = ControlPlaneOperationBinding<any, any, any, any>> {
+	binding: TBinding;
+	handler(input: {
+		path: ControlPlaneOperationPath<TBinding>;
+		query: ControlPlaneOperationQuery<TBinding>;
+		body: ControlPlaneOperationBody<TBinding>;
+	}, context: OperationInvocationContext): Promise<ControlPlaneOperationOutput<TBinding>>;
 }
 
 export class ControlPlaneOperationError extends Error {
@@ -39,10 +47,10 @@ export class OperationRegistry {
 	readonly operations: ReadonlyMap<string, BoundOperation>;
 
 	constructor(operations: readonly BoundOperation[]) {
-		this.catalog = { schemaVersion: 'treeseed.control-plane-catalog/v1', operations: operations.map((operation) => operation.descriptor) };
+		this.catalog = { schemaVersion: 'treeseed.control-plane-catalog/v1', operations: operations.map((operation) => operation.binding.descriptor) };
 		const diagnostics = validateControlPlaneCatalog(this.catalog);
 		if (diagnostics.length > 0) throw new Error(`Invalid control-plane operation catalog: ${diagnostics.map((entry) => entry.code).join(', ')}`);
-		this.operations = new Map(operations.map((operation) => [operation.descriptor.operationId, operation]));
+		this.operations = new Map(operations.map((operation) => [operation.binding.descriptor.operationId, operation]));
 		if (this.operations.size !== operations.length) throw new Error('Every bound operation must have a unique operation ID.');
 	}
 

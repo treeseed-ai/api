@@ -1,6 +1,7 @@
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { OperationRegistry } from '../catalog/operation-registry.ts';
+import { sdkOperationInputStandardSchema, sdkStandardSchema } from '../catalog/sdk-standard-schema.ts';
 import { createMcpCatalog } from './mcp-catalog.ts';
 
 export function createControlPlaneMcpHandler(registry: OperationRegistry) {
@@ -8,24 +9,24 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry) {
 	return createMcpHandler((requestContext) => {
 		const server = new McpServer({ name: 'treeseed-control-plane', version: '0.8.0-rc.1' });
 		for (const operation of registry.operations.values()) {
-			if (!operation.descriptor.surfaces.includes('mcp_tool')) continue;
-			server.registerTool(operation.descriptor.operationId, {
-				description: operation.descriptor.description,
-				inputSchema: operation.inputSchema,
-				outputSchema: operation.outputSchema,
+			const descriptor = operation.binding.descriptor;
+			if (!descriptor.surfaces.includes('mcp_tool')) continue;
+			server.registerTool(descriptor.operationId, {
+				description: descriptor.description,
+				inputSchema: sdkOperationInputStandardSchema(operation.binding),
+				outputSchema: sdkStandardSchema(operation.binding.schema.output),
 				annotations: {
-					readOnlyHint: operation.descriptor.kind === 'read',
-					destructiveHint: operation.descriptor.riskClass !== 'ordinary',
-					idempotentHint: operation.descriptor.kind === 'read' || operation.descriptor.idempotency.required,
+					readOnlyHint: descriptor.kind === 'read',
+					destructiveHint: descriptor.riskClass !== 'ordinary',
+					idempotentHint: descriptor.kind === 'read' || descriptor.idempotency.required,
 					openWorldHint: false,
 				},
 			}, async (input) => {
-				const parsed = operation.inputSchema.parse(input);
-				const output = await operation.handler(parsed, {
+				const output = await operation.handler(input as any, {
 					interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo,
 					principal: requestContext.authInfo?.extra?.principal as any,
 				});
-				const validated = operation.outputSchema.parse(output) as Record<string, unknown>;
+				const validated = operation.binding.schema.output.parse(output) as Record<string, unknown>;
 				return { content: [{ type: 'text', text: JSON.stringify(validated) }], structuredContent: validated };
 			});
 		}
@@ -34,13 +35,13 @@ export function createControlPlaneMcpHandler(registry: OperationRegistry) {
 			server.registerResource(resource.name, resource.uriTemplate, {
 				description: resource.description,
 				mimeType: resource.mimeType,
-				cacheHint: { ttlMs: (resource.cacheTtlSeconds ?? 0) * 1000, cacheScope: operation.descriptor.cacheScope === 'public' ? 'public' : 'private' },
+				cacheHint: { ttlMs: (resource.cacheTtlSeconds ?? 0) * 1000, cacheScope: operation.binding.descriptor.cacheScope === 'public' ? 'public' : 'private' },
 			}, async (uri) => {
-				const output = await operation.handler(operation.inputSchema.parse({}), {
+				const output = await operation.handler({ path: operation.binding.schema.path.parse({}), query: operation.binding.schema.query.parse({}), body: operation.binding.schema.body.parse(undefined) }, {
 					interface: 'mcp', requestId: crypto.randomUUID(), authInfo: requestContext.authInfo,
 					principal: requestContext.authInfo?.extra?.principal as any,
 				});
-				return { contents: [{ uri: uri.href, mimeType: resource.mimeType, text: JSON.stringify(operation.outputSchema.parse(output)) }] };
+				return { contents: [{ uri: uri.href, mimeType: resource.mimeType, text: JSON.stringify(operation.binding.schema.output.parse(output)) }] };
 			});
 		}
 		for (const prompt of mcpCatalog.prompts) {
