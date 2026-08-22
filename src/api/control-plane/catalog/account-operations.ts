@@ -21,6 +21,13 @@ export interface AccountOperationDependencies {
 		register(input: Record<string, unknown>): Promise<Record<string, any>>;
 		confirm(token: unknown): Promise<Record<string, any>>;
 	};
+	accountSecurity: {
+		updatePassword(user: Record<string, any>, input: Record<string, unknown>): Promise<Record<string, any>>;
+		requestPasswordReset(email: unknown): Promise<Record<string, any>>;
+		completePasswordReset(input: Record<string, unknown>): Promise<Record<string, any>>;
+		deletionBlockers(user: Record<string, any>): Promise<Record<string, any>>;
+		removeAccount(user: Record<string, any>, input: Record<string, unknown>): Promise<Record<string, any>>;
+	};
 }
 
 function serviceResult(result: Record<string, any>, fallback: string) {
@@ -37,6 +44,36 @@ export function createAccountRegisterOperation(dependencies: AccountOperationDep
 export function createAccountEmailConfirmOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.confirmEmail> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.confirmEmail, async handler(input) {
 		return serviceResult(await dependencies.accountRegistration.confirm((input.body as Record<string, unknown>).token), 'Email confirmation failed.');
+	} };
+}
+
+export function createAccountPasswordUpdateOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.updatePassword> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.updatePassword, async handler(input, context) {
+		return serviceResult(await dependencies.accountSecurity.updatePassword(principal(context), input.body as Record<string, unknown>), 'Password update failed.');
+	} };
+}
+
+export function createAccountPasswordResetRequestOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.requestPasswordReset> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.requestPasswordReset, async handler(input) {
+		return serviceResult(await dependencies.accountSecurity.requestPasswordReset((input.body as Record<string, unknown>).email), 'Password reset request failed.');
+	} };
+}
+
+export function createAccountPasswordResetCompleteOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.completePasswordReset> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.completePasswordReset, async handler(input) {
+		return serviceResult(await dependencies.accountSecurity.completePasswordReset(input.body as Record<string, unknown>), 'Password reset failed.');
+	} };
+}
+
+export function createAccountDeletionBlockersOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.deletionBlockers> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.deletionBlockers, async handler(_input, context) {
+		return dependencies.accountSecurity.deletionBlockers(principal(context));
+	} };
+}
+
+export function createAccountDeleteOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.remove> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.remove, async handler(input, context) {
+		return serviceResult(await dependencies.accountSecurity.removeAccount(principal(context), input.body as Record<string, unknown>), 'Account deletion failed.');
 	} };
 }
 

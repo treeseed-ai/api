@@ -7,6 +7,7 @@ import { installControlPlaneProtocolRoutes } from '../control-plane/http/protoco
 import { ConfirmationService } from '../control-plane/confirmation/confirmation-service.ts';
 import { createAccountEmailService } from '../control-plane/accounts/account-email-service.ts';
 import { createAccountRegistrationService } from '../control-plane/accounts/account-registration-service.ts';
+import { createAccountSecurityService } from '../control-plane/accounts/account-security-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -174,6 +175,7 @@ export function createPlatformApiApp(options: any = {}) {
 			listUserEmailAddresses: (userId) => routeDependencies.listUserEmailAddresses(store, userId),
 			accountEmails: createAccountEmailService(store, invitationContext),
 			accountRegistration: createAccountRegistrationService(store, authProvider, invitationContext),
+			accountSecurity: createAccountSecurityService(store, invitationContext),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

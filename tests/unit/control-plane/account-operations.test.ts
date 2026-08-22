@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
+import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
 	interface: 'rest' as const, requestId: 'request-1' };
@@ -30,6 +30,13 @@ function dependencies() {
 		accountRegistration: {
 			async register() { return { ok: true, confirmationRequired: true, email: 'adrian@example.test', expiresInSeconds: 3600 }; },
 			async confirm() { return { ok: true, confirmed: true }; },
+		},
+		accountSecurity: {
+			async updatePassword() { return { ok: true, changed: true }; },
+			async requestPasswordReset() { return { ok: true, sent: true }; },
+			async completePasswordReset() { return { ok: true, changed: true }; },
+			async deletionBlockers() { return { blockers: [], canDelete: true }; },
+			async removeAccount() { return { ok: true, deleted: true }; },
 		},
 	} as any };
 }
@@ -107,5 +114,15 @@ describe('account catalog operations', () => {
 		expect(confirmed).toEqual({ ok: true, confirmed: true });
 		expect(JSON.stringify([registered, confirmed])).not.toMatch(/accessToken|refreshToken|sessionToken/iu);
 		expect(createAccountRegisterOperation(fixture.value).binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.register);
+	});
+
+	it('routes password and account deletion through the API security service', async () => {
+		const fixture = dependencies();
+		const body = { currentPassword: 'redacted-current', password: 'redacted-new-password' };
+		expect(await createAccountPasswordUpdateOperation(fixture.value).handler({ path: {}, query: {}, body }, context)).toMatchObject({ changed: true });
+		expect(await createAccountPasswordResetRequestOperation(fixture.value).handler({ path: {}, query: {}, body: { email: 'adrian@example.test' } }, context)).toMatchObject({ sent: true });
+		expect(await createAccountPasswordResetCompleteOperation(fixture.value).handler({ path: {}, query: {}, body: { token: 'redacted', password: 'redacted-new-password' } }, context)).toMatchObject({ changed: true });
+		expect(await createAccountDeletionBlockersOperation(fixture.value).handler({ path: {}, query: {}, body: undefined }, context)).toEqual({ blockers: [], canDelete: true });
+		expect(await createAccountDeleteOperation(fixture.value).handler({ path: {}, query: {}, body: { confirmation: 'DELETE MY ACCOUNT' } }, context)).toMatchObject({ deleted: true });
 	});
 });
