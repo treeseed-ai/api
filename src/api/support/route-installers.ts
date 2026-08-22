@@ -5,7 +5,6 @@ import { installClientActionRoutes } from "../routes/realtime/client-actions.ts"
 import { installOperationsPlatformRunnersAndJobsRoutes } from "../routes/operations/operations-platform-runners-and-jobs.ts";
 import { installOperationsProjectJobsRoutes } from "../routes/projects/operations/operations-project-jobs.ts";
 import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/projects-settings-and-summaries.ts";
-import { installProjectsRepositoryTopologyRoutes } from "../routes/projects/repositories/projects-repository-topology.ts";
 import { installProjectWorkflowOperationRoutes } from "../routes/projects/operations/workflow-operations.ts";
 import { installProjectWorkflowConfigurationRoutes } from "../routes/projects/operations/workflow-configuration.ts";
 import { installGitHubConnectorRoutes } from "../routes/providers/github-connectors.ts";
@@ -34,7 +33,6 @@ export function installPlatformRoutes(context: any): void {
   installTreedxCredentialsMirrorsAndSharesRoutes(context);
   installTeamServicesRoutes(context);
   installTeamServiceAuthorityRoutes(context);
-  installProjectsRepositoryTopologyRoutes(context);
   installProjectWorkflowOperationRoutes(context);
   installProjectWorkflowConfigurationRoutes(context);
   installGitHubConnectorRoutes(context);
