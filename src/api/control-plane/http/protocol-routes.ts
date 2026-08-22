@@ -1,5 +1,5 @@
 import { createMcpHonoApp, hostHeaderValidation } from '@modelcontextprotocol/hono';
-import { OAuthError, OAuthErrorCode, requireBearerAuth } from '@modelcontextprotocol/server';
+import { OAuthError, OAuthErrorCode, requireBearerAuth, type ServerEventBus } from '@modelcontextprotocol/server';
 import type { Hono } from 'hono';
 import { controlPlaneOperations } from '../catalog/index.ts';
 import type { OperationRegistry } from '../catalog/operation-registry.ts';
@@ -21,6 +21,7 @@ export function installControlPlaneProtocolRoutes(
 	oauthProvider?: OAuthRuntimeProvider,
 	registry: OperationRegistry = controlPlaneOperations,
 	confirmations?: ConfirmationService,
+	mcpBusForPrincipal?: (principal: AuthenticatedPrincipal['principal']) => Promise<ServerEventBus | undefined>,
 ) {
 	const document = generateOpenApi(registry);
 	const digest = openApiDigest(document);
@@ -51,7 +52,11 @@ export function installControlPlaneProtocolRoutes(
 	protocolApp.post('/', async (context) => {
 		const authInfo = await bearerGate(context.req.raw);
 		if (authInfo instanceof Response) return authInfo;
-		return mcpHandler.fetch(context.req.raw, { parsedBody: context.get('parsedBody'), authInfo });
+		const principal = authInfo.extra?.principal as AuthenticatedPrincipal['principal'];
+		const requestHandler = mcpBusForPrincipal
+			? createControlPlaneMcpHandler(registry, confirmations, await mcpBusForPrincipal(principal))
+			: mcpHandler;
+		return requestHandler.fetch(context.req.raw, { parsedBody: context.get('parsedBody'), authInfo });
 	});
 
 	app.get('/openapi.json', (context) => context.json(document, 200, { 'x-treeseed-contract-digest': digest }));

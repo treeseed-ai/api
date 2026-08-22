@@ -39,6 +39,7 @@ import { createFeedbackOperationService } from '../control-plane/feedback/feedba
 import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
+import { SessionEventMcpBus } from '../control-plane/mcp/session-event-bus.ts';
 import {
 	defaultConfig,
 	installApiRequestLogger,
@@ -233,7 +234,10 @@ export function createPlatformApiApp(options: any = {}) {
 			repositories: createProjectRepositoryService(store),
 			workflows: createWorkflowService(store),
 			workflowConfiguration: createWorkflowConfigurationService(store),
-		}), confirmations);
+		}), confirmations, async (principal) => {
+			const teams = await store.listTeamsForPrincipal(principal);
+			return new SessionEventMcpBus(sessionEvents, teams.map((team) => String(team.id)).filter(Boolean));
+		});
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));
