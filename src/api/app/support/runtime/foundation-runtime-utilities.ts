@@ -1,18 +1,5 @@
-import { PERSONAL_THEME_COMPILER_VERSION } from '@treeseed/sdk/account-contracts';
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
-import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,parseJsonObject,redactedRequestTarget,safePrivateKnowledgeSlug } from '../index.ts';
-export function personalThemeFromRow(row) {
-    return {
-        id: row.id,
-        schemeId: `personal-${row.id}`,
-        name: row.name,
-        baseScheme: row.base_scheme,
-        palette: parseJsonObject(row.palette_json),
-        compilerVersion: Number(row.compiler_version ?? PERSONAL_THEME_COMPILER_VERSION),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-    };
-}
+import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,redactedRequestTarget,safePrivateKnowledgeSlug } from '../index.ts';
 export async function accountDeletionBlockers(store, principal) {
     const teams = await store.listTeamsForPrincipal(principal);
     const blockers = teams

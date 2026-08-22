@@ -1,17 +1,5 @@
-import { normalizeNotificationPreferences } from '@treeseed/sdk/account-contracts';
 import { createHash,randomUUID } from 'node:crypto';
 import { isLoopbackUrl,normalizeBaseUrl,optionalTrimmedString,requestClientIp,trimmedHeaderValue } from '../index.ts';
-export async function loadNotificationPreferences(store, userId) {
-    const settings = await store.first(`SELECT * FROM user_notification_preferences WHERE user_id = ? LIMIT 1`, [userId]);
-    const globalRows = await store.all(`SELECT content_type FROM user_notification_global_content_types WHERE user_id = ? ORDER BY content_type`, [userId]);
-    const overrideRows = await store.all(`SELECT project_id FROM user_notification_project_overrides WHERE user_id = ? ORDER BY project_id`, [userId]);
-    const typeRows = await store.all(`SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ? ORDER BY project_id, content_type`, [userId]);
-    return normalizeNotificationPreferences({
-        emailCadence: settings?.email_cadence,
-        globalContentTypes: globalRows.map((row) => row.content_type),
-        projectOverrides: overrideRows.map((row) => ({ projectId: row.project_id, contentTypes: typeRows.filter((entry) => entry.project_id === row.project_id).map((entry) => entry.content_type) })),
-    });
-}
 export function shouldExposeNonProductionAuthDiagnostics(c, runtime) {
     const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
     if (environment && !['prod', 'production'].includes(environment))

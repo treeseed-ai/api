@@ -1,4 +1,3 @@
-import { installAuthenticationAccountProfileAndNotificationsRoutes } from "../routes/accounts/authentication-account-profile-and-notifications.ts";
 import { installAuthenticationDeviceSignupAndOauthRoutes } from "../routes/accounts/authentication-device-signup-and-oauth.ts";
 import { installAuthenticationPasswordAndAccountSecurityRoutes } from "../routes/accounts/authentication-password-and-account-security.ts";
 import { installFoundationUsersByUsernameItemProfileRoutes } from "../routes/accounts/foundation-users-by-username-item-profile.ts";
@@ -54,7 +53,6 @@ export function installPlatformRoutes(context: any): void {
   installSeedRunLifecycleRoutes(context);
   installOperationsPlatformRunnersAndJobsRoutes(context);
   installAuthenticationDeviceSignupAndOauthRoutes(context);
-  installAuthenticationAccountProfileAndNotificationsRoutes(context);
   installAuthenticationPasswordAndAccountSecurityRoutes(context);
   installFoundationUsersByUsernameItemProfileRoutes(context);
   installTreedxTeamServiceAndPublicFederationRoutes(context);

@@ -1,18 +1,5 @@
-import { createHash } from 'node:crypto';
 import { verifyProviderIdToken } from '../index.ts';
-export const availabilityAttempts = new Map();
 export const providerJwksCache = new Map();
-export function availabilityRateLimit(c, kind, value) {
-    const key = `${kind}:${c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? 'local'}:${createHash('sha256').update(value).digest('hex').slice(0, 16)}`;
-    const now = Date.now();
-    const current = availabilityAttempts.get(key);
-    const source = { ...process.env, ...(c.env ?? {}) };
-    const windowMs = Math.max(1000, Number(source.TREESEED_AUTH_AVAILABILITY_WINDOW_MS ?? 60000) || 60000);
-    const limit = Math.max(1, Number(source.TREESEED_AUTH_AVAILABILITY_LIMIT ?? 10) || 10);
-    const next = !current || current.resetAt <= now ? { count: 1, resetAt: now + windowMs } : { ...current, count: current.count + 1 };
-    availabilityAttempts.set(key, next);
-    return next.count > limit ? Math.max(1, Math.ceil((next.resetAt - now) / 1000)) : 0;
-}
 export async function exchangeProviderIdentity(provider, configured, code, redirectUri, verifier, expectedNonce) {
     const body = new URLSearchParams({ code, client_id: configured.clientId, client_secret: configured.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' });
     if (verifier)
