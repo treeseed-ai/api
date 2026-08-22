@@ -1,15 +1,6 @@
 export function installProjectsSettingsAndSummariesRoutes(context: any) {
 	const { app, jsonError, markdownToPlainProjectSummary, principalHasPermission, recordPrivateKnowledgeAudit, requireProjectAccess, safePrivateKnowledgeSlug, store, validateProjectSlug } = context;
 	
-	app.get('/v1/projects/:projectId/access', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					return c.json({
-						ok: true,
-						payload: await store.getProjectAccessSummary(c.req.param('projectId'), access.principal),
-					});
-				});
-
 	app.put('/v1/projects/:projectId', async (c) => {
 					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:manage:team');
 					if (access.response) return access.response;
@@ -118,15 +109,6 @@ export function installProjectsSettingsAndSummariesRoutes(context: any) {
 							},
 							slug: safePrivateKnowledgeSlug(body.slug),
 						},
-					});
-				});
-	
-	app.get('/v1/projects/:projectId/summary', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					return c.json({
-						ok: true,
-						payload: await store.getProjectSummary(c.req.param('projectId'), access.principal),
 					});
 				});
 	

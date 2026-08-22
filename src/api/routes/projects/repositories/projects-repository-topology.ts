@@ -45,12 +45,6 @@ async function verifiedTopology(store: any, project: any, input: unknown) {
 
 export function installProjectsRepositoryTopologyRoutes(context: any) {
 	const { app, jsonError, requireProjectAccess, store } = context;
-	app.get('/v1/projects/:projectId', async (c: any) => {
-		const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-		if (access.response) return access.response;
-		return c.json({ ok: true, payload: access.details });
-	});
-
 	app.get('/v1/projects/:projectId/repository-topology', async (c: any) => {
 		const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
 		if (access.response) return access.response;

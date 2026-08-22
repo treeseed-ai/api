@@ -1,7 +1,7 @@
 import { OperationRegistry } from './operation-registry.ts';
 import { createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
 import { createDeepHealthOperation, createReadinessOperation, statusOperation, type DeepHealthDependencies } from './core-operations.ts';
-import { createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
+import { createProjectAccessOperation, createProjectShowOperation, createProjectSummaryOperation, createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
 import { createTeamProfileOperation, createTeamsListOperation, type TeamOperationDependencies } from './team-operations.ts';
 
 export * from './operation-registry.ts';
@@ -17,5 +17,8 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		createTeamsListOperation(dependencies),
 		createTeamProfileOperation(dependencies),
 		createProjectsListOperation(dependencies),
+		createProjectShowOperation(dependencies),
+		createProjectAccessOperation(dependencies),
+		createProjectSummaryOperation(dependencies),
 	]);
 }

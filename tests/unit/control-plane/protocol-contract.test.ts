@@ -34,6 +34,9 @@ describe('control-plane protocol contract', () => {
 		async listTeamsForPrincipal() { return []; },
 		async loadTeamProfileByName() { return null; },
 		async principalCanAccessTeam() { return true; },
+		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a' }, repositories: [] }; },
+		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
+		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
 		...overrides,
 	});
 
@@ -173,6 +176,19 @@ describe('control-plane protocol contract', () => {
 		const denied = await deniedApp.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer test-token' } });
 		expect(denied.status).toBe(403);
 		expect(await denied.json()).toMatchObject({ code: 'team_access_denied' });
+	});
+
+	it('serves project identity, access, and summary through SDK-owned bindings', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations({ store: operationStore() });
+		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
+		const headers = { authorization: 'Bearer test-token' };
+		expect(await (await app.request('/v1/projects/project-a', { headers })).json()).toMatchObject({ data: { project: { id: 'project-a' } } });
+		expect(await (await app.request('/v1/projects/project-a/access', { headers })).json()).toEqual({ data: { projectId: 'project-a', access: 'member' } });
+		expect(await (await app.request('/v1/projects/project-a/summary', { headers })).json()).toEqual({ data: { projectId: 'project-a', status: 'active' } });
+		expect(registry.require('projects.show').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.show);
+		expect(registry.require('projects.access.show').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.access);
+		expect(registry.require('projects.summary.show').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.summary);
 	});
 
 	it('publishes truthful OAuth resource metadata and RFC 8628 device exchange', async () => {
