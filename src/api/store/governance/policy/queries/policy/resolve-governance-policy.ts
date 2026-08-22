@@ -5,5 +5,5 @@ export async function resolveGovernancePolicyMethod(this: ControlPlaneStore, inp
         if (projectPolicy)
             return projectPolicy;
     }
-    return this.getTeamGovernancePolicy(input.teamId, input.scope === 'commons' ? 'commons' : 'team');
+    return this.getTeamGovernancePolicy(input.teamId, 'team');
 }

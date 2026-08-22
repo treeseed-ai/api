@@ -7,7 +7,7 @@ export async function snapshotGovernanceElectorateMethod(this: ControlPlaneStore
     if (!proposal)
         return null;
     const provider = governanceVotingProvider(proposal.governanceProviderId);
-    const policy = proposal.projectId ? await this.getProjectGovernancePolicy(proposal.projectId) : await this.getTeamGovernancePolicy(proposal.teamId, proposal.scope === 'commons' ? 'commons' : 'team');
+    const policy = proposal.projectId ? await this.getProjectGovernancePolicy(proposal.projectId) : await this.getTeamGovernancePolicy(proposal.teamId, 'team');
     const eligibleVoters = await this.governanceEligibleVoters(proposal.teamId, provider.id);
     const delegations = await this.activeGovernanceDelegationSnapshots(proposal.teamId, proposal.scope);
     const snapshot = await provider.snapshotElectorate({

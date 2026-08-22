@@ -32,7 +32,7 @@ export const TEAM_ROLE_DESCRIPTIONS = {
     contributor: 'Edit direction and move workstreams forward.',
     reviewer: 'Review staged work and approve remote execution.',
     finance: 'Manage billing and commercial product settings.',
-    viewer: 'Read-only participant in team and Commons governance surfaces.',
+    viewer: 'Read-only participant in team governance surfaces.',
 };
 
 export const ALL_TEAM_CAPABILITIES = [...new Set(Object.values(TEAM_ROLE_CAPABILITIES).flat())];

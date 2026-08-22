@@ -2,7 +2,7 @@ import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences } from '../../../../governance/decision-authority.ts';
 import { normalizeGovernanceProposalPlan } from '../../../../governance/proposal-readiness.ts';
 import { randomUUID } from 'node:crypto';
-import { COMMONS_TEAM_SLUG,governanceContentHash,governanceSlug,isoNow,ControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
+import { governanceContentHash,governanceSlug,isoNow,ControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
 export async function createGovernanceProposalMethod(this: ControlPlaneStore, principal, input: any = {}) {
     await this.ensureInitialized();
     const title = stringValue(input.title);
@@ -14,8 +14,9 @@ export async function createGovernanceProposalMethod(this: ControlPlaneStore, pr
         throw error;
     }
     const project = input.projectId ? await this.getProject(input.projectId) : null;
-    const teamId = input.teamId ?? project?.teamId ?? COMMONS_TEAM_SLUG;
-    const scope = optionalStringValue(input.scope, project ? 'project' : 'commons');
+    const teamId = input.teamId ?? project?.teamId;
+    if (!teamId) { const error: Error & Record<string, any> = new Error('A team or project is required.'); error.status = 400; throw error; }
+    const scope = optionalStringValue(input.scope, project ? 'project' : 'team');
     const policy = await this.resolveGovernancePolicy({ teamId, projectId: project?.id ?? null, scope });
     const provider = governanceVotingProvider(policy?.providerId);
     const timestamp = isoNow();

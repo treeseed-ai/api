@@ -1,5 +1,5 @@
 import { governanceVotingProvider } from '../../../../governance/voting.ts';
-import { COMMONS_TEAM_SLUG,isoNow,ControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
+import { isoNow,ControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
 export async function ensureDefaultTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId, scope = 'team') {
     await this.ensureInitialized();
     const existing = await this.first(`SELECT * FROM team_governance_policies
@@ -8,8 +8,7 @@ export async function ensureDefaultTeamGovernancePolicyMethod(this: ControlPlane
     if (existing)
         return serializeGovernancePolicy(existing);
     const timestamp = isoNow();
-    const providerId = teamId === COMMONS_TEAM_SLUG || scope === 'commons' ? 'treeseed_bicameral_v1' : 'admin_approval_v1';
-    const provider = governanceVotingProvider(providerId);
+    const provider = governanceVotingProvider('admin_approval_v1');
     const id = `governance-policy:${teamId}:${scope}`;
     await this.run(`INSERT INTO team_governance_policies (
 				id, team_id, scope, provider_id, provider_version, config_json, active, created_by, created_at, updated_at, superseded_at

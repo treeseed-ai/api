@@ -61,9 +61,6 @@ export function createAccountRegistrationService(store: any, authProvider: any, 
 				const confirmation = await createControlPlaneEmailConfirmation(store, emailContext, {
 					email, emailAddressId, displayName, returnTo: String(input.returnTo ?? '/app/'),
 				});
-				await store.ensureCommonsParticipantForPrincipal(synced.principal, {
-					displayName, metadata: { registrationSource: 'control_plane_operation' },
-				}).catch(() => null);
 				return { ok: true, confirmationRequired: true, email, expiresInSeconds: confirmation.expiresInSeconds };
 			} catch {
 				await rollbackRegistration(store, synced.principal.id, emailAddressId);

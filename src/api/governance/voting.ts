@@ -1,4 +1,4 @@
-export type GovernanceScope = 'project' | 'commons' | 'team';
+export type GovernanceScope = 'project' | 'team';
 export type GovernanceVoteValue = 'support' | 'object' | 'abstain';
 export type GovernanceOutcomeStatus = 'voting' | 'accepted' | 'rejected' | 'no_decision_quorum_failed';
 export type GovernanceOutcomeReason =
