@@ -5,7 +5,6 @@ import { installClientActionRoutes } from "../routes/realtime/client-actions.ts"
 import { installGovernanceCommonsProposalsQuestionsAndVotesRoutes } from "../routes/governance/commons/governance-commons-proposals-questions-and-votes.ts";
 import { installGovernanceCommonsReviewsDecisionsAndDelegationsRoutes } from "../routes/governance/commons/governance-commons-reviews-decisions-and-delegations.ts";
 import { installOperationsPlatformRunnersAndJobsRoutes } from "../routes/operations/operations-platform-runners-and-jobs.ts";
-import { installGovernanceProjectsItemApprovalsItemDecisionRoutes } from "../routes/projects/governance/governance-projects-item-approvals-item-decision.ts";
 import { installGovernanceTeamProjectDelegationsAndApprovalsRoutes } from "../routes/projects/governance/governance-team-project-delegations-and-approvals.ts";
 import { installGovernanceTeamProjectPolicyRoutes } from "../routes/projects/governance/governance-team-project-policy.ts";
 import { installOperationsProjectJobsRoutes } from "../routes/projects/operations/operations-project-jobs.ts";
@@ -49,7 +48,6 @@ export function installPlatformRoutes(context: any): void {
   installProjectsSettingsAndSummariesRoutes(context);
   installGovernanceTeamProjectPolicyRoutes(context);
   installGovernanceTeamProjectDelegationsAndApprovalsRoutes(context);
-  installGovernanceProjectsItemApprovalsItemDecisionRoutes(context);
   installOperationsProjectJobsRoutes(context);
   installFoundationApprovalDecisionsRoutes(context);
   installGovernanceCommonsProposalsQuestionsAndVotesRoutes(context);

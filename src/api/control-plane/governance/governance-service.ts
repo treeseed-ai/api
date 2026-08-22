@@ -68,8 +68,44 @@ function fail(error: unknown, fallbackCode: string): never {
 		error instanceof Error ? error.message : 'Governance operation failed.');
 }
 
+const approvalDecisions = new Set(['approve', 'approve_as_book_content', 'request_changes', 'request_more_research',
+	'defer', 'reject', 'approve_release', 'reject_release']);
+
+function approvalState(decision: string) {
+	if (['approve', 'approve_as_book_content', 'approve_release'].includes(decision)) return 'approved';
+	if (decision === 'defer') return 'expired';
+	return 'rejected';
+}
+
 export function createGovernanceService(store: any) {
 	return {
+		async approvals(principal: Principal, projectId: string, query: Record<string, unknown>) {
+			const project = await projectFor(store, principal, projectId, 'projects:read:team');
+			return { projectId: project.id, items: await store.listApprovalRequestsForProject(project.id, query.limit), cursor: null };
+		},
+		async approval(principal: Principal, projectId: string, approvalId: string) {
+			const project = await projectFor(store, principal, projectId, 'projects:read:team');
+			const approval = await store.getApprovalRequest(approvalId);
+			if (!approval || approval.projectId !== project.id) throw new GovernanceServiceError(404, 'approval_not_found', 'Unknown approval request.');
+			return { projectId: project.id, approval };
+		},
+		async decideApproval(principal: Principal, projectId: string, approvalId: string, body: Record<string, unknown>, ifMatch?: string) {
+			await projectFor(store, principal, projectId, 'projects:manage:team');
+			if (principal?.metadata?.serviceId || principal?.roles?.includes('service')) {
+				throw new GovernanceServiceError(403, 'service_approval_decision_forbidden', 'Service principals cannot decide agent approvals.');
+			}
+			const approval = await store.getApprovalRequest(approvalId);
+			if (!approval || approval.projectId !== projectId) throw new GovernanceServiceError(404, 'approval_not_found', 'Unknown approval request.');
+			if (!ifMatch || ifMatch !== String(approval.updatedAt ?? '')) {
+				throw new GovernanceServiceError(412, 'approval_precondition_failed', 'The approval changed after it was inspected.');
+			}
+			const decision = optionalText(body.decision) ?? '';
+			if (!approvalDecisions.has(decision)) throw new GovernanceServiceError(400, 'approval_decision_invalid', 'Unsupported approval decision.');
+			try {
+				return await store.decideApprovalRequest(approvalId, { state: approvalState(decision), decidedByType: actorType(principal),
+					decidedById: principal!.id, decision: { decision, reason: optionalText(body.reason) ?? null } });
+			} catch (error) { fail(error, 'approval_decision_failed'); }
+		},
 		async createProposal(principal: Principal, projectId: string, body: Record<string, unknown>) {
 			const project = await projectFor(store, principal, projectId, 'projects:manage:team');
 			try {

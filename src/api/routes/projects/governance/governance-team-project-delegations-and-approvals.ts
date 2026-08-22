@@ -1,5 +1,5 @@
 export function installGovernanceTeamProjectDelegationsAndApprovalsRoutes(context: any) {
-	const { app, capacity, findById, jsonError, jsonThrownError, optionalTrimmedString, readJsonOrFormBody, requireProjectAccess, requireTeamAccess, store } = context;
+	const { app, jsonError, jsonThrownError, optionalTrimmedString, readJsonOrFormBody, requireProjectAccess, requireTeamAccess, store } = context;
 	app.get('/v1/teams/:teamId/governance-delegations', async (c) => {
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 					if (access.response) return access.response;
@@ -49,26 +49,4 @@ export function installGovernanceTeamProjectDelegationsAndApprovalsRoutes(contex
 					}) });
 				});
 	
-	app.get('/v1/projects/:projectId/approvals', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					return c.json({
-						ok: true,
-						payload: {
-							projectId: access.details.project.id,
-							items: await store.listApprovalRequestsForProject(access.details.project.id, 200),
-						},
-					});
-				});
-	
-	app.get('/v1/projects/:projectId/approvals/:approvalId', async (c) => {
-					const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'projects:read:team');
-					if (access.response) return access.response;
-					const approvalId = c.req.param('approvalId');
-					const summary = await capacity.getProjectAgentsSummary(access.details.project.id, access.principal);
-					const approval = findById(summary?.approvals, approvalId);
-					return approval
-						? c.json({ ok: true, payload: { projectId: access.details.project.id, approval } })
-						: jsonError(c, 404, 'Unknown approval request.');
-				});
 }

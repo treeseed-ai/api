@@ -1,16 +1,6 @@
 import { createHmac,timingSafeEqual } from 'node:crypto';
 import { bearerTokenFromRequest } from '../../../accounts/request-auth.ts';
 import { base64urlJson,jsonError,normalizeBaseUrl,optionalTrimmedString,parseBase64urlJson,requireTeamAccess,safeTokenEquals } from '../index.ts';
-export const AGENT_PROMOTION_APPROVAL_DECISIONS = new Set([
-    'approve',
-    'approve_as_book_content',
-    'request_changes',
-    'request_more_research',
-    'defer',
-    'reject',
-    'approve_release',
-    'reject_release',
-]);
 export const PLATFORM_OPERATION_SCOPES = [
     'platform:runners:register',
     'platform:runners:claim',

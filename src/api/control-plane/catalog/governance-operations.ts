@@ -4,6 +4,9 @@ import { ControlPlaneOperationError, type BoundOperation, type OperationInvocati
 
 export interface GovernanceOperationDependencies {
 	governance: {
+		approvals(principal: OperationInvocationContext['principal'], projectId: string, query: Record<string, unknown>): Promise<Record<string, any>>;
+		approval(principal: OperationInvocationContext['principal'], projectId: string, approvalId: string): Promise<Record<string, any>>;
+		decideApproval(principal: OperationInvocationContext['principal'], projectId: string, approvalId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 		createProposal(principal: OperationInvocationContext['principal'], projectId: string, body: Record<string, unknown>): Promise<Record<string, any>>;
 		updateProposal(principal: OperationInvocationContext['principal'], projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 		openProposal(principal: OperationInvocationContext['principal'], projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
@@ -31,6 +34,13 @@ function result<T>(call: () => Promise<T>) {
 export function createGovernanceOperations(dependencies: GovernanceOperationDependencies): BoundOperation[] {
 	const governance = dependencies.governance;
 	return [
+		{ binding: CONTROL_PLANE_OPERATIONS.governance.approvals,
+			handler: (input, context) => result(() => governance.approvals(context.principal, input.path.projectId, input.query)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.governance.approval,
+			handler: (input, context) => result(() => governance.approval(context.principal, input.path.projectId, input.path.approvalId)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.governance.decideApproval,
+			handler: (input, context) => result(() => governance.decideApproval(context.principal, input.path.projectId, input.path.approvalId,
+				input.body as Record<string, unknown>, context.ifMatch)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.governance.createProposal,
 			handler: (input, context) => result(() => governance.createProposal(context.principal, input.path.projectId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.governance.updateProposal,

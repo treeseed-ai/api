@@ -7,6 +7,9 @@ function fixture(proposalProjectId = 'project-1') {
 		principalCanAccessTeam: vi.fn(async () => true),
 		getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', projectId: proposalProjectId, activeVersion: 3, metadata: {} })),
 		updateGovernanceProposalDraft: vi.fn(async () => ({ id: 'proposal-1', activeVersion: 3 })),
+		getApprovalRequest: vi.fn(async () => ({ id: 'approval-1', projectId: 'project-1', updatedAt: '2026-08-22T12:00:00.000Z' })),
+		listApprovalRequestsForProject: vi.fn(async () => []),
+		decideApprovalRequest: vi.fn(async (_id, input) => ({ id: 'approval-1', state: input.state, decision: input.decision })),
 	};
 	return { store, service: createGovernanceService(store), principal: { id: 'user-1', roles: ['member'] } };
 }
@@ -36,5 +39,24 @@ describe('governance service mutation boundaries', () => {
 			status: 404, code: 'governance_proposal_not_found',
 		});
 		expect((store as any).openGovernanceProposal).toBeUndefined();
+	});
+
+	it('decides the exact approval without building an agent summary projection', async () => {
+		const { store, service, principal } = fixture();
+		const result = await service.decideApproval(principal, 'project-1', 'approval-1',
+			{ decision: 'request_changes', reason: 'Add evidence.' }, '2026-08-22T12:00:00.000Z');
+		expect(result).toMatchObject({ state: 'rejected', decision: { decision: 'request_changes', reason: 'Add evidence.' } });
+		expect(store.decideApprovalRequest).toHaveBeenCalledWith('approval-1', expect.objectContaining({
+			state: 'rejected', decidedByType: 'user', decidedById: 'user-1',
+		}));
+	});
+
+	it('rejects service-principal approval decisions', async () => {
+		const { store, service } = fixture();
+		await expect(service.decideApproval({ id: 'service-1', metadata: { serviceId: 'runner' } }, 'project-1', 'approval-1',
+			{ decision: 'approve' }, '2026-08-22T12:00:00.000Z')).rejects.toMatchObject({
+				status: 403, code: 'service_approval_decision_forbidden',
+			});
+		expect(store.decideApprovalRequest).not.toHaveBeenCalled();
 	});
 });
