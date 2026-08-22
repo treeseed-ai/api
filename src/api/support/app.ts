@@ -45,7 +45,7 @@ import {
 } from '../app/support/index.ts';
 import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
 import { routeDependencies } from './route-dependencies.ts';
-import { installPlatformRoutes } from './route-installers.ts';
+import { installFoundationHealthAndControlPlaneRoutes } from '../routes/support/foundation-health-and-control-plane.ts';
 
 export * from '../app/support/index.ts';
 
@@ -199,7 +199,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
-	installPlatformRoutes(routeContext);
+	installFoundationHealthAndControlPlaneRoutes(routeContext);
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };

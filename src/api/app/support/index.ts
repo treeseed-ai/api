@@ -13,4 +13,3 @@ export * from './projects/projects-core/projects-lifecycle.ts';
 export * from './repositories/foundation-runtime-github.ts';
 export * from './runtime/foundation-runtime-utilities.ts';
 export * from './seeds/seeds.ts';
-export * from './treedx/repositories/treedx.ts';

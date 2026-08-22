@@ -110,8 +110,6 @@ declare module '../persistence/store.ts' {
 		getTeamInviteByToken: OmitThisParameter<typeof import('./teams/queries/invites/get-team-invite-by-token.ts').getTeamInviteByTokenMethod>;
 		revokeTeamInvite: OmitThisParameter<typeof import('./teams/retirement/revoke-team-invite.ts').revokeTeamInviteMethod>;
 		acceptTeamInvite: OmitThisParameter<typeof import('./teams/lifecycle/accept-team-invite.ts').acceptTeamInviteMethod>;
-		getTeamStorageLocator: OmitThisParameter<typeof import('./teams/queries/hosting/get-team-storage-locator.ts').getTeamStorageLocatorMethod>;
-		upsertTeamStorageLocator: OmitThisParameter<typeof import('./teams/creation/upsert-team-storage-locator.ts').upsertTeamStorageLocatorMethod>;
 		loadTeamProfileByName: OmitThisParameter<typeof import('./teams/queries/identity/load-team-profile-by-name.ts').loadTeamProfileByNameMethod>;
 		loadUserProfileByUsername: OmitThisParameter<typeof import('./accounts/queries/load-user-profile-by-username.ts').loadUserProfileByUsernameMethod>;
 		evaluateTeamDeletionBlockers: OmitThisParameter<typeof import('./teams/contracts/evaluate-team-deletion-blockers.ts').evaluateTeamDeletionBlockersMethod>;
