@@ -11,7 +11,6 @@ type SeedProductResource,
 type SeedProjectResource,
 type SeedTeamMembershipResource,
 type SeedCapacityProviderPrerequisite,
-type SeedAgentLabServicePrincipalPrerequisite,
 type SeedSupportRepositoryResource,
 type SeedTeamResource,
 } from '../types.js';
@@ -35,14 +34,6 @@ function parseCapacityProvider(value: unknown, index: number, diagnostics: SeedD
 		allowedModes: [...new Set(allowedModes)] as Array<'planning' | 'acting'>,
 		executionProviderIds: stringArrayField(value, 'executionProviderIds', path, diagnostics) ?? [],
 	};
-}
-
-function parseAgentLabServicePrincipal(value: unknown, index: number, diagnostics: SeedDiagnostic[]): SeedAgentLabServicePrincipalPrerequisite | null {
-	const path = `runtime.agentLabServicePrincipals[${index}]`;
-	if (!isRecord(value)) { diagnostics.push(errorDiagnostic('seed.invalid_runtime_prerequisite', 'Agent Lab service principal prerequisite must be an object.', path)); return null; }
-	const roles = stringArrayField(value, 'roles', path, diagnostics) ?? [];
-	if (roles.length !== 1 || roles[0] !== 'team_owner') diagnostics.push(errorDiagnostic('seed.invalid_agent_lab_service_principal_role', 'The local Agent Lab service principal must have exactly the team_owner role.', `${path}.roles`));
-	return { key: requireString(value, 'key', path, diagnostics), environments: parseEnvironments(value.environments, `${path}.environments`, diagnostics), team: requireString(value, 'team', path, diagnostics), name: requireString(value, 'name', path, diagnostics), roles: ['team_owner'] };
 }
 
 export function arrayBucket(resources: Record<string, unknown>, bucket: string, diagnostics: SeedDiagnostic[]) {
@@ -77,7 +68,6 @@ export function validateResourceKeys(manifest: SeedManifest, diagnostics: SeedDi
 	manifest.resources.products.forEach((product, index) => visit(product.key, `resources.products[${index}].key`));
 	manifest.resources.catalogArtifacts.forEach((artifact, index) => visit(artifact.key, `resources.catalogArtifacts[${index}].key`));
 	manifest.runtime.capacityProviders.forEach((provider, index) => visit(provider.key, `runtime.capacityProviders[${index}].key`));
-	manifest.runtime.agentLabServicePrincipals.forEach((principal, index) => visit(principal.key, `runtime.agentLabServicePrincipals[${index}].key`));
 }
 
 export function validateReferences(manifest: SeedManifest, diagnostics: SeedDiagnostic[]) {
@@ -95,10 +85,6 @@ export function validateReferences(manifest: SeedManifest, diagnostics: SeedDiag
 		if (!teamKeys.has(provider.team)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown team reference: ${provider.team}.`, `runtime.capacityProviders[${index}].team`));
 		provider.projects.forEach((project, projectIndex) => { if (!projectKeys.has(project)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown project reference: ${project}.`, `runtime.capacityProviders[${index}].projects[${projectIndex}]`)); });
 		if (!(provider.environments ?? manifest.environments).every((environment) => environment === 'local')) diagnostics.push(errorDiagnostic('seed.provider_local_only', 'trusted-local-owner capacity prerequisites may target only local.', `runtime.capacityProviders[${index}].environments`));
-	});
-	manifest.runtime.agentLabServicePrincipals.forEach((principal, index) => {
-		if (!teamKeys.has(principal.team)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown team reference: ${principal.team}.`, `runtime.agentLabServicePrincipals[${index}].team`));
-		if (!(principal.environments ?? manifest.environments).every((environment) => environment === 'local')) diagnostics.push(errorDiagnostic('seed.agent_lab_service_principal_local_only', 'Agent Lab service principals may target only local.', `runtime.agentLabServicePrincipals[${index}].environments`));
 	});
 	manifest.resources.hubRepositories.forEach((repository, index) => {
 		if (!projectKeys.has(repository.project)) diagnostics.push(errorDiagnostic('seed.invalid_reference', `Unknown project reference: ${repository.project}.`, `resources.hubRepositories[${index}].project`));
@@ -233,11 +219,9 @@ export function parseSeedManifest(value: unknown, diagnostics: SeedDiagnostic[])
 	};
 	const runtimeValue = value.runtime === undefined ? {} : isRecord(value.runtime) ? value.runtime : {};
 	if (value.runtime !== undefined && !isRecord(value.runtime)) diagnostics.push(errorDiagnostic('seed.invalid_runtime', 'runtime must be an object.', 'runtime'));
-	for (const key of Object.keys(runtimeValue)) if (!['capacityProviders', 'agentLabServicePrincipals'].includes(key)) diagnostics.push(errorDiagnostic('seed.unsupported_runtime_kind', `Unsupported runtime prerequisite: ${key}.`, `runtime.${key}`));
+	for (const key of Object.keys(runtimeValue)) if (key !== 'capacityProviders') diagnostics.push(errorDiagnostic('seed.unsupported_runtime_kind', `Unsupported runtime prerequisite: ${key}.`, `runtime.${key}`));
 	const capacityValues = runtimeValue.capacityProviders === undefined ? [] : Array.isArray(runtimeValue.capacityProviders) ? runtimeValue.capacityProviders : [];
 	if (runtimeValue.capacityProviders !== undefined && !Array.isArray(runtimeValue.capacityProviders)) diagnostics.push(errorDiagnostic('seed.invalid_runtime_prerequisite', 'runtime.capacityProviders must be an array.', 'runtime.capacityProviders'));
-	const principalValues = runtimeValue.agentLabServicePrincipals === undefined ? [] : Array.isArray(runtimeValue.agentLabServicePrincipals) ? runtimeValue.agentLabServicePrincipals : [];
-	if (runtimeValue.agentLabServicePrincipals !== undefined && !Array.isArray(runtimeValue.agentLabServicePrincipals)) diagnostics.push(errorDiagnostic('seed.invalid_runtime_prerequisite', 'runtime.agentLabServicePrincipals must be an array.', 'runtime.agentLabServicePrincipals'));
 
 	const manifest: SeedManifest = {
 		name,
@@ -251,7 +235,6 @@ export function parseSeedManifest(value: unknown, diagnostics: SeedDiagnostic[])
 		resources,
 		runtime: {
 			capacityProviders: capacityValues.map((entry, index) => parseCapacityProvider(entry, index, diagnostics)).filter((provider): provider is SeedCapacityProviderPrerequisite => Boolean(provider)),
-			agentLabServicePrincipals: principalValues.map((entry, index) => parseAgentLabServicePrincipal(entry, index, diagnostics)).filter((principal): principal is SeedAgentLabServicePrincipalPrerequisite => Boolean(principal)),
 		},
 		operationRecipes: Array.isArray(value.operationRecipes)
 			? value.operationRecipes.map((recipe, index) => parseOperationRecipe(recipe, `operationRecipes[${index}]`, diagnostics, environments)).filter((recipe): recipe is SeedOperationRecipe => Boolean(recipe))
@@ -267,7 +250,7 @@ export function parseSeedManifest(value: unknown, diagnostics: SeedDiagnostic[])
 	validateReferences(manifest, diagnostics);
 	validateOperationRecipes(manifest, diagnostics);
 	if (diagnostics.length === 0 && manifest.resources.projects.length === 0
-		&& manifest.runtime.capacityProviders.length === 0 && manifest.runtime.agentLabServicePrincipals.length === 0) {
+		&& manifest.runtime.capacityProviders.length === 0) {
 		diagnostics.push(warningDiagnostic('seed.empty_projects', 'Seed manifest does not define projects.', 'resources.projects'));
 	}
 	return manifest;

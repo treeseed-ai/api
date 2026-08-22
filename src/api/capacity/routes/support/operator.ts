@@ -2,7 +2,6 @@ import { decodeCapacityPageCursor, normalizeCapacityPageLimit, type CapacityPage
 import type { Context, Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
-import { installOperatorAgentLabRoutes } from './agent-lab/operator-agent-lab.ts';
 import { installOperatorCommunicationRoutes } from './operator-communication.ts';
 
 export interface CapacityOperatorStore extends CapacityGovernanceDatabase {
@@ -52,5 +51,4 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 		runtimeControlPlaneAuthProvider: options.runtimeControlPlaneAuthProvider, environment: options.config?.environment,
 		requireTeamAccess: (c: Context, teamId: string) => options.requireTeamAccess(c, options.store, teamId, 'projects:read:team') };
 	installOperatorCommunicationRoutes(app, dependencies);
-	installOperatorAgentLabRoutes(app, dependencies);
 }

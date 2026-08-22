@@ -109,7 +109,7 @@ function planFromPayload(payload) {
 		environments: Array.isArray(payload.environments) ? payload.environments : [],
 		summary: payload.summary,
 		actions: Array.isArray(payload.actions) ? payload.actions : [],
-		runtime: payload.runtime && typeof payload.runtime === 'object' ? payload.runtime : { capacityProviders: [], agentLabServicePrincipals: [] },
+		runtime: payload.runtime && typeof payload.runtime === 'object' ? payload.runtime : { capacityProviders: [] },
 		recipes: Array.isArray(payload.recipes) ? payload.recipes : [],
 		diagnostics: Array.isArray(payload.diagnostics) ? payload.diagnostics : [],
 		manifestPath: '',

@@ -106,15 +106,8 @@ export type SeedCapacityProviderPrerequisite = SeedResourceBase & {
 	executionProviderIds: string[];
 };
 
-export type SeedAgentLabServicePrincipalPrerequisite = SeedResourceBase & {
-	team: string;
-	name: string;
-	roles: ['team_owner'];
-};
-
 export type SeedRuntimePrerequisites = {
 	capacityProviders: SeedCapacityProviderPrerequisite[];
-	agentLabServicePrincipals: SeedAgentLabServicePrincipalPrerequisite[];
 };
 
 export type SeedTeamResource = SeedResourceBase & {

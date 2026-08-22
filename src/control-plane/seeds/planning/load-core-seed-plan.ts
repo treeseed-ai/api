@@ -109,8 +109,6 @@ function createPlan(manifest: any, manifestPath: string, environments: SeedEnvir
 		runtime: {
 			capacityProviders: manifest.runtime.capacityProviders.filter((provider: any) =>
 				(provider.environments?.length ? provider.environments : manifest.environments).some((environment: SeedEnvironment) => environments.includes(environment))),
-			agentLabServicePrincipals: manifest.runtime.agentLabServicePrincipals.filter((principal: any) =>
-				(principal.environments?.length ? principal.environments : manifest.environments).some((environment: SeedEnvironment) => environments.includes(environment))),
 		},
 		recipes: manifest.operationRecipes.map((recipe: any) => {
 			const selected = recipe.environments.some((environment: SeedEnvironment) => environments.includes(environment));

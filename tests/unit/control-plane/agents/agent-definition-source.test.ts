@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest';
-import { REPOSITORY_DEFINITION_EXTENSIONS,repositoryDefinitionSource,validateAgentDefinitionSource } from '../../../../../src/api/capacity/routes/support/agent-lab/repository-definitions.ts';
+import { REPOSITORY_DEFINITION_EXTENSIONS,repositoryDefinitionSource,validateAgentDefinitionSource } from '../../../../src/api/control-plane/repositories/agents/agent-definition-source.ts';
 
 const validSource = `---
 id: agent:architect
