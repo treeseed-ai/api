@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createAccountEmailsOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
+import { createAccountEmailAddOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
 	interface: 'rest' as const, requestId: 'request-1' };
@@ -21,6 +21,12 @@ function dependencies() {
 			run, recordAuditEvent,
 		},
 		async listUserEmailAddresses() { return [{ id: 'email-1', email: 'adrian@example.test' }]; },
+		accountEmails: {
+			async add() { return { ok: true, emailAddress: { id: 'email-2' }, verificationSent: true }; },
+			async verify() { return { ok: true, emailAddress: { id: 'email-2' }, verificationSent: true }; },
+			async makePrimary() { return { ok: true, emailAddress: { id: 'email-1', isPrimary: true } }; },
+			async remove() { return { ok: true, items: [{ id: 'email-1' }] }; },
+		},
 	} as any };
 }
 
@@ -70,5 +76,18 @@ describe('account catalog operations', () => {
 		const read = await createAccountNotificationReadOperation(fixture.value).handler({ path: { notificationId: 'notification-1' }, query: {}, body: {} }, context);
 		expect(listed).toMatchObject({ items: [{ id: 'notification-1', projectId: 'project-1' }] });
 		expect(read).toMatchObject({ id: 'notification-1', readAt: expect.any(String) });
+	});
+
+	it('uses API-owned email custody without returning session credentials', async () => {
+		const fixture = dependencies();
+		const added = await createAccountEmailAddOperation(fixture.value).handler({ path: {}, query: {}, body: { email: 'new@example.test' } }, context);
+		const verified = await createAccountEmailVerifyOperation(fixture.value).handler({ path: { emailId: 'email-2' }, query: {}, body: {} }, context);
+		const primary = await createAccountEmailPrimaryOperation(fixture.value).handler({ path: { emailId: 'email-1' }, query: {}, body: {} }, context);
+		const removed = await createAccountEmailRemoveOperation(fixture.value).handler({ path: { emailId: 'email-2' }, query: {}, body: {} }, context);
+		expect(added).toMatchObject({ verificationSent: true });
+		expect(verified).toMatchObject({ verificationSent: true });
+		expect(primary).toEqual({ emailAddress: { id: 'email-1', isPrimary: true } });
+		expect(removed).toEqual({ items: [{ id: 'email-1' }] });
+		expect(JSON.stringify([added, verified, primary, removed])).not.toMatch(/accessToken|refreshToken|sessionToken/iu);
 	});
 });

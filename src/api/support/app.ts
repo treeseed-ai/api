@@ -5,6 +5,7 @@ import { createCapacityControlPlane } from '../capacity/control-plane.ts';
 import { createApiControlPlaneOperations } from '../control-plane/catalog/index.ts';
 import { installControlPlaneProtocolRoutes } from '../control-plane/http/protocol-routes.ts';
 import { ConfirmationService } from '../control-plane/confirmation/confirmation-service.ts';
+import { createAccountEmailService } from '../control-plane/accounts/account-email-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -170,6 +171,7 @@ export function createPlatformApiApp(options: any = {}) {
 		createApiControlPlaneOperations({ store, capacity,
 			deliverTeamInvite: (input) => routeDependencies.sendTeamInviteEmail(invitationContext, input),
 			listUserEmailAddresses: (userId) => routeDependencies.listUserEmailAddresses(store, userId),
+			accountEmails: createAccountEmailService(store, invitationContext),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

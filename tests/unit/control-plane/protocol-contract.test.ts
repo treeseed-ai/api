@@ -64,8 +64,8 @@ describe('control-plane protocol contract', () => {
 		async recordAuditEvent() {},
 		...overrides,
 	});
-	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides),
-		capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; } });
+	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides), capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
+		accountEmails: { async add() { return { ok: true }; }, async verify() { return { ok: true }; }, async makePrimary() { return { ok: true }; }, async remove() { return { ok: true, items: [] }; } } });
 	const confirmationService = () => {
 		const consumed = new Set<string>();
 		return new ConfirmationService('test-confirmation-secret', { async consume(nonce) {

@@ -11,6 +11,12 @@ export interface AccountOperationDependencies {
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 	listUserEmailAddresses(userId: string): Promise<Array<Record<string, unknown>>>;
+	accountEmails: {
+		add(user: Record<string, any>, email: unknown): Promise<Record<string, any>>;
+		verify(user: Record<string, any>, emailId: string): Promise<Record<string, any>>;
+		makePrimary(user: Record<string, any>, emailId: string): Promise<Record<string, any>>;
+		remove(user: Record<string, any>, emailId: string): Promise<Record<string, any>>;
+	};
 }
 
 function principal(context: { principal?: Record<string, any> }) {
@@ -68,6 +74,52 @@ export function createAccountIdentityOperation(dependencies: AccountOperationDep
 export function createAccountEmailsOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.emails> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.emails,
 		async handler(_input, context) { return { items: await dependencies.listUserEmailAddresses(principal(context).id) }; } };
+}
+
+function emailFailure(result: Record<string, any>, fallback: string): never {
+	throw new ControlPlaneOperationError(Number(result.status ?? 400), String(result.code ?? 'email_operation_failed'), String(result.message ?? result.error ?? fallback));
+}
+
+export function createAccountEmailAddOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.addEmail> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.addEmail, async handler(input, context) {
+		try {
+			const result = await dependencies.accountEmails.add(principal(context), (input.body as Record<string, unknown>).email);
+			if (!result.ok) emailFailure(result, 'The email address could not be added.');
+			return result;
+		} catch (error) {
+			if (error instanceof ControlPlaneOperationError) throw error;
+			throw new ControlPlaneOperationError(503, 'email_verification_delivery_failed', 'Email verification could not be delivered. Try again shortly.');
+		}
+	} };
+}
+
+export function createAccountEmailVerifyOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.verifyEmail> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.verifyEmail, async handler(input, context) {
+		try {
+			const result = await dependencies.accountEmails.verify(principal(context), input.path.emailId);
+			if (!result.ok) emailFailure(result, 'Email verification could not be requested.');
+			return result;
+		} catch (error) {
+			if (error instanceof ControlPlaneOperationError) throw error;
+			throw new ControlPlaneOperationError(503, 'email_verification_delivery_failed', 'Email verification could not be delivered. Try again shortly.');
+		}
+	} };
+}
+
+export function createAccountEmailPrimaryOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.makePrimaryEmail> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.makePrimaryEmail, async handler(input, context) {
+		const result = await dependencies.accountEmails.makePrimary(principal(context), input.path.emailId);
+		if (!result.ok) emailFailure(result, 'The primary email could not be changed.');
+		return { emailAddress: result.emailAddress };
+	} };
+}
+
+export function createAccountEmailRemoveOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.removeEmail> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.removeEmail, async handler(input, context) {
+		const result = await dependencies.accountEmails.remove(principal(context), input.path.emailId);
+		if (!result.ok) emailFailure(result, 'The email address could not be removed.');
+		return { items: result.items };
+	} };
 }
 
 export function createAccountSessionsOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.sessions> {
