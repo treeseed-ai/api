@@ -1,4 +1,3 @@
-import { installFoundationUsersByUsernameItemProfileRoutes } from "../routes/accounts/foundation-users-by-username-item-profile.ts";
 import { installFeedbackAdministrationRoutes } from "../routes/feedback/administration.ts";
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installDiscussionRoutes } from "../routes/discussions/discussions.ts";
@@ -50,7 +49,6 @@ export function installPlatformRoutes(context: any): void {
   installSeedResourceResolutionRoutes(context);
   installSeedRunLifecycleRoutes(context);
   installOperationsPlatformRunnersAndJobsRoutes(context);
-  installFoundationUsersByUsernameItemProfileRoutes(context);
   installTreedxTeamServiceAndPublicFederationRoutes(context);
   installTreedxInternalTreedxPublicFederationStatusRoutes(context);
   installTreedxCredentialsMirrorsAndSharesRoutes(context);
