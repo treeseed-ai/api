@@ -133,9 +133,6 @@ declare module '../persistence/store.ts' {
 		listRecentJobsForProject: OmitThisParameter<typeof import('./projects/queries/activity/list-recent-jobs-for-project.ts').listRecentJobsForProjectMethod>;
 		listProjectActivity: OmitThisParameter<typeof import('./projects/queries/activity/list-project-activity.ts').listProjectActivityMethod>;
 		getProjectSummary: OmitThisParameter<typeof import('./projects/queries/summaries/get-project-summary.ts').getProjectSummaryMethod>;
-		getProjectDirectSummary: OmitThisParameter<typeof import('./projects/queries/summaries/get-project-direct-summary.ts').getProjectDirectSummaryMethod>;
-		getProjectWorkstreamsSummary: OmitThisParameter<typeof import('./projects/delivery/queries/get-project-workstreams-summary.ts').getProjectWorkstreamsSummaryMethod>;
-		getProjectShareSummary: OmitThisParameter<typeof import('./projects/queries/summaries/get-project-share-summary.ts').getProjectShareSummaryMethod>;
 		listPersistedTeamInboxItems: OmitThisParameter<typeof import('./teams/queries/inbox/list-persisted-team-inbox-items.ts').listPersistedTeamInboxItemsMethod>;
 		getProjectSummarySnapshot: OmitThisParameter<typeof import('./projects/queries/summaries/get-project-summary-snapshot.ts').getProjectSummarySnapshotMethod>;
 		upsertProjectSummarySnapshot: OmitThisParameter<typeof import('./projects/projects-core/creation/upsert-project-summary-snapshot.ts').upsertProjectSummarySnapshotMethod>;

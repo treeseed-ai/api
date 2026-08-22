@@ -9,7 +9,7 @@ import { createDeepHealthOperation, createReadinessOperation, statusOperation, t
 import { createDiscussionOperations, type DiscussionOperationDependencies } from './discussion-operations.ts';
 import { createGovernanceOperations, type GovernanceOperationDependencies } from './governance-operations.ts';
 import { createKnowledgeOperations, type KnowledgeOperationDependencies } from './knowledge-operations.ts';
-import { createProjectAccessOperation, createProjectArchiveOperation, createProjectCreateOperation, createProjectDeleteOperation, createProjectDeletionBlockersOperation, createProjectRestoreOperation, createProjectShowOperation, createProjectSummaryOperation, createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
+import { createProjectAccessOperation, createProjectArchiveOperation, createProjectCreateOperation, createProjectDeleteOperation, createProjectDeletionBlockersOperation, createProjectRestoreOperation, createProjectShowOperation, createProjectSummaryOperation, createProjectUpdateOperation, createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
 import { createRepositoryOperations, type RepositoryOperationDependencies } from './repositories/index.ts';
 import { createServiceOperations, type ServiceOperationDependencies } from './services/index.ts';
 import { createPlatformOperations, type PlatformOperationDependencies } from './operations/index.ts';
@@ -88,6 +88,7 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		createProjectsListOperation(dependencies),
 		createProjectShowOperation(dependencies),
 		createProjectCreateOperation(dependencies),
+		createProjectUpdateOperation(dependencies),
 		createProjectArchiveOperation(dependencies),
 		createProjectRestoreOperation(dependencies),
 		createProjectDeletionBlockersOperation(dependencies),

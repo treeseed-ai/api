@@ -1,5 +1,5 @@
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
-import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,redactedRequestTarget,safePrivateKnowledgeSlug } from '../index.ts';
+import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,redactedRequestTarget } from '../index.ts';
 export async function accountDeletionBlockers(store, principal) {
     const teams = await store.listTeamsForPrincipal(principal);
     const blockers = teams
@@ -225,29 +225,6 @@ export function uiRuntimeLocals(config) {
             },
         },
     };
-}
-export function privateKnowledgeAuditPayload(body, extra: any = {}) {
-    return {
-        slug: safePrivateKnowledgeSlug(body?.slug),
-        route: typeof body?.route === 'string' && body.route.startsWith('/app/projects/') ? body.route : null,
-        summary: extra.summary ?? null,
-        status: extra.status ?? null,
-    };
-}
-export async function recordPrivateKnowledgeAudit(store, input: any = {}) {
-    if (typeof store.recordAuditEvent !== 'function')
-        return null;
-    return store.recordAuditEvent({
-        eventType: input.eventType,
-        actorType: input.actorType ?? 'user',
-        actorId: input.actorId ?? null,
-        targetType: 'project',
-        targetId: input.projectId,
-        data: privateKnowledgeAuditPayload(input.body, {
-            status: input.status,
-            summary: input.summary,
-        }),
-    });
 }
 export const AGENT_TASK_SIGNATURES = {
     'question.summarize': {

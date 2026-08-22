@@ -32,7 +32,3 @@ export function safeTokenEquals(left, right) {
     const rightBuffer = Buffer.from(String(right));
     return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
-export function safePrivateKnowledgeSlug(value) {
-    const slug = String(value ?? '').trim().replace(/^\/+|\/+$/gu, '');
-    return slug && !slug.includes('..') ? slug : 'index';
-}

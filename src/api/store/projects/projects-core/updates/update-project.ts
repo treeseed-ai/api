@@ -10,16 +10,18 @@ export async function updateProjectMethod(this: ControlPlaneStore, projectId, in
     const nextSlug = input.slug ?? existing.slug;
     const nextName = input.name ?? existing.name;
     const nextDescription = input.description ?? existing.description ?? null;
-    await this.run(`UPDATE projects
+	const updated = await this.run(`UPDATE projects
 			 SET slug = ?, name = ?, description = ?, metadata_json = ?, updated_at = ?
-			 WHERE id = ?`, [
+			 WHERE id = ?${input.expectedRevision ? ' AND updated_at = ?' : ''}`, [
         nextSlug,
         nextName,
         nextDescription,
         JSON.stringify(metadata),
         timestamp,
-        projectId,
+		projectId,
+		...(input.expectedRevision ? [input.expectedRevision] : []),
     ]);
+	if (input.expectedRevision && !updated.changes) return null;
     if (metadata?.architecture) {
         await this.projectArchitectureContentBindings(projectId, normalizeProjectArchitecture(metadata.architecture)).catch(() => null);
     }

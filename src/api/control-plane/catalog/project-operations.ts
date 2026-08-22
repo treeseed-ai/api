@@ -10,11 +10,12 @@ export interface ProjectOperationDependencies {
 		listTeamProjects(teamId: string): Promise<Array<Record<string, any>>>;
 		principalCanAccessTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
 		getProjectDetails(projectId: string): Promise<Record<string, any> | null>;
+		getProjectByTeamAndSlug(teamId: string, slug: string): Promise<Record<string, any> | null>;
 		getProjectAccessSummary(projectId: string, principal: Record<string, unknown>): Promise<Record<string, unknown>>;
 		getProjectSummary(projectId: string, principal: Record<string, unknown>): Promise<Record<string, unknown>>;
 		principalCanManageTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
 		createProject(teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
-		updateProject(projectId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
+		updateProject(projectId: string, input: Record<string, unknown>): Promise<Record<string, any> | null>;
 		run(query: string, parameters?: unknown[]): Promise<unknown>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
@@ -114,6 +115,39 @@ export function createProjectCreateOperation(dependencies: ProjectOperationDepen
 				const message = error instanceof Error ? error.message : 'The project could not be created.';
 				throw new ControlPlaneOperationError(/already in use/u.test(message) ? 409 : 400, /already in use/u.test(message) ? 'project_slug_taken' : 'project_input_invalid', message);
 			}
+		},
+	};
+}
+
+function projectSlug(value: unknown) {
+	const slug = String(value ?? '').trim().toLowerCase();
+	if (!slug || slug.length > 80 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) {
+		throw new ControlPlaneOperationError(400, 'project_slug_invalid', 'Project slugs use 1-80 lowercase letters, numbers, or single hyphens.');
+	}
+	return slug;
+}
+
+export function createProjectUpdateOperation(dependencies: ProjectOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.projects.update> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.projects.update,
+		async handler(input, context) {
+			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			const currentRevision = String(access.details.project.updatedAt ?? '');
+			if (currentRevision !== context.ifMatch) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed since it was read.');
+			const body = input.body as Record<string, unknown>;
+			const slug = body.slug === undefined ? access.details.project.slug : projectSlug(body.slug);
+			const name = body.name === undefined ? access.details.project.name : String(body.name).trim();
+			if (!name) throw new ControlPlaneOperationError(400, 'project_name_required', 'Project name is required.');
+			const duplicate = slug === access.details.project.slug ? null : await dependencies.store.getProjectByTeamAndSlug(access.details.project.teamId, slug);
+			if (duplicate && duplicate.id !== input.path.projectId) throw new ControlPlaneOperationError(409, 'project_slug_taken', 'That project slug is already in use for this team.');
+			const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata) ? body.metadata as Record<string, unknown> : access.details.project.metadata ?? {};
+			if ('coreObjective' in body || 'coreObjective' in metadata) throw new ControlPlaneOperationError(409, 'treedx_changeset_required', 'Core objective content must be updated through an atomic TreeDX changeset.');
+			const updated = await dependencies.store.updateProject(input.path.projectId, { slug, name,
+				description: typeof body.description === 'string' ? body.description.trim() || null : access.details.project.description ?? null,
+				metadata, expectedRevision: context.ifMatch });
+			if (!updated) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed while it was being updated.');
+			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id, eventType: 'project.updated', targetType: 'project', targetId: input.path.projectId });
+			return updated;
 		},
 	};
 }
