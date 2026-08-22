@@ -1,44 +1,5 @@
 export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
-	const { AUTH_PROVIDERS, CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createControlPlaneEmailConfirmation, createControlPlaneWebSession, ensureControlPlaneCredentialSchema, ensurePrincipal, exchangeProviderIdentity, exposeAuthTokenForTests, hashControlPlanePassword, jsonError, controlPlaneAuthContext, controlPlaneEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, requireConfiguredServiceCredential, resolveAuthApprovalBaseUrl, runtime, runtimeControlPlaneAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, validateControlPlanePassword, validatePublicUsername, verifiedEmailCount, verifyControlPlanePassword, webAuthPayload, webSessionData } = context;
-	app.post('/v1/auth/device/start', async (c) => {
-					const body = await c.req.json().catch(() => ({}));
-					const started = await runtimeControlPlaneAuthProvider.startDeviceFlow({
-						clientName: typeof body.clientName === 'string' ? body.clientName : 'treeseed-cli',
-						scopes: Array.isArray(body.scopes) ? body.scopes.map(String) : ['auth:me'],
-					});
-					return c.json(started);
-				});
-	
-	app.post('/v1/auth/device/poll', async (c) => {
-					const body = await c.req.json().catch(() => ({}));
-					const response = await runtimeControlPlaneAuthProvider.pollDeviceFlow({ deviceCode: String(body.deviceCode ?? '') });
-					return c.json(response, { status: response.ok ? 200 : response.status === 'expired' ? 410 : 400 });
-				});
-	
-	app.get('/v1/auth/device/approve', (c) => {
-					const target = new URL('/auth/device/approve', `${resolveAuthApprovalBaseUrl(config)}/`);
-					const userCode = c.req.query('user_code');
-					if (userCode) target.searchParams.set('user_code', userCode);
-					return c.redirect(target.toString(), 302);
-				});
-	
-	app.post('/v1/auth/device/approve', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const body = await c.req.json().catch(() => ({}));
-					try {
-						return c.json(await runtimeControlPlaneAuthProvider.approveDeviceFlow({
-							userCode: String(body.userCode ?? ''),
-							principalId: auth.principal.id,
-							displayName: auth.principal.displayName,
-							metadata: auth.principal.metadata,
-							scopes: Array.isArray(body.scopes) ? body.scopes.map(String) : undefined,
-						}));
-					} catch (error) {
-						return jsonError(c, 400, error instanceof Error ? error.message : String(error));
-					}
-				});
-	
+	const { AUTH_PROVIDERS, CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX, app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, authTokenTimestampMillis, config, createHash, createControlPlaneEmailConfirmation, createControlPlaneWebSession, ensureControlPlaneCredentialSchema, ensurePrincipal, exchangeProviderIdentity, exposeAuthTokenForTests, hashControlPlanePassword, jsonError, controlPlaneAuthContext, controlPlaneEmailTokenHash, normalizeAppearancePreference, normalizeEmail, normalizeUsername, optionalTrimmedString, providerConfigFor, randomBytes, randomUUID, readJsonOrFormBody, resolveAuthApprovalBaseUrl, runtime, runtimeControlPlaneAuthProvider, sanitizedReturnTo, sendWelcomeEmail, setPrimaryEmailAddress, shouldBypassAcceptanceAuthEmailDelivery, shouldExposeNonProductionAuthDiagnostics, store, validateControlPlanePassword, validatePublicUsername, verifiedEmailCount, verifyControlPlanePassword, webAuthPayload, webSessionData } = context;
 	app.post('/v1/auth/web/sign-up', async (c) => {
 					await ensureControlPlaneCredentialSchema(store);
 					const body = await readJsonOrFormBody(c);
@@ -143,63 +104,6 @@ export function installAuthenticationDeviceSignupAndOauthRoutes(context: any) {
 							email,
 							expiresInSeconds: confirmation.expiresInSeconds,
 							confirmationToken: exposeAuthTokenForTests(c, runtime.resolved.config) ? confirmation.token : undefined,
-						},
-					});
-				});
-	
-	app.post('/v1/acceptance/auth/confirm-email', async (c) => {
-					const service = requireConfiguredServiceCredential(c, runtime.resolved.config);
-					if (service.response) return service.response;
-					await ensureControlPlaneCredentialSchema(store);
-					const body = await readJsonOrFormBody(c);
-					const email = normalizeEmail(body.email);
-					if (!email) return jsonError(c, 400, 'Email is required.');
-					const emailAddress = await store.first(
-						`SELECT * FROM user_email_addresses WHERE normalized_email = ? ORDER BY created_at DESC LIMIT 1`,
-						[email],
-					);
-					if (!emailAddress?.id) return jsonError(c, 404, 'Email confirmation record not found.');
-					const credential = await store.first(
-						`SELECT user_id, email, username, status FROM control_plane_auth_credentials WHERE user_id = ? LIMIT 1`,
-						[emailAddress.user_id],
-					);
-					if (!credential || credential.status === 'deleted') return jsonError(c, 404, 'Email confirmation record not found.');
-					const now = new Date().toISOString();
-					const firstVerified = (await verifiedEmailCount(store, emailAddress.user_id)) === 0;
-					if (firstVerified) {
-						const personalTeam = await store.ensurePersonalResearchTeamForUser(emailAddress.user_id);
-						if (!personalTeam.ok) {
-							return jsonError(c, personalTeam.code === 'namespace_conflict' ? 409 : 400, personalTeam.message, { code: personalTeam.code });
-						}
-					}
-					await store.run(
-						`UPDATE user_email_addresses
-						 SET status = 'verified', verified_at = COALESCE(verified_at, ?), updated_at = ?
-						 WHERE id = ?`,
-						[now, now, emailAddress.id],
-					);
-					await store.claimSeedTeamMembershipsForVerifiedEmail(emailAddress.user_id, email);
-					if (Number(emailAddress.is_primary ?? 0) === 1 || firstVerified) {
-						await setPrimaryEmailAddress(store, emailAddress.user_id, emailAddress.id);
-					}
-					if (credential.status !== 'active') {
-						await store.run(
-							`UPDATE control_plane_auth_credentials SET status = 'active', updated_at = ? WHERE user_id = ?`,
-							[now, credential.user_id],
-						);
-						await store.run(
-							`UPDATE user_identities SET email_verified = 1, updated_at = ? WHERE user_id = ?`,
-							[now, credential.user_id],
-						).catch(() => null);
-					}
-					await store.run(`DELETE FROM better_auth_verification WHERE identifier = ?`, [`${CONTROL_PLANE_EMAIL_CONFIRMATION_PREFIX}${emailAddress.id}`]).catch(() => null);
-					return c.json({
-						ok: true,
-						payload: {
-							email,
-							emailAddressId: emailAddress.id,
-							userId: emailAddress.user_id,
-							verified: true,
 						},
 					});
 				});
