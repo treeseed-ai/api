@@ -5,6 +5,8 @@ ApiAuthProvider,
 ApiConfig,
 ApiCredential,
 ApiPrincipal,
+AuthorizationCodeExchangeRequest,
+AuthorizationCodeStartRequest,
 DeviceCodeApproveRequest,
 DeviceCodePollRequest,
 DeviceCodePollResponse,
@@ -59,6 +61,14 @@ export class PostgresAuthProvider implements ApiAuthProvider {
 
 	refreshAccessToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse> {
 		return this.store.refreshAccessToken(request);
+	}
+
+	startAuthorizationCode(request: AuthorizationCodeStartRequest) {
+		return this.store.startAuthorizationCode(request);
+	}
+
+	exchangeAuthorizationCode(request: AuthorizationCodeExchangeRequest): Promise<TokenRefreshResponse> {
+		return this.store.exchangeAuthorizationCode(request);
 	}
 
 	revokeOAuthToken(token: string): Promise<void> {

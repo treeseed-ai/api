@@ -57,7 +57,7 @@ export function installControlPlaneProtocolRoutes(
 	app.get('/openapi.json', (context) => context.json(document, 200, { 'x-treeseed-contract-digest': digest }));
 	app.get('/mcp/catalog.json', (context) => context.json(mcpCatalog, 200, { 'x-treeseed-contract-digest': mcpDigest }));
 	app.get('/docs', (context) => context.html(`<!doctype html><html><head><title>TreeSeed Control Plane</title></head><body><main><h1>TreeSeed Control Plane</h1><p>OpenAPI 3.1.1 contract: <a href="/openapi.json">openapi.json</a> (<code>${digest}</code>)</p><p>MCP endpoint: <code>POST /mcp</code>, protocol <code>2026-07-28</code>. <a href="/mcp/catalog.json">MCP catalog</a> (<code>${mcpDigest}</code>).</p></main></body></html>`));
-	installOAuthProtocolRoutes(app, oauthProvider);
+	installOAuthProtocolRoutes(app, oauthProvider, authenticateBearerToken);
 	app.route('/mcp', protocolApp);
 
 	for (const operation of registry.operations.values()) {

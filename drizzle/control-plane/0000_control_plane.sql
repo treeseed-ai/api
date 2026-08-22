@@ -2385,6 +2385,19 @@ CREATE TABLE "auth_sessions" (
 	"updated_at" text NOT NULL
 );
 
+CREATE TABLE "oauth_authorization_codes" (
+	"id" text PRIMARY KEY NOT NULL,
+	"code_hash" text NOT NULL UNIQUE,
+	"client_id" text NOT NULL,
+	"user_id" text NOT NULL,
+	"redirect_uri" text NOT NULL,
+	"code_challenge" text NOT NULL,
+	"scopes_json" text NOT NULL,
+	"expires_at" text NOT NULL,
+	"used_at" text,
+	"created_at" text NOT NULL
+);
+
 CREATE TABLE "contact_submissions" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"email" text NOT NULL,
@@ -2394,8 +2407,9 @@ CREATE TABLE "contact_submissions" (
 
 CREATE TABLE "device_codes" (
 	"id" text PRIMARY KEY NOT NULL,
-	"device_code" text NOT NULL,
+	"device_code_hash" text NOT NULL,
 	"user_code" text NOT NULL,
+	"client_id" text NOT NULL,
 	"requested_scopes_json" text NOT NULL,
 	"expires_at" text NOT NULL,
 	"interval_seconds" integer NOT NULL,
@@ -2403,7 +2417,7 @@ CREATE TABLE "device_codes" (
 	"user_id" text,
 	"created_at" text NOT NULL,
 	"updated_at" text NOT NULL,
-	CONSTRAINT "device_codes_device_code_unique" UNIQUE("device_code"),
+	CONSTRAINT "device_codes_device_code_hash_unique" UNIQUE("device_code_hash"),
 	CONSTRAINT "device_codes_user_code_unique" UNIQUE("user_code")
 );
 

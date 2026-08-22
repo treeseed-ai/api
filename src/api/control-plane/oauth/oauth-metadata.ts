@@ -33,10 +33,13 @@ export function authorizationServerMetadata(requestUrl: string) {
 	const issuer = oauthIssuer(requestUrl);
 	return {
 		issuer,
+		authorization_endpoint: `${issuer}/oauth/authorize`,
 		device_authorization_endpoint: `${issuer}/oauth/device_authorization`,
 		token_endpoint: `${issuer}/oauth/token`,
 		revocation_endpoint: `${issuer}/oauth/revoke`,
-		grant_types_supported: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
+		grant_types_supported: ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
+		response_types_supported: ['code'],
+		code_challenge_methods_supported: ['S256'],
 		token_endpoint_auth_methods_supported: ['none'],
 		scopes_supported: [...TREESEED_OAUTH_SCOPES],
 	};

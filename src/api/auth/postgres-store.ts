@@ -114,6 +114,18 @@ export const AUTH_SCHEMA_SQL = [
 		updated_at TEXT NOT NULL,
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 	)`,
+    `CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+		id TEXT PRIMARY KEY,
+		code_hash TEXT NOT NULL UNIQUE,
+		client_id TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		redirect_uri TEXT NOT NULL,
+		code_challenge TEXT NOT NULL,
+		scopes_json TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		used_at TEXT,
+		created_at TEXT NOT NULL
+	)`,
     `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
 		ON auth_sessions(user_id)`,
     `CREATE TABLE IF NOT EXISTS operation_confirmation_nonces (
@@ -141,8 +153,9 @@ export const AUTH_SCHEMA_SQL = [
 		ON audit_events(target_type, target_id)`,
     `CREATE TABLE IF NOT EXISTS device_codes (
 		id TEXT PRIMARY KEY,
-		device_code TEXT NOT NULL UNIQUE,
+		device_code_hash TEXT NOT NULL UNIQUE,
 		user_code TEXT NOT NULL UNIQUE,
+		client_id TEXT NOT NULL,
 		requested_scopes_json TEXT NOT NULL,
 		expires_at TEXT NOT NULL,
 		interval_seconds INTEGER NOT NULL,
@@ -154,8 +167,9 @@ export const AUTH_SCHEMA_SQL = [
 ];
 export type DeviceCodeRow = {
     id: string;
-    device_code: string;
+    device_code_hash: string;
     user_code: string;
+    client_id: string;
     requested_scopes_json: string;
     expires_at: string;
     interval_seconds: number;
@@ -269,6 +283,8 @@ export interface PostgresAuthStore {
         data?: Record<string, unknown>;
     }): Promise<TokenRefreshResponse>;
     refreshAccessToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse>;
+    startAuthorizationCode(request: import('../types.ts').AuthorizationCodeStartRequest): Promise<import('../types.ts').AuthorizationCodeStartResponse>;
+    exchangeAuthorizationCode(request: import('../types.ts').AuthorizationCodeExchangeRequest): Promise<TokenRefreshResponse>;
     revokeOAuthToken(token: string): Promise<void>;
     createPersonalAccessToken(userId: string, input: {
         name: string;
@@ -332,6 +348,8 @@ PostgresAuthStore.prototype.approveDeviceFlow = extractedMethods.approveDeviceFl
 PostgresAuthStore.prototype.pollDeviceFlow = extractedMethods.pollDeviceFlowMethod;
 PostgresAuthStore.prototype.issueUserSession = extractedMethods.issueUserSessionMethod;
 PostgresAuthStore.prototype.refreshAccessToken = extractedMethods.refreshAccessTokenMethod;
+PostgresAuthStore.prototype.startAuthorizationCode = extractedMethods.startAuthorizationCodeMethod;
+PostgresAuthStore.prototype.exchangeAuthorizationCode = extractedMethods.exchangeAuthorizationCodeMethod;
 PostgresAuthStore.prototype.revokeOAuthToken = extractedMethods.revokeOAuthTokenMethod;
 PostgresAuthStore.prototype.createPersonalAccessToken = extractedMethods.createPersonalAccessTokenMethod;
 PostgresAuthStore.prototype.listPersonalAccessTokens = extractedMethods.listPersonalAccessTokensMethod;

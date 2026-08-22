@@ -10,6 +10,9 @@ export interface DeviceCodePollRequest { deviceCode: string }
 export interface DeviceCodeApproveRequest { userCode: string; principalId: string; displayName?: string; scopes?: ApiScope[]; metadata?: Record<string, unknown> }
 export interface TokenRefreshRequest { refreshToken: string }
 export interface TokenRefreshResponse { ok: true; accessToken: string; refreshToken: string; tokenType: 'Bearer'; expiresAt: string; expiresInSeconds: number; principal: ApiPrincipal }
+export interface AuthorizationCodeStartRequest { clientId: string; userId: string; redirectUri: string; codeChallenge: string; scopes: string[] }
+export interface AuthorizationCodeStartResponse { code: string; expiresInSeconds: number }
+export interface AuthorizationCodeExchangeRequest { clientId: string; code: string; redirectUri: string; codeVerifier: string }
 export interface SdkHttpOperationRequest { input?: Record<string, unknown>; repoRoot?: string }
 export interface WorkflowHttpOperationRequest { input?: Record<string, unknown>; cwd?: string; env?: Record<string, string> }
 export interface ApiWorkflowOperationResponse { ok: boolean; operation: string; payload?: Record<string, unknown> | null; nextSteps?: Array<{ operation: string; reason?: string; input?: Record<string, unknown> }> }
@@ -19,6 +22,8 @@ export interface ApiAuthProvider {
 	startDeviceFlow(request: DeviceCodeStartRequest): Promise<DeviceCodeStartResponse>;
 	pollDeviceFlow(request: DeviceCodePollRequest): Promise<DeviceCodePollResponse>;
 	refreshAccessToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse>;
+	startAuthorizationCode(request: AuthorizationCodeStartRequest): Promise<AuthorizationCodeStartResponse>;
+	exchangeAuthorizationCode(request: AuthorizationCodeExchangeRequest): Promise<TokenRefreshResponse>;
 	revokeOAuthToken(token: string): Promise<void>;
 	approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{ ok: true }>;
 	authenticateBearerToken(token: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;

@@ -24,6 +24,10 @@ describe('control-plane protocol contract', () => {
 		async refreshAccessToken() {
 			return { accessToken: 'access-2', refreshToken: 'refresh-2', tokenType: 'Bearer', expiresInSeconds: 900, principal: { scopes: ['treeseed:read'] } };
 		},
+		async startAuthorizationCode() { return { code: 'code-a', expiresInSeconds: 300 }; },
+		async exchangeAuthorizationCode() {
+			return { accessToken: 'access-3', refreshToken: 'refresh-3', tokenType: 'Bearer', expiresInSeconds: 900, principal: { scopes: ['treeseed:read'] } };
+		},
 		async revokeOAuthToken() {},
 	};
 	const operationStore = (overrides: Record<string, unknown> = {}) => ({

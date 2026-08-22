@@ -4,7 +4,7 @@ import { addSeconds,PostgresAuthStore,DeviceCodeRow,isoNow,now,parseJson,stableH
 import { nextOpaqueToken } from "../../tokens.ts";
 export async function pollDeviceFlowMethod(this: PostgresAuthStore, request: DeviceCodePollRequest): Promise<DeviceCodePollResponse> {
     await this.ensureInitialized();
-    const row = await this.first<DeviceCodeRow>(`SELECT * FROM device_codes WHERE device_code = ?`, [request.deviceCode]);
+    const row = await this.first<DeviceCodeRow>(`SELECT * FROM device_codes WHERE device_code_hash = ?`, [stableHash(request.deviceCode, this.config.authSecret)]);
     if (!row) {
         return { ok: false, status: 'invalid', error: 'Unknown device code.' };
     }
@@ -36,7 +36,7 @@ export async function pollDeviceFlowMethod(this: PostgresAuthStore, request: Dev
         refreshTokenHash,
         row.requested_scopes_json,
         refreshExpiresAt.toISOString(),
-        JSON.stringify({ deviceCodeId: row.id }),
+        JSON.stringify({ deviceCodeId: row.id, clientId: row.client_id }),
         isoNow(),
         isoNow(),
     ]);
