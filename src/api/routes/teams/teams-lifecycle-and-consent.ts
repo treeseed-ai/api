@@ -21,30 +21,6 @@ export function installTeamsLifecycleAndConsentRoutes(context: any) {
 		return { principal: auth.principal, access };
 	};
 
-	app.get('/v1/teams/:teamId/access', async (c: any) => {
-		const auth = await ensurePrincipal(c);
-		if (auth.response) return auth.response;
-		const teamId = c.req.param('teamId');
-		const team = await store.getTeam(teamId);
-		if (!team) return jsonError(c, 404, 'Team not found.', { code: 'team_missing' });
-		if (!await store.principalCanAccessTeam(auth.principal, teamId)) {
-			return jsonError(c, 403, 'Team access denied.', { code: 'team_forbidden' });
-		}
-		return c.json({
-			ok: true,
-			payload: {
-				team,
-				access: await store.getTeamAccessSummary(teamId, auth.principal),
-			},
-		});
-	});
-
-	app.get('/v1/teams/:teamId/invites', async (c: any) => {
-		const access = await requireTeamRole(c, c.req.param('teamId'), ['team_owner', 'project_lead']);
-		if (access.response) return access.response;
-		return c.json({ ok: true, payload: await store.listTeamInvites(c.req.param('teamId')) });
-	});
-
 	app.post('/v1/teams/:teamId/invites/:inviteId/resend', async (c: any) => {
 		const teamId = c.req.param('teamId');
 		const access = await requireTeamRole(c, teamId, ['team_owner', 'project_lead']);

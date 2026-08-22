@@ -74,28 +74,6 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 					});
 				});
 	
-	app.get('/v1/teams/:teamId/members', async (c) => {
-					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
-					if (access.response) return access.response;
-					const members = await store.listTeamMembers(c.req.param('teamId'));
-					const query = String(c.req.query('q') ?? '').trim().toLowerCase();
-					const ownerCount = members.filter((member) => member.roles?.includes('team_owner')).length;
-					const filtered = query
-						? members.filter((member) => `${member.displayName ?? ''} ${member.email ?? ''} ${member.roleKey ?? ''}`.toLowerCase().includes(query))
-						: members;
-					if (c.req.query('page') || c.req.query('limit') || query) {
-						const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 25)));
-						const page = Math.max(1, Number(c.req.query('page') ?? 1));
-						const offset = (page - 1) * limit;
-						return c.json({ ok: true, payload: { items: filtered.slice(offset, offset + limit), page, limit, total: filtered.length, ownerCount } });
-					}
-					return c.json({
-						ok: true,
-						payload: members,
-						ownerCount,
-					});
-				});
-	
 	app.get('/v1/teams/:teamId/permissions', async (c) => {
 					const access = await requireTeamAccess(c, store, c.req.param('teamId'), 'projects:read:team');
 					if (access.response) return access.response;

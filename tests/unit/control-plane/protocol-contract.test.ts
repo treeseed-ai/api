@@ -33,7 +33,12 @@ describe('control-plane protocol contract', () => {
 		async listTeamProjects() { return []; },
 		async listTeamsForPrincipal() { return []; },
 		async loadTeamProfileByName() { return null; },
+		async getTeam(teamId: string) { return { id: teamId, name: 'TreeSeed' }; },
 		async principalCanAccessTeam() { return true; },
+		async getTeamAccessSummary(teamId: string) { return { teamId, roles: ['project_lead'] }; },
+		async resolvePrincipalTeamContext() { return { roles: ['project_lead'] }; },
+		async listTeamMembers() { return []; },
+		async listTeamInvites() { return []; },
 		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
@@ -129,6 +134,28 @@ describe('control-plane protocol contract', () => {
 		expect((await app.request('/v1/teams/by-name/missing/profile', { headers })).status).toBe(404);
 		expect(registry.require('teams.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.list);
 		expect(registry.require('teams.profile.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.profile);
+	});
+
+	it('serves team access, members, and invites through SDK-owned operation bindings', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies({
+			async listTeamMembers() { return [{ id: 'member-1', displayName: 'Adrian', roles: ['team_owner'] }]; },
+			async listTeamInvites() { return [{ id: 'invite-1', email: 'member@example.test' }]; },
+		}));
+		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
+		const headers = { authorization: 'Bearer test-token' };
+		expect(await (await app.request('/v1/teams/team-a/access', { headers })).json()).toEqual({ data: {
+			team: { id: 'team-a', name: 'TreeSeed' }, access: { teamId: 'team-a', roles: ['project_lead'] },
+		} });
+		expect(await (await app.request('/v1/teams/team-a/members?limit=1', { headers })).json()).toEqual({ data: {
+			items: [{ id: 'member-1', displayName: 'Adrian', roles: ['team_owner'] }], total: 1, ownerCount: 1, cursor: null,
+		} });
+		expect(await (await app.request('/v1/teams/team-a/invites', { headers })).json()).toEqual({ data: {
+			items: [{ id: 'invite-1', email: 'member@example.test' }], total: 1, cursor: null,
+		} });
+		expect(registry.require('teams.access.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.access);
+		expect(registry.require('teams.members.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.members);
+		expect(registry.require('teams.invites.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.invites);
 	});
 
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {
