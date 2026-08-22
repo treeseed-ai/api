@@ -1,5 +1,5 @@
 import { OperationRegistry } from './operation-registry.ts';
-import { createAccountEmailsOperation, createAccountIdentityOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation, createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
+import { createAccountEmailsOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation, createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
 import { createDeepHealthOperation, createReadinessOperation, statusOperation, type DeepHealthDependencies } from './core-operations.ts';
 import { createProjectAccessOperation, createProjectArchiveOperation, createProjectCreateOperation, createProjectDeleteOperation, createProjectDeletionBlockersOperation, createProjectRestoreOperation, createProjectShowOperation, createProjectSummaryOperation, createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
 import { createTeamAccessOperation, createTeamArchiveOperation, createTeamCreateOperation, createTeamDeletionReadinessOperation, createTeamInviteAcceptOperation, createTeamInviteOperation, createTeamInvitesOperation, createTeamInviteShowOperation, createTeamLeaveOperation, createTeamMembersOperation, createTeamMemberRemoveOperation, createTeamMemberUpdateOperation, createTeamOwnershipTransferOperation, createTeamProfileOperation, createTeamRestoreOperation, createTeamsListOperation, createTeamUpdateOperation, type TeamOperationDependencies } from './team-operations.ts';
@@ -18,6 +18,11 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		createAccountEmailsOperation(dependencies),
 		createAccountSessionsOperation(dependencies),
 		createAccountSessionRevokeOperation(dependencies),
+		createAccountProfileUpdateOperation(dependencies),
+		createAccountPreferencesOperation(dependencies),
+		createAccountPreferencesUpdateOperation(dependencies),
+		createAccountNotificationsOperation(dependencies),
+		createAccountNotificationReadOperation(dependencies),
 		createTeamsListOperation(dependencies),
 		createTeamProfileOperation(dependencies),
 		createTeamCreateOperation(dependencies),

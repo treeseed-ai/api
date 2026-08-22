@@ -154,91 +154,6 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					return c.json({ ok: true, payload: await listUserEmailAddresses(store, auth.principal.id) });
 				});
 	
-	app.patch('/v1/auth/web/profile', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const body = await readJsonOrFormBody(c);
-					const firstName = optionalTrimmedString(body.firstName);
-					const lastName = optionalTrimmedString(body.lastName);
-					const displayName = String(body.displayName ?? body.name ?? [firstName, lastName].filter(Boolean).join(' ')).trim();
-					const image = optionalTrimmedString(body.image);
-					const headline = optionalTrimmedString(body.headline);
-					const profileSummary = optionalTrimmedString(body.profileSummary);
-					const location = optionalTrimmedString(body.location);
-					const website = optionalTrimmedString(body.website);
-					const expertise = (Array.isArray(body.expertise) ? body.expertise : String(body.expertise ?? '').split(','))
-						.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 8);
-					if (!displayName) return jsonError(c, 400, 'Display name is required.');
-					if (headline && headline.length > 120) return jsonError(c, 400, 'Headline must be 120 characters or fewer.', { code: 'profile_headline_invalid', fieldErrors: { headline: 'Headline must be 120 characters or fewer.' } });
-					if (profileSummary && profileSummary.length > 600) return jsonError(c, 400, 'Profile summary must be 600 characters or fewer.', { code: 'profile_summary_invalid', fieldErrors: { profileSummary: 'Profile summary must be 600 characters or fewer.' } });
-					if (website && (!website.startsWith('https://') || website.length > 240)) return jsonError(c, 400, 'Website must be a valid HTTPS URL.', { code: 'profile_website_invalid', fieldErrors: { website: 'Enter a valid HTTPS URL.' } });
-					const metadata = {
-						...(auth.principal.metadata ?? {}),
-						firstName,
-						lastName,
-						image,
-						headline,
-						profileSummary,
-						location,
-						website,
-						expertise,
-					};
-					await store.run(`UPDATE users SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?`, [
-						displayName,
-						JSON.stringify(metadata),
-						new Date().toISOString(),
-						auth.principal.id,
-					]);
-					return c.json({ ok: true, payload: { changed: true } });
-				});
-
-	app.get('/v1/auth/web/preferences', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const row = await store.first(`SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
-					return c.json({ ok: true, payload: {
-						timeZone: row?.time_zone ?? 'UTC',
-						realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
-						realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(Number(row?.real_time_polling_interval_seconds)) ? Number(row?.real_time_polling_interval_seconds) : 5,
-					} });
-				});
-
-	app.patch('/v1/auth/web/preferences', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const body = await readJsonOrFormBody(c);
-					const existing = await store.first(`SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1`, [auth.principal.id]);
-					const timeZone = optionalTrimmedString(body.timeZone) ?? String(existing?.time_zone ?? 'UTC');
-					try {
-						new Intl.DateTimeFormat('en', { timeZone }).format();
-					} catch {
-						return jsonError(c, 400, 'Select a valid IANA time zone.', { code: 'invalid_time_zone' });
-					}
-					const realTimeUpdates = body.realTimeUpdates === undefined
-						? existing ? Number(existing.real_time_updates) !== 0 : true
-						: body.realTimeUpdates === true || body.realTimeUpdates === 'true' || body.realTimeUpdates === '1';
-					const interval = body.realTimePollingIntervalSeconds === undefined
-						? Number(existing?.real_time_polling_interval_seconds ?? 5)
-						: Number(body.realTimePollingIntervalSeconds);
-					if (![2, 5, 15, 30].includes(interval)) return jsonError(c, 400, 'Select a supported real-time polling interval.', { code: 'invalid_realtime_polling_interval' });
-					const now = new Date().toISOString();
-					await store.run(
-						`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, created_at, updated_at)
-						 VALUES (?, 'fern', 'system', ?, ?, ?, ?, ?)
-						 ON CONFLICT (user_id) DO UPDATE SET time_zone = EXCLUDED.time_zone, real_time_updates = EXCLUDED.real_time_updates, real_time_polling_interval_seconds = EXCLUDED.real_time_polling_interval_seconds, updated_at = EXCLUDED.updated_at`,
-						[auth.principal.id, timeZone, realTimeUpdates ? 1 : 0, interval, now, now],
-					);
-					await store.recordAuditEvent({
-						actorType: 'user',
-						actorId: auth.principal.id,
-						eventType: 'account.preferences.updated',
-						targetType: 'user',
-						targetId: auth.principal.id,
-						data: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval },
-					});
-					return c.json({ ok: true, payload: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
-				});
-	
 	app.get('/v1/auth/web/appearance', async (c) => {
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
@@ -355,22 +270,4 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					return c.json({ ok: true, payload: await loadNotificationPreferences(store, auth.principal.id) });
 				});
 	
-	app.get('/v1/auth/web/notifications', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const allowedProjects = new Set((await store.listProjectsForPrincipal(auth.principal)).map((project) => project.id));
-					const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 20)));
-					const rows = await store.all(`SELECT user_notifications.id, user_notifications.read_at, user_notifications.created_at, notification_events.* FROM user_notifications INNER JOIN notification_events ON notification_events.id = user_notifications.event_id WHERE user_notifications.user_id = ? ORDER BY user_notifications.created_at DESC LIMIT ?`, [auth.principal.id, limit * 3]);
-					return c.json({ ok: true, payload: rows.filter((row) => allowedProjects.has(row.project_id)).slice(0, limit).map((row) => ({ id: row.id, eventType: row.event_type, contentType: row.content_type, projectId: row.project_id, title: row.title, summary: row.summary, targetUrl: row.target_url, createdAt: row.created_at, readAt: row.read_at })) });
-				});
-	
-	app.post('/v1/auth/web/notifications/:notificationId/read', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const row = await store.first(`SELECT id, read_at FROM user_notifications WHERE id = ? AND user_id = ? LIMIT 1`, [c.req.param('notificationId'), auth.principal.id]);
-					if (!row) return jsonError(c, 404, 'Notification was not found.');
-					const readAt = row.read_at ?? new Date().toISOString();
-					await store.run(`UPDATE user_notifications SET read_at = ? WHERE id = ? AND user_id = ?`, [readAt, row.id, auth.principal.id]);
-					return c.json({ ok: true, payload: { id: row.id, readAt } });
-				});
 }

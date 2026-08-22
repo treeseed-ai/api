@@ -4,6 +4,7 @@ import { ControlPlaneOperationError, type BoundOperation } from './operation-reg
 export interface AccountOperationDependencies {
 	store: {
 		listTeamsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
+		listProjectsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, any>>>;
 		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
 		all(query: string, parameters?: unknown[]): Promise<Array<Record<string, any>>>;
 		run(query: string, parameters?: unknown[]): Promise<unknown>;
@@ -102,4 +103,91 @@ export function createAccountSessionRevokeOperation(dependencies: AccountOperati
 			return { id: input.path.sessionId, status: existing.revoked_at ? 'already-revoked' : 'revoked' };
 		},
 	};
+}
+
+function optionalString(value: unknown) {
+	return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function createAccountProfileUpdateOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.updateProfile> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.accounts.updateProfile,
+		async handler(input, context) {
+			const actor = principal(context);
+			const body = input.body as Record<string, unknown>;
+			const firstName = optionalString(body.firstName), lastName = optionalString(body.lastName);
+			const displayName = String(body.displayName ?? body.name ?? [firstName, lastName].filter(Boolean).join(' ')).trim();
+			const headline = optionalString(body.headline), profileSummary = optionalString(body.profileSummary), website = optionalString(body.website);
+			if (!displayName) throw new ControlPlaneOperationError(400, 'profile_name_required', 'Display name is required.');
+			if (headline && headline.length > 120) throw new ControlPlaneOperationError(400, 'profile_headline_invalid', 'Headline must be 120 characters or fewer.');
+			if (profileSummary && profileSummary.length > 600) throw new ControlPlaneOperationError(400, 'profile_summary_invalid', 'Profile summary must be 600 characters or fewer.');
+			if (website && (!website.startsWith('https://') || website.length > 240)) throw new ControlPlaneOperationError(400, 'profile_website_invalid', 'Website must be a valid HTTPS URL.');
+			const expertise = (Array.isArray(body.expertise) ? body.expertise : String(body.expertise ?? '').split(','))
+				.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 8);
+			const metadata = { ...(actor.metadata ?? {}), firstName, lastName, image: optionalString(body.image), headline,
+				profileSummary, location: optionalString(body.location), website, expertise };
+			await dependencies.store.run('UPDATE users SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?',
+				[displayName, JSON.stringify(metadata), new Date().toISOString(), actor.id]);
+			return { changed: true };
+		},
+	};
+}
+
+function preferenceView(row: Record<string, any> | null) {
+	const interval = Number(row?.real_time_polling_interval_seconds);
+	return { timeZone: row?.time_zone ?? 'UTC', realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
+		realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(interval) ? interval : 5 };
+}
+
+export function createAccountPreferencesOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.preferences> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.preferences, async handler(_input, context) {
+		const actor = principal(context);
+		return preferenceView(await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]));
+	} };
+}
+
+export function createAccountPreferencesUpdateOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.updatePreferences> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.updatePreferences, async handler(input, context) {
+		const actor = principal(context), body = input.body as Record<string, unknown>;
+		const existing = await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]);
+		const timeZone = optionalString(body.timeZone) ?? String(existing?.time_zone ?? 'UTC');
+		try { new Intl.DateTimeFormat('en', { timeZone }).format(); } catch { throw new ControlPlaneOperationError(400, 'invalid_time_zone', 'Select a valid IANA time zone.'); }
+		const realTimeUpdates = body.realTimeUpdates === undefined ? preferenceView(existing).realTimeUpdates
+			: body.realTimeUpdates === true || body.realTimeUpdates === 'true' || body.realTimeUpdates === '1';
+		const interval = body.realTimePollingIntervalSeconds === undefined ? preferenceView(existing).realTimePollingIntervalSeconds : Number(body.realTimePollingIntervalSeconds);
+		if (![2, 5, 15, 30].includes(interval)) throw new ControlPlaneOperationError(400, 'invalid_realtime_polling_interval', 'Select a supported real-time polling interval.');
+		const now = new Date().toISOString();
+		await dependencies.store.run(`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, created_at, updated_at)
+			VALUES (?, 'fern', 'system', ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO UPDATE SET time_zone = EXCLUDED.time_zone,
+			real_time_updates = EXCLUDED.real_time_updates, real_time_polling_interval_seconds = EXCLUDED.real_time_polling_interval_seconds, updated_at = EXCLUDED.updated_at`,
+			[actor.id, timeZone, realTimeUpdates ? 1 : 0, interval, now, now]);
+		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: actor.id, eventType: 'account.preferences.updated', targetType: 'user', targetId: actor.id,
+			data: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
+		return { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval };
+	} };
+}
+
+export function createAccountNotificationsOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.notifications> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.notifications, async handler(input, context) {
+		const actor = principal(context);
+		const allowed = new Set((await dependencies.store.listProjectsForPrincipal(actor)).map((project) => project.id));
+		const limit = Math.min(100, Math.max(1, Number(input.query.limit ?? 20)));
+		const rows = await dependencies.store.all(`SELECT user_notifications.id, user_notifications.read_at, user_notifications.created_at, notification_events.*
+			FROM user_notifications INNER JOIN notification_events ON notification_events.id = user_notifications.event_id
+			WHERE user_notifications.user_id = ? ORDER BY user_notifications.created_at DESC LIMIT ?`, [actor.id, limit * 3]);
+		return { items: rows.filter((row) => allowed.has(row.project_id)).slice(0, limit).map((row) => ({ id: row.id, eventType: row.event_type,
+			contentType: row.content_type, projectId: row.project_id, title: row.title, summary: row.summary, targetUrl: row.target_url,
+			createdAt: row.created_at, readAt: row.read_at })) };
+	} };
+}
+
+export function createAccountNotificationReadOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.readNotification> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.readNotification, async handler(input, context) {
+		const actor = principal(context);
+		const row = await dependencies.store.first('SELECT id, read_at FROM user_notifications WHERE id = ? AND user_id = ? LIMIT 1', [input.path.notificationId, actor.id]);
+		if (!row) throw new ControlPlaneOperationError(404, 'notification_missing', 'The notification was not found.');
+		const readAt = row.read_at ?? new Date().toISOString();
+		await dependencies.store.run('UPDATE user_notifications SET read_at = ? WHERE id = ? AND user_id = ?', [readAt, row.id, actor.id]);
+		return { id: row.id, readAt };
+	} };
 }
