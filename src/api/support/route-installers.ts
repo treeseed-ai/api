@@ -2,11 +2,7 @@ import { installFeedbackAdministrationRoutes } from "../routes/feedback/administ
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installSessionEventRoutes } from "../routes/realtime/session-events.ts";
 import { installClientActionRoutes } from "../routes/realtime/client-actions.ts";
-import { installGovernanceCommonsProposalsQuestionsAndVotesRoutes } from "../routes/governance/commons/governance-commons-proposals-questions-and-votes.ts";
-import { installGovernanceCommonsReviewsDecisionsAndDelegationsRoutes } from "../routes/governance/commons/governance-commons-reviews-decisions-and-delegations.ts";
 import { installOperationsPlatformRunnersAndJobsRoutes } from "../routes/operations/operations-platform-runners-and-jobs.ts";
-import { installGovernanceTeamProjectDelegationsAndApprovalsRoutes } from "../routes/projects/governance/governance-team-project-delegations-and-approvals.ts";
-import { installGovernanceTeamProjectPolicyRoutes } from "../routes/projects/governance/governance-team-project-policy.ts";
 import { installOperationsProjectJobsRoutes } from "../routes/projects/operations/operations-project-jobs.ts";
 import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/projects-settings-and-summaries.ts";
 import { installProjectsRepositoryTopologyRoutes } from "../routes/projects/repositories/projects-repository-topology.ts";
@@ -18,7 +14,6 @@ import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resour
 import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
 import { installFoundationApprovalDecisionsRoutes } from "../routes/support/foundation-approval-decisions.ts";
 import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
-import { installFoundationStewardTransitionCommonsProposalRoutes } from "../routes/support/foundation-stewardTransitionCommonsProposal.ts";
 import { installTeamServicesRoutes } from "../routes/teams/team-services.ts";
 import { installTeamServiceAuthorityRoutes } from "../routes/teams/team-service-authorities.ts";
 import { installTeamsStorageAndContentPreviewsRoutes } from "../routes/teams/teams-storage-and-content-previews.ts";
@@ -46,12 +41,7 @@ export function installPlatformRoutes(context: any): void {
   installGitHubConnectorRoutes(context);
   installGitHubWebhookRoutes(context);
   installProjectsSettingsAndSummariesRoutes(context);
-  installGovernanceTeamProjectPolicyRoutes(context);
-  installGovernanceTeamProjectDelegationsAndApprovalsRoutes(context);
   installOperationsProjectJobsRoutes(context);
   installFoundationApprovalDecisionsRoutes(context);
-  installGovernanceCommonsProposalsQuestionsAndVotesRoutes(context);
-  installFoundationStewardTransitionCommonsProposalRoutes(context);
-  installGovernanceCommonsReviewsDecisionsAndDelegationsRoutes(context);
   installTeamsStorageAndContentPreviewsRoutes(context);
 }
