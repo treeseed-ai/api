@@ -1,7 +1,32 @@
 import { createHash } from 'node:crypto';
-import { KNOWLEDGE_PACK_SCHEMA_VERSION, type KnowledgePackManifest, type KnowledgeVisibility } from '@treeseed/sdk/knowledge';
-import type { KnowledgeSnapshotPackInput } from '@treeseed/sdk/knowledge-packs';
+import {
+	KNOWLEDGE_PACK_SCHEMA_VERSION,
+	type BookDefinition,
+	type KnowledgePackManifest,
+	type KnowledgePageDefinition,
+	type KnowledgeVisibility,
+} from '@treeseed/sdk/knowledge';
 import { createDeterministicZip } from './knowledge-pack-zip.ts';
+
+export interface KnowledgeSnapshotProject {
+	teamId: string;
+	projectId: string;
+	repositoryId: string;
+	commitSha: string;
+	books: BookDefinition[];
+	pages: Array<{ definition: KnowledgePageDefinition; source: string; sourcePath?: string }>;
+	bookSourcePaths?: Record<string, string>;
+}
+
+interface KnowledgeSnapshotPackInput {
+	id?: string;
+	teamId: string;
+	createdAt: string;
+	projects: KnowledgeSnapshotProject[];
+	bookIds: string[];
+	publicationRevision: string;
+	publicationSourceClosure: string;
+}
 
 const digest = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
 const normalizedSource = (value: string) => `${value.replaceAll('\r\n', '\n').trimEnd()}\n`;

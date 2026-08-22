@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { KNOWLEDGE_PUBLICATION_SCHEMA_VERSION, type KnowledgePublicationManifest, type KnowledgeVisibility } from '@treeseed/sdk/knowledge';
-import type { KnowledgeSnapshotProject } from '@treeseed/sdk/knowledge-packs';
+import type { KnowledgeSnapshotProject } from './packs/knowledge-pack-builder.ts';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export const canonicalKnowledgePublicationValue = (value: unknown): string => Array.isArray(value)
