@@ -160,7 +160,7 @@ cases:
   - id: health.ready
     actor: anonymous
     method: GET
-    path: /readyz
+    path: /v1/health/ready
     expect:
       status: 200
 

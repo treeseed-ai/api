@@ -64,15 +64,15 @@ describe('control-plane protocol contract', () => {
 		const app = new Hono();
 		const registry = createApiControlPlaneOperations({ store: operationStore() });
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
-		const response = await app.request('/healthz/deep');
+		const response = await app.request('/v1/health/deep');
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
 		const specification = await app.request('/openapi.json');
-		expect((await specification.json() as any).paths['/healthz/deep'].get.operationId).toBe('health.deep');
+		expect((await specification.json() as any).paths['/v1/health/deep'].get.operationId).toBe('health.deep');
 		const unavailableApp = new Hono();
 		const unavailable = createApiControlPlaneOperations({ store: operationStore({ async ensureInitialized() { throw new Error('private database detail'); } }) });
 		installControlPlaneProtocolRoutes(unavailableApp, authenticate, oauthProvider, unavailable);
-		const failed = await unavailableApp.request('/healthz/deep');
+		const failed = await unavailableApp.request('/v1/health/deep');
 		const failedText = await failed.text();
 		expect(failed.status).toBe(503);
 		expect(failed.headers.get('content-type')).toContain('application/problem+json');
@@ -84,11 +84,11 @@ describe('control-plane protocol contract', () => {
 		const app = new Hono();
 		const registry = createApiControlPlaneOperations({ store: operationStore() });
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
-		const response = await app.request('/readyz');
+		const response = await app.request('/v1/health/ready');
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
 		const specification = await app.request('/openapi.json');
-		expect((await specification.json() as any).paths['/readyz'].get.operationId).toBe('health.ready');
+		expect((await specification.json() as any).paths['/v1/health/ready'].get.operationId).toBe('health.ready');
 	});
 
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {

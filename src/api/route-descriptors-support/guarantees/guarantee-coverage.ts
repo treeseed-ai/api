@@ -20,7 +20,7 @@ export const API_ENDPOINT_GUARANTEE_FAMILIES = [
 ];
 
 export function endpointGuaranteeFamily(path) {
-    if (path === '/healthz/deep' || path === '/v1/me' || path.startsWith('/v1/me/'))
+    if (path === '/v1/me' || path.startsWith('/v1/me/'))
         return 'health-and-identity';
     if (path.startsWith('/v1/auth/') || path.startsWith('/v1/team-invites/'))
         return 'auth-and-sessions';

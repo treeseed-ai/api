@@ -4,7 +4,7 @@ describe('control-plane API', () => {
 it('uses the Drizzle-owned web session schema before serving deep health', async () => {
 		const db = createTestPostgresDatabase();
 		const app = createTestApp({ db });
-		const deepHealth = await json(await app.request('/healthz/deep'));
+		const deepHealth = await json(await app.request('/v1/health/deep'));
 		expect(deepHealth).toMatchObject({
 			data: {
 				status: 'ok',

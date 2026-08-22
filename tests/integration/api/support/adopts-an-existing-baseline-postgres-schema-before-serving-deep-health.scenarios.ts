@@ -10,7 +10,7 @@ it('adopts an existing baseline Postgres schema before serving deep health', asy
 		await legacyDb.pool.query(`DELETE FROM treeseed_control_plane_schema_migrations WHERE name = '0000_control_plane.sql'`);
 		const db = ControlPlanePostgresDatabase.fromPool(legacyDb.pool, { migrationRoot: controlPlaneMigrationRoot });
 		const app = createTestApp({ db });
-		const deepHealth = await json(await app.request('/healthz/deep'));
+		const deepHealth = await json(await app.request('/v1/health/deep'));
 		expect(deepHealth, JSON.stringify(deepHealth)).toMatchObject({
 			data: {
 				status: 'ok',

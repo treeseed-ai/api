@@ -57,7 +57,7 @@ export function createDeepHealthOperation(dependencies: DeepHealthDependencies):
 			schemaVersion: CONTROL_PLANE_OPERATION_SCHEMA_VERSION,
 			operationId: 'health.deep',
 			description: 'Read authoritative control-plane database readiness.',
-			rest: { method: 'GET', path: '/healthz/deep' },
+			rest: { method: 'GET', path: '/v1/health/deep' },
 			schemas: { input: 'treeseed.health.deep.input/v1', output: 'treeseed.health.deep.output/v1', errors: 'treeseed.problem/v1' },
 			capability: 'health.read', oauthScopes: [], kind: 'read', riskClass: 'ordinary', confirmation: 'never',
 			idempotency: { required: false, header: 'Idempotency-Key' },
@@ -88,7 +88,7 @@ export function createReadinessOperation(dependencies: DeepHealthDependencies): 
 			...operation.descriptor,
 			operationId: 'health.ready',
 			description: 'Read authoritative control-plane readiness.',
-			rest: { method: 'GET', path: '/readyz' },
+			rest: { method: 'GET', path: '/v1/health/ready' },
 			schemas: { ...operation.descriptor.schemas, output: 'treeseed.health.ready.output/v1' },
 		},
 	};

@@ -3,7 +3,7 @@ import { authorizeApp,createTeamAndProject,createTestApp,describe,expect,it,json
 describe('control-plane API', () => {
 it('serves deep health and runner health summaries', async () => {
 		const app = createTestApp();
-		const deepHealth = await json(await app.request('/healthz/deep'));
+		const deepHealth = await json(await app.request('/v1/health/deep'));
 		expect(deepHealth, JSON.stringify(deepHealth)).toMatchObject({
 			data: {
 				status: 'ok',

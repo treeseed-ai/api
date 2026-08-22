@@ -13,7 +13,7 @@ it('repairs an incomplete Postgres baseline with a stale applied marker before s
 			['0000_control_plane.sql', new Date().toISOString()],
 		);
 		const app = createTestApp({ db });
-		const deepHealth = await json(await app.request('/healthz/deep'));
+		const deepHealth = await json(await app.request('/v1/health/deep'));
 		expect(deepHealth).toMatchObject({
 			data: {
 				status: 'ok',
