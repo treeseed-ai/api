@@ -29,6 +29,7 @@ import { createProviderRuntimeService } from '../control-plane/repositories/prov
 import { createProviderAssignmentService } from '../control-plane/repositories/providers/provider-assignment-service.ts';
 import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
+import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
 import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
@@ -191,6 +192,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents);
 	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
+	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
@@ -211,6 +213,7 @@ export function createPlatformApiApp(options: any = {}) {
 			providerAssignments,
 			providerSignals,
 			providerWorkflows,
+			treeDxProxy,
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),

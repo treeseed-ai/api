@@ -6,7 +6,6 @@ import { installCapacityOperatorRoutes } from './support/operator.ts';
 import { installPlanningStateRoutes } from './support/planning-state.ts';
 import { installStructuredEstimateRoutes } from './support/structured-estimates.ts';
 import { installDecisionWorkGraphRoutes } from './treedx/graph/decision-work-graphs.ts';
-import { installTreeDxProxyRoutes,type TreeDxProxyRouteOptions } from './treedx/repositories/treedx-proxy.ts';
 
 function installCapacityErrorBoundary(app: Hono) {
 	app.onError((error, c) => {
@@ -27,7 +26,7 @@ function installCapacityErrorBoundary(app: Hono) {
 	});
 }
 
-export function installCapacityRoutes(app: Hono, options: ProjectDiagnosticsRouteOptions & TreeDxProxyRouteOptions & { store: any; sessionEvents?: any; requireTeamAccess: (...args: any[]) => Promise<any>; runtime: any; runtimeControlPlaneAuthProvider: any; config: Record<string, unknown> }) {
+export function installCapacityRoutes(app: Hono, options: ProjectDiagnosticsRouteOptions & { store: any; sessionEvents?: any; requireTeamAccess: (...args: any[]) => Promise<any>; runtime: any; runtimeControlPlaneAuthProvider: any; config: Record<string, unknown> }) {
 	installCapacityErrorBoundary(app);
 	installCapacityOperatorRoutes(app, options);
 	installPlanningStateRoutes(app, options);
@@ -35,5 +34,4 @@ export function installCapacityRoutes(app: Hono, options: ProjectDiagnosticsRout
 	installDecisionWorkGraphRoutes(app, options);
 	installResearchWorkflowRoutes(app, options);
 	installProjectDiagnosticsRoutes(app, options);
-	installTreeDxProxyRoutes(app, options);
 }

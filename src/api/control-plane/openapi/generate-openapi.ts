@@ -20,6 +20,7 @@ export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http:/
 			description: descriptor.description,
 			tags: [descriptor.operationId.split('.')[0]],
 			security: descriptor.authentication === 'oauth' ? [{ oauth: descriptor.oauthScopes }]
+				: descriptor.authentication === 'oauth_or_provider' ? [{ oauth: descriptor.oauthScopes }, { providerProtocol: [] }]
 				: descriptor.authentication === 'provider' ? [{ providerProtocol: [] }] : [],
 			...(descriptor.kind === 'mutation' ? { requestBody: { required: true, content: { 'application/json': { schema: jsonSchema(operation, 'input') } } } } : {}),
 			responses: {

@@ -64,9 +64,12 @@ export function createOperationHttpHandler(
 			const descriptor = operation.binding.descriptor;
 			const idempotencyKey = context.req.header(descriptor.idempotency.header)
 				?? (descriptor.operationId === 'repositories.github.webhook' ? context.req.header('x-github-delivery') : undefined);
-			const authInfo = descriptor.authentication === 'oauth' ? await authenticate(context.req.raw) : undefined;
+			const providerAuth = context.get('capacityProviderAccessAuth') as { principal?: { membershipId?: string; capacityProviderId?: string; teamId?: string; scopes?: string[] } } | undefined;
+			const authInfo = descriptor.authentication === 'oauth'
+				|| (descriptor.authentication === 'oauth_or_provider' && !providerAuth?.principal)
+				? await authenticate(context.req.raw) : undefined;
 			if (authInfo instanceof Response) return authInfo;
-			const missingScope = descriptor.oauthScopes.find((scope) => !authInfo?.scopes.includes(scope));
+			const missingScope = authInfo ? descriptor.oauthScopes.find((scope) => !authInfo.scopes.includes(scope)) : undefined;
 			if (missingScope) throw new ControlPlaneOperationError(403, 'oauth_scope_insufficient', `The operation requires ${missingScope}.`);
 			if (descriptor.idempotency.required && !idempotencyKey) {
 				throw new ControlPlaneOperationError(400, 'idempotency_key_required', `${descriptor.idempotency.header} is required.`);
@@ -93,7 +96,6 @@ export function createOperationHttpHandler(
 					throw new ControlPlaneOperationError(409, 'confirmation_invalid', 'The confirmation is invalid, expired, changed, or already used.');
 				}
 			}
-			const providerAuth = context.get('capacityProviderAccessAuth') as { principal?: { membershipId?: string; capacityProviderId?: string; teamId?: string; scopes?: string[] } } | undefined;
 			const providerIdentity = providerAuth?.principal;
 			const output = operation.binding.schema.output.parse(await operation.handler(input, {
 				interface: 'rest',
@@ -104,6 +106,7 @@ export function createOperationHttpHandler(
 				rawBody: parsed.rawBody,
 				requestHeaders: Object.fromEntries(['content-type', 'content-length', 'x-hub-signature-256',
 					'x-github-delivery', 'x-github-event', 'authorization', 'x-treeseed-provider-proof',
+					'x-treeseed-assignment-id', 'x-treeseed-treedx-proxy-handle-id', 'x-treeseed-treedx-proxy-handle',
 					'cf-connecting-ip', 'x-forwarded-for'].map((name) => [name, context.req.header(name) ?? ''])),
 				providerAuth,
 				signal: context.req.raw.signal,
