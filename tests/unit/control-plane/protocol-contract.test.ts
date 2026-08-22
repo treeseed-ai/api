@@ -6,6 +6,7 @@ import { controlPlaneOperations, createApiControlPlaneOperations } from '../../.
 import { OperationRegistry, type BoundOperation } from '../../../src/api/control-plane/catalog/operation-registry.ts';
 import { installControlPlaneProtocolRoutes } from '../../../src/api/control-plane/http/protocol-routes.ts';
 import { generateOpenApi, openApiDigest } from '../../../src/api/control-plane/openapi/generate-openapi.ts';
+import { ConfirmationService, encodeConfirmation } from '../../../src/api/control-plane/confirmation/confirmation-service.ts';
 
 const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
@@ -60,6 +61,12 @@ describe('control-plane protocol contract', () => {
 		store: operationStore(overrides),
 		capacity: { async evaluateProjectDeletionBlockers() { return []; } },
 	});
+	const confirmationService = () => {
+		const consumed = new Set<string>();
+		return new ConfirmationService('test-confirmation-secret', { async consume(nonce) {
+			if (consumed.has(nonce)) return false; consumed.add(nonce); return true;
+		} });
+	};
 
 	it('binds status to one catalog operation and deterministic OpenAPI 3.1.1', () => {
 		const operation = controlPlaneOperations.require('status.show');
@@ -266,6 +273,19 @@ describe('control-plane protocol contract', () => {
 		expect(calls).toEqual([{ input: { path: { projectId: 'project-a' }, query: {}, body: { name: 'Example' } }, requestId: 'request-1', traceparent: '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' }]);
 	});
 
+	it('binds confirmation state to principal, client, operation, arguments, expiry, and one use', async () => {
+		const confirmations = confirmationService();
+		const identity = { principalId: 'user-1', clientId: 'client-1', operationId: 'projects.delete', arguments: { path: { projectId: 'project-1' }, body: { confirmation: 'DELETE project' } } };
+		const state = confirmations.request({ ...identity, requestId: 'request-1' }).confirmation;
+		expect(await confirmations.verify(state, { ...identity, principalId: 'user-2' })).toBe(false);
+		expect(await confirmations.verify(state, { ...identity, clientId: 'client-2' })).toBe(false);
+		expect(await confirmations.verify(state, { ...identity, operationId: 'projects.archive' })).toBe(false);
+		expect(await confirmations.verify(state, { ...identity, arguments: { ...identity.arguments, body: { confirmation: 'changed' } } })).toBe(false);
+		expect(await confirmations.verify({ ...state, expiresAt: '2000-01-01T00:00:00.000Z' }, identity)).toBe(false);
+		expect(await confirmations.verify(state, identity)).toBe(true);
+		expect(await confirmations.verify(state, identity)).toBe(false);
+	});
+
 	it('lists only visible team projects through the shared REST and MCP operation', async () => {
 		const registry = createApiControlPlaneOperations(apiDependencies({
 			async listTeamProjects() {
@@ -309,21 +329,39 @@ describe('control-plane protocol contract', () => {
 	it('routes project lifecycle mutations through SDK-owned bindings', async () => {
 		const app = new Hono();
 		const registry = createApiControlPlaneOperations(apiDependencies());
+		const confirmations = confirmationService();
 		installControlPlaneProtocolRoutes(app, async () => ({
 			principal: { id: 'user_1', scopes: ['treeseed:read', 'treeseed:projects:write'], roles: ['admin'], permissions: [] },
 			credential: { id: 'client_1' },
-		}), oauthProvider, registry);
+		}), oauthProvider, registry, confirmations);
 		const mutationHeaders = { authorization: 'Bearer test-token', 'content-type': 'application/json', 'idempotency-key': 'project-lifecycle-1' };
 		const created = await app.request('/v1/teams/team-a/projects', { method: 'POST', headers: mutationHeaders, body: JSON.stringify({ slug: 'new', name: 'New Project' }) });
 		expect(created.status).toBe(200);
 		expect(await created.json()).toMatchObject({ data: { id: 'project-new', teamId: 'team-a', slug: 'new' } });
-		const archive = await app.request('/v1/projects/project-a/archive', { method: 'POST', headers: { ...mutationHeaders, 'if-match': '"project-a"' }, body: '{}' });
+		const archiveRequest = { method: 'POST', headers: { ...mutationHeaders, 'if-match': '"project-a"' }, body: '{}' };
+		const archiveRequired = await app.request('/v1/projects/project-a/archive', archiveRequest);
+		const archiveState = (await archiveRequired.json() as any).inputRequired.confirmation;
+		const archive = await app.request('/v1/projects/project-a/archive', { ...archiveRequest, headers: {
+			...archiveRequest.headers, 'x-treeseed-confirmation': encodeConfirmation(archiveState),
+		} });
 		expect(archive.status).toBe(200);
 		const blockers = await app.request('/v1/projects/project-a/deletion-blockers', { headers: { authorization: 'Bearer test-token' } });
 		expect(await blockers.json()).toEqual({ data: { blockers: [] } });
-		const removed = await app.request('/v1/projects/project-a', { method: 'DELETE', headers: { ...mutationHeaders, 'if-match': '"project-a"' }, body: JSON.stringify({ confirmation: 'DELETE sdk' }) });
+		const removalRequest = { method: 'DELETE', headers: { ...mutationHeaders, 'if-match': '"project-a"' }, body: JSON.stringify({ confirmation: 'DELETE sdk' }) };
+		const confirmationRequired = await app.request('/v1/projects/project-a', removalRequest);
+		expect(confirmationRequired.status).toBe(409);
+		const confirmationProblem = await confirmationRequired.json() as any;
+		expect(confirmationProblem).toMatchObject({ code: 'confirmation_required', inputRequired: { type: 'input_required' } });
+		const removed = await app.request('/v1/projects/project-a', { ...removalRequest, headers: {
+			...removalRequest.headers, 'x-treeseed-confirmation': encodeConfirmation(confirmationProblem.inputRequired.confirmation),
+		} });
 		expect(removed.status).toBe(200);
 		expect(await removed.json()).toEqual({ data: { id: 'project-a', deleted: true } });
+		const replay = await app.request('/v1/projects/project-a', { ...removalRequest, headers: {
+			...removalRequest.headers, 'x-treeseed-confirmation': encodeConfirmation(confirmationProblem.inputRequired.confirmation),
+		} });
+		expect(replay.status).toBe(409);
+		expect(await replay.json()).toMatchObject({ code: 'confirmation_invalid' });
 		expect(registry.require('projects.create').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.create);
 		expect(registry.require('projects.archive').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.archive);
 		expect(registry.require('projects.delete').binding).toBe(CONTROL_PLANE_OPERATIONS.projects.remove);
@@ -404,6 +442,40 @@ describe('control-plane protocol contract', () => {
 			expect(prompts.prompts.map((prompt) => prompt.name)).toEqual(expect.arrayContaining(['operate', 'research', 'governance-review', 'workday-planning', 'project-agent-chat']));
 			const prompt = await client.getPrompt({ name: 'operate', arguments: { objective: 'Inspect status.' } });
 			expect(prompt.messages[0]?.content).toMatchObject({ type: 'text' });
+		} finally {
+			await client.close();
+		}
+	});
+
+	it('completes signed high-risk confirmation through official MCP multi-round input', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies());
+		installControlPlaneProtocolRoutes(app, async () => ({
+			principal: { id: 'user_1', scopes: ['treeseed:read', 'treeseed:projects:write'], roles: ['admin'], permissions: [] },
+			credential: { id: 'client_1' },
+		}), oauthProvider, registry, confirmationService());
+		const transport = new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
+			authProvider: { token: async () => 'test-token' },
+			fetch: async (input, init) => {
+				const request = input instanceof Request ? input : new Request(input, init);
+				const headers = new Headers(request.headers);
+				headers.set('host', 'localhost');
+				return app.fetch(new Request(request, { headers }));
+			},
+		});
+		const client = new Client({ name: 'confirmation-test', version: '1.0.0' }, {
+			capabilities: { elicitation: { form: {} } },
+			versionNegotiation: { mode: { pin: '2026-07-28' } },
+			inputRequired: { autoFulfill: true, maxRounds: 2 },
+		});
+		client.setRequestHandler('elicitation/create', async () => ({ action: 'accept', content: { confirm: true } }));
+		await client.connect(transport);
+		try {
+			const result = await client.callTool({ name: 'projects.archive', arguments: {
+				path: { projectId: 'project-a' }, query: {}, body: {},
+			} });
+			expect(result.isError).not.toBe(true);
+			expect(result.structuredContent).toMatchObject({ id: 'project-a' });
 		} finally {
 			await client.close();
 		}

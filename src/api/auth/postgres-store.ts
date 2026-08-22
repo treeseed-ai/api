@@ -114,6 +114,17 @@ export const AUTH_SCHEMA_SQL = [
 	)`,
     `CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
 		ON auth_sessions(user_id)`,
+    `CREATE TABLE IF NOT EXISTS operation_confirmation_nonces (
+		nonce TEXT PRIMARY KEY,
+		principal_id TEXT NOT NULL,
+		client_id TEXT NOT NULL,
+		operation_id TEXT NOT NULL,
+		arguments_digest TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		consumed_at TEXT NOT NULL
+	)`,
+    `CREATE INDEX IF NOT EXISTS idx_operation_confirmation_nonces_expires_at
+		ON operation_confirmation_nonces(expires_at)`,
     `CREATE TABLE IF NOT EXISTS audit_events (
 		id TEXT PRIMARY KEY,
 		actor_type TEXT NOT NULL,

@@ -8,6 +8,7 @@ import { createMcpCatalog, mcpCatalogDigest } from '../mcp/mcp-catalog.ts';
 import { generateOpenApi, openApiDigest } from '../openapi/generate-openapi.ts';
 import { installOAuthProtocolRoutes, type OAuthRuntimeProvider } from '../oauth/oauth-routes.ts';
 import { createOperationHttpHandler } from './operation-http-handler.ts';
+import type { ConfirmationService } from '../confirmation/confirmation-service.ts';
 
 interface AuthenticatedPrincipal {
 	principal: { id: string; scopes?: string[]; roles?: string[]; permissions?: string[] };
@@ -19,12 +20,13 @@ export function installControlPlaneProtocolRoutes(
 	authenticateBearerToken: (token: string) => Promise<AuthenticatedPrincipal | null>,
 	oauthProvider?: OAuthRuntimeProvider,
 	registry: OperationRegistry = controlPlaneOperations,
+	confirmations?: ConfirmationService,
 ) {
 	const document = generateOpenApi(registry);
 	const digest = openApiDigest(document);
 	const mcpCatalog = createMcpCatalog(registry);
 	const mcpDigest = mcpCatalogDigest(mcpCatalog);
-	const mcpHandler = createControlPlaneMcpHandler(registry);
+	const mcpHandler = createControlPlaneMcpHandler(registry, confirmations);
 	const bearerGate = requireBearerAuth({
 		verifier: {
 			async verifyAccessToken(token) {
@@ -62,6 +64,6 @@ export function installControlPlaneProtocolRoutes(
 		const rest = operation.binding.descriptor.rest;
 		if (!rest) continue;
 		const honoPath = rest.path.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/gu, ':$1');
-		app.on(rest.method, honoPath, createOperationHttpHandler(operation, bearerGate, digest));
+		app.on(rest.method, honoPath, createOperationHttpHandler(operation, bearerGate, digest, confirmations));
 	}
 }

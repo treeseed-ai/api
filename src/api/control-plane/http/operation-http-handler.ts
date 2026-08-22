@@ -3,6 +3,7 @@ import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { Context } from 'hono';
 import { ZodError } from 'zod';
 import { ControlPlaneOperationError, type BoundOperation } from '../catalog/operation-registry.ts';
+import { decodeConfirmation, type ConfirmationService } from '../confirmation/confirmation-service.ts';
 
 type Authenticate = (request: Request) => Promise<AuthInfo | Response>;
 
@@ -50,6 +51,7 @@ export function createOperationHttpHandler(
 	operation: BoundOperation,
 	authenticate: Authenticate,
 	contractDigest: string,
+	confirmations?: ConfirmationService,
 ) {
 	return async (context: Context) => {
 		const requestId = context.req.header('x-request-id')?.trim() || randomUUID();
@@ -66,6 +68,23 @@ export function createOperationHttpHandler(
 				throw new ControlPlaneOperationError(412, 'precondition_required', `${descriptor.concurrency.writeHeader} is required.`);
 			}
 			const input = await operationInput(context, operation);
+			if (descriptor.confirmation === 'input_required') {
+				if (!confirmations || !authInfo?.extra?.principal || !authInfo.clientId) {
+					throw new ControlPlaneOperationError(503, 'confirmation_unavailable', 'Confirmation is not configured.');
+				}
+				const identity = { principalId: String((authInfo.extra.principal as any).id), clientId: authInfo.clientId,
+					operationId: descriptor.operationId, arguments: input };
+				const supplied = decodeConfirmation(context.req.header('x-treeseed-confirmation'));
+				if (!supplied) {
+					const required = confirmations.request({ ...identity, requestId });
+					return context.json({ type: 'https://treeseed.dev/problems/confirmation_required', title: 'Confirmation required',
+						status: 409, code: 'confirmation_required', detail: required.prompt, instance: new URL(context.req.url).pathname,
+						requestId, inputRequired: required }, 409, { 'content-type': 'application/problem+json', 'x-request-id': requestId });
+				}
+				if (!await confirmations.verify(supplied, identity)) {
+					throw new ControlPlaneOperationError(409, 'confirmation_invalid', 'The confirmation is invalid, expired, changed, or already used.');
+				}
+			}
 			const output = operation.binding.schema.output.parse(await operation.handler(input, {
 				interface: 'rest',
 				requestId,

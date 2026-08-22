@@ -4,6 +4,7 @@ import { PostgresAuthProvider } from '../auth/postgres-provider.ts';
 import { createCapacityControlPlane } from '../capacity/control-plane.ts';
 import { createApiControlPlaneOperations } from '../control-plane/catalog/index.ts';
 import { installControlPlaneProtocolRoutes } from '../control-plane/http/protocol-routes.ts';
+import { ConfirmationService } from '../control-plane/confirmation/confirmation-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -71,6 +72,18 @@ export function createPlatformApiApp(options: any = {}) {
 	const authProvider = authProviderFor(options, config, db);
 	const capacity = createCapacityControlPlane(store);
 	const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
+	const confirmations = new ConfirmationService(config.authSecret, {
+		async consume(nonce, claims) {
+			await store.run('DELETE FROM operation_confirmation_nonces WHERE expires_at <= ?', [new Date().toISOString()]);
+			try {
+				await store.run(`INSERT INTO operation_confirmation_nonces
+					(nonce, principal_id, client_id, operation_id, arguments_digest, expires_at, consumed_at)
+					VALUES (?, ?, ?, ?, ?, ?, ?)`, [nonce, claims.principalId, claims.clientId, claims.operationId,
+					claims.argumentsDigest, claims.expiresAt, new Date().toISOString()]);
+				return true;
+			} catch { return false; }
+		},
+	});
 	const runtimeProviders = {
 		auth: authProvider,
 		selections: { auth: config.providers?.auth ?? 'control-plane-postgres', agents: config.providers?.agents ?? {} },
@@ -150,7 +163,8 @@ export function createPlatformApiApp(options: any = {}) {
 		store,
 	};
 	installPlatformRoutes(routeContext);
-	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider, createApiControlPlaneOperations({ store, capacity }));
+	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
+		createApiControlPlaneOperations({ store, capacity }), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));
