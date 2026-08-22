@@ -1,8 +1,14 @@
-import { mintTreeDxHs256Token, projectRepositoryName, TreeDxClient } from '@treeseed/sdk/treedx';
+import { mintTreeDxHs256Token } from '@treeseed/sdk/treedx/auth';
+import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 
 function text(...values: unknown[]): string {
 	for (const value of values) if (typeof value === 'string' && value.trim()) return value.trim();
 	return '';
+}
+
+function projectRepositoryName(projectSlug: string) {
+	const normalized = `treeseed-${projectSlug}`.trim().toLowerCase().replace(/[^a-z0-9_.-]+/gu, '-').replace(/^-+|-+$/gu, '');
+	return normalized || 'project';
 }
 
 export async function ensureProjectKnowledgeBinding(input: {

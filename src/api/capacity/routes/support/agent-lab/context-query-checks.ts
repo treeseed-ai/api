@@ -2,7 +2,7 @@ import type { Hono } from 'hono';
 import { ContextQueryCheckService } from '../../../services/capacity/agents/context-query-check-service.ts';
 import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
-import { contextQueryReadiness } from '@treeseed/sdk';
+import { contextQueryReadiness } from '../../../../knowledge/context-query-runtime.ts';
 import { listUnpublishedTreeDxAuthoringState } from '../../../services/treedx/repositories/treedx-authoring-journal.ts';
 
 function text(value:unknown) { return typeof value === 'string' ? value.trim() : ''; }

@@ -1,4 +1,4 @@
-import type { CapacityGrantStatus } from '@treeseed/sdk/agent-capacity/allocation';
+import type { CapacityGrantStatus } from '@treeseed/sdk/agent-capacity';
 import { decodeCapacityPageCursor,normalizeCapacityPageLimit,type CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import type { Context,Hono } from 'hono';
 import type { CapacityGovernanceDatabase } from '../../database.ts';

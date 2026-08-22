@@ -1,11 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { relative, resolve } from 'node:path';
 import { deriveAgentRuntimeStatus, type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
-import { parseSceneManifest } from '@treeseed/sdk/scenes';
-import { validateSeedSource } from '@treeseed/sdk/seeds';
 import type { Context, Hono } from 'hono';
-import { parse as parseYaml } from 'yaml';
 import { AgentLabProjectionService } from '../../../services/capacity/observability/agent-lab-projection-service.ts';
 import { AgentLabCommandService } from '../../../services/capacity/observability/agent-lab-command-service.ts';
 import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
@@ -354,63 +349,6 @@ function installServicePrincipalRoutes(app: Hono, dependencies: WorkdayRouteDepe
 	});
 }
 
-function installSimulationRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
-	app.post('/v1/teams/:teamId/agent-lab/simulations', async (c) => {
-		const access = await dependencies.manage(c); if (access.response) return access.response;
-		const body = await readCapacityRequestObject(c); const scenePath = typeof body.scenePath === 'string' ? body.scenePath : ''; const immutableRef = typeof body.immutableRef === 'string' ? body.immutableRef : ''; const requestId = text(body.requestId, randomUUID());
-		if (!/^[a-zA-Z0-9._:-]{8,160}$/u.test(requestId)) return c.json({ ok: false, code: 'agent_lab_simulation_request_id_invalid', error: 'The launch request identifier is invalid.' }, 422);
-		if (!/^scenes\/[a-z0-9._/-]+\.ya?ml$/iu.test(scenePath) || !/^[a-f0-9]{40,64}$/iu.test(immutableRef)) return c.json({ ok: false, code: 'agent_lab_simulation_definition_invalid', error: 'Choose a repository scene and its immutable commit SHA.' }, 422);
-		const requestedProjectId = typeof body.projectId === 'string' ? body.projectId : '';
-		const project = requestedProjectId
-			? await dependencies.store.first(`SELECT id, name FROM projects WHERE id = ? AND team_id = ? LIMIT 1`, [requestedProjectId, c.req.param('teamId')])
-			: await dependencies.store.first(`SELECT id, name FROM projects WHERE team_id = ? ORDER BY CASE WHEN slug = 'api' THEN 0 ELSE 1 END, created_at ASC LIMIT 1`, [c.req.param('teamId')]);
-		if (!project) return c.json({ ok: false, code: 'agent_lab_simulation_project_invalid', error: 'Choose a repository-backed project in this team.' }, 422);
-		const connection = await resolveKnowledgeGatewayConnection(dependencies.store, { projectId: text(project.id), write: false, readRefs: [immutableRef], authoringPaths: true });
-		if (!connection) return c.json({ ok: false, code: 'agent_lab_simulation_treedx_unavailable', error: 'The project TreeDX repository is unavailable.' }, 503);
-		let sceneSource = ''; let seedSources: Array<{ name: string; path: string; source: string }> = [];
-		try {
-			const read = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: immutableRef, path: scenePath, encoding: 'utf8', maxBytes: 196_608, allowProtected: true });
-			sceneSource = text(object(read.file).content);
-			const parsed = parseYaml(sceneSource); const diagnostics: Parameters<typeof parseSceneManifest>[1] = []; const scene = parseSceneManifest(parsed, diagnostics);
-			const errors = diagnostics.filter((item) => item.severity === 'error'); if (!scene || errors.length) throw new Error(errors.map((item) => item.message).join(' ') || 'The scene is invalid.');
-			if (scene.runtime.mode !== 'demo' || scene.mode.test || !scene.mode.demo) throw new Error('Browser simulations must explicitly use demo mode and test: false.');
-			if (scene.agentLab?.scope.kind !== 'team') throw new Error('Browser simulations must use the retained team scope.');
-			seedSources = await Promise.all((scene.setup.seeds ?? []).map(async (seed) => { const path = `seeds/${seed.name}.yaml`; const seedRead = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: immutableRef, path, encoding: 'utf8', maxBytes: 196_608, allowProtected: true }); const source = text(object(seedRead.file).content); const validation = validateSeedSource(source); if (!validation.ok) throw new Error(`Seed ${seed.name} is invalid: ${validation.diagnostics.map((item) => item.message).join(' ')}`); return { name: seed.name, path, source }; }));
-		} catch (error) {
-			return c.json({ ok: false, code: 'agent_lab_simulation_ref_invalid', error: error instanceof Error ? error.message : 'TreeDX could not read the scene at that commit.' }, 422);
-		}
-		const team = await dependencies.store.first(`SELECT metadata_json FROM teams WHERE id = ? LIMIT 1`, [c.req.param('teamId')]); const servicePrincipalId = text(object(object(typeof team?.metadata_json === 'string' ? (() => { try { return JSON.parse(team.metadata_json); } catch { return {}; } })() : {}).agentLab).servicePrincipalId);
-		if (!servicePrincipalId) return c.json({ ok: false, code: 'agent_lab_service_principal_missing', error: 'Apply the team seed to reconcile the local Agent Lab service principal before launching simulations.' }, 409);
-		const prior = await dependencies.store.first("SELECT id, status, input_json FROM platform_operations WHERE namespace = 'agent-lab' AND operation = 'run-scene' AND idempotency_key = ? LIMIT 1", [`agent-lab:${c.req.param('teamId')}:${requestId}`]);
-		if (prior) return c.json({ ok: true, payload: { id: prior.id, status: prior.status, replayed: true, scenePath, immutableRef } }, 200);
-		const id = randomUUID(); const now = new Date().toISOString(); const input = { teamId: c.req.param('teamId'), projectId: text(project.id), scenePath, sceneSource, seedSources, immutableRef, requestId, environment: 'local', initiatingUserId: access.principal?.id ?? null, executingServicePrincipalId: servicePrincipalId };
-		await dependencies.store.run(`INSERT INTO platform_operations (id, namespace, operation, status, target, idempotency_key, input_json, output_json, error_json, requested_by_type, requested_by_id, assigned_runner_id, lease_expires_at, created_at, updated_at, started_at, finished_at, cancelled_at) VALUES (?, 'agent-lab', 'run-scene', 'queued', 'control_plane_operations_runner', ?, ?, NULL, NULL, 'user', ?, NULL, NULL, ?, ?, NULL, NULL, NULL)`, [id, `agent-lab:${c.req.param('teamId')}:${requestId}`, JSON.stringify(input), access.principal?.id ?? null, now, now]);
-		await dependencies.store.run(`INSERT INTO platform_operation_events (id, operation_id, seq, kind, data_json, created_at) VALUES (?, ?, 1, 'created', ?, ?)`, [randomUUID(), id, JSON.stringify({ namespace: 'agent-lab', operation: 'run-scene', initiatingUserId: access.principal?.id ?? null, executingServicePrincipalId: servicePrincipalId }), now]);
-		return c.json({ ok: true, payload: { id, status: 'queued', scenePath, immutableRef, initiatingUserId: access.principal?.id ?? null, executingServicePrincipalId: servicePrincipalId } }, 202);
-	});
-
-	app.post('/v1/teams/:teamId/agent-lab/simulations/:operationId/cancel', async (c) => {
-		const access = await dependencies.manage(c); if (access.response) return access.response;
-		const operation = await dependencies.store.first(`SELECT * FROM platform_operations WHERE id = ? AND namespace = 'agent-lab' LIMIT 1`, [c.req.param('operationId')]);
-		if (!operation) return dependencies.notFound(c, 'Unknown simulation operation.');
-		if (!['queued', 'leased', 'running'].includes(String(operation.status))) return c.json({ ok: false, code: 'agent_lab_simulation_not_cancellable', error: 'This simulation is already terminal.' }, 409);
-		const now = new Date().toISOString(); await dependencies.store.run(`UPDATE platform_operations SET status = 'cancelled', cancelled_at = ?, finished_at = ?, updated_at = ? WHERE id = ?`, [now, now, now, operation.id]);
-		return c.json({ ok: true, payload: { id: operation.id, status: 'cancelled' } });
-	});
-
-	app.get('/v1/teams/:teamId/agent-lab/simulations/:operationId/report', async (c) => {
-		const access = await dependencies.read(c); if (access.response) return access.response;
-		const operation = await dependencies.store.first(`SELECT input_json, output_json, status FROM platform_operations WHERE id = ? AND namespace = 'agent-lab' LIMIT 1`, [c.req.param('operationId')]);
-		if (!operation || text(object(JSON.parse(text(operation.input_json) || '{}')).teamId) !== c.req.param('teamId')) return dependencies.notFound(c, 'Unknown simulation report.');
-		const reportPath = text(object(JSON.parse(text(operation.output_json) || '{}')).reportPath);
-		if (!reportPath) return c.json({ ok: false, code: 'agent_lab_report_pending', error: `The report is not available while the simulation is ${text(operation.status, 'pending')}.` }, 409);
-		const reportRoot = resolve(dependencies.store.config.repoRoot ?? process.cwd(), '.treeseed'); const absolute = resolve(reportPath); const local = relative(reportRoot, absolute);
-		if (!local || local.startsWith('../') || local.startsWith('..\\') || !absolute.endsWith('/report.html')) return c.json({ ok: false, code: 'agent_lab_report_path_invalid', error: 'The retained report path is invalid.' }, 500);
-		try { return new Response(await readFile(absolute, 'utf8'), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'" } }); }
-		catch { return dependencies.notFound(c, 'The retained simulation report is no longer available.'); }
-	});
-}
-
 function installDetailRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {
 	app.get('/v1/teams/:teamId/agent-lab/details/:kind/:entityId', async (c) => {
 		const kind = c.req.param('kind');
@@ -486,7 +424,6 @@ export function installOperatorAgentLabRoutes(app: Hono, dependencies: WorkdayRo
 	installSurfaceRoutes(app, dependencies);
 	installViewStateRoutes(app, dependencies);
 	installServicePrincipalRoutes(app, dependencies);
-	installSimulationRoutes(app, dependencies);
 	installDetailRoutes(app, dependencies);
 	installAgentLabTargetRoutes(app, dependencies);
 	installContextQueryCheckRoutes(app, dependencies);

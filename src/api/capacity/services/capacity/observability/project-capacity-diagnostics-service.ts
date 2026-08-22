@@ -6,7 +6,7 @@ NativeCapacitySummary,
 ProjectCapacityDiagnostics,
 ProjectEnvironmentName,
 } from '@treeseed/sdk';
-import type { CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import type { CapacityGrantV2 } from '@treeseed/sdk/agent-capacity';
 import { MAX_CAPACITY_PAGE_LIMIT,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { CapacityGovernanceError } from '../../../database.ts';
 import type { CapacityTimeReservationTotals } from '../accounting/agent-time-reservation-aggregation-service.ts';

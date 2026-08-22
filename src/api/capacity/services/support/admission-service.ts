@@ -2,7 +2,7 @@ import {
 evaluateCapacityAdmission,
 type CapacityAdmissionDecision,
 type CapacityAdmissionInput,
-} from '@treeseed/sdk/agent-capacity/allocation';
+} from '@treeseed/sdk/agent-capacity';
 import { createHash,randomUUID } from 'node:crypto';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';

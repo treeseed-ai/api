@@ -13,7 +13,6 @@ TokenRefreshRequest,
 TokenRefreshResponse,
 RemoteWorkflowOperationRequest as WorkflowHttpOperationRequest,
 } from '@treeseed/sdk';
-import type { AgentSdk } from '@treeseed/sdk';
 
 export type {
 ApiPrincipal,
@@ -211,7 +210,6 @@ export interface ApiResolvedSettings {
 export interface ApiAppRuntime {
 	resolved: ApiResolvedSettings;
 	runtimeProviders: ResolvedApiRuntimeProviders;
-	sharedSdk: AgentSdk;
 	internalPrefix: string;
 }
 
@@ -225,7 +223,6 @@ export interface ApiExtension {
 export interface ApiServerOptions {
 	config?: Partial<ApiConfig>;
 	runtimeProviders?: ApiRuntimeProviders;
-	sdk?: AgentSdk;
 	workflowExecutor?: (operation: string, request: WorkflowHttpOperationRequest) => Promise<ApiWorkflowOperationResponse>;
 	surfaces?: Partial<{
 		auth: boolean;
@@ -246,4 +243,3 @@ export interface ApiServerOptions {
 }
 
 export type PostgresDatabaseLike = any;
-

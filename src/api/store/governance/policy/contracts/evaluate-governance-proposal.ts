@@ -1,4 +1,4 @@
-import { governanceVotingProvider } from '@treeseed/sdk';
+import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion, simulationEvidence } from '../support/simulation-evidence.ts';
 export async function evaluateGovernanceProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {

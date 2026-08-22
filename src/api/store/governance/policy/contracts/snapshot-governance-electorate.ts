@@ -1,4 +1,4 @@
-import { governanceVotingProvider } from '@treeseed/sdk';
+import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeGovernanceElectorateSnapshot } from "../../../../persistence/store.ts";
 export async function snapshotGovernanceElectorateMethod(this: ControlPlaneStore, proposalId) {

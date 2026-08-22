@@ -1,6 +1,6 @@
 import { validateAgentActivityProfilesConfiguration,validateAgentDefinitionModel,validateAgentSignalContract,validateProposalTypeContract,validateGroupDefinition,validateGroupEdgeDefinition } from '@treeseed/sdk/agent-capacity';
 import { createHash } from 'node:crypto';
-import { parseFrontmatterDocument,serializeFrontmatterDocument } from '@treeseed/sdk/frontmatter';
+import { parseFrontmatterDocument,serializeFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import { parse as parseYaml } from 'yaml';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import type { WorkdayRouteDependencies } from '../operator-workdays.ts';

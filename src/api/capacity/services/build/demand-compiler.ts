@@ -1,4 +1,5 @@
-import { COMMUNICATION_PRIORITY,evaluatePlanningGraphNodeInstances,validateAgentArtifactManifest,type AgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
+import { COMMUNICATION_PRIORITY,evaluatePlanningGraphNodeInstances,type AgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
+import { validateAgentArtifactManifest } from '../../artifact-manifest.ts';
 import { evaluateMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
 import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';

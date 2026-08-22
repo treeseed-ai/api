@@ -1,7 +1,7 @@
 import {
 validateCapacityAllocationSetV2,
 type CapacityAllocationSetV2,
-} from '@treeseed/sdk/agent-capacity/allocation';
+} from '@treeseed/sdk/agent-capacity';
 import type { CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';

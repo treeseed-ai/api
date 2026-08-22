@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AgentLabOverview } from '@treeseed/sdk/agent-capacity';
-import type { GovernanceProposalReadiness } from '@treeseed/sdk';
+import type { GovernanceProposalReadiness } from '../../../../governance/proposal-readiness.ts';
 import type { AgentLabProjectionRow as Row, AgentLabSourceRows } from './agent-lab-projection-service.ts';
 import { commandPrimaryView } from './command-primary-view.ts';
 

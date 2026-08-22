@@ -1,4 +1,4 @@
-import { governanceVotingProvider } from '@treeseed/sdk';
+import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { COMMONS_TEAM_SLUG,isoNow,ControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
 export async function ensureDefaultTeamGovernancePolicyMethod(this: ControlPlaneStore, teamId, scope = 'team') {
     await this.ensureInitialized();

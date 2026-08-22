@@ -1,4 +1,4 @@
-import { evaluateGovernanceProposalReadiness,type GovernanceProposalReadiness } from '@treeseed/sdk';
+import { evaluateGovernanceProposalReadiness,type GovernanceProposalReadiness } from '../../../../governance/proposal-readiness.ts';
 import type { ControlPlaneStore } from '../../../../persistence/store.ts';
 
 type Row = Record<string, unknown>;

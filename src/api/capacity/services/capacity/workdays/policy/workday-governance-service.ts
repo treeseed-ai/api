@@ -1,4 +1,4 @@
-import type { CapacityAllocationSetV2,CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import type { CapacityAllocationSetV2,CapacityGrantV2 } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../database.ts';
 
 export interface GovernedWorkdayProject {

@@ -1,4 +1,3 @@
-import * as sdk from "@treeseed/sdk";
 import * as accountContracts from "@treeseed/sdk/account-contracts";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -30,7 +29,6 @@ import * as postgres from "./control-plane-postgres.js";
 
 /** Static dependencies exposed to bounded route installers. */
 export const routeDependencies: Record<string, any> = {
-  ...sdk,
   ...accountContracts,
   ...crypto,
   ...fs,

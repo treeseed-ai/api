@@ -1,4 +1,3 @@
-import { AgentSdk, REMOTE_CONTRACT_HEADER, REMOTE_CONTRACT_VERSION } from '@treeseed/sdk';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { PostgresAuthProvider } from '../auth/postgres-provider.ts';
@@ -72,7 +71,6 @@ export function createPlatformApiApp(options: any = {}) {
 	const authProvider = authProviderFor(options, config, db);
 	const capacity = createCapacityControlPlane(store);
 	const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
-	const sharedSdk = options.sdk ?? AgentSdk.createLocal({ repoRoot: config.repoRoot });
 	const runtimeProviders = {
 		auth: authProvider,
 		selections: { auth: config.providers?.auth ?? 'control-plane-postgres', agents: config.providers?.agents ?? {} },
@@ -80,7 +78,6 @@ export function createPlatformApiApp(options: any = {}) {
 	const runtime = {
 		resolved: { config, surfaces: { auth: true, templates: false, sdk: false, operations: false, ...(options.surfaces ?? {}) } },
 		runtimeProviders,
-		sharedSdk,
 		internalPrefix: options.internalPrefix ?? '/internal/core',
 	};
 	const app = new Hono();
@@ -93,7 +90,6 @@ export function createPlatformApiApp(options: any = {}) {
 		context.set('credential', null);
 		context.set('actorType', 'anonymous');
 		context.set('permissionGrants', []);
-		context.header(REMOTE_CONTRACT_HEADER, String(REMOTE_CONTRACT_VERSION));
 		await next();
 	});
 
@@ -150,7 +146,6 @@ export function createPlatformApiApp(options: any = {}) {
 		runtime,
 		runtimeControlPlaneAuthProvider: authProvider,
 		runtimeProviders,
-		sharedSdk,
 		sessionEvents,
 		store,
 	};

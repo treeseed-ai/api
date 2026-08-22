@@ -1,4 +1,4 @@
-import { governanceVotingProvider } from '@treeseed/sdk';
+import { governanceVotingProvider } from '../../../../governance/voting.ts';
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,objectValue,optionalStringValue,principalIsAdmin,requireEnumValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';

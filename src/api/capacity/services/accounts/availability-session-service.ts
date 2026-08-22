@@ -5,7 +5,6 @@ import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../../repositories/accounts/availability-session.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
-import { isMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
 
 type JsonRecord = Record<string, unknown>;
 export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: string; capacityProviderId: string; }
@@ -13,6 +12,18 @@ export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: s
 function object(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function objects(value: unknown): JsonRecord[] { return Array.isArray(value) ? value.filter((entry): entry is JsonRecord => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry))) : []; }
 function strings(value: unknown): string[] { return Array.isArray(value) ? [...new Set(value.map(String).map((entry) => entry.trim()).filter(Boolean))] : []; }
+function isMinimumAssignmentDuration(value: unknown) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	const candidate = value as Record<string, unknown>;
+	if (!Number.isInteger(candidate.amount) || Number(candidate.amount) < 1) return false;
+	if (candidate.unit === 'seconds') return true;
+	if (candidate.unit !== 'business-days' || !candidate.calendar || typeof candidate.calendar !== 'object' || Array.isArray(candidate.calendar)) return false;
+	const calendar = candidate.calendar as Record<string, unknown>;
+	try { new Intl.DateTimeFormat('en', { timeZone: String(calendar.timeZone ?? '') }).format(); } catch { return false; }
+	const weekdays = calendar.weekdays ?? [1, 2, 3, 4, 5]; const holidays = calendar.holidayDates ?? [];
+	return Array.isArray(weekdays) && weekdays.length > 0 && weekdays.every((day) => Number.isInteger(day) && Number(day) >= 1 && Number(day) <= 7)
+		&& new Set(weekdays).size === weekdays.length && Array.isArray(holidays) && holidays.every((date) => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(date));
+}
 function timestamp(value: unknown, fallback: string): string {
 	if (value == null) return fallback;
 	const text = String(value);

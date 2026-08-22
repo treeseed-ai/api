@@ -3,7 +3,7 @@ import type {
 CapacityExecutionProvider,
 CapacityProviderMembershipView,
 } from '@treeseed/sdk/capacity-provider/contracts';
-import { deriveNativeCapacity,resolveNativeAccountingWindow } from '@treeseed/sdk/native-capacity';
+import { deriveNativeCapacity,resolveNativeAccountingWindow } from '../accounting/native-capacity.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { listCapacityExecutionProviders } from '../../../repositories/capacity/providers/execution-provider.ts';
 import { CapacityProviderIdentityRepository } from '../../../repositories/capacity/providers/provider-identity.ts';

@@ -1,5 +1,5 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { serializeFrontmatterDocument } from '@treeseed/sdk/frontmatter';
+import { serializeFrontmatterDocument } from '../../../content/frontmatter.ts';
 import { validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parse as parseYaml } from 'yaml';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';

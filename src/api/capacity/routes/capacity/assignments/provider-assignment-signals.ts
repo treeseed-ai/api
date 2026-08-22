@@ -1,4 +1,5 @@
-import { resolveEffectiveGroupMembership,type AgentSignalContract,type GroupMembershipSnapshot } from '@treeseed/sdk/agent-capacity';
+import { type AgentSignalContract,type GroupMembershipSnapshot } from '@treeseed/sdk/agent-capacity';
+import { resolveEffectiveGroupMembership } from '../../../../governance/group-membership.ts';
 import type { Hono } from 'hono';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { recordPlanningParticipantRequest,validatePlanningParticipantRequest } from '../../../services/capacity/workdays/scheduling/planning-participant-request-service.ts';

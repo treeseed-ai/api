@@ -1,4 +1,4 @@
-import { validateContentRecord } from '@treeseed/sdk';
+import { validateContentRecord } from '../../../../content/content-validation.ts';
 
 export interface QuestionContentDiagnostic {
 	path: string;

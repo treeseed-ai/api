@@ -1,5 +1,6 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences,normalizeGovernanceProposalPlan } from '@treeseed/sdk';
+import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences } from '../../../../governance/decision-authority.ts';
+import { normalizeGovernanceProposalPlan } from '../../../../governance/proposal-readiness.ts';
 import { governanceContentHash,isoNow,ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
 async function ensureVersionEvidence(store: ControlPlaneStore,input: { proposal:any;version:number;hash:string;metadata:Record<string,any>;proposalTypes:string[];changeReason:string;createdById:string|null;createdByType:string;priorState:string;nextState:string;priorHash:string }) {
 	const timestamp=isoNow();const proposalId=String(input.proposal.id);

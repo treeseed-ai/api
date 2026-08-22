@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { parseFrontmatterDocument, serializeFrontmatterDocument } from '@treeseed/sdk/frontmatter';
+import { parseFrontmatterDocument, serializeFrontmatterDocument } from '../content/frontmatter.ts';
 import { resolveKnowledgeGatewayConnection } from '../knowledge/gateway-treedx-connection.ts';
 import { applyTextChangeset } from '../knowledge/changesets/apply-text-changeset.ts';
 import { projectTreeDxCommitSignals } from '../capacity/services/treedx/repositories/treedx-change-projector.ts';
@@ -7,7 +7,7 @@ import { recordTreeDxAuthoringState } from '../capacity/services/treedx/reposito
 import { listReadableTreeDxAuthoringState } from '../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { isAgentAtlasContextReference, type AgentAtlasContextReference } from '@treeseed/sdk/agent-capacity';
 import { persistSessionEvent } from '../realtime/session-events.ts';
-import { validateContentRecord, type ContentModel } from '@treeseed/sdk/content-operations';
+import { validateContentRecord, type ContentModel } from '../content/content-validation.ts';
 import { discussionWorkspaceOperationKey,openDiscussionWorkspace } from './discussion-workspace.ts';
 
 type Row = Record<string, unknown>;

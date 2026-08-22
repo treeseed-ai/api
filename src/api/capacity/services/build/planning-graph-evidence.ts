@@ -1,4 +1,5 @@
-import { resolveEffectiveGroupMembership,type EffectiveGroupMembership,type PlanningGraphGroupContext,type PlanningGraphNodeEvidence,type PlanningGraphEvidenceReference } from '@treeseed/sdk/agent-capacity';
+import { type EffectiveGroupMembership,type PlanningGraphGroupContext,type PlanningGraphNodeEvidence,type PlanningGraphEvidenceReference } from '@treeseed/sdk/agent-capacity';
+import { resolveEffectiveGroupMembership } from '../../../governance/group-membership.ts';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { decodeDurableJsonObject } from '../../durable-json.ts';
 import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';

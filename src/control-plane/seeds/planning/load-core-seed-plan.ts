@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { validateSeedSource, type SeedDiagnostic, type SeedEnvironment, type SeedPlan, type SeedPlanAction } from '@treeseed/sdk/seeds';
+import { validateSeedSource, type SeedDiagnostic, type SeedEnvironment, type SeedPlan, type SeedPlanAction } from '../contracts/index.ts';
 
 const error = (code: string, message: string, path?: string): SeedDiagnostic => ({ severity: 'error', code, message, path });
 const hasErrors = (diagnostics: SeedDiagnostic[]) => diagnostics.some((diagnostic) => diagnostic.severity === 'error');

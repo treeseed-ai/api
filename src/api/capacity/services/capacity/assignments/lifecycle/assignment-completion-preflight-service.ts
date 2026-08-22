@@ -1,4 +1,4 @@
-import { validateAgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
+import { validateAgentArtifactManifest } from '../../../../artifact-manifest.ts';
 import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';

@@ -1,4 +1,4 @@
-import { normalizeProjectRepositoryTopology } from '@treeseed/sdk';
+import { normalizeProjectRepositoryTopology } from '../../../../repositories/project-topology.ts';
 import type { ControlPlaneStore } from '../../../../persistence/store.ts';
 
 export async function upsertProjectRepositoryTopologyMethod(this: ControlPlaneStore, projectId: string, input: unknown) {

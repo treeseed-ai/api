@@ -1,4 +1,4 @@
-import { validateCapacityGrantV2,type CapacityGrantStatus,type CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import { validateCapacityGrantV2,type CapacityGrantStatus,type CapacityGrantV2 } from '@treeseed/sdk/agent-capacity';
 import { decodeCapacityPageCursor,encodeCapacityPageCursor,normalizeCapacityPageLimit,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';

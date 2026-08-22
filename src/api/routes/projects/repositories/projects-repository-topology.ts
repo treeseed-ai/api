@@ -1,5 +1,5 @@
 import { containsForbiddenPlaintextSecretMaterial } from '@treeseed/sdk/secrets-capability';
-import { normalizeProjectRepositoryTopology } from '@treeseed/sdk';
+import { normalizeProjectRepositoryTopology } from '../../../repositories/project-topology.ts';
 import { resolveGitHubRepositoryCandidateAuthority } from '../../../../security/provider-credential-authority.ts';
 import { resolveGitHubCredentialAuthority } from '../../../../security/provider-credential-authority.ts';
 import { githubRepositoryHead, githubRepositoryMetadata } from '../../../../providers/github/repository-client.ts';

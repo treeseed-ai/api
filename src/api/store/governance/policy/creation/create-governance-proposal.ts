@@ -1,4 +1,6 @@
-import { decisionDependencyReferencesAreComplete,governanceVotingProvider,normalizeDecisionDependencyReferences,normalizeGovernanceProposalPlan } from '@treeseed/sdk';
+import { governanceVotingProvider } from '../../../../governance/voting.ts';
+import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences } from '../../../../governance/decision-authority.ts';
+import { normalizeGovernanceProposalPlan } from '../../../../governance/proposal-readiness.ts';
 import { randomUUID } from 'node:crypto';
 import { COMMONS_TEAM_SLUG,governanceContentHash,governanceSlug,isoNow,ControlPlaneStore,optionalStringValue,stringValue } from "../../../../persistence/store.ts";
 export async function createGovernanceProposalMethod(this: ControlPlaneStore, principal, input: any = {}) {

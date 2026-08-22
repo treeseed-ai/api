@@ -1,5 +1,5 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { serializeFrontmatterDocument } from '@treeseed/sdk/frontmatter';
+import { serializeFrontmatterDocument } from '../../../content/frontmatter.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
