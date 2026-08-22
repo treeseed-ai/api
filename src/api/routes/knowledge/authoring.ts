@@ -13,34 +13,6 @@ export { reviewPathsMatch, searchRelations } from './relation-search.ts';
 export function installKnowledgeAuthoringRoutes(context: any) {
 	const { app, jsonError, requireProjectAccess, store } = context;
 
-	app.get('/v1/teams/:teamId/knowledge/catalog', async (c: any) => {
-		const teamId = c.req.param('teamId');
-		const access = await context.requireTeamAccess(c, store, teamId, 'knowledge:read');
-		if (access.response) return access.response;
-		const catalog = await loadFederatedKnowledgeCatalog(context, c).catch(() => null);
-		if (!catalog) return jsonError(c, 503, 'The team knowledge catalog is unavailable.');
-		if (catalog.response) return catalog.response;
-		const visible = await authorizedCatalog(context, c, {
-			books: catalog.books.filter((book: any) => book.source.teamId === teamId),
-			pages: catalog.pages.filter((page: any) => page.source.teamId === teamId),
-		});
-		return c.json({ ok: true, payload: {
-			books: visible.books,
-			pages: visible.pages
-				.map(({ bodyMarkdown: _body, bodyHtml: _html, ...page }: any) => page),
-		} });
-	});
-
-	app.get('/v1/projects/:projectId/knowledge/catalog', async (c: any) => {
-		const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'knowledge:read');
-		if (access.response) return access.response;
-		const catalog = await loadFederatedKnowledgeCatalog(context, c, access.details.project.id).catch(() => null);
-		if (!catalog) return jsonError(c, 503, 'The project knowledge catalog is unavailable.');
-		if (catalog.response) return catalog.response;
-		const visible = await authorizedCatalog(context, c, catalog);
-		return c.json({ ok: true, payload: { books: visible.books, pages: visible.pages.map(({ bodyMarkdown: _body, bodyHtml: _html, ...page }) => page) } });
-	});
-
 	app.get('/v1/projects/:projectId/knowledge/relations/search', async (c: any) => {
 		const access = await requireProjectAccess(c, store, c.req.param('projectId'), 'knowledge:link');
 		if (access.response) return access.response;

@@ -6,7 +6,7 @@ import { knowledgePageSummary, resolveKnowledgePage } from '../../knowledge/runt
 type Principal = { id: string; roles?: string[] } | undefined;
 
 export class KnowledgeReaderError extends Error {
-	constructor(readonly status: 404 | 503, readonly code: string, message: string) { super(message); }
+	constructor(readonly status: 401 | 403 | 404 | 503, readonly code: string, message: string) { super(message); }
 }
 
 export function createKnowledgeReaderService(context: any) {
@@ -26,6 +26,23 @@ export function createKnowledgeReaderService(context: any) {
 	}
 
 	return {
+		async teamCatalog(principal: Principal, teamId: string) {
+			const access = await knowledgeAccess(context.store, principal, teamId);
+			const loaded = await catalog(principal);
+			return catalogProjection(loaded.books.filter((book) => book.source.teamId === teamId),
+				loaded.pages.filter((page) => page.source.teamId === teamId), access);
+		},
+
+		async projectCatalog(principal: Principal, projectId: string) {
+			const details = await context.store.getProjectDetails(projectId);
+			if (!details?.project) throw new KnowledgeReaderError(404, 'project_not_found', 'The project was not found.');
+			const access = await knowledgeAccess(context.store, principal, details.project.teamId);
+			const loaded = await loadFederatedKnowledgeCatalog(context, { get: (key: string) => key === 'principal' ? principal : undefined }, projectId)
+				.catch(() => null);
+			if (!loaded) throw new KnowledgeReaderError(503, 'knowledge_runtime_unavailable', 'The project knowledge catalog is unavailable.');
+			return catalogProjection(loaded.books, loaded.pages, access);
+		},
+
 		async library(principal: Principal, query: Record<string, unknown>) {
 			const loaded = await catalog(principal);
 			const pages = await readable(principal, loaded.pages);
@@ -90,6 +107,30 @@ export function createKnowledgeReaderService(context: any) {
 				.slice(0, 10).map(knowledgePageSummary), revision };
 		},
 	};
+}
+
+async function knowledgeAccess(store: any, principal: Principal, teamId: string) {
+	if (!principal) throw new KnowledgeReaderError(401, 'authentication_required', 'Authentication is required.');
+	const administrator = principal.roles?.some((role) => ['admin', 'platform_admin'].includes(role)) ?? false;
+	if (!administrator && !await store.principalCanAccessTeam(principal, teamId)) {
+		throw new KnowledgeReaderError(403, 'knowledge_access_denied', 'The principal cannot access this knowledge catalog.');
+	}
+	const summary = administrator ? { permissions: ['*:*:*'] } : await store.getTeamAccessSummary(teamId, principal);
+	if (!administrator && !summary.permissions.includes('knowledge:read')) {
+		throw new KnowledgeReaderError(403, 'knowledge_permission_denied', 'Knowledge read authority is required.');
+	}
+	return { administrator, permissions: new Set<string>(summary.permissions) };
+}
+
+function catalogProjection(books: any[], pages: FederatedKnowledgePage[], access: { administrator: boolean; permissions: Set<string> }) {
+	const mayReadDrafts = access.administrator || ['knowledge:author', 'knowledge:review', 'knowledge:manage-books']
+		.some((permission) => access.permissions.has(permission));
+	const visibleBooks = books.filter((book) => (book.status === 'published' || mayReadDrafts)
+		&& (book.visibility !== 'admin' || access.administrator));
+	const bookIds = new Set(visibleBooks.map((book) => book.id));
+	const visiblePages = pages.filter((page) => bookIds.has(page.bookId) && (page.status === 'published' || mayReadDrafts)
+		&& (page.visibility !== 'admin' || access.administrator));
+	return { books: visibleBooks, pages: visiblePages.map(({ bodyMarkdown: _body, bodyHtml: _html, ...page }: any) => page) };
 }
 
 const text = (value: unknown, fallback = '') => typeof value === 'string' && value.trim() ? value.trim() : fallback;

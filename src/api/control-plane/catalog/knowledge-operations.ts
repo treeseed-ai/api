@@ -4,6 +4,8 @@ import { ControlPlaneOperationError, type BoundOperation, type OperationInvocati
 
 export interface KnowledgeOperationDependencies {
 	knowledgeReader: {
+		teamCatalog(principal: OperationInvocationContext['principal'], teamId: string): Promise<Record<string, any>>;
+		projectCatalog(principal: OperationInvocationContext['principal'], projectId: string): Promise<Record<string, any>>;
 		library(principal: OperationInvocationContext['principal'], query: Record<string, unknown>): Promise<Record<string, any>>;
 		reader(principal: OperationInvocationContext['principal'], query: Record<string, unknown>): Promise<Record<string, any>>;
 		context(principal: OperationInvocationContext['principal'], query: Record<string, unknown>): Promise<Record<string, any>>;
@@ -18,6 +20,8 @@ function result<T>(call: () => Promise<T>) {
 
 export function createKnowledgeOperations(dependencies: KnowledgeOperationDependencies): BoundOperation[] {
 	return [
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.teamCatalog, handler: (input, context) => result(() => dependencies.knowledgeReader.teamCatalog(context.principal, input.path.teamId)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.projectCatalog, handler: (input, context) => result(() => dependencies.knowledgeReader.projectCatalog(context.principal, input.path.projectId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.library, handler: (input, context) => result(() => dependencies.knowledgeReader.library(context.principal, input.query)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.reader, handler: (input, context) => result(() => dependencies.knowledgeReader.reader(context.principal, input.query)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.context, handler: (input, context) => result(() => dependencies.knowledgeReader.context(context.principal, input.query)) },
