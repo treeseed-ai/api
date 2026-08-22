@@ -61,6 +61,10 @@ export class PostgresAuthProvider implements ApiAuthProvider {
 		return this.store.refreshAccessToken(request);
 	}
 
+	revokeOAuthToken(token: string): Promise<void> {
+		return this.store.revokeOAuthToken(token);
+	}
+
 	issueUserSession(userId: string, options: { sessionType?: string; scopes?: string[]; data?: Record<string, unknown> } = {}) {
 		return this.store.issueUserSession(userId, options);
 	}
@@ -131,4 +135,3 @@ export class PostgresAuthProvider implements ApiAuthProvider {
 		return this.store.exchangeTrustedUserAssertion(claims);
 	}
 }
-

@@ -25,6 +25,7 @@ export interface OAuthRuntimeProvider {
 	startDeviceFlow(request: { clientName: string; scopes: string[] }): Promise<DeviceStartResult>;
 	pollDeviceFlow(request: { deviceCode: string }): Promise<ApprovedTokenResult | { ok?: boolean; status: string; intervalSeconds?: number; error?: string }>;
 	refreshAccessToken(request: { refreshToken: string }): Promise<ApprovedTokenResult>;
+	revokeOAuthToken(token: string): Promise<void>;
 }
 
 async function requestBody(context: any): Promise<Record<string, unknown>> {
@@ -99,5 +100,16 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 		} catch {
 			return oauthError(context, 400, 'invalid_grant', 'The grant is invalid, expired, revoked, or already used.');
 		}
+	});
+
+	app.post('/oauth/revoke', async (context) => {
+		if (!provider) return oauthError(context, 503, 'temporarily_unavailable', 'OAuth revocation is not configured.');
+		const body = await requestBody(context);
+		const clientId = String(body.client_id ?? '').trim();
+		if (!isFirstPartyOAuthClient(clientId)) return oauthError(context, 401, 'invalid_client', 'The OAuth client is not registered.');
+		const token = String(body.token ?? '').trim();
+		if (!token) return oauthError(context, 400, 'invalid_request', 'token is required.');
+		await provider.revokeOAuthToken(token);
+		return context.body(null, 200, { 'cache-control': 'no-store', pragma: 'no-cache' });
 	});
 }

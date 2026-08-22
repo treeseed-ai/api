@@ -35,6 +35,7 @@ export function authorizationServerMetadata(requestUrl: string) {
 		issuer,
 		device_authorization_endpoint: `${issuer}/oauth/device_authorization`,
 		token_endpoint: `${issuer}/oauth/token`,
+		revocation_endpoint: `${issuer}/oauth/revoke`,
 		grant_types_supported: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
 		token_endpoint_auth_methods_supported: ['none'],
 		scopes_supported: [...TREESEED_OAUTH_SCOPES],

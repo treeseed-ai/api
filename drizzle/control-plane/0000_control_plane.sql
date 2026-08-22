@@ -2374,6 +2374,8 @@ CREATE TABLE "auth_sessions" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
 	"session_type" text NOT NULL,
+	"access_token_hash" text NOT NULL,
+	"access_expires_at" text NOT NULL,
 	"refresh_token_hash" text NOT NULL,
 	"scopes_json" text NOT NULL,
 	"expires_at" text NOT NULL,

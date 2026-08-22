@@ -1,4 +1,3 @@
-import { createHash,randomUUID } from 'node:crypto';
 import { isLoopbackUrl,normalizeBaseUrl,optionalTrimmedString,requestClientIp,trimmedHeaderValue } from '../index.ts';
 export function shouldExposeNonProductionAuthDiagnostics(c, runtime) {
     const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
@@ -49,46 +48,6 @@ export function authTokenTimestampMillis(value) {
     if (!Number.isFinite(number) || number <= 0)
         return 0;
     return number < 10000000000 ? number * 1000 : number;
-}
-export async function createControlPlaneWebSession(controlPlaneAuthProvider, userId, data: any = {}, options: any = {}) {
-    if (typeof controlPlaneAuthProvider.issueUserSession === 'function') {
-        return controlPlaneAuthProvider.issueUserSession(userId, {
-            sessionType: 'web',
-            data,
-        });
-    }
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    const token = await controlPlaneAuthProvider.createPersonalAccessToken(userId, {
-        name: 'Treeseed web session',
-        scopes: ['auth:me'],
-        expiresAt,
-    });
-    const authenticated = await controlPlaneAuthProvider.authenticateBearerToken(token.token);
-    const sessionId = randomUUID();
-    const now = new Date().toISOString();
-    if (options.store?.run) {
-        await options.store.run(`INSERT INTO auth_sessions (id, user_id, session_type, refresh_token_hash, scopes_json, expires_at, revoked_at, data_json, created_at, updated_at)
-			 VALUES (?, ?, 'web', ?, ?, ?, NULL, ?, ?, ?)`, [
-            sessionId,
-            userId,
-            createHash('sha256').update(`${options.authSecret ?? 'control-plane'}:${sessionId}`).digest('hex'),
-            JSON.stringify(['auth:me']),
-            expiresAt,
-            JSON.stringify({ ...data, tokenId: token.id }),
-            now,
-            now,
-        ]).catch(() => null);
-    }
-    return {
-        ok: true,
-        status: 'approved',
-        accessToken: token.token,
-        refreshToken: null,
-        tokenType: 'Bearer',
-        expiresAt,
-        expiresInSeconds: 15 * 60,
-        principal: authenticated?.principal ?? { id: userId, type: 'user', roles: [], scopes: ['auth:me'], metadata: { sessionId } },
-    };
 }
 export function webAuthPayload(session) {
     return {

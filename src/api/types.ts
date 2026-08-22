@@ -19,6 +19,7 @@ export interface ApiAuthProvider {
 	startDeviceFlow(request: DeviceCodeStartRequest): Promise<DeviceCodeStartResponse>;
 	pollDeviceFlow(request: DeviceCodePollRequest): Promise<DeviceCodePollResponse>;
 	refreshAccessToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse>;
+	revokeOAuthToken(token: string): Promise<void>;
 	approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{ ok: true }>;
 	authenticateBearerToken(token: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;
 	authenticateServiceCredential(serviceId: string, secret: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;

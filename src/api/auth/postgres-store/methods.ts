@@ -8,6 +8,7 @@ export { authenticateBearerTokenMethod } from './accounts/tokens/authenticate-be
 export { createPersonalAccessTokenMethod } from './accounts/tokens/create-personal-access-token.ts';
 export { listPersonalAccessTokensMethod } from './accounts/tokens/list-personal-access-tokens.ts';
 export { refreshAccessTokenMethod } from './accounts/tokens/refresh-access-token.ts';
+export { revokeOAuthTokenMethod } from './accounts/tokens/revoke-oauth-token.ts';
 export { revokePersonalAccessTokenMethod } from './accounts/tokens/revoke-personal-access-token.ts';
 export { loadIdentityByProviderMethod } from './capacity/providers/load-identity-by-provider.ts';
 export { seedRbacMethod as seedCatalogMethod } from './bootstrap/seed/seed-rbac.ts';
@@ -38,4 +39,3 @@ export { permissionsForRolesMethod } from './teams/permissions-for-roles.ts';
 export { replaceRolesMethod } from './teams/replace-roles.ts';
 export { rolesForUserMethod } from './teams/roles-for-user.ts';
 export { setUserRolesMethod } from './teams/set-user-roles.ts';
-

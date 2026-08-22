@@ -103,6 +103,8 @@ export const AUTH_SCHEMA_SQL = [
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
 		session_type TEXT NOT NULL,
+		access_token_hash TEXT NOT NULL,
+		access_expires_at TEXT NOT NULL,
 		refresh_token_hash TEXT NOT NULL,
 		scopes_json TEXT NOT NULL,
 		expires_at TEXT NOT NULL,
@@ -267,6 +269,7 @@ export interface PostgresAuthStore {
         data?: Record<string, unknown>;
     }): Promise<TokenRefreshResponse>;
     refreshAccessToken(request: TokenRefreshRequest): Promise<TokenRefreshResponse>;
+    revokeOAuthToken(token: string): Promise<void>;
     createPersonalAccessToken(userId: string, input: {
         name: string;
         scopes?: string[];
@@ -329,6 +332,7 @@ PostgresAuthStore.prototype.approveDeviceFlow = extractedMethods.approveDeviceFl
 PostgresAuthStore.prototype.pollDeviceFlow = extractedMethods.pollDeviceFlowMethod;
 PostgresAuthStore.prototype.issueUserSession = extractedMethods.issueUserSessionMethod;
 PostgresAuthStore.prototype.refreshAccessToken = extractedMethods.refreshAccessTokenMethod;
+PostgresAuthStore.prototype.revokeOAuthToken = extractedMethods.revokeOAuthTokenMethod;
 PostgresAuthStore.prototype.createPersonalAccessToken = extractedMethods.createPersonalAccessTokenMethod;
 PostgresAuthStore.prototype.listPersonalAccessTokens = extractedMethods.listPersonalAccessTokensMethod;
 PostgresAuthStore.prototype.revokePersonalAccessToken = extractedMethods.revokePersonalAccessTokenMethod;
