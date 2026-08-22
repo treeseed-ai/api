@@ -1,13 +1,13 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { serializeFrontmatterDocument } from '../../../content/frontmatter.ts';
+import { serializeFrontmatterDocument } from '../../content/frontmatter.ts';
 import { validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parse as parseYaml } from 'yaml';
-import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
-import { projectTreeDxCommitSignals } from '../../../capacity/services/treedx/repositories/treedx-change-projector.ts';
-import { recordTreeDxAuthoringState } from '../../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
-import { applyTextChangeset } from '../../../knowledge/changesets/apply-text-changeset.ts';
-import { assertGovernanceContent } from '../../../governance/content-validation.ts';
-import { treeDxWorkspaceId } from '../../../knowledge/workspaces/identity.ts';
+import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
+import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
+import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
+import { assertGovernanceContent } from '../../governance/content-validation.ts';
+import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 
 type Row = Record<string, unknown>;
 function object(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return object(JSON.parse(value)); } catch { return {}; } return {}; }
