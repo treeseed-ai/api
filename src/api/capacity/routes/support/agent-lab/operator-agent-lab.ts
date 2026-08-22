@@ -6,7 +6,7 @@ import { AgentLabCommandService } from '../../../services/capacity/observability
 import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
-import { RelationContentValidationError,searchRelations } from '../../../../routes/knowledge/relation-search.ts';
+import { RelationContentValidationError,searchRelations } from '../../../../knowledge/relation-search.ts';
 import { CapacityAllocationService } from '../../../services/capacity/allocations/allocation-service.ts';
 import { agentLabRepositoryDefinitions,matchesAgentDefinition,unmatchedAgentDefinitions } from './repository-definitions.ts';
 import { agentLabInboxQuestions } from './inbox-questions.ts';

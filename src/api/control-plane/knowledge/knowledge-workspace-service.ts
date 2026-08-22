@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
-import { treeDxWorkspaceId } from '../../knowledge/workspace-identity.ts';
+import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
 import { serializeBookDraft, serializeKnowledgePageDraft } from '../../knowledge/runtime/authoring.ts';

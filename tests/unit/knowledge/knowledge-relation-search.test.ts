@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { reviewPathsMatch, searchRelations } from '../../../src/api/routes/knowledge/relation-search.ts';
-import { RelationContentValidationError } from '../../../src/api/routes/knowledge/relation-search.ts';
+import { reviewPathsMatch, searchRelations } from '../../../src/api/knowledge/relation-search.ts';
+import { RelationContentValidationError } from '../../../src/api/knowledge/relation-search.ts';
 
 describe('knowledge relationship search', () => {
 	it('maps authorized TreeDX files to stable functional-content identifiers', async () => {

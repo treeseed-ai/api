@@ -5,7 +5,7 @@ import { projectTreeDxCommitSignals } from '../../../capacity/services/treedx/re
 import { recordTreeDxAuthoringState } from '../../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { applyTextChangeset } from '../../../knowledge/changesets/apply-text-changeset.ts';
 import { assertGovernanceContent } from '../../../governance/content-validation.ts';
-import { treeDxWorkspaceId } from '../../../knowledge/workspace-identity.ts';
+import { treeDxWorkspaceId } from '../../../knowledge/workspaces/identity.ts';
 
 type Row = Record<string, unknown>;
 

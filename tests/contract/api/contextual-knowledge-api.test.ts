@@ -52,7 +52,7 @@ describe('contextual knowledge API architecture', () => {
 
 	it('keeps relationship search and backlink inspection on the authorized TreeDX gateway', () => {
 		const authoring = source('src/api/routes/knowledge/authoring.ts');
-		const relationSearch = source('src/api/routes/knowledge/relation-search.ts');
+		const relationSearch = source('src/api/knowledge/relation-search.ts');
 		expect(authoring).toContain("'/v1/projects/:projectId/knowledge/relations/search'");
 		expect(authoring).toContain("'/v1/knowledge/workspaces/:workspaceId/relations/search'");
 		expect(relationSearch).toContain('searchRepositoryFiles');

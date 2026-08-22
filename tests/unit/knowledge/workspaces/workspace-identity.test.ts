@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { treeDxWorkspaceId } from '../../../../src/api/knowledge/workspace-identity.ts';
+import { treeDxWorkspaceId } from '../../../../src/api/knowledge/workspaces/identity.ts';
 
 describe('knowledge workspace identity', () => {
 	it('maps an API idempotency identifier into the TreeDX workspace namespace', () => {
