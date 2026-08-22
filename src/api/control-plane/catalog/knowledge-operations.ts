@@ -15,6 +15,8 @@ export interface KnowledgeOperationDependencies {
 	knowledgeWorkspaces: {
 		create(principal: OperationInvocationContext['principal'], projectId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
 		show(principal: OperationInvocationContext['principal'], workspaceId: string): Promise<Record<string, any>>;
+		readContent(principal: OperationInvocationContext['principal'], workspaceId: string, path: unknown): Promise<Record<string, any>>;
+		updateContent(principal: OperationInvocationContext['principal'], workspaceId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
 		diff(principal: OperationInvocationContext['principal'], workspaceId: string): Promise<Record<string, any>>;
 		abandon(principal: OperationInvocationContext['principal'], workspaceId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
 	};
@@ -35,6 +37,8 @@ export function createKnowledgeOperations(dependencies: KnowledgeOperationDepend
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.search, handler: (input, context) => result(() => dependencies.knowledgeReader.search(context.principal, input.query)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.createWorkspace, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.create(context.principal, input.path.projectId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.workspace, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.show(context.principal, input.path.workspaceId)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.workspaceContent, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.readContent(context.principal, input.path.workspaceId, input.query.path)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.updateWorkspaceContent, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.updateContent(context.principal, input.path.workspaceId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.workspaceDiff, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.diff(context.principal, input.path.workspaceId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.abandonWorkspace, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.abandon(context.principal, input.path.workspaceId, input.body as Record<string, unknown>)) },
 	];

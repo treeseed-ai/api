@@ -171,6 +171,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
+	const knowledgeReader = createKnowledgeReaderService({ store, options });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
 			deliverTeamInvite: (input) => routeDependencies.sendTeamInviteEmail(invitationContext, input),
@@ -178,8 +179,8 @@ export function createPlatformApiApp(options: any = {}) {
 			accountEmails: createAccountEmailService(store, invitationContext),
 			accountRegistration: createAccountRegistrationService(store, authProvider, invitationContext),
 			accountSecurity: createAccountSecurityService(store, invitationContext),
-			knowledgeReader: createKnowledgeReaderService({ store, options }),
-			knowledgeWorkspaces: createKnowledgeWorkspaceService(store),
+			knowledgeReader,
+			knowledgeWorkspaces: createKnowledgeWorkspaceService(store, knowledgeReader),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

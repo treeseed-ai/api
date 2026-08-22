@@ -1,12 +1,10 @@
-import { loadFederatedKnowledgeCatalog } from '../../knowledge/federated-catalog.ts';
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { createRevisionWorkspace, currentReviewIds, discardRevisionWorkspace, reviewWorkspaceAvailable } from '../../knowledge/review-revision.ts';
 import { editorialReviewGate, editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedEditorialContextTrace } from '../../knowledge/editorial-review.ts';
 import { RelationContentValidationError,relationKinds, reviewPathsMatch, searchRelations } from './relation-search.ts';
-import { allowedWorkspacePath, assertSimulatedProductionPolicy, authorizedCatalog, bookDocument, list, pageDocument, parseBook, parseKnowledgePage, text, workspaceAccess } from './authoring-support.ts';
+import { allowedWorkspacePath, assertSimulatedProductionPolicy, list, text, workspaceAccess } from './authoring-support.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
-import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 export { reviewPathsMatch, searchRelations } from './relation-search.ts';
 
 export function installKnowledgeAuthoringRoutes(context: any) {
@@ -48,83 +46,6 @@ export function installKnowledgeAuthoringRoutes(context: any) {
 			if (error instanceof RelationContentValidationError) return jsonError(c,error.status,error.message,{code:error.code,diagnostics:error.diagnostics});
 			return jsonError(c, 503, 'Knowledge relationship search is unavailable.', { code: 'knowledge_relation_search_unavailable' });
 		}
-	});
-
-	app.get('/v1/knowledge/workspaces/:workspaceId/content', async (c: any) => {
-		const access = await workspaceAccess(context, c, 'knowledge:read');
-		if (access.response) return access.response;
-		const path = text(c.req.query('path'));
-		if (!allowedWorkspacePath(access.workspace, path)) return jsonError(c, 422, 'Choose a knowledge file in this project workspace.', { code: 'knowledge_path_invalid' });
-		const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-			write: false, workspaceRefs: [access.workspace.branchName] });
-		if (!connection) return jsonError(c, 503, 'The project knowledge repository is unavailable.');
-		const file = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path });
-		try {
-			const isBook = path.startsWith(`${connection.contentPath}/books/`);
-			const definition = isBook ? parseBook({ path, raw: file.content }) : parseKnowledgePage({ path, raw: file.content });
-			let backlinks: any[] = [];
-			if (!isBook) {
-				const catalog = await loadFederatedKnowledgeCatalog(context, c, access.workspace.projectId);
-				if (catalog.response) return catalog.response;
-				const visible = await authorizedCatalog(context, c, catalog);
-				backlinks = visible.pages.filter((page: any) => page.relatedKnowledgeIds.includes((definition as any).id)).map((page: any) => ({
-					id: page.id, title: page.title, summary: page.summary,
-					canonicalPath: `/t/${encodeURIComponent(page.source.teamSlug)}/books/${encodeURIComponent(page.source.bookSlug ?? page.bookId)}/${page.slug.split('/').map(encodeURIComponent).join('/')}`,
-				}));
-			}
-			return c.json({ ok: true, payload: { kind: isBook ? 'book' : 'page', path, expectedSha: file.sha, definition, backlinks } });
-		} catch (error) {
-			return jsonError(c, 422, error instanceof Error ? error.message : 'The knowledge file is invalid.', { code: 'knowledge_content_invalid' });
-		}
-	});
-
-	app.put('/v1/knowledge/workspaces/:workspaceId/content', async (c: any) => {
-		const access = await workspaceAccess(context, c, 'knowledge:author');
-		if (access.response) return access.response;
-		if (access.workspace.actorUserId !== access.principal.id) return jsonError(c, 403, 'Only the workspace author can edit this draft.');
-		if (!['draft', 'changes-requested'].includes(access.workspace.status)) {
-			return jsonError(c, 409, 'This draft is locked while it is in review or publication.', { code: 'knowledge_workspace_locked' });
-		}
-		const body = await c.req.json().catch(() => ({}));
-		if (Number(body.version) !== access.workspace.version) return jsonError(c, 409, 'The draft changed. Reload before saving.', { code: 'stale_workspace', workspace: access.workspace });
-		let content: string;
-		let before: string | null = null;
-		try {
-			let status: 'published' | 'archived' = 'published';
-			if (text(body.sourcePath)) {
-				const readConnection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-					write: false, workspaceRefs: [access.workspace.branchName] });
-				if (!readConnection) return jsonError(c, 503, 'The project knowledge repository is unavailable.');
-				const current = await readConnection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId,
-					path: text(body.sourcePath) });
-				before = current.content;
-				const definition = body.kind === 'book' ? parseBook({ path: text(body.sourcePath), raw: current.content })
-					: parseKnowledgePage({ path: text(body.sourcePath), raw: current.content });
-				status = definition.status === 'archived' ? 'archived' : 'published';
-			}
-			content = body.kind === 'book' ? bookDocument(body, status) : pageDocument(body, status);
-		}
-		catch (error) { return jsonError(c, 422, error instanceof Error ? error.message : 'Invalid knowledge content.', { code: 'invalid_knowledge_content' }); }
-		const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-			write: true, workspaceRefs: [access.workspace.branchName] });
-		if (!connection) return jsonError(c, 503, 'The project knowledge repository is unavailable.');
-		const slug = text(body.slug);
-		const derivedPath = body.kind === 'book'
-			? `${connection.contentPath}/books/${slug}.md`
-			: `${connection.contentPath}/knowledge/${text(body.bookId)}/${slug}.md`;
-		const path = text(body.sourcePath) || derivedPath;
-		if (!allowedWorkspacePath(access.workspace, path)) return jsonError(c, 422, 'The knowledge path is outside this workspace.', { code: 'knowledge_path_invalid' });
-		if (text(body.sourcePath) && path !== derivedPath) return jsonError(c, 422, 'Changing a knowledge path requires an explicit move operation.', { code: 'knowledge_path_move_required' });
-		const result = await applyTextChangeset({ client: connection.client, workspace: {
-			workspaceId: access.workspace.treeDxWorkspaceId,
-			baseCommitSha: access.workspace.baseCommitSha,
-			baseRef: access.workspace.baseRef,
-		}, changes: [{ path, before, after: content }], idempotencyKey: `knowledge-content-${access.workspace.id}-${access.workspace.version}` });
-		const updated = await store.updateKnowledgeWorkspace(access.workspace.id, { version: access.workspace.version, status: 'draft' });
-		if (!updated.ok) return jsonError(c, 409, 'The draft changed. Reload before saving.', { code: 'stale_workspace', workspace: updated.workspace });
-		await store.recordAuditEvent({ eventType: body.kind === 'book' ? 'knowledge.book.updated' : 'knowledge.page.updated', actorType: 'user', actorId: access.principal.id,
-			targetType: body.kind === 'book' ? 'book' : 'knowledge_page', targetId: text(body.id), data: { workspaceId: access.workspace.id, projectId: access.workspace.projectId, path } });
-		return c.json({ ok: true, payload: { result, workspace: updated.workspace } });
 	});
 
 	app.post('/v1/knowledge/workspaces/:workspaceId/submit', async (c: any) => {
