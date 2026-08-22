@@ -13,6 +13,8 @@ export interface TeamOperationDependencies {
 		listTeamInvites(teamId: string): Promise<Array<Record<string, unknown>>>;
 		getTeamInviteByToken(token: string): Promise<Record<string, any>>;
 		acceptTeamInvite(token: string, principalId: string): Promise<Record<string, any>>;
+		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
+		createTeam(input: Record<string, unknown>): Promise<Record<string, any>>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 }
@@ -136,6 +138,37 @@ export function createTeamInviteAcceptOperation(dependencies: TeamOperationDepen
 				eventType: 'team.invitation.accepted', targetType: 'team', targetId: result.team?.id ?? result.invite?.teamId ?? null,
 				data: { invitationId: result.invite?.id ?? null } });
 			return result;
+		},
+	};
+}
+
+export function createTeamCreateOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.create> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.teams.create,
+		async handler(input, context) {
+			const principal = authenticatedPrincipal(context);
+			if (principal.roles?.some((role: string) => role === 'team_api_key' || role === 'project_api')) {
+				throw new ControlPlaneOperationError(403, 'team_creation_forbidden', 'This credential cannot create teams.');
+			}
+			const verified = await dependencies.store.first(
+				"SELECT COUNT(*) AS count FROM user_email_addresses WHERE user_id = ? AND status = 'verified'", [principal.id]);
+			if (Number(verified?.count ?? 0) < 1) throw new ControlPlaneOperationError(403, 'verified_email_required', 'Verify an email address before creating a team.');
+			const body = input.body as Record<string, any>;
+			const name = String(body.slug ?? body.name ?? '').trim();
+			if (!name) throw new ControlPlaneOperationError(400, 'invalid_team', 'A team name is required.');
+			try {
+				const team = await dependencies.store.createTeam({ name,
+					displayName: typeof body.displayName === 'string' ? body.displayName : typeof body.label === 'string' ? body.label : name,
+					logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : null,
+					profileSummary: typeof body.profileSummary === 'string' ? body.profileSummary : typeof body.description === 'string' ? body.description : null,
+					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {}, ownerUserId: principal.id });
+				await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: principal.id, eventType: 'team.created', targetType: 'team', targetId: team.id, data: { name: team.name } });
+				return team;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : 'The team could not be created.';
+				const conflict = /already taken|already used/u.test(message);
+				throw new ControlPlaneOperationError(conflict ? 409 : 400, conflict ? 'namespace_taken' : 'invalid_team', message);
+			}
 		},
 	};
 }

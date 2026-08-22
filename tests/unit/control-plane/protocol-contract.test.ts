@@ -28,7 +28,7 @@ describe('control-plane protocol contract', () => {
 	};
 	const operationStore = (overrides: Record<string, unknown> = {}) => ({
 		async ensureInitialized() {},
-		async first() { return { ok: 1 }; },
+		async first() { return { ok: 1, count: 1 }; },
 		async listProjectsForPrincipal() { return []; },
 		async listTeamProjects() { return []; },
 		async listTeamsForPrincipal() { return []; },
@@ -41,6 +41,7 @@ describe('control-plane protocol contract', () => {
 		async listTeamInvites() { return []; },
 		async getTeamInviteByToken(token: string) { return { ok: true, invite: { id: 'invite-1', token, email: 'member@example.test', roleKey: 'contributor', status: 'pending', expiresAt: '2026-08-23T00:00:00Z' }, team: { id: 'team-a', name: 'treeseed', displayName: 'TreeSeed' } }; },
 		async acceptTeamInvite() { return { ok: true, invite: { id: 'invite-1', teamId: 'team-a' }, team: { id: 'team-a' }, membership: { id: 'membership-1' } }; },
+		async createTeam(input: Record<string, unknown>) { return { id: 'team-new', ...input }; },
 		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
@@ -177,6 +178,20 @@ describe('control-plane protocol contract', () => {
 		expect(await accepted.json()).toMatchObject({ data: { ok: true, membership: { id: 'membership-1' } } });
 		expect(registry.require('teams.invites.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.inviteShow);
 		expect(registry.require('teams.invites.accept').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.inviteAccept);
+	});
+
+	it('creates teams through the SDK-owned operation binding', async () => {
+		const app = new Hono();
+		const registry = createApiControlPlaneOperations(apiDependencies());
+		installControlPlaneProtocolRoutes(app, async () => ({
+			principal: { id: 'user_1', scopes: ['treeseed:projects:write'], roles: [], permissions: [] }, credential: { id: 'client_1' },
+		}), oauthProvider, registry);
+		const response = await app.request('/v1/teams', { method: 'POST', headers: {
+			authorization: 'Bearer test-token', 'content-type': 'application/json', 'idempotency-key': 'team-create-1',
+		}, body: JSON.stringify({ name: 'TreeSeed Labs', slug: 'treeseed-labs' }) });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ data: { id: 'team-new', name: 'treeseed-labs', displayName: 'treeseed-labs', ownerUserId: 'user_1' } });
+		expect(registry.require('teams.create').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.create);
 	});
 
 	it('enforces mutation idempotency and concurrency through the shared operation adapter', async () => {

@@ -1,5 +1,5 @@
 export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) {
-	const { app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, capacity, config, ensurePrincipal, exportSeedWithStore, isTeamApiPrincipal, jsonError, controlPlaneAuthContext, normalizeSeedEnvironments, requireTeamAccess, runtime, sendTeamInviteEmail, shouldExposeNonProductionAuthDiagnostics, store, verifiedEmailCount } = context;
+	const { app, authEmailDeliveryFailureDetail, authEmailDeliveryFailureReason, capacity, config, exportSeedWithStore, jsonError, controlPlaneAuthContext, normalizeSeedEnvironments, requireTeamAccess, runtime, sendTeamInviteEmail, shouldExposeNonProductionAuthDiagnostics, store } = context;
 	const actorOwnsTeam = async (teamId: string, principal: any) => {
 		const teamContext = await store.resolvePrincipalTeamContext(teamId, principal);
 		return teamContext?.roles?.includes('team_owner') === true;
@@ -73,44 +73,6 @@ export function installTeamsInvitationsMembershipAndApiKeysRoutes(context: any) 
 						principal: access.principal,
 					});
 					return c.json(result, result.ok ? 200 : 400);
-				});
-	
-	app.post('/v1/teams', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					if (isTeamApiPrincipal(auth.principal) || c.get('actorType') === 'project') {
-						return jsonError(c, 403, 'Permission denied.');
-					}
-					if (await verifiedEmailCount(store, auth.principal.id) < 1) {
-						return jsonError(c, 403, 'Verify an email address before creating a team.', { code: 'verified_email_required' });
-					}
-					const body = await c.req.json().catch(() => ({}));
-					if (!body.name && !body.slug) {
-						return jsonError(c, 400, 'name is required.');
-					}
-					let team;
-					try {
-						team = await store.createTeam({
-							name: String(body.slug ?? body.name),
-							displayName: typeof body.displayName === 'string' ? body.displayName : typeof body.label === 'string' ? body.label : String(body.name ?? body.slug),
-							logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : null,
-							profileSummary: typeof body.profileSummary === 'string' ? body.profileSummary : typeof body.description === 'string' ? body.description : null,
-							metadata: typeof body.metadata === 'object' && body.metadata ? body.metadata : {},
-							ownerUserId: typeof auth.principal.id === 'string' ? auth.principal.id : null,
-						});
-					} catch (error) {
-						const message = error instanceof Error ? error.message : String(error);
-						const status = /already taken|already used/u.test(message) ? 409 : 400;
-						return jsonError(c, status, message, {
-							code: status === 409 ? 'namespace_taken' : 'invalid_team',
-							fieldErrors: { name: message },
-						});
-					}
-					await store.recordAuditEvent({
-						actorType: 'user', actorId: auth.principal.id, eventType: 'team.created',
-						targetType: 'team', targetId: team.id, data: { name: team.name },
-					});
-					return c.json({ ok: true, payload: team });
 				});
 	
 	app.patch('/v1/teams/:teamId', async (c) => {
