@@ -169,6 +169,7 @@ export function createPlatformApiApp(options: any = {}) {
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
 			deliverTeamInvite: (input) => routeDependencies.sendTeamInviteEmail(invitationContext, input),
+			listUserEmailAddresses: (userId) => routeDependencies.listUserEmailAddresses(store, userId),
 		}), confirmations);
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);

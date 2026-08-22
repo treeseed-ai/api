@@ -44,40 +44,6 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 					return c.json({ ok: true, payload: { value: email, available: !existing, status: existing ? 'taken' : 'available', message: existing ? 'This email can’t be used.' : 'Email is available.' } });
 				});
 	
-	app.get('/v1/auth/web/emails', async (c) => {
-					await ensureControlPlaneCredentialSchema(store);
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					return c.json({ ok: true, payload: await listUserEmailAddresses(store, auth.principal.id) });
-				});
-	
-	app.get('/v1/auth/web/account/identity', async (c) => {
-					await ensureControlPlaneCredentialSchema(store);
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const user = await store.first(`SELECT id, username, display_name, metadata_json FROM users WHERE id = ? LIMIT 1`, [auth.principal.id]);
-					const credential = await store.first(`SELECT user_id FROM control_plane_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1`, [auth.principal.id]);
-					const identities = await store.all(`SELECT id, provider, email, created_at FROM user_identities WHERE user_id = ? AND provider <> 'credential' ORDER BY created_at`, [auth.principal.id]);
-					const metadata = parseJsonObject(user?.metadata_json);
-					const usableMethods = identities.length + (credential ? 1 : 0);
-					return c.json({ ok: true, payload: {
-						id: auth.principal.id,
-						username: normalizeUsername(user?.username ?? metadata.username),
-						displayName: user?.display_name ?? auth.principal.displayName ?? '',
-						firstName: metadata.firstName ?? null,
-						lastName: metadata.lastName ?? null,
-						image: metadata.image ?? null,
-						headline: metadata.headline ?? null,
-						profileSummary: metadata.profileSummary ?? null,
-						location: metadata.location ?? null,
-						website: metadata.website ?? null,
-						expertise: Array.isArray(metadata.expertise) ? metadata.expertise : [],
-						hasCredential: Boolean(credential),
-						emails: await listUserEmailAddresses(store, auth.principal.id),
-						providers: identities.map((identity) => ({ id: identity.id, provider: identity.provider, email: identity.email, linkedAt: identity.created_at, canUnlink: usableMethods > 1 })),
-					} });
-				});
-	
 	app.patch('/v1/auth/web/username', async (c) => {
 					const auth = await ensurePrincipal(c);
 					if (auth.response) return auth.response;
@@ -186,51 +152,6 @@ export function installAuthenticationAccountProfileAndNotificationsRoutes(contex
 						await syncPrimaryEmailCaches(store, auth.principal.id);
 					}
 					return c.json({ ok: true, payload: await listUserEmailAddresses(store, auth.principal.id) });
-				});
-	
-	app.get('/v1/auth/web/sessions', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const sessions = await store.all(
-						`SELECT id, session_type, expires_at, revoked_at, data_json, created_at, updated_at
-						 FROM auth_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
-						[auth.principal.id],
-					).catch(() => []);
-					return c.json({
-						ok: true,
-						payload: sessions.map((session) => {
-							const data = parseJsonObject(session.data_json);
-							return {
-								id: session.id,
-								provider: session.session_type,
-								expiresAt: session.expires_at,
-								revokedAt: session.revoked_at,
-								authenticatedAt: session.created_at,
-								lastSeenAt: session.updated_at,
-								ipAddress: typeof data.ipAddress === 'string' ? data.ipAddress : null,
-								userAgent: typeof data.userAgent === 'string' ? data.userAgent : null,
-								current: auth.principal.metadata?.sessionId === session.id,
-							};
-						}),
-					});
-				});
-	
-	app.post('/v1/auth/web/sessions/:sessionId/revoke', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const sessionId = c.req.param('sessionId');
-					if (auth.principal.metadata?.sessionId === sessionId) return jsonError(c, 409, 'Use sign out to end the current session.', { code: 'current_session' });
-					const existing = await store.first(`SELECT revoked_at FROM auth_sessions WHERE id = ? AND user_id = ? LIMIT 1`, [sessionId, auth.principal.id]);
-					if (!existing) return c.json({ ok: true, payload: { id: sessionId, status: 'not-found' } });
-					await store.run(
-						`UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE id = ? AND user_id = ?`,
-						[new Date().toISOString(), new Date().toISOString(), sessionId, auth.principal.id],
-					);
-					await store.recordAuditEvent({
-						actorType: 'user', actorId: auth.principal.id, eventType: 'auth.session.revoked',
-						targetType: 'auth_session', targetId: sessionId,
-					});
-					return c.json({ ok: true, payload: { id: sessionId, status: existing.revoked_at ? 'already-revoked' : 'revoked' } });
 				});
 	
 	app.patch('/v1/auth/web/profile', async (c) => {
