@@ -74,6 +74,9 @@
     "libsodium-wrappers-sumo": "0.7.15",
     "octokit": "^5.0.5",
     "pg": "^8.21.0",
+    "remark-mdx": "3.1.1",
+    "remark-parse": "11.0.0",
+    "unified": "11.0.5",
     "yaml": "^2.8.1",
     "zod": "4.4.3",
     "zod-to-json-schema": "3.25.1"

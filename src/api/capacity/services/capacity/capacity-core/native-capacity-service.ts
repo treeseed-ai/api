@@ -1,4 +1,5 @@
-import type { CapacityReservation,NativeCapacityAvailability,NativeCapacityInput,NativeCapacitySummary } from '@treeseed/sdk';
+import type { CapacityReservation } from '@treeseed/sdk/agent-capacity';
+import type { NativeCapacityAvailability,NativeCapacityInput,NativeCapacitySummary } from '../../../contracts.ts';
 import type {
 CapacityExecutionProvider,
 CapacityProviderMembershipView,

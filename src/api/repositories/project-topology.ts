@@ -1,4 +1,31 @@
-import type { ProjectContentRepositoryTopology, ProjectFilesystemRepositoryTopology, ProjectRepositoryTopology } from '@treeseed/sdk';
+interface ProjectContentRepositoryTopology {
+	accessMode: 'treedx';
+	githubUrl: string | null;
+	defaultBranch: string | null;
+	ref: string | null;
+	contentPath: string;
+	treeDx: { instanceId: string; libraryId: string; repositoryId: string | null; baseUrl: string | null };
+	remote: {
+		bindingId: string; serviceConnectionId: string; capabilityBindingId: string; providerId: string;
+		providerRepositoryId: string; owner: string; name: string; cloneUrl: string; defaultRef: string;
+		publicationRef: string; authorityId: string; expectedHead: string | null; observedHead: string | null;
+		grantStatus: 'ready' | 'missing' | 'suspended' | 'reauthorization-required';
+		drift: 'none' | 'remote-ahead' | 'remote-behind' | 'diverged' | 'unavailable' | 'unknown'; version: number;
+	} | null;
+	r2: Record<string, unknown>;
+}
+
+interface ProjectFilesystemRepositoryTopology {
+	accessMode: 'filesystem'; provider: string; owner: string | null; name: string; url: string | null;
+	defaultBranch: string; ref: string | null; checkoutPath: string | null; volumePath: string | null;
+	submoduleMountPath: string | null; siteSubmodulePath: string | null;
+}
+
+interface ProjectRepositoryTopology {
+	contentRepository: ProjectContentRepositoryTopology;
+	siteRepository: ProjectFilesystemRepositoryTopology;
+	projectRepository: ProjectFilesystemRepositoryTopology | null;
+}
 
 const TREEDX_CONTENT_PATH = 'src/content';
 function cleanString(value: unknown) { return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null; }

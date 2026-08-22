@@ -1,30 +1,18 @@
 import type { Hono } from 'hono';
-import type {
-ApiPrincipal,
-ApiScope,
-RemoteWorkflowOperationResponse as ApiWorkflowOperationResponse,
-DeviceCodePollRequest,
-DeviceCodePollResponse,
-DeviceCodeStartRequest,
-DeviceCodeStartResponse,
-DeviceCodeApproveRequest as SdkDeviceCodeApproveRequest,
-RemoteSdkOperationRequest as SdkHttpOperationRequest,
-TokenRefreshRequest,
-TokenRefreshResponse,
-RemoteWorkflowOperationRequest as WorkflowHttpOperationRequest,
-} from '@treeseed/sdk';
+import type { ApiPrincipal } from '@treeseed/sdk/operator-contracts';
 
-export type {
-ApiPrincipal,
-ApiScope,ApiWorkflowOperationResponse,DeviceCodePollRequest,
-DeviceCodePollResponse,
-DeviceCodeStartRequest,
-DeviceCodeStartResponse,SdkHttpOperationRequest,
-TokenRefreshRequest,
-TokenRefreshResponse,WorkflowHttpOperationRequest
-};
-
-export type DeviceCodeApproveRequest = SdkDeviceCodeApproveRequest;
+export type { ApiPrincipal };
+export type ApiScope = string;
+export interface DeviceCodeStartRequest { clientName?: string; scopes?: ApiScope[] }
+export interface DeviceCodeStartResponse { ok: true; deviceCode: string; userCode: string; verificationUri: string; verificationUriComplete: string; intervalSeconds: number; expiresAt: string; expiresInSeconds: number }
+export type DeviceCodePollResponse = { ok: true; status: 'pending'; intervalSeconds: number } | { ok: true; status: 'approved'; accessToken: string; refreshToken: string; tokenType: 'Bearer'; expiresAt: string; expiresInSeconds: number; principal: ApiPrincipal } | { ok: false; status: 'expired' | 'invalid' | 'already_used'; error: string };
+export interface DeviceCodePollRequest { deviceCode: string }
+export interface DeviceCodeApproveRequest { userCode: string; principalId: string; displayName?: string; scopes?: ApiScope[]; metadata?: Record<string, unknown> }
+export interface TokenRefreshRequest { refreshToken: string }
+export interface TokenRefreshResponse { ok: true; accessToken: string; refreshToken: string; tokenType: 'Bearer'; expiresAt: string; expiresInSeconds: number; principal: ApiPrincipal }
+export interface SdkHttpOperationRequest { input?: Record<string, unknown>; repoRoot?: string }
+export interface WorkflowHttpOperationRequest { input?: Record<string, unknown>; cwd?: string; env?: Record<string, string> }
+export interface ApiWorkflowOperationResponse { ok: boolean; operation: string; payload?: Record<string, unknown> | null; nextSteps?: Array<{ operation: string; reason?: string; input?: Record<string, unknown> }> }
 
 export interface ApiAuthProvider {
 	readonly id: string;

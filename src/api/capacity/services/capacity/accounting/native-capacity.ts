@@ -1,4 +1,5 @@
-import type { CapacityReservation, NativeCapacityAvailability, NativeCapacityInput } from '@treeseed/sdk';
+import type { CapacityReservation } from '@treeseed/sdk/agent-capacity';
+import type { NativeCapacityAvailability, NativeCapacityInput } from '../../../contracts.ts';
 import type { CapacityExecutionProvider } from '@treeseed/sdk/capacity-provider/contracts';
 
 export interface NativeAccountingWindow { startAt: string | null; endAt: string | null; source: 'observation' | 'configured_reset' | 'unknown'; known: boolean }
