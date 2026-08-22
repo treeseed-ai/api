@@ -1,7 +1,6 @@
 import type { Hono } from 'hono';
 import { CapacityGovernanceError } from '../database.ts';
 import { installResearchWorkflowRoutes } from './operations/research-workflows.ts';
-import { installProjectDiagnosticsRoutes,type ProjectDiagnosticsRouteOptions } from './projects/projects-core/project-diagnostics.ts';
 import { installCapacityOperatorRoutes } from './support/operator.ts';
 import { installPlanningStateRoutes } from './support/planning-state.ts';
 import { installStructuredEstimateRoutes } from './support/structured-estimates.ts';
@@ -26,12 +25,11 @@ function installCapacityErrorBoundary(app: Hono) {
 	});
 }
 
-export function installCapacityRoutes(app: Hono, options: ProjectDiagnosticsRouteOptions & { store: any; sessionEvents?: any; requireTeamAccess: (...args: any[]) => Promise<any>; runtime: any; runtimeControlPlaneAuthProvider: any; config: Record<string, unknown> }) {
+export function installCapacityRoutes(app: Hono, options: { store: any; sessionEvents?: any; requireTeamAccess: (...args: any[]) => Promise<any>; requireProjectAccess: (...args: any[]) => Promise<any>; runtime: any; runtimeControlPlaneAuthProvider: any; config: Record<string, unknown> }) {
 	installCapacityErrorBoundary(app);
 	installCapacityOperatorRoutes(app, options);
 	installPlanningStateRoutes(app, options);
 	installStructuredEstimateRoutes(app, options);
 	installDecisionWorkGraphRoutes(app, options);
 	installResearchWorkflowRoutes(app, options);
-	installProjectDiagnosticsRoutes(app, options);
 }
