@@ -1,5 +1,5 @@
 export function installAuthenticationPasswordAndAccountSecurityRoutes(context: any) {
-	const { accountDeletionBlockers, accountDeletionConfirmationMatches, app, config, consumeReauthentication, createHash, deleteTeamCapacityAggregate, ensureControlPlaneCredentialSchema, ensurePrincipal, hashControlPlanePassword, jsonError, controlPlaneAuthContext, normalizeEmail, normalizeUsername, passwordResetUrlFor, randomBytes, randomUUID, readJsonOrFormBody, runtimeControlPlaneAuthProvider, sendAuthEmail, store, validateControlPlanePassword, verifyControlPlanePassword } = context;
+	const { accountDeletionBlockers, accountDeletionConfirmationMatches, app, config, consumeReauthentication, createHash, deleteTeamCapacityAggregate, ensureControlPlaneCredentialSchema, ensurePrincipal, hashControlPlanePassword, jsonError, controlPlaneAuthContext, normalizeEmail, normalizeUsername, passwordResetUrlFor, randomBytes, randomUUID, readJsonOrFormBody, sendAuthEmail, store, validateControlPlanePassword, verifyControlPlanePassword } = context;
 	app.patch('/v1/auth/web/password', async (c) => {
 					await ensureControlPlaneCredentialSchema(store);
 					const auth = await ensurePrincipal(c);
@@ -171,29 +171,4 @@ export function installAuthenticationPasswordAndAccountSecurityRoutes(context: a
 					return c.json({ ok: true, payload: { deleted: true } });
 				});
 	
-	app.post('/v1/auth/token/refresh', async (c) => {
-					const body = await c.req.json().catch(() => ({}));
-					try {
-						return c.json(await runtimeControlPlaneAuthProvider.refreshAccessToken({ refreshToken: String(body.refreshToken ?? '') }));
-					} catch (error) {
-						return jsonError(c, 401, error instanceof Error ? error.message : String(error));
-					}
-				});
-	
-	app.post('/v1/auth/logout', async (c) => {
-					const auth = await ensurePrincipal(c);
-					if (auth.response) return auth.response;
-					const sessionId = auth.principal.metadata?.sessionId;
-					if (typeof sessionId === 'string' && sessionId.trim()) {
-						await store.run(
-							`UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE id = ? AND user_id = ?`,
-							[new Date().toISOString(), new Date().toISOString(), sessionId, auth.principal.id],
-						).catch(() => {});
-						await store.recordAuditEvent({
-							actorType: 'user', actorId: auth.principal.id, eventType: 'auth.session.revoked',
-							targetType: 'auth_session', targetId: sessionId, data: { reason: 'logout' },
-						});
-					}
-					return c.json({ ok: true });
-				});
 }

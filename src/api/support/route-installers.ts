@@ -2,7 +2,6 @@ import { installAuthenticationAccountProfileAndNotificationsRoutes } from "../ro
 import { installAuthenticationDeviceSignupAndOauthRoutes } from "../routes/accounts/authentication-device-signup-and-oauth.ts";
 import { installAuthenticationPasswordAndAccountSecurityRoutes } from "../routes/accounts/authentication-password-and-account-security.ts";
 import { installFoundationUsersByUsernameItemProfileRoutes } from "../routes/accounts/foundation-users-by-username-item-profile.ts";
-import { installProjectionsInfrastructureKnowledgeAndWorkdaysRoutes } from "../routes/capacity/workdays/projections-infrastructure-knowledge-and-workdays.ts";
 import { installFeedbackAdministrationRoutes } from "../routes/feedback/administration.ts";
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installDiscussionRoutes } from "../routes/discussions/discussions.ts";
@@ -15,7 +14,6 @@ import { installKnowledgePackRoutes } from "../routes/knowledge/packs.ts";
 import { installKnowledgePublicationRoutes } from "../routes/knowledge/publication.ts";
 import { installKnowledgeLifecycleRoutes } from "../routes/knowledge/lifecycle.ts";
 import { installOperationsPlatformRunnersAndJobsRoutes } from "../routes/operations/operations-platform-runners-and-jobs.ts";
-import { installGovernanceProjectionRoutes } from "../routes/projects/governance/governance-projection.ts";
 import { installGovernanceProjectsItemApprovalsItemDecisionRoutes } from "../routes/projects/governance/governance-projects-item-approvals-item-decision.ts";
 import { installGovernanceTeamProjectDelegationsAndApprovalsRoutes } from "../routes/projects/governance/governance-team-project-delegations-and-approvals.ts";
 import { installGovernanceTeamProjectPolicyRoutes } from "../routes/projects/governance/governance-team-project-policy.ts";
@@ -60,8 +58,6 @@ export function installPlatformRoutes(context: any): void {
   installAuthenticationDeviceSignupAndOauthRoutes(context);
   installAuthenticationAccountProfileAndNotificationsRoutes(context);
   installAuthenticationPasswordAndAccountSecurityRoutes(context);
-  installGovernanceProjectionRoutes(context);
-  installProjectionsInfrastructureKnowledgeAndWorkdaysRoutes(context);
   installFoundationUsersByUsernameItemProfileRoutes(context);
   installTeamsInvitationsMembershipAndApiKeysRoutes(context);
   installTeamsLifecycleAndConsentRoutes(context);

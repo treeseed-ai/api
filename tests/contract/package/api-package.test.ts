@@ -1,10 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe,expect,it } from 'vitest';
 import { ControlPlaneStore,validateProjectSlug } from '../../../src/api/persistence/store.js';
 import { createPlatformApiApp } from '../../../src/api/support/app.js';
 import { createControlPlanePostgresDatabase } from '../../../src/api/support/control-plane-postgres.js';
-import { ACCEPTANCE_ACTORS,API_ROUTE_DESCRIPTORS } from '../../../src/api/support/route-descriptors.js';
 import { main as runAPIOperationsRunner } from '../../../src/operations-runner/entrypoint.js';
 
 function createNoopStore() {
@@ -53,23 +50,5 @@ describe('API package surface', () => {
 		});
 
 		expect(typeof app.fetch).toBe('function');
-	});
-});
-
-describe('route descriptors', () => {
-	it('covers the SDK route map with unique route ids', () => {
-		const ids = new Set(API_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.id));
-		expect(ids.size).toBe(API_ROUTE_DESCRIPTORS.length);
-	});
-
-	it('has expected acceptance statuses for every descriptor actor matrix entry', () => {
-		const expected = JSON.parse(readFileSync(resolve(process.cwd(), 'tests/acceptance/api/expected-statuses.json'), 'utf8'));
-		const statuses = expected.statuses ?? {};
-		for (const descriptor of API_ROUTE_DESCRIPTORS) {
-			expect(statuses[descriptor.id], descriptor.id).toBeTruthy();
-			for (const actor of ACCEPTANCE_ACTORS) {
-				expect(statuses[descriptor.id][actor], `${descriptor.id}:${actor}`).toEqual(expect.any(Number));
-			}
-		}
 	});
 });

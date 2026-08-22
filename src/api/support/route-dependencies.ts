@@ -10,10 +10,7 @@ import * as emailConfirmation from "../../auth/email-confirmation.ts";
 import * as authEmail from "../../auth/email.ts";
 import { validateUsername as validatePublicUsername } from "../../auth/profile-validation.ts";
 import * as welcomeEmail from "../../auth/welcome-email.ts";
-import * as workdayProjection from "../../control-plane/capacity/workdays/workday-projection.js";
 import * as contentRelations from "../../control-plane/content/content-relations.js";
-import * as knowledgeProjection from "../../control-plane/projects/knowledge/knowledge-projection.js";
-import * as governanceProjection from "../../control-plane/projects/projects-core/governance-projection.js";
 import * as seedApply from "../../control-plane/seeds/apply.js";
 import * as infrastructureSeeds from "../../control-plane/seeds/infrastructure-seeds.js";
 import * as notifications from "../../notifications/service.ts";
@@ -38,9 +35,6 @@ export const routeDependencies: Record<string, any> = {
   ...emailConfirmation,
   ...authEmail,
   ...welcomeEmail,
-  ...workdayProjection,
-  ...knowledgeProjection,
-  ...governanceProjection,
   ...seedApply,
   ...infrastructureSeeds,
   ...notifications,
