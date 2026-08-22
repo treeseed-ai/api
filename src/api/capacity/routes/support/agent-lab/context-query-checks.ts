@@ -1,6 +1,6 @@
 import type { Hono } from 'hono';
 import { ContextQueryCheckService } from '../../../services/capacity/agents/context-query-check-service.ts';
-import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
+import type { WorkdayRouteDependencies } from '../workday-route-dependencies.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
 import { contextQueryReadiness } from '../../../../knowledge/runtime/context-query-runtime.ts';
 import { listUnpublishedTreeDxAuthoringState } from '../../../services/treedx/repositories/treedx-authoring-journal.ts';

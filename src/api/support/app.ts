@@ -20,6 +20,7 @@ import { createGitHubConnectorService } from '../control-plane/repositories/gith
 import { createGitHubWebhookService } from '../control-plane/repositories/github-webhook-service.ts';
 import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
 import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
+import { createWorkdayService } from '../control-plane/repositories/capacity/workday-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -185,6 +186,7 @@ export function createPlatformApiApp(options: any = {}) {
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
 			plans: createCapacityPlanService(capacity),
+			workdays: createWorkdayService(capacity),
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),

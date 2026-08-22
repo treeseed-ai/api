@@ -3,7 +3,7 @@ import { type AgentLabEntityKind } from '@treeseed/sdk/agent-capacity';
 import type { Context, Hono } from 'hono';
 import { AgentLabProjectionService } from '../../../services/capacity/observability/agent-lab-projection-service.ts';
 import { AgentLabCommandService } from '../../../services/capacity/observability/agent-lab-command-service.ts';
-import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
+import type { WorkdayRouteDependencies } from '../workday-route-dependencies.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import { RelationContentValidationError,searchRelations } from '../../../../knowledge/relation-search.ts';

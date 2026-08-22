@@ -1,5 +1,5 @@
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
-import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
+import type { WorkdayRouteDependencies } from '../workday-route-dependencies.ts';
 import { parseValidatedQuestionContent } from './question-content.ts';
 
 type Row = Record<string, unknown>;

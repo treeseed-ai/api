@@ -11,7 +11,7 @@ import { optionalAvailabilityStatus } from '../../services/accounts/availability
 import { CapacityOverrunService } from '../../services/capacity/accounting/overrun-service.ts';
 import { CapacityOperatorEvidenceService } from '../../services/support/operator-evidence-service.ts';
 import { readCapacityRequestObject } from './request-json.ts';
-import { installOperatorActivityRoutes, installOperatorWorkdayRoutes } from './operator-workdays.ts';
+import { installOperatorCommunicationRoutes } from './operator-communication.ts';
 import { installOperatorAgentLabRoutes } from './agent-lab/operator-agent-lab.ts';
 import { installOperatorAssignmentContentRoutes } from './operator-assignment-content.ts';
 import { observeAssignmentCleanup } from '../../services/capacity/assignments/observability/assignment-cleanup-observation-service.ts';
@@ -118,8 +118,7 @@ export function installCapacityOperatorRoutes(app: Hono, options: CapacityOperat
 		environment: options.config?.environment,
 		requireTeamAccess: (c: Context, teamId: string) => options.requireTeamAccess(c, options.store, teamId, 'projects:read:team'),
 	};
-	installOperatorWorkdayRoutes(app, workdayDependencies);
-	installOperatorActivityRoutes(app, workdayDependencies);
+	installOperatorCommunicationRoutes(app, workdayDependencies);
 	installOperatorAgentLabRoutes(app, workdayDependencies);
 	installOperatorAssignmentContentRoutes(app,{ store,manage,operatorError });
 

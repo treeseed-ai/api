@@ -2,7 +2,7 @@ import { normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
 import type { Hono } from 'hono';
 import { CapacityGovernanceError } from '../../database.ts';
 import { readCapacityRequestObject } from './request-json.ts';
-import type { WorkdayRouteDependencies } from './operator-workdays.ts';
+import type { WorkdayRouteDependencies } from './workday-route-dependencies.ts';
 
 type Row = Record<string, unknown>;
 type ProviderSnapshot = Row & { maxConcurrentRunners?: number; lanes?: unknown[] };

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { agentLabMetricKeys } from '@treeseed/sdk/agent-capacity';
 import type { Hono } from 'hono';
-import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
+import type { WorkdayRouteDependencies } from '../workday-route-dependencies.ts';
 import { readCapacityRequestObject } from '../request-json.ts';
 
 export function installAgentLabTargetRoutes(app: Hono, dependencies: WorkdayRouteDependencies) {

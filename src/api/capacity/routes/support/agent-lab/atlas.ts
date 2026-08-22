@@ -1,7 +1,7 @@
 import type { Context, Hono } from "hono";
 import { AgentAtlasProjectionService } from "../../../services/capacity/observability/agent-atlas-projection-service.ts";
 import { AgentLabProjectionService } from "../../../services/capacity/observability/agent-lab-projection-service.ts";
-import type { WorkdayRouteDependencies } from "../operator-workdays.ts";
+import type { WorkdayRouteDependencies } from "../workday-route-dependencies.ts";
 
 function text(value: unknown, fallback = "") {
   return typeof value === "string" && value ? value : fallback;

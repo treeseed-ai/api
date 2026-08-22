@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { parseFrontmatterDocument,serializeFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import { parse as parseYaml } from 'yaml';
 import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
-import type { WorkdayRouteDependencies } from '../operator-workdays.ts';
+import type { WorkdayRouteDependencies } from '../workday-route-dependencies.ts';
 
 type Row = Record<string, unknown>;
 export const REPOSITORY_DEFINITION_EXTENSIONS = ['.md', '.mdx', '.yaml', '.yml'] as const;
