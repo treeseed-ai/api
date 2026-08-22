@@ -101,7 +101,9 @@ export function createOperationHttpHandler(
 				ifMatch: context.req.header(descriptor.concurrency.writeHeader)?.replace(/^"|"$/gu, ''),
 				rawBody: parsed.rawBody,
 				requestHeaders: Object.fromEntries(['content-type', 'content-length', 'x-hub-signature-256',
-					'x-github-delivery', 'x-github-event'].map((name) => [name, context.req.header(name) ?? ''])),
+					'x-github-delivery', 'x-github-event', 'authorization', 'x-treeseed-provider-proof',
+					'cf-connecting-ip', 'x-forwarded-for'].map((name) => [name, context.req.header(name) ?? ''])),
+				providerAuth: context.get('capacityProviderAccessAuth'),
 				authInfo,
 				principal: authInfo?.extra?.principal as { id: string; roles?: string[]; permissions?: string[] } | undefined,
 			}));

@@ -17,6 +17,7 @@ export interface OperationInvocationContext {
 	ifMatch?: string;
 	rawBody?: string;
 	requestHeaders?: Readonly<Record<string, string>>;
+	providerAuth?: unknown;
 	authInfo?: AuthInfo;
 	principal?: {
 		id: string;
@@ -37,7 +38,7 @@ export interface BoundOperation<TBinding extends ControlPlaneOperationBinding<an
 
 export class ControlPlaneOperationError extends Error {
 	constructor(
-		readonly status: 400 | 401 | 403 | 404 | 409 | 412 | 422 | 429 | 500 | 503,
+		readonly status: 400 | 401 | 403 | 404 | 409 | 412 | 413 | 422 | 429 | 500 | 503,
 		readonly code: string,
 		message: string,
 	) {

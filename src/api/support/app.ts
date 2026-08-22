@@ -25,6 +25,8 @@ import { createAgentQueryService } from '../control-plane/repositories/capacity/
 import { createCapacityQueryService } from '../control-plane/repositories/capacity/capacity-query-service.ts';
 import { createAssignmentService } from '../control-plane/repositories/capacity/assignment-service.ts';
 import { createOperationService } from '../control-plane/repositories/operations/operation-service.ts';
+import { createProviderRuntimeService } from '../control-plane/repositories/providers/provider-runtime-service.ts';
+import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -182,6 +184,10 @@ export function createPlatformApiApp(options: any = {}) {
 		sessionEvents,
 		store,
 	};
+	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config });
+	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
+	app.use('/v1/provider/*', providerAccess);
+	app.use('/v1/dx/*', providerAccess);
 	installPlatformRoutes(routeContext);
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
@@ -195,6 +201,7 @@ export function createPlatformApiApp(options: any = {}) {
 			capacityQueries: createCapacityQueryService(capacity),
 			assignments: createAssignmentService(capacity),
 			platformOperations: createOperationService(store),
+			providers,
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),
