@@ -1,6 +1,5 @@
 import { installFeedbackAdministrationRoutes } from "../routes/feedback/administration.ts";
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
-import { installDiscussionRoutes } from "../routes/discussions/discussions.ts";
 import { installSessionEventRoutes } from "../routes/realtime/session-events.ts";
 import { installClientActionRoutes } from "../routes/realtime/client-actions.ts";
 import { installGovernanceCommonsProposalsQuestionsAndVotesRoutes } from "../routes/governance/commons/governance-commons-proposals-questions-and-votes.ts";
@@ -32,7 +31,6 @@ import { installTreedxTeamServiceAndPublicFederationRoutes } from "../routes/tre
 export function installPlatformRoutes(context: any): void {
   installFoundationHealthAndControlPlaneRoutes(context);
   installFeedbackSubmissionRoutes(context);
-  installDiscussionRoutes(context);
   installSessionEventRoutes(context);
   installClientActionRoutes(context);
   installFeedbackAdministrationRoutes(context);
