@@ -17,6 +17,27 @@ export interface AccountOperationDependencies {
 		makePrimary(user: Record<string, any>, emailId: string): Promise<Record<string, any>>;
 		remove(user: Record<string, any>, emailId: string): Promise<Record<string, any>>;
 	};
+	accountRegistration: {
+		register(input: Record<string, unknown>): Promise<Record<string, any>>;
+		confirm(token: unknown): Promise<Record<string, any>>;
+	};
+}
+
+function serviceResult(result: Record<string, any>, fallback: string) {
+	if (!result.ok) throw new ControlPlaneOperationError(Number(result.status ?? 400), String(result.code ?? 'account_operation_failed'), String(result.message ?? fallback));
+	return result;
+}
+
+export function createAccountRegisterOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.register> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.register, async handler(input) {
+		return serviceResult(await dependencies.accountRegistration.register(input.body as Record<string, unknown>), 'Registration failed.');
+	} };
+}
+
+export function createAccountEmailConfirmOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.confirmEmail> {
+	return { binding: CONTROL_PLANE_OPERATIONS.accounts.confirmEmail, async handler(input) {
+		return serviceResult(await dependencies.accountRegistration.confirm((input.body as Record<string, unknown>).token), 'Email confirmation failed.');
+	} };
 }
 
 function principal(context: { principal?: Record<string, any> }) {

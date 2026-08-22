@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createAccountEmailAddOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
+import { createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
 	interface: 'rest' as const, requestId: 'request-1' };
@@ -26,6 +26,10 @@ function dependencies() {
 			async verify() { return { ok: true, emailAddress: { id: 'email-2' }, verificationSent: true }; },
 			async makePrimary() { return { ok: true, emailAddress: { id: 'email-1', isPrimary: true } }; },
 			async remove() { return { ok: true, items: [{ id: 'email-1' }] }; },
+		},
+		accountRegistration: {
+			async register() { return { ok: true, confirmationRequired: true, email: 'adrian@example.test', expiresInSeconds: 3600 }; },
+			async confirm() { return { ok: true, confirmed: true }; },
 		},
 	} as any };
 }
@@ -89,5 +93,19 @@ describe('account catalog operations', () => {
 		expect(primary).toEqual({ emailAddress: { id: 'email-1', isPrimary: true } });
 		expect(removed).toEqual({ items: [{ id: 'email-1' }] });
 		expect(JSON.stringify([added, verified, primary, removed])).not.toMatch(/accessToken|refreshToken|sessionToken/iu);
+	});
+
+	it('registers and confirms without minting web-session credentials', async () => {
+		const fixture = dependencies();
+		const registered = await createAccountRegisterOperation(fixture.value).handler({ path: {}, query: {}, body: {
+			email: 'adrian@example.test', username: 'adrian', password: 'redacted-password',
+		} }, { interface: 'rest', requestId: 'request-public' });
+		const confirmed = await createAccountEmailConfirmOperation(fixture.value).handler({ path: {}, query: {}, body: {
+			token: 'redacted-token',
+		} }, { interface: 'rest', requestId: 'request-public' });
+		expect(registered).toMatchObject({ confirmationRequired: true, email: 'adrian@example.test' });
+		expect(confirmed).toEqual({ ok: true, confirmed: true });
+		expect(JSON.stringify([registered, confirmed])).not.toMatch(/accessToken|refreshToken|sessionToken/iu);
+		expect(createAccountRegisterOperation(fixture.value).binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.register);
 	});
 });
