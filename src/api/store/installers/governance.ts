@@ -62,10 +62,10 @@ import { updateGovernanceProposalDraftMethod } from '../governance/policy/update
 import { setProjectGovernancePolicyMethod } from '../projects/projects-core/updates/set-project-governance-policy.ts';
 import { getProjectGovernancePolicyMethod } from '../projects/queries/governance/get-project-governance-policy.ts';
 import { listApprovalRequestsForProjectMethod } from '../projects/queries/governance/list-approval-requests-for-project.ts';
+import { listApprovalRequestsForTeamMethod } from '../teams/queries/identity/list-approval-requests-for-team.ts';
 import { createApprovalRequestMethod } from '../support/creation/create-approval-request.ts';
 import { decideApprovalRequestMethod } from '../support/lifecycle/decide-approval-request.ts';
 import { getApprovalRequestMethod } from '../support/queries/get-approval-request.ts';
-import { listApprovalRequestsForTeamMethod } from '../teams/queries/identity/list-approval-requests-for-team.ts';
 
 export function installGovernanceStoreMethods(prototype: ControlPlaneStore) {
 	prototype.recordGovernanceEvent = recordGovernanceEventMethod;

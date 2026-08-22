@@ -144,7 +144,6 @@ declare module '../persistence/store.ts' {
 		getTeamInviteByToken: OmitThisParameter<typeof import('./teams/queries/invites/get-team-invite-by-token.ts').getTeamInviteByTokenMethod>;
 		revokeTeamInvite: OmitThisParameter<typeof import('./teams/retirement/revoke-team-invite.ts').revokeTeamInviteMethod>;
 		acceptTeamInvite: OmitThisParameter<typeof import('./teams/lifecycle/accept-team-invite.ts').acceptTeamInviteMethod>;
-		createTeamApiKey: OmitThisParameter<typeof import('./teams/creation/create-team-api-key.ts').createTeamApiKeyMethod>;
 		getTeamStorageLocator: OmitThisParameter<typeof import('./teams/queries/hosting/get-team-storage-locator.ts').getTeamStorageLocatorMethod>;
 		upsertTeamStorageLocator: OmitThisParameter<typeof import('./teams/creation/upsert-team-storage-locator.ts').upsertTeamStorageLocatorMethod>;
 		loadTeamProfileByName: OmitThisParameter<typeof import('./teams/queries/identity/load-team-profile-by-name.ts').loadTeamProfileByNameMethod>;
@@ -177,8 +176,6 @@ declare module '../persistence/store.ts' {
 		upsertTeamInboxItem: OmitThisParameter<typeof import('./teams/creation/upsert-team-inbox-item.ts').upsertTeamInboxItemMethod>;
 		deleteTeamInboxItem: OmitThisParameter<typeof import('./teams/retirement/delete-team-inbox-item.ts').deleteTeamInboxItemMethod>;
 		deleteTeamInboxItemsByItemKey: OmitThisParameter<typeof import('./teams/retirement/delete-team-inbox-items-by-item-key.ts').deleteTeamInboxItemsByItemKeyMethod>;
-		listTeamInboxItems: OmitThisParameter<typeof import('./teams/queries/inbox/list-team-inbox-items.ts').listTeamInboxItemsMethod>;
-		getTeamHomeSummary: OmitThisParameter<typeof import('./teams/queries/identity/get-team-home-summary.ts').getTeamHomeSummaryMethod>;
 		appendPlatformOperationEvent: OmitThisParameter<typeof import('./operations/contracts/append-platform-operation-event.ts').appendPlatformOperationEventMethod>;
 		listPlatformOperationEvents: OmitThisParameter<typeof import('./operations/queries/platform-operations/list-platform-operation-events.ts').listPlatformOperationEventsMethod>;
 		findPlatformOperationById: OmitThisParameter<typeof import('./operations/queries/platform-operations/find-platform-operation-by-id.ts').findPlatformOperationByIdMethod>;

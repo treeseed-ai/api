@@ -11,7 +11,6 @@ import { teamIdsForPrincipalMethod } from '../teams/contracts/team-ids-for-princ
 import { syncPlatformAdminOwnersMethod } from '../teams/contracts/administration/sync-platform-admin-owners.ts';
 import { claimSeedTeamMembershipsForVerifiedEmailMethod,getSeedTeamMembershipClaimMethod,reconcileSeedTeamMembershipClaimMethod,retireUndeclaredSeedTeamMembershipClaimsMethod } from '../teams/contracts/seeding/seed-membership-claims.ts';
 import { teamPublicNameExistsMethod } from '../teams/contracts/team-public-name-exists.ts';
-import { createTeamApiKeyMethod } from '../teams/creation/create-team-api-key.ts';
 import { createTeamInviteMethod } from '../teams/creation/create-team-invite.ts';
 import { createTeamMethod } from '../teams/creation/create-team.ts';
 import { prepareTeamDeletionMethod } from '../teams/creation/prepare-team-deletion.ts';
@@ -27,12 +26,10 @@ import { resolvePrincipalTeamContextMethod } from '../teams/queries/access/resol
 import { getTeamStorageLocatorMethod } from '../teams/queries/hosting/get-team-storage-locator.ts';
 import { getTeamByNameMethod } from '../teams/queries/identity/get-team-by-name.ts';
 import { getTeamBySlugMethod } from '../teams/queries/identity/get-team-by-slug.ts';
-import { getTeamHomeSummaryMethod } from '../teams/queries/identity/get-team-home-summary.ts';
 import { getTeamMethod } from '../teams/queries/identity/get-team.ts';
 import { isTeamNameAvailableMethod } from '../teams/queries/identity/is-team-name-available.ts';
 import { loadTeamProfileByNameMethod } from '../teams/queries/identity/load-team-profile-by-name.ts';
 import { listPersistedTeamInboxItemsMethod } from '../teams/queries/inbox/list-persisted-team-inbox-items.ts';
-import { listTeamInboxItemsMethod } from '../teams/queries/inbox/list-team-inbox-items.ts';
 import { getPendingTeamInviteByTokenMethod } from '../teams/queries/invites/get-pending-team-invite-by-token.ts';
 import { getTeamInviteByTokenMethod } from '../teams/queries/invites/get-team-invite-by-token.ts';
 import { getTeamInviteMethod } from '../teams/queries/invites/get-team-invite.ts';
@@ -129,7 +126,6 @@ export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.getTeamDeletionReadiness = getTeamDeletionReadinessMethod;
 	prototype.transferTeamOwnership = transferTeamOwnershipMethod;
 	prototype.leaveTeam = leaveTeamMethod;
-	prototype.createTeamApiKey = createTeamApiKeyMethod;
 	prototype.getTeamStorageLocator = getTeamStorageLocatorMethod;
 	prototype.upsertTeamStorageLocator = upsertTeamStorageLocatorMethod;
 	prototype.loadTeamProfileByName = loadTeamProfileByNameMethod;
@@ -139,8 +135,6 @@ export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.upsertTeamInboxItem = upsertTeamInboxItemMethod;
 	prototype.deleteTeamInboxItem = deleteTeamInboxItemMethod;
 	prototype.deleteTeamInboxItemsByItemKey = deleteTeamInboxItemsByItemKeyMethod;
-	prototype.listTeamInboxItems = listTeamInboxItemsMethod;
-	prototype.getTeamHomeSummary = getTeamHomeSummaryMethod;
 	prototype.listTeamServiceConnections = listTeamServiceConnectionsMethod;
 	prototype.getTeamServiceConnection = getTeamServiceConnectionMethod;
 	prototype.createTeamServiceConnection = createTeamServiceConnectionMethod;
