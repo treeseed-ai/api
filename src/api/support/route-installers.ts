@@ -5,8 +5,6 @@ import { installClientActionRoutes } from "../routes/realtime/client-actions.ts"
 import { installOperationsPlatformRunnersAndJobsRoutes } from "../routes/operations/operations-platform-runners-and-jobs.ts";
 import { installOperationsProjectJobsRoutes } from "../routes/projects/operations/operations-project-jobs.ts";
 import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/projects-settings-and-summaries.ts";
-import { installGitHubConnectorRoutes } from "../routes/providers/github-connectors.ts";
-import { installGitHubWebhookRoutes } from "../routes/providers/github-webhooks.ts";
 import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resource-resolution.ts";
 import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
 import { installFoundationHealthAndControlPlaneRoutes } from "../routes/support/foundation-health-and-control-plane.ts";
@@ -31,8 +29,6 @@ export function installPlatformRoutes(context: any): void {
   installTreedxCredentialsMirrorsAndSharesRoutes(context);
   installTeamServicesRoutes(context);
   installTeamServiceAuthorityRoutes(context);
-  installGitHubConnectorRoutes(context);
-  installGitHubWebhookRoutes(context);
   installProjectsSettingsAndSummariesRoutes(context);
   installOperationsProjectJobsRoutes(context);
   installTeamsStorageAndContentPreviewsRoutes(context);

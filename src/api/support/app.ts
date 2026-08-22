@@ -16,6 +16,8 @@ import { createGovernanceService } from '../control-plane/governance/governance-
 import { createProjectRepositoryService } from '../control-plane/repositories/project-repository-service.ts';
 import { createWorkflowService } from '../control-plane/repositories/workflow-service.ts';
 import { createWorkflowConfigurationService } from '../control-plane/repositories/workflow-configuration-service.ts';
+import { createGitHubConnectorService } from '../control-plane/repositories/github-connector-service.ts';
+import { createGitHubWebhookService } from '../control-plane/repositories/github-webhook-service.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
 import {
@@ -180,6 +182,8 @@ export function createPlatformApiApp(options: any = {}) {
 	const knowledgeReader = createKnowledgeReaderService({ store, options });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
+			githubConnector: createGitHubConnectorService(store),
+			githubWebhook: createGitHubWebhookService(store),
 			deliverTeamInvite: (input) => routeDependencies.sendTeamInviteEmail(invitationContext, input),
 			listUserEmailAddresses: (userId) => routeDependencies.listUserEmailAddresses(store, userId),
 			accountEmails: createAccountEmailService(store, invitationContext),

@@ -15,6 +15,8 @@ export interface OperationInvocationContext {
 	traceparent?: string;
 	idempotencyKey?: string;
 	ifMatch?: string;
+	rawBody?: string;
+	requestHeaders?: Readonly<Record<string, string>>;
 	authInfo?: AuthInfo;
 	principal?: {
 		id: string;

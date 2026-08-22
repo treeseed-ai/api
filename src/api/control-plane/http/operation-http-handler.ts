@@ -40,11 +40,16 @@ function etag(value: unknown) {
 async function operationInput(context: Context, operation: BoundOperation) {
 	const query = operation.binding.schema.query.parse(Object.fromEntries(new URL(context.req.url).searchParams.entries()));
 	const path = operation.binding.schema.path.parse(context.req.param());
-	const bodyValue = operation.binding.descriptor.kind === 'read' ? undefined : await context.req.json().catch(() => ({}));
+	const rawBody = operation.binding.descriptor.kind === 'read' ? undefined : await context.req.text();
+	let bodyValue: unknown = undefined;
+	if (rawBody !== undefined) {
+		try { bodyValue = rawBody ? JSON.parse(rawBody) : {}; }
+		catch { throw new ControlPlaneOperationError(400, 'operation_json_invalid', 'The request body must be valid JSON.'); }
+	}
 	if (operation.binding.descriptor.kind === 'mutation' && (!bodyValue || typeof bodyValue !== 'object' || Array.isArray(bodyValue))) {
 		throw new ControlPlaneOperationError(400, 'operation_input_invalid', 'The request body must be a JSON object.');
 	}
-	return { path, query, body: operation.binding.schema.body.parse(bodyValue) };
+	return { input: { path, query, body: operation.binding.schema.body.parse(bodyValue) }, rawBody };
 }
 
 export function createOperationHttpHandler(
@@ -57,17 +62,20 @@ export function createOperationHttpHandler(
 		const requestId = context.req.header('x-request-id')?.trim() || randomUUID();
 		try {
 			const descriptor = operation.binding.descriptor;
+			const idempotencyKey = context.req.header(descriptor.idempotency.header)
+				?? (descriptor.operationId === 'repositories.github.webhook' ? context.req.header('x-github-delivery') : undefined);
 			const authInfo = descriptor.oauthScopes.length > 0 ? await authenticate(context.req.raw) : undefined;
 			if (authInfo instanceof Response) return authInfo;
 			const missingScope = descriptor.oauthScopes.find((scope) => !authInfo?.scopes.includes(scope));
 			if (missingScope) throw new ControlPlaneOperationError(403, 'oauth_scope_insufficient', `The operation requires ${missingScope}.`);
-			if (descriptor.idempotency.required && !context.req.header(descriptor.idempotency.header)) {
+			if (descriptor.idempotency.required && !idempotencyKey) {
 				throw new ControlPlaneOperationError(400, 'idempotency_key_required', `${descriptor.idempotency.header} is required.`);
 			}
 			if (descriptor.concurrency.required && !context.req.header(descriptor.concurrency.writeHeader)) {
 				throw new ControlPlaneOperationError(412, 'precondition_required', `${descriptor.concurrency.writeHeader} is required.`);
 			}
-			const input = await operationInput(context, operation);
+			const parsed = await operationInput(context, operation);
+			const input = parsed.input;
 			if (descriptor.confirmation === 'input_required') {
 				if (!confirmations || !authInfo?.extra?.principal || !authInfo.clientId) {
 					throw new ControlPlaneOperationError(503, 'confirmation_unavailable', 'Confirmation is not configured.');
@@ -89,11 +97,17 @@ export function createOperationHttpHandler(
 				interface: 'rest',
 				requestId,
 				traceparent: context.req.header('traceparent'),
-				idempotencyKey: context.req.header(descriptor.idempotency.header),
+				idempotencyKey,
 				ifMatch: context.req.header(descriptor.concurrency.writeHeader)?.replace(/^"|"$/gu, ''),
+				rawBody: parsed.rawBody,
+				requestHeaders: Object.fromEntries(['content-type', 'content-length', 'x-hub-signature-256',
+					'x-github-delivery', 'x-github-event'].map((name) => [name, context.req.header(name) ?? ''])),
 				authInfo,
 				principal: authInfo?.extra?.principal as { id: string; roles?: string[]; permissions?: string[] } | undefined,
 			}));
+			if (descriptor.operationId === 'repositories.github.callback' && typeof (output as any).redirect === 'string') {
+				return context.redirect((output as any).redirect, 302);
+			}
 			return context.json({ data: output }, 200, {
 				'x-request-id': requestId,
 				'x-treeseed-contract-digest': contractDigest,

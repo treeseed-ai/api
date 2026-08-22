@@ -24,8 +24,14 @@ describe('repository catalog operations', () => {
 			artifacts: vi.fn(async () => ({ items: [] })) };
 		const workflowConfiguration = { publicKey: vi.fn(async () => ({ keyId: 'key-1' })), list: vi.fn(async () => ({ items: [] })),
 			put: vi.fn(async () => ({ operation: { id: 'operation-1' } })), remove: vi.fn(async () => ({ operation: { id: 'operation-2' } })) };
-		const operations = createRepositoryOperations({ repositories, workflows, workflowConfiguration });
+		const githubConnector = { setup: vi.fn(async () => ({ redirect: 'https://github.com/apps/example/installations/new' })),
+			callback: vi.fn(async () => ({ redirect: 'https://github.com/login/oauth/authorize' })) };
+		const githubWebhook = vi.fn(async () => ({ code: 'webhook_processed' }));
+		const operations = createRepositoryOperations({ repositories, workflows, workflowConfiguration, githubConnector, githubWebhook });
 		expect(operations.map((operation) => operation.binding)).toEqual([
+			CONTROL_PLANE_OPERATIONS.repositories.githubSetup,
+			CONTROL_PLANE_OPERATIONS.repositories.githubCallback,
+			CONTROL_PLANE_OPERATIONS.repositories.githubWebhook,
 			CONTROL_PLANE_OPERATIONS.projects.repositoryTopology,
 			CONTROL_PLANE_OPERATIONS.projects.repositoryTopologyStatus,
 			CONTROL_PLANE_OPERATIONS.projects.updateRepositoryTopology,
@@ -44,17 +50,23 @@ describe('repository catalog operations', () => {
 			CONTROL_PLANE_OPERATIONS.repositories.putWorkflowVariable,
 			CONTROL_PLANE_OPERATIONS.repositories.deleteWorkflowVariable,
 		]);
-		await operations[2].handler({ path: { projectId: 'project-1' }, query: {}, body: topology },
+		await operations[5].handler({ path: { projectId: 'project-1' }, query: {}, body: topology },
 			{ interface: 'rest', requestId: 'request-1', principal, ifMatch: 'sha256:current' });
 		expect(repositories.update).toHaveBeenCalledWith(principal, 'project-1', topology, 'sha256:current');
-		await operations[6].handler({ path: { projectId: 'project-1', operationId: 'workflow-1' }, query: {}, body: { ref: 'refs/heads/staging' } },
+		await operations[9].handler({ path: { projectId: 'project-1', operationId: 'workflow-1' }, query: {}, body: { ref: 'refs/heads/staging' } },
 			{ interface: 'rest', requestId: 'request-2', principal, idempotencyKey: 'dispatch-1' });
 		expect(workflows.dispatch).toHaveBeenCalledWith(principal, 'project-1', 'workflow-1', { ref: 'refs/heads/staging' }, 'dispatch-1');
 		const variable = { repositoryBindingId: 'repository-1', workflowBindingId: 'binding-1', value: 'enabled' };
-		await operations[15].handler({ path: { projectId: 'project-1', name: 'FEATURE_FLAG' }, query: {}, body: variable },
+		await operations[18].handler({ path: { projectId: 'project-1', name: 'FEATURE_FLAG' }, query: {}, body: variable },
 			{ interface: 'rest', requestId: 'request-3', principal, idempotencyKey: 'variable-1', ifMatch: '0' });
 		expect(workflowConfiguration.put).toHaveBeenCalledWith(principal, 'project-1', 'variables', 'FEATURE_FLAG',
 			variable, variable, 'variable-1', '0');
+		await operations[2].handler({ path: { kind: 'repository' }, query: {}, body: { action: 'ping' } }, {
+			interface: 'rest', requestId: 'request-4', rawBody: '{"action":"ping"}',
+			requestHeaders: { 'x-github-delivery': 'delivery-1' },
+		});
+		expect(githubWebhook).toHaveBeenCalledWith('repository', { action: 'ping' }, '{"action":"ping"}',
+			{ 'x-github-delivery': 'delivery-1' });
 	});
 
 	it('requires exact read-back evidence before updating topology', async () => {

@@ -4,6 +4,12 @@ import { WorkflowOperationError } from '../../repositories/workflow-operation-er
 import { ControlPlaneOperationError, type BoundOperation, type OperationInvocationContext } from '../operation-registry.ts';
 
 export interface RepositoryOperationDependencies {
+	githubConnector: {
+		setup(principal: OperationInvocationContext['principal'], kind: string, body: Record<string, unknown>): Promise<Record<string, any>>;
+		callback(kind: string, query: Record<string, unknown>): Promise<Record<string, any>>;
+	};
+	githubWebhook(kind: string, payload: Record<string, unknown>, rawBody?: string,
+		headers?: Readonly<Record<string, string>>): Promise<Record<string, any>>;
 	repositories: {
 		topology(principal: OperationInvocationContext['principal'], projectId: string): Promise<Record<string, any>>;
 		status(principal: OperationInvocationContext['principal'], projectId: string): Promise<Record<string, any>>;
@@ -38,6 +44,14 @@ function result<T>(call: () => Promise<T>) {
 
 export function createRepositoryOperations(dependencies: RepositoryOperationDependencies): BoundOperation[] {
 	return [
+		{ binding: CONTROL_PLANE_OPERATIONS.repositories.githubSetup,
+			handler: (input, context) => result(() => dependencies.githubConnector.setup(context.principal, input.path.kind,
+				input.body as Record<string, unknown>)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.repositories.githubCallback,
+			handler: (input) => result(() => dependencies.githubConnector.callback(input.path.kind, input.query)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.repositories.githubWebhook,
+			handler: (input, context) => result(() => dependencies.githubWebhook(input.path.kind,
+				input.body as Record<string, unknown>, context.rawBody, context.requestHeaders)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.projects.repositoryTopology,
 			handler: (input, context) => result(() => dependencies.repositories.topology(context.principal, input.path.projectId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.projects.repositoryTopologyStatus,
