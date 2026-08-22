@@ -1,5 +1,5 @@
-import { CAPABILITY_PERMISSIONS,MarketControlPlaneStore,principalIsAdmin,TEAM_ROLE_DESCRIPTIONS,uniqueStrings } from "../../../../persistence/store.ts";
-export async function getTeamAccessSummaryMethod(this: MarketControlPlaneStore, teamId, principal) {
+import { CAPABILITY_PERMISSIONS,ControlPlaneStore,principalIsAdmin,TEAM_ROLE_DESCRIPTIONS,uniqueStrings } from "../../../../persistence/store.ts";
+export async function getTeamAccessSummaryMethod(this: ControlPlaneStore, teamId, principal) {
     await this.ensureInitialized();
     const context = await this.resolvePrincipalTeamContext(teamId, principal);
     const roles = context?.roles ?? [];

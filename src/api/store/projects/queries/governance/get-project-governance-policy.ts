@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
-export async function getProjectGovernancePolicyMethod(this: MarketControlPlaneStore, projectId) {
+import { ControlPlaneStore,serializeGovernancePolicy } from "../../../../persistence/store.ts";
+export async function getProjectGovernancePolicyMethod(this: ControlPlaneStore, projectId) {
     await this.ensureInitialized();
     const row = await this.first(`SELECT * FROM project_governance_policies
 			 WHERE project_id = ? AND active = 1

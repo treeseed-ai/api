@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { MarketControlPlaneStore } from '../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../persistence/store.ts';
 import { isoNow } from '../../support/index.ts';
 
 export async function transferTeamOwnershipMethod(
-	this: MarketControlPlaneStore,
+	this: ControlPlaneStore,
 	teamId: string,
 	input: { fromMembershipId: string; toMembershipId: string; expectedVersion?: string },
 ) {
@@ -34,7 +34,7 @@ export async function transferTeamOwnershipMethod(
 	};
 }
 
-export async function leaveTeamMethod(this: MarketControlPlaneStore, teamId: string, userId: string) {
+export async function leaveTeamMethod(this: ControlPlaneStore, teamId: string, userId: string) {
 	await this.ensureInitialized();
 	const membership = await this.first(`SELECT * FROM team_memberships WHERE team_id = ? AND user_id = ? AND status = 'active' LIMIT 1`, [teamId, userId]);
 	if (!membership?.id) return { ok: false, code: 'missing', message: 'You are not an active member of this team.' };

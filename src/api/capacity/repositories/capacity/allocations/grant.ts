@@ -1,4 +1,4 @@
-import type { CapacityGrantStatus,CapacityGrantV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import type { CapacityGrantStatus,CapacityGrantV2 } from '@treeseed/sdk/agent-capacity';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable-json.ts';
 
 export function serializeCapacityGrantRow(row: Record<string, unknown>): CapacityGrantV2 {

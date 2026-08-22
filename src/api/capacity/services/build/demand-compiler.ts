@@ -1,5 +1,7 @@
-import { COMMUNICATION_PRIORITY,evaluatePlanningGraphNodeInstances,validateAgentArtifactManifest,type AgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
-import { evaluateMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
+import { COMMUNICATION_PRIORITY,type AgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
+import { evaluatePlanningGraphNodeInstances } from '../../policy/workdays/planning-graph.ts';
+import { validateAgentArtifactManifest } from '../../artifact-manifest.ts';
+import { evaluateMinimumAssignmentDuration } from '../../policy/timing/assignment-duration.ts';
 import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
@@ -268,9 +270,6 @@ async function compilePlanningDemands(
 		const definitionBaseRef=capacityWorkdayContentBaseRef(run.environment,agent.branchPolicy,agent.sourceImmutableRef);
 		const contentBaseRef=capacityWorkdayRuntimeContentRef(source.payload,definitionBaseRef);
 		const verifiedContext=contextReferences.length?await new ContextQueryCheckService(store).requirePassing(run.teamId,project.id,definitionBaseRef,contextReferences,new Date(now)):[];
-		const semanticArtifactExpectations=(Array.isArray(record(record(run.parameters).agentLab).expectedArtifacts)
-			? record(record(run.parameters).agentLab).expectedArtifacts as unknown[]:[]).map(record)
-			.filter((expectation)=>text(expectation.agentId)===agent.slug&&text(expectation.activityType)===agent.activityType);
 		const demand = await demandRepository.create({
 			id: id('demand', idempotencyKey), teamId: run.teamId, projectId: project.id, workdayRunId: run.id, workdayId,
 			sourceType: source.sourceType, sourceId: source.sourceId, mode: 'planning',
@@ -308,7 +307,6 @@ async function compilePlanningDemands(
 					...(Array.isArray(record(agent.signalPolicy).publishes) ? record(agent.signalPolicy).publishes as string[] : []),
 				].map((contractId) => [contractId, snapshot.signalContracts[contractId]]).filter((entry) => Boolean(entry[1]))),
 				outputContract: agent.outputContract,
-				semanticArtifactExpectations,
 				planningGraph: { revision: snapshot.revision, nodeId: graphNodeId, instanceKey: instance.instanceKey, predecessorNodeIds: instance.matched.map((value) => value.nodeId), inputs: graphInputs },
 				cooperativePlanning: wave ? { sessionWaveId: wave.id, round: wave.round, snapshotRef: wave.snapshotRef, snapshot: wave.snapshot } : null,
 				cycle: cycle.cycleNumber,

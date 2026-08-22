@@ -1,6 +1,6 @@
 import { createPublicKey,createVerify } from 'node:crypto';
 import { parseBase64urlJson,providerJwksCache } from '../../index.ts';
-export const POSTGRES_AUTH_PROVIDER_ID = 'market-postgres';
+export const POSTGRES_AUTH_PROVIDER_ID = 'control-plane-postgres';
 export const AUTH_PROVIDERS = {
     github: { label: 'GitHub', authorizeUrl: 'https://github.com/login/oauth/authorize', tokenUrl: 'https://github.com/login/oauth/access_token', scopes: 'read:user user:email' },
     google: { label: 'Google', authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: 'https://oauth2.googleapis.com/token', scopes: 'openid email profile', issuer: 'https://accounts.google.com', jwksUrl: 'https://www.googleapis.com/oauth2/v3/certs' },

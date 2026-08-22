@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeGovernanceElectorateSnapshot } from "../../../../../persistence/store.ts";
-export async function latestGovernanceElectorateSnapshotMethod(this: MarketControlPlaneStore, proposalId, version) {
+import { ControlPlaneStore,serializeGovernanceElectorateSnapshot } from "../../../../../persistence/store.ts";
+export async function latestGovernanceElectorateSnapshotMethod(this: ControlPlaneStore, proposalId, version) {
     await this.ensureInitialized();
     return serializeGovernanceElectorateSnapshot(await this.first(`SELECT * FROM governance_electorate_snapshots
 			 WHERE proposal_id = ? AND proposal_version = ?

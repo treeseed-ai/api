@@ -1,6 +1,8 @@
-import { normalizeDecisionDependencyReferences,type DecisionAuthoritySnapshot,type DecisionAuthorityValidation,type DecisionDependencyReference,type DecisionDependencySnapshot } from '@treeseed/sdk';
-
 type Row = Record<string, unknown>;
+export interface DecisionDependencyReference { projectId: string; decisionId: string }
+export interface DecisionDependencySnapshot extends DecisionDependencyReference { teamId: string; proposalId: string; proposalVersion: number; proposalContentHash: string }
+export interface DecisionAuthoritySnapshot extends DecisionDependencySnapshot { decisionDependencies: DecisionDependencySnapshot[] }
+export interface DecisionAuthorityValidation { valid: boolean; code: string | null; message: string | null; current: DecisionAuthoritySnapshot | null }
 export interface DecisionAuthorityDatabase {
 	first<T extends Row = Row>(query: string, params?: unknown[]): Promise<T | null>;
 }
@@ -11,6 +13,16 @@ function object(value: unknown): Row {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
 	if (typeof value !== 'string') return {};
 	try { const parsed = JSON.parse(value); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Row : {}; } catch { return {}; }
+}
+
+export function normalizeDecisionDependencyReferences(value: unknown): DecisionDependencyReference[] {
+	if (!Array.isArray(value)) return [];
+	const references = value.map(object).map((entry) => ({ projectId: text(entry.projectId ?? entry.project_id), decisionId: text(entry.decisionId ?? entry.decision_id) })).filter((entry) => entry.projectId && entry.decisionId);
+	return [...new Map(references.map((entry) => [`${entry.projectId}:${entry.decisionId}`, entry])).values()].sort((left, right) => `${left.projectId}:${left.decisionId}`.localeCompare(`${right.projectId}:${right.decisionId}`));
+}
+
+export function decisionDependencyReferencesAreComplete(value: unknown) {
+	return !Array.isArray(value) || value.length === normalizeDecisionDependencyReferences(value).length;
 }
 
 async function decisionRow(database: DecisionAuthorityDatabase, decisionId: string) {

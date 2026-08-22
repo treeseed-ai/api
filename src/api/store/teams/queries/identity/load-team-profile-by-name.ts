@@ -1,6 +1,6 @@
-import { MarketControlPlaneStore,teamIsPrivate } from "../../../../persistence/store.ts";
+import { ControlPlaneStore,teamIsPrivate } from "../../../../persistence/store.ts";
 import { publicTeamKnowledgeProfile } from '../../../public-profiles/knowledge-profile.ts';
-export async function loadTeamProfileByNameMethod(this: MarketControlPlaneStore, name, principal = null) {
+export async function loadTeamProfileByNameMethod(this: ControlPlaneStore, name, principal = null) {
     const team = await this.getTeamByName(name);
     if (!team || team.status !== 'active')
         return null;
@@ -10,7 +10,7 @@ export async function loadTeamProfileByNameMethod(this: MarketControlPlaneStore,
     const globallyAuthorized = !teamIsPrivate(team) && Boolean(principal
         && (principal.permissions?.includes?.('*:*:*')
             || principal.roles?.includes?.('platform_admin')
-            || principal.roles?.includes?.('market_admin')));
+            || principal.roles?.includes?.('platform_admin')));
     return {
         team: {
             ...(memberContext || globallyAuthorized ? { id: team.id } : {}),

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,objectValue,serializeTreeDxInstance } from "../../../../persistence/store.ts";
-export async function upsertTeamTreeDxMethod(this: MarketControlPlaneStore, teamId, input: any = {}) {
+import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxInstance } from "../../../../persistence/store.ts";
+export async function upsertTeamTreeDxMethod(this: ControlPlaneStore, teamId, input: any = {}) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const existing = await this.getPrimaryTreeDxInstance(teamId);

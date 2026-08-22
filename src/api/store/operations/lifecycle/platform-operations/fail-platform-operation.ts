@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function failPlatformOperationMethod(this: MarketControlPlaneStore, operationId, input: any = {}) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function failPlatformOperationMethod(this: ControlPlaneStore, operationId, input: any = {}) {
     await this.ensureInitialized();
     await this.assertPlatformOperationRunnerUpdate(operationId, input.runnerId);
     const timestamp = isoNow();

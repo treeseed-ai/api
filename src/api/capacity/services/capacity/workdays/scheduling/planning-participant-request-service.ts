@@ -1,4 +1,5 @@
-import { expandSignalDependencyClosure,type AgentPlanningGraph } from '@treeseed/sdk/agent-capacity';
+import { type AgentPlanningGraph } from '@treeseed/sdk/agent-capacity';
+import { expandSignalDependencyClosure } from '../../../../policy/workdays/cooperative-planning.ts';
 import { createHash } from 'node:crypto';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';

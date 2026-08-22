@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow, type MarketControlPlaneStore, parseJson } from '../../persistence/store.ts';
+import { isoNow, type ControlPlaneStore, parseJson } from '../../persistence/store.ts';
 
 function workspace(row: any) {
 	return row ? {
@@ -28,7 +28,7 @@ function review(row: any) {
 	} : null;
 }
 
-export async function createKnowledgeWorkspaceRecordMethod(this: MarketControlPlaneStore, input: any) {
+export async function createKnowledgeWorkspaceRecordMethod(this: ControlPlaneStore, input: any) {
 	await this.ensureInitialized();
 	const id = input.id ?? randomUUID();
 	const timestamp = isoNow();
@@ -40,12 +40,12 @@ export async function createKnowledgeWorkspaceRecordMethod(this: MarketControlPl
 	return this.getKnowledgeWorkspace(id);
 }
 
-export async function getKnowledgeWorkspaceMethod(this: MarketControlPlaneStore, id: string) {
+export async function getKnowledgeWorkspaceMethod(this: ControlPlaneStore, id: string) {
 	await this.ensureInitialized();
 	return workspace(await this.first(`SELECT * FROM knowledge_authoring_workspaces WHERE id = ? LIMIT 1`, [id]));
 }
 
-export async function updateKnowledgeWorkspaceMethod(this: MarketControlPlaneStore, id: string, input: any) {
+export async function updateKnowledgeWorkspaceMethod(this: ControlPlaneStore, id: string, input: any) {
 	await this.ensureInitialized();
 	const current = await this.getKnowledgeWorkspace(id);
 	if (!current) return { ok: false, code: 'missing' };
@@ -56,7 +56,7 @@ export async function updateKnowledgeWorkspaceMethod(this: MarketControlPlaneSto
 	return { ok: true, workspace: await this.getKnowledgeWorkspace(id) };
 }
 
-export async function createKnowledgeReviewMethod(this: MarketControlPlaneStore, input: any) {
+export async function createKnowledgeReviewMethod(this: ControlPlaneStore, input: any) {
 	await this.ensureInitialized();
 	const id = input.id ?? randomUUID();
 	const timestamp = isoNow();
@@ -70,17 +70,17 @@ export async function createKnowledgeReviewMethod(this: MarketControlPlaneStore,
 	return review(await this.first(`SELECT * FROM knowledge_reviews WHERE id = ?`, [id]));
 }
 
-export async function getKnowledgeReviewMethod(this: MarketControlPlaneStore, id: string) {
+export async function getKnowledgeReviewMethod(this: ControlPlaneStore, id: string) {
 	await this.ensureInitialized();
 	return review(await this.first(`SELECT * FROM knowledge_reviews WHERE id = ? LIMIT 1`, [id]));
 }
 
-export async function getKnowledgeReviewByWorkspaceMethod(this: MarketControlPlaneStore, workspaceId: string) {
+export async function getKnowledgeReviewByWorkspaceMethod(this: ControlPlaneStore, workspaceId: string) {
 	await this.ensureInitialized();
 	return review(await this.first(`SELECT * FROM knowledge_reviews WHERE workspace_id = ? ORDER BY created_at DESC LIMIT 1`, [workspaceId]));
 }
 
-export async function submitKnowledgeWorkspaceMethod(this: MarketControlPlaneStore, input: any) {
+export async function submitKnowledgeWorkspaceMethod(this: ControlPlaneStore, input: any) {
 	await this.ensureInitialized();
 	const id = input.id ?? randomUUID();
 	const timestamp = isoNow();
@@ -107,7 +107,7 @@ export async function submitKnowledgeWorkspaceMethod(this: MarketControlPlaneSto
 			workspace: await this.getKnowledgeWorkspace(input.workspaceId) };
 }
 
-export async function listKnowledgeReviewsMethod(this: MarketControlPlaneStore, teamId: string) {
+export async function listKnowledgeReviewsMethod(this: ControlPlaneStore, teamId: string) {
 	await this.ensureInitialized();
 	const rows = await this.all(`SELECT r.*, w.team_id, w.project_id, w.branch_name, w.actor_user_id, w.version AS workspace_version
 		FROM knowledge_reviews r JOIN knowledge_authoring_workspaces w ON w.id = r.workspace_id
@@ -116,7 +116,7 @@ export async function listKnowledgeReviewsMethod(this: MarketControlPlaneStore, 
 		branchName: row.branch_name, authorUserId: row.actor_user_id, workspaceVersion: Number(row.workspace_version) }));
 }
 
-export async function decideKnowledgeReviewMethod(this: MarketControlPlaneStore, id: string, input: any) {
+export async function decideKnowledgeReviewMethod(this: ControlPlaneStore, id: string, input: any) {
 	await this.ensureInitialized();
 	const status = input.decision === 'approve' ? 'approved' : 'changes-requested';
 	const timestamp = isoNow();
@@ -144,7 +144,7 @@ export async function decideKnowledgeReviewMethod(this: MarketControlPlaneStore,
 		: { ok: false, code: 'stale_or_missing' };
 }
 
-export async function recordKnowledgeEditorialReviewMethod(this: MarketControlPlaneStore, id: string, input: any) {
+export async function recordKnowledgeEditorialReviewMethod(this: ControlPlaneStore, id: string, input: any) {
 	await this.ensureInitialized();
 	const current = await this.getKnowledgeReview(id);
 	if (!current || current.status !== 'open') return { ok: false, code: 'stale_or_missing', review: current };
@@ -172,7 +172,7 @@ export async function recordKnowledgeEditorialReviewMethod(this: MarketControlPl
 		: { ok: false, code: 'stale_or_mismatched', review: await this.getKnowledgeReview(id) };
 }
 
-export async function createKnowledgePublicationMethod(this: MarketControlPlaneStore, input: any) {
+export async function createKnowledgePublicationMethod(this: ControlPlaneStore, input: any) {
 	await this.ensureInitialized();
 	const existing = await this.getKnowledgePublicationByReview(input.reviewId);
 	if (existing) return existing;
@@ -184,12 +184,12 @@ export async function createKnowledgePublicationMethod(this: MarketControlPlaneS
 	return this.first(`SELECT * FROM knowledge_publications WHERE id = ?`, [id]);
 }
 
-export async function getKnowledgePublicationByReviewMethod(this: MarketControlPlaneStore, reviewId: string) {
+export async function getKnowledgePublicationByReviewMethod(this: ControlPlaneStore, reviewId: string) {
 	await this.ensureInitialized();
 	return this.first(`SELECT * FROM knowledge_publications WHERE review_id = ? LIMIT 1`, [reviewId]);
 }
 
-export async function updateKnowledgePublicationMethod(this: MarketControlPlaneStore, id: string, input: any) {
+export async function updateKnowledgePublicationMethod(this: ControlPlaneStore, id: string, input: any) {
 	await this.ensureInitialized();
 	const result = await this.run(`UPDATE knowledge_publications SET status = ?, published_revision = ?, completed_at = ? WHERE id = ? AND status = ?`,
 		[input.status, input.publishedRevision ?? null, input.completedAt ?? null, id, input.expectedStatus]);
@@ -198,7 +198,7 @@ export async function updateKnowledgePublicationMethod(this: MarketControlPlaneS
 		: { ok: false, publication: await this.first(`SELECT * FROM knowledge_publications WHERE id = ?`, [id]) };
 }
 
-export async function completeKnowledgePublicationMethod(this: MarketControlPlaneStore, id: string, input: any) {
+export async function completeKnowledgePublicationMethod(this: ControlPlaneStore, id: string, input: any) {
 	await this.ensureInitialized();
 	const timestamp = input.completedAt ?? isoNow();
 	const updated = await this.first(`WITH candidate AS (

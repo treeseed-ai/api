@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,objectValue,serializeTreeDxInstance,serializeTreeDxMirror } from "../../../../persistence/store.ts";
-export async function createTreeDxMirrorMethod(this: MarketControlPlaneStore, teamId, input: any = {}) {
+import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxInstance,serializeTreeDxMirror } from "../../../../persistence/store.ts";
+export async function createTreeDxMirrorMethod(this: ControlPlaneStore, teamId, input: any = {}) {
     await this.ensureInitialized();
     const instance = input.instanceId
         ? serializeTreeDxInstance(await this.first(`SELECT * FROM treedx_instances WHERE id = ? LIMIT 1`, [input.instanceId]))

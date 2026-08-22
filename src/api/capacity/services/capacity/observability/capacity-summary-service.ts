@@ -1,4 +1,5 @@
-import type { CapacityAllocationSetV2,ProjectCapacityDiagnostics } from '@treeseed/sdk';
+import type { CapacityAllocationSetV2 } from '@treeseed/sdk/agent-capacity';
+import type { ProjectCapacityDiagnostics } from '../../../contracts.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityProviderIdentityRepository } from '../../../repositories/capacity/providers/provider-identity.ts';
 import { aggregateCapacityTimeReservations } from '../accounting/agent-time-reservation-aggregation-service.ts';

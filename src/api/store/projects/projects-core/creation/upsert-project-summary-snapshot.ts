@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function upsertProjectSummarySnapshotMethod(this: MarketControlPlaneStore, projectId, teamId, summary) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function upsertProjectSummarySnapshotMethod(this: ControlPlaneStore, projectId, teamId, summary) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     await this.run(`INSERT OR REPLACE INTO project_summary_snapshots (

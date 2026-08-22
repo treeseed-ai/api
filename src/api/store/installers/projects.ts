@@ -1,6 +1,5 @@
-import type { MarketControlPlaneStore } from '../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../persistence/store.ts';
 import { getProjectAccessSummaryMethod } from '../projects/access/queries/get-project-access-summary.ts';
-import { getProjectWorkstreamsSummaryMethod } from '../projects/delivery/queries/get-project-workstreams-summary.ts';
 import { projectArchitectureContentBindingsMethod } from '../projects/projects-core/contracts/project-architecture-content-bindings.ts';
 import { createProjectMethod } from '../projects/projects-core/creation/create-project.ts';
 import { upsertProjectArchitectureMethod } from '../projects/projects-core/creation/upsert-project-architecture.ts';
@@ -15,14 +14,12 @@ import { listProjectsForPrincipalMethod } from '../projects/queries/identity/lis
 import { listPublicProjectsMethod } from '../projects/queries/identity/list-public-projects.ts';
 import { listTeamProjectsMethod } from '../projects/queries/identity/list-team-projects.ts';
 import { getProjectDetailsMethod } from '../projects/queries/summaries/get-project-details.ts';
-import { getProjectDirectSummaryMethod } from '../projects/queries/summaries/get-project-direct-summary.ts';
-import { getProjectShareSummaryMethod } from '../projects/queries/summaries/get-project-share-summary.ts';
 import { getProjectSummarySnapshotMethod } from '../projects/queries/summaries/get-project-summary-snapshot.ts';
 import { getProjectSummaryMethod } from '../projects/queries/summaries/get-project-summary.ts';
 import { upsertProjectRepositoryTopologyMethod } from '../projects/repositories/creation/upsert-project-repository-topology.ts';
 import { getProjectRepositoryTopologyMethod } from '../projects/repositories/queries/get-project-repository-topology.ts';
 
-export function installProjectsStoreMethods(prototype: MarketControlPlaneStore) {
+export function installProjectsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.getProjectAccessSummary = getProjectAccessSummaryMethod;
 	prototype.getProjectRepositoryTopology = getProjectRepositoryTopologyMethod;
 	prototype.upsertProjectRepositoryTopology = upsertProjectRepositoryTopologyMethod;
@@ -40,9 +37,6 @@ export function installProjectsStoreMethods(prototype: MarketControlPlaneStore) 
 	prototype.listRecentJobsForProject = listRecentJobsForProjectMethod;
 	prototype.listProjectActivity = listProjectActivityMethod;
 	prototype.getProjectSummary = getProjectSummaryMethod;
-	prototype.getProjectDirectSummary = getProjectDirectSummaryMethod;
-	prototype.getProjectWorkstreamsSummary = getProjectWorkstreamsSummaryMethod;
-	prototype.getProjectShareSummary = getProjectShareSummaryMethod;
 	prototype.getProjectSummarySnapshot = getProjectSummarySnapshotMethod;
 	prototype.upsertProjectSummarySnapshot = upsertProjectSummarySnapshotMethod;
 }

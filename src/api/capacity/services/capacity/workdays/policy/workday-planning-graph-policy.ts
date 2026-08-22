@@ -1,5 +1,9 @@
 import { MAX_CAPACITY_PAGE_LIMIT,type CapacityPage } from '@treeseed/sdk/capacity-pagination';
-import { compileAgentPlanningGraph,normalizeWorkdayAgentSelection,validateAgentSignalContract,validateProposalTypeContract,validateGovernanceGroupGraph,validateGroupDefinition,validateGroupEdgeDefinition,type AgentPlanningGraph,type AgentSignalContract,type ProposalTypeContract,type GovernanceGroup,type GovernanceGroupEdge } from '@treeseed/sdk/agent-capacity';
+import { validateAgentSignalContract,validateProposalTypeContract,type AgentPlanningGraph,type AgentSignalContract,type ProposalTypeContract,type GovernanceGroup,type GovernanceGroupEdge } from '@treeseed/sdk/agent-capacity';
+import { compileAgentPlanningGraph } from '../../../../policy/workdays/planning-graph.ts';
+import { validateGroupDefinition,validateGroupEdgeDefinition } from '../../../../policy/group-definition.ts';
+import { validateGovernanceGroupGraph } from '../../../../../governance/group-membership.ts';
+import { normalizeWorkdayAgentSelection } from '../../../../policy/workdays/workday.ts';
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { capacityWorkdayAgentsFromClasses,type CapacityWorkdayAgent } from './workday-agent-policy.ts';

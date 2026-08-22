@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createUnifiedChangeset,type TextFileChange } from '@treeseed/sdk/treedx';
+import { createUnifiedChangeset,type TextFileChange } from './unified-diff.ts';
 
 export async function applyTextChangeset(input: {
 	client: any;

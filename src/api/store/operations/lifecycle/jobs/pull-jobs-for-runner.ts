@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function pullJobsForRunnerMethod(this: MarketControlPlaneStore, projectId, input: any = {}) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function pullJobsForRunnerMethod(this: ControlPlaneStore, projectId, input: any = {}) {
     await this.ensureInitialized();
     const limit = Math.max(1, Math.min(Number(input.limit ?? 1), 20));
     const rows = await this.all(`SELECT * FROM remote_jobs

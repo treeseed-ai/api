@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import { resolveApiConfig } from '@treeseed/sdk/api';
+import { resolveApiConfig } from '../configuration/runtime-config.ts';
 import type { Server } from 'node:http';
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { createPlatformApiApp } from './app.js';
-import { createMarketPostgresDatabase } from './market-postgres.js';
+import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
 
 function hasRequestBody(method) {
 	return method !== 'GET' && method !== 'HEAD';
@@ -58,7 +58,7 @@ export async function createApiServer(options: any = {}): Promise<ApiServerInsta
 	};
 	const ownedDatabase = options.db
 		? null
-		: createMarketPostgresDatabase(config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL);
+		: createControlPlanePostgresDatabase(config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL);
 	const db = options.db ?? ownedDatabase;
 	await db.migrate();
 	const app = createPlatformApiApp({

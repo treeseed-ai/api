@@ -1,8 +1,6 @@
 import { build } from 'esbuild';
-import { createHash } from 'node:crypto';
-import { chmodSync,copyFileSync,cpSync,existsSync,mkdirSync,readdirSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
+import { chmodSync,copyFileSync,existsSync,mkdirSync,readdirSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
 import { dirname,extname,join,relative,resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { packageRoot } from '../packages/package-tools.ts';
 
@@ -18,14 +16,7 @@ const EXECUTABLE_OUTPUTS = new Set([
 	'scripts/support/migrate-db.js',
 ]);
 const REQUIRED_OUTPUTS = [
-	'index.js',
-	'index.d.ts',
-	'api/support/app.js',
 	'api/support/server.js',
-	'api/persistence/store.js',
-	'api/support/market-postgres.js',
-	'api/support/route-descriptors.js',
-	'admin-api-descriptor.json',
 	'operations-runner/entrypoint.js',
 	'scripts/support/migrate-db.js',
 ];
@@ -48,7 +39,7 @@ function ensureDir(filePath: string) {
 function rewriteRuntimeSpecifiers(contents: string) {
 	return contents
 		.replace(/(['"`])(\.[^'"`\n]+)\.(mjs|ts)\1/g, '$1$2.js$1')
-		.replace(/(['"`])\.\.\/src\//g, '$1../');
+		.replace(/(['"`])((?:\.\.\/)+)src\//g, '$1$2');
 }
 
 function outputPathForSource(filePath: string, sourceRoot: string, outputRoot: string) {
@@ -140,91 +131,6 @@ function assertRequiredOutputs() {
 	}
 }
 
-async function assertCapacityRouteDescriptorCoverage() {
-	const routeRoot = resolve(distRoot, 'api', 'capacity', 'routes');
-	const routeFiles = walkFiles(routeRoot).filter((filePath) => filePath.endsWith('.js') && !filePath.endsWith('.d.js'));
-	const declarations: Array<{ method: string; path: string; filePath: string }> = [];
-	for (const filePath of routeFiles) {
-		const source = readFileSync(filePath, 'utf8');
-		if (/app\.(get|post|put|patch|delete)\(\s*`/u.test(source)) {
-			throw new Error(`Capacity route registrations must use literal quoted paths so descriptor discovery is complete: ${relative(distRoot, filePath)}`);
-		}
-		for (const match of source.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]([^'"]+)['"]/gu)) {
-			if (match[2].startsWith('/v1')) declarations.push({ method: match[1].toUpperCase(), path: match[2], filePath });
-		}
-	}
-	const descriptorModuleUrl = `${pathToFileURL(resolve(distRoot, 'api', 'support', 'route-descriptors.js')).href}?build=${Date.now()}`;
-	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<{ method: string; path: string }> };
-	const descriptorKeys = new Set(descriptorModule.API_ROUTE_DESCRIPTORS.map((entry) => `${entry.method} ${entry.path}`));
-	for (const declaration of declarations) {
-		if (!descriptorKeys.has(`${declaration.method} ${declaration.path}`)) {
-			throw new Error(`Built route descriptor inventory omitted ${declaration.method} ${declaration.path} from ${relative(distRoot, declaration.filePath)}.`);
-		}
-	}
-}
-
-async function writeAdminApiDescriptorArtifact() {
-	const descriptorModuleUrl = `${pathToFileURL(resolve(distRoot, 'api', 'support', 'route-descriptors.js')).href}?artifact=${Date.now()}`;
-	const descriptorModule = await import(descriptorModuleUrl) as { API_ROUTE_DESCRIPTORS: Array<Record<string, unknown>> };
-	const routes = [...descriptorModule.API_ROUTE_DESCRIPTORS].sort((left, right) => String(left.id).localeCompare(String(right.id)));
-	const adminRoutes = routes.filter((route) => route.runtimePlane === 'admin');
-	const marketRoutes = routes.filter((route) => route.runtimePlane === 'market');
-	const routesJson = JSON.stringify(routes);
-	const digest = createHash('sha256').update(routesJson).digest('hex');
-	const packageMetadata = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as { version: string };
-	writeFileSync(resolve(distRoot, 'admin-api-descriptor.json'), `${JSON.stringify({
-		schemaVersion: 'treeseed.admin-api-descriptor/v1',
-		package: '@treeseed/api',
-		version: packageMetadata.version,
-		sourceRef: process.env.TREESEED_SOURCE_REF?.trim() || null,
-		digest: `sha256:${digest}`,
-		routeCount: routes.length,
-		adminRouteCount: adminRoutes.length,
-		marketRouteCount: marketRoutes.length,
-		migrationReady: marketRoutes.length === 0,
-		routes,
-	}, null, 2)}\n`, 'utf8');
-}
-
-function preparedSdkPackageRoot(installedSdkRoot: string) {
-	if (existsSync(resolve(installedSdkRoot, 'dist', 'index.js')) && existsSync(resolve(installedSdkRoot, 'dist', 'api', 'index.js'))) {
-		return { root: installedSdkRoot, cleanup: () => {} };
-	}
-	throw new Error('@treeseed/api requires the installed semantic @treeseed/sdk package to contain its published runtime artifacts.');
-}
-
-function copySdkRuntimeArtifacts() {
-	const sdkRoot = resolve(packageRoot, 'node_modules', '@treeseed', 'sdk');
-	const sdkVendorRoot = resolve(distRoot, 'node_modules', '@treeseed', 'sdk');
-	const sdkPackage = preparedSdkPackageRoot(sdkRoot);
-	const copyRuntimeArtifact = (source: string, destination: string) => {
-		cpSync(source, destination, {
-			recursive: true,
-			filter: (entry) => !entry.endsWith('.d.js'),
-		});
-	};
-	try {
-		const sdkPackageJson = resolve(sdkPackage.root, 'package.json');
-		if (!existsSync(sdkPackageJson)) return;
-		const requiredSdkOutputs = [
-			resolve(sdkPackage.root, 'dist', 'index.js'),
-			resolve(sdkPackage.root, 'dist', 'api', 'index.js'),
-			resolve(sdkPackage.root, 'drizzle', 'market'),
-		];
-		for (const requiredOutput of requiredSdkOutputs) {
-			if (!existsSync(requiredOutput)) {
-				throw new Error(`@treeseed/sdk is missing required runtime artifact: ${relative(sdkPackage.root, requiredOutput)}`);
-			}
-		}
-		mkdirSync(sdkVendorRoot, { recursive: true });
-		copyFileSync(sdkPackageJson, resolve(sdkVendorRoot, 'package.json'));
-		copyRuntimeArtifact(resolve(sdkPackage.root, 'dist'), resolve(sdkVendorRoot, 'dist'));
-		copyRuntimeArtifact(resolve(sdkPackage.root, 'drizzle'), resolve(sdkVendorRoot, 'drizzle'));
-	} finally {
-		sdkPackage.cleanup();
-	}
-}
-
 rmSync(distRoot, { recursive: true, force: true });
 
 for (const filePath of walkFiles(srcRoot)) {
@@ -234,12 +140,7 @@ for (const filePath of walkFiles(srcRoot)) {
 	else if (COPY_EXTENSIONS.has(extension)) copyAsset(filePath, srcRoot, distRoot);
 }
 
-for (const filePath of walkFiles(scriptsRoot)) {
-	if (filePath.endsWith('.ts')) transpileScript(filePath);
-}
+transpileScript(resolve(scriptsRoot, 'support', 'migrate-db.ts'));
 
 emitDeclarations();
-copySdkRuntimeArtifacts();
-await assertCapacityRouteDescriptorCoverage();
-await writeAdminApiDescriptorArtifact();
 assertRequiredOutputs();

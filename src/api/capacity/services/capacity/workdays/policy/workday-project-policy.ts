@@ -18,7 +18,7 @@ function text(value: unknown, fallback = ''): string {
 }
 
 export const CANONICAL_WORKDAY_PROJECT_SLUGS = [
-	'market', 'admin', 'agent', 'api', 'cli', 'core', 'sdk', 'ui', 'treedx',
+	'admin', 'agent', 'api', 'cli', 'core', 'sdk', 'ui', 'treedx',
 ] as const;
 
 export function capacityWorkdayRequestedProjectSlugs(parameters: JsonRecord = {}): string[] {

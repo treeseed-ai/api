@@ -1,7 +1,7 @@
-import { isoNow,MarketControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
+import { isoNow,ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
 import { assertExpectedProposalVersion,simulationEvidence } from '../support/simulation-evidence.ts';
 import { assertGovernanceProposalReady } from '../contracts/governance-proposal-readiness.ts';
-export async function startGovernanceProposalVotingMethod(this: MarketControlPlaneStore, principal, proposalId, input: any = {}) {
+export async function startGovernanceProposalVotingMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)

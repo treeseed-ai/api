@@ -1,4 +1,4 @@
-import type { MarketControlPlaneStore } from '../../../../persistence/store.ts';
+import type { ControlPlaneStore } from '../../../../persistence/store.ts';
 
 function remote(row: any) {
 	if (!row) return null;
@@ -12,7 +12,7 @@ function remote(row: any) {
 	};
 }
 
-export async function getProjectRepositoryTopologyMethod(this: MarketControlPlaneStore, projectId: string) {
+export async function getProjectRepositoryTopologyMethod(this: ControlPlaneStore, projectId: string) {
 	await this.ensureInitialized();
 	const library = await this.getProjectTreeDxLibrary(projectId);
 	if (!library?.topology?.contentRepository) return null;

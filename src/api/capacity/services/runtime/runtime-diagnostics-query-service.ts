@@ -1,4 +1,4 @@
-import { summarizeCapacityRuntimeDiagnostics } from '@treeseed/sdk/agent-capacity';
+import { summarizeCapacityRuntimeDiagnostics } from '../../policy/runtime/runtime-diagnostics.ts';
 import { DEFAULT_CAPACITY_PAGE_LIMIT } from '@treeseed/sdk/capacity-pagination';
 
 interface RuntimeDiagnosticsDatabase {

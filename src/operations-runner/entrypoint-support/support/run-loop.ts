@@ -3,7 +3,6 @@ import { ContextQueryCheckMaintenanceScheduler } from '../../../api/capacity/ser
 import { ContextQueryCheckService } from '../../../api/capacity/services/capacity/agents/context-query-check-service.js';
 import { randomUUID } from 'node:crypto';
 import { drainNotificationEmailOutbox } from '../../../notifications/service.js';
-import { runSecretOperationExecutor } from '../../security/secret-operation-executor.js';
 import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
 import { createClient,createControlPlaneStore,loadConfig,loadHealthConfig,packageVersion,parseRunnerOptions,registerAndHeartbeat,runOnceWithClient,startHealthServer } from '../index.js';
 
@@ -44,8 +43,6 @@ export async function runLoop() {
             healthState.status = 'running';
             healthState.error = null;
 			await runOnceWithClient(config, client, version, { ...options, controlPlaneStore, operationRunnerId });
-            if (controlPlaneStore)
-                await runSecretOperationExecutor(controlPlaneStore);
             if (controlPlaneStore)
                 await drainNotificationEmailOutbox(controlPlaneStore);
             await capacityWorkdayMaintenance?.runIfDue();

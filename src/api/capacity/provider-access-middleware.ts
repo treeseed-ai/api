@@ -6,7 +6,7 @@ interface CapacityProviderAccessAuthenticator {
 
 export type CapacityProviderAccessEnv = {
 	Variables: {
-		capacityProviderAccessAuth: unknown;
+		capacityProviderAccessAuth?: unknown;
 	};
 };
 

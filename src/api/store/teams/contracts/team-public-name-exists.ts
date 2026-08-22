@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,missingSchemaError,normalizeTeamName } from "../../../persistence/store.ts";
-export async function teamPublicNameExistsMethod(this: MarketControlPlaneStore, name, excludeTeamId = null) {
+import { ControlPlaneStore,missingSchemaError,normalizeTeamName } from "../../../persistence/store.ts";
+export async function teamPublicNameExistsMethod(this: ControlPlaneStore, name, excludeTeamId = null) {
     await this.ensureInitialized();
     const value = normalizeTeamName(name);
     if (!value)

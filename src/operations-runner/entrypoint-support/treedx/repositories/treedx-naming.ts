@@ -1,5 +1,12 @@
-import { deployRailwayServiceInstance,ensureRailwayEnvironment,ensureRailwayGeneratedServiceDomain,ensureRailwayProject,ensureRailwayService,ensureRailwayServiceInstanceConfiguration,ensureRailwayServiceVolume,listRailwayVariables,normalizeRailwayEnvironmentName,upsertRailwayVariables } from '@treeseed/sdk';
 import { randomBytes } from 'node:crypto';
+
+function normalizeRailwayEnvironmentName(value) {
+    return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9-]+/gu, '-').replace(/^-+|-+$/gu, '');
+}
+
+function unavailableRailwayOperation() {
+    throw new Error('Railway mutation is not enabled in the control-plane operations runner. Supply an explicitly governed provider adapter.');
+}
 
 export function treeDxSlug(value, fallback = 'treedx') {
     const slug = String(value ?? '')
@@ -52,14 +59,14 @@ export function treeDxSecretBase() {
 
 export function treeDxRailway(options: any = {}) {
     return {
-        ensureProject: options.ensureProject ?? ensureRailwayProject,
-        ensureEnvironment: options.ensureEnvironment ?? ensureRailwayEnvironment,
-        ensureService: options.ensureService ?? ensureRailwayService,
-        ensureServiceInstanceConfiguration: options.ensureServiceInstanceConfiguration ?? ensureRailwayServiceInstanceConfiguration,
-        ensureServiceVolume: options.ensureServiceVolume ?? ensureRailwayServiceVolume,
-        ensureGeneratedServiceDomain: options.ensureGeneratedServiceDomain ?? ensureRailwayGeneratedServiceDomain,
-        listVariables: options.listVariables ?? listRailwayVariables,
-        upsertVariables: options.upsertVariables ?? upsertRailwayVariables,
-        deployServiceInstance: options.deployServiceInstance ?? deployRailwayServiceInstance,
+        ensureProject: options.ensureProject ?? unavailableRailwayOperation,
+        ensureEnvironment: options.ensureEnvironment ?? unavailableRailwayOperation,
+        ensureService: options.ensureService ?? unavailableRailwayOperation,
+        ensureServiceInstanceConfiguration: options.ensureServiceInstanceConfiguration ?? unavailableRailwayOperation,
+        ensureServiceVolume: options.ensureServiceVolume ?? unavailableRailwayOperation,
+        ensureGeneratedServiceDomain: options.ensureGeneratedServiceDomain ?? unavailableRailwayOperation,
+        listVariables: options.listVariables ?? unavailableRailwayOperation,
+        upsertVariables: options.upsertVariables ?? unavailableRailwayOperation,
+        deployServiceInstance: options.deployServiceInstance ?? unavailableRailwayOperation,
     };
 }

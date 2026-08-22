@@ -1,11 +1,11 @@
-import { MarketControlPlaneStore } from "../../../persistence/store.ts";
+import { ControlPlaneStore } from "../../../persistence/store.ts";
 interface RepositoryTopologyMetadata {
     contentRepository?: Record<string, unknown>;
     siteRepository?: Record<string, unknown>;
     projectRepository?: Record<string, unknown>;
 }
 
-export function buildRepositoryTopologySnapshotMethod(this: MarketControlPlaneStore, { project, instance, binding, softwareRepository, workspaceLink, metadata = {} as RepositoryTopologyMetadata }) {
+export function buildRepositoryTopologySnapshotMethod(this: ControlPlaneStore, { project, instance, binding, softwareRepository, workspaceLink, metadata = {} as RepositoryTopologyMetadata }) {
     const siteCheckoutBase = `/data/projects/${project.slug}/site`;
     const projectCheckoutBase = workspaceLink?.parentName ? `/data/projects/${project.slug}/project` : null;
     return {

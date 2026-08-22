@@ -1,7 +1,7 @@
-import { normalizeProjectRepositoryTopology } from '@treeseed/sdk';
-import type { MarketControlPlaneStore } from '../../../../persistence/store.ts';
+import { normalizeProjectRepositoryTopology } from '../../../../repositories/project-topology.ts';
+import type { ControlPlaneStore } from '../../../../persistence/store.ts';
 
-export async function upsertProjectRepositoryTopologyMethod(this: MarketControlPlaneStore, projectId: string, input: unknown) {
+export async function upsertProjectRepositoryTopologyMethod(this: ControlPlaneStore, projectId: string, input: unknown) {
 	await this.ensureInitialized();
 	const [project, library] = await Promise.all([this.getProject(projectId), this.getProjectTreeDxLibrary(projectId)]);
 	if (!project || !library) return null;

@@ -1,4 +1,4 @@
-import { evaluateWorkdayContinuation } from '@treeseed/sdk/agent-capacity';
+import { evaluateWorkdayContinuation } from '../../../../policy/workdays/workday.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { decodeDurableJsonObject } from '../../../../durable-json.ts';

@@ -1,17 +1,4 @@
-import { normalizeNotificationPreferences } from '@treeseed/sdk/account-contracts';
-import { createHash,randomUUID } from 'node:crypto';
-import { isLoopbackUrl,normalizeBaseUrl,optionalTrimmedString,requestClientIp,shouldBypassAcceptanceAuthEmailDelivery,trimmedHeaderValue } from '../index.ts';
-export async function loadNotificationPreferences(store, userId) {
-    const settings = await store.first(`SELECT * FROM user_notification_preferences WHERE user_id = ? LIMIT 1`, [userId]);
-    const globalRows = await store.all(`SELECT content_type FROM user_notification_global_content_types WHERE user_id = ? ORDER BY content_type`, [userId]);
-    const overrideRows = await store.all(`SELECT project_id FROM user_notification_project_overrides WHERE user_id = ? ORDER BY project_id`, [userId]);
-    const typeRows = await store.all(`SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ? ORDER BY project_id, content_type`, [userId]);
-    return normalizeNotificationPreferences({
-        emailCadence: settings?.email_cadence,
-        globalContentTypes: globalRows.map((row) => row.content_type),
-        projectOverrides: overrideRows.map((row) => ({ projectId: row.project_id, contentTypes: typeRows.filter((entry) => entry.project_id === row.project_id).map((entry) => entry.content_type) })),
-    });
-}
+import { isLoopbackUrl,normalizeBaseUrl,optionalTrimmedString,requestClientIp,trimmedHeaderValue } from '../index.ts';
 export function shouldExposeNonProductionAuthDiagnostics(c, runtime) {
     const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
     if (environment && !['prod', 'production'].includes(environment))
@@ -38,7 +25,7 @@ export function webSessionData(c, source) {
         ...requestSessionMetadata(c),
     };
 }
-export function marketAuthContext(c, config: any = {}) {
+export function controlPlaneAuthContext(c, config: any = {}) {
     const configuredSiteUrl = String(config.siteUrl ?? config.authApprovalBaseUrl ?? '').trim();
     return {
         locals: {
@@ -53,11 +40,6 @@ export function marketAuthContext(c, config: any = {}) {
         url: new URL(c.req.url),
     };
 }
-export function exposeAuthTokenForTests(c = null, config: any = {}) {
-    return process.env.NODE_ENV === 'test'
-        || process.env.TREESEED_ACCEPTANCE_EXPOSE_AUTH_TOKENS === '1'
-        || (c ? shouldBypassAcceptanceAuthEmailDelivery(c, config) : false);
-}
 export function authTokenTimestampSeconds(value = Date.now()) {
     return Math.floor(Number(value) / 1000);
 }
@@ -66,46 +48,6 @@ export function authTokenTimestampMillis(value) {
     if (!Number.isFinite(number) || number <= 0)
         return 0;
     return number < 10000000000 ? number * 1000 : number;
-}
-export async function createMarketWebSession(marketAuthProvider, userId, data: any = {}, options: any = {}) {
-    if (typeof marketAuthProvider.issueUserSession === 'function') {
-        return marketAuthProvider.issueUserSession(userId, {
-            sessionType: 'web',
-            data,
-        });
-    }
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    const token = await marketAuthProvider.createPersonalAccessToken(userId, {
-        name: 'Treeseed web session',
-        scopes: ['auth:me'],
-        expiresAt,
-    });
-    const authenticated = await marketAuthProvider.authenticateBearerToken(token.token);
-    const sessionId = randomUUID();
-    const now = new Date().toISOString();
-    if (options.store?.run) {
-        await options.store.run(`INSERT INTO auth_sessions (id, user_id, session_type, refresh_token_hash, scopes_json, expires_at, revoked_at, data_json, created_at, updated_at)
-			 VALUES (?, ?, 'web', ?, ?, ?, NULL, ?, ?, ?)`, [
-            sessionId,
-            userId,
-            createHash('sha256').update(`${options.authSecret ?? 'market'}:${sessionId}`).digest('hex'),
-            JSON.stringify(['auth:me']),
-            expiresAt,
-            JSON.stringify({ ...data, tokenId: token.id }),
-            now,
-            now,
-        ]).catch(() => null);
-    }
-    return {
-        ok: true,
-        status: 'approved',
-        accessToken: token.token,
-        refreshToken: null,
-        tokenType: 'Bearer',
-        expiresAt,
-        expiresInSeconds: 15 * 60,
-        principal: authenticated?.principal ?? { id: userId, type: 'user', roles: [], scopes: ['auth:me'], metadata: { sessionId } },
-    };
 }
 export function webAuthPayload(session) {
     return {
@@ -154,9 +96,4 @@ export function resolveAuthApprovalBaseUrl(config) {
         return 'https://treeseed.dev';
     }
     return normalized || baseUrl;
-}
-export function localAcceptanceAuthEnabled(runtime) {
-    const environment = String(runtime?.resolved?.config?.environment ?? process.env.TREESEED_API_ENVIRONMENT ?? process.env.TREESEED_ENVIRONMENT ?? '').trim().toLowerCase();
-    const baseUrl = String(runtime?.resolved?.config?.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? '').trim();
-    return environment === 'local' || process.env.LOCAL_DEV_MODE === '1' || isLoopbackUrl(baseUrl);
 }

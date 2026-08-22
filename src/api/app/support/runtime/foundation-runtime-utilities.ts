@@ -1,18 +1,5 @@
-import { PERSONAL_THEME_COMPILER_VERSION } from '@treeseed/sdk/account-contracts';
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
-import { backfillUserEmailAddresses,normalizeBaseUrl,normalizeMarketProfile,parseBooleanEnvValue,parseJsonObject,redactedRequestTarget,safePrivateKnowledgeSlug } from '../index.ts';
-export function personalThemeFromRow(row) {
-    return {
-        id: row.id,
-        schemeId: `personal-${row.id}`,
-        name: row.name,
-        baseScheme: row.base_scheme,
-        palette: parseJsonObject(row.palette_json),
-        compilerVersion: Number(row.compiler_version ?? PERSONAL_THEME_COMPILER_VERSION),
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-    };
-}
+import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,redactedRequestTarget } from '../index.ts';
 export async function accountDeletionBlockers(store, principal) {
     const teams = await store.listTeamsForPrincipal(principal);
     const blockers = teams
@@ -39,7 +26,7 @@ export function base64Url(value) {
 export function shouldLogApiRequests(config, options: any = {}) {
     if (typeof options.logRequests === 'boolean')
         return options.logRequests;
-    const explicit = parseBooleanEnvValue(process.env.TREESEED_MARKET_API_REQUEST_LOGS ?? process.env.TREESEED_API_REQUEST_LOGS);
+    const explicit = parseBooleanEnvValue(process.env.TREESEED_API_REQUEST_LOGS);
     if (explicit != null)
         return explicit;
     if (process.env.NODE_ENV === 'test')
@@ -93,7 +80,7 @@ export function requestClientIp(c) {
         || forwardedFor
         || null);
 }
-export async function ensureMarketCredentialSchema(store) {
+export async function ensureControlPlaneCredentialSchema(store) {
     await store.ensureInitialized();
     await backfillUserEmailAddresses(store);
 }
@@ -180,15 +167,6 @@ export function resolveAgentArtifactBucket(runtime) {
     ];
     return candidates.find((candidate) => candidate && typeof candidate === 'object' && typeof candidate.put === 'function') ?? null;
 }
-export function centralMarketProfile(baseUrl) {
-    return {
-        id: 'central',
-        label: 'TreeSeed Central Market',
-        baseUrl: normalizeBaseUrl(baseUrl),
-        kind: 'central',
-        alwaysAvailable: true,
-    };
-}
 export function scheduleBackgroundBootstrap(c, task) {
     const promise = Promise.resolve()
         .then(task)
@@ -209,56 +187,6 @@ export function scheduleBackgroundBootstrap(c, task) {
 }
 export function base64urlJson(value) {
     return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
-}
-export function marketProfilesForTeams(teams: any = [], baseUrl) {
-    const byId = new Map();
-    const central = centralMarketProfile(baseUrl);
-    byId.set(central.id, central);
-    for (const team of teams) {
-        const metadata = team?.metadata && typeof team.metadata === 'object' ? team.metadata : {};
-        const profiles = Array.isArray(metadata.marketProfiles)
-            ? metadata.marketProfiles
-            : Array.isArray(metadata.markets)
-                ? metadata.markets
-                : [];
-        for (const profile of profiles) {
-            const normalized = normalizeMarketProfile(profile, team.id);
-            if (normalized) {
-                byId.set(normalized.id, normalized);
-            }
-        }
-    }
-    return [...byId.values()];
-}
-export function artifactDownloadPayload(baseUrl, item, artifact) {
-    const metadata = artifact.metadata && typeof artifact.metadata === 'object' ? artifact.metadata : {};
-    const downloadUrl = typeof metadata.downloadUrl === 'string' && metadata.downloadUrl.trim()
-        ? metadata.downloadUrl
-        : typeof metadata.publicUrl === 'string' && metadata.publicUrl.trim()
-            ? metadata.publicUrl
-            : `${normalizeBaseUrl(baseUrl)}/v1/catalog/${encodeURIComponent(item.id)}/artifacts/${encodeURIComponent(artifact.version)}/content`;
-    return {
-        itemId: item.id,
-        slug: item.slug,
-        kind: item.kind,
-        version: artifact.version,
-        contentType: typeof metadata.contentType === 'string' && metadata.contentType.trim()
-            ? metadata.contentType
-            : item.kind === 'knowledge_pack'
-                ? 'application/vnd.treeseed.knowledge-pack+tar'
-                : 'application/vnd.treeseed.template+tar',
-        sha256: typeof metadata.sha256 === 'string' && metadata.sha256.trim() ? metadata.sha256.trim() : null,
-        downloadUrl,
-        expiresAt: typeof metadata.expiresAt === 'string' ? metadata.expiresAt : null,
-        installStrategy: typeof metadata.installStrategy === 'string'
-            ? metadata.installStrategy
-            : typeof item.metadata?.installStrategy === 'string'
-                ? item.metadata.installStrategy
-                : null,
-    };
-}
-export function localAcceptanceAdminToken() {
-    return process.env.TREESEED_CAPACITY_ACCEPTANCE_ADMIN_TOKEN || 'tsk_local_treeseed_acceptance_admin';
 }
 export function canonicalArchitectureTopology(value) {
     if (value === 'combined_compatibility')
@@ -297,29 +225,6 @@ export function uiRuntimeLocals(config) {
             },
         },
     };
-}
-export function privateKnowledgeAuditPayload(body, extra: any = {}) {
-    return {
-        slug: safePrivateKnowledgeSlug(body?.slug),
-        route: typeof body?.route === 'string' && body.route.startsWith('/app/projects/') ? body.route : null,
-        summary: extra.summary ?? null,
-        status: extra.status ?? null,
-    };
-}
-export async function recordPrivateKnowledgeAudit(store, input: any = {}) {
-    if (typeof store.recordAuditEvent !== 'function')
-        return null;
-    return store.recordAuditEvent({
-        eventType: input.eventType,
-        actorType: input.actorType ?? 'user',
-        actorId: input.actorId ?? null,
-        targetType: 'project',
-        targetId: input.projectId,
-        data: privateKnowledgeAuditPayload(input.body, {
-            status: input.status,
-            summary: input.summary,
-        }),
-    });
 }
 export const AGENT_TASK_SIGNATURES = {
     'question.summarize': {
@@ -362,14 +267,6 @@ export const AGENT_TASK_SIGNATURES = {
         productionAllowed: true,
         priorityClass: 'background',
     },
-    'market.description.draft': {
-        defaultSeconds: 480,
-        requiredCapabilities: ['agent-execution'],
-        repositoryMutation: false,
-        bindingWork: false,
-        productionAllowed: true,
-        priorityClass: 'interactive',
-    },
     'repository.change.apply': {
         defaultSeconds: 1200,
         requiredCapabilities: ['agent-execution', 'repository_work'],
@@ -397,7 +294,7 @@ export const AGENT_TASK_SIGNATURES = {
 };
 export function createApiExtension(options: any = {}) {
     return {
-        name: options.name ?? 'treeseed-market',
+        name: options.name ?? 'treeseed-api',
         mount: options.mount ?? ((app, runtime) => options.extendApp?.(app, runtime)),
     };
 }

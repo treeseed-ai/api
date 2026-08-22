@@ -1,10 +1,4 @@
-import {
-canonicalCapacityProviderJson,
-capacityProviderFingerprint,
-capacityProviderSha256,
-validateCapacityProviderProofPayload,
-validateCapacityProviderPublicJwk,
-} from '@treeseed/sdk/capacity-provider';
+import { validateCapacityProviderProofPayload, validateCapacityProviderPublicJwk } from '@treeseed/sdk/capacity-provider';
 import type {
 CapacityProviderProofPayload,
 CapacityProviderPublicJwk,
@@ -32,7 +26,16 @@ const SECRET_PREFIX: Record<CapacitySecretKind, string> = {
 
 export const canonicalJson = canonicalCapacityProviderJson;
 export const sha256 = capacityProviderSha256;
-export { capacityProviderFingerprint };
+
+function canonicalValue(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(canonicalValue);
+	if (!value || typeof value !== 'object') return value;
+	return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([, entry]) => entry !== undefined).sort(([left], [right]) => left.localeCompare(right)).map(([key, entry]) => [key, canonicalValue(entry)]));
+}
+
+export function canonicalCapacityProviderJson(value: unknown) { return JSON.stringify(canonicalValue(value)); }
+export function capacityProviderSha256(value: string | Uint8Array) { return createHash('sha256').update(value).digest('base64url'); }
+export function capacityProviderFingerprint(publicJwk: CapacityProviderPublicJwk) { return `sha256:${capacityProviderSha256(canonicalCapacityProviderJson({ crv: publicJwk.crv, kty: publicJwk.kty, x: publicJwk.x }))}`; }
 
 export class CapacitySecretCodec {
 	readonly #hashKey: Buffer;

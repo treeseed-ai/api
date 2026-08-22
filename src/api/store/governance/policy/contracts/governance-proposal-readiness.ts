@@ -1,5 +1,5 @@
-import { evaluateGovernanceProposalReadiness,type GovernanceProposalReadiness } from '@treeseed/sdk';
-import type { MarketControlPlaneStore } from '../../../../persistence/store.ts';
+import { evaluateGovernanceProposalReadiness,type GovernanceProposalReadiness } from '../../../../governance/proposal-readiness.ts';
+import type { ControlPlaneStore } from '../../../../persistence/store.ts';
 
 type Row = Record<string, unknown>;
 function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -9,7 +9,7 @@ function structuredEstimate(value: unknown) {
 	const output = record(value); return record(record(output.metadata).structuredEstimate);
 }
 
-export async function governanceProposalReadinessMethod(this: MarketControlPlaneStore, proposalId: string): Promise<GovernanceProposalReadiness | null> {
+export async function governanceProposalReadinessMethod(this: ControlPlaneStore, proposalId: string): Promise<GovernanceProposalReadiness | null> {
 	const proposal = await this.getGovernanceProposal(proposalId);
 	if (!proposal) return null;
 	const metadata = record(proposal.metadata);
@@ -59,7 +59,7 @@ export async function governanceProposalReadinessMethod(this: MarketControlPlane
 	});
 }
 
-export async function assertGovernanceProposalReady(this: MarketControlPlaneStore, proposalId: string, stage: 'content' | 'voting') {
+export async function assertGovernanceProposalReady(this: ControlPlaneStore, proposalId: string, stage: 'content' | 'voting') {
 	const readiness = await governanceProposalReadinessMethod.call(this, proposalId);
 	if (!readiness) return null;
 	const missing = stage === 'content' ? readiness.missingContent : readiness.missingVoting;

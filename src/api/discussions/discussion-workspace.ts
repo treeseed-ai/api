@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { treeDxWorkspaceId } from '../knowledge/workspace-identity.ts';
+import { treeDxWorkspaceId } from '../knowledge/workspaces/identity.ts';
 import {
 	listOpenTreeDxWorkspaces,
 	recordTreeDxWorkspaceState,

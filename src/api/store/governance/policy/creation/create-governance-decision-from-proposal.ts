@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializeGovernanceDecision } from "../../../../persistence/store.ts";
+import { isoNow,ControlPlaneStore,serializeGovernanceDecision } from "../../../../persistence/store.ts";
 import { resolveDecisionDependencySnapshots } from '../../../../governance/decision-authority.ts';
-export async function createGovernanceDecisionFromProposalMethod(this: MarketControlPlaneStore, proposalId, input: any = {}) {
+export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
     if (!proposal)

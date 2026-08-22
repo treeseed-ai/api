@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import {
-  selectCapacitySupply,
   type CapacitySupplyPolicy,
 } from "@treeseed/sdk/agent-capacity";
-import { evaluateMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
+import { selectCapacitySupply } from '../../../../policy/supply-selection.ts';
+import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
 import type { CapacityGovernanceDatabase } from "../../../../database.ts";
 import { CapacityGovernanceError } from "../../../../database.ts";
 import type { DurableProviderAssignment } from "../../../../repositories/capacity/assignments/assignment.ts";

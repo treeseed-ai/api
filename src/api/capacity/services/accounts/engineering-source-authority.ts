@@ -1,10 +1,10 @@
 import {
-validateAgentArtifactManifest,
 type AgentArtifactManifest,
 type DeliverableManifestRecord,
 type GovernedPredecessorEvidence,
 type GovernedReviewPolicy,
 } from '@treeseed/sdk/agent-capacity';
+import { validateAgentArtifactManifest } from '../../artifact-manifest.ts';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { decodeDurableJsonObject } from '../../durable-json.ts';

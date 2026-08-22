@@ -2,7 +2,6 @@ export const RESERVED_USERNAMES = new Set([
 	'app',
 	'api',
 	'auth',
-	'market',
 	'templates',
 	'admin',
 	'settings',

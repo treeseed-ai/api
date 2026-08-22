@@ -1,4 +1,4 @@
-import { TreeDxClient } from '@treeseed/sdk/treedx';
+import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { mintTreeDxHs256Token } from '@treeseed/sdk/treedx/auth';
 import { AGENT_OPERATIONAL_CONTENT_COLLECTIONS } from '@treeseed/sdk/content-validation';
 

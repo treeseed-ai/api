@@ -1,9 +1,4 @@
 import type { ProviderAssignmentSynthesisSource } from '@treeseed/sdk/agent-capacity';
-import {
-providerAssignmentCapabilityHandlesContainSecretMaterial,
-redactedProviderAssignmentCapabilityHandles,
-validateProviderAssignmentCapabilityHandles,
-} from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../database.ts';
 
 type RecordValue = Record<string, unknown>;
@@ -18,6 +13,30 @@ function array(value: unknown): unknown[] {
 
 function text(value: unknown): string {
 	return typeof value === 'string' ? value.trim() : '';
+}
+
+function secretLikeKey(key: string) { return /(^|[_-])(plaintext|token|passphrase|password|private[_-]?key|deploy[_-]?key|raw[_-]?secret|unencrypted|credential)([_-]|$)/iu.test(key) || ['secretValue', 'rawSecret', 'githubInstallationToken', 'deployKey', 'privateKey'].includes(key); }
+function secretLikePath(value: unknown, path = '$'): string | null {
+	if (Array.isArray(value)) { for (let index = 0; index < value.length; index += 1) { const found = secretLikePath(value[index], `${path}[${index}]`); if (found) return found; } return null; }
+	if (!value || typeof value !== 'object') return null;
+	for (const [key, entry] of Object.entries(value as RecordValue)) { if (secretLikeKey(key)) return `${path}.${key}`; const found = secretLikePath(entry, `${path}.${key}`); if (found) return found; }
+	return null;
+}
+function providerAssignmentCapabilityHandlesContainSecretMaterial(value: unknown) { return Boolean(secretLikePath(value)); }
+function redactedProviderAssignmentCapabilityHandles(value: unknown) {
+	const source = record(value); const redact = (entry: unknown) => Object.fromEntries(Object.entries(record(entry)).filter(([key]) => !secretLikeKey(key)));
+	return { workspaceAccessMode: workspaceAccessMode(source), repository: array(source.repository).map(redact), treeDx: array(source.treeDx).map(redact), workflowOperations: array(source.workflowOperations).map(redact), secrets: array(source.secrets).map(redact), metadata: record(source.metadata) };
+}
+function validateProviderAssignmentCapabilityHandles(input: { assignment: AssignmentCapabilityInput & { capabilityHandles?: RecordValue }; capabilityHandles?: RecordValue; now?: Date }) {
+	const handles = input.capabilityHandles ?? input.assignment.capabilityHandles; const leakedPath = secretLikePath(handles); if (leakedPath) return { code: 'assignment_capability_handle_secret_material', reason: `Assignment capability handles include secret-like material at ${leakedPath}.`, metadata: { path: leakedPath } };
+	for (const handle of [...array(handles?.repository), ...array(handles?.treeDx), ...array(handles?.workflowOperations), ...array(handles?.secrets)].map(record)) {
+		if (!text(handle.id) || !text(handle.kind)) return { code: 'assignment_capability_handle_invalid', reason: 'An assignment capability handle is missing its identity or kind.', metadata: {} };
+		if ((handle.teamId && handle.teamId !== input.assignment.teamId) || (handle.projectId && handle.projectId !== input.assignment.projectId) || (handle.assignmentId && handle.assignmentId !== input.assignment.id)) return { code: 'assignment_capability_handle_invalid', reason: `Capability handle ${text(handle.id)} is scoped to a different assignment.`, metadata: { handleId: handle.id } };
+		if (handle.expiresAt && Date.parse(String(handle.expiresAt)) <= (input.now ?? new Date()).getTime()) return { code: 'assignment_capability_handle_invalid', reason: `Capability handle ${text(handle.id)} has expired.`, metadata: { handleId: handle.id } };
+		const operations = array(handle.operations).map(String); const writeCapable = operations.some((operation) => ['write', 'commit', 'push', 'release', 'dispatch_workflow', 'files:write', 'git:commit'].includes(operation));
+		if (writeCapable && input.assignment.mode !== 'acting' && record(input.assignment.metadata).allowPlanningContentArtifacts !== true) return { code: 'assignment_capability_handle_write_not_ready', reason: 'Write-capable handles require acting mode or explicit planning-artifact authority.', metadata: { handleId: handle.id } };
+	}
+	return null;
 }
 
 function exactBaseRef(input: AssignmentCapabilityInput) {

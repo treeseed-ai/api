@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function getTeamTreeDxMethod(this: MarketControlPlaneStore, teamId) {
+import { ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function getTeamTreeDxMethod(this: ControlPlaneStore, teamId) {
     await this.ensureInitialized();
     const instance = await this.getPrimaryTreeDxInstance(teamId);
     return {

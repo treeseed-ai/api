@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,validateTeamName } from "../../../../persistence/store.ts";
-export async function isTeamNameAvailableMethod(this: MarketControlPlaneStore, name, excludeTeamId = null) {
+import { ControlPlaneStore,validateTeamName } from "../../../../persistence/store.ts";
+export async function isTeamNameAvailableMethod(this: ControlPlaneStore, name, excludeTeamId = null) {
     await this.ensureInitialized();
     const validation = validateTeamName(name);
     if (!validation.ok)

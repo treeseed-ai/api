@@ -1,4 +1,4 @@
-import { type MarketControlPlaneStore, serializeProject } from '../../../../persistence/store.ts';
+import { type ControlPlaneStore, serializeProject } from '../../../../persistence/store.ts';
 
 function isPublic(project: any) {
 	const metadata = project?.metadata ?? {};
@@ -6,7 +6,7 @@ function isPublic(project: any) {
 	return String(declared.visibility ?? metadata.visibility ?? 'private').toLowerCase() === 'public';
 }
 
-export async function listPublicProjectsMethod(this: MarketControlPlaneStore) {
+export async function listPublicProjectsMethod(this: ControlPlaneStore) {
 	await this.ensureInitialized();
 	const rows = await this.all('SELECT * FROM projects ORDER BY created_at ASC');
 	return rows.map(serializeProject).filter((project) => project?.metadata?.deletion?.status !== 'succeeded' && isPublic(project));

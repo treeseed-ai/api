@@ -1,10 +1,15 @@
-import type { CapacityProviderAccessPrincipal } from '../../../../routes/capacity/providers/provider-auth.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
-import { evaluateMinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider';
+import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
 
 type JsonRecord = Record<string,unknown>;
+interface CapacityProviderAccessPrincipal {
+	membershipId: string;
+	teamId: string;
+	capacityProviderId: string;
+	scopes: string[];
+}
 function record(value:unknown):JsonRecord { return value&&typeof value==='object'&&!Array.isArray(value)?value as JsonRecord:{}; }
 function text(value:unknown){ return typeof value==='string'?value.trim():''; }
 function positive(value:unknown){ const parsed=Number(value); return Number.isInteger(parsed)&&parsed>0?parsed:null; }

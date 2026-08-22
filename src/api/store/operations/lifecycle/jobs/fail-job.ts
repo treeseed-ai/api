@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function failJobMethod(this: MarketControlPlaneStore, jobId, input) {
+import { isoNow,ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function failJobMethod(this: ControlPlaneStore, jobId, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     await this.run(`UPDATE remote_jobs

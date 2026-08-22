@@ -1,13 +1,12 @@
-import { MarketControlPlaneStore } from "../../../../persistence/store.ts";
-export async function getProjectSummaryMethod(this: MarketControlPlaneStore, projectId, principal = null) {
+import { ControlPlaneStore } from "../../../../persistence/store.ts";
+export async function getProjectSummaryMethod(this: ControlPlaneStore, projectId, principal = null) {
     const details = await this.getProjectDetails(projectId);
     if (!details) {
         return null;
     }
-    const [jobs, activity, products, summarySnapshot] = await Promise.all([
+    const [jobs, activity, summarySnapshot] = await Promise.all([
         this.listRecentJobsForProject(projectId, 12),
         this.listProjectActivity(projectId, 12),
-        this.listCatalogArtifactVersions(projectId),
         this.getProjectSummarySnapshot(projectId),
     ]);
     const metadata = details.project.metadata ?? {};
@@ -33,7 +32,7 @@ export async function getProjectSummaryMethod(this: MarketControlPlaneStore, pro
             decisions: Number(metadata.decisionCount ?? 0),
             activeWorkstreams: Number(Array.isArray(metadata.workstreams) ? metadata.workstreams.length : 0),
             agents: Number(metadata.agentCount ?? 0),
-            artifacts: products.length,
+            artifacts: 0,
         },
         repositories: details.repositories,
         contentSource: details.contentSource,

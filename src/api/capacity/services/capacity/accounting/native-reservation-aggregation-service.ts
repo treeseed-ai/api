@@ -1,4 +1,4 @@
-import type { NativeReservationDebitAggregate } from '@treeseed/sdk';
+import type { NativeReservationDebitAggregate } from '../../../contracts.ts';
 
 interface CapacityAggregateDatabase {
 	first(query: string, values?: unknown[]): Promise<Record<string, unknown> | null>;

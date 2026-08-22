@@ -1,19 +1,16 @@
-import { MarketControlPlaneStore,parseJson } from "../../../persistence/store.ts";
-export async function evaluateTeamDeletionBlockersMethod(this: MarketControlPlaneStore, teamId) {
+import { ControlPlaneStore,parseJson } from "../../../persistence/store.ts";
+export async function evaluateTeamDeletionBlockersMethod(this: ControlPlaneStore, teamId) {
     await this.ensureInitialized();
     const [
         projectRows,
-        catalogItems,
         jobs,
         services,
         workdays,
         assignments,
         reservations,
-        commerceOrders,
         pendingInvites,
     ] = await Promise.all([
         this.all(`SELECT id, slug, name, metadata_json FROM projects WHERE team_id = ? ORDER BY created_at ASC LIMIT 20`, [teamId]),
-        this.all(`SELECT id, kind, slug, title FROM catalog_items WHERE team_id = ? ORDER BY created_at ASC LIMIT 20`, [teamId]),
         this.all(`SELECT remote_jobs.id, remote_jobs.operation, remote_jobs.status, projects.slug AS project_slug, projects.name AS project_name
 				 FROM remote_jobs
 				 INNER JOIN projects ON projects.id = remote_jobs.project_id
@@ -30,10 +27,6 @@ export async function evaluateTeamDeletionBlockersMethod(this: MarketControlPlan
         this.all(`SELECT id, project_id, state FROM capacity_reservations
                  WHERE team_id = ? AND state IN ('reserved', 'consuming', 'overran_pending_approval', 'continuation_required')
                  ORDER BY created_at ASC LIMIT 20`, [teamId]),
-        this.all(`SELECT id, status FROM commerce_orders
-                 WHERE (buyer_team_id = ? OR seller_team_id = ?)
-                   AND status NOT IN ('completed', 'cancelled', 'refunded', 'failed')
-                 ORDER BY created_at ASC LIMIT 20`, [teamId, teamId]),
         this.all(`SELECT id, email, status FROM team_invites
                  WHERE team_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 20`, [teamId]),
     ]);
@@ -47,9 +40,7 @@ export async function evaluateTeamDeletionBlockersMethod(this: MarketControlPlan
         ...workdays.map((row) => ({ code: 'active_workday', id: row.id, label: row.scenario_id ?? row.id, href: '/app/work/workdays' })),
         ...assignments.map((row) => ({ code: 'active_assignment', id: row.id, label: `${row.project_id}: ${row.status}`, href: '/app/capacity/assignments' })),
         ...reservations.map((row) => ({ code: 'capacity_reservation', id: row.id, label: `${row.project_id}: ${row.state}`, href: '/app/capacity/usage' })),
-        ...catalogItems.map((row) => ({ code: 'catalog_item', id: row.id, label: row.title, href: '/app/knowledge/templates' })),
         ...jobs.map((row) => ({ code: 'active_job', id: row.id, label: `${row.project_name}: ${row.operation}`, href: '/app/work/objectives' })),
-        ...commerceOrders.map((row) => ({ code: 'commerce_obligation', id: row.id, label: `Order ${row.id}: ${row.status}`, href: '/app/commerce/orders' })),
         ...pendingInvites.map((row) => ({ code: 'pending_invitation', id: row.id, label: row.email, href: `/app/teams/${teamId}/members` })),
     ];
 }

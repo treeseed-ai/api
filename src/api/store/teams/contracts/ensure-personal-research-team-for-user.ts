@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
-export async function ensurePersonalResearchTeamForUserMethod(this: MarketControlPlaneStore, userId) {
+import { ControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
+export async function ensurePersonalResearchTeamForUserMethod(this: ControlPlaneStore, userId) {
     await this.ensureInitialized();
     const user = await this.first(`SELECT id, username, display_name FROM users WHERE id = ? LIMIT 1`, [userId]);
     const validation = validateTeamName(user?.username);

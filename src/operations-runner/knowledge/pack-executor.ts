@@ -1,4 +1,4 @@
-import { buildKnowledgeSnapshotPack } from '@treeseed/sdk/knowledge-packs';
+import { buildKnowledgeSnapshotPack } from '../../api/knowledge/packs/knowledge-pack-builder.ts';
 import { loadPublishedKnowledgeSnapshots } from '../../api/knowledge/published-catalog.ts';
 import { createKnowledgePublicationStorage } from '../../api/knowledge/publication-storage.ts';
 import { createPrivateObjectStorage } from '../../api/storage/private-object-storage.ts';

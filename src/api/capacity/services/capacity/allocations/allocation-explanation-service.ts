@@ -1,4 +1,4 @@
-import { evaluateCapacityAdmission } from '@treeseed/sdk/agent-capacity/allocation';
+import { evaluateCapacityAdmission } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import {

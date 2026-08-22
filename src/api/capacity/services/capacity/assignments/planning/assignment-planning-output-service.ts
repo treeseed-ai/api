@@ -1,7 +1,7 @@
-import { evaluateGovernanceProposalReadiness } from '@treeseed/sdk';
-import { resolveEffectiveGroupMembership } from '@treeseed/sdk/agent-capacity';
+import { evaluateGovernanceProposalReadiness } from '../../../../../governance/proposal-readiness.ts';
+import { resolveEffectiveGroupMembership } from '../../../../../governance/group-membership.ts';
 import type { AgentArtifactManifest,CapacityWorkdayRunRecord,StructuredAgentEstimateRecord } from '@treeseed/sdk/agent-capacity';
-import { validateAgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
+import { validateAgentArtifactManifest } from '../../../../artifact-manifest.ts';
 import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { createHash } from 'node:crypto';

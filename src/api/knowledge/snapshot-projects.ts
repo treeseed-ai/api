@@ -1,5 +1,5 @@
-import { parseBook, parseKnowledgePage, validateKnowledgeCatalog } from '@treeseed/sdk/knowledge';
-import type { KnowledgeSnapshotProject } from '@treeseed/sdk/knowledge-packs';
+import { parseBook, parseKnowledgePage, validateKnowledgeCatalog } from './runtime/catalog.ts';
+import type { KnowledgeSnapshotProject } from './packs/knowledge-pack-builder.ts';
 import { resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
 import { listKnowledgeContentPaths } from './read-model/repository-paths.ts';
 

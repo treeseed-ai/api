@@ -1,4 +1,4 @@
-export { MarketControlPlaneStore,validateProjectSlug } from './api/persistence/store.js';
+export { ControlPlaneStore,validateProjectSlug } from './api/persistence/store.js';
 export { createPlatformApiApp } from './api/support/app.js';
-export { MarketPostgresDatabase,createMarketPostgresDatabase } from './api/support/market-postgres.js';
+export { ControlPlanePostgresDatabase,createControlPlanePostgresDatabase } from './api/support/control-plane-postgres.js';
 export { createApiServer } from './api/support/server.js';

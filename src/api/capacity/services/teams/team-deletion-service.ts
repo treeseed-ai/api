@@ -19,22 +19,8 @@ export async function deleteTeamCapacityAggregate(
 	},
 	teamId: string,
 	confirmation: string,
-	options: { localAcceptanceCleanup?: boolean } = {},
 ) {
-	let prepared;
-	if (options.localAcceptanceCleanup === true) {
-		const team = await database.getTeam(teamId);
-		const name = String(team?.name ?? '');
-		if (!team || !/^capacity-live-(?:acceptance|governance)-/u.test(name)) {
-			return { ok: false, code: 'invalid_acceptance_scope', message: 'Only isolated local acceptance teams can use aggregate cleanup.' };
-		}
-		if (confirmation !== `DELETE ${name}`) {
-			return { ok: false, code: 'confirmation', message: `Type DELETE ${name} to confirm.` };
-		}
-		prepared = { ok: true, team };
-	} else {
-		prepared = await database.prepareTeamDeletion(teamId, confirmation);
-	}
+	const prepared = await database.prepareTeamDeletion(teamId, confirmation);
 	if (!prepared.ok) return prepared;
 	const providerRows = await database.all<{ capacity_provider_id: string }>(
 		`SELECT DISTINCT capacity_provider_id

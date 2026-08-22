@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { KnowledgePublicationManifest } from '@treeseed/sdk/knowledge';
 import { canonicalKnowledgePublicationValue } from './build-publication.ts';
 import type { KnowledgePublicationStorage } from './publication-storage.ts';
-import type { KnowledgeSnapshotProject } from '@treeseed/sdk/knowledge-packs';
+import type { KnowledgeSnapshotProject } from './packs/knowledge-pack-builder.ts';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const storageIds = new WeakMap<object, number>();

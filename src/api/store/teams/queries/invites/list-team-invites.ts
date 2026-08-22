@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeTeamInvite } from "../../../../persistence/store.ts";
-export async function listTeamInvitesMethod(this: MarketControlPlaneStore, teamId) {
+import { ControlPlaneStore,serializeTeamInvite } from "../../../../persistence/store.ts";
+export async function listTeamInvitesMethod(this: ControlPlaneStore, teamId) {
     await this.ensureInitialized();
     const rows = await this.all(`SELECT team_invites.*,
             inviter.display_name AS invited_by_display_name,

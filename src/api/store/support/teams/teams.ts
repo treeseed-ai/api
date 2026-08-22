@@ -5,15 +5,12 @@ export const TEAM_ROLE_CAPABILITIES = {
         'manage_projects',
         'edit_direct',
         'manage_workstreams',
-        'publish_market_listings',
-        'manage_products',
         'manage_billing',
         'approve_remote_execution',
 		'diagnose_workdays',
 		'knowledge_read', 'knowledge_author', 'knowledge_link', 'knowledge_review',
 		'knowledge_publish', 'knowledge_manage_books', 'knowledge_build_packs',
     ],
-    market_steward: ['manage_products', 'publish_market_listings'],
 	project_lead: ['manage_projects', 'edit_direct', 'manage_workstreams', 'approve_remote_execution', 'diagnose_workdays', 'knowledge_read', 'knowledge_author', 'knowledge_link', 'knowledge_review', 'knowledge_publish', 'knowledge_manage_books', 'knowledge_build_packs'],
     service_admin: ['manage_services', 'use_service_credentials', 'authorize_service_operations'],
 	knowledge_admin: ['knowledge_read', 'knowledge_author', 'knowledge_link', 'knowledge_review', 'knowledge_publish', 'knowledge_manage_books', 'knowledge_build_packs'],
@@ -21,13 +18,12 @@ export const TEAM_ROLE_CAPABILITIES = {
 	knowledge_reviewer: ['knowledge_read', 'knowledge_review'],
 	contributor: ['edit_direct', 'manage_workstreams', 'knowledge_read', 'knowledge_author', 'knowledge_link'],
 	reviewer: ['approve_remote_execution', 'diagnose_workdays', 'knowledge_read', 'knowledge_review'],
-    finance: ['manage_billing', 'manage_products'],
+    finance: ['manage_billing'],
 	viewer: ['knowledge_read'],
 };
 
 export const TEAM_ROLE_DESCRIPTIONS = {
     team_owner: 'Own the team portfolio and all project capabilities.',
-    market_steward: 'Manage market products and publish listings.',
     project_lead: 'Lead projects, workstreams, and release promotion.',
     service_admin: 'Manage provider connections, protected credentials, and authorized service operations.',
 	knowledge_admin: 'Manage books, review knowledge, publish revisions, and build knowledge packs.',
@@ -36,7 +32,7 @@ export const TEAM_ROLE_DESCRIPTIONS = {
     contributor: 'Edit direction and move workstreams forward.',
     reviewer: 'Review staged work and approve remote execution.',
     finance: 'Manage billing and commercial product settings.',
-    viewer: 'Read-only participant in team and Commons governance surfaces.',
+    viewer: 'Read-only participant in team governance surfaces.',
 };
 
 export const ALL_TEAM_CAPABILITIES = [...new Set(Object.values(TEAM_ROLE_CAPABILITIES).flat())];
@@ -45,8 +41,6 @@ export const CAPABILITY_PERMISSIONS = {
     manage_projects: 'project:manage',
     edit_direct: 'project:edit',
     manage_workstreams: 'project:workstream:manage',
-    publish_market_listings: 'catalog:publish',
-    manage_products: 'catalog:manage',
     manage_billing: 'billing:manage',
     approve_remote_execution: 'remote:execution:approve',
 	diagnose_workdays: 'workday:diagnose',
@@ -71,7 +65,6 @@ export const TEAM_RESERVED_NAMES = new Set([
     'app',
     'api',
     'auth',
-    'market',
     'templates',
     'admin',
     'settings',
@@ -125,7 +118,7 @@ export function normalizeTeamRoleKey(value, fallback = 'contributor') {
 }
 
 export function primaryTeamRole(roles: any = []) {
-	const preferredOrder = ['team_owner', 'project_lead', 'knowledge_admin', 'service_admin', 'market_steward', 'knowledge_author', 'contributor', 'knowledge_reviewer', 'reviewer', 'finance', 'viewer'];
+	const preferredOrder = ['team_owner', 'project_lead', 'knowledge_admin', 'service_admin', 'knowledge_author', 'contributor', 'knowledge_reviewer', 'reviewer', 'finance', 'viewer'];
     return preferredOrder.find((role) => roles.includes(role)) ?? roles[0] ?? null;
 }
 

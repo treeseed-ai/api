@@ -1,6 +1,6 @@
 import { redactSensitiveValue } from "../../../../../security/redact-sensitive-value.ts";
-import { isoNow,MarketControlPlaneStore,objectValue,serializeTreeDxDeployment } from "../../../../persistence/store.ts";
-export async function updateTreeDxDeploymentMethod(this: MarketControlPlaneStore, deploymentId, patch: any = {}) {
+import { isoNow,ControlPlaneStore,objectValue,serializeTreeDxDeployment } from "../../../../persistence/store.ts";
+export async function updateTreeDxDeploymentMethod(this: ControlPlaneStore, deploymentId, patch: any = {}) {
     await this.ensureInitialized();
     const existing = serializeTreeDxDeployment(await this.first(`SELECT * FROM treedx_deployments WHERE id = ? LIMIT 1`, [deploymentId]));
     if (!existing)

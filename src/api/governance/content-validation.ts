@@ -1,4 +1,4 @@
-import { validateContentRecord,type ContentModel } from '@treeseed/sdk/content-operations';
+import { validateContentRecord,type ContentModel,type ContentValidationResult } from '../content/content-validation.ts';
 
 export class GovernanceContentValidationError extends Error {
 	readonly status = 422;
@@ -9,7 +9,7 @@ export class GovernanceContentValidationError extends Error {
 	}
 }
 
-export function assertGovernanceContent(model: ContentModel,source: string) {
+export function assertGovernanceContent(model: ContentModel,source: string): ContentValidationResult {
 	const validation = validateContentRecord(model,source);
 	if (!validation.ok) throw new GovernanceContentValidationError(model,validation.diagnostics);
 	return validation;

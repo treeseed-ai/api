@@ -15,7 +15,7 @@ RUN npm run build
 ENV NODE_ENV=production \
 	HOST=0.0.0.0 \
 	PORT=3000 \
-	TREESEED_API_PROVIDER_AUTH=market-postgres
+	TREESEED_API_PROVIDER_AUTH=control-plane-postgres
 
 EXPOSE 3000
 

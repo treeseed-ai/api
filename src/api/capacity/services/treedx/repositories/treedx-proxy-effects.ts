@@ -1,7 +1,6 @@
 import { gzipSync } from 'node:zlib';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import type { TreeDxProxyAccess } from './treedx-proxy-access-service.ts';
 import {
 	isLoopbackTreeDxBaseUrl,
 	resolveTreeDxProxyToken,
@@ -20,6 +19,13 @@ export interface TreeDxProxyStore extends CapacityGovernanceDatabase {
 	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
 	getProject(projectId: string): Promise<{ teamId: string } | null>;
 	recordTreeDxProxyAudit(input: Record<string, unknown>): Promise<unknown>;
+}
+
+interface TreeDxProxyAccess {
+	actorType: 'user' | 'capacity_provider';
+	principal: Record<string, unknown>;
+	assignment: Record<string, unknown> | null;
+	handle: Record<string, unknown> | null;
 }
 
 interface ProxyRequest {

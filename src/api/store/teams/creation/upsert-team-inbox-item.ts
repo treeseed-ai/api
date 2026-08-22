@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,serializeTeamInboxItem } from "../../../persistence/store.ts";
-export async function upsertTeamInboxItemMethod(this: MarketControlPlaneStore, teamId, input) {
+import { isoNow,ControlPlaneStore,serializeTeamInboxItem } from "../../../persistence/store.ts";
+export async function upsertTeamInboxItemMethod(this: ControlPlaneStore, teamId, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();

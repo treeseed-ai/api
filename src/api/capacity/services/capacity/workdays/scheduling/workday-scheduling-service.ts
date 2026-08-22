@@ -1,4 +1,4 @@
-import type { CapacityAllocationSetV2 } from '@treeseed/sdk/agent-capacity/allocation';
+import type { CapacityAllocationSetV2 } from '@treeseed/sdk/agent-capacity';
 import { validateWorkdayTimePolicy } from '@treeseed/sdk/agent-capacity';
 import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';

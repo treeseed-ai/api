@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,normalizeTeamRoleKey } from "../../../persistence/store.ts";
-export async function updateTeamMemberRoleMethod(this: MarketControlPlaneStore, teamId, membershipId, roleKey, expectedVersion) {
+import { isoNow,ControlPlaneStore,normalizeTeamRoleKey } from "../../../persistence/store.ts";
+export async function updateTeamMemberRoleMethod(this: ControlPlaneStore, teamId, membershipId, roleKey, expectedVersion) {
     await this.ensureInitialized();
     const role = normalizeTeamRoleKey(roleKey);
     const membership = await this.first(`SELECT * FROM team_memberships WHERE id = ? AND team_id = ? LIMIT 1`, [membershipId, teamId]);

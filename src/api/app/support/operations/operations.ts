@@ -1,17 +1,6 @@
-import { derivePlatformOperationNavigation,isPlatformOperationTerminal } from '@treeseed/sdk';
 import { createHmac,timingSafeEqual } from 'node:crypto';
 import { bearerTokenFromRequest } from '../../../accounts/request-auth.ts';
 import { base64urlJson,jsonError,normalizeBaseUrl,optionalTrimmedString,parseBase64urlJson,requireTeamAccess,safeTokenEquals } from '../index.ts';
-export const AGENT_PROMOTION_APPROVAL_DECISIONS = new Set([
-    'approve',
-    'approve_as_book_content',
-    'request_changes',
-    'request_more_research',
-    'defer',
-    'reject',
-    'approve_release',
-    'reject_release',
-]);
 export const PLATFORM_OPERATION_SCOPES = [
     'platform:runners:register',
     'platform:runners:claim',
@@ -23,10 +12,35 @@ export const PLATFORM_OPERATION_SCOPES = [
     'platform:deploy:write',
     'platform:database:migrate',
 ];
+const operationRecord = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+const operationString = (...values) => values.find((value) => typeof value === 'string' && value.trim())?.trim() ?? null;
+const operationStrings = (value) => Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter(Boolean) : [];
+const nestedOperationRecord = (value, keys) => {
+    let current = value;
+    for (const key of keys) {
+        current = operationRecord(current)?.[key];
+    }
+    return operationRecord(current);
+};
+export function derivePlatformOperationNavigation(operation) {
+    const output = operationRecord(operation?.output) ?? {};
+    const nestedOutput = nestedOperationRecord(output, ['output']) ?? {};
+    const record = nestedOperationRecord(output, ['record']) ?? nestedOperationRecord(nestedOutput, ['record']);
+    const child = nestedOperationRecord(output, ['child']) ?? nestedOperationRecord(nestedOutput, ['child']);
+    const decision = nestedOperationRecord(output, ['decision']) ?? nestedOperationRecord(nestedOutput, ['decision']);
+    return {
+        href: operationString(output.href, nestedOutput.href, record?.href, child?.href, decision?.href),
+        changedPaths: [...new Set([...operationStrings(output.changedPaths), ...operationStrings(nestedOutput.changedPaths)])],
+        branch: operationString(output.branch, nestedOutput.branch),
+        commitSha: operationString(output.commitSha, nestedOutput.commitSha),
+    };
+}
+export function isPlatformOperationTerminal(operation) {
+    return ['succeeded', 'failed', 'cancelled'].includes(String(operation?.status ?? ''));
+}
 export function operationTokenSecret(runtime) {
     return runtime?.resolved?.config?.assertionSecret
         ?? runtime?.resolved?.config?.authSecret
-        ?? process.env.TREESEED_MARKET_OPERATION_TOKEN_SECRET
         ?? process.env.TREESEED_AUTH_SECRET
         ?? 'treeseed-local-operation-token-secret';
 }
@@ -84,24 +98,10 @@ export function principalIsSeedAdmin(principal) {
         && (principal.permissions?.includes?.('*:*:*')
             || principal.permissions?.includes?.('seeds:apply:global')
             || principal.roles?.includes?.('platform_admin')
-            || principal.roles?.includes?.('market_admin')));
+            || principal.roles?.includes?.('platform_admin')));
 }
 export function isTeamApiPrincipal(principal) {
     return Boolean(principal?.roles?.includes?.('team_api_key'));
-}
-export function isLocalAcceptanceServicePrincipal(c, principal) {
-    return c.get('actorType') === 'service'
-        && principal?.metadata?.localAcceptance === true
-        && principalHasPermission(principal, '*:*:*');
-}
-export function decorateJob(baseUrl, job) {
-    if (!job)
-        return null;
-    return {
-        ...job,
-        pollUrl: `${baseUrl}/v1/jobs/${job.id}`,
-        streamUrl: `${baseUrl}/v1/jobs/${job.id}/events`,
-    };
 }
 export function safePlatformOperationOutput(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -135,7 +135,7 @@ export function resolvePlatformRunnerSecret(config) {
     return optionalTrimmedString(config.platformRunnerSecret)
         ?? optionalTrimmedString(config.operationsRunnerSecret)
         ?? optionalTrimmedString(process.env.TREESEED_PLATFORM_RUNNER_SECRET)
-        ?? optionalTrimmedString(process.env.TREESEED_MARKET_OPERATIONS_RUNNER_SECRET);
+        ?? optionalTrimmedString(process.env.TREESEED_PLATFORM_RUNNER_SECRET);
 }
 export function platformOperationMutationError(c, error) {
     const status = Number(error?.status ?? 500);
@@ -176,7 +176,7 @@ export async function ensurePrincipal(c) {
 }
 export function principalHasGlobalPlatformRole(principal) {
     return Boolean(principal?.roles?.includes?.('platform_admin')
-        || principal?.roles?.includes?.('market_admin')
+        || principal?.roles?.includes?.('platform_admin')
         || principal?.permissions?.includes?.('*:*:*'));
 }
 export async function requireServiceParticipantAccess(c, store, request, sellerPermission = 'projects:read:team') {

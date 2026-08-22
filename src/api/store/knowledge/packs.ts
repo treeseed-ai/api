@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BOOK_COLLECTION_SCHEMA_VERSION } from '@treeseed/sdk/knowledge';
-import { isoNow, parseJson, type MarketControlPlaneStore } from '../../persistence/store.ts';
+import { isoNow, parseJson, type ControlPlaneStore } from '../../persistence/store.ts';
 
 function collection(row: any) {
 	return row ? {
@@ -23,17 +23,17 @@ function build(row: any) {
 	} : null;
 }
 
-export async function listBookCollectionsMethod(this: MarketControlPlaneStore, teamId: string) {
+export async function listBookCollectionsMethod(this: ControlPlaneStore, teamId: string) {
 	await this.ensureInitialized();
 	return (await this.all('SELECT * FROM book_collections WHERE team_id = ? ORDER BY name ASC', [teamId])).map(collection);
 }
 
-export async function getBookCollectionMethod(this: MarketControlPlaneStore, id: string) {
+export async function getBookCollectionMethod(this: ControlPlaneStore, id: string) {
 	await this.ensureInitialized();
 	return collection(await this.first('SELECT * FROM book_collections WHERE id = ? LIMIT 1', [id]));
 }
 
-export async function createBookCollectionMethod(this: MarketControlPlaneStore, input: any) {
+export async function createBookCollectionMethod(this: ControlPlaneStore, input: any) {
 	await this.ensureInitialized();
 	const id = input.id ?? randomUUID();
 	const now = isoNow();
@@ -44,7 +44,7 @@ export async function createBookCollectionMethod(this: MarketControlPlaneStore, 
 	return this.getBookCollection(id);
 }
 
-export async function updateBookCollectionMethod(this: MarketControlPlaneStore, id: string, input: any) {
+export async function updateBookCollectionMethod(this: ControlPlaneStore, id: string, input: any) {
 	await this.ensureInitialized();
 	const current = await this.getBookCollection(id);
 	if (!current) return { ok: false, code: 'missing' };
@@ -57,13 +57,13 @@ export async function updateBookCollectionMethod(this: MarketControlPlaneStore, 
 		: { ok: false, code: 'stale', collection: await this.getBookCollection(id) };
 }
 
-export async function deleteBookCollectionMethod(this: MarketControlPlaneStore, id: string, version: number) {
+export async function deleteBookCollectionMethod(this: ControlPlaneStore, id: string, version: number) {
 	await this.ensureInitialized();
 	const result = await this.run('DELETE FROM book_collections WHERE id = ? AND version = ?', [id, version]);
 	return { ok: Number(result.meta?.changes ?? 0) === 1 };
 }
 
-export async function createKnowledgePackBuildMethod(this: MarketControlPlaneStore, input: any) {
+export async function createKnowledgePackBuildMethod(this: ControlPlaneStore, input: any) {
 	await this.ensureInitialized();
 	const id = input.id ?? randomUUID();
 	const now = isoNow();
@@ -75,18 +75,18 @@ export async function createKnowledgePackBuildMethod(this: MarketControlPlaneSto
 	return this.getKnowledgePackBuild(id);
 }
 
-export async function getKnowledgePackBuildMethod(this: MarketControlPlaneStore, id: string) {
+export async function getKnowledgePackBuildMethod(this: ControlPlaneStore, id: string) {
 	await this.ensureInitialized();
 	return build(await this.first('SELECT * FROM knowledge_pack_builds WHERE id = ? LIMIT 1', [id]));
 }
 
-export async function listKnowledgePackBuildsMethod(this: MarketControlPlaneStore, teamId: string) {
+export async function listKnowledgePackBuildsMethod(this: ControlPlaneStore, teamId: string) {
 	await this.ensureInitialized();
 	return (await this.all(`SELECT * FROM knowledge_pack_builds WHERE team_id = ?
 		ORDER BY created_at DESC LIMIT 100`, [teamId])).map(build);
 }
 
-export async function updateKnowledgePackBuildMethod(this: MarketControlPlaneStore, id: string, input: any) {
+export async function updateKnowledgePackBuildMethod(this: ControlPlaneStore, id: string, input: any) {
 	await this.ensureInitialized();
 	const current = await this.getKnowledgePackBuild(id);
 	if (!current) return { ok: false, code: 'missing' };

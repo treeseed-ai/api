@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../persistence/store.ts";
-export async function findUserByEmailMethod(this: MarketControlPlaneStore, email) {
+import { ControlPlaneStore } from "../../../persistence/store.ts";
+export async function findUserByEmailMethod(this: ControlPlaneStore, email) {
     await this.ensureInitialized();
     const normalized = String(email ?? '').trim().toLowerCase();
     if (!normalized)

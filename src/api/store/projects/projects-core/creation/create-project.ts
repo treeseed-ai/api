@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,MarketControlPlaneStore,normalizeProjectArchitecture,validateProjectSlug } from "../../../../persistence/store.ts";
-export async function createProjectMethod(this: MarketControlPlaneStore, teamId, input) {
+import { isoNow,ControlPlaneStore,normalizeProjectArchitecture,validateProjectSlug } from "../../../../persistence/store.ts";
+export async function createProjectMethod(this: ControlPlaneStore, teamId, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();
@@ -29,24 +29,10 @@ export async function createProjectMethod(this: MarketControlPlaneStore, teamId,
         teamId,
         id,
         input.entitlementTier ?? 'free',
-        JSON.stringify({ seededBy: 'market_control_plane' }),
+        JSON.stringify({ seededBy: 'control_plane' }),
         timestamp,
         timestamp,
     ]);
-    await this.upsertCatalogItem(teamId, {
-        id,
-        kind: 'project',
-        slug: slugResult.slug,
-        title: input.name,
-        summary: input.description ?? null,
-        visibility: 'team',
-        listingEnabled: input.metadata?.listingEnabled === true,
-        offerMode: input.entitlementTier ?? 'free',
-        manifestKey: input.metadata?.manifestKey ?? null,
-        artifactKey: input.metadata?.artifactKey ?? null,
-        searchText: [input.name, input.description].filter(Boolean).join(' ').trim() || null,
-        metadata: input.metadata ?? {},
-    });
     if (input.metadata?.architecture) {
         await this.projectArchitectureContentBindings(id, normalizeProjectArchitecture(input.metadata.architecture)).catch(() => null);
     }

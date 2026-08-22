@@ -1,4 +1,3 @@
-import { TreeDxApiError } from '@treeseed/sdk/treedx';
 import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -14,7 +13,7 @@ function text(...values: unknown[]) {
 }
 
 export function terminalWorkspaceAlreadyAbsent(error: unknown) {
-	return error instanceof TreeDxApiError && error.status === 404;
+	return error instanceof Error && 'status' in error && error.status === 404;
 }
 
 export async function closeTerminalAssignmentWorkspace(

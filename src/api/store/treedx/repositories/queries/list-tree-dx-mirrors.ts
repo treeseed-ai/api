@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeTreeDxMirror } from "../../../../persistence/store.ts";
-export async function listTreeDxMirrorsMethod(this: MarketControlPlaneStore, teamId, instanceId = null) {
+import { ControlPlaneStore,serializeTreeDxMirror } from "../../../../persistence/store.ts";
+export async function listTreeDxMirrorsMethod(this: ControlPlaneStore, teamId, instanceId = null) {
     await this.ensureInitialized();
     let rows = instanceId
         ? await this.all(`SELECT * FROM treedx_mirrors WHERE team_id = ? AND instance_id = ? ORDER BY created_at ASC`, [teamId, instanceId])

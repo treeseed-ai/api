@@ -1,5 +1,5 @@
-import { equalHash,isoNow,MarketControlPlaneStore,serializeTeamInvite,stableHash,tokenPrefix } from "../../../../persistence/store.ts";
-export async function getPendingTeamInviteByTokenMethod(this: MarketControlPlaneStore, token) {
+import { equalHash,isoNow,ControlPlaneStore,serializeTeamInvite,stableHash,tokenPrefix } from "../../../../persistence/store.ts";
+export async function getPendingTeamInviteByTokenMethod(this: ControlPlaneStore, token) {
     await this.ensureInitialized();
     const prefix = tokenPrefix(String(token ?? ''));
     const rows = await this.all(`SELECT * FROM team_invites WHERE token_prefix = ? AND status = 'pending'`, [prefix]);

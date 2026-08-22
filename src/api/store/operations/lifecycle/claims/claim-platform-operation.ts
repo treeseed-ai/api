@@ -1,5 +1,5 @@
-import { isoNow,MarketControlPlaneStore,normalizeOperationCapabilities } from "../../../../persistence/store.ts";
-export async function claimPlatformOperationMethod(this: MarketControlPlaneStore, input: any = {}) {
+import { isoNow,ControlPlaneStore,normalizeOperationCapabilities } from "../../../../persistence/store.ts";
+export async function claimPlatformOperationMethod(this: ControlPlaneStore, input: any = {}) {
     await this.ensureInitialized();
     const runnerId = input.runnerId;
     const limit = Math.max(1, Math.min(Number(input.limit ?? 1), 1));

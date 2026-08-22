@@ -1,5 +1,5 @@
 import type { StructuredAgentEstimateRecord,StructuredAgentEstimateStatus } from '@treeseed/sdk/agent-capacity';
-import { validateStructuredAgentEstimate } from '@treeseed/sdk/agent-capacity';
+import { validateStructuredAgentEstimate } from '../../policy/decision-work.ts';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';

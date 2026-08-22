@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,primaryTeamRole,serializeTeam } from "../../../../persistence/store.ts";
-export async function listTeamsForPrincipalMethod(this: MarketControlPlaneStore, principal) {
+import { ControlPlaneStore,primaryTeamRole,serializeTeam } from "../../../../persistence/store.ts";
+export async function listTeamsForPrincipalMethod(this: ControlPlaneStore, principal) {
     await this.ensureInitialized();
     const teamIds = await this.teamIdsForPrincipal(principal);
     if (teamIds.length === 0) {

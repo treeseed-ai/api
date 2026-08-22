@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../persistence/store.ts";
-export function ensureInitializedMethod(this: MarketControlPlaneStore) {
+import { ControlPlaneStore } from "../../../persistence/store.ts";
+export function ensureInitializedMethod(this: ControlPlaneStore) {
     if (!this.initializationPromise) {
 		this.initializationPromise = Promise.resolve()
 			.then(() => this.db.migrate?.())

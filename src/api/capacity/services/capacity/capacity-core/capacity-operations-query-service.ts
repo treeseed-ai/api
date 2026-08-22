@@ -1,10 +1,5 @@
-import type {
-ApprovalRequest,
-CapacityLedgerEntry,
-CapacityReservation,
-CapacityUsageActual,
-ProjectCapacityDiagnostics,
-} from '@treeseed/sdk';
+import type { CapacityLedgerEntry,CapacityReservation,CapacityUsageActual } from '@treeseed/sdk/agent-capacity';
+import type { ApprovalRequest,ProjectCapacityDiagnostics } from '../../../contracts.ts';
 import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import type { ProjectCapacitySummary } from '../observability/capacity-summary-service.ts';

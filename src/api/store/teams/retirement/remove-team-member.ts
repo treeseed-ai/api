@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore } from "../../../persistence/store.ts";
-export async function removeTeamMemberMethod(this: MarketControlPlaneStore, teamId, membershipId, expectedVersion) {
+import { ControlPlaneStore } from "../../../persistence/store.ts";
+export async function removeTeamMemberMethod(this: ControlPlaneStore, teamId, membershipId, expectedVersion) {
     await this.ensureInitialized();
     const membership = await this.first(`SELECT * FROM team_memberships WHERE id = ? AND team_id = ? LIMIT 1`, [membershipId, teamId]);
     if (!membership?.id)

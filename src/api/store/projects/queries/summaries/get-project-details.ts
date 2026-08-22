@@ -1,5 +1,5 @@
-import { MarketControlPlaneStore,serializeEntitlement } from "../../../../persistence/store.ts";
-export async function getProjectDetailsMethod(this: MarketControlPlaneStore, projectId) {
+import { ControlPlaneStore,serializeEntitlement } from "../../../../persistence/store.ts";
+export async function getProjectDetailsMethod(this: ControlPlaneStore, projectId) {
     await this.ensureInitialized();
     const project = await this.getProject(projectId);
     if (!project) {

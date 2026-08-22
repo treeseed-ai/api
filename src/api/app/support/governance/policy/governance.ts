@@ -1,13 +1,10 @@
-import { ensurePrincipal,isLocalAcceptanceServicePrincipal,isTeamApiPrincipal,jsonError,principalHasPermission,principalIsSeedAdmin } from '../../index.ts';
+import { ensurePrincipal,isTeamApiPrincipal,jsonError,principalHasPermission,principalIsSeedAdmin } from '../../index.ts';
 export async function requireTeamAccess(c, store, teamId, permission = null) {
     const auth = await ensurePrincipal(c);
     if (auth.response) {
         return auth;
     }
     const { principal } = auth;
-    if (isLocalAcceptanceServicePrincipal(c, principal)) {
-        return { principal };
-    }
     if (principalIsSeedAdmin(principal)) {
         return { principal };
     }
@@ -27,11 +24,6 @@ export async function requireTeamAccess(c, store, teamId, permission = null) {
         };
     }
     if (permission === 'services:manage:team' && !isTeamApiPrincipal(principal) && !(await store.principalCanManageServices(principal, teamId))) {
-        return {
-            response: jsonError(c, 403, 'Permission denied.', { permission }),
-        };
-    }
-    if (permission === 'vault:manage:team' && !isTeamApiPrincipal(principal) && !(await store.principalCanManageServiceVault(principal, teamId))) {
         return {
             response: jsonError(c, 403, 'Permission denied.', { permission }),
         };

@@ -1,4 +1,5 @@
-import { selectCapacitySupply,type CapacitySupplyCandidate } from '@treeseed/sdk/agent-capacity';
+import { type CapacitySupplyCandidate } from '@treeseed/sdk/agent-capacity';
+import { selectCapacitySupply } from '../../../policy/supply-selection.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable-json.ts';
 import { teamSupplyPolicy } from '../../../domain/supply-policy.ts';

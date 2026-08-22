@@ -79,7 +79,7 @@ function EmailConfirmation({ displayName, confirmationUrl, expiresInSeconds }: {
 					fontWeight: 800,
 					letterSpacing: 0,
 				},
-			}, `Finish creating your Treeseed Market account, ${displayName}.`),
+			}, `Finish creating your TreeSeed account, ${displayName}.`),
 			React.createElement('p', {
 				style: {
 					margin: '12px 0 0',
@@ -96,7 +96,7 @@ function EmailConfirmation({ displayName, confirmationUrl, expiresInSeconds }: {
 						fontSize: 15,
 						lineHeight: '24px',
 					},
-				}, 'Confirm this email address to activate your account and continue to Treeseed Market.'),
+				}, 'Confirm this email address to activate your account and continue to TreeSeed.'),
 				React.createElement('a', {
 					href: confirmationUrl,
 					style: {
@@ -141,7 +141,7 @@ function EmailConfirmation({ displayName, confirmationUrl, expiresInSeconds }: {
 						fontSize: 12,
 						lineHeight: '18px',
 					},
-				}, 'You are receiving this because this email address was used to create a Treeseed Market account.'))))));
+				}, 'You are receiving this because this email address was used to create a TreeSeed account.'))))));
 }
 
 function firstName(value: string) {
@@ -166,7 +166,7 @@ export async function sendEmailConfirmation(
 	]);
 	await sendAuthEmail(context, {
 		to: email,
-		subject: 'Confirm your Treeseed Market email',
+		subject: 'Confirm your TreeSeed email',
 		text,
 		html,
 	});
