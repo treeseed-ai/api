@@ -2,8 +2,6 @@ import { installFeedbackAdministrationRoutes } from "../routes/feedback/administ
 import { installFeedbackSubmissionRoutes } from "../routes/feedback/submission.ts";
 import { installSessionEventRoutes } from "../routes/realtime/session-events.ts";
 import { installClientActionRoutes } from "../routes/realtime/client-actions.ts";
-import { installOperationsPlatformRunnersAndJobsRoutes } from "../routes/operations/operations-platform-runners-and-jobs.ts";
-import { installOperationsProjectJobsRoutes } from "../routes/projects/operations/operations-project-jobs.ts";
 import { installProjectsSettingsAndSummariesRoutes } from "../routes/projects/projects-settings-and-summaries.ts";
 import { installSeedResourceResolutionRoutes } from "../routes/seeds/seed-resource-resolution.ts";
 import { installSeedRunLifecycleRoutes } from "../routes/seeds/seed-run-lifecycle.ts";
@@ -21,11 +19,9 @@ export function installPlatformRoutes(context: any): void {
   installFeedbackAdministrationRoutes(context);
   installSeedResourceResolutionRoutes(context);
   installSeedRunLifecycleRoutes(context);
-  installOperationsPlatformRunnersAndJobsRoutes(context);
   installTreedxTeamServiceAndPublicFederationRoutes(context);
   installTreedxInternalTreedxPublicFederationStatusRoutes(context);
   installTreedxCredentialsMirrorsAndSharesRoutes(context);
   installProjectsSettingsAndSummariesRoutes(context);
-  installOperationsProjectJobsRoutes(context);
   installTeamsStorageAndContentPreviewsRoutes(context);
 }

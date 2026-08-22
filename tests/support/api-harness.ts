@@ -23,7 +23,6 @@ import { ControlPlanePostgresDatabase } from '../../src/api/support/control-plan
 import { ControlPlaneStore } from '../../src/api/persistence/store.js';
 
 import { runOnceWithClient } from '../../src/operations-runner/entrypoint.js';
-import { ControlPlaneRunnerClient } from '../../src/operations-runner/client/control-plane-runner-client.js';
 
 export const packageRoot = process.cwd();
 
@@ -271,4 +270,4 @@ export async function createTeam(app: ReturnType<typeof createTestApp>, token: s
 afterEach(() => {
     vi.restoreAllMocks();
 });
-export { afterEach,AgentSdk,ControlPlaneRunnerClient,Core,createPlatformApiApp,createServer,DataType,describe,execFileSync,existsSync,expect,it,ControlPlaneStore,ControlPlanePostgresDatabase,mkdirSync,mkdtempSync,newDb,resolve,rmSync,runOnceWithClient,tmpdir,vi,writeFileSync };
+export { afterEach,AgentSdk,Core,createPlatformApiApp,createServer,DataType,describe,execFileSync,existsSync,expect,it,ControlPlaneStore,ControlPlanePostgresDatabase,mkdirSync,mkdtempSync,newDb,resolve,rmSync,runOnceWithClient,tmpdir,vi,writeFileSync };

@@ -103,15 +103,6 @@ export function principalIsSeedAdmin(principal) {
 export function isTeamApiPrincipal(principal) {
     return Boolean(principal?.roles?.includes?.('team_api_key'));
 }
-export function decorateJob(baseUrl, job) {
-    if (!job)
-        return null;
-    return {
-        ...job,
-        pollUrl: `${baseUrl}/v1/jobs/${job.id}`,
-        streamUrl: `${baseUrl}/v1/jobs/${job.id}/events`,
-    };
-}
 export function safePlatformOperationOutput(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         return value ?? null;
