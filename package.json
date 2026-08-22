@@ -22,12 +22,10 @@
     "libsodium": "0.7.15",
     "libsodium-sumo": "0.7.15"
   },
-  "types": "./dist/index.d.ts",
   "files": [
     "README.md",
     "dist",
     "drizzle/control-plane",
-    "scripts/support/verify-driver.ts",
     "LICENSE",
     "COMMERCIAL.md"
   ],
@@ -35,37 +33,6 @@
     "treeseed-api": "./dist/api/support/server.js",
     "treeseed-api-operations-runner": "./dist/operations-runner/entrypoint.js",
     "treeseed-api-db-migrate": "./dist/scripts/support/migrate-db.js"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./api/app": {
-      "types": "./dist/api/support/app.d.ts",
-      "default": "./dist/api/support/app.js"
-    },
-    "./api/server": {
-      "types": "./dist/api/support/server.d.ts",
-      "default": "./dist/api/support/server.js"
-    },
-    "./api/store": {
-      "types": "./dist/api/persistence/store.d.ts",
-      "default": "./dist/api/persistence/store.js"
-    },
-    "./api/control-plane-postgres": {
-      "types": "./dist/api/support/control-plane-postgres.d.ts",
-      "default": "./dist/api/support/control-plane-postgres.js"
-    },
-    "./operations-runner": {
-      "types": "./dist/operations-runner/entrypoint.d.ts",
-      "default": "./dist/operations-runner/entrypoint.js"
-    },
-    "./route-descriptors": {
-      "types": "./dist/api/support/route-descriptors.d.ts",
-      "default": "./dist/api/support/route-descriptors.js"
-    },
-    "./admin-api-descriptor.json": "./dist/admin-api-descriptor.json"
   },
   "scripts": {
     "setup": "npm install",
@@ -85,15 +52,10 @@
     "start:runner": "node ./dist/operations-runner/entrypoint.js run",
     "db:migrate": "node ./dist/scripts/support/migrate-db.js",
     "lint": "npm run check:file-lengths && npm run build:dist",
-    "test": "npm run test:unit",
-    "test:unit": "vitest run --config ./vitest.config.ts",
-    "test:postgres:phase1": "vitest run --config ./vitest.config.ts tests/integration/postgres/phase1-postgres-proof.test.ts",
-    "test:capacity-load": "vitest run --config ./vitest.config.ts tests/performance/capacity-admission-settlement-load.test.ts",
-    "test:acceptance": "node --import tsx ./scripts/support/api-acceptance.ts",
+    "test": "npm run test:control-plane",
+    "test:control-plane": "vitest run --config ./vitest.control-plane.config.ts",
     "verify:direct": "npm run release:verify",
-    "verify:local": "TREESEED_VERIFY_DRIVER=direct TMPDIR=/tmp node --import tsx ./scripts/support/verify-driver.ts",
-    "verify:action": "TREESEED_VERIFY_DRIVER=act TMPDIR=/tmp node --import tsx ./scripts/support/verify-driver.ts",
-    "verify": "TMPDIR=/tmp node --import tsx ./scripts/support/verify-driver.ts",
+    "verify": "npm run verify:direct",
     "release:setup": "npm run setup:ci",
     "release:check-tag": "node --import tsx ./scripts/packages/assert-release-tag-version.ts",
     "release:verify": "npm run check:file-lengths && node --import tsx ./scripts/packages/release-verify.ts",
@@ -119,7 +81,6 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "^24.6.0",
     "esbuild": "^0.28.0",
-    "pg-mem": "^3.0.14",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.2"

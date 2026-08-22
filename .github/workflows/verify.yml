@@ -2,9 +2,7 @@ name: Verify
 
 on:
   push:
-    paths-ignore: ["docs/src/content/**"]
   pull_request:
-    paths-ignore: ["docs/src/content/**"]
   workflow_dispatch:
 
 jobs:
@@ -13,26 +11,12 @@ jobs:
     permissions:
       actions: read
       contents: read
-    services:
-      mailpit:
-        image: axllent/mailpit:v1.21
-        ports:
-          - 1025:1025
-          - 8025:8025
     env:
       CI: "true"
-      TREESEED_GITHUB_AUTOMATION_MODE: stub
-      TREESEED_STAGE_WAIT_MODE: skip
-      TREESEED_AGENT_DISABLE_GIT: "true"
-      TREESEED_MAILPIT_URL: http://127.0.0.1:8025
-      TREESEED_MAILPIT_SMTP_HOST: 127.0.0.1
-      TREESEED_MAILPIT_SMTP_PORT: "1025"
       GH_TOKEN: ${{ secrets.TREESEED_GITHUB_TOKEN || github.token }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-node@v4
         with:
@@ -92,16 +76,6 @@ jobs:
           fi
           test -f node_modules/@treeseed/sdk/package.json
           test -d node_modules/@treeseed/sdk/dist
-      - name: Wait for Mailpit
-        run: |
-          for attempt in {1..30}; do
-            if curl -fsS http://127.0.0.1:8025/api/v1/messages >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Mailpit did not become ready" >&2
-          exit 1
       - run: npm run verify:direct
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts

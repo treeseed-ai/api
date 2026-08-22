@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
-import { chmodSync,copyFileSync,cpSync,existsSync,mkdirSync,readdirSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
+import { chmodSync,copyFileSync,existsSync,mkdirSync,readdirSync,readFileSync,rmSync,writeFileSync } from 'node:fs';
 import { dirname,extname,join,relative,resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
@@ -18,14 +18,7 @@ const EXECUTABLE_OUTPUTS = new Set([
 	'scripts/support/migrate-db.js',
 ]);
 const REQUIRED_OUTPUTS = [
-	'index.js',
-	'index.d.ts',
-	'api/support/app.js',
 	'api/support/server.js',
-	'api/persistence/store.js',
-	'api/support/control-plane-postgres.js',
-	'api/support/route-descriptors.js',
-	'admin-api-descriptor.json',
 	'operations-runner/entrypoint.js',
 	'scripts/support/migrate-db.js',
 ];
@@ -48,7 +41,7 @@ function ensureDir(filePath: string) {
 function rewriteRuntimeSpecifiers(contents: string) {
 	return contents
 		.replace(/(['"`])(\.[^'"`\n]+)\.(mjs|ts)\1/g, '$1$2.js$1')
-		.replace(/(['"`])\.\.\/src\//g, '$1../');
+		.replace(/(['"`])((?:\.\.\/)+)src\//g, '$1$2');
 }
 
 function outputPathForSource(filePath: string, sourceRoot: string, outputRoot: string) {
@@ -184,42 +177,6 @@ async function writeAdminApiDescriptorArtifact() {
 	}, null, 2)}\n`, 'utf8');
 }
 
-function preparedSdkPackageRoot(installedSdkRoot: string) {
-	if (existsSync(resolve(installedSdkRoot, 'dist', 'index.js'))) {
-		return { root: installedSdkRoot, cleanup: () => {} };
-	}
-	throw new Error('@treeseed/api requires the installed semantic @treeseed/sdk package to contain its published runtime artifacts.');
-}
-
-function copySdkRuntimeArtifacts() {
-	const sdkRoot = resolve(packageRoot, 'node_modules', '@treeseed', 'sdk');
-	const sdkVendorRoot = resolve(distRoot, 'node_modules', '@treeseed', 'sdk');
-	const sdkPackage = preparedSdkPackageRoot(sdkRoot);
-	const copyRuntimeArtifact = (source: string, destination: string) => {
-		cpSync(source, destination, {
-			recursive: true,
-			filter: (entry) => !entry.endsWith('.d.js'),
-		});
-	};
-	try {
-		const sdkPackageJson = resolve(sdkPackage.root, 'package.json');
-		if (!existsSync(sdkPackageJson)) return;
-		const requiredSdkOutputs = [
-			resolve(sdkPackage.root, 'dist', 'index.js'),
-		];
-		for (const requiredOutput of requiredSdkOutputs) {
-			if (!existsSync(requiredOutput)) {
-				throw new Error(`@treeseed/sdk is missing required runtime artifact: ${relative(sdkPackage.root, requiredOutput)}`);
-			}
-		}
-		mkdirSync(sdkVendorRoot, { recursive: true });
-		copyFileSync(sdkPackageJson, resolve(sdkVendorRoot, 'package.json'));
-		copyRuntimeArtifact(resolve(sdkPackage.root, 'dist'), resolve(sdkVendorRoot, 'dist'));
-	} finally {
-		sdkPackage.cleanup();
-	}
-}
-
 rmSync(distRoot, { recursive: true, force: true });
 
 for (const filePath of walkFiles(srcRoot)) {
@@ -229,12 +186,9 @@ for (const filePath of walkFiles(srcRoot)) {
 	else if (COPY_EXTENSIONS.has(extension)) copyAsset(filePath, srcRoot, distRoot);
 }
 
-for (const filePath of walkFiles(scriptsRoot)) {
-	if (filePath.endsWith('.ts')) transpileScript(filePath);
-}
+transpileScript(resolve(scriptsRoot, 'support', 'migrate-db.ts'));
 
 emitDeclarations();
-copySdkRuntimeArtifacts();
 await assertCapacityRouteDescriptorCoverage();
 await writeAdminApiDescriptorArtifact();
 assertRequiredOutputs();

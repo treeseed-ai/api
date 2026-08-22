@@ -10,7 +10,6 @@ Use this package when you operate or develop the Treeseed backend. Ordinary admi
 
 - operators deploying Treeseed API and operations-runner services
 - maintainers changing backend routes, storage, auth, migrations, or operation execution
-- acceptance-test runners validating hosted API behavior
 - platform engineers wiring TreeDX federation into the Treeseed backend
 - platform engineers implementing provider sessions, assignment leases, mode-run persistence, and capacity ledger settlement
 - maintainers working on accounts, projects, governance, knowledge, capacity, workdays, assignments, OpenAPI, OAuth, or MCP
@@ -51,8 +50,8 @@ Treeseed PostgreSQL targets both services with `TREESEED_DATABASE_URL`. Local de
 ```bash
 npm install
 npm run build
-npm run test:unit
-npm run verify:local
+npm test
+npm run verify
 ```
 
 Runtime scripts:
@@ -74,15 +73,6 @@ npm run dev:compose:logs
 npm run dev:compose:down
 ```
 
-Hosted acceptance:
-
-```bash
-TREESEED_API_BASE_URL=<api-base-url> \
-TREESEED_ACCEPTANCE_SERVICE_ID=<service-id> \
-TREESEED_ACCEPTANCE_SERVICE_SECRET=<service-secret> \
-npm run test:acceptance -- --base-url "$TREESEED_API_BASE_URL"
-```
-
 ## Deployment
 
 Reconciliation must flow through `trsd`; direct provider mutation is diagnostic only.
@@ -96,7 +86,7 @@ npx trsd hosting verify --environment staging --app api --live --json
 npx trsd operations smoke --environment staging --service operationsRunner --json
 ```
 
-The package deploy workflow verifies the package, reconciles the API app, verifies live Railway/API/runner/PostgreSQL/TreeDX state, runs operations-runner smoke checks, and runs hosted API acceptance before going green.
+The package verification workflow builds the package, runs the focused control-plane protocol suite, checks the supported executables, and packs the exact artifact. Hosted deployment remains fail-closed during this cutover.
 
 ## Required Environment
 
@@ -130,19 +120,9 @@ API owns durable provider availability sessions, assignment leases, reservations
 
 Provider runners should receive project-scoped TreeDX proxy handles rather than raw TreeDX credentials. API owns authentication, project scope checks, TreeDX node resolution, credential holding, and forwarding allowed `/v1/dx/projects/:projectId/...` operations.
 
-## Public Exports
+## Supported entrypoints
 
-```text
-@treeseed/api
-@treeseed/api/api/app
-@treeseed/api/api/server
-@treeseed/api/api/store
-@treeseed/api/api/control-plane-postgres
-@treeseed/api/operations-runner
-@treeseed/api/route-descriptors
-```
-
-Published binaries:
+The API does not expose its store, route installers, application internals, or database adapters as an importable library. Its supported package entrypoints are these executables:
 
 ```text
 treeseed-api
