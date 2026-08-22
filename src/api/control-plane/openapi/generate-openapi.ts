@@ -19,7 +19,8 @@ export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http:/
 			operationId: descriptor.operationId,
 			description: descriptor.description,
 			tags: [descriptor.operationId.split('.')[0]],
-			security: descriptor.oauthScopes.length > 0 ? [{ oauth: descriptor.oauthScopes }] : [],
+			security: descriptor.authentication === 'oauth' ? [{ oauth: descriptor.oauthScopes }]
+				: descriptor.authentication === 'provider' ? [{ providerProtocol: [] }] : [],
 			...(descriptor.kind === 'mutation' ? { requestBody: { required: true, content: { 'application/json': { schema: jsonSchema(operation, 'input') } } } } : {}),
 			responses: {
 				'200': { description: 'Successful operation', content: { 'application/json': { schema: { type: 'object', required: ['data'], properties: { data: jsonSchema(operation, 'output'), meta: { type: 'object' }, links: { type: 'object' } } } } } },
@@ -39,6 +40,10 @@ export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http:/
 					scheme: 'bearer',
 					bearerFormat: 'opaque',
 					description: `Discover current OAuth capabilities at ${serverUrl}/.well-known/oauth-authorization-server.`,
+				},
+				providerProtocol: {
+					type: 'apiKey', in: 'header', name: 'Authorization',
+					description: 'TreeSeed provider registration, credential, or provider bearer authorization as required by the selected provider operation.',
 				},
 			},
 			responses: { Problem: { description: 'RFC 9457 problem', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } } },

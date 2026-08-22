@@ -26,6 +26,9 @@ import { createCapacityQueryService } from '../control-plane/repositories/capaci
 import { createAssignmentService } from '../control-plane/repositories/capacity/assignment-service.ts';
 import { createOperationService } from '../control-plane/repositories/operations/operation-service.ts';
 import { createProviderRuntimeService } from '../control-plane/repositories/providers/provider-runtime-service.ts';
+import { createProviderAssignmentService } from '../control-plane/repositories/providers/provider-assignment-service.ts';
+import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
+import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
@@ -185,6 +188,9 @@ export function createPlatformApiApp(options: any = {}) {
 		store,
 	};
 	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config });
+	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents);
+	const providerSignals = createProviderSignalService(capacity);
+	const providerWorkflows = createProviderWorkflowService(capacity);
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
@@ -202,6 +208,9 @@ export function createPlatformApiApp(options: any = {}) {
 			assignments: createAssignmentService(capacity),
 			platformOperations: createOperationService(store),
 			providers,
+			providerAssignments,
+			providerSignals,
+			providerWorkflows,
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),

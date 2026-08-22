@@ -18,6 +18,7 @@ export interface OperationInvocationContext {
 	rawBody?: string;
 	requestHeaders?: Readonly<Record<string, string>>;
 	providerAuth?: unknown;
+	signal?: AbortSignal;
 	authInfo?: AuthInfo;
 	principal?: {
 		id: string;
