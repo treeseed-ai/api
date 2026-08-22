@@ -5,7 +5,6 @@ import { installSessionEventRoutes } from "../routes/realtime/session-events.ts"
 import { installClientActionRoutes } from "../routes/realtime/client-actions.ts";
 import { installGovernanceCommonsProposalsQuestionsAndVotesRoutes } from "../routes/governance/commons/governance-commons-proposals-questions-and-votes.ts";
 import { installGovernanceCommonsReviewsDecisionsAndDelegationsRoutes } from "../routes/governance/commons/governance-commons-reviews-decisions-and-delegations.ts";
-import { installKnowledgeAuthoringRoutes } from "../routes/knowledge/authoring.ts";
 import { installKnowledgePackRoutes } from "../routes/knowledge/packs.ts";
 import { installKnowledgePublicationRoutes } from "../routes/knowledge/publication.ts";
 import { installKnowledgeLifecycleRoutes } from "../routes/knowledge/lifecycle.ts";
@@ -40,7 +39,6 @@ export function installPlatformRoutes(context: any): void {
   installSessionEventRoutes(context);
   installClientActionRoutes(context);
   installFeedbackAdministrationRoutes(context);
-  installKnowledgeAuthoringRoutes(context);
   installKnowledgePackRoutes(context);
   installKnowledgePublicationRoutes(context);
   installKnowledgeLifecycleRoutes(context);

@@ -20,7 +20,8 @@ describe('knowledge catalog operations', () => {
 			diff: vi.fn(async () => ({ changedPaths: [] })), abandon: vi.fn(async () => ({ id: 'workspace-1', status: 'abandoned' })),
 			submit: vi.fn(async () => ({ review: { id: 'review-1' }, commit: { commitSha: 'abc' } })),
 		};
-		const reviews = { list: vi.fn(async () => ({ items: [] })), comment: vi.fn(async () => ({ id: 'comment-1' })) };
+		const reviews = { list: vi.fn(async () => ({ items: [] })), comment: vi.fn(async () => ({ id: 'comment-1' })),
+			decide: vi.fn(async () => ({ id: 'review-1', status: 'approved' })), publish: vi.fn(async () => ({ publication: { id: 'publication-1' } })) };
 		const operations = createKnowledgeOperations({ knowledgeReader: service, knowledgeWorkspaces: workspaces, knowledgeReviews: reviews });
 		expect(operations.map((operation) => operation.binding)).toEqual([
 			CONTROL_PLANE_OPERATIONS.knowledge.teamCatalog, CONTROL_PLANE_OPERATIONS.knowledge.projectCatalog,
@@ -32,6 +33,7 @@ describe('knowledge catalog operations', () => {
 			CONTROL_PLANE_OPERATIONS.knowledge.workspaceDiff, CONTROL_PLANE_OPERATIONS.knowledge.abandonWorkspace,
 			CONTROL_PLANE_OPERATIONS.knowledge.submitWorkspace,
 			CONTROL_PLANE_OPERATIONS.knowledge.reviews, CONTROL_PLANE_OPERATIONS.knowledge.commentReview,
+			CONTROL_PLANE_OPERATIONS.knowledge.decideReview, CONTROL_PLANE_OPERATIONS.knowledge.publishReview,
 		]);
 		const page = operations[5];
 		await page.handler({ path: { pageId: 'page-1' }, query: {}, body: undefined }, {

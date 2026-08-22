@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { reviewPathsMatch, searchRelations } from '../../../src/api/routes/knowledge/authoring.ts';
+import { reviewPathsMatch, searchRelations } from '../../../src/api/routes/knowledge/relation-search.ts';
 import { RelationContentValidationError } from '../../../src/api/routes/knowledge/relation-search.ts';
 
 describe('knowledge relationship search', () => {

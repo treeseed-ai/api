@@ -24,6 +24,8 @@ export interface KnowledgeOperationDependencies {
 	knowledgeReviews: {
 		list(principal: OperationInvocationContext['principal'], teamId: string): Promise<Record<string, any>>;
 		comment(principal: OperationInvocationContext['principal'], reviewId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
+		decide(principal: OperationInvocationContext['principal'], reviewId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
+		publish(principal: OperationInvocationContext['principal'], reviewId: string, input: Record<string, unknown>): Promise<Record<string, any>>;
 	};
 }
 
@@ -49,5 +51,7 @@ export function createKnowledgeOperations(dependencies: KnowledgeOperationDepend
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.submitWorkspace, handler: (input, context) => result(() => dependencies.knowledgeWorkspaces.submit(context.principal, input.path.workspaceId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.reviews, handler: (input, context) => result(() => dependencies.knowledgeReviews.list(context.principal, input.path.teamId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.commentReview, handler: (input, context) => result(() => dependencies.knowledgeReviews.comment(context.principal, input.path.reviewId, input.body as Record<string, unknown>)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.decideReview, handler: (input, context) => result(() => dependencies.knowledgeReviews.decide(context.principal, input.path.reviewId, input.body as Record<string, unknown>)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.knowledge.publishReview, handler: (input, context) => result(() => dependencies.knowledgeReviews.publish(context.principal, input.path.reviewId, input.body as Record<string, unknown>)) },
 	];
 }
