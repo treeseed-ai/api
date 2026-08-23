@@ -18,7 +18,7 @@ export async function ensureProjectKnowledgeBinding(input: {
 	projectSlug: string;
 	contentPath?: string;
 	contentRepositoryRef?: string;
-	contentRepositoryUrl?: string;
+	contentRepositoryUrl?: string | null;
 	contentRepositoryDefaultBranch?: string;
 	env?: NodeJS.ProcessEnv;
 	dependencyState?: { repositoryCatalog?: Promise<any[]> };
@@ -30,7 +30,7 @@ export async function ensureProjectKnowledgeBinding(input: {
 		tenantId: 'treeseed-control-plane',
 		projectId: input.projectId,
 		connectionId: 'treedx-local-seed',
-		scope: { capabilities: ['repos:read'], repositoryIds: ['*'], refs: ['*'], paths: ['**'] },
+		scope: { capabilities: ['repos:read', 'repos:write'], repositoryIds: ['*'], refs: ['*'], paths: ['**'] },
 	}).token;
 	const normalizedBaseUrl = baseUrl.replace(/\/+$/u, '');
 	const transport = new FetchTransport({ baseUrl: normalizedBaseUrl, token, timeoutMs: 15_000, fetchImpl: input.store.config?.fetchImpl });
@@ -42,9 +42,14 @@ export async function ensureProjectKnowledgeBinding(input: {
 	const repositories = input.dependencyState
 		? await (input.dependencyState.repositoryCatalog ??= client.repositories.list() as Promise<any[]>)
 		: await client.repositories.list() as any[];
-	const repository = repositories.find((candidate) =>
+	let repository = repositories.find((candidate) =>
 		candidate.name === repositoryName || candidate.repositoryName === repositoryName);
-	if (!repository) throw new Error(`TreeDX repository ${repositoryName} is not reconciled.`);
+	if (!repository) {
+		const created = await client.repositories.create({ repositoryName, defaultRef: 'refs/heads/main' }) as any;
+		repository = created?.repo ?? created;
+		if (!repository?.repoId) throw new Error(`TreeDX repository ${repositoryName} was not created.`);
+		repositories.push(repository);
+	}
 	const existing = await input.store.getProjectTreeDxLibrary(input.projectId);
 	await input.store.upsertTeamTreeDx(input.teamId, {
 		kind: 'managed_public_federation', provider: 'local', name: 'Local TreeDX knowledge plane',
@@ -54,7 +59,9 @@ export async function ensureProjectKnowledgeBinding(input: {
 	await input.store.upsertProjectTreeDxLibrary(input.projectId, {
 		repositoryId: repository.repoId,
 		contentPath: input.contentPath ?? 'src/content',
-		contentRepositoryUrl: input.contentRepositoryUrl ?? existing?.contentRepositoryUrl,
+		contentRepositoryUrl: input.contentRepositoryUrl === undefined
+			? existing?.contentRepositoryUrl ?? null
+			: input.contentRepositoryUrl,
 		contentRepositoryDefaultBranch: input.contentRepositoryDefaultBranch
 			?? existing?.contentRepositoryDefaultBranch ?? 'main',
 		contentRepositoryRef: input.contentRepositoryRef

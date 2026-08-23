@@ -54,7 +54,7 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
 			contentRepositoryRef: action.payload.architecture?.topology === 'split_site_content'
 				? 'refs/heads/staging'
 				: undefined,
-			contentRepositoryUrl: contentRepository?.payload.gitUrl,
+			contentRepositoryUrl: contentRepository?.payload.gitUrl ?? null,
 			contentRepositoryDefaultBranch: contentRepository?.payload.defaultBranch,
             env,
             dependencyState,
