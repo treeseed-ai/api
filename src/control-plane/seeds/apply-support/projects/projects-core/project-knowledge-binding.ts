@@ -18,7 +18,7 @@ export async function ensureProjectKnowledgeBinding(input: {
 	projectSlug: string;
 	contentPath?: string;
 	contentRepositoryRef?: string;
-	contentRepositoryUrl?: string;
+	contentRepositoryUrl?: string | null;
 	contentRepositoryDefaultBranch?: string;
 	env?: NodeJS.ProcessEnv;
 	dependencyState?: { repositoryCatalog?: Promise<any[]> };
@@ -59,7 +59,9 @@ export async function ensureProjectKnowledgeBinding(input: {
 	await input.store.upsertProjectTreeDxLibrary(input.projectId, {
 		repositoryId: repository.repoId,
 		contentPath: input.contentPath ?? 'src/content',
-		contentRepositoryUrl: input.contentRepositoryUrl ?? existing?.contentRepositoryUrl,
+		contentRepositoryUrl: input.contentRepositoryUrl === undefined
+			? existing?.contentRepositoryUrl ?? null
+			: input.contentRepositoryUrl,
 		contentRepositoryDefaultBranch: input.contentRepositoryDefaultBranch
 			?? existing?.contentRepositoryDefaultBranch ?? 'main',
 		contentRepositoryRef: input.contentRepositoryRef

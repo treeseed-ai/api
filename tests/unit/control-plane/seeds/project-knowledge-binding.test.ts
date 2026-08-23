@@ -25,6 +25,7 @@ describe('seed TreeDX knowledge binding', () => {
 
 		await expect(ensureProjectKnowledgeBinding({
 			store, projectId: 'project-platform', teamId: 'team-treeseed', projectSlug: 'platform',
+			contentRepositoryUrl: null,
 			env: { NODE_ENV: 'test', TREESEED_TREEDX_URL: 'http://127.0.0.1:4000' }, dependencyState: {},
 		})).resolves.toEqual({ kind: 'projectKnowledgeBinding', projectId: 'project-platform', repositoryId: 'repo-platform' });
 		expect(calls).toEqual([
@@ -32,5 +33,6 @@ describe('seed TreeDX knowledge binding', () => {
 			{ method: 'POST', path: '/api/v1/repos', body: { repositoryName: 'treeseed-platform', defaultRef: 'refs/heads/main' } },
 		]);
 		expect(bindings).toHaveLength(2);
+		expect(bindings[1]).toMatchObject({ repositoryId: 'repo-platform', contentRepositoryUrl: null });
 	});
 });
