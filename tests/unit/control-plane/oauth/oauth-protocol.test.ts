@@ -10,6 +10,11 @@ describe('OAuth protocol', () => {
 		const revokeOAuthToken = vi.fn();
 		const provider = {
 			async approveDeviceFlow() { return { ok: true as const }; },
+			async authenticatePassword(identifier: string, password: string) {
+				return identifier === 'human@example.test' && password === 'correct-password'
+					? { principal: { id: 'user-a', displayName: 'Human', scopes: ['treeseed:read'] } }
+					: null;
+			},
 			async startDeviceFlow() {
 				return { deviceCode: 'device-code', userCode: 'ABCD-EFGH', verificationUri: 'http://localhost/approve',
 					verificationUriComplete: 'http://localhost/approve?user_code=ABCD-EFGH', intervalSeconds: 5, expiresInSeconds: 600 };
@@ -44,11 +49,22 @@ describe('OAuth protocol', () => {
 			headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'client_id=trsd&scope=treeseed%3Aread' });
 		expect(await started.json()).toMatchObject({ device_code: 'device-code', user_code: 'ABCD-EFGH', expires_in: 600 });
 		const approvalPage = await app.request('/auth/device/approve?user_code=ABCD-EFGH');
-		expect(await approvalPage.json()).toMatchObject({ user_code: 'ABCD-EFGH', approval_required: true });
+		expect(approvalPage.headers.get('content-type')).toContain('text/html');
+		expect(await approvalPage.text()).toContain('ABCD-EFGH');
 		const deviceApproval = await app.request('/auth/device/approve', { method: 'POST', headers: {
 			'content-type': 'application/json', authorization: 'Bearer user-session',
 		}, body: JSON.stringify({ userCode: 'ABCD-EFGH' }) });
 		expect(deviceApproval.status).toBe(200);
+		const formApproval = await app.request('/auth/device/approve', { method: 'POST', headers: {
+			'content-type': 'application/x-www-form-urlencoded',
+		}, body: new URLSearchParams({ user_code: 'ABCD-EFGH', identifier: 'human@example.test', password: 'correct-password' }).toString() });
+		expect(formApproval.status).toBe(200);
+		expect(await formApproval.text()).toContain('Device approved');
+		const rejectedForm = await app.request('/auth/device/approve', { method: 'POST', headers: {
+			'content-type': 'application/x-www-form-urlencoded',
+		}, body: new URLSearchParams({ user_code: 'ABCD-EFGH', identifier: 'human@example.test', password: 'wrong-password' }).toString() });
+		expect(rejectedForm.status).toBe(401);
+		expect(await rejectedForm.text()).not.toContain('wrong-password');
 		const escalated = await app.request('/oauth/authorize', { method: 'POST', headers: {
 			'content-type': 'application/x-www-form-urlencoded', authorization: 'Bearer user-session',
 		}, body: new URLSearchParams({ client_id: 'trsd', redirect_uri: 'http://127.0.0.1:8765/callback', response_type: 'code',
