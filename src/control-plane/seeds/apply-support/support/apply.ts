@@ -41,7 +41,7 @@ export async function applySeedWithStore(input) {
     const store = input.store ?? await createLocalSeedStore(input.projectRoot, input.env);
     const manifestHash = planned['manifestHash'] ?? manifestHashFor(planned.manifestPath);
     let run = await createSeedRunIfAvailable(store, seedRunInput({
-        plan: planned.plan,
+        plan: input.bundle ? { ...planned.plan, sourceBundle: input.bundle } : planned.plan,
         manifestHash,
         actor: input.actor,
     }));
