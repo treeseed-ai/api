@@ -29,7 +29,9 @@ export async function projectCurrentPayload(store, action, project) {
         return null;
     const repository = action.payload.repository;
     const configuredRepository = project.metadata?.repository ?? {};
-    const hubRepository = (await store.listHubRepositories(project.id)).find((entry) => entry.role === repository.role) ?? null;
+	const hubRepository = repository
+		? (await store.listHubRepositories(project.id)).find((entry) => entry.role === repository.role) ?? null
+		: null;
     return {
         teamKey: action.payload.teamKey,
         slug: project.slug,
