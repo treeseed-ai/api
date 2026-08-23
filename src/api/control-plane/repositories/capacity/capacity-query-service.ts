@@ -28,6 +28,16 @@ export function createCapacityQueryService(store: any) {
 	const evidence = new CapacityOperatorEvidenceService(store);
 	const grants = new CapacityGrantService(store);
 	return {
+		async explain(principal: CapacityPrincipal, teamId: string) {
+			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
+			const [sessions, lanes, active] = await Promise.all([
+				store.listProviderAvailabilitySessionsPage(teamId, { status: 'open', limit: 100 }),
+				store.all(`SELECT lanes.*, providers.display_name AS provider_name FROM capacity_provider_lanes lanes INNER JOIN capacity_providers providers ON providers.id = lanes.capacity_provider_id WHERE lanes.team_id = ? ORDER BY lanes.priority DESC, lanes.purpose`, [teamId]),
+				store.first(`SELECT COUNT(*) AS count FROM capacity_provider_assignments WHERE team_id = ? AND status IN ('pending','leased','returned')`, [teamId]),
+			]);
+			return { teamId, model: 'shared-provider-battery', lanePurposes: ['communication', 'platform', 'workday'],
+				availability: sessions, lanes, activeAssignments: Number(active?.count ?? 0) };
+		},
 		async availability(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			try { return await store.listProviderAvailabilitySessionsPage(teamId, { providerId: query.providerId ?? null,
@@ -42,6 +52,15 @@ export function createCapacityQueryService(store: any) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			try { return await evidence.listLedger(teamId, { projectId: String(query.projectId ?? ''),
 				workDayId: typeof query.workDayId === 'string' ? query.workDayId : null, ...page(query) }); } catch (error) { translate(error); }
+		},
+		async audit(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
+			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
+			const { limit } = page(query);
+			return { items: await store.all(`SELECT * FROM capacity_audit_events WHERE team_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`, [teamId, limit]), page: { limit, hasMore: false, nextCursor: null } };
+		},
+		async lanes(principal: CapacityPrincipal, teamId: string) {
+			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
+			return { items: await store.all(`SELECT * FROM capacity_provider_lanes WHERE team_id = ? ORDER BY priority DESC, purpose, id`, [teamId]) };
 		},
 		async grants(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');

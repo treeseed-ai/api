@@ -194,7 +194,7 @@ export function createPlatformApiApp(options: any = {}) {
 		}
 		await next();
 	});
-	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config });
+	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config }, store);
 	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents);
 	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
@@ -223,7 +223,7 @@ export function createPlatformApiApp(options: any = {}) {
 			providerWorkflows,
 			treeDxProxy,
 			realtime: createRealtimeOperationService(store, sessionEvents),
-			seeds: createSeedOperationService(store, config),
+			seeds: createSeedOperationService(store),
 			feedback: createFeedbackOperationService(store, options),
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),

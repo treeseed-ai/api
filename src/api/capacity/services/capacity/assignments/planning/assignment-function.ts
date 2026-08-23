@@ -24,6 +24,7 @@ import { teamSupplyPolicy } from "../../../../domain/supply-policy.ts";
 import { persistIssuedWorkspaceAuthority } from './workspace-authority-persistence.ts';
 import { compileAssignmentTimeBudget } from './assignment-time-budget.ts';
 import { selectAssignmentLane } from './assignment-lane-selection.ts';
+import { assertBatteryAdmission } from './admission/battery-admission.ts';
 import { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './planning-assignment-contract.ts';
 import { assignmentBootstrapReadPaths,assignmentContextQueryReadPaths,assignmentInstructionTemplateReadPaths,assignmentOperationalContentPaths,assignmentTreeDxProxyHandle,mergeAssignmentPathScopes } from './assignment-operational-paths.ts';
 export { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './planning-assignment-contract.ts';
@@ -146,21 +147,18 @@ async function assignmentInput(
   }
 	const executionKind = demand.metadata.executionKind === 'conversation' ? 'conversation' : demand.metadata.executionKind === 'recovery' ? 'recovery' : demand.metadata.executionKind === 'simulation' ? 'simulation' : 'workday';
 	const triggerKind = demand.metadata.triggerKind === 'discussion' ? 'discussion' : demand.metadata.triggerKind === 'agent-handoff' ? 'agent-handoff' : demand.metadata.triggerKind === 'manual' ? 'manual' : 'scheduled';
-	const lanePurpose = executionKind === 'conversation' ? 'communication' as const : 'operation' as const;
-	if (lanePurpose === 'communication' && executionProvider.maxConcurrentRunners < 2) throw new CapacityGovernanceError(
-		'capacity_provider_communication_not_ready',
-		'Execution provider global concurrency is below the two-slot communication readiness floor.',
-		409,
-		{ executionProviderId: executionProvider.id, maxConcurrentRunners: executionProvider.maxConcurrentRunners },
-	);
+	const requestedLane = demand.metadata.lanePurpose === 'platform' ? 'platform' as const
+		: executionKind === 'conversation' ? 'communication' as const : 'workday' as const;
 	const compatibleLanes = executionProvider.lanes.filter((candidate) => requiredCapabilities.every((capability) => candidate.capabilities.length === 0 || candidate.capabilities.includes(capability)));
 	const laneLoads = new Map<string, number>();
 	for (const candidate of compatibleLanes) {
 		const count = await store.first(`SELECT COUNT(*) AS count FROM capacity_provider_assignments WHERE capacity_provider_id = ? AND lane_id = ? AND status IN ('pending','leased','running')`, [principal.capacityProviderId, candidate.id]);
 		laneLoads.set(candidate.id, Number(count?.count ?? 0));
 	}
-	const { lane, communicationOverflow } = selectAssignmentLane(executionKind, compatibleLanes, laneLoads);
-	if (!lane) throw new CapacityGovernanceError('capacity_provider_lane_unavailable', `No ${lanePurpose} lane satisfies this demand.`, 409, { executionProviderId: executionProvider.id, lanePurpose });
+	const { lane, communicationOverflow } = selectAssignmentLane(executionKind, compatibleLanes, laneLoads, requestedLane);
+	if (!lane) throw new CapacityGovernanceError('capacity_provider_lane_unavailable', `No ${requestedLane} lane satisfies this demand.`, 409, { executionProviderId: executionProvider.id, lanePurpose: requestedLane });
+	await assertBatteryAdmission({ store, teamId: demand.teamId, providerId: principal.capacityProviderId,
+		executionProvider, lanes: compatibleLanes, laneLoads, requestedLane });
 	const effectiveLanePurpose = lane.purpose;
 	const evaluatedMinimumDuration = executionProvider.minimumAssignmentDuration
 		? evaluateMinimumAssignmentDuration(executionProvider.minimumAssignmentDuration, now)

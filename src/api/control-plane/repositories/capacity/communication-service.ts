@@ -14,12 +14,10 @@ function readiness(session: Row) {
 	} catch {
 		return { ...session, communicationReady: false, sourceClosureDigest: null, blockers: ['provider_snapshot_invalid'] };
 	}
-	const ready = providers.some((provider) => Number(provider.maxConcurrentRunners) >= 2
-		&& Array.isArray(provider.lanes)
-		&& provider.lanes.some((lane) => (lane as Row).purpose === 'communication')
-		&& provider.lanes.some((lane) => (lane as Row).purpose === 'operation'));
+	const ready = providers.some((provider) => Array.isArray(provider.lanes)
+		&& provider.lanes.some((lane) => (lane as Row).purpose === 'communication'));
 	return { ...session, sourceClosureDigest: typeof metadata.sourceClosureDigest === 'string' ? metadata.sourceClosureDigest : null,
-		communicationReady: ready, blockers: ready ? [] : ['provider_requires_two_global_slots_and_distinct_communication_operation_lanes'] };
+		communicationReady: ready, blockers: ready ? [] : ['provider_communication_lane_unavailable'] };
 }
 
 function terminal(status: unknown) {

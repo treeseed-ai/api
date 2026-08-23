@@ -26,7 +26,7 @@ export interface SynthesizedProviderAssignmentInput {
 	budget?: import('@treeseed/sdk/agent-capacity').CapacityBudgetV2 | null;
 	executionProviderId?: string | null;
 	laneId?: string | null;
-	lanePurpose?: 'communication' | 'operation' | null;
+	lanePurpose?: 'communication' | 'platform' | 'workday' | null;
 	communicationOverflow?: boolean;
 	executionKind?: 'workday' | 'conversation' | 'simulation' | 'recovery';
 	triggerKind?: 'scheduled' | 'manual' | 'discussion' | 'agent-handoff';

@@ -141,10 +141,7 @@ async function communicationSupply(store: DiscussionInvocationStore, teamId: str
 		 JOIN capacity_execution_providers execution ON execution.capacity_provider_id = membership.capacity_provider_id
 		 JOIN capacity_provider_lanes communication ON communication.capacity_provider_id = membership.capacity_provider_id
 		   AND communication.execution_provider_id = execution.id AND communication.status = 'active' AND communication.purpose = 'communication'
-		 JOIN capacity_provider_lanes operation ON operation.capacity_provider_id = membership.capacity_provider_id
-		   AND operation.execution_provider_id = execution.id AND operation.status = 'active' AND operation.purpose = 'operation'
 		 WHERE membership.team_id = ? AND membership.status = 'approved' AND execution.status = 'active'
-		   AND execution.max_concurrent_runners >= 2
 		 ORDER BY membership.approved_at ASC, execution.id ASC`,
 		[teamId],
 	);
@@ -158,12 +155,11 @@ async function communicationSupply(store: DiscussionInvocationStore, teamId: str
 			[candidate.membership_id, teamId, candidate.capacity_provider_id, now, now, now],
 		);
 		const providers = records(session?.execution_providers_json);
-		const provider = providers.find((value) => text(value.id) === text(candidate.execution_provider_id) && text(value.status) === 'available');
-		if (!provider || Number(provider.maxConcurrentRunners ?? 0) < 2) continue;
+		const provider = providers.find((value) => text(value.id) === text(candidate.execution_provider_id) && text(value.status) === 'active');
+		if (!provider) continue;
 		const lanes = Array.isArray(provider.lanes) ? provider.lanes.map(record) : [];
 		const communicationLane = lanes.find((lane) => lane.purpose === 'communication');
-		const operationLane = lanes.find((lane) => lane.purpose === 'operation');
-		if (!communicationLane || !operationLane) continue;
+		if (!communicationLane) continue;
 		const durations = [provider.minimumAssignmentDuration, communicationLane.minimumAssignmentDuration]
 			.filter((value): value is Parameters<typeof evaluateMinimumAssignmentDuration>[0] => Boolean(value));
 		const minimumSeconds = Math.max(0, ...durations.map((duration) => evaluateMinimumAssignmentDuration(duration, now).minimumWindowSeconds));

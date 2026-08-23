@@ -5,6 +5,8 @@ import { createProviderRegistrationAndAvailabilityOperations } from '../../../..
 function service() {
 	return {
 		authenticator: {},
+		list: vi.fn(), show: vi.fn(), status: vi.fn(), diagnose: vi.fn(), connect: vi.fn(), disconnect: vi.fn(),
+		requests: vi.fn(), request: vi.fn(), approve: vi.fn(), reject: vi.fn(), credentials: vi.fn(), rotateCredentials: vi.fn(), revokeCredentials: vi.fn(),
 		register: vi.fn(), registration: vi.fn(), exchangeCredential: vi.fn(), issueAccessToken: vi.fn(),
 		leave: vi.fn(), rotateIdentity: vi.fn(), rotateCredential: vi.fn(), createAvailability: vi.fn(),
 		refreshAvailability: vi.fn(), closeAvailability: vi.fn(),
@@ -15,6 +17,19 @@ describe('provider registration and availability catalog', () => {
 	it('binds the exact portable SDK operations without route metadata', () => {
 		const operations = createProviderRegistrationAndAvailabilityOperations({ providers: service() });
 		expect(operations.map((operation) => operation.binding)).toEqual([
+			CONTROL_PLANE_OPERATIONS.providers.list,
+			CONTROL_PLANE_OPERATIONS.providers.show,
+			CONTROL_PLANE_OPERATIONS.providers.status,
+			CONTROL_PLANE_OPERATIONS.providers.diagnose,
+			CONTROL_PLANE_OPERATIONS.providers.connect,
+			CONTROL_PLANE_OPERATIONS.providers.disconnect,
+			CONTROL_PLANE_OPERATIONS.providers.requests.list,
+			CONTROL_PLANE_OPERATIONS.providers.requests.show,
+			CONTROL_PLANE_OPERATIONS.providers.requests.approve,
+			CONTROL_PLANE_OPERATIONS.providers.requests.reject,
+			CONTROL_PLANE_OPERATIONS.providers.credentials.status,
+			CONTROL_PLANE_OPERATIONS.providers.credentials.rotate,
+			CONTROL_PLANE_OPERATIONS.providers.credentials.revoke,
 			CONTROL_PLANE_OPERATIONS.providers.register,
 			CONTROL_PLANE_OPERATIONS.providers.registration,
 			CONTROL_PLANE_OPERATIONS.providers.exchangeCredential,

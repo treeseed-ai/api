@@ -253,7 +253,7 @@ async function compilePlanningDemands(
 					const providerFloor = provider.minimumAssignmentDuration
 						? evaluateMinimumAssignmentDuration(provider.minimumAssignmentDuration, now).minimumWindowSeconds : 0;
 					const eligibleLanes = provider.lanes.filter((lane) => run.executionKind === 'conversation'
-						? lane.purpose === 'communication' || lane.purpose === 'operation' : lane.purpose === 'operation');
+						? lane.purpose === 'communication' : lane.purpose === 'workday');
 					const laneFloor = Math.max(0, ...eligibleLanes.flatMap((lane) => lane.minimumAssignmentDuration
 						? [evaluateMinimumAssignmentDuration(lane.minimumAssignmentDuration, now).minimumWindowSeconds] : []));
 					const floor = Math.max(providerFloor, laneFloor);

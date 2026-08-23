@@ -170,7 +170,7 @@ async function eligibleLeaseCandidates(input:{store:ProviderAssignmentLeaseStore
 		if (request.laneId && assignment.laneId !== request.laneId) laneReasons.push('lane_id_mismatch');
 		if (request.lanePurpose && assignment.lanePurpose !== request.lanePurpose) laneReasons.push('lane_purpose_mismatch');
 		if (assignment.executionKind === 'conversation' && assignment.lanePurpose !== 'communication' && assignment.communicationOverflow !== true) laneReasons.push('communication_lane_required');
-		if (assignment.executionKind !== 'conversation' && assignment.lanePurpose !== 'operation') laneReasons.push('operation_lane_required');
+		if (assignment.executionKind !== 'conversation' && !['platform', 'workday'].includes(String(assignment.lanePurpose))) laneReasons.push('execution_lane_required');
 		if (laneReasons.length) {
 			diagnostics.push({ assignmentId: assignment.id, projectId: assignment.projectId, status: assignment.status, leaseState: assignment.leaseState,
 				sessionId: assignment.providerSessionId ?? null, reasons: laneReasons, eligible: false,
