@@ -18,6 +18,7 @@ TrustedUserAssertionClaims,
 UserIdentityProfileInput,
 } from '../types.ts';
 import { PostgresAuthStore } from './postgres-store.ts';
+import { verifyControlPlanePassword } from './password.ts';
 
 function encodePayload(payload: TrustedUserAssertionClaims) {
 	return Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -81,6 +82,18 @@ export class PostgresAuthProvider implements ApiAuthProvider {
 
 	approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{ ok: true }> {
 		return this.store.approveDeviceFlow(request);
+	}
+
+	async authenticatePassword(identifier: string, password: string): Promise<{ principal: ApiPrincipal } | null> {
+		const normalized = identifier.trim();
+		if (!normalized || !password) return null;
+		await this.store.ensureInitialized();
+		const credential = await this.store.first<{ user_id: string; password_hash: string }>(`SELECT user_id, password_hash
+			FROM control_plane_auth_credentials
+			WHERE status = 'active' AND (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?))
+			LIMIT 1`, [normalized, normalized]);
+		if (!credential || !verifyControlPlanePassword(password, credential.password_hash)) return null;
+		return { principal: (await this.store.principalForUser(credential.user_id)).principal };
 	}
 
 	authenticateBearerToken(token: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null> {

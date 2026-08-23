@@ -26,6 +26,7 @@ export interface ApiAuthProvider {
 	exchangeAuthorizationCode(request: AuthorizationCodeExchangeRequest): Promise<TokenRefreshResponse>;
 	revokeOAuthToken(token: string): Promise<void>;
 	approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{ ok: true }>;
+	authenticatePassword?(identifier: string, password: string): Promise<{ principal: ApiPrincipal } | null>;
 	authenticateBearerToken(token: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;
 	authenticateServiceCredential(serviceId: string, secret: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;
 	createPersonalAccessToken(
