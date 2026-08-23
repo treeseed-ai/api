@@ -56,10 +56,13 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 			if (!membership) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', teamId: team.id, blockers: ['provider_enrollment_and_owner_approval_required'] }); continue; }
 			const session = await store.first(`SELECT * FROM capacity_provider_availability_sessions WHERE membership_id = ? AND status = 'open' AND expires_at > ? ORDER BY refreshed_at DESC LIMIT 1`, [membership.id, new Date().toISOString()]);
 			if (!session) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', teamId: team.id, membershipId: membership.id, blockers: ['provider_health_required'] }); continue; }
-			const lanes = await store.all(`SELECT * FROM capacity_provider_lanes WHERE capacity_provider_id = ? AND status = 'active' ORDER BY purpose, id`, [membership.capacity_provider_id]);
+			const lanes = await store.all(`SELECT lane.* FROM capacity_provider_lanes lane
+				INNER JOIN capacity_execution_providers execution_provider ON execution_provider.id = lane.execution_provider_id
+				WHERE lane.capacity_provider_id = ? AND lane.status = 'active' AND execution_provider.status = 'active'
+				ORDER BY lane.purpose, lane.id`, [membership.capacity_provider_id]);
 			const purposes = new Set(lanes.map((lane) => String(lane.purpose)));
 			const missingLanes = prerequisite.requiredLanePurposes.filter((purpose: string) => !purposes.has(purpose));
-			if (missingLanes.length) { receipts.push({ key: prerequisite.key, status: 'blocked', blockers: missingLanes.map((purpose: string) => `lane_missing:${purpose}`) }); continue; }
+			if (missingLanes.length) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', blockers: missingLanes.map((purpose: string) => `lane_execution_unavailable:${purpose}`) }); continue; }
 			const executionProviders = await store.all(`SELECT * FROM capacity_execution_providers WHERE capacity_provider_id = ? AND status = 'active' ORDER BY id`, [membership.capacity_provider_id]);
 			const projectReceipts = [];
 			for (const projectKey of prerequisite.projects) {
