@@ -1,6 +1,7 @@
 import { normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
 import { authorizeCapacityTeam, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
+import { loadDiscussions } from '../../../discussions/content.ts';
 
 type Row = Record<string, unknown>;
 type ProviderSnapshot = Row & { maxConcurrentRunners?: number; lanes?: unknown[] };
@@ -24,6 +25,14 @@ function terminal(status: unknown) {
 	return ['completed', 'failed', 'cancelled', 'returned', 'expired'].includes(String(status));
 }
 
+function record(value: unknown): Row {
+	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
+	if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; }
+	return {};
+}
+
+function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
+
 function requestedLimit(query: Row) {
 	try { return normalizeCapacityPageLimit(query.limit); }
 	catch (error) { throw new CapacityOperationError(400, 'capacity_page_invalid', error instanceof Error ? error.message : String(error)); }
@@ -35,8 +44,73 @@ async function invocation(store: any, teamId: string, invocationId: string) {
 	return row as Row;
 }
 
-export function createCommunicationService(store: any) {
+export function createCommunicationService(store: any, discussions?: { create(principal: CapacityPrincipal, body: Row, idempotencyKey?: string): Promise<Row> }, contentStore: any = store) {
+	async function sendReceipt(teamId: string, discussionId: string) {
+		const invocations = await store.all(`SELECT * FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
+			AND metadata_json->>'discussionId'=? ORDER BY requested_at,id`, [teamId, discussionId]);
+		if (!invocations.length) throw new CapacityOperationError(404, 'communication_send_not_found', 'Communication send not found.');
+		const projectId = text(invocations[0]?.project_id);
+		const history = await loadDiscussions({ store: contentStore, projectId, discussionId, collection: 'messages', limit: 200 });
+		const messages = history.messages as Row[];
+		const sourceMessageId = text(record(invocations[0]?.metadata_json).sourceMessageId);
+		const source = messages.find((message) => text(message.id) === sourceMessageId);
+		const responses = invocations.flatMap((invocation: Row) => {
+			const path = text(invocation.final_message_ref);
+			const message = messages.find((candidate) => text(candidate.path) === path);
+			if (!message) return [];
+			const frontmatter = record(message.frontmatter);
+			return [{ projectId: text(invocation.project_id), agentSlug: text(invocation.agent_id), invocationId: text(invocation.id),
+				assignmentId: text(invocation.assignment_id) || null, messageRef: path, markdown: text(message.body), status: 'responded',
+				createdAt: text(frontmatter.createdAt, text(invocation.completed_at, new Date().toISOString())) }];
+		});
+		const statuses = invocations.map((row: Row) => text(row.status));
+		const finished = statuses.filter((status: string) => ['completed', 'suspended', 'failed', 'cancelled'].includes(status)).length;
+		const status = finished === invocations.length
+			? responses.length === invocations.length ? 'complete' : responses.length ? 'partial' : 'failed'
+			: statuses.some((value: string) => ['admitted', 'running'].includes(value)) ? 'running' : 'queued';
+		const project = await contentStore.getProjectDetails(projectId);
+		const targetStatus = (row: Row) => text(row.final_message_ref) || text(row.status) === 'suspended' ? 'responded'
+			: text(row.status) === 'failed' ? 'failed' : text(row.status) === 'cancelled' ? 'cancelled'
+				: ['admitted', 'running'].includes(text(row.status)) ? 'running' : 'queued';
+		return { schemaVersion: 'treeseed.communication-send-receipt/v1', sendId: discussionId, teamId,
+			channel: text(record(record(invocations[0]?.metadata_json).communication).channel, 'general'),
+			topic: text(record(source?.frontmatter).topic) || null, discussionId, messageRef: text(source?.path), status,
+			targets: invocations.map((row: Row) => ({ projectId: text(row.project_id), projectSlug: text(project?.project?.slug, text(row.project_id)),
+				agentSlug: text(row.agent_id), definitionRevision: text(row.agent_revision), invocationId: text(row.id) || null,
+				status: targetStatus(row) })),
+			responses, createdAt: text(invocations[0]?.requested_at, new Date().toISOString()),
+			updatedAt: text(invocations.at(-1)?.updated_at, text(invocations[0]?.requested_at, new Date().toISOString())) };
+	}
 	return {
+		async send(principal: CapacityPrincipal, teamId: string, channel: string, body: Row, idempotencyKey?: string) {
+			await authorizeCapacityTeam(store, principal, teamId, 'projects:manage:team');
+			if (!discussions) throw new CapacityOperationError(503, 'discussion_service_unavailable', 'Discussion service is unavailable.');
+			const projectId = text(body.projectId);
+			if (!projectId) throw new CapacityOperationError(400, 'communication_project_required', 'Select a project for unambiguous agent resolution.');
+			const details = await contentStore.getProjectDetails(projectId);
+			if (!details?.project || text(details.project.teamId) !== teamId) throw new CapacityOperationError(404, 'communication_project_not_found', 'Project not found in the selected team.');
+			const recipients = Array.isArray(body.recipients) ? body.recipients.map(String) : [];
+			if (!recipients.length) throw new CapacityOperationError(400, 'communication_recipient_required', 'Select at least one project agent.');
+			const projectSlug = text(details.project.slug, projectId);
+			const agentSlugs = recipients.map((value) => {
+				const normalized = value.trim(); const separator = normalized.indexOf('/');
+				if (separator < 0) return normalized;
+				const prefix = normalized.slice(0, separator); const agent = normalized.slice(separator + 1);
+				if (![projectId, projectSlug].includes(prefix)) throw new CapacityOperationError(409, 'communication_target_project_mismatch', `Agent target ${normalized} does not belong to project ${projectSlug}.`);
+				return agent;
+			});
+			const created = await discussions.create(principal, { teamId, projectId, body: body.message, topic: body.topic,
+				recipients: agentSlugs, communication: { channel }, durationSeconds: Math.max(60, Number(body.waitSeconds ?? 0) || 900) }, idempotencyKey);
+			for (const invocation of (Array.isArray(created.invocations) ? created.invocations : [])) {
+				await store.run(`UPDATE agent_invocation_requests SET metadata_json=jsonb_set(COALESCE(metadata_json,'{}'::jsonb),'{communication}',?::jsonb,true),updated_at=? WHERE id=? AND team_id=?`,
+					[JSON.stringify({ channel }), new Date().toISOString(), invocation.id, teamId]);
+			}
+			return sendReceipt(teamId, text(record(created.discussion).id));
+		},
+		async sendStatus(principal: CapacityPrincipal, teamId: string, sendId: string) {
+			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
+			return sendReceipt(teamId, sendId);
+		},
 		async invocations(principal: CapacityPrincipal, teamId: string, query: Row) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			const clauses = ['team_id=?']; const values: unknown[] = [teamId];

@@ -32,6 +32,7 @@ describe('planning and estimate catalog operations', () => {
 		expect(createAgentGovernanceOperations({ agentGovernance: service as never })).toHaveLength(12);
 		expect(createCommunicationOperations({ communications: service as never })
 			.map((operation) => operation.binding.descriptor.operationId)).toEqual([
+				'communications.send', 'communications.sends.show',
 				'communications.invocations.list', 'communications.invocations.show', 'communications.status.show',
 				'communications.handoffs.list', 'communications.client.actions.list', 'communications.invocations.cancel',
 			]);

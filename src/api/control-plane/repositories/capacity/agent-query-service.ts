@@ -7,18 +7,32 @@ function page(query: Record<string, unknown>) {
 	catch (error) { throw new CapacityOperationError(400, 'capacity_page_invalid', error instanceof Error ? error.message : String(error)); }
 }
 function artifactId(value: any) { return String(value?.id ?? value?.taskId ?? ''); }
+function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+
+async function acceptedAgents(store: any, projectId: string) {
+	const page = await store.listProjectAgentClassesPage(projectId, { limit: 200, cursor: null });
+	return (Array.isArray(page?.items) ? page.items : []).flatMap((agentClass: any) => {
+		const agents = record(agentClass.handlerRefs).agents;
+		return Array.isArray(agents) ? agents.map(record).filter((agent) => agent.enabled !== false).map((agent) => ({
+			agentSlug: String(agent.slug ?? agent.agentId ?? ''), name: String(agent.name ?? agent.title ?? agent.slug ?? agent.agentId ?? ''),
+			projectAgentClassId: agentClass.id, allocationClass: agentClass.slug, definitionRevision: String(record(agentClass.metadata).immutableRef ?? agentClass.updatedAt ?? ''),
+			activities: record(agent.activities), chatEnabled: record(record(agent.activities).chat).enabled !== false && Boolean(record(record(agent.activities).chat).handler),
+			status: agentClass.status === 'active' ? 'ready' : agentClass.status,
+		})) : [];
+	}).filter((agent: any) => agent.agentSlug);
+}
 
 export function createAgentQueryService(store: any) {
 	return {
 		async list(principal: CapacityPrincipal, projectId: string) {
 			await authorizeCapacityProject(store, principal, projectId, 'projects:read:team');
-			return await store.getProjectAgentsSummary(projectId, principal) ?? { projectId, agents: [] };
+			const [definitions, runtime] = await Promise.all([acceptedAgents(store, projectId), store.getProjectAgentsSummary(projectId, principal)]);
+			const runtimeBySlug = new Map((Array.isArray(runtime?.agents) ? runtime.agents : []).map((agent: any) => [String(agent.agentSlug ?? agent.slug ?? ''), agent]));
+			return { projectId, agents: definitions.map((agent: any) => ({ ...agent, runtime: runtimeBySlug.get(agent.agentSlug) ?? null })) };
 		},
 		async show(principal: CapacityPrincipal, projectId: string, slug: string) {
 			await authorizeCapacityProject(store, principal, projectId, 'projects:read:team');
-			const summary = await store.getProjectAgentsSummary(projectId, principal);
-			const agent = Array.isArray(summary?.agents)
-				? summary.agents.find((item: any) => String(item?.agentSlug ?? item?.slug ?? '') === slug) : null;
+			const agent = (await acceptedAgents(store, projectId)).find((item: any) => item.agentSlug === slug);
 			if (!agent) throw new CapacityOperationError(404, 'project_agent_not_found', 'Project agent not found.');
 			return { projectId, agent };
 		},

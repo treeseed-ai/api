@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { reportCapacityUsage } from '../../../capacity/services/capacity/accounting/usage-report-service.ts';
 import { settleCapacityReservationExactlyOnce, type CapacitySettlementRequest } from '../../../capacity/services/capacity/accounting/settlement-service.ts';
@@ -7,6 +8,8 @@ import { modeRunActivityEvent } from '../../../capacity/services/capacity/workda
 import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
 import { assignmentActivityType, assignmentRecord as record, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
+import { commitDiscussionMessage } from '../../../discussions/content.ts';
+import { suspendAssignmentForDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-suspension-service.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
@@ -39,7 +42,7 @@ async function ownedAssignment(store: ProviderAssignmentStore, assignmentId: str
 	return assignment;
 }
 
-export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents) {
+export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue) {
 	const store = storeValue;
 	const principal = (auth: unknown, scopes: string[]) => providerPrincipal(auth, scopes);
 	const lifecycle = async (auth: unknown, assignmentId: string, body: Record<string, unknown>, scope: string,
@@ -77,6 +80,38 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		startExecution: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => startAssignmentExecutionWindow(store, principal(auth, ['provider:assignments:write']), assignmentId, body),
 		startCloseout: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => startAssignmentCloseoutWindow(store, principal(auth, ['provider:assignments:write']), assignmentId, body),
 		preflight: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => store.preflightProviderAssignmentCompletion(principal(auth, ['provider:assignments:write']), assignmentId, body),
+		async respondToDiscussion(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
+			const actor = principal(auth, ['provider:assignments:write']);
+			if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Discussion response requires an idempotency key.', 400);
+			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'respond to the discussion for');
+			if (assignment.executionKind !== 'conversation' || !assignment.invocationId) throw new CapacityGovernanceError('provider_discussion_assignment_required', 'Only a conversation assignment can publish a discussion response.', 409);
+			const invocation = await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? AND assignment_id=? LIMIT 1', [assignment.invocationId, actor.teamId, assignment.id]);
+			if (!invocation) throw new CapacityGovernanceError('communication_invocation_provenance_missing', 'Conversation assignment has no authoritative invocation.', 409);
+			if (assignment.status === 'returned' && String(invocation.final_message_ref ?? '').trim()) return {
+				schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId, invocationId: assignment.invocationId,
+				messageRef: String(invocation.final_message_ref), status: 'responded', settledAt: String(invocation.completed_at ?? assignment.returnedAt ?? new Date().toISOString()),
+			};
+			const metadata = record(assignment.metadata); const handle = record(assignment.treedxProxyHandle);
+			const discussionId = String(metadata.discussionId ?? '').trim();
+			const sourceMessageId = String(metadata.sourceMessageId ?? '').trim();
+			const authoringRef = String(handle.branchName ?? '').trim();
+			const markdown = String(body.markdown ?? '').trim();
+			const leaseToken = String(body.leaseToken ?? '').trim();
+			if (!discussionId || !sourceMessageId || !markdown || !leaseToken || leaseToken !== assignment.leaseToken) throw new CapacityGovernanceError('provider_discussion_response_invalid', 'Discussion, response, and exact lease authority are required.', 409);
+			const messageId = `response-${createHash('sha256').update(`${assignmentId}:${idempotencyKey}`).digest('hex').slice(0, 24)}`;
+			const authored = await commitDiscussionMessage({ store: contentStore, projectId: assignment.projectId, teamId: assignment.teamId,
+				principal: { id: assignment.agentId ?? 'project-agent', displayName: assignment.agentId ?? 'Project agent', email: `${assignment.agentId ?? 'agent'}@agents.treeseed.local` },
+				body: markdown, intent: 'discuss', discussionId, messageId, createDiscussion: false, replyTo: sourceMessageId,
+				sourceMessageRefs: assignment.sourceMessageRefs, authorType: 'agent', authorAgentId: assignment.agentId,
+				assignmentId: assignment.id, authoringRef,
+			});
+			await suspendAssignmentForDiscussionResponse(store, { assignmentId, teamId: assignment.teamId, leaseToken,
+				discussionId, messageId: authored.message.id, message: String(body.summary ?? markdown.slice(0, 500)),
+				messagePath: authored.message.path, checkpoint: { summary: body.summary ?? null, usage: record(body.usage), commitSha: authored.commitSha },
+			});
+			return { schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId,
+				invocationId: assignment.invocationId, messageRef: authored.message.path, status: 'responded', settledAt: new Date().toISOString() };
+		},
 		returnAssignment: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'returnProviderAssignment'),
 		complete: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment'),
 		async fail(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
