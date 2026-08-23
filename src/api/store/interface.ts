@@ -124,6 +124,7 @@ declare module '../persistence/store.ts' {
 		getProject: OmitThisParameter<typeof import('./projects/queries/identity/get-project.ts').getProjectMethod>;
 		getProjectByTeamAndSlug: OmitThisParameter<typeof import('./projects/queries/identity/get-project-by-team-and-slug.ts').getProjectByTeamAndSlugMethod>;
 		upsertHubRepository: OmitThisParameter<typeof import('./repositories/creation/upsert-hub-repository.ts').upsertHubRepositoryMethod>;
+		deleteHubRepositoryByRole: OmitThisParameter<typeof import('./repositories/retirement/delete-hub-repository-by-role.ts').deleteHubRepositoryByRoleMethod>;
 		listHubRepositories: OmitThisParameter<typeof import('./support/queries/list-hub-repositories.ts').listHubRepositoriesMethod>;
 		upsertHubContentSource: OmitThisParameter<typeof import('./content/creation/upsert-hub-content-source.ts').upsertHubContentSourceMethod>;
 		getHubContentSource: OmitThisParameter<typeof import('./content/queries/get-hub-content-source.ts').getHubContentSourceMethod>;

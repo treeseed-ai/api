@@ -12,6 +12,10 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
     const repairs = [];
 	const metadata = mergeSeedMetadata(projectSeedMetadata(action.existing?.metadata), action.payload.metadata, action, manifestHash, appliedAt);
     const repositories = await store.listHubRepositories(projectId);
+	if (repositories.some((entry) => entry.role === 'content')) {
+		await store.deleteHubRepositoryByRole(projectId, 'content');
+		repairs.push({ kind: 'legacyContentRepositoryRemoved', projectId });
+	}
 	if (repository) {
 		const existingRepository = repositories.find((entry) => entry.role === repository.role);
 		const currentBranch = repository.repositoryPolicy?.stagingBranch ?? repository.defaultBranch ?? 'main';
