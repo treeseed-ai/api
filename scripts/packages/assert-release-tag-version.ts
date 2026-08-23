@@ -12,8 +12,8 @@ if (!tagName) {
 	process.exit(1);
 }
 
-if (!/^\d+\.\d+\.\d+$/.test(tagName)) {
-	console.error(`Release tag "${tagName}" must be a plain semver tag like "${packageVersion}".`);
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/.test(tagName)) {
+	console.error(`Release tag "${tagName}" must be an exact semver tag without a v prefix or build metadata, like "${packageVersion}".`);
 	process.exit(1);
 }
 

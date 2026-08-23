@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 import { parse } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,6 +7,14 @@ const hash = (marker: string) => `sha256:${marker.repeat(64)}`;
 afterEach(() => rmSync('release-assets', { recursive: true, force: true }));
 
 describe('managed API release publication', () => {
+	it('accepts the exact package RC tag and rejects aliases or build metadata', () => {
+		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/packages/assert-release-tag-version.ts'], { env: { ...process.env, GITHUB_REF_NAME: '0.8.0-rc.9' } });
+		for (const tag of ['v0.8.0-rc.9', '0.8.0-rc.9+rebuilt']) {
+			const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/packages/assert-release-tag-version.ts'], { env: { ...process.env, GITHUB_REF_NAME: tag } });
+			expect(result.status).not.toBe(0);
+		}
+	});
+
 	it('publishes API, runner, and database RC architecture manifests', () => {
 		const workflow = parse(readFileSync('.github/workflows/publish.yml', 'utf8')) as { jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } } }> };
 		const images = workflow.jobs.build?.strategy?.matrix?.include?.map((entry) => entry.image) ?? [];
