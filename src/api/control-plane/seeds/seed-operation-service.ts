@@ -92,6 +92,16 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 		for (const teamId of existingTeams(plan)) if (!await store.principalCanManageTeam(principal, teamId)) throw new SeedOperationError(403, 'seed_team_management_denied', 'The principal cannot manage every team selected by this seed.');
 		if (createsTeams(plan) && !seedAdmin(principal)) throw new SeedOperationError(403, 'seed_global_access_denied', 'Creating teams from a seed requires seed administration access.');
 	}
+	async function latestSourceBundle(name: string) {
+		const runs = await store.listSeedRuns(100);
+		for (const run of runs) {
+			if (String(run.seed_name ?? run.seedName) !== name) continue;
+			const plan = run.plan && typeof run.plan === 'object' ? run.plan as Record<string, unknown> : {};
+			const source = plan.sourceBundle;
+			if (source && typeof source === 'object' && !Array.isArray(source)) return source as SeedBundleV2;
+		}
+		throw new SeedOperationError(409, 'seed_source_bundle_unavailable', 'No applied seed run retains the exact portable source bundle; apply the current bundle before verification.');
+	}
 	return {
 		async validate(principalValue: OperationInvocationContext['principal'], body: Record<string, unknown>) {
 			requirePrincipal(principalValue);
@@ -141,7 +151,7 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 		},
 		async verify(principalValue: OperationInvocationContext['principal'], name: string, body: Record<string, unknown>) {
 			const principal = requirePrincipal(principalValue);
-			const value = bundle(body);
+			const value = body.bundle || body.schemaVersion ? bundle(body) : await latestSourceBundle(name);
 			const validation = await validateBundle(value);
 			if (!validation.ok) throw new SeedOperationError(400, 'seed_bundle_invalid', validation.diagnostics.map((entry) => entry.message).join(' '));
 			const planned = await planSeedWithStore({ seedName: name, environments: environments(body.environments), mode: 'plan', store, bundle: value, actor: { actorType: 'user', principal } });
