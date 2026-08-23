@@ -45,6 +45,8 @@ export async function applySeedWithStore(input) {
         manifestHash,
         actor: input.actor,
     }));
+    let activeActionKey = null;
+    try {
     const hasProduction = planned.plan.environments.includes('prod');
     if (hasProduction) {
         const approval = input.approvalRequestId ? await store.getApprovalRequest(input.approvalRequestId) : null;
@@ -77,6 +79,7 @@ export async function applySeedWithStore(input) {
     const repairs = [];
     const dependencyState = {};
 	for (const action of selectedActions(planned.plan)) {
+		activeActionKey = action.key;
         if (action.existing?.id) {
             if (action.kind === 'team')
                 ids.teams.set(action.key, action.existing.id);
@@ -91,6 +94,7 @@ export async function applySeedWithStore(input) {
 			plan: planned.plan,
 		}));
 	}
+	activeActionKey = null;
 	const membershipClaims = {
 		declared: selectedActions(planned.plan).filter((action) => action.kind === 'teamMembership').map((action) => action.key),
 		removed: await store.retireUndeclaredSeedTeamMembershipClaims(
@@ -138,6 +142,16 @@ export async function applySeedWithStore(input) {
         result,
         run,
     };
+    } catch (error) {
+        const message = activeActionKey
+            ? `Seed application failed while reconciling ${activeActionKey}.`
+            : 'Seed application failed during authoritative read-back.';
+        run = await updateSeedRunIfAvailable(store, run?.id, {
+            state: 'failed',
+            error: { code: 'seed_apply_failed', message, actionKey: activeActionKey },
+        }) ?? run;
+        throw error;
+    }
 }
 
 export async function applyLocalSeedFromCli(input) {

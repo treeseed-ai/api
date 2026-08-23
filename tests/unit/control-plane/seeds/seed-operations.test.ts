@@ -3,6 +3,7 @@ import { CONTROL_PLANE_OPERATIONS, digestSeedBundle } from '@treeseed/sdk/operat
 import { createSeedOperations } from '../../../../src/api/control-plane/catalog/seeds/index.ts';
 import { createSeedOperationService } from '../../../../src/api/control-plane/seeds/seed-operation-service.ts';
 import { validateSeedSource } from '../../../../src/control-plane/seeds/contracts/index.ts';
+import { actionIsUnchanged } from '../../../../src/control-plane/seeds/apply-support/index.ts';
 
 describe('seed catalog operations', () => {
 	it('binds the complete SDK-owned portable seed lifecycle', () => {
@@ -48,5 +49,16 @@ describe('seed catalog operations', () => {
 		expect(result).toMatchObject({ ok: false, diagnostics: [expect.objectContaining({
 			code: 'seed.unsupported_resource_kind', path: 'resources.products',
 		})] });
+	});
+
+	it('does not treat an action-only resource key as persisted-state drift', () => {
+		expect(actionIsUnchanged({ payload: {
+			key: 'team:treeseed', slug: 'treeseed',
+			metadata: { seed: { name: 'treeseed', resourceKey: 'team:treeseed', version: 2 } },
+		} }, {
+			slug: 'treeseed',
+			metadata: { seed: { name: 'treeseed', resourceKey: 'team:treeseed', version: 2,
+				lastAppliedAt: '2026-08-23T00:00:00.000Z', manifestHash: 'sha256:test' } },
+		})).toBe(true);
 	});
 });
