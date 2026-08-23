@@ -1,7 +1,9 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
+import type { TreeDxProxyOperationService } from '../repositories/treedx/proxy-operation-service.ts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
 
 export interface ProjectOperationDependencies {
+	treeDxProxy: TreeDxProxyOperationService;
 	capacity: {
 		evaluateProjectDeletionBlockers(projectId: string): Promise<Array<Record<string, unknown>>>;
 	};
@@ -16,6 +18,7 @@ export interface ProjectOperationDependencies {
 		principalCanManageTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
 		createProject(teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
 		updateProject(projectId: string, input: Record<string, unknown>): Promise<Record<string, any> | null>;
+		getProjectTreeDxLibrary(projectId: string): Promise<Record<string, any> | null>;
 		run(query: string, parameters?: unknown[]): Promise<unknown>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
@@ -197,16 +200,39 @@ export function createProjectDeleteOperation(dependencies: ProjectOperationDepen
 		binding: CONTROL_PLANE_OPERATIONS.projects.remove,
 		async handler(input, context) {
 			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			const currentRevision = String(access.details.project.updatedAt ?? '');
+			if (currentRevision !== context.ifMatch) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed since it was read.');
 			const expected = `DELETE ${access.details.project.slug}`;
 			if ((input.body as Record<string, unknown>).confirmation !== expected) {
 				throw new ControlPlaneOperationError(400, 'confirmation_invalid', `Type ${expected} to confirm.`);
 			}
 			const blockers = await dependencies.capacity.evaluateProjectDeletionBlockers(input.path.projectId);
 			if (blockers.length) throw new ControlPlaneOperationError(409, 'project_blocked', 'The project still has active work and cannot be deleted.');
+			const pending = await dependencies.store.updateProject(input.path.projectId, {
+				metadata: { ...access.details.project.metadata, inventory: {
+					status: 'deletion_pending', requestedAt: new Date().toISOString(), requestedBy: access.principal.id,
+				} },
+				expectedRevision: context.ifMatch,
+			});
+			if (!pending) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed while deletion was being prepared.');
+			const library = await dependencies.store.getProjectTreeDxLibrary(input.path.projectId);
+			let virtualKnowledgeRepository: unknown = null;
+			if (library?.repositoryId) {
+				try {
+					virtualKnowledgeRepository = await dependencies.treeDxProxy.invoke(
+						CONTROL_PLANE_OPERATIONS.treedx.repositories.retire.descriptor,
+						{ path: { projectId: input.path.projectId, repoId: String(library.repositoryId) }, query: {}, body: {} },
+						context,
+					);
+				} catch (error) {
+					const upstream = error as { status?: number; code?: string; message?: string };
+					throw new ControlPlaneOperationError((upstream.status ?? 503) as 503, upstream.code ?? 'treedx_retirement_failed', upstream.message ?? 'The virtual knowledge repository could not be retired.');
+				}
+			}
 			await dependencies.store.run('DELETE FROM projects WHERE id = ?', [input.path.projectId]);
 			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
 				eventType: 'project.deleted', targetType: 'project', targetId: input.path.projectId });
-			return { id: input.path.projectId, deleted: true };
+			return { id: input.path.projectId, deleted: true, virtualKnowledgeRepository };
 		},
 	};
 }
