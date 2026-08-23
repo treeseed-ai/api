@@ -36,7 +36,7 @@ export async function reconcilePlanWithStore(plan, store) {
 				teamKey: action.payload.teamKey,
 				email: existing.normalized_email,
 				roles: JSON.parse(existing.roles_json ?? '[]'),
-				missingUser: 'defer',
+				missingUser: action.payload.missingUser,
 				metadata: action.payload.metadata,
 			} : null;
 			if (existing?.status === 'removed') currentPayload = null;

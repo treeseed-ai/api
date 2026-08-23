@@ -11,6 +11,35 @@ function projectRepositoryName(projectSlug: string) {
 	return normalized || 'project';
 }
 
+interface TreeDxRepositorySummary {
+	repoId: string;
+	repositoryName?: string;
+	name?: string;
+	defaultRef?: string;
+}
+
+function repositoryCatalog(response: unknown): TreeDxRepositorySummary[] {
+	if (!response || typeof response !== 'object' || !Array.isArray((response as { repos?: unknown }).repos)) {
+		throw new Error('TreeDX repository catalog response is invalid.');
+	}
+	return (response as { repos: unknown[] }).repos.map((repository) => {
+		if (!repository || typeof repository !== 'object' || typeof (repository as { repoId?: unknown }).repoId !== 'string') {
+			throw new Error('TreeDX repository catalog contains an invalid repository.');
+		}
+		return repository as TreeDxRepositorySummary;
+	});
+}
+
+function createdRepository(response: unknown): TreeDxRepositorySummary {
+	const repository = response && typeof response === 'object'
+		? (response as { repo?: unknown }).repo
+		: undefined;
+	if (!repository || typeof repository !== 'object' || typeof (repository as { repoId?: unknown }).repoId !== 'string') {
+		throw new Error('TreeDX repository creation response is invalid.');
+	}
+	return repository as TreeDxRepositorySummary;
+}
+
 export async function ensureProjectKnowledgeBinding(input: {
 	store: any;
 	projectId: string;
@@ -21,7 +50,7 @@ export async function ensureProjectKnowledgeBinding(input: {
 	contentRepositoryUrl?: string | null;
 	contentRepositoryDefaultBranch?: string;
 	env?: NodeJS.ProcessEnv;
-	dependencyState?: { repositoryCatalog?: Promise<any[]> };
+	dependencyState?: { repositoryCatalog?: Promise<unknown> };
 }) {
 	const env = input.env ?? process.env;
 	const baseUrl = text(env.TREESEED_TREEDX_URL, env.TREESEED_TREEDX_BASE_URL, 'http://127.0.0.1:4000');
@@ -39,15 +68,14 @@ export async function ensureProjectKnowledgeBinding(input: {
 		transport,
 	});
 	const repositoryName = projectRepositoryName(input.projectSlug);
-	const repositories = input.dependencyState
-		? await (input.dependencyState.repositoryCatalog ??= client.repositories.list() as Promise<any[]>)
-		: await client.repositories.list() as any[];
+	const catalogResponse = input.dependencyState
+		? await (input.dependencyState.repositoryCatalog ??= client.repositories.list())
+		: await client.repositories.list();
+	const repositories = repositoryCatalog(catalogResponse);
 	let repository = repositories.find((candidate) =>
 		candidate.name === repositoryName || candidate.repositoryName === repositoryName);
 	if (!repository) {
-		const created = await client.repositories.create({ repositoryName, defaultRef: 'refs/heads/main' }) as any;
-		repository = created?.repo ?? created;
-		if (!repository?.repoId) throw new Error(`TreeDX repository ${repositoryName} was not created.`);
+		repository = createdRepository(await client.repositories.create({ repositoryName, defaultRef: 'refs/heads/main' }));
 		repositories.push(repository);
 	}
 	const existing = await input.store.getProjectTreeDxLibrary(input.projectId);
