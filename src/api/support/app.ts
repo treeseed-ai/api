@@ -33,6 +33,7 @@ import { createProviderAssignmentService } from '../control-plane/repositories/p
 import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
+import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
 import { createSeedOperationService } from '../control-plane/seeds/seed-operation-service.ts';
 import { createFeedbackOperationService } from '../control-plane/feedback/feedback-operation-service.ts';
@@ -102,6 +103,7 @@ export function createPlatformApiApp(options: any = {}) {
 		fetchImpl: options.fetchImpl ?? fetch,
 	}, db);
 	const authProvider = authProviderFor(options, config, db);
+	const delegationAuthority = options.treeDxDelegationAuthority ?? treeDxDelegationAuthority();
 	const capacity = createCapacityControlPlane(store);
 	const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
 	const confirmations = new ConfirmationService(config.authSecret, {
@@ -123,9 +125,14 @@ export function createPlatformApiApp(options: any = {}) {
 	const runtime = {
 		resolved: { config, surfaces: { auth: true, templates: false, sdk: false, operations: false, ...(options.surfaces ?? {}) } },
 		runtimeProviders,
+		treeDxDelegationAuthority: delegationAuthority,
+		fetchImpl: options.fetchImpl ?? fetch,
 		internalPrefix: options.internalPrefix ?? '/internal/core',
 	};
 	const app = new Hono();
+	app.get('/.well-known/treedx-jwks.json', (context) => context.json(delegationAuthority.jwks(), 200, {
+		'cache-control': 'public, max-age=60, stale-while-revalidate=300',
+	}));
 
 	app.use('*', async (context, next) => {
 		context.set('requestId', context.req.header('x-request-id')?.trim() || randomUUID());

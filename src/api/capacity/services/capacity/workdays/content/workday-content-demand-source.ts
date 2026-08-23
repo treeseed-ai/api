@@ -1,4 +1,3 @@
-import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
@@ -43,7 +42,7 @@ export async function listTreeDxPlanningDemandSources(
 		capabilities: ['repos:read', 'files:read', 'files:search'],
 	});
 	if (!connection) return [];
-	const client = new TreeDxClient({ ...connection, repoId: connection.repositoryId, timeoutMs: 15_000, fetch: connection.fetchImpl });
+	const client = connection.client;
 	const root = capacityWorkdayContentRoot(project).replace(/\/+$/u, '');
 	const selectedObjectives = new Set((Array.isArray(run.parameters.objectiveRefs) ? run.parameters.objectiveRefs : [])
 		.map((value) => text(value).replace(/^objective:/u, '')).filter(Boolean));

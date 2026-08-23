@@ -64,7 +64,7 @@ function assertions(test: ContextQueryTestDefinition, stats: ReturnType<typeof r
 	];
 }
 
-export async function executeContextQueryTest(input: { query: DeclarativeContextQuery; test: ContextQueryTestDefinition; execute(request: Record<string, unknown>): Promise<unknown>; now?: () => Date }) {
+export async function executeContextQueryTest(input: { query: DeclarativeContextQuery; test: ContextQueryTestDefinition; execute(request: Record<string, unknown>): Promise<unknown>; now?: () => Date }): Promise<Record<string, unknown>> {
 	if (!input.test.queryRef) return { ok: false, status: 'failing' as const, phase: 'identity' as const, errors: ['A single-query test requires queryRef.'], warnings: [] };
 	const compiled = compileDeclarativeContextQuery(input.query);
 	if (!compiled.ok || !compiled.compiled) return { ok: false, status: 'failing' as const, phase: 'compile' as const, errors: compiled.errors, warnings: compiled.warnings };
@@ -74,7 +74,7 @@ export async function executeContextQueryTest(input: { query: DeclarativeContext
 	return { ok, status: ok ? 'passing' as const : 'failing' as const, phase: 'executed' as const, checkedAt, queryRef: input.test.queryRef, testRef: input.test.testRef, query: compiled.compiled.query, request: compiled.compiled.request, latencyMs, stats, assertions: checked, warnings: compiled.warnings, result };
 }
 
-export async function executeContextQuerySetTest(input: { querySet: ContextQuerySetDefinition; queries: DeclarativeContextQuery[]; test: ContextQueryTestDefinition; execute(query: DeclarativeContextQuery, request: Record<string, unknown>): Promise<unknown>; now?: () => Date }) {
+export async function executeContextQuerySetTest(input: { querySet: ContextQuerySetDefinition; queries: DeclarativeContextQuery[]; test: ContextQueryTestDefinition; execute(query: DeclarativeContextQuery, request: Record<string, unknown>): Promise<unknown>; now?: () => Date }): Promise<Record<string, unknown>> {
 	const expected = input.test.querySetRef;
 	if (!expected || expected.id !== input.querySet.id || expected.revision !== input.querySet.revision) return { ok: false, status: 'stale' as const, phase: 'identity' as const, errors: ['Query-set id and revision do not match the immutable test reference.'], warnings: [] };
 	const byRef = new Map(input.queries.map((query) => [`${query.id}@${query.revision}`, query])); const ordered = input.querySet.queryRefs.map((ref) => byRef.get(`${ref.id}@${ref.revision}`));

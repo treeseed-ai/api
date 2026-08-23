@@ -1,17 +1,6 @@
-import { gzipSync } from 'node:zlib';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import {
-	isLoopbackTreeDxBaseUrl,
-	resolveTreeDxProxyToken,
-	treeDxProxyActorId,
-	treeDxProxyTenantId,
-	treeDxRuntimeEnv,
-	treeDxTokenScope,
-	type TreeDxProxyRuntime,
-	type TreeDxProxyScope,
-} from './treedx-proxy-token-service.ts';
-import { readBoundedTreeDxJson } from './treedx-response.ts';
+import type { TreeDxProxyScope } from './treedx-proxy-token-service.ts';
 import { projectTreeDxCommitSignals } from './treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from './treedx-authoring-journal.ts';
 
@@ -28,92 +17,10 @@ interface TreeDxProxyAccess {
 	handle: Record<string, unknown> | null;
 }
 
-interface ProxyRequest {
-	baseUrl: string;
-	token: string;
-	projectId: string;
-	method: 'GET' | 'POST' | 'PUT';
-	path: string;
-	body?: unknown;
-	fetchImpl: typeof fetch;
-}
+type ProxyMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-export async function requestTreeDxJson(input: ProxyRequest) {
-	let response: Response;
-	try {
-		const serialized = input.body === undefined ? undefined : JSON.stringify(input.body);
-		const gzip = input.path.endsWith('/changesets') && serialized !== undefined
-			&& Buffer.byteLength(serialized, 'utf8') >= 1_024;
-		response = await input.fetchImpl(`${input.baseUrl}${input.path}`, {
-			method: input.method,
-			headers: {
-				accept: 'application/json',
-				authorization: `Bearer ${input.token}`,
-				...(input.body === undefined ? {} : { 'content-type': 'application/json' }),
-				...(gzip ? { 'content-encoding': 'gzip' } : {}),
-			},
-			body: serialized === undefined ? undefined : gzip ? gzipSync(serialized) : serialized,
-		});
-	} catch (error) {
-		throw new CapacityGovernanceError('treedx_runtime_unavailable', 'TreeDX runtime is unavailable for this project.', 503, {
-			projectId: input.projectId,
-			details: error instanceof Error ? error.message : String(error),
-		});
-	}
-	const payload = await readBoundedTreeDxJson(response);
-	if (!response.ok) {
-		throw new CapacityGovernanceError('treedx_proxy_request_failed', `TreeDX ${input.method} ${input.path} failed.`, response.status, {
-			status: response.status,
-			details: record(payload).error ?? payload,
-		});
-	}
-	return payload;
-}
-
-export async function grantCreatedLoopbackRepository(input: {
-	runtime: TreeDxProxyRuntime;
-	baseUrl: string;
-	token: string;
-	projectId: string;
-	method: ProxyRequest['method'];
-	path: string;
-	payload: unknown;
-	fetchImpl: typeof fetch;
-}) {
-	if (input.method !== 'POST' || input.path !== '/api/v1/repos' || !isLoopbackTreeDxBaseUrl(input.baseUrl)) return;
-	const payload = record(input.payload);
-	const repository = record(payload.repo ?? payload.repository ?? input.payload);
-	const rawRepositoryId = repository.repoId ?? repository.id ?? null;
-	if (typeof rawRepositoryId !== 'string') return;
-	const environment = treeDxRuntimeEnv(input.runtime);
-	const grantToken = resolveTreeDxProxyToken(input.runtime, input.baseUrl, input.projectId, treeDxTokenScope({
-		repoId: rawRepositoryId,
-		capabilities: ['policy:write'],
-		paths: ['**'],
-	}));
-	const response = await input.fetchImpl(`${input.baseUrl}/api/v1/policy/grants`, {
-		method: 'POST',
-		headers: { accept: 'application/json', authorization: `Bearer ${grantToken ?? input.token}`, 'content-type': 'application/json' },
-		body: JSON.stringify({
-			actorId: treeDxProxyActorId(environment),
-			tenantId: treeDxProxyTenantId(environment),
-			repoIds: [rawRepositoryId],
-			capabilities: ['repos:read', 'repos:write', 'files:read', 'files:write', 'files:search', 'graph:query', 'graph:refresh', 'workspace:create', 'git:read', 'git:diff', 'git:commit', 'git:fetch'],
-			refs: ['*'],
-			paths: ['**'],
-		}),
-	});
-	const grant = await readBoundedTreeDxJson(response);
-	if (!response.ok) {
-		throw new CapacityGovernanceError('treedx_repository_grant_failed', 'TreeDX repository was created but proxy capability grant failed.', response.status, {
-			repositoryId: rawRepositoryId,
-			details: record(grant).error ?? grant,
-		});
-	}
 }
 
 function actorId(access: TreeDxProxyAccess): string | null {
@@ -126,7 +33,7 @@ export async function recordTreeDxProxySuccess(input: {
 	store: TreeDxProxyStore;
 	access: TreeDxProxyAccess;
 	projectId: string;
-	method: ProxyRequest['method'];
+	method: ProxyMethod;
 	path: string;
 	tokenScope: TreeDxProxyScope;
 	assignmentId: string | null;
@@ -151,7 +58,7 @@ export async function projectTreeDxProxyCommit(input: {
 	store: TreeDxProxyStore;
 	access: TreeDxProxyAccess;
 	projectId: string;
-	method: ProxyRequest['method'];
+	method: ProxyMethod;
 	path: string;
 	body?: unknown;
 	payload: unknown;

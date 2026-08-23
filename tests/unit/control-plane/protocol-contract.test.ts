@@ -7,6 +7,7 @@ import { OperationRegistry, type BoundOperation } from '../../../src/api/control
 import { installControlPlaneProtocolRoutes } from '../../../src/api/control-plane/http/protocol-routes.ts';
 import { generateOpenApi, openApiDigest } from '../../../src/api/control-plane/openapi/generate-openapi.ts';
 import { ConfirmationService, encodeConfirmation } from '../../../src/api/control-plane/confirmation/confirmation-service.ts';
+import { createMcpCatalog } from '../../../src/api/control-plane/mcp/mcp-catalog.ts';
 
 describe('control-plane protocol contract', () => {
 	const authenticate = async (token: string) => token === 'test-token' ? {
@@ -408,7 +409,8 @@ describe('control-plane protocol contract', () => {
 
 	it('serves discovery and tools through the official modern client', async () => {
 		const app = new Hono();
-		installControlPlaneProtocolRoutes(app, authenticate, undefined, createApiControlPlaneOperations(apiDependencies()));
+		const registry = createApiControlPlaneOperations(apiDependencies());
+		installControlPlaneProtocolRoutes(app, authenticate, undefined, registry);
 		const transport = new StreamableHTTPClientTransport(new URL('http://localhost/mcp'), {
 			authProvider: { token: async () => 'test-token' },
 			fetch: async (input, init) => {
@@ -430,7 +432,8 @@ describe('control-plane protocol contract', () => {
 			const resources = await client.listResources();
 			expect(resources.resources.map((resource) => resource.uri)).toContain('treeseed://status');
 			const templates = await client.listResourceTemplates();
-			expect(templates.resourceTemplates).toHaveLength(27);
+			const expectedTemplates = createMcpCatalog(registry).resources.filter((resource) => resource.uriTemplate.includes('{'));
+			expect(templates.resourceTemplates).toHaveLength(expectedTemplates.length);
 			expect(templates.resourceTemplates.map((resource) => resource.uriTemplate)).toEqual(expect.arrayContaining([
 				'treeseed://projects/{projectId}', 'treeseed://plans/{capacityPlanId}', 'treeseed://operations/{operationId}',
 			]));

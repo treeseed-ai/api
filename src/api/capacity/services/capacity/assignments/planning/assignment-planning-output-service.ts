@@ -2,7 +2,6 @@ import { evaluateGovernanceProposalReadiness } from '../../../../../governance/p
 import { resolveEffectiveGroupMembership } from '../../../../../governance/group-membership.ts';
 import type { AgentArtifactManifest,CapacityWorkdayRunRecord,StructuredAgentEstimateRecord } from '@treeseed/sdk/agent-capacity';
 import { validateAgentArtifactManifest } from '../../../../artifact-manifest.ts';
-import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
@@ -165,7 +164,7 @@ async function registerProposalArtifacts(
 	if (!connection) throw new CapacityGovernanceError('assignment_proposal_treedx_unavailable', 'Proposal output could not be read through the project TreeDX binding.', 503, { assignmentId: assignment.id });
 	// Completion projects immutable agent output into governance. Under concurrent
 	// report collection, repository reads can exceed the interactive proxy timeout.
-	const client = new TreeDxClient({ ...connection, repoId: connection.repositoryId, timeoutMs: 60_000, fetch: connection.fetchImpl });
+	const client = connection.client;
 	const workday = await store.getCapacityWorkdayRun(assignment.teamId, assignmentWorkdayRunId(assignment));
 	const registered: unknown[] = [];
 	for (const reference of proposalReferences) {

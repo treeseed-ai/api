@@ -23,7 +23,7 @@ function failure(error: unknown, status: 409 | 503, code: string): never {
 	if (error instanceof DiscussionServiceError) throw error;
 	const value = record(error);
 	throw new DiscussionServiceError(Number.isInteger(value.status) ? value.status : status, text(value.code, code),
-		error instanceof Error ? error.message : 'TreeDX Discussion operation failed.');
+		'TreeDX Discussion operation failed.');
 }
 
 async function projectFor(store: any, principal: Principal, projectId: string) {

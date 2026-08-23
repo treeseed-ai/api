@@ -8,4 +8,3 @@ export * from './support/main.js';
 export * from './support/output-redaction.js';
 export * from './support/registration.js';
 export * from './support/run-loop.js';
-export * from './treedx/repositories/treedx-naming.js';
