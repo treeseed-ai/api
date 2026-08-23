@@ -60,7 +60,8 @@ describe('control-plane protocol contract', () => {
 		async restoreTeam(teamId: string) { return { ok: true, team: { id: teamId, status: 'active', lifecycleVersion: 2 } }; },
 		async transferTeamOwnership() { return { ok: true, members: [] }; },
 		async leaveTeam() { return { ok: true }; },
-		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', metadata: {} }, repositories: [] }; },
+		async getProjectDetails(projectId: string) { return { project: { id: projectId, teamId: 'team-a', slug: 'sdk', updatedAt: 'project-a', metadata: {} }, repositories: [] }; },
+		async getProjectTreeDxLibrary() { return null; },
 		async getProjectAccessSummary(projectId: string) { return { projectId, access: 'member' }; },
 		async getProjectSummary(projectId: string) { return { projectId, status: 'active' }; },
 		async principalCanManageTeam() { return true; },
@@ -70,7 +71,7 @@ describe('control-plane protocol contract', () => {
 		async recordAuditEvent() {},
 		...overrides,
 	});
-	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides), capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
+	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides), treeDxProxy: { async invoke() { throw new Error('Unexpected TreeDX proxy invocation.'); } }, capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
 		accountEmails: { async add() { return { ok: true }; }, async verify() { return { ok: true }; }, async makePrimary() { return { ok: true }; }, async remove() { return { ok: true, items: [] }; } } });
 	const confirmationService = () => {
 		const consumed = new Set<string>();
@@ -361,7 +362,7 @@ describe('control-plane protocol contract', () => {
 			...removalRequest.headers, 'x-treeseed-confirmation': encodeConfirmation(confirmationProblem.inputRequired.confirmation),
 		} });
 		expect(removed.status).toBe(200);
-		expect(await removed.json()).toEqual({ data: { id: 'project-a', deleted: true } });
+		expect(await removed.json()).toEqual({ data: { id: 'project-a', deleted: true, virtualKnowledgeRepository: null } });
 		const replay = await app.request('/v1/projects/project-a', { ...removalRequest, headers: {
 			...removalRequest.headers, 'x-treeseed-confirmation': encodeConfirmation(confirmationProblem.inputRequired.confirmation),
 		} });
