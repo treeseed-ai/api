@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
@@ -84,6 +85,7 @@ describe('control-plane protocol contract', () => {
 		const first = generateOpenApi(controlPlaneOperations);
 		const second = generateOpenApi(controlPlaneOperations);
 		expect(first.openapi).toBe('3.1.1');
+		expect(first.info.version).toBe(JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version);
 		expect(first.paths['/v1/status']?.get).toMatchObject({ operationId: 'status.show' });
 		expect(first.components.securitySchemes.oauth).toMatchObject({ type: 'http', scheme: 'bearer', bearerFormat: 'opaque' });
 		expect(first.components.securitySchemes.oauth).not.toHaveProperty('flows');

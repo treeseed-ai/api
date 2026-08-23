@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { BoundOperation, OperationRegistry } from '../catalog/operation-registry.ts';
 import { sdkSchemaJson } from '../catalog/sdk-standard-schema.ts';
+
+const apiVersion = String(JSON.parse(readFileSync(new URL('../../../../package.json', import.meta.url), 'utf8')).version);
 
 function jsonSchema(operation: BoundOperation, direction: 'input' | 'output') {
 	const schema = direction === 'output' ? operation.binding.schema.output : operation.binding.schema.body;
@@ -45,7 +48,7 @@ export function generateOpenApi(registry: OperationRegistry, serverUrl = 'http:/
 	}
 	return {
 		openapi: '3.1.1',
-		info: { title: 'TreeSeed Control Plane', version: '0.8.0-rc.1' },
+		info: { title: 'TreeSeed Control Plane', version: apiVersion },
 		servers: [{ url: serverUrl }],
 		paths,
 		components: {
