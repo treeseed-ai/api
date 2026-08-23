@@ -62,15 +62,15 @@ export async function planPortableSeedBundle(input: {
 			roles: membership.roles, metadata: ownership(bundle, membership.key) },
 	});
 	for (const project of bundle.resources.projects) {
-		const primary = repositories.get(project.primaryRepository);
-		if (!primary) continue;
+		const primary = project.primaryRepository ? repositories.get(project.primaryRepository) : undefined;
 		actions.push({
 			kind: 'project', key: project.key, label: `${project.team.replace(/^team:/u, '')}/${project.slug}`,
 			environments: environments.selected, action: 'create',
 			payload: { teamKey: project.team, slug: project.slug, name: project.name,
 				description: project.description, kind: project.kind,
-				repository: { provider: primary.provider, owner: primary.owner, name: primary.name,
-					gitUrl: primary.gitUrl, defaultBranch: primary.defaultBranch },
+				repository: primary ? { role: primary.role, provider: primary.provider, owner: primary.owner, name: primary.name,
+					gitUrl: primary.gitUrl, defaultBranch: primary.defaultBranch, repositoryPolicy: primary.repositoryPolicy,
+					submodulePath: primary.submodulePath ?? primary.checkoutPath ?? null } : null,
 				architecture: project.metadata?.architecture ?? {},
 				metadata: { ...(project.metadata ?? {}), ...ownership(bundle, project.key) } },
 		});
