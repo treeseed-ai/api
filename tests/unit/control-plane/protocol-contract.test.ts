@@ -291,6 +291,20 @@ describe('control-plane protocol contract', () => {
 		expect(calls).toEqual([{ input: { path: { projectId: 'project-a' }, query: {}, body: { name: 'Example' } }, requestId: 'request-1', traceparent: '00-0123456789abcdef0123456789abcdef-0123456789abcdef-01' }]);
 	});
 
+	it('parses request bodies for catalogued POST reads', async () => {
+		const operation: BoundOperation<typeof CONTROL_PLANE_OPERATIONS.seeds.validate> = {
+			binding: CONTROL_PLANE_OPERATIONS.seeds.validate,
+			async handler(value) { return { received: value.body }; },
+		};
+		const app = new Hono();
+		installControlPlaneProtocolRoutes(app, async () => ({ principal: { id: 'user_1', scopes: ['treeseed:admin'], roles: ['platform_admin'], permissions: ['*:*:*'] }, credential: { id: 'client_1' } }), oauthProvider, new OperationRegistry([operation]));
+		const response = await app.request('/v1/seeds/validate', { method: 'POST', headers: {
+			authorization: 'Bearer test-token', 'content-type': 'application/json',
+		}, body: JSON.stringify({ bundle: { schemaVersion: 'treeseed.seed-bundle/v2', name: 'treeseed' } }) });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { received: { bundle: { schemaVersion: 'treeseed.seed-bundle/v2', name: 'treeseed' } } } });
+	});
+
 	it('lists only visible team projects through the shared REST and MCP operation', async () => {
 		const registry = createApiControlPlaneOperations(apiDependencies({
 			async listTeamProjects() {
