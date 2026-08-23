@@ -36,6 +36,8 @@ export function stripSeedRuntimeMetadata(metadata) {
 
 export function comparablePayload(payload) {
     const next = { ...(payload ?? {}) };
+    // Stable resource keys identify plan actions; they are not persisted resource state.
+    delete next.key;
     if (next.metadata && typeof next.metadata === 'object') {
         next.metadata = stripSeedRuntimeMetadata(next.metadata);
     }
