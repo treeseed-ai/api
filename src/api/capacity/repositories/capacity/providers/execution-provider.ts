@@ -28,7 +28,24 @@ export function upsertCapacityExecutionProviderOperations(input: {
 	if (!Array.isArray(input.executionProviders)) return [];
 	const providerNativeLimits = record(input.providerNativeLimits);
 	const seen = new Set<string>();
-	return input.executionProviders.flatMap((value) => {
+	const laneIds = new Set(input.executionProviders.flatMap((value) => {
+		const entry = record(value);
+		return Array.isArray(entry.lanes) ? entry.lanes.map((lane) => String(record(lane).id ?? '').trim()).filter(Boolean) : [];
+	}));
+	const guard = input.availabilityGuard
+		? ` AND EXISTS (SELECT 1 FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? AND sequence = ? AND status = 'open')`
+		: '';
+	const guardValues = input.availabilityGuard
+		? [input.availabilityGuard.sessionId, input.availabilityGuard.membershipId, input.availabilityGuard.teamId, input.availabilityGuard.expectedSequence]
+		: [];
+	const providerIds = input.executionProviders.map((value) => String(record(value).id ?? '').trim()).filter(Boolean);
+	const cleanup: CapacityDatabaseOperation[] = [
+		{ query: `UPDATE capacity_execution_providers SET status = 'unavailable', updated_at = ? WHERE capacity_provider_id = ? AND id NOT IN (${providerIds.map(() => '?').join(',')})${guard}`,
+			params: [input.createdAt, input.providerId, ...providerIds, ...guardValues] },
+		{ query: `UPDATE capacity_provider_lanes SET status = 'paused', updated_at = ? WHERE capacity_provider_id = ?${laneIds.size ? ` AND id NOT IN (${[...laneIds].map(() => '?').join(',')})` : ''}${guard}`,
+			params: [input.createdAt, input.providerId, ...laneIds, ...guardValues] },
+	];
+	const upserts = input.executionProviders.flatMap((value) => {
 		const entry = record(value);
 		const id = String(entry.id ?? '').trim();
 		if (!id || seen.has(id)) return [];
@@ -137,6 +154,7 @@ export function upsertCapacityExecutionProviderOperations(input: {
 		}) : [];
 		return [executionProviderOperation, ...laneOperations];
 	});
+	return [...cleanup, ...upserts];
 }
 
 function json<T>(value: unknown, fallback: T): T {
