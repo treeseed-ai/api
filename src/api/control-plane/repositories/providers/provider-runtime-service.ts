@@ -52,6 +52,10 @@ function identityRotation(body: Record<string, unknown>): CapacityProviderIdenti
 	return body as unknown as CapacityProviderIdentityRotationRequest;
 }
 
+export function providerAvailabilityIsRunnable(sessions: Record<string, unknown>[], activeExecutionProviderCount: number, now = Date.now()) {
+	return activeExecutionProviderCount > 0 && sessions.some((entry) => entry.status === 'open' && Date.parse(String(entry.expires_at)) > now);
+}
+
 export function createProviderRuntimeService(store: CapacityGovernanceDatabase, config: Record<string, unknown>, ownerStore: OwnerStore = store as OwnerStore) {
 	const environment = String(config.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local');
 	const secretSource = config.capacityGovernanceSecret ?? config.TREESEED_CAPACITY_GOVERNANCE_SECRET
@@ -95,7 +99,9 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 		async status(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const item = await this.show(principal, teamId, providerId);
 			const sessions = await store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]);
-			return { provider: item, healthy: sessions.some((entry) => entry.status === 'open' && Date.parse(String(entry.expires_at)) > Date.now()), availability: sessions };
+			const activeExecutionProvider = await store.first(`SELECT COUNT(*) AS count FROM capacity_execution_providers WHERE capacity_provider_id = ? AND status = 'active'`, [providerId]);
+			const activeExecutionProviderCount = Number(activeExecutionProvider?.count ?? 0);
+			return { provider: item, healthy: providerAvailabilityIsRunnable(sessions, activeExecutionProviderCount), activeExecutionProviderCount, availability: sessions };
 		},
 		async diagnose(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const status = await this.status(principal, teamId, providerId);
