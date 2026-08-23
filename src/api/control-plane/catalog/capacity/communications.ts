@@ -7,6 +7,8 @@ type RecordValue = Record<string, unknown>;
 
 export interface CommunicationOperationDependencies {
 	communications: {
+		send(principal: Principal, teamId: string, channel: string, body: RecordValue, idempotencyKey?: string): Promise<RecordValue>;
+		sendStatus(principal: Principal, teamId: string, sendId: string): Promise<RecordValue>;
 		invocations(principal: Principal, teamId: string, query: RecordValue): Promise<RecordValue>;
 		invocation(principal: Principal, teamId: string, invocationId: string): Promise<RecordValue>;
 		status(principal: Principal, teamId: string): Promise<RecordValue>;
@@ -25,6 +27,8 @@ function result<T>(call: () => T | Promise<T>) {
 export function createCommunicationOperations(dependencies: CommunicationOperationDependencies): BoundOperation[] {
 	const service = dependencies.communications;
 	return [
+		{ binding: CONTROL_PLANE_OPERATIONS.communications.send, handler: (input, context) => result(() => service.send(context.principal, input.path.teamId, input.path.channel, input.body as RecordValue, context.idempotencyKey)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.communications.sendStatus, handler: (input, context) => result(() => service.sendStatus(context.principal, input.path.teamId, input.path.sendId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.communications.invocations, handler: (input, context) => result(() => service.invocations(context.principal, input.path.teamId, input.query as RecordValue)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.communications.invocation, handler: (input, context) => result(() => service.invocation(context.principal, input.path.teamId, input.path.invocationId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.communications.status, handler: (input, context) => result(() => service.status(context.principal, input.path.teamId)) },

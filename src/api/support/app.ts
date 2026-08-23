@@ -195,7 +195,7 @@ export function createPlatformApiApp(options: any = {}) {
 		await next();
 	});
 	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config }, store);
-	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents);
+	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store);
 	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
 	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
@@ -206,12 +206,13 @@ export function createPlatformApiApp(options: any = {}) {
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
 	const knowledgeReader = createKnowledgeReaderService({ store, options });
+	const discussions = createDiscussionService({ store, capacity, sessionEvents });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
 			plans: createCapacityPlanService(capacity),
 			planningAndEstimates: createPlanningAndEstimateService(capacity),
 			agentGovernance: createAgentGovernanceService(capacity),
-			communications: createCommunicationService(capacity),
+			communications: createCommunicationService(capacity, discussions, store),
 			workdays: createWorkdayService(capacity),
 			agents: createAgentQueryService(capacity),
 			capacityQueries: createCapacityQueryService(capacity),
@@ -236,7 +237,7 @@ export function createPlatformApiApp(options: any = {}) {
 			knowledgeReader,
 			knowledgeWorkspaces: createKnowledgeWorkspaceService(store, knowledgeReader),
 			knowledgeReviews: createKnowledgeReviewService(store),
-			discussions: createDiscussionService({ store, capacity, sessionEvents }),
+			discussions,
 			governance: createGovernanceService(store),
 			repositories: createProjectRepositoryService(store),
 			workflows: createWorkflowService(store),

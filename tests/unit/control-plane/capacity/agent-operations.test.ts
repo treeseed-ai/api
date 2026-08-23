@@ -21,9 +21,10 @@ describe('agent catalog operations', () => {
 			principalCanAccessTeam: vi.fn(async () => true),
 			getTeamAccessSummary: vi.fn(async () => ({ permissions: ['projects:read:team'] })),
 			getProjectAgentsSummary: vi.fn(async () => ({ agents: [{ slug: 'engineer' }] })),
+			listProjectAgentClassesPage: vi.fn(async () => ({ items: [{ id: 'class-1', slug: 'engineering', status: 'active', updatedAt: '2026-08-23T00:00:00.000Z', metadata: { immutableRef: 'ref-1' }, handlerRefs: { agents: [{ slug: 'engineer', name: 'Engineer', activities: { chat: { enabled: true, handler: 'chat' } } }] } }] })),
 		};
-		await expect(createAgentQueryService(store).show(principal, 'project-1', 'engineer')).resolves.toEqual({
-			projectId: 'project-1', agent: { slug: 'engineer' },
+		await expect(createAgentQueryService(store).show(principal, 'project-1', 'engineer')).resolves.toMatchObject({
+			projectId: 'project-1', agent: { agentSlug: 'engineer', allocationClass: 'engineering', chatEnabled: true },
 		});
 	});
 });

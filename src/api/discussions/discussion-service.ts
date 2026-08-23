@@ -166,7 +166,8 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 				authored = await commitDiscussionMessage({ store, projectId, teamId, principal, body: messageBody,
 					intent: body.intent === 'propose' ? 'propose' : 'discuss', discussionId, messageId,
 					createDiscussion: !text(body.discussionId), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
-					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs, ...(continuation ?? {}) });
+					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
+					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [], ...(continuation ?? {}) });
 			} catch (error) { failure(error, 503, 'discussion_content_unavailable'); }
 			const observed = await loadDiscussions({ store, projectId, discussionId: authored.discussion.id,
 				query: authored.message.id, collection: 'messages' });
@@ -177,7 +178,9 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 				payload: { discussionId: authored.discussion.id, messageId: authored.message.id, commitSha: authored.commitSha } }).catch(() => undefined);
 			try {
 				const agents = await resolveDiscussionInvocationAgents(invocationStore, { teamId, projectId,
-					discussionId: authored.discussion.id, parentAssignmentId, mentionedAgents: authored.mentions });
+					discussionId: authored.discussion.id, parentAssignmentId, mentionedAgents: [...new Set([
+						...authored.mentions, ...(Array.isArray(body.recipients) ? body.recipients.map(String) : []),
+					])] });
 				if (!agents.length) return { ...authored, invocations: [], replayed: false };
 				const invocations = await admitDiscussionInvocations(invocationStore, { teamId, projectId,
 					projectSlug: text(project.slug, project.id), discussionId: authored.discussion.id, messageId: authored.message.id,
