@@ -5,11 +5,12 @@ import { createCapacityQueryService } from '../../../../src/api/control-plane/re
 
 const principal = { id: 'user-1' };
 describe('capacity query catalog operations', () => {
-	it('binds only status, accounting, and grant reads', () => {
-		const capacityQueries = Object.fromEntries(['availability', 'usage', 'ledger', 'grants', 'grant'].map((name) => [name, vi.fn()])) as any;
+	it('binds the complete battery inspection surface', () => {
+		const capacityQueries = Object.fromEntries(['availability', 'explain', 'usage', 'ledger', 'audit', 'lanes', 'grants', 'grant'].map((name) => [name, vi.fn()])) as any;
 		expect(createCapacityQueryOperations({ capacityQueries }).map((operation) => operation.binding)).toEqual([
-			CONTROL_PLANE_OPERATIONS.capacity.availability, CONTROL_PLANE_OPERATIONS.capacity.usage,
-			CONTROL_PLANE_OPERATIONS.capacity.ledger, CONTROL_PLANE_OPERATIONS.capacity.grants,
+			CONTROL_PLANE_OPERATIONS.capacity.availability, CONTROL_PLANE_OPERATIONS.capacity.explain,
+			CONTROL_PLANE_OPERATIONS.capacity.usage, CONTROL_PLANE_OPERATIONS.capacity.ledger,
+			CONTROL_PLANE_OPERATIONS.capacity.audit, CONTROL_PLANE_OPERATIONS.capacity.lanes, CONTROL_PLANE_OPERATIONS.capacity.grants,
 			CONTROL_PLANE_OPERATIONS.capacity.grant,
 		]);
 	});

@@ -34,6 +34,16 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
 			email: action.payload.email, roles: action.payload.roles,
 		});
 	}
+	if (action.kind === 'servicePrincipalMembership') {
+		const teamId = ids.teams.get(action.payload.teamKey);
+		if (!teamId) throw new Error(`Missing team for ${action.key}.`);
+		const seed = action.payload.metadata?.seed ?? {};
+		return store.reconcileSeedServicePrincipalMembership({
+			seedName: String(seed.name ?? plan.seed), resourceKey: action.key, teamId,
+			principalKey: action.payload.principalKey, displayName: action.payload.displayName,
+			roles: action.payload.roles,
+		});
+	}
 	if (action.kind === 'project') {
         const teamId = ids.teams.get(action.payload.teamKey);
         if (!teamId)

@@ -10,6 +10,7 @@ import { seedTeamRolesMethod } from '../teams/contracts/seed-team-roles.ts';
 import { teamIdsForPrincipalMethod } from '../teams/contracts/team-ids-for-principal.ts';
 import { syncPlatformAdminOwnersMethod } from '../teams/contracts/administration/sync-platform-admin-owners.ts';
 import { claimSeedTeamMembershipsForVerifiedEmailMethod,getSeedTeamMembershipClaimMethod,reconcileSeedTeamMembershipClaimMethod,retireUndeclaredSeedTeamMembershipClaimsMethod } from '../teams/contracts/seeding/seed-membership-claims.ts';
+import { getSeedServicePrincipalMembershipMethod,reconcileSeedServicePrincipalMembershipMethod,retireUndeclaredSeedServicePrincipalMembershipsMethod } from '../teams/contracts/seeding/service-principal-memberships.ts';
 import { teamPublicNameExistsMethod } from '../teams/contracts/team-public-name-exists.ts';
 import { createTeamInviteMethod } from '../teams/creation/create-team-invite.ts';
 import { createTeamMethod } from '../teams/creation/create-team.ts';
@@ -59,6 +60,9 @@ export function installTeamsStoreMethods(prototype: ControlPlaneStore) {
 	prototype.reconcileSeedTeamMembershipClaim = reconcileSeedTeamMembershipClaimMethod;
 	prototype.claimSeedTeamMembershipsForVerifiedEmail = claimSeedTeamMembershipsForVerifiedEmailMethod;
 	prototype.retireUndeclaredSeedTeamMembershipClaims = retireUndeclaredSeedTeamMembershipClaimsMethod;
+	prototype.getSeedServicePrincipalMembership = getSeedServicePrincipalMembershipMethod;
+	prototype.reconcileSeedServicePrincipalMembership = reconcileSeedServicePrincipalMembershipMethod;
+	prototype.retireUndeclaredSeedServicePrincipalMemberships = retireUndeclaredSeedServicePrincipalMembershipsMethod;
 	prototype.roleIdForKey = roleIdForKeyMethod;
 	prototype.bindRoleToMembership = bindRoleToMembershipMethod;
 	prototype.listRoleKeysForMembership = listRoleKeysForMembershipMethod;

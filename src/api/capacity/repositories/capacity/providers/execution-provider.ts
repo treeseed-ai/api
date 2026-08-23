@@ -88,21 +88,28 @@ export function upsertCapacityExecutionProviderOperations(input: {
 			const laneStatus = ['active', 'paused', 'degraded', 'revoked'].includes(String(lane.status))
 				? String(lane.status)
 				: 'active';
-			const lanePurpose = lane.purpose === 'communication' ? 'communication' : 'operation';
+			const lanePurpose = ['communication', 'platform', 'workday'].includes(String(lane.purpose)) ? String(lane.purpose) : null;
+			if (!lanePurpose) return [];
 			return [{
 				query: `INSERT INTO capacity_provider_lanes (
 					capacity_provider_id, id, execution_provider_id, display_name, purpose, status,
-					capabilities_json, max_concurrent_runners, native_limits_json,
+					capabilities_json, max_concurrent_runners, native_limits_json, priority,
+					reserved_concurrent_workers, borrow_when_idle, lend_when_idle, queue_limit, timeout_seconds,
 					metadata_json, created_at, updated_at
-				) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS integer), ?, ?, ?, ?${guardClause}
+				) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS integer), ?, CAST(? AS integer), CAST(? AS integer), CAST(? AS boolean), CAST(? AS boolean), CAST(? AS integer), CAST(? AS integer), ?, ?, ?${guardClause}
 				ON CONFLICT (capacity_provider_id, id) DO UPDATE SET
-					execution_provider_id = EXCLUDED.execution_provider_id,
 					display_name = EXCLUDED.display_name,
 					purpose = EXCLUDED.purpose,
 					status = EXCLUDED.status,
 					capabilities_json = EXCLUDED.capabilities_json,
 					max_concurrent_runners = EXCLUDED.max_concurrent_runners,
 					native_limits_json = EXCLUDED.native_limits_json,
+					priority = EXCLUDED.priority,
+					reserved_concurrent_workers = EXCLUDED.reserved_concurrent_workers,
+					borrow_when_idle = EXCLUDED.borrow_when_idle,
+					lend_when_idle = EXCLUDED.lend_when_idle,
+					queue_limit = EXCLUDED.queue_limit,
+					timeout_seconds = EXCLUDED.timeout_seconds,
 					metadata_json = EXCLUDED.metadata_json,
 					updated_at = EXCLUDED.updated_at`,
 				params: [
@@ -113,8 +120,14 @@ export function upsertCapacityExecutionProviderOperations(input: {
 					lanePurpose,
 					laneStatus,
 					JSON.stringify(strings(lane.capabilities)),
-					positiveInteger(lane.maxConcurrentRunners, 1),
+					positiveInteger(lane.maxConcurrentRunners ?? lane.maxConcurrentWorkers, 1),
 					JSON.stringify(lane.nativeLimits ?? []),
+					Number.isInteger(Number(lane.priority)) ? Number(lane.priority) : 0,
+					Math.max(0, Number(lane.reservedConcurrentWorkers ?? 0)),
+					Boolean(lane.borrowWhenIdle),
+					Boolean(lane.lendWhenIdle),
+					Math.max(0, Number(lane.queueLimit ?? 0)),
+					positiveInteger(lane.timeoutSeconds, 300),
 					JSON.stringify(record(lane.metadata)),
 					input.createdAt,
 					input.createdAt,

@@ -105,7 +105,6 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const prefix = secretPrefix(registrationKey);
 		const keyRow = prefix ? await this.repository.registrationKeyByPrefix(prefix) : null;
 		if (!keyRow || !this.secrets.verify(registrationKey, String(keyRow.key_hash))) throw new CapacityGovernanceError('registration_key_invalid', 'Team capacity registration key is invalid.', 401);
-		if (keyRow.status !== 'active') throw new CapacityGovernanceError('registration_key_disabled', 'Team capacity registration key is disabled.', 403);
 		await this.assertTeamExists(String(keyRow.team_id));
 		const offerValidation = validateProviderSupplyOffer(submission.supplyOffer);
 		if (!offerValidation.ok) throw new CapacityGovernanceError('provider_offer_invalid', 'Provider supply offer is invalid.', 400, { diagnostics: offerValidation.diagnostics });
@@ -117,6 +116,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 			if (priorIdempotentRequest.requestDigest !== requestDigest || priorIdempotentRequest.request.providerFingerprint !== verified.fingerprint) throw new CapacityGovernanceError('idempotency_key_conflict', 'Registration idempotency key is already bound to another request.', 409);
 			return priorIdempotentRequest.request;
 		}
+		if (keyRow.status !== 'active') throw new CapacityGovernanceError('registration_key_disabled', 'Team capacity registration key is disabled.', 403);
 		const now = nowIso();
 		if (!await this.repository.consumeProofNonce(verified.fingerprint, verified.payload.jti, verified.payload.expiresAt, now)) throw new CapacityGovernanceError('provider_proof_replayed', 'Provider proof has already been used.', 409);
 		const rateDimensions = await this.repository.consumeRegistrationRateLimits({
@@ -153,7 +153,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		});
 		if (!request) throw new CapacityGovernanceError('registration_key_disabled', 'Team capacity registration key was disabled or rotated before registration committed.', 403);
 		if (!(await this.repository.registrationRequestByIdempotency(String(keyRow.team_id), idempotencyKey))) throw new CapacityGovernanceError('provider_registration_exists', 'Provider already has a registration request for this key generation.', 409, { requestId: request.id, status: request.status });
-		await this.auditRepository.record({ id: randomUUID(), teamId: request.teamId, providerId: request.providerId, actorType: 'provider-identity', actorId: request.providerFingerprint, action: 'provider-registration.requested', resourceType: 'provider-registration-request', resourceId: request.id, requestId: request.id, idempotencyKey, now });
+		await this.auditRepository.record({ id: randomUUID(), teamId: request.teamId, providerId: request.providerId, actorType: 'provider-identity', actorId: request.providerFingerprint, action: 'provider-registration.requested', resourceType: 'provider-registration-request', resourceId: request.id, requestId: request.id, idempotencyKey, now }); await this.setRegistrationKeyStatus(request.teamId, null, 'disabled', `consume:${request.id}`);
 		return request;
 	}
 

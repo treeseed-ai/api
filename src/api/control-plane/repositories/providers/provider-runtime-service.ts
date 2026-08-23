@@ -18,6 +18,11 @@ export interface ProviderPrincipal {
 }
 
 type ProviderAuth = { principal?: ProviderPrincipal } | null | undefined;
+type UserPrincipal = { id: string; roles?: string[]; permissions?: string[] };
+type OwnerStore = CapacityGovernanceDatabase & {
+	principalCanAccessTeam(principal: UserPrincipal, teamId: string): Promise<boolean>;
+	principalCanManageTeam(principal: UserPrincipal, teamId: string): Promise<boolean>;
+};
 
 function credential(headers: Readonly<Record<string, string>> | undefined, scheme: string) {
 	const value = headers?.authorization?.trim() ?? '';
@@ -47,7 +52,7 @@ function identityRotation(body: Record<string, unknown>): CapacityProviderIdenti
 	return body as unknown as CapacityProviderIdentityRotationRequest;
 }
 
-export function createProviderRuntimeService(store: CapacityGovernanceDatabase, config: Record<string, unknown>) {
+export function createProviderRuntimeService(store: CapacityGovernanceDatabase, config: Record<string, unknown>, ownerStore: OwnerStore = store as OwnerStore) {
 	const environment = String(config.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local');
 	const secretSource = config.capacityGovernanceSecret ?? config.TREESEED_CAPACITY_GOVERNANCE_SECRET
 		?? process.env.TREESEED_CAPACITY_GOVERNANCE_SECRET
@@ -59,8 +64,84 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 	const audience = String(config.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/u, '');
 	const registration = new CapacityRegistrationService(new CapacityGovernanceRepository(store), new CapacitySecretCodec(configuredSecret), audience);
 	const availability = new AvailabilitySessionService(store);
+	const requireUser = (principal: UserPrincipal | null | undefined) => {
+		if (!principal) throw new CapacityGovernanceError('authentication_required', 'An authenticated team principal is required.', 401);
+		return principal;
+	};
+	const requireRead = async (principal: UserPrincipal | null | undefined, teamId: string) => {
+		const actor = requireUser(principal);
+		if (!await ownerStore.principalCanAccessTeam(actor, teamId)) throw new CapacityGovernanceError('provider_team_access_denied', 'The principal cannot read this team provider.', 403);
+		return actor;
+	};
+	const requireManage = async (principal: UserPrincipal | null | undefined, teamId: string) => {
+		const actor = requireUser(principal);
+		if (!await ownerStore.principalCanManageTeam(actor, teamId)) throw new CapacityGovernanceError('provider_team_management_denied', 'The principal cannot manage this team provider.', 403);
+		return actor;
+	};
+	const membership = async (teamId: string, connectionId: string) => registration.membership(teamId, connectionId);
 	return {
 		authenticator: registration,
+		async list(principal: UserPrincipal | null | undefined, teamId: string, query: Record<string, unknown>) {
+			await requireRead(principal, teamId);
+			return registration.listMembershipsPage(teamId, query);
+		},
+		async show(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
+			await requireRead(principal, teamId);
+			const page = await registration.listMembershipsPage(teamId, { providerId, limit: 2 });
+			const item = page.items[0];
+			if (!item) throw new CapacityGovernanceError('provider_not_found', 'The team capacity provider was not found.', 404);
+			return item;
+		},
+		async status(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
+			const item = await this.show(principal, teamId, providerId);
+			const sessions = await store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]);
+			return { provider: item, healthy: sessions.some((entry) => entry.status === 'open' && Date.parse(String(entry.expires_at)) > Date.now()), availability: sessions };
+		},
+		async diagnose(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
+			const status = await this.status(principal, teamId, providerId);
+			return { ...status, blockers: status.healthy ? [] : ['provider_availability_unhealthy'], nextActions: status.healthy ? [] : ['Start or reconcile the local provider manager.'] };
+		},
+		async connect(principal: UserPrincipal | null | undefined, teamId: string, idempotencyKey: string) {
+			const actor = await requireManage(principal, teamId);
+			const issued = await registration.rotateRegistrationKey(teamId, actor.id, idempotencyKey);
+			return { teamId, connectionState: 'enrollment_required', expiresAfterUse: true,
+				enrollmentToken: issued.registrationKey, keyPrefix: issued.keyPrefix, generation: issued.generation };
+		},
+		async disconnect(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
+			const actor = await requireManage(principal, teamId);
+			return registration.updateMembership(teamId, connectionId, actor.id, 'revoked', idempotencyKey);
+		},
+		async requests(principal: UserPrincipal | null | undefined, teamId: string, query: Record<string, unknown>) {
+			await requireRead(principal, teamId);
+			return registration.listRequestsPage(teamId, query);
+		},
+		async request(principal: UserPrincipal | null | undefined, teamId: string, requestId: string) {
+			await requireRead(principal, teamId);
+			return registration.registrationRequest(teamId, requestId);
+		},
+		async approve(principal: UserPrincipal | null | undefined, teamId: string, requestId: string, body: Record<string, unknown>, idempotencyKey: string) {
+			const actor = await requireManage(principal, teamId);
+			return registration.approve(teamId, requestId, actor.id, idempotencyKey, typeof body.teamAlias === 'string' ? body.teamAlias : null);
+		},
+		async reject(principal: UserPrincipal | null | undefined, teamId: string, requestId: string, body: Record<string, unknown>, idempotencyKey: string) {
+			const actor = await requireManage(principal, teamId);
+			return registration.reject(teamId, requestId, actor.id, String(body.reason ?? ''), idempotencyKey);
+		},
+		async credentials(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string) {
+			await requireRead(principal, teamId); await membership(teamId, connectionId);
+			return registration.listCredentialsPage(teamId, connectionId, { limit: 20 });
+		},
+		async rotateCredentials(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
+			const actor = await requireManage(principal, teamId);
+			return registration.authorizeTeamCredentialRotation(teamId, connectionId, actor.id, idempotencyKey);
+		},
+		async revokeCredentials(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
+			const actor = await requireManage(principal, teamId);
+			const credentials = await registration.listCredentialsPage(teamId, connectionId, { status: 'active', limit: 100 });
+			const revoked = [];
+			for (const item of credentials.items) revoked.push(await registration.revokeCredential(teamId, connectionId, item.id, actor.id, `${idempotencyKey}:${item.id}`));
+			return { connectionId, revoked };
+		},
 		async register(body: Record<string, unknown>, headers: Readonly<Record<string, string>> | undefined, idempotencyKey = '') {
 			const key = credential(headers, 'Treeseed-Registration');
 			if (!key) throw new CapacityGovernanceError('registration_key_required', 'Treeseed-Registration authorization is required.', 401);

@@ -15,7 +15,7 @@ export interface CapacityAssignmentDraft {
 	providerSessionId?: string | null;
 	executionProviderId?: string | null;
 	laneId?: string | null;
-	lanePurpose?: 'communication' | 'operation' | null;
+	lanePurpose?: 'communication' | 'platform' | 'workday' | null;
 	communicationOverflow?: boolean;
 	executionKind?: 'workday' | 'conversation' | 'simulation' | 'recovery';
 	triggerKind?: 'scheduled' | 'manual' | 'discussion' | 'agent-handoff';
@@ -333,7 +333,7 @@ export async function commitCapacityAdmission(database: CapacityGovernanceDataba
 	};
 	const operations = counterInitializationOperations(input, decision, now);
 	const executionKind = input.assignment.executionKind ?? 'workday';
-	const lanePurpose = input.assignment.lanePurpose ?? (executionKind === 'conversation' ? 'communication' : 'operation');
+	const lanePurpose = input.assignment.lanePurpose ?? (executionKind === 'conversation' ? 'communication' : 'workday');
 	operations.push({
 		query: `INSERT OR IGNORE INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind, invocation_id, operation_handoff_id, allocation_set_id, allocation_version, allocation_slice_ids_json, policy_snapshot_json, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, task_id, state, requested_seconds, reserved_seconds, active_seconds, elapsed_seconds, released_seconds, overrun_seconds, expires_at, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?, 0, 0, 0, 0, ?, '{}', ?, ?)`,
 		params: [reservationId, idempotencyKey, admissionToken, request.membershipId, grantId, request.providerId, request.executionProviderId ?? null, request.laneId ?? null, lanePurpose, input.assignment.communicationOverflow ? 1 : 0, executionKind, input.assignment.triggerKind ?? 'scheduled', input.assignment.invocationId ?? null, input.assignment.operationHandoffId ?? null, allocationSetId, decision.allocationVersion, JSON.stringify(input.admission.allocationSliceIds), JSON.stringify(decision.policySnapshot), input.assignment.projectAgentClassId, assignmentId, request.mode, request.teamId, request.projectId, workDayId, taskId, request.requestedSeconds, request.requestedSeconds, input.expiresAt ?? null, now, now],

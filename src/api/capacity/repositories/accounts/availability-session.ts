@@ -7,6 +7,7 @@ import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../durable-js
 type Row = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
 const STATUSES = new Set<ProviderAvailabilitySessionStatus>(['open', 'draining', 'closed', 'expired']);
+const object = (value: unknown): JsonRecord => value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 
 function text(value: unknown) { return value == null ? '' : String(value); }
 function nullableText(value: unknown) { return value == null ? null : String(value); }
@@ -31,8 +32,6 @@ export function serializeAvailabilitySessionRow(row: Row | null): ProviderAvaila
 	const nativeLimits = decodeDurableJsonObject(row.native_limits_json, context(id, 'native_limits_json'));
 	const pressure = decodeDurableJsonObject(row.runner_pressure_json, context(id, 'runner_pressure_json'));
 	const constraints = decodeDurableJsonObject(row.constraints_json, context(id, 'constraints_json'));
-	const communicationProviders=executionProviders.filter((provider)=>Number(provider.maxConcurrentRunners)>=2&&Array.isArray(provider.lanes)&&provider.lanes.some((lane)=>lane&&typeof lane==='object'&&(lane as JsonRecord).purpose==='communication')&&provider.lanes.some((lane)=>lane&&typeof lane==='object'&&(lane as JsonRecord).purpose==='operation'));
-	const communicationReady=communicationProviders.length>0;
 	const pressureValue = String(pressure.throttleState ?? pressure.pressure ?? 'normal');
 	if (!['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(pressureValue)) throw new CapacityGovernanceError('provider_availability_pressure_invalid', `Availability session ${id} has invalid pressure.`, 500, { sessionId: id });
 	return {
@@ -40,9 +39,21 @@ export function serializeAvailabilitySessionRow(row: Row | null): ProviderAvaila
 			snapshot: {
 			sequence, availableFrom: text(row.available_from || row.opened_at), availableUntil: nullableText(row.available_until),
 			pressure: pressureValue as ProviderAvailabilitySession['snapshot']['pressure'],
-			maxConcurrentAssignments: Number(pressure.maxConcurrentRunners ?? nativeLimits.maxConcurrentRunners ?? 0),
+			maxConcurrentWorkers: Number(pressure.maxConcurrentWorkers ?? nativeLimits.maxConcurrentWorkers ?? nativeLimits.maxConcurrentRunners ?? 0),
 			activeAssignmentIds: Array.isArray(pressure.activeAssignmentIds) ? pressure.activeAssignmentIds.map(String) : [],
-			executionProviders: executionProviders as unknown as ProviderAvailabilitySession['snapshot']['executionProviders'],communicationReady,communicationBlockers:communicationReady?[]:['provider_requires_two_global_slots_and_distinct_communication_operation_lanes'], capabilities, constraints,
+			reservedWorkers: Number(pressure.reservedWorkers ?? 0), borrowedWorkers: Number(pressure.borrowedWorkers ?? 0),
+			availableWorkers: Number(pressure.availableWorkers ?? nativeLimits.maxConcurrentWorkers ?? nativeLimits.maxConcurrentRunners ?? 0),
+			adapters: executionProviders.map((provider) => ({ id: String(provider.id), adapter: String(provider.adapter),
+				isolation: provider.isolation === 'process' ? 'process' : 'worker', status: provider.status === 'active' ? 'available' : provider.status,
+				capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String) : [],
+				laneIds: Array.isArray(provider.lanes) ? provider.lanes.map((lane) => String((lane as JsonRecord).id)) : [],
+				maxConcurrentWorkers: Number(provider.maxConcurrentRunners ?? 0), activeWorkers: Number(provider.activeWorkers ?? 0),
+				nativeLimits: object(provider.nativeLimits), observations: object(provider.observations) })) as ProviderAvailabilitySession['snapshot']['adapters'],
+			lanes: executionProviders.flatMap((provider) => Array.isArray(provider.lanes) ? provider.lanes.map((entry) => entry as JsonRecord) : []).filter((lane, index, all) => all.findIndex((entry) => entry.id === lane.id) === index).map((lane) => ({
+				id: String(lane.id), purpose: lane.purpose as any, status: 'active', priority: Number(lane.priority ?? 0),
+				reservedConcurrentWorkers: Number(lane.reservedConcurrentWorkers ?? 0), borrowedWorkers: Number(lane.borrowedWorkers ?? 0), lentWorkers: Number(lane.lentWorkers ?? 0), queuedAssignments: Number(lane.queuedAssignments ?? 0),
+				capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String) : [], maxConcurrentWorkers: Number(lane.maxConcurrentRunners ?? 0), activeWorkers: Number(lane.activeWorkers ?? 0),
+			})) as ProviderAvailabilitySession['snapshot']['lanes'], capabilities, constraints,
 		},
 		openedAt: text(row.opened_at), refreshedAt: text(row.refreshed_at), expiresAt: text(row.expires_at), closedAt: nullableText(row.closed_at),
 	};

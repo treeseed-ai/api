@@ -12,6 +12,9 @@ declare module '../persistence/store.ts' {
 		reconcileSeedTeamMembershipClaim: OmitThisParameter<typeof import('./teams/contracts/seeding/seed-membership-claims.ts').reconcileSeedTeamMembershipClaimMethod>;
 		claimSeedTeamMembershipsForVerifiedEmail: OmitThisParameter<typeof import('./teams/contracts/seeding/seed-membership-claims.ts').claimSeedTeamMembershipsForVerifiedEmailMethod>;
 		retireUndeclaredSeedTeamMembershipClaims: OmitThisParameter<typeof import('./teams/contracts/seeding/seed-membership-claims.ts').retireUndeclaredSeedTeamMembershipClaimsMethod>;
+		getSeedServicePrincipalMembership: OmitThisParameter<typeof import('./teams/contracts/seeding/service-principal-memberships.ts').getSeedServicePrincipalMembershipMethod>;
+		reconcileSeedServicePrincipalMembership: OmitThisParameter<typeof import('./teams/contracts/seeding/service-principal-memberships.ts').reconcileSeedServicePrincipalMembershipMethod>;
+		retireUndeclaredSeedServicePrincipalMemberships: OmitThisParameter<typeof import('./teams/contracts/seeding/service-principal-memberships.ts').retireUndeclaredSeedServicePrincipalMembershipsMethod>;
 		roleIdForKey: OmitThisParameter<typeof import('./teams/contracts/role-id-for-key.ts').roleIdForKeyMethod>;
 		bindRoleToMembership: OmitThisParameter<typeof import('./teams/updates/bind-role-to-membership.ts').bindRoleToMembershipMethod>;
 		listRoleKeysForMembership: OmitThisParameter<typeof import('./teams/queries/members/list-role-keys-for-membership.ts').listRoleKeysForMembershipMethod>;

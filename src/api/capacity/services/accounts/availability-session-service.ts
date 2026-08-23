@@ -81,13 +81,23 @@ export class AvailabilitySessionService {
 		const availableFrom = timestamp(input.availableFrom, now);
 		const availableUntil = input.availableUntil == null ? null : timestamp(input.availableUntil, expiresAt);
 		if (availableUntil && Date.parse(availableUntil) <= Date.parse(availableFrom)) throw new CapacityGovernanceError('provider_availability_window_invalid', 'availableUntil must be after availableFrom.', 400);
-		const executionProviders = objects(input.executionProviders ?? input.execution_providers);
-		if (executionProviders.some((entry) => typeof entry.id !== 'string' || !entry.id.trim())) throw new CapacityGovernanceError('provider_execution_provider_invalid', 'Every execution provider snapshot requires an id.', 400);
-		if (executionProviders.some((entry) => entry.minimumAssignmentDuration !== undefined && !isMinimumAssignmentDuration(entry.minimumAssignmentDuration))) throw new CapacityGovernanceError('provider_execution_provider_minimum_duration_invalid', 'Every advertised minimum assignment duration must satisfy the SDK contract.', 400);
+		if ('executionProviders' in input || 'execution_providers' in input) throw new CapacityGovernanceError('provider_availability_legacy_shape', 'Availability must use provider v3 adapters and lanes.', 400);
+		const adapters = objects(input.adapters);
+		const lanes = objects(input.lanes);
+		if (!adapters.length || adapters.some((entry) => typeof entry.id !== 'string' || !entry.id.trim())) throw new CapacityGovernanceError('provider_adapter_invalid', 'Availability requires at least one identified execution adapter.', 400);
+		if (lanes.length !== 3 || new Set(lanes.map((entry) => entry.purpose)).size !== 3 || !['communication', 'platform', 'workday'].every((purpose) => lanes.some((entry) => entry.purpose === purpose))) throw new CapacityGovernanceError('provider_lanes_invalid', 'Availability requires exactly the communication, platform, and workday lanes.', 400);
+		if (lanes.some((entry) => entry.minimumAssignmentDuration !== undefined && !isMinimumAssignmentDuration(entry.minimumAssignmentDuration))) throw new CapacityGovernanceError('provider_lane_minimum_duration_invalid', 'Every advertised minimum assignment duration must satisfy the SDK contract.', 400);
+		const executionProviders = adapters.map((adapter) => ({
+			...adapter,
+			status: adapter.status === 'available' ? 'active' : adapter.status,
+			maxConcurrentRunners: adapter.maxConcurrentWorkers,
+			lanes: lanes.filter((lane) => Array.isArray(adapter.laneIds) && adapter.laneIds.includes(lane.id)).map((lane) => ({ ...lane, maxConcurrentRunners: lane.maxConcurrentWorkers })),
+		}));
+		const capacity = object(input.capacity);
 		return {
 			id, membershipId: principal.membershipId, teamId: principal.teamId, providerId: principal.capacityProviderId,
 			environment: typeof input.environment === 'string' ? input.environment : null, sequence, openedAt: now, refreshedAt: now, expiresAt, availableFrom, availableUntil,
-			executionProviders, capabilities: strings(input.capabilities), nativeLimits: object(input.nativeLimits ?? input.native_limits),
+			executionProviders, capabilities: strings(input.capabilities), nativeLimits: { ...capacity, maxConcurrentRunners: capacity.maxConcurrentWorkers },
 			runnerPressure: object(input.runnerPressure ?? input.runner_pressure), constraints: object(input.constraints), metadata: object(input.metadata),
 		};
 	}

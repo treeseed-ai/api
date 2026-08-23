@@ -1,8 +1,26 @@
 import { resolve } from 'node:path';
 import { loadAndPlanCoreSeed } from '../../planning/load-core-seed-plan.ts';
+import { planPortableSeedBundle } from '../../planning/plan-portable-seed-bundle.ts';
 import { createLocalSeedStore,createSeedRunIfAvailable,manifestHashFor,manifestRefIsAllowed,mutationActions,reconcilePlanWithStore,seedRunInput } from '../index.js';
 
 export async function planSeedWithStore(input) {
+    if (input.bundle) {
+        const planned = await planPortableSeedBundle({
+            bundle: input.bundle,
+            seedName: input.seedName,
+            environments: input.environments,
+            mode: input.mode ?? 'plan',
+        });
+        if (!planned.plan) return planned;
+        const store = input.store ?? await createLocalSeedStore(input.projectRoot, input.env);
+        const plan = await reconcilePlanWithStore(planned.plan, store);
+        let run = null;
+        if (input.audit === true) run = await createSeedRunIfAvailable(store, seedRunInput({
+            plan, manifestHash: planned.manifestHash, actor: input.actor,
+            state: 'completed', result: { actionCount: mutationActions(plan).length },
+        }));
+        return { ...planned, plan, run };
+    }
     if (!manifestRefIsAllowed(input.seedName, input.manifestRef)) {
         return {
             manifestPath: resolve(input.projectRoot, input.manifestRef ?? ''),

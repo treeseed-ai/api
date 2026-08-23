@@ -15,6 +15,19 @@ function result<T>(call: () => T | Promise<T>) {
 export function createProviderRegistrationAndAvailabilityOperations({ providers }: ProviderOperationDependencies): BoundOperation[] {
 	const operations = CONTROL_PLANE_OPERATIONS.providers;
 	return [
+		{ binding: operations.list, handler: (input, context) => result(() => providers.list(context.principal, input.path.teamId, input.query as Record<string, unknown>)) },
+		{ binding: operations.show, handler: (input, context) => result(() => providers.show(context.principal, input.path.teamId, input.path.providerId)) },
+		{ binding: operations.status, handler: (input, context) => result(() => providers.status(context.principal, input.path.teamId, input.path.providerId)) },
+		{ binding: operations.diagnose, handler: (input, context) => result(() => providers.diagnose(context.principal, input.path.teamId, input.path.providerId)) },
+		{ binding: operations.connect, handler: (_input, context) => result(() => providers.connect(context.principal, _input.path.teamId, context.idempotencyKey)) },
+		{ binding: operations.disconnect, handler: (input, context) => result(() => providers.disconnect(context.principal, input.path.teamId, input.path.connectionId, context.idempotencyKey)) },
+		{ binding: operations.requests.list, handler: (input, context) => result(() => providers.requests(context.principal, input.path.teamId, input.query as Record<string, unknown>)) },
+		{ binding: operations.requests.show, handler: (input, context) => result(() => providers.request(context.principal, input.path.teamId, input.path.requestId)) },
+		{ binding: operations.requests.approve, handler: (input, context) => result(() => providers.approve(context.principal, input.path.teamId, input.path.requestId, input.body as Record<string, unknown>, context.idempotencyKey)) },
+		{ binding: operations.requests.reject, handler: (input, context) => result(() => providers.reject(context.principal, input.path.teamId, input.path.requestId, input.body as Record<string, unknown>, context.idempotencyKey)) },
+		{ binding: operations.credentials.status, handler: (input, context) => result(() => providers.credentials(context.principal, input.path.teamId, input.path.connectionId)) },
+		{ binding: operations.credentials.rotate, handler: (input, context) => result(() => providers.rotateCredentials(context.principal, input.path.teamId, input.path.connectionId, context.idempotencyKey)) },
+		{ binding: operations.credentials.revoke, handler: (input, context) => result(() => providers.revokeCredentials(context.principal, input.path.teamId, input.path.connectionId, context.idempotencyKey)) },
 		{ binding: operations.register, handler: (input, context) => result(() => providers.register(input.body as Record<string, unknown>, context.requestHeaders, context.idempotencyKey)) },
 		{ binding: operations.registration, handler: (input, context) => result(() => providers.registration(input.path.requestId, context.requestHeaders)) },
 		{ binding: operations.exchangeCredential, handler: (input, context) => result(() => providers.exchangeCredential(input.path.requestId, input.body as Record<string, unknown>, context.idempotencyKey)) },

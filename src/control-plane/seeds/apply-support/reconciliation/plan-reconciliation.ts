@@ -41,6 +41,18 @@ export async function reconcilePlanWithStore(plan, store) {
 			} : null;
 			if (existing?.status === 'removed') currentPayload = null;
 		}
+		if (action.kind === 'servicePrincipalMembership') {
+			const seed = action.payload.metadata?.seed ?? {};
+			existing = await store.getSeedServicePrincipalMembership(seed.name, action.key);
+			currentPayload = existing && existing.status !== 'removed' ? {
+				teamKey: action.payload.teamKey,
+				principalKey: existing.principal_key,
+				displayName: existing.display_name,
+				interactiveLogin: false,
+				roles: JSON.parse(existing.roles_json ?? '[]'),
+				metadata: action.payload.metadata,
+			} : null;
+		}
         if (action.kind === 'project') {
             const teamId = teamIds.get(action.payload.teamKey);
             existing = teamId ? await store.getProjectByTeamAndSlug(teamId, action.payload.slug) : null;

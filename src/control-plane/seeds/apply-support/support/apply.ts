@@ -10,6 +10,7 @@ async function verifyAppliedSeed(input, store) {
         env: input.env,
         manifestRef: input.manifestRef,
         actor: input.actor,
+        bundle: input.bundle,
     });
     if (!observed.plan) throw new Error(observed.diagnostics?.[0]?.message ?? 'Seed read-back verification failed.');
     const drift = observed.plan.actions.filter((action) => ['create', 'update', 'delete', 'error'].includes(action.action));
@@ -29,6 +30,7 @@ export async function applySeedWithStore(input) {
         env: input.env,
         manifestRef: input.manifestRef,
         actor: input.actor,
+        bundle: input.bundle,
     });
     if (!planned.plan) {
         throw new Error(planned.diagnostics?.[0]?.message ?? 'Seed plan failed.');
@@ -96,6 +98,13 @@ export async function applySeedWithStore(input) {
 			selectedActions(planned.plan).filter((action) => action.kind === 'teamMembership').map((action) => action.key),
 		),
 	};
+	const servicePrincipalMemberships = {
+		declared: selectedActions(planned.plan).filter((action) => action.kind === 'servicePrincipalMembership').map((action) => action.key),
+		removed: await store.retireUndeclaredSeedServicePrincipalMemberships(
+			planned.plan.seed,
+			selectedActions(planned.plan).filter((action) => action.kind === 'servicePrincipalMembership').map((action) => action.key),
+		),
+	};
     const localTeamMemberships = input.localOnly === true
         ? await ensureLocalSeedTeamMemberships({
             store,
@@ -115,6 +124,7 @@ export async function applySeedWithStore(input) {
         actionCount: mutationActions(planned.plan).length,
 		repairs,
 		membershipClaims,
+		servicePrincipalMemberships,
         localTeamMemberships,
 		platformAdminOwnership,
 		verification,

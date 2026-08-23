@@ -1,19 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
+import { CONTROL_PLANE_OPERATIONS, digestSeedBundle } from '@treeseed/sdk/operator-contracts';
 import { createSeedOperations } from '../../../../src/api/control-plane/catalog/seeds/index.ts';
 import { createSeedOperationService } from '../../../../src/api/control-plane/seeds/seed-operation-service.ts';
 import { validateSeedSource } from '../../../../src/control-plane/seeds/contracts/index.ts';
 
 describe('seed catalog operations', () => {
-	it('binds all five SDK-owned seed operations', () => {
+	it('binds the complete SDK-owned portable seed lifecycle', () => {
 		const operations = createSeedOperations({ seeds: {} as any });
 		expect(operations.map((operation) => operation.binding)).toEqual([
 			CONTROL_PLANE_OPERATIONS.seeds.runs,
 			CONTROL_PLANE_OPERATIONS.seeds.run,
+			CONTROL_PLANE_OPERATIONS.seeds.validate,
 			CONTROL_PLANE_OPERATIONS.seeds.plan,
 			CONTROL_PLANE_OPERATIONS.seeds.apply,
+			CONTROL_PLANE_OPERATIONS.seeds.show,
+			CONTROL_PLANE_OPERATIONS.seeds.verify,
+			CONTROL_PLANE_OPERATIONS.seeds.reconcile,
 			CONTROL_PLANE_OPERATIONS.seeds.resolveResources,
 		]);
+	});
+
+	it('validates an uploaded digest-bound bundle without filesystem access', async () => {
+		const unsigned: any = { schemaVersion: 'treeseed.seed-bundle/v2', name: 'treeseed', version: 1,
+			description: 'test', environments: ['local'], resources: { teams: [], memberships: [], projects: [], repositories: [] },
+			runtime: { capacityProviders: [] } };
+		const value = { ...unsigned, digest: await digestSeedBundle(unsigned) };
+		const service = createSeedOperationService({} as any);
+		await expect(service.validate({ id: 'user-1' }, { bundle: value })).resolves.toMatchObject({ ok: true, name: 'treeseed' });
+		await expect(service.validate({ id: 'user-1' }, { bundle: { ...value, digest: `sha256:${'0'.repeat(64)}` } }))
+			.resolves.toMatchObject({ ok: false, diagnostics: [expect.objectContaining({ code: 'seed_bundle_digest_mismatch' })] });
 	});
 
 	it('keeps run inspection authenticated and bounded', async () => {
