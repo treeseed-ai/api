@@ -6,6 +6,19 @@ import { installControlPlaneProtocolRoutes } from '../../../../src/api/control-p
 import { generateOpenApi } from '../../../../src/api/control-plane/openapi/generate-openapi.ts';
 
 describe('provider HTTP authentication', () => {
+	it('admits signed bootstrap registration without a preexisting provider bearer token', async () => {
+		let oauthCalls = 0;
+		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.providers.register,
+			handler: async (_input, context) => ({ authorization: context.requestHeaders?.authorization }) }]);
+		const app = new Hono();
+		installControlPlaneProtocolRoutes(app, async () => { oauthCalls += 1; return null; }, undefined, registry);
+		const response = await app.request('/v1/provider-registrations', { method: 'POST',
+			headers: { authorization: 'Treeseed-Registration one-time', 'content-type': 'application/json', 'idempotency-key': 'register-1' }, body: '{}' });
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ data: { authorization: 'Treeseed-Registration one-time' } });
+		expect(oauthCalls).toBe(0);
+	});
+
 	it('uses provider identity without invoking the OAuth verifier', async () => {
 		let oauthCalls = 0;
 		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.providers.createAvailability,

@@ -1,6 +1,6 @@
 {
   "name": "@treeseed/api",
-  "version": "0.8.0-rc.3",
+  "version": "0.8.0-rc.4",
   "description": "TreeSeed control-plane API and operations runner.",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -67,7 +67,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "0.13.0-rc.22",
+    "@treeseed/sdk": "0.13.0-rc.24",
     "@treeseed/treedx": "0.3.0-rc.3",
     "drizzle-orm": "^0.45.2",
     "hono": "4.13.3",
