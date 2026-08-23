@@ -86,3 +86,28 @@ localDev:
     command: node
     args:
       - scripts/support/migrate-db.ts
+packageRuntime:
+  schemaVersion: treeseed.package-runtime/v1
+  componentId: api
+  services:
+    - id: api
+      composeService: api
+      endpoints:
+        - id: http
+          protocol: http
+          port: 3000
+          visibility: host
+          defaultAlias: api.treeseed.localhost
+          aliasOverride: true
+          tls: edge
+          authentication: application
+          healthGate: { protocol: http, path: /healthz, timeoutSeconds: 120 }
+    - id: operations-runner
+      composeService: operations-runner
+      endpoints: []
+    - id: database
+      composeService: database
+      endpoints: []
+    - id: migration
+      composeService: migration
+      endpoints: []

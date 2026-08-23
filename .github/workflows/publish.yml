@@ -1,0 +1,143 @@
+name: Publish TreeSeed API images
+
+on:
+  push:
+    tags: ["*.*.*"]
+
+jobs:
+  verify:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 24 }
+      - run: npm run release:setup
+      - run: npm run release:check-tag
+      - run: npm run verify:direct
+
+  build:
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    permissions: { contents: read, id-token: write, packages: write }
+    environment: production
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { image: "treeseed/api", target: api, arch: amd64, platform: "linux/amd64", runner: ubuntu-24.04 }
+          - { image: "treeseed/api", target: api, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
+          - { image: "treeseed/op-runner", target: operations-runner, arch: amd64, platform: "linux/amd64", runner: ubuntu-24.04 }
+          - { image: "treeseed/op-runner", target: operations-runner, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
+          - { image: "treeseed/api-postgres", target: database, arch: amd64, platform: "linux/amd64", runner: ubuntu-24.04 }
+          - { image: "treeseed/api-postgres", target: database, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 24 }
+      - run: npm ci --ignore-scripts
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          username: ${{ vars.TREESEED_DOCKERHUB_USERNAME }}
+          password: ${{ secrets.TREESEED_DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ matrix.image }}:${{ github.ref_name }}-${{ matrix.arch }}
+          sbom: true
+          provenance: mode=max
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions: { contents: read, packages: write }
+    environment: production
+    strategy:
+      matrix:
+        image: ["treeseed/api", "treeseed/op-runner", "treeseed/api-postgres"]
+    steps:
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          username: ${{ vars.TREESEED_DOCKERHUB_USERNAME }}
+          password: ${{ secrets.TREESEED_DOCKERHUB_TOKEN }}
+      - name: Publish and read back multi-architecture manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ matrix.image }}"; version="${GITHUB_REF_NAME#v}"
+          docker buildx imagetools create -t "${image}:${version}" "${image}:${version}-amd64" "${image}:${version}-arm64"
+          for ref in "${image}:${version}-amd64" "${image}:${version}-arm64" "${image}:${version}"; do
+            raw="$(docker buildx imagetools inspect --raw "${ref}")"
+            grep -q '"vnd.docker.reference.type"[[:space:]]*:[[:space:]]*"attestation-manifest"' <<<"${raw}"
+            grep -q '"vnd.docker.reference.digest"[[:space:]]*:[[:space:]]*"sha256:' <<<"${raw}"
+          done
+
+  component-release:
+    needs: manifest
+    runs-on: ubuntu-24.04
+    permissions: { contents: read, packages: read }
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 24 }
+      - run: npm ci --ignore-scripts
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          username: ${{ vars.TREESEED_DOCKERHUB_USERNAME }}
+          password: ${{ secrets.TREESEED_DOCKERHUB_TOKEN }}
+      - name: Read exact Docker Hub digests
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          for pair in api=treeseed/api runner=treeseed/op-runner database=treeseed/api-postgres; do
+            name="${pair%%=*}"; image="${pair#*=}"
+            digest="$(docker buildx imagetools inspect "${image}:${version}" --format '{{json .Manifest}}' | jq -r '.digest')"
+            [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; echo "${name}=${digest}" >> "$GITHUB_OUTPUT"
+          done
+      - name: Build exact component release
+        env:
+          TREESEED_RELEASE: ${{ github.ref_name }}
+          TREESEED_SOURCE_COMMIT: ${{ github.sha }}
+          TREESEED_API_DIGEST: ${{ steps.images.outputs.api }}
+          TREESEED_RUNNER_DIGEST: ${{ steps.images.outputs.runner }}
+          TREESEED_DATABASE_DIGEST: ${{ steps.images.outputs.database }}
+        run: node --import tsx scripts/release/create-component-release.ts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: api-component-release-${{ github.sha }}
+          path: release-assets/
+          if-no-files-found: error
+
+  prerelease:
+    needs: [verify, manifest, component-release]
+    if: contains(github.ref_name, '-rc.')
+    runs-on: ubuntu-24.04
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: "api-component-release-${{ github.sha }}", path: release-assets }
+      - env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --generate-notes --verify-tag --prerelease
+
+  release:
+    needs: [verify, manifest, component-release]
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-24.04
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: "api-component-release-${{ github.sha }}", path: release-assets }
+      - env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --generate-notes --verify-tag

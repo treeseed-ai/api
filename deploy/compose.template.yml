@@ -1,0 +1,70 @@
+name: treeseed-api
+services:
+  database:
+    image: "@DATABASE_IMAGE@"
+    restart: unless-stopped
+    env_file: /etc/treeseed/components/api/environment
+    volumes:
+      - type: bind
+        source: /var/lib/treeseed/components/api/postgres
+        target: /var/lib/postgresql/data
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-treeseed} -d $${POSTGRES_DB:-treeseed_api}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    security_opt: ["no-new-privileges:true"]
+  migration:
+    image: "@API_IMAGE@"
+    command: ["npm", "run", "db:migrate"]
+    restart: "no"
+    env_file: /etc/treeseed/components/api/environment
+    depends_on:
+      database: { condition: service_healthy }
+    networks: [private]
+    security_opt: ["no-new-privileges:true"]
+  api:
+    image: "@API_IMAGE@"
+    restart: unless-stopped
+    env_file: /etc/treeseed/components/api/environment
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      TREESEED_API_PROVIDER_AUTH: control-plane-postgres
+    depends_on:
+      migration: { condition: service_completed_successfully }
+    networks: [private, platform, treeseed-edge]
+    expose: ["3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    security_opt: ["no-new-privileges:true"]
+  operations-runner:
+    image: "@RUNNER_IMAGE@"
+    restart: unless-stopped
+    env_file: /etc/treeseed/components/api/environment
+    environment:
+      NODE_ENV: production
+      TREESEED_API_BASE_URL: http://api:3000
+      TREESEED_PLATFORM_RUNNER_DATA_DIR: /data
+    depends_on:
+      api: { condition: service_healthy }
+    volumes:
+      - type: bind
+        source: /var/lib/treeseed/components/api/operations-runner
+        target: /data
+    networks: [private, platform]
+    security_opt: ["no-new-privileges:true"]
+networks:
+  private: { internal: true }
+  platform:
+    name: treeseed-platform
+    external: true
+  treeseed-edge:
+    name: treeseed-edge
+    external: true

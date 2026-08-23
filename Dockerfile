@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 
 WORKDIR /app
 
@@ -14,8 +14,7 @@ RUN npm run build
 
 ENV NODE_ENV=production \
 	HOST=0.0.0.0 \
-	PORT=3000 \
-	TREESEED_API_PROVIDER_AUTH=control-plane-postgres
+	PORT=3000
 
 EXPOSE 3000
 
@@ -24,3 +23,5 @@ CMD ["npm", "run", "start:api"]
 
 FROM runtime AS operations-runner
 CMD ["npm", "run", "start:runner"]
+
+FROM postgres:16-bookworm AS database
