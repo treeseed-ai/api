@@ -1,5 +1,5 @@
-import { mintTreeDxHs256Token } from '@treeseed/sdk/treedx/auth';
-import { TreeDxClient } from '@treeseed/sdk/treedx/client';
+import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
+import { treeDxDelegationAuthority } from '../../../../../api/control-plane/treedx/delegation-authority.ts';
 
 function text(...values: unknown[]): string {
 	for (const value of values) if (typeof value === 'string' && value.trim()) return value.trim();
@@ -25,29 +25,23 @@ export async function ensureProjectKnowledgeBinding(input: {
 }) {
 	const env = input.env ?? process.env;
 	const baseUrl = text(env.TREESEED_TREEDX_URL, env.TREESEED_TREEDX_BASE_URL, 'http://127.0.0.1:4000');
-	const secret = text(env.TREESEED_TREEDX_JWT_HS256_SECRET, 'treeseed-local-treedx-jwt-secret');
-	const token = mintTreeDxHs256Token({
-		secret,
-		issuer: text(env.TREESEED_TREEDX_JWT_ISSUER, 'https://api.treeseed.local/treedx'),
-		audience: text(env.TREESEED_TREEDX_JWT_AUDIENCE, 'treedx-local'),
+	const token = treeDxDelegationAuthority().mint({
 		actorId: 'treeseed-api',
 		tenantId: 'treeseed-control-plane',
-		capabilities: ['repos:read'],
-		repoIds: ['*'],
-		refs: ['*'],
-		paths: ['**'],
-		ttlSeconds: 300,
-	});
+		projectId: input.projectId,
+		connectionId: 'treedx-local-seed',
+		scope: { capabilities: ['repos:read'], repositoryIds: ['*'], refs: ['*'], paths: ['**'] },
+	}).token;
+	const normalizedBaseUrl = baseUrl.replace(/\/+$/u, '');
+	const transport = new FetchTransport({ baseUrl: normalizedBaseUrl, token, timeoutMs: 15_000, fetchImpl: input.store.config?.fetchImpl });
 	const client = new TreeDxClient({
-		baseUrl: baseUrl.replace(/\/+$/u, ''),
-		token,
-		timeoutMs: 15_000,
-		fetch: input.store.config?.fetchImpl,
+		baseUrl: normalizedBaseUrl,
+		transport,
 	});
 	const repositoryName = projectRepositoryName(input.projectSlug);
 	const repositories = input.dependencyState
-		? await (input.dependencyState.repositoryCatalog ??= client.listRepositories())
-		: await client.listRepositories();
+		? await (input.dependencyState.repositoryCatalog ??= client.repositories.list() as Promise<any[]>)
+		: await client.repositories.list() as any[];
 	const repository = repositories.find((candidate) =>
 		candidate.name === repositoryName || candidate.repositoryName === repositoryName);
 	if (!repository) throw new Error(`TreeDX repository ${repositoryName} is not reconciled.`);

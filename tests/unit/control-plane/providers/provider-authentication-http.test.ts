@@ -26,7 +26,7 @@ describe('provider HTTP authentication', () => {
 
 	it('selects OAuth or provider identity for a hybrid TreeDX operation', async () => {
 		let oauthCalls = 0;
-		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.treedx.createRepository,
+		const registry = new OperationRegistry([{ binding: CONTROL_PLANE_OPERATIONS.treedx.repositories.create,
 			handler: async (_input, context) => ({ actor: context.providerAuth ? 'provider' : context.principal?.id }) }]);
 		const app = new Hono();
 		app.use('/v1/dx/*', async (context, next) => {

@@ -4,7 +4,6 @@ import { getProjectTreeDxLibraryMethod } from '../projects/knowledge/queries/get
 import { ensureHubContentSourceTreeDxMethod } from '../treedx/repositories/contracts/ensure-hub-content-source-tree-dx.ts';
 import { createTreeDxMirrorMethod } from '../treedx/repositories/creation/create-tree-dx-mirror.ts';
 import { createTreeDxShareMethod } from '../treedx/repositories/creation/create-tree-dx-share.ts';
-import { provisionTeamTreeDxMethod } from '../treedx/repositories/creation/provision-team-tree-dx.ts';
 import { upsertTeamTreeDxMethod } from '../treedx/repositories/creation/upsert-team-tree-dx.ts';
 import { getPrimaryTreeDxInstanceMethod } from '../treedx/repositories/queries/get-primary-tree-dx-instance.ts';
 import { getTeamTreeDxMethod } from '../treedx/repositories/queries/get-team-tree-dx.ts';
@@ -18,7 +17,6 @@ export function installTreedxStoreMethods(prototype: ControlPlaneStore) {
 	prototype.getPrimaryTreeDxInstance = getPrimaryTreeDxInstanceMethod;
 	prototype.getTeamTreeDx = getTeamTreeDxMethod;
 	prototype.upsertTeamTreeDx = upsertTeamTreeDxMethod;
-	prototype.provisionTeamTreeDx = provisionTeamTreeDxMethod;
 	prototype.updateTreeDxDeployment = updateTreeDxDeploymentMethod;
 	prototype.listTreeDxDeployments = listTreeDxDeploymentsMethod;
 	prototype.listTreeDxMirrors = listTreeDxMirrorsMethod;

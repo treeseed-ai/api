@@ -1,4 +1,6 @@
-import { mintTreeDxHs256Token } from '@treeseed/sdk/treedx/auth';
+import { treeDxDelegationAuthority } from '../../../../../control-plane/treedx/delegation-authority.ts';
+import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
+import { TreeDxInfrastructureClient } from '../../../../../control-plane/treedx/infrastructure-client.ts';
 
 export interface WorkdayTreeDxConnectionStore {
 	config: Record<string, unknown> & { fetchImpl?: typeof fetch };
@@ -14,10 +16,6 @@ function text(...values: unknown[]): string {
 	return '';
 }
 
-function loopback(value: string): boolean {
-	try { return ['localhost', '127.0.0.1', '::1'].includes(new URL(value).hostname); } catch { return false; }
-}
-
 export async function resolveWorkdayTreeDxConnection(
 	store: WorkdayTreeDxConnectionStore,
 	input: { projectId: string; repositoryId?: string; runId: string; capabilities: string[] },
@@ -28,24 +26,16 @@ export async function resolveWorkdayTreeDxConnection(
 		store.config.treedxBaseUrl, process.env.TREESEED_TREEDX_URL, process.env.TREESEED_TREEDX_BASE_URL) || 'http://127.0.0.1:4000';
 	const repositoryId = text(input.repositoryId, library?.repositoryId, treeDx.repositoryId);
 	if (!repositoryId) return null;
-	const apiBaseUrl = text(store.config.baseUrl, process.env.TREESEED_API_BASE_URL);
-	const local = process.env.TREESEED_API_ENVIRONMENT === 'local' || process.env.TREESEED_ENVIRONMENT === 'local'
-		|| process.env.LOCAL_DEV_MODE === '1' || loopback(apiBaseUrl) || loopback(baseUrl);
-	const secret = text(store.config.TREESEED_TREEDX_JWT_HS256_SECRET, store.config.treedxJwtHs256Secret,
-		process.env.TREESEED_TREEDX_JWT_HS256_SECRET) || (local ? 'treeseed-local-treedx-jwt-secret' : '');
-	if (!secret) return null;
-	const token = mintTreeDxHs256Token({
-		secret,
-		issuer: text(store.config.TREESEED_TREEDX_JWT_ISSUER, store.config.treedxJwtIssuer,
-			process.env.TREESEED_TREEDX_JWT_ISSUER, process.env.TREEDX_JWT_ISSUER) || 'https://api.treeseed.local/treedx',
-		audience: text(store.config.TREESEED_TREEDX_JWT_AUDIENCE, store.config.treedxJwtAudience,
-			process.env.TREESEED_TREEDX_JWT_AUDIENCE, process.env.TREEDX_JWT_AUDIENCE) || 'treedx-local',
+	const token = treeDxDelegationAuthority().mint({
 		actorId: text(store.config.TREESEED_TREEDX_PROXY_ACTOR_ID, store.config.treedxProxyActorId,
 			process.env.TREESEED_TREEDX_PROXY_ACTOR_ID) || 'treeseed-api',
 		tenantId: text(store.config.TREESEED_TREEDX_PROXY_TENANT_ID, store.config.treedxProxyTenantId,
 			process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
-		repoIds: [repositoryId], capabilities: input.capabilities, refs: ['*'], paths: ['**'],
-		projectId: input.projectId, capacityWorkdayRunId: input.runId, ttlSeconds: 300,
-	});
-	return { baseUrl: baseUrl.replace(/\/+$/u, ''), repositoryId, token, fetchImpl: store.config.fetchImpl };
+		projectId: input.projectId,
+		connectionId: text(treeDx.connectionId, treeDx.instanceId, 'treedx-workday-binding'),
+		scope: { repositoryIds: [repositoryId], capabilities: input.capabilities, refs: ['*'], paths: ['**'], workdayRunId: input.runId },
+	}).token;
+	const normalizedBaseUrl = baseUrl.replace(/\/+$/u, '');
+	const transport = new FetchTransport({ baseUrl: normalizedBaseUrl, token, timeoutMs: 60_000, fetchImpl: store.config.fetchImpl });
+	return { baseUrl: normalizedBaseUrl, repositoryId, client: new TreeDxInfrastructureClient(new TreeDxClient({ baseUrl: normalizedBaseUrl, transport }), repositoryId) };
 }

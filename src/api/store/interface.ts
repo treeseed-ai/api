@@ -42,7 +42,6 @@ declare module '../persistence/store.ts' {
 		getPrimaryTreeDxInstance: OmitThisParameter<typeof import('./treedx/repositories/queries/get-primary-tree-dx-instance.ts').getPrimaryTreeDxInstanceMethod>;
 		getTeamTreeDx: OmitThisParameter<typeof import('./treedx/repositories/queries/get-team-tree-dx.ts').getTeamTreeDxMethod>;
 		upsertTeamTreeDx: OmitThisParameter<typeof import('./treedx/repositories/creation/upsert-team-tree-dx.ts').upsertTeamTreeDxMethod>;
-		provisionTeamTreeDx: OmitThisParameter<typeof import('./treedx/repositories/creation/provision-team-tree-dx.ts').provisionTeamTreeDxMethod>;
 		updateTreeDxDeployment: OmitThisParameter<typeof import('./treedx/repositories/updates/update-tree-dx-deployment.ts').updateTreeDxDeploymentMethod>;
 		listTreeDxDeployments: OmitThisParameter<typeof import('./treedx/repositories/queries/list-tree-dx-deployments.ts').listTreeDxDeploymentsMethod>;
 		listTreeDxMirrors: OmitThisParameter<typeof import('./treedx/repositories/queries/list-tree-dx-mirrors.ts').listTreeDxMirrorsMethod>;

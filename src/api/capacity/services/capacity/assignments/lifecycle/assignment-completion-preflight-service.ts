@@ -1,5 +1,4 @@
 import { validateAgentArtifactManifest } from '../../../../artifact-manifest.ts';
-import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
@@ -38,7 +37,7 @@ export async function preflightProviderAssignmentCompletion(store:Store,principa
 	if(expectations.length){
 		const repositoryId=text(payload.repositoryId);const connection=await resolveWorkdayTreeDxConnection(store,{projectId:text(assignment.projectId),repositoryId,runId,capabilities:['repos:read','files:read']});
 		if(!connection)throw new CapacityGovernanceError('assignment_completion_treedx_unavailable','Semantic preflight cannot read the exact project repository.',503,{assignmentId});
-		const client=new TreeDxClient({...connection,repoId:connection.repositoryId,timeoutMs:60_000,fetch:connection.fetchImpl});
+		const client=connection.client;
 		for(const expectation of expectations){
 			const candidates=references.filter((reference)=>text(reference.model)===expectation.model||text(reference.contentPath).startsWith(expectation.pathPrefix));
 			const attempts=[];

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isoNow,ControlPlaneStore,teamIsPrivate,validateTeamName } from "../../../persistence/store.ts";
+import { isoNow,ControlPlaneStore,validateTeamName } from "../../../persistence/store.ts";
 export async function createTeamMethod(this: ControlPlaneStore, input) {
     await this.ensureInitialized();
     const timestamp = isoNow();
@@ -35,15 +35,6 @@ export async function createTeamMethod(this: ControlPlaneStore, input) {
     ]);
     if (input.ownerUserId) {
         await this.upsertTeamMember(id, input.ownerUserId, 'team_owner');
-    }
-    const team = await this.getTeam(id);
-    if (teamIsPrivate(team)) {
-        await this.provisionTeamTreeDx(id, {
-            metadata: {
-                automaticPrivateTeamTreeDx: true,
-                createdFrom: 'private_team_creation',
-            },
-        });
     }
     return this.getTeam(id);
 }

@@ -1,6 +1,7 @@
-import { TreeDxClient } from '@treeseed/sdk/treedx/client';
-import { mintTreeDxHs256Token } from '@treeseed/sdk/treedx/auth';
+import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
 import { AGENT_OPERATIONAL_CONTENT_COLLECTIONS } from '@treeseed/sdk/content-validation';
+import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
+import { TreeDxInfrastructureClient } from '../control-plane/treedx/infrastructure-client.ts';
 
 type RecordValue = Record<string, unknown>;
 
@@ -12,10 +13,6 @@ function text(...values: unknown[]): string {
 	return '';
 }
 
-function localAddress(value: string): boolean {
-	try { return ['localhost', '127.0.0.1', '::1'].includes(new URL(value).hostname); } catch { return false; }
-}
-
 function normalizedContentPath(value: unknown): string {
 	const path = text(value).replace(/^\/+|\/+$/gu, '');
 	if (!path || path.split('/').some((part) => !part || part === '.' || part === '..')) {
@@ -25,7 +22,7 @@ function normalizedContentPath(value: unknown): string {
 }
 
 export interface KnowledgeGatewayConnection {
-	client: TreeDxClient;
+	client: TreeDxInfrastructureClient;
 	repositoryId: string;
 	baseRef: string;
 	contentPath: string;
@@ -55,11 +52,6 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		process.env.TREESEED_TREEDX_URL, process.env.TREESEED_TREEDX_BASE_URL) || 'http://127.0.0.1:4000';
 	const repositoryId = text(library.repositoryId, treeDx.repositoryId);
 	if (!repositoryId) return null;
-	const local = process.env.TREESEED_ENVIRONMENT === 'local' || process.env.LOCAL_DEV_MODE === '1'
-		|| localAddress(baseUrl) || localAddress(text(store.config.baseUrl, process.env.TREESEED_API_BASE_URL));
-	const secret = text(store.config.TREESEED_TREEDX_JWT_HS256_SECRET, store.config.treedxJwtHs256Secret,
-		process.env.TREESEED_TREEDX_JWT_HS256_SECRET) || (local ? 'treeseed-local-treedx-jwt-secret' : '');
-	if (!secret) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
 	const allowedPaths = [`${contentPath}/books/**`, `${contentPath}/knowledge/**`, `${contentPath}/assets/**`,
 		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
@@ -73,14 +65,12 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		] : [])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const canonicalAuthoringRef = `refs/heads/${authoringBranch.replace(/^refs\/heads\//u, '')}`;
-	const token = mintTreeDxHs256Token({
-		secret,
-		issuer: text(store.config.TREESEED_TREEDX_JWT_ISSUER, process.env.TREESEED_TREEDX_JWT_ISSUER) || 'https://api.treeseed.local/treedx',
-		audience: text(store.config.TREESEED_TREEDX_JWT_AUDIENCE, process.env.TREESEED_TREEDX_JWT_AUDIENCE) || 'treedx-local',
+	const token = treeDxDelegationAuthority().mint({
 		actorId: text(store.config.TREESEED_TREEDX_PROXY_ACTOR_ID, process.env.TREESEED_TREEDX_PROXY_ACTOR_ID) || 'treeseed-api',
 		tenantId: text(store.config.TREESEED_TREEDX_PROXY_TENANT_ID, process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
-		repoIds: [repositoryId],
-		capabilities: input.maintenanceRefs?.length
+		projectId: input.projectId,
+		connectionId: text(library.instanceId, treeDx.connectionId, treeDx.instanceId, 'treedx-project-binding'),
+		scope: { repositoryIds: [repositoryId], capabilities: input.maintenanceRefs?.length
 			? ['repos:read', 'files:read', 'git:read', 'git:diff', 'git:fetch', 'git:push', 'registry:read', 'policy:write']
 			: input.publishRefs?.length
 			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:fetch', 'git:push', 'registry:read', 'graph:query', 'graph:refresh']
@@ -91,12 +81,11 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
 			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []),
 			...(input.workspaceRefs ?? [])])],
-		paths: allowedPaths,
-		projectId: input.projectId,
-		ttlSeconds: 300,
-	});
+		paths: allowedPaths },
+	}).token;
+	const transport = new FetchTransport({ baseUrl: baseUrl.replace(/\/+$/u, ''), token, timeoutMs: 15_000, fetchImpl: store.config.fetchImpl });
 	return {
-		client: new TreeDxClient({ baseUrl: baseUrl.replace(/\/+$/u, ''), token, repoId: repositoryId, timeoutMs: 15_000, fetch: store.config.fetchImpl }),
+		client: new TreeDxInfrastructureClient(new TreeDxClient({ baseUrl: baseUrl.replace(/\/+$/u, ''), transport }), repositoryId),
 		repositoryId,
 		baseRef: text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
 		contentPath,

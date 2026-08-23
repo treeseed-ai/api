@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
-import { readBoundedTreeDxJson } from '../../../treedx/repositories/treedx-response.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from './workday-treedx-connection.ts';
+import type { TreeDxInfrastructureClient } from '../../../../../control-plane/treedx/infrastructure-client.ts';
 
 interface CreateWorkdayTreeDxWorkspaceInput {
-	baseUrl: string;
-	token: string;
+	client: TreeDxInfrastructureClient;
 	repositoryId: string;
 	assignmentId: string;
 	baseRef: string;
@@ -13,7 +12,6 @@ interface CreateWorkdayTreeDxWorkspaceInput {
 	mode: 'read_only' | 'writable';
 	allowedPaths: string[];
 	ttlSeconds: number;
-	fetchImpl?: typeof fetch;
 }
 
 type ConfiguredWorkspaceStore = WorkdayTreeDxConnectionStore;
@@ -48,9 +46,7 @@ export function workdayTreeDxWorkspaceId(assignmentId: string) {
 
 export async function createWorkdayTreeDxWorkspace(input: CreateWorkdayTreeDxWorkspaceInput) {
 	const workspaceId = workdayTreeDxWorkspaceId(input.assignmentId);
-	const baseUrl = requireText(input.baseUrl, 'baseUrl').replace(/\/+$/u, '');
 	const repositoryId = requireText(input.repositoryId, 'repositoryId');
-	const token = requireText(input.token, 'token');
 	if (!Number.isFinite(input.ttlSeconds) || input.ttlSeconds <= 0) {
 		throw new CapacityGovernanceError(
 			'capacity_workday_workspace_input_invalid',
@@ -59,37 +55,14 @@ export async function createWorkdayTreeDxWorkspace(input: CreateWorkdayTreeDxWor
 			{ owner: 'ttlSeconds' },
 		);
 	}
-	const response = await (input.fetchImpl ?? fetch)(
-		`${baseUrl}/api/v1/repos/${encodeURIComponent(repositoryId)}/workspaces`,
-		{
-			method: 'POST',
-			headers: {
-				accept: 'application/json',
-				authorization: `Bearer ${token}`,
-				'content-type': 'application/json',
-			},
-			body: JSON.stringify({
-				workspaceId,
-				baseRef: input.baseRef,
-				branchName: input.branchName,
-				mode: input.mode,
-				allowedPaths: input.allowedPaths,
-				ttlSeconds: input.ttlSeconds,
-			}),
-		},
-	);
-	const decoded = await readBoundedTreeDxJson(response, {
-		tooLargeCode: 'capacity_workday_workspace_response_too_large',
-		invalidCode: 'capacity_workday_workspace_response_invalid',
-		owner: 'TreeDX workspace response',
-	});
-	if (!response.ok) {
-		throw new CapacityGovernanceError(
-			'capacity_workday_workspace_create_failed',
-			`TreeDX workspace creation failed (${response.status}).`,
-			502,
-			{ status: response.status },
-		);
+	let decoded: unknown;
+	try {
+		decoded = await input.client.createWorkspace({ repoId: repositoryId, workspaceId, baseRef: input.baseRef, branchName: input.branchName,
+			mode: input.mode, allowedPaths: input.allowedPaths, ttlSeconds: input.ttlSeconds });
+	} catch (error) {
+		throw new CapacityGovernanceError('capacity_workday_workspace_create_failed', 'TreeDX workspace creation failed.', 502, {
+			details: 'The TreeDX workspace operation failed.',
+		});
 	}
 	const envelope = record(decoded);
 	const workspace = record(envelope.payload ?? envelope.workspace ?? envelope);
@@ -116,8 +89,7 @@ export async function createConfiguredWorkdayTreeDxWorkspace(
 	});
 	if (!connection) throw new CapacityGovernanceError('capacity_workday_workspace_auth_unavailable', 'TreeDX connected authentication and a repository binding are required for local and hosted workdays.', 503);
 	return createWorkdayTreeDxWorkspace({
-		baseUrl: connection.baseUrl,
-		token: connection.token,
+		client: connection.client,
 		repositoryId: connection.repositoryId,
 		assignmentId: input.assignmentId,
 		baseRef: input.baseRef ?? 'refs/heads/main',
@@ -125,6 +97,5 @@ export async function createConfiguredWorkdayTreeDxWorkspace(
 		mode: input.mode ?? 'writable',
 		allowedPaths: input.allowedPaths,
 		ttlSeconds: input.ttlSeconds,
-		fetchImpl: connection.fetchImpl,
 	});
 }

@@ -1,4 +1,3 @@
-import { TreeDxClient } from '@treeseed/sdk/treedx/client';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
@@ -37,7 +36,7 @@ export async function closeTerminalAssignmentWorkspace(
 		503,
 		{ assignmentId: assignment.id, workspaceId },
 	);
-	const client = new TreeDxClient({ ...connection, repoId: connection.repositoryId, timeoutMs: 15_000, fetch: connection.fetchImpl });
+	const client = connection.client;
 	try {
 		await client.closeWorkspace(workspaceId);
 	} catch (error) {
