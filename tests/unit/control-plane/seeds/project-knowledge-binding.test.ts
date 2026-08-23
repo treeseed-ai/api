@@ -10,7 +10,7 @@ describe('seed TreeDX knowledge binding', () => {
 			const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
 			const body = init?.body ? JSON.parse(String(init.body)) : undefined;
 			calls.push({ method, path: url.pathname, body });
-			if (method === 'GET' && url.pathname === '/api/v1/repos') return Response.json([]);
+			if (method === 'GET' && url.pathname === '/api/v1/repos') return Response.json({ ok: true, repos: [] });
 			if (method === 'POST' && url.pathname === '/api/v1/repos') {
 				return Response.json({ ok: true, repo: { repoId: 'repo-platform', repositoryName: 'treeseed-platform', defaultRef: 'refs/heads/main' } });
 			}
@@ -34,5 +34,15 @@ describe('seed TreeDX knowledge binding', () => {
 		]);
 		expect(bindings).toHaveLength(2);
 		expect(bindings[1]).toMatchObject({ repositoryId: 'repo-platform', contentRepositoryUrl: null });
+	});
+
+	it('rejects a malformed TreeDX repository catalog instead of guessing its shape', async () => {
+		const store = {
+			config: { fetchImpl: async () => Response.json([]) },
+		};
+		await expect(ensureProjectKnowledgeBinding({
+			store, projectId: 'project-platform', teamId: 'team-treeseed', projectSlug: 'platform',
+			env: { NODE_ENV: 'test', TREESEED_TREEDX_URL: 'http://127.0.0.1:4000' }, dependencyState: {},
+		})).rejects.toThrow('TreeDX repository catalog response is invalid.');
 	});
 });

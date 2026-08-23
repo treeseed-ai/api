@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { digestSeedBundle, type SeedBundleV2 } from '@treeseed/sdk/operator-contracts';
+import { applyAction } from '../../../../src/control-plane/seeds/apply-support/support/action-dispatch.ts';
 import { planPortableSeedBundle } from '../../../../src/control-plane/seeds/planning/plan-portable-seed-bundle.ts';
 
 describe('content-only seed projects', () => {
@@ -24,5 +25,22 @@ describe('content-only seed projects', () => {
 		expect(result.ok).toBe(true);
 		expect(project?.payload.repository).toBeNull();
 		expect(result.plan?.actions.some((action) => action.kind === 'hubRepository')).toBe(false);
+	});
+
+	it('does not persist an empty legacy architecture object', async () => {
+		const updateProject = vi.fn(async (_projectId, input) => ({ id: 'project-1', ...input }));
+		await applyAction({
+			action: {
+				kind: 'project', key: 'project:fixture/knowledge', action: 'update', existing: { id: 'project-1', metadata: {} },
+				payload: { teamKey: 'team:fixture', slug: 'knowledge', name: 'Knowledge', description: 'Virtual knowledge only.',
+					kind: 'content', repository: null, architecture: {}, metadata: {} },
+			},
+			store: { updateProject },
+			ids: { teams: new Map([['team:fixture', 'team-1']]), projects: new Map(), projectTeams: new Map() },
+			manifestHash: `sha256:${'0'.repeat(64)}`, appliedAt: '2026-08-23T00:00:00.000Z', plan: { seed: 'fixture' },
+		} as never);
+		expect(updateProject).toHaveBeenCalledWith('project-1', expect.objectContaining({
+			metadata: expect.not.objectContaining({ architecture: expect.anything() }),
+		}));
 	});
 });

@@ -52,7 +52,9 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
 			metadata: mergeSeedMetadata(projectSeedMetadata(action.existing?.metadata), action.payload.metadata, action, manifestHash, appliedAt),
             kind: action.payload.kind,
             repository: action.payload.repository,
-            architecture: action.payload.architecture,
+			...(Object.keys(action.payload.architecture ?? {}).length > 0
+				? { architecture: action.payload.architecture }
+				: {}),
         };
         const project = action.existing
             ? await store.updateProject(action.existing.id, {
@@ -89,7 +91,7 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
             name: action.payload.name,
             url: action.payload.gitUrl,
             defaultBranch: action.payload.defaultBranch ?? 'main',
-            currentBranch: action.payload.currentBranch ?? action.payload.defaultBranch ?? 'main',
+			currentBranch: action.existing?.currentBranch ?? action.payload.defaultBranch ?? 'main',
             status: action.payload.status ?? 'active',
             accessPolicy: action.payload.accessPolicy ?? {},
             releasePolicy: action.payload.releasePolicy ?? {},

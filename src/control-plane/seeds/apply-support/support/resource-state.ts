@@ -1,4 +1,4 @@
-import { emptyObjectAsNull,projectSeedMetadata } from '../index.js';
+import { projectSeedMetadata } from '../index.js';
 
 function managedMetadata(desired, actual) {
     const desiredRecord = desired && typeof desired === 'object' && !Array.isArray(desired) ? desired : {};
@@ -52,7 +52,7 @@ export async function projectCurrentPayload(store, action, project) {
                 repositoryPolicy: configuredRepository.repositoryPolicy,
             }
             : null,
-        architecture: project.metadata?.architecture,
+		architecture: project.metadata?.architecture ?? {},
 		metadata: managedMetadata(action.payload.metadata, projectSeedMetadata(project.metadata)),
     };
 }
@@ -68,12 +68,11 @@ export function hubRepositoryCurrentPayload(action, repository) {
         name: repository.name,
         gitUrl: repository.url,
         defaultBranch: repository.defaultBranch ?? null,
-        currentBranch: repository.currentBranch ?? repository.defaultBranch ?? null,
         submodulePath: repository.submodulePath ?? null,
         status: repository.status ?? 'active',
-        accessPolicy: emptyObjectAsNull(repository.accessPolicy),
-        releasePolicy: emptyObjectAsNull(repository.releasePolicy),
-        publishPolicy: emptyObjectAsNull(repository.publishPolicy),
+		accessPolicy: repository.accessPolicy ?? {},
+		releasePolicy: repository.releasePolicy ?? {},
+		publishPolicy: repository.publishPolicy ?? {},
         repositoryPolicy: action.payload.repositoryPolicy,
         metadata: action.payload.metadata,
     };

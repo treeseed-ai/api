@@ -80,7 +80,7 @@ export async function planPortableSeedBundle(input: {
 		environments: environments.selected, action: 'create',
 		payload: { projectKey: repository.project, role: repository.role, provider: repository.provider,
 			owner: repository.owner, name: repository.name, gitUrl: repository.gitUrl,
-			defaultBranch: repository.defaultBranch, currentBranch: repository.defaultBranch,
+			defaultBranch: repository.defaultBranch,
 			submodulePath: repository.submodulePath ?? repository.checkoutPath ?? null, status: 'active',
 			accessPolicy: {}, releasePolicy: {}, publishPolicy: {}, repositoryPolicy: repository.repositoryPolicy,
 			metadata: { ...(repository.metadata ?? {}), ...ownership(bundle, repository.key) } },
