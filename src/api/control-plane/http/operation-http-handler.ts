@@ -41,13 +41,14 @@ function etag(value: unknown) {
 async function operationInput(context: Context, operation: BoundOperation) {
 	const query = operation.binding.schema.query.parse(Object.fromEntries(new URL(context.req.url).searchParams.entries()));
 	const path = operation.binding.schema.path.parse(context.req.param());
-	const rawBody = operation.binding.descriptor.kind === 'read' ? undefined : await context.req.text();
+	const acceptsBody = operation.binding.descriptor.rest?.method !== 'GET';
+	const rawBody = acceptsBody ? await context.req.text() : undefined;
 	let bodyValue: unknown = undefined;
 	if (rawBody !== undefined) {
 		try { bodyValue = rawBody ? JSON.parse(rawBody) : {}; }
 		catch { throw new ControlPlaneOperationError(400, 'operation_json_invalid', 'The request body must be valid JSON.'); }
 	}
-	if (operation.binding.descriptor.kind === 'mutation' && (!bodyValue || typeof bodyValue !== 'object' || Array.isArray(bodyValue))) {
+	if (acceptsBody && (!bodyValue || typeof bodyValue !== 'object' || Array.isArray(bodyValue))) {
 		throw new ControlPlaneOperationError(400, 'operation_input_invalid', 'The request body must be a JSON object.');
 	}
 	return { input: { path, query, body: operation.binding.schema.body.parse(bodyValue) }, rawBody };
