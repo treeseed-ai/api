@@ -1,6 +1,6 @@
 import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { TreeDxDelegationAuthority } from '../../../src/api/control-plane/treedx/delegation-authority.ts';
+import { TreeDxDelegationAuthority } from '../../../../src/api/control-plane/treedx/delegation-authority.ts';
 
 function environment() {
 	const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
