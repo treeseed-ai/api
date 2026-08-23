@@ -4,6 +4,7 @@ import { upsertHubContentSourceMethod } from '../content/creation/upsert-hub-con
 import { getHubContentSourceMethod } from '../content/queries/get-hub-content-source.ts';
 import { buildRepositoryTopologySnapshotMethod } from '../repositories/creation/build-repository-topology-snapshot.ts';
 import { upsertHubRepositoryMethod } from '../repositories/creation/upsert-hub-repository.ts';
+import { deleteHubRepositoryByRoleMethod } from '../repositories/retirement/delete-hub-repository-by-role.ts';
 import { batchMethod } from '../support/contracts/batch.ts';
 import { ensureInitializedMethod } from '../support/contracts/ensure-initialized.ts';
 import { firstMethod } from '../support/contracts/first.ts';
@@ -21,6 +22,7 @@ export function installFoundationStoreMethods(prototype: ControlPlaneStore) {
 	prototype.ensureInitialized = ensureInitializedMethod;
 	prototype.buildRepositoryTopologySnapshot = buildRepositoryTopologySnapshotMethod;
 	prototype.upsertHubRepository = upsertHubRepositoryMethod;
+	prototype.deleteHubRepositoryByRole = deleteHubRepositoryByRoleMethod;
 	prototype.listHubRepositories = listHubRepositoriesMethod;
 	prototype.upsertHubContentSource = upsertHubContentSourceMethod;
 	prototype.getHubContentSource = getHubContentSourceMethod;
