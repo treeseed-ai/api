@@ -34,6 +34,7 @@ import { createProviderSignalService } from '../control-plane/repositories/provi
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
 import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
+import { installRemoteCredentialBrokerRoute } from '../control-plane/treedx/remote-credential-broker.ts';
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
 import { createSeedOperationService } from '../control-plane/seeds/seed-operation-service.ts';
 import { createFeedbackOperationService } from '../control-plane/feedback/feedback-operation-service.ts';
@@ -202,6 +203,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
+	installRemoteCredentialBrokerRoute(app, { store, env: process.env, fetchImpl: options.fetchImpl ?? fetch });
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };

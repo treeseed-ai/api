@@ -8,8 +8,8 @@ afterEach(() => rmSync('release-assets', { recursive: true, force: true }));
 
 describe('managed API release publication', () => {
 	it('accepts the exact package RC tag and rejects aliases or build metadata', () => {
-		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/packages/assert-release-tag-version.ts'], { env: { ...process.env, GITHUB_REF_NAME: '0.8.0-rc.10' } });
-		for (const tag of ['v0.8.0-rc.10', '0.8.0-rc.10+rebuilt']) {
+		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/packages/assert-release-tag-version.ts'], { env: { ...process.env, GITHUB_REF_NAME: '0.8.0-rc.11' } });
+		for (const tag of ['v0.8.0-rc.11', '0.8.0-rc.11+rebuilt']) {
 			const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/packages/assert-release-tag-version.ts'], { env: { ...process.env, GITHUB_REF_NAME: tag } });
 			expect(result.status).not.toBe(0);
 		}
