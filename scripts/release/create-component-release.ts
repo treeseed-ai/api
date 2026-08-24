@@ -13,7 +13,7 @@ const runtime = {
 	compose: { projectName: 'treeseed-api', files: ['compose.yml'] },
 	services: [
 		{ id: 'database', composeService: 'database', endpoints: [] }, { id: 'migration', composeService: 'migration', endpoints: [] },
-		{ id: 'api', composeService: 'api', endpoints: [{ id: 'http', protocol: 'http' as const, port: 3000, visibility: 'host' as const, defaultAlias: 'api.treeseed.localhost', aliasOverride: true, tls: 'edge' as const, authentication: 'application' as const, healthGate: { protocol: 'http' as const, path: '/healthz', timeoutSeconds: 120 } }] },
+		{ id: 'api', composeService: 'api', endpoints: [{ id: 'http', protocol: 'http' as const, port: 3000, visibility: 'host' as const, defaultAlias: 'api.treeseed.localhost', aliasOverride: true, tls: 'edge' as const, authentication: 'application' as const, healthGate: { protocol: 'http' as const, path: '/v1/health/ready', timeoutSeconds: 120 } }] },
 		{ id: 'operations-runner', composeService: 'operations-runner', endpoints: [] },
 	],
 	stateVolumes: [{ id: 'postgres', volume: '/var/lib/treeseed/components/api/postgres', backup: 'required' as const }, { id: 'operations-runner', volume: '/var/lib/treeseed/components/api/operations-runner', backup: 'required' as const }],
