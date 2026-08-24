@@ -66,7 +66,7 @@ localDev:
       hostEnv: HOST
       portEnv: PORT
       defaultPort: 3000
-      healthPath: /healthz
+      healthPath: /v1/health/ready
     operationsRunner:
       script: dev:runner
   database:
@@ -101,7 +101,7 @@ packageRuntime:
           aliasOverride: true
           tls: edge
           authentication: application
-          healthGate: { protocol: http, path: /healthz, timeoutSeconds: 120 }
+          healthGate: { protocol: http, path: /v1/health/ready, timeoutSeconds: 120 }
     - id: operations-runner
       composeService: operations-runner
       endpoints: []
