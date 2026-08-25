@@ -143,12 +143,14 @@ export async function applySeedWithStore(input) {
         run,
     };
     } catch (error) {
+		const causeMessage = error instanceof Error && error.message.trim() ? error.message.trim() : 'Unknown reconciliation failure.';
+		const causeCode = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
         const message = activeActionKey
             ? `Seed application failed while reconciling ${activeActionKey}.`
             : 'Seed application failed during authoritative read-back.';
         run = await updateSeedRunIfAvailable(store, run?.id, {
             state: 'failed',
-            error: { code: 'seed_apply_failed', message, actionKey: activeActionKey },
+            error: { code: 'seed_apply_failed', message, actionKey: activeActionKey, causeCode, causeMessage },
         }) ?? run;
         throw error;
     }

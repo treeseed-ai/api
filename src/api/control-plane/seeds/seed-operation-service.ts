@@ -152,7 +152,13 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 			const planned = await planSeedWithStore({ seedName: name, environments: selectedEnvironments, mode: 'apply', store, bundle: value, actor: { actorType: 'user', principal } });
 			if (!planned.plan) throw new SeedOperationError(400, 'seed_plan_invalid', 'The seed could not be planned.');
 			await requireApplyAccess(principal, planned.plan);
-			const applied = await applySeedWithStore({ seedName: name, environments: selectedEnvironments, bundle: value, approvalRequestId: text(body.approvalRequestId), store, localOnly: planned.plan.environments.length === 1 && planned.plan.environments[0] === 'local', actor: { actorType: 'user', principal } });
+			let applied;
+			try {
+				applied = await applySeedWithStore({ seedName: name, environments: selectedEnvironments, bundle: value, approvalRequestId: text(body.approvalRequestId), store, localOnly: planned.plan.environments.length === 1 && planned.plan.environments[0] === 'local', actor: { actorType: 'user', principal } });
+			} catch (error) {
+				const detail = error instanceof Error && error.message.trim() ? error.message.trim() : 'Seed reconciliation failed.';
+				throw new SeedOperationError(502, 'seed_reconciliation_failed', detail);
+			}
 			if (applied.result?.blocked === true) throw new SeedOperationError(409, 'seed_apply_blocked', String(applied.result.reason ?? 'The seed application is blocked.'));
 			const providerClosure = await reconcileProviderPrerequisites(applied.plan, true);
 			return { seed: applied.plan.seed, mode: 'apply', environments: applied.plan.environments, summary: applied.plan.summary, runtime: applied.plan.runtime, actions: applied.plan.actions, diagnostics: applied.plan.diagnostics, run: applied.run, result: { ...applied.result, providerClosure } };
