@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { treeDxDelegationAuthority, type TreeDxDelegationAuthority } from '../../../../control-plane/treedx/delegation-authority.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
+import { resolveTreeDxServiceUrl } from '../../../../control-plane/treedx/connection-url.ts';
 
 export interface TreeDxProxyScope {
 	repoIds: string[];
@@ -84,17 +85,11 @@ export function resolveTreeDxProxyBaseUrl(runtime: TreeDxProxyRuntime, library: 
 		|| text(env.TREESEED_TREEDX_BASE_URL)
 		|| text(env.TREESEED_PUBLIC_TREEDX_BASE_URL)
 		|| 'http://127.0.0.1:4000';
-	let parsed: URL;
-	try { parsed = new URL(value); } catch { throw new CapacityGovernanceError('treedx_connection_invalid', 'TreeDX connection URL is invalid.', 409); }
-	if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
-		throw new CapacityGovernanceError('treedx_connection_invalid', 'TreeDX connection requires a credential-free HTTP service URL without query or fragment data.', 409);
+	try { return resolveTreeDxServiceUrl(value, env); }
+	catch (error) {
+		const message = error instanceof Error ? error.message : 'TreeDX connection URL is invalid.';
+		throw new CapacityGovernanceError(message.includes('TLS') ? 'treedx_connection_tls_required' : 'treedx_connection_invalid', message, 409);
 	}
-	const local = env.TREESEED_ENVIRONMENT === 'local' || env.TREESEED_ENVIRONMENT === 'test' || env.NODE_ENV === 'test'
-		|| env.LOCAL_DEV_MODE === '1';
-	if (parsed.protocol !== 'https:' && !local) {
-		throw new CapacityGovernanceError('treedx_connection_tls_required', 'TreeDX connections require TLS outside explicit local development.', 409);
-	}
-	return parsed.toString().replace(/\/+$/u, '');
 }
 
 export function resolveTreeDxProxyToken(runtime: TreeDxProxyRuntime, baseUrl: string, projectId: string, requestedScope: TreeDxProxyScope,

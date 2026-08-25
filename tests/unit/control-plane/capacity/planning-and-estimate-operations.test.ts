@@ -73,4 +73,23 @@ describe('planning and estimate catalog operations', () => {
 			.rejects.toMatchObject({ code: 'agent_invocation_precondition_failed', status: 412 });
 		expect(update).not.toHaveBeenCalled();
 	});
+
+	it('collapses duplicate addresses with required precedence and fails explicitly without communication capacity', async () => {
+		const create = vi.fn(async () => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
+		const service = createCommunicationService(store({
+			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
+			async first(query: string) {
+				if (query.includes('communication_discussion_topics')) return { id: 'topic-a', slug: 'agent-chat', status: 'active' };
+				if (query.includes('communication_discussion_streams')) return { id: 'stream-a', discussion_id: 'discussion-a' };
+				return null;
+			},
+			async run() { return { meta: { changes: 1 } }; },
+		}), { create });
+		await expect(service.send(principal, 'team-a', 'Agent Chat', {
+			projectId: 'sdk', message: '@sdk/architect\nPlease coordinate with @architect.',
+		}, 'request-a')).rejects.toMatchObject({ code: 'communication_capacity_unavailable', status: 503 });
+		expect(create).toHaveBeenCalledWith(principal, expect.objectContaining({
+			recipients: ['architect'], addressRequirements: { architect: 'required' },
+		}), 'request-a');
+	});
 });

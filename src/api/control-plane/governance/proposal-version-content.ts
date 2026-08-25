@@ -2,7 +2,7 @@ import { createHash,randomUUID } from 'node:crypto';
 import { serializeFrontmatterDocument } from '../../content/frontmatter.ts';
 import { validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parse as parseYaml } from 'yaml';
-import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
@@ -25,7 +25,7 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId, write: true, relationPaths: true, authoringPaths: true });
 	if (!connection) throw Object.assign(new Error('The project TreeDX repository is unavailable for proposal authoring.'), { status: 503, code: 'proposal_treedx_unavailable' });
 	const title = text(input.update.title, input.proposal.title); const summary = text(input.update.summary, input.proposal.summary); const body = text(input.update.body, input.proposal.body); const types = list(input.update.proposalTypes).length ? list(input.update.proposalTypes) : list(input.proposal.proposalTypes ?? input.proposal.proposal_types_json);
-	const path = text(provenance.contentPath) || `${connection.contentPath}/proposals/governance/${slug(title)}.mdx`; const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
+	const path = text(provenance.contentPath) || projectLibraryPath(connection.contentPath, 'proposals/governance', `${slug(title)}.mdx`); const branchName = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const workspace = await connection.client.createWorkspace({ workspaceId: treeDxWorkspaceId(randomUUID()), repoId: connection.repositoryId, baseRef: branchName, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 600 });
 	const expectedBase = text(input.update.expectedTreeDxBase);
 	if (expectedBase && expectedBase !== workspace.baseCommitSha) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('The proposal content branch changed. Compare and rebase before publishing.'), { status: 409, code: 'proposal_treedx_base_stale', currentBase: workspace.baseCommitSha }); }

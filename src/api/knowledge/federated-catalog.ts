@@ -1,6 +1,6 @@
 import { type BookDefinition, type KnowledgePageDefinition } from '@treeseed/sdk/knowledge';
 import { parseBook, parseKnowledgePage } from './runtime/catalog.ts';
-import { resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
 import { createKnowledgePublicationStorage } from './publication-storage.ts';
 import { loadPublishedTeamCatalog } from './published-catalog.ts';
 import { listKnowledgeContentPaths } from './read-model/repository-paths.ts';
@@ -70,8 +70,8 @@ async function loadLiveProjectCatalog(context: any, project: any) {
 		|| connection.contentPath !== observedConnection.contentPath) {
 		throw new Error('The knowledge repository binding changed while the catalog was loading.');
 	}
-	const bookRoot = `${connection.contentPath}/books/`;
-	const pageRoot = `${connection.contentPath}/knowledge/`;
+	const bookRoot = `${projectLibraryPath(connection.contentPath, 'books')}/`;
+	const pageRoot = `${projectLibraryPath(connection.contentPath, 'knowledge')}/`;
 	const [bookDocuments, pageDocuments] = await Promise.all([
 		repositoryDocuments(connection, paths.resolvedRef, paths.paths.filter((path) => path.startsWith(bookRoot))),
 		repositoryDocuments(connection, paths.resolvedRef, paths.paths.filter((path) => path.startsWith(pageRoot))),

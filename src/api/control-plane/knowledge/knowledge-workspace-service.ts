@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
@@ -77,7 +77,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const file = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path });
 			try {
-				const isBook = path.startsWith(`${connection.contentPath}/books/`);
+				const isBook = path.startsWith(`${projectLibraryPath(connection.contentPath, 'books')}/`);
 				const definition = isBook ? parseBook({ path, raw: file.content }) : parseKnowledgePage({ path, raw: file.content });
 				const catalog = isBook ? { pages: [] } : await reader.projectCatalog(access.principal, access.workspace.projectId);
 				const backlinks = isBook ? [] : (catalog.pages ?? []).filter((page: any) => page.relatedKnowledgeIds?.includes((definition as any).id))
@@ -110,8 +110,8 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			try { content = input.kind === 'book' ? bookDocument(input, status) : pageDocument(input, status); }
 			catch (error) { throw new KnowledgeOperationError(422, 'invalid_knowledge_content', error instanceof Error ? error.message : 'Invalid knowledge content.'); }
 			const slug = text(input.slug);
-			const derivedPath = input.kind === 'book' ? `${connection.contentPath}/books/${slug}.md`
-				: `${connection.contentPath}/knowledge/${text(input.bookId)}/${slug}.md`;
+			const derivedPath = input.kind === 'book' ? projectLibraryPath(connection.contentPath, 'books', `${slug}.md`)
+				: projectLibraryPath(connection.contentPath, 'knowledge', text(input.bookId), `${slug}.md`);
 			const path = sourcePath || derivedPath;
 			if (!allowedKnowledgePath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The knowledge path is outside this workspace.');
 			if (sourcePath && path !== derivedPath) throw new KnowledgeOperationError(422, 'knowledge_path_move_required', 'Changing a knowledge path requires an explicit move operation.');

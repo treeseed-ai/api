@@ -38,6 +38,11 @@ function etag(value: unknown) {
 	return `"sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}"`;
 }
 
+function isZodValidationError(error: unknown): boolean {
+	return error instanceof ZodError
+		|| (error instanceof Error && error.name === 'ZodError' && Array.isArray((error as { issues?: unknown }).issues));
+}
+
 async function operationInput(context: Context, operation: BoundOperation) {
 	const query = operation.binding.schema.query.parse(Object.fromEntries(new URL(context.req.url).searchParams.entries()));
 	const path = operation.binding.schema.path.parse(context.req.param());
@@ -127,7 +132,7 @@ export function createOperationHttpHandler(
 			});
 		} catch (error) {
 			const failure = error instanceof ControlPlaneOperationError ? error
-				: error instanceof ZodError ? new ControlPlaneOperationError(400, 'operation_input_invalid', 'The operation input is invalid.')
+				: isZodValidationError(error) ? new ControlPlaneOperationError(400, 'operation_input_invalid', 'The operation input is invalid.')
 					: new ControlPlaneOperationError(500, 'operation_failed', 'The operation failed.');
 			return problem(context, failure, requestId);
 		}

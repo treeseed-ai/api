@@ -185,6 +185,7 @@ export async function resolvePlanningDemandSource(
 					providerSourceClosureDigest: text(workdayParameters.providerSourceClosureDigest),
 					handoffRootId: text(invocation.handoff_root_id), handoffParentId: text(invocation.handoff_parent_id),
 					handoffDepth: Number(invocation.handoff_depth ?? 0), triggerKind: text(invocation.trigger_kind),
+					communication: record(metadata.communication),
 				},
 			};
 		}

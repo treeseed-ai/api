@@ -60,6 +60,8 @@ export interface DiscussionInvocationInput {
 	subject?: string | null;
 	durationSeconds: number;
 	requestedById?: string | null;
+	communication?: Row;
+	addressRequirements?: Record<string, 'required' | 'optional'>;
 }
 
 function record(value: unknown): Row {
@@ -209,6 +211,7 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 		return { id: text(existing.id), status, executionId, productiveSeconds, replayed: true };
 	}
 	const definitionRevision = text(record(agentClass.metadata_json).immutableRef);
+	const chatProfileRevision = digest(record(record(selectedAgent).activities).chat);
 	const subjectDigest = digest({ discussionId: input.discussionId, agentSlug, subject: text(input.subject) || null });
 	const pending=await store.first(`SELECT id,content_refs_json FROM agent_invocation_requests WHERE team_id=? AND project_id=? AND agent_id=? AND subject_digest=? AND status IN ('queued','blocked') ORDER BY requested_at LIMIT 1`,[input.teamId,input.projectId,agentSlug,subjectDigest]);
 	const prior = await store.first(`SELECT id,assignment_id,handoff_root_id,handoff_depth FROM agent_invocation_requests WHERE team_id = ? AND project_id = ? AND agent_id = ? AND subject_digest = ? AND status = 'suspended' ORDER BY completed_at DESC,requested_at DESC LIMIT 1`, [input.teamId,input.projectId,agentSlug,subjectDigest]);
@@ -228,7 +231,9 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 			JSON.stringify([input.messagePath, ...input.contextRefs]), parent?.id ?? null, continuationParentAssignmentId,
 			handoffRootId,handoffParentId,handoffDepth,JSON.stringify([agentSlug]), subjectDigest,
 			input.triggerKind === 'agent-handoff' ? 'agent-asynchronous' : 'human-interactive', now,
-			`${input.idempotencyKey}:${agentSlug}`, requestDigest, '{}', JSON.stringify({ discussionId: input.discussionId, sourceMessageId: input.messageId, sourceCommit: input.messageCommit, definitionRevision, productiveSeconds }), now],
+			`${input.idempotencyKey}:${agentSlug}`, requestDigest, '{}', JSON.stringify({ discussionId: input.discussionId, sourceMessageId: input.messageId, sourceCommit: input.messageCommit, definitionRevision, productiveSeconds,
+				revisions: { project: input.messageCommit, library: definitionRevision || input.messageCommit, agentDefinition: definitionRevision || input.messageCommit, chatProfile: chatProfileRevision },
+				...(input.communication ? { communication: { ...input.communication, requirement: input.addressRequirements?.[agentSlug] ?? 'required' } } : {}) }), now],
 	);
 	if (Number(record(record(inserted).meta).changes) === 0) {
 		const replay = await store.first(`SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1`, [id,input.teamId]);

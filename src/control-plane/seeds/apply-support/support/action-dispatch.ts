@@ -52,6 +52,7 @@ export async function applyAction({ action, store, ids, manifestHash, appliedAt,
 			metadata: mergeSeedMetadata(projectSeedMetadata(action.existing?.metadata), action.payload.metadata, action, manifestHash, appliedAt),
             kind: action.payload.kind,
             repository: action.payload.repository,
+			library: action.payload.library,
 			...(Object.keys(action.payload.architecture ?? {}).length > 0
 				? { architecture: action.payload.architecture }
 				: {}),

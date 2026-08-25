@@ -156,6 +156,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 							projectSlug: text(project.slug, project.id), discussionId, messageId, messagePath: text(replay.path),
 							messageCommit: text(record(invocations[0]?.metadata_json).sourceCommit, text((history as any).ref)), contextRefs, agentSlugs: replayAgents,
 							idempotencyKey, parentWorkdayId, parentAssignmentId,
+							communication: record(body.communication), addressRequirements: record(body.addressRequirements),
 							durationSeconds: Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900))), requestedById: principal.id });
 					}
 					return { discussion: { id: discussionId }, message: replay, invocations, replayed: true };
@@ -165,7 +166,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] })) : { discussions: [] };
 				authored = await commitDiscussionMessage({ store, projectId, teamId, principal, body: messageBody,
 					intent: body.intent === 'propose' ? 'propose' : 'discuss', discussionId, messageId,
-					createDiscussion: !text(body.discussionId), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
+					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
 					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
 					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [], ...(continuation ?? {}) });
 			} catch (error) { failure(error, 503, 'discussion_content_unavailable'); }
@@ -186,6 +187,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					projectSlug: text(project.slug, project.id), discussionId: authored.discussion.id, messageId: authored.message.id,
 					messagePath: authored.message.path, messageCommit: authored.commitSha, contextRefs, agentSlugs: agents,
 					idempotencyKey, parentWorkdayId, parentAssignmentId, durationSeconds: Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900))),
+					communication: record(body.communication), addressRequirements: record(body.addressRequirements),
 					requestedById: principal.id });
 				return { ...authored, invocations, replayed: false };
 			} catch (error) { failure(error, 409, 'discussion_invocation_failed'); }

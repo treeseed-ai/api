@@ -2,6 +2,7 @@ import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
 import { AGENT_OPERATIONAL_CONTENT_COLLECTIONS } from '@treeseed/sdk/content-validation';
 import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
 import { TreeDxInfrastructureClient } from '../control-plane/treedx/infrastructure-client.ts';
+import { resolveTreeDxServiceUrl } from '../control-plane/treedx/connection-url.ts';
 
 type RecordValue = Record<string, unknown>;
 
@@ -15,10 +16,18 @@ function text(...values: unknown[]): string {
 
 function normalizedContentPath(value: unknown): string {
 	const path = text(value).replace(/^\/+|\/+$/gu, '');
-	if (!path || path.split('/').some((part) => !part || part === '.' || part === '..')) {
+	if (!path || (path !== '.' && path.split('/').some((part) => !part || part === '.' || part === '..'))) {
 		throw new Error('The project content path is missing or unsafe.');
 	}
 	return path;
+}
+
+export function projectLibraryPath(root: string, ...parts: string[]): string {
+	const normalizedRoot = normalizedContentPath(root);
+	const normalizedParts = parts.flatMap((part) => part.split('/'))
+		.map((part) => part.trim()).filter(Boolean);
+	if (normalizedParts.some((part) => part === '.' || part === '..')) throw new Error('The project library path is unsafe.');
+	return [normalizedRoot === '.' ? '' : normalizedRoot, ...normalizedParts].filter(Boolean).join('/');
 }
 
 export interface KnowledgeGatewayConnection {
@@ -47,20 +56,22 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	const topology = record(library.topology);
 	const contentRepository = record(topology.contentRepository);
 	const treeDx = record(contentRepository.treeDx);
-	const baseUrl = text(treeDx.baseUrl, treeDx.registryUrl, store.config.TREESEED_TREEDX_URL,
+	const configuredBaseUrl = text(treeDx.baseUrl, treeDx.registryUrl, store.config.TREESEED_TREEDX_URL,
 		store.config.TREESEED_TREEDX_BASE_URL, store.config.treedxBaseUrl,
 		process.env.TREESEED_TREEDX_URL, process.env.TREESEED_TREEDX_BASE_URL) || 'http://127.0.0.1:4000';
+	const runtimeEnvironment = { ...process.env, ...store.config };
+	const baseUrl = resolveTreeDxServiceUrl(configuredBaseUrl, runtimeEnvironment);
 	const repositoryId = text(library.repositoryId, treeDx.repositoryId);
 	if (!repositoryId) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
-	const allowedPaths = [`${contentPath}/books/**`, `${contentPath}/knowledge/**`, `${contentPath}/assets/**`,
+	const allowedPaths = [projectLibraryPath(contentPath, 'books/**'), projectLibraryPath(contentPath, 'knowledge/**'), projectLibraryPath(contentPath, 'assets/**'),
 		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
-			.map((collection) => `${contentPath}/${collection}/**`) : []),
+			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
 		...(input.communicationPaths ? ['discussions', 'discussion-messages', 'discussion-events']
-			.map((collection) => `${contentPath}/${collection}/**`) : []),
+			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
 		...(input.authoringPaths ? [
-			`${contentPath}/agents/**`,`${contentPath}/agent-tests/**`,`${contentPath}/groups/**`,`${contentPath}/group-edges/**`,
-			...Object.values(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map((collection) => `${contentPath}/${collection}/**`),
+			projectLibraryPath(contentPath, 'agents/**'),projectLibraryPath(contentPath, 'agent-tests/**'),projectLibraryPath(contentPath, 'groups/**'),projectLibraryPath(contentPath, 'group-edges/**'),
+			...Object.values(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map((collection) => projectLibraryPath(contentPath, collection, '**')),
 			'.treeseed/agents/**','.treeseed/governance/proposal-types/**','.treeseed/seeds/**','seeds/**','scenes/**',
 		] : [])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');

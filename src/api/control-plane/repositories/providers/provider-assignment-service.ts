@@ -4,6 +4,8 @@ import { reportCapacityUsage } from '../../../capacity/services/capacity/account
 import { settleCapacityReservationExactlyOnce, type CapacitySettlementRequest } from '../../../capacity/services/capacity/accounting/settlement-service.ts';
 import { startAssignmentCloseoutWindow, startAssignmentExecutionWindow } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
+import { admitDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
+import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 import { modeRunActivityEvent } from '../../../capacity/services/capacity/workdays/content/mode-run-activity-event.ts';
 import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
@@ -89,28 +91,59 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			if (!invocation) throw new CapacityGovernanceError('communication_invocation_provenance_missing', 'Conversation assignment has no authoritative invocation.', 409);
 			if (assignment.status === 'returned' && String(invocation.final_message_ref ?? '').trim()) return {
 				schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId, invocationId: assignment.invocationId,
-				messageRef: String(invocation.final_message_ref), status: 'responded', settledAt: String(invocation.completed_at ?? assignment.returnedAt ?? new Date().toISOString()),
+				messageRef: String(invocation.final_message_ref), status: String(record(invocation.response_json).outcome) === 'abstained' ? 'abstained' : 'responded', settledAt: String(invocation.completed_at ?? assignment.returnedAt ?? new Date().toISOString()),
 			};
 			const metadata = record(assignment.metadata); const handle = record(assignment.treedxProxyHandle);
 			const discussionId = String(metadata.discussionId ?? '').trim();
 			const sourceMessageId = String(metadata.sourceMessageId ?? '').trim();
 			const authoringRef = String(handle.branchName ?? '').trim();
-			const markdown = String(body.markdown ?? '').trim();
+			const outcome = body.outcome === 'abstained' ? 'abstained' : 'responded';
+			const communication = record(record(invocation.metadata_json).communication);
+			if (outcome === 'abstained' && String(communication.requirement ?? 'required') === 'required') throw new CapacityGovernanceError(
+				'communication_required_response_missing', 'A directly addressed agent must respond and cannot abstain.', 409);
+			const markdown = outcome === 'abstained'
+				? `*${assignment.agentId ?? 'Agent'} abstained from this optional discussion assignment.*`
+				: String(body.markdown ?? '').trim();
 			const leaseToken = String(body.leaseToken ?? '').trim();
 			if (!discussionId || !sourceMessageId || !markdown || !leaseToken || leaseToken !== assignment.leaseToken) throw new CapacityGovernanceError('provider_discussion_response_invalid', 'Discussion, response, and exact lease authority are required.', 409);
+			const project = await contentStore.getProjectDetails(assignment.projectId);
+			const projectSlug = String(project?.project?.slug ?? assignment.projectId);
+			const addresses = outcome === 'responded' ? parseCommunicationAddresses(markdown) : [];
+			for (const address of addresses) if (address.projectSlug && ![projectSlug, assignment.projectId].includes(address.projectSlug)) throw new CapacityGovernanceError(
+				'communication_target_project_mismatch', `Agent target ${address.address} does not belong to project ${projectSlug}.`, 409);
+			const existingChain = await store.all(`SELECT agent_id,trigger_kind FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
+				AND metadata_json->'communication'->>'sendId'=?`, [actor.teamId, String(communication.sendId ?? '')]);
+			const priorAgents = new Set(existingChain.map((row: Record<string, unknown>) => String(row.agent_id ?? '')));
+			const followupRequirements = new Map<string, 'required' | 'optional'>();
+			for (const address of addresses) if (!priorAgents.has(address.agentSlug)
+				&& (!followupRequirements.has(address.agentSlug) || address.requirement === 'required')) followupRequirements.set(address.agentSlug, address.requirement);
+			const followupCount = existingChain.filter((row: Record<string, unknown>) => String(row.trigger_kind ?? '') === 'agent-handoff').length;
+			const followupAddresses = [...followupRequirements].slice(0, Math.min(2, Math.max(0, 16 - followupCount)))
+				.map(([agentSlug, requirement]) => ({ agentSlug, requirement }));
+			if (Number(invocation.handoff_depth ?? 0) >= 3 || followupCount >= 16) followupAddresses.splice(0);
 			const messageId = `response-${createHash('sha256').update(`${assignmentId}:${idempotencyKey}`).digest('hex').slice(0, 24)}`;
 			const authored = await commitDiscussionMessage({ store: contentStore, projectId: assignment.projectId, teamId: assignment.teamId,
 				principal: { id: assignment.agentId ?? 'project-agent', displayName: assignment.agentId ?? 'Project agent', email: `${assignment.agentId ?? 'agent'}@agents.treeseed.local` },
 				body: markdown, intent: 'discuss', discussionId, messageId, createDiscussion: false, replyTo: sourceMessageId,
 				sourceMessageRefs: assignment.sourceMessageRefs, authorType: 'agent', authorAgentId: assignment.agentId,
+				recipients: followupAddresses.map((address) => address.agentSlug),
 				assignmentId: assignment.id, authoringRef,
 			});
 			await suspendAssignmentForDiscussionResponse(store, { assignmentId, teamId: assignment.teamId, leaseToken,
 				discussionId, messageId: authored.message.id, message: String(body.summary ?? markdown.slice(0, 500)),
 				messagePath: authored.message.path, checkpoint: { summary: body.summary ?? null, usage: record(body.usage), commitSha: authored.commitSha },
 			});
+			await store.run(`UPDATE agent_invocation_requests SET response_json=?,updated_at=? WHERE id=? AND team_id=?`, [JSON.stringify({ outcome }), new Date().toISOString(), invocation.id, actor.teamId]);
+			if (followupAddresses.length) {
+				await admitDiscussionInvocations(store, { teamId: assignment.teamId, projectId: assignment.projectId,
+					projectSlug, discussionId, messageId: authored.message.id, messagePath: authored.message.path, messageCommit: authored.commitSha,
+					contextRefs: [], agentSlugs: followupAddresses.map((address) => address.agentSlug), idempotencyKey: `${idempotencyKey}:followup`,
+					parentAssignmentId: assignment.id, handoffRootId: String(invocation.handoff_root_id ?? invocation.id), handoffParentId: String(invocation.id),
+					handoffDepth: Number(invocation.handoff_depth ?? 0) + 1, triggerKind: 'agent-handoff', durationSeconds: 900, requestedById: String(assignment.agentId ?? ''),
+					communication: { ...communication, parentInvocationId: invocation.id }, addressRequirements: Object.fromEntries(followupAddresses.map((address) => [address.agentSlug, address.requirement])) });
+			}
 			return { schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId,
-				invocationId: assignment.invocationId, messageRef: authored.message.path, status: 'responded', settledAt: new Date().toISOString() };
+				invocationId: assignment.invocationId, messageRef: authored.message.path, status: outcome, settledAt: new Date().toISOString() };
 		},
 		returnAssignment: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'returnProviderAssignment'),
 		complete: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment'),

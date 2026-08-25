@@ -323,6 +323,7 @@ async function assignmentInput(
 	  executionMode,
 	  upstreamMutationPolicy: executionMode === 'production' ? 'checkpoint-only' : 'denied',
       activityType: demand.activityType,
+	  chatProfile: record(payload.chatProfile),
 		agentClassSlug: text(demand.metadata.agentClassSlug),
       contentRoot,
       agentContentPath: text(payload.agentContentPath),

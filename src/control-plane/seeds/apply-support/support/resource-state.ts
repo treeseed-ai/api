@@ -28,9 +28,13 @@ export async function projectCurrentPayload(store, action, project) {
     if (!project)
         return null;
     const repository = action.payload.repository;
+	const library = action.payload.library;
     const configuredRepository = project.metadata?.repository ?? {};
 	const hubRepository = repository
 		? (await store.listHubRepositories(project.id)).find((entry) => entry.role === repository.role) ?? null
+		: null;
+	const libraryRepository = library
+		? (await store.listHubRepositories(project.id)).find((entry) => entry.role === 'library') ?? null
 		: null;
     return {
         teamKey: action.payload.teamKey,
@@ -52,6 +56,15 @@ export async function projectCurrentPayload(store, action, project) {
                 repositoryPolicy: configuredRepository.repositoryPolicy,
             }
             : null,
+		library: libraryRepository ? {
+			role: libraryRepository.role,
+			provider: libraryRepository.provider,
+			owner: libraryRepository.owner,
+			name: libraryRepository.name,
+			gitUrl: libraryRepository.url,
+			defaultBranch: libraryRepository.defaultBranch ?? undefined,
+			repositoryPolicy: project.metadata?.library?.repositoryPolicy ?? library.repositoryPolicy,
+		} : null,
 		architecture: project.metadata?.architecture ?? {},
 		metadata: managedMetadata(action.payload.metadata, projectSeedMetadata(project.metadata)),
     };

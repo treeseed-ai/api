@@ -72,6 +72,9 @@ export function installControlPlaneProtocolRoutes(
 		if (!rest) continue;
 		const honoPath = rest.path.replace(/\{([A-Za-z][A-Za-z0-9]*)\}/gu, ':$1');
 		app.on(rest.method, honoPath, createOperationHttpHandler(operation, bearerGate, digest, confirmations));
+		if (operation.binding.descriptor.operationId === 'communications.send') {
+			app.on(rest.method, '/v1/teams/:teamId/channels/:channel/messages', createOperationHttpHandler(operation, bearerGate, digest, confirmations));
+		}
 	}
 	return { mcpHandler, openApiDigest: digest, mcpCatalogDigest: mcpDigest };
 }

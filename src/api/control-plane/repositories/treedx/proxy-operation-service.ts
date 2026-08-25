@@ -207,7 +207,10 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			const access = await authorize(store, projectId, permission, scope, operation.method, operation.path, input.query, context, input.path);
 			if (input.path.workspaceId) await verifyTreeDxWorkspace({ runtime, projectId, library, workspaceId: String(input.path.workspaceId) });
 			const baseUrl = resolveTreeDxProxyBaseUrl(runtime, library);
-			const token = resolveTreeDxProxyToken(runtime, baseUrl, projectId, scope, { actorId: actorId(access), tenantId: access.details.project.teamId, connectionId: connectionId(library, baseUrl) });
+			// TreeDX grants upstream authority to the control-plane service identity. The
+			// end user or capacity provider remains the audited actor below, but must not
+			// replace the service principal in the bounded delegation token.
+			const token = resolveTreeDxProxyToken(runtime, baseUrl, projectId, scope, { connectionId: connectionId(library, baseUrl) });
 			try {
 				const payload = await admission.run({ connectionId: connectionId(library, baseUrl), projectId, actorId: actorId(access),
 					retryable: descriptor.kind === 'read' || Boolean(context.idempotencyKey), signal: context.signal,

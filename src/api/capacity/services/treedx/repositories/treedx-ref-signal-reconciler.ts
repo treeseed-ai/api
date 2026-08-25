@@ -1,5 +1,5 @@
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
-import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from './treedx-change-projector.ts';
 
 type Row = Record<string, unknown>;
@@ -11,7 +11,7 @@ function paths(value: unknown) { return Array.isArray(value) ? value.flatMap((en
 export async function reconcileTreeDxRefSignals(database: CapacityGovernanceDatabase, projectId: string, createdAt = new Date().toISOString()) {
 	let connection = await resolveKnowledgeGatewayConnection(database, { projectId, write: false, relationPaths: true });
 	if (!connection) throw new Error(`TreeDX repository is unavailable for project ${projectId}.`);
-	const listed = await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: connection.baseRef, paths: [`${connection.contentPath}/**`], kinds: ['blob'], limit: 1, allowProtected: true });
+	const listed = await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: connection.baseRef, paths: [projectLibraryPath(connection.contentPath, '**')], kinds: ['blob'], limit: 1, allowProtected: true });
 	const currentRef = text(listed.resolvedRef);
 	if (!/^[a-f0-9]{40}$/u.test(currentRef)) throw new Error(`TreeDX did not resolve an immutable content ref for project ${projectId}.`);
 	const key = `${projectId}:${connection.repositoryId}:${connection.baseRef}`;
@@ -32,7 +32,7 @@ export async function reconcileTreeDxRefSignals(database: CapacityGovernanceData
 		if (!connection) throw new Error(`TreeDX repository is unavailable for project ${projectId}.`);
 		let cursor: string | null = null;
 		do {
-			const result = await connection.client.queryRepository({ repoId: connection.repositoryId, ref: currentRef, baseRef: previousRef, type: 'changed_path', paths: [`${connection.contentPath}/**`], limit: 400, cursor, allowProtected: true });
+			const result = await connection.client.queryRepository({ repoId: connection.repositoryId, ref: currentRef, baseRef: previousRef, type: 'changed_path', paths: [projectLibraryPath(connection.contentPath, '**')], limit: 400, cursor, allowProtected: true });
 			changedPaths.push(...paths(result.results)); cursor = result.page?.hasMore ? result.page.nextCursor : null;
 		} while (cursor);
 		changedPaths = [...new Set(changedPaths)].sort();

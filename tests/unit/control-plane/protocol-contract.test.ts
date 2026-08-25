@@ -300,9 +300,12 @@ describe('control-plane protocol contract', () => {
 		}));
 		const app = new Hono();
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
-		const response = await app.request('/v1/projects?teamId=team-a', { headers: { authorization: 'Bearer test-token' } });
+		const response = await app.request('/v1/projects?teamId=team-a&limit=200', { headers: { authorization: 'Bearer test-token' } });
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ data: { projects: [{ id: 'active', metadata: {} }] } });
+		expect(await response.json()).toEqual({ data: { items: [{ id: 'active', metadata: {} }], page: { limit: 200, hasMore: false, nextCursor: null } } });
+		const invalid = await app.request('/v1/projects?teamId=team-a&limit=invalid', { headers: { authorization: 'Bearer test-token' } });
+		expect(invalid.status).toBe(400);
+		expect(await invalid.json()).toMatchObject({ code: 'operation_input_invalid' });
 		const specification = await app.request('/openapi.json');
 		expect((await specification.json() as any).paths['/v1/projects'].get.operationId).toBe('projects.list');
 		const catalog = await app.request('/mcp/catalog.json');

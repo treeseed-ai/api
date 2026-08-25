@@ -1,3 +1,5 @@
+import { projectLibraryPath } from '../gateway-treedx-connection.ts';
+
 export async function listKnowledgeContentPaths(connection: any, ref = connection.baseRef) {
 	const entries: any[] = [];
 	let cursor: string | undefined;
@@ -6,7 +8,7 @@ export async function listKnowledgeContentPaths(connection: any, ref = connectio
 	for (let pageNumber = 0; pageNumber < 10_000; pageNumber += 1) {
 		const response = await connection.client.listRepositoryPaths({
 			repoId: connection.repositoryId, ref: resolvedRef ?? ref,
-			paths: [`${connection.contentPath}/books/**`, `${connection.contentPath}/knowledge/**`],
+			paths: [projectLibraryPath(connection.contentPath, 'books/**'), projectLibraryPath(connection.contentPath, 'knowledge/**')],
 			extensions: ['.md', '.mdx'], kinds: ['blob'], limit: 500, ...(cursor ? { cursor } : {}),
 		});
 		const observedRef = String(response.resolvedRef ?? response.ref ?? '');
