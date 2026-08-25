@@ -16,6 +16,12 @@ type WorkspaceConnection = {
 
 type WorkspaceStore = Parameters<typeof recordTreeDxWorkspaceState>[0];
 
+function branchMovedConflict(error: unknown) {
+	const value = error as { status?: unknown; code?: unknown; message?: unknown };
+	return Number(value?.status) === 409 && String(value?.code) === 'conflict'
+		&& String(value?.message).includes('Workspace branch already exists at a different commit');
+}
+
 export function discussionWorkspaceOperationKey(kind: string, identity: string) {
 	return `${kind}:${createHash('sha256').update(identity).digest('hex')}`;
 }
@@ -58,10 +64,16 @@ export async function openDiscussionWorkspace(input: {
 		actorType:'service',actorId:'discussion-authoring',
 	});
 	try {
-		const workspace=await input.connection.client.createWorkspace({
+		const request = {
 			workspaceId,repoId:input.connection.repositoryId,baseRef:input.baseRef,
 			branchName:input.branchName,mode:'writable',allowedPaths:input.connection.allowedPaths,ttlSeconds:600,
-		});
+		};
+		let workspace;
+		try { workspace=await input.connection.client.createWorkspace(request); }
+		catch (error) {
+			if (!branchMovedConflict(error)) throw error;
+			workspace=await input.connection.client.createWorkspace({ ...request, baseRef: input.branchName });
+		}
 		return { workspace, async close() {
 			await input.connection.client.closeWorkspace(workspaceId);
 			await recordTreeDxWorkspaceState(input.store,'closed',{
