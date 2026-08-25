@@ -96,6 +96,7 @@ export async function reconcileLibraryProvider(input: {
 	const heads = { main, staging };
 	if (!token) return { heads, credentialId: undefined };
 	const authority = await ensureEnvironmentAuthority({ ...input, repository, heads });
+	if (input.visibility === 'public') return { heads, credentialId: undefined };
 	const refspecs = ['+refs/heads/main:refs/remotes/origin/main','+refs/heads/staging:refs/remotes/origin/staging'];
 	const delivery = await createRemoteGitCredentialDelivery({ store:input.store,
 		operationId:`seed-library-fetch:${input.projectId}:${heads.main}:${heads.staging}`,actorId:'treeseed-seed-reconciler',teamId:input.teamId,

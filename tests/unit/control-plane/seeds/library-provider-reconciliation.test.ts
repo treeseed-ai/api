@@ -29,4 +29,16 @@ describe('seed library provider reconciliation',()=>{
 	it('fails closed when a missing library cannot be created without control-plane credentials',async()=>{
 		await expect(reconcileLibraryProvider({store:{},teamId:'team',projectId:'project',projectSlug:'sdk',owner:'treeseed-ai',name:'missing-library',visibility:'public',lifecycle:'create-or-adopt',env:{},fetchImpl:async()=>new Response(null,{status:404})})).rejects.toThrow('TREESEED_GITHUB_TOKEN');
 	});
+
+	it('uses anonymous TreeDX fetches for public libraries while retaining control-plane authority',async()=>{
+		const store={ async run(){return{};}, async all(){return[];}, async first(){return null;} };
+		const fetchImpl=async(input:string|URL|Request)=>{
+			const path=new URL(input instanceof Request?input.url:String(input)).pathname;
+			if(path==='/repos/treeseed-ai/platform-library') return Response.json({id:7,name:'platform-library',private:false,owner:{login:'treeseed-ai'}});
+			if(path.endsWith('/git/ref/heads/main')) return Response.json({object:{sha:'1'.repeat(40)}});
+			if(path.endsWith('/git/ref/heads/staging')) return Response.json({object:{sha:'2'.repeat(40)}});
+			return new Response(null,{status:404});
+		};
+		await expect(reconcileLibraryProvider({store,teamId:'team',projectId:'project',projectSlug:'platform',owner:'treeseed-ai',name:'platform-library',visibility:'public',lifecycle:'create-or-adopt',env:{TREESEED_GITHUB_TOKEN:'provider-secret'},fetchImpl})).resolves.toEqual({heads:{main:'1'.repeat(40),staging:'2'.repeat(40)},credentialId:undefined});
+	});
 });
