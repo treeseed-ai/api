@@ -26,6 +26,7 @@ export class TreeDxInfrastructureClient {
 	readFile(input: Input) { const { workspaceId, ...query } = input; return this.upstream.files.read(String(workspaceId), query) as Promise<any>; }
 	status(input: Input) { return this.upstream.files.status(String(input.workspaceId)) as Promise<any>; }
 	diff(input: Input) { const { workspaceId, ...query } = input; return this.upstream.files.diff(String(workspaceId), query) as Promise<any>; }
+	applyChangeset(input: Input) { const { workspaceId, ...body } = input; return this.upstream.files.changeset(String(workspaceId), body) as Promise<any>; }
 	commit(input: Input) { const { workspaceId, ...body } = input; return this.upstream.files.commit(String(workspaceId), body) as Promise<any>; }
 
 	getRepository(repoId: string) { return this.upstream.repositories.get(repoId) as Promise<any>; }
