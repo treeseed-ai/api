@@ -229,7 +229,7 @@ export function createPlatformApiApp(options: any = {}) {
 			providerWorkflows,
 			treeDxProxy,
 			realtime: createRealtimeOperationService(store, sessionEvents),
-			seeds: createSeedOperationService(store),
+			seeds: createSeedOperationService(store, { providers }),
 			feedback: createFeedbackOperationService(store, options),
 			githubConnector: createGitHubConnectorService(store),
 			githubWebhook: createGitHubWebhookService(store),
