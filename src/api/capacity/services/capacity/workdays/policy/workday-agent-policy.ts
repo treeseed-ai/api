@@ -21,6 +21,8 @@ export type CapacityWorkdayAgent = {
 	projectAgentClassId: string;
 	projectAgentClassSlug: string;
 	purpose: string;
+	identity: UnknownRecord;
+	summary: string | null;
 	promptTask: string;
 	outputContract: UnknownRecord;
 	signalPolicy: UnknownRecord;
@@ -172,6 +174,8 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				projectAgentClassId: text(agentClass.id),
 				projectAgentClassSlug: text(agentClass.slug, 'planning'),
 				purpose: text(profile.purpose, `Perform configured planning work as ${slug}.`),
+				identity: selectedActivity.identity,
+				summary: selectedActivity.summary,
 				promptTask: text(stage.promptTask, text(record(profile.prompt).task)),
 				outputContract: record(profile.outputs),
 				signalPolicy: Object.keys(record(stage.signals)).length ? record(stage.signals) : record(profile.signals),

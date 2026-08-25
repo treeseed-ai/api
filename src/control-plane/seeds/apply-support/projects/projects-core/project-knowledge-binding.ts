@@ -115,6 +115,7 @@ async function reconcileProjectAgentClasses(input: {
 			const profiles = object(definition.activityProfiles);
 			return { agentId: text(definition.id), slug: text(definition.slug), name: text(definition.name, definition.title),
 				title: text(definition.title, definition.name), enabled: definition.enabled !== false,
+				identity: object(definition.identity), summary: text(definition.summary, definition.description),
 				groupIds: strings(definition.groupIds), contentPath: path,
 				contextQueryRefs: definition.contextQueryRefs ?? [], contextQuerySetRefs: definition.contextQuerySetRefs ?? [],
 				instructionTemplateRefs: definition.instructionTemplateRefs ?? [], activities: profiles };

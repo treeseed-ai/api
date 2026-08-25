@@ -9,6 +9,7 @@ import { isAgentAtlasContextReference, type AgentAtlasContextReference } from '@
 import { persistSessionEvent } from '../realtime/session-events.ts';
 import { validateContentRecord, type ContentModel } from '../content/content-validation.ts';
 import { discussionWorkspaceOperationKey,openDiscussionWorkspace } from './discussion-workspace.ts';
+import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 
 type Row = Record<string, unknown>;
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
@@ -36,7 +37,7 @@ function assertDiscussionContent(path: string, source: string) {
 }
 
 export function mentionedAgentSlugs(body: string) {
-	return [...new Set([...body.matchAll(/(?:^|\s)@([a-z0-9][a-z0-9-]{1,63})\b/giu)].map((match) => match[1]!.toLowerCase()))];
+	return parseCommunicationAddresses(body).map((address) => address.agentSlug);
 }
 
 export async function loadDiscussions(input: {

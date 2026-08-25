@@ -19,6 +19,8 @@ export interface ProjectAgentActivityRef {
 	activityType: string;
 	handlerId: string;
 	profile: JsonRecord;
+	identity: JsonRecord;
+	summary: string | null;
 }
 
 function revisionRefs(...values:unknown[]) {
@@ -41,7 +43,7 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 			agentId,
 			agentName: text(agent.name ?? agent.title) ?? agentId,
 			groupIds: Array.isArray(agent.groupIds) ? agent.groupIds.map(String).filter(Boolean) : [],
-			contentPath: text(agent.contentPath), activityType, handlerId, profile,
+			contentPath: text(agent.contentPath), activityType, handlerId, profile, identity: record(agent.identity), summary: text(agent.summary),
 			contextQueryRefs:revisionRefs(agent.contextQueryRefs,profile.contextQueryRefs),
 			contextQuerySetRefs:revisionRefs(agent.contextQuerySetRefs,profile.contextQuerySetRefs),
 			instructionTemplateRefs:revisionRefs(agent.instructionTemplateRefs,profile.instructionTemplateRefs),
