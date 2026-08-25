@@ -22,7 +22,7 @@ describe('seed catalog operations', () => {
 	});
 
 	it('validates an uploaded digest-bound bundle without filesystem access', async () => {
-		const unsigned: any = { schemaVersion: 'treeseed.seed-bundle/v2', name: 'treeseed', version: 1,
+		const unsigned: any = { schemaVersion: 'treeseed.seed-bundle/v3', name: 'treeseed', version: 1,
 			description: 'test', environments: ['local'], resources: { teams: [], memberships: [], projects: [], repositories: [] },
 			runtime: { capacityProviders: [] } };
 		const value = { ...unsigned, digest: await digestSeedBundle(unsigned) };

@@ -1,4 +1,5 @@
 import { validatePortableContentData,type PortableContentDiagnostic,type PortableContentModel } from '@treeseed/sdk/content-validation';
+import { projectLibraryPath } from './gateway-treedx-connection.ts';
 
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
 export const relationKinds = new Set(['knowledge', 'notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people']);
@@ -22,13 +23,13 @@ export function reviewPathsMatch(recorded: unknown, current: unknown) {
 }
 
 export async function searchRelations(connection: any, query: string, requested: Set<string>) {
-	const paths = [...requested].map((kind) => `${connection.contentPath}/${kind}/**`);
+	const paths = [...requested].map((kind) => projectLibraryPath(connection.contentPath, kind, '**'));
 	const response = await connection.client.searchRepositoryFiles({ repoId: connection.repositoryId, ref: connection.baseRef,
 		paths: paths.length ? paths : connection.allowedPaths, query, limit: 60, includeFrontmatter: true, includeBody: false });
 	const invalid: PortableContentDiagnostic[] = [];
 	const results = (response.results ?? []).flatMap((entry: any) => {
 		const path = String(entry.path ?? '');
-		const kind = [...relationKinds].find((candidate) => path.includes(`/${candidate}/`)
+		const kind = [...relationKinds].find((candidate) => path.startsWith(`${candidate}/`) || path.includes(`/${candidate}/`)
 			|| entry.sourceModel === candidate || entry.entityType === candidate.replace(/s$/u, '')
 			|| (candidate === 'knowledge' && ['knowledge-page', 'knowledge_page'].includes(entry.entityType)));
 		if (!kind || (requested.size && !requested.has(kind))) return [];

@@ -6,7 +6,7 @@ services:
     env_file: /etc/treeseed/components/api/environment
     volumes:
       - type: bind
-        source: /var/lib/treeseed/components/api/postgres
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/api/postgres
         target: /var/lib/postgresql/data
     networks: [private]
     healthcheck:
@@ -56,7 +56,7 @@ services:
       api: { condition: service_healthy }
     volumes:
       - type: bind
-        source: /var/lib/treeseed/components/api/operations-runner
+        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/api/operations-runner
         target: /data
     networks: [private, platform]
     healthcheck:

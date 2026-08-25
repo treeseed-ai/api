@@ -7,7 +7,7 @@ import { validateContentFrontmatter } from '@treeseed/sdk/content-validation';
 import { parseFrontmatterDocument } from '../../../../content/frontmatter.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
-import { resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../../../knowledge/gateway-treedx-connection.ts';
 
 const COLLECTIONS = { agent:'agents',test:'agent-tests',query:'agent-context-queries',set:'agent-context-query-sets' } as const;
 const DEFAULT_FRESH_SECONDS = 86_400;
@@ -19,14 +19,14 @@ function safeId(value:unknown) {
 	if (!/^[a-z0-9][a-z0-9/_-]*$/u.test(id)||id.includes('..')) throw new CapacityGovernanceError('context_query_test_id_invalid','Context-query test id is unsafe.',400);
 	return id;
 }
-function path(root:string,collection:string,id:string) { return `${root}/${collection}/${safeId(id)}.mdx`; }
+function path(root:string,collection:string,id:string) { return projectLibraryPath(root, collection, `${safeId(id)}.mdx`); }
 function digest(value:unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 export async function executeCurrentContext(connection:Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>,exactRef:string,request:Record<string,unknown>) {
 	if(!connection) throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
 	// A successful context response is not proof that TreeDX's derived graph includes
 	// every file at the requested ref. Rebuild the exact graph before every isolated
 	// check so omissions cannot be mistaken for authoritative current results.
-	const refresh=await connection.client.refreshGraph({repoId:connection.repositoryId,ref:exactRef,paths:[`${connection.contentPath}/**`],forceFull:true});
+	const refresh=await connection.client.refreshGraph({repoId:connection.repositoryId,ref:exactRef,paths:[projectLibraryPath(connection.contentPath,'**')],forceFull:true});
 	if(refresh.jobId) {
 		let completed=false;
 		for(let attempt=0;attempt<120;attempt+=1) {
@@ -56,7 +56,7 @@ export class ContextQueryCheckService {
 		const connection=await resolveKnowledgeGatewayConnection(this.store,{projectId,write:false,authoringPaths:true});
 		if(!connection) return null;
 		const ref=`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`;
-		const listed=await connection.client.listRepositoryPaths({repoId:connection.repositoryId,ref,paths:[`${connection.contentPath}/${COLLECTIONS.query}/**`],kinds:['blob'],limit:1,allowProtected:true});
+		const listed=await connection.client.listRepositoryPaths({repoId:connection.repositoryId,ref,paths:[projectLibraryPath(connection.contentPath,COLLECTIONS.query,'**')],kinds:['blob'],limit:1,allowProtected:true});
 		return String(listed.resolvedRef??'').trim()||null;
 	}
 
@@ -64,13 +64,13 @@ export class ContextQueryCheckService {
 		const connection=await resolveKnowledgeGatewayConnection(this.store,{projectId,write:false,authoringPaths:true,readRefs:[ref]});
 		if(!connection) throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
 		const collections=[['query',COLLECTIONS.query,'agent_context_query'],['query-set',COLLECTIONS.set,'agent_context_query_set'],['test',COLLECTIONS.test,'agent_test'],['agent',COLLECTIONS.agent,'agent']] as const;
-		const listed=await connection.client.listRepositoryPaths({repoId:connection.repositoryId,ref,paths:collections.map(([,collection])=>`${connection.contentPath}/${collection}/**`),kinds:['blob'],extensions:['.md','.mdx'],limit:500,allowProtected:true});
+		const listed=await connection.client.listRepositoryPaths({repoId:connection.repositoryId,ref,paths:collections.map(([,collection])=>projectLibraryPath(connection.contentPath,collection,'**')),kinds:['blob'],extensions:['.md','.mdx'],limit:500,allowProtected:true});
 		const paths=(listed.entries??[]).map((entry:unknown)=>String(record(entry).path??'').trim()).filter(Boolean);
 		const read=paths.length?await connection.client.readRepositoryFiles({repoId:connection.repositoryId,ref:String(listed.resolvedRef??ref),paths,encoding:'utf8',parseFrontmatter:false,allowProtected:true}):{files:[]};
 		const commit=String((read as Record<string,unknown>).resolvedRef??listed.resolvedRef??ref);
 		const entries=(read.files??[]).flatMap((file:unknown)=>{
 			const row=record(file); const filePath=String(row.path??''); const source=String(row.content??'');
-			const contract=collections.find(([,collection])=>filePath.includes(`/${collection}/`)); if(!contract||!source) return [];
+			const contract=collections.find(([,collection])=>filePath.startsWith(`${collection}/`)||filePath.includes(`/${collection}/`)); if(!contract||!source) return [];
 			const validation=validateContentFrontmatter(contract[2],parseFrontmatterDocument(source).frontmatter);
 			if(!validation.ok||!validation.data) return [];
 			const value=validation.data as Record<string,unknown>;

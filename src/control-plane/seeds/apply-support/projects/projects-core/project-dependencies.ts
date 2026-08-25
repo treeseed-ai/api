@@ -12,51 +12,48 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
     const repairs = [];
 	const metadata = mergeSeedMetadata(projectSeedMetadata(action.existing?.metadata), action.payload.metadata, action, manifestHash, appliedAt);
     const repositories = await store.listHubRepositories(projectId);
-	if (repositories.some((entry) => entry.role === 'content')) {
-		await store.deleteHubRepositoryByRole(projectId, 'content');
-		repairs.push({ kind: 'legacyContentRepositoryRemoved', projectId });
-	}
-	if (repository) {
-		const existingRepository = repositories.find((entry) => entry.role === repository.role);
-		const currentBranch = repository.repositoryPolicy?.stagingBranch ?? repository.defaultBranch ?? 'main';
+	const desiredRepositories = [repository, action.payload.library].filter(Boolean);
+	for (const desiredRepository of desiredRepositories) {
+		const existingRepository = repositories.find((entry) => entry.role === desiredRepository.role);
+		const currentBranch = desiredRepository.repositoryPolicy?.stagingBranch ?? desiredRepository.defaultBranch ?? 'main';
 		const repositoryDrift = !existingRepository
-			|| existingRepository.provider !== repository.provider
-			|| existingRepository.owner !== repository.owner
-			|| existingRepository.name !== repository.name
-			|| existingRepository.url !== repository.gitUrl
-			|| existingRepository.defaultBranch !== (repository.defaultBranch ?? 'main')
+			|| existingRepository.provider !== desiredRepository.provider
+			|| existingRepository.owner !== desiredRepository.owner
+			|| existingRepository.name !== desiredRepository.name
+			|| existingRepository.url !== desiredRepository.gitUrl
+			|| existingRepository.defaultBranch !== (desiredRepository.defaultBranch ?? 'main')
 			|| existingRepository.currentBranch !== currentBranch
 			|| existingRepository.status !== 'active'
-			|| (existingRepository.submodulePath ?? null) !== (repository.submodulePath ?? null);
+			|| (existingRepository.submodulePath ?? null) !== (desiredRepository.submodulePath ?? null);
 		if (repositoryDrift) {
 			await store.upsertHubRepository(projectId, {
 				id: existingRepository?.id,
 				teamId,
-				role: repository.role,
-				provider: repository.provider,
-				owner: repository.owner,
-				name: repository.name,
-				url: repository.gitUrl,
-				defaultBranch: repository.defaultBranch ?? 'main',
+				role: desiredRepository.role,
+				provider: desiredRepository.provider,
+				owner: desiredRepository.owner,
+				name: desiredRepository.name,
+				url: desiredRepository.gitUrl,
+				defaultBranch: desiredRepository.defaultBranch ?? 'main',
 				currentBranch,
 				status: 'active',
-				submodulePath: repository.submodulePath ?? null,
+				submodulePath: desiredRepository.submodulePath ?? null,
 				metadata,
 			});
-			repairs.push({ kind: 'hubRepository', projectId, role: repository.role });
+			repairs.push({ kind: 'hubRepository', projectId, role: desiredRepository.role });
 		}
     }
 	if (localOnly === true) {
+		if (!action.payload.library) throw new Error(`Project ${action.key} is missing its required library repository.`);
         repairs.push(await ensureProjectKnowledgeBinding({
             store,
             projectId,
             teamId,
             projectSlug: action.payload.slug,
-            contentPath: action.payload.architecture?.contentPath,
-			contentRepositoryRef: action.payload.architecture?.topology === 'split_site_content'
-				? 'refs/heads/staging'
-				: undefined,
-			contentRepositoryUrl: null,
+			libraryRoot: '.',
+			libraryRef: 'refs/remotes/origin/staging',
+			libraryRepositoryUrl: action.payload.library.gitUrl,
+			libraryDefaultBranch: action.payload.library.defaultBranch ?? 'main',
             env,
             dependencyState,
         }));

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { parseFrontmatterDocument, serializeFrontmatterDocument } from '../content/frontmatter.ts';
-import { resolveKnowledgeGatewayConnection } from '../knowledge/gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../knowledge/gateway-treedx-connection.ts';
 import { applyTextChangeset } from '../knowledge/changesets/apply-text-changeset.ts';
 import { projectTreeDxCommitSignals } from '../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
@@ -22,8 +22,8 @@ export function discussionEventPathIdentity(value: string) {
 }
 
 function discussionModel(path: string): ContentModel {
-	if (path.includes('/discussion-messages/')) return 'discussion_message';
-	if (path.includes('/discussion-events/')) return 'discussion_event';
+	if (path.startsWith('discussion-messages/') || path.includes('/discussion-messages/')) return 'discussion_message';
+	if (path.startsWith('discussion-events/') || path.includes('/discussion-events/')) return 'discussion_event';
 	return 'discussion';
 }
 
@@ -50,8 +50,8 @@ export async function loadDiscussions(input: {
 	const discussionRef = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const selected = input.discussionId ? slug(input.discussionId) : null;
 	const patterns = selected
-		? [`${connection.contentPath}/discussions/${selected}.mdx`, `${connection.contentPath}/discussion-messages/${selected}/**`, `${connection.contentPath}/discussion-events/${selected}/**`]
-		: [`${connection.contentPath}/discussions/**`];
+		? [projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`), projectLibraryPath(connection.contentPath, 'discussion-messages', selected, '**'), projectLibraryPath(connection.contentPath, 'discussion-events', selected, '**')]
+		: [projectLibraryPath(connection.contentPath, 'discussions/**')];
 	const listed = await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: discussionRef, paths: patterns, kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 1_000, allowProtected: true });
 	const readableAuthoring = await listReadableTreeDxAuthoringState(input.store, input.projectId);
 	const branchPaths = (listed.entries ?? []).map((entry: unknown) => text((entry as Row)?.path)).filter(Boolean);
@@ -59,20 +59,20 @@ export async function loadDiscussions(input: {
 		? state.changedPaths.map((path) => text(path)).filter(Boolean) : []);
 	const query = text(input.query).toLowerCase();
 	const limit = Math.max(1, Math.min(100, Number(input.limit) || 50));
-	const collectionMarker = input.collection === 'messages' ? '/discussion-messages/'
-		: input.collection === 'events' ? '/discussion-events/'
-		: input.collection === 'discussions' ? '/discussions/' : null;
-	const selectedDiscussionPaths = selected ? (path: string) => path === `${connection.contentPath}/discussions/${selected}.mdx`
-		|| path.startsWith(`${connection.contentPath}/discussion-messages/${selected}/`)
-		|| path.startsWith(`${connection.contentPath}/discussion-events/${selected}/`) : () => true;
+	const collectionMarker = input.collection === 'messages' ? 'discussion-messages/'
+		: input.collection === 'events' ? 'discussion-events/'
+		: input.collection === 'discussions' ? 'discussions/' : null;
+	const selectedDiscussionPaths = selected ? (path: string) => path === projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)
+		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-messages', selected)}/`)
+		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-events', selected)}/`) : () => true;
 	const eligiblePaths = [...new Set([...branchPaths, ...journalPaths])]
 		.filter(selectedDiscussionPaths)
 		.filter((path) => !collectionMarker || path.includes(collectionMarker));
 	const pathMatches = query ? eligiblePaths.filter((path) => path.toLowerCase().includes(query)) : [];
 	const boundedPaths = pathMatches.length ? pathMatches.slice(-limit) : [
-		...eligiblePaths.filter((path) => path.includes('/discussions/')).slice(-limit),
-		...eligiblePaths.filter((path) => path.includes('/discussion-messages/')).slice(-limit),
-		...eligiblePaths.filter((path) => path.includes('/discussion-events/')).slice(-limit),
+		...eligiblePaths.filter((path) => path.startsWith('discussions/') || path.includes('/discussions/')).slice(-limit),
+		...eligiblePaths.filter((path) => path.startsWith('discussion-messages/') || path.includes('/discussion-messages/')).slice(-limit),
+		...eligiblePaths.filter((path) => path.startsWith('discussion-events/') || path.includes('/discussion-events/')).slice(-limit),
 	];
 	const selectedPaths = [...new Set(boundedPaths)];
 	const paths = branchPaths.filter((path) => selectedPaths.includes(path));
@@ -86,10 +86,10 @@ export async function loadDiscussions(input: {
 		for (const path of changedPaths) {
 			if (!selectedPaths.includes(path)) continue;
 			const isSelectedDiscussion=selected
-				? path === `${connection.contentPath}/discussions/${selected}.mdx`
-					|| path.startsWith(`${connection.contentPath}/discussion-messages/${selected}/`)
-					|| path.startsWith(`${connection.contentPath}/discussion-events/${selected}/`)
-				: path.startsWith(`${connection.contentPath}/discussions/`);
+				? path === projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)
+					|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-messages', selected)}/`)
+					|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-events', selected)}/`)
+				: path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussions')}/`);
 			if (isSelectedDiscussion) latestUnpublishedByPath.set(path,commitSha);
 		}
 	}
@@ -115,10 +115,10 @@ export async function loadDiscussions(input: {
 		const frontmatter = record(item.frontmatter);
 		return text(frontmatter.createdAt, text(frontmatter.occurredAt)) > after;
 	});
-	const discussions = afterFiltered.filter((item: Row) => text(item.path).includes('/discussions/')).slice(0, limit);
-	const messages = afterFiltered.filter((item: Row) => text(item.path).includes('/discussion-messages/'))
+	const discussions = afterFiltered.filter((item: Row) => text(item.path).startsWith('discussions/') || text(item.path).includes('/discussions/')).slice(0, limit);
+	const messages = afterFiltered.filter((item: Row) => text(item.path).startsWith('discussion-messages/') || text(item.path).includes('/discussion-messages/'))
 		.sort((a: Row, b: Row) => text((a.frontmatter as Row)?.createdAt).localeCompare(text((b.frontmatter as Row)?.createdAt))).slice(0, limit);
-	const events = afterFiltered.filter((item: Row) => text(item.path).includes('/discussion-events/'))
+	const events = afterFiltered.filter((item: Row) => text(item.path).startsWith('discussion-events/') || text(item.path).includes('/discussion-events/'))
 		.sort((a: Row, b: Row) => Number((a.frontmatter as Row)?.sequence ?? 0) - Number((b.frontmatter as Row)?.sequence ?? 0)).slice(0, limit);
 	const last = [...messages, ...events].sort((a: Row, b: Row) => {
 		const left = record(a.frontmatter); const right = record(b.frontmatter);
@@ -160,9 +160,9 @@ export async function commitDiscussionMessage(input: {
 		? mentions.filter((agentId) => recipients.includes(agentId))
 		: [...new Set([...mentions, ...recipients])];
 	const root = connection.contentPath;
-	const discussionPath = `${root}/discussions/${slug(discussionId)}.mdx`;
-	const messagePath = `${root}/discussion-messages/${slug(discussionId)}/${messageId}.mdx`;
-	const eventPath = `${root}/discussion-events/${slug(discussionId)}/${now.replace(/[^0-9]/gu, '')}-${messageId}.mdx`;
+	const discussionPath = projectLibraryPath(root, 'discussions', `${slug(discussionId)}.mdx`);
+	const messagePath = projectLibraryPath(root, 'discussion-messages', slug(discussionId), `${messageId}.mdx`);
+	const eventPath = projectLibraryPath(root, 'discussion-events', slug(discussionId), `${now.replace(/[^0-9]/gu, '')}-${messageId}.mdx`);
 	const authorId = text(input.principal.id, 'unknown-user');
 	const authorName = text(input.principal.displayName, input.principal.name, authorId);
 	const discussion = serializeFrontmatterDocument({ title: topic, topic, status: 'active', teamId: input.teamId, projectId: input.projectId, visibility: 'team', participantIds: [authorId], agentIds: mentions, createdAt: now, updatedAt: now }, `# ${topic}\n`);
@@ -269,7 +269,7 @@ export async function appendDiscussionEvent(input: {
 	const occurredAt = text(input.event.createdAt, new Date().toISOString());
 	const eventId = text(input.event.id, randomUUID());
 	const phase = text(input.event.eventType, input.event.type, 'assignment.event');
-	const path = `${connection.contentPath}/discussion-events/${slug(input.discussionId)}/${occurredAt.replace(/[^0-9]/gu, '')}-${discussionEventPathIdentity(eventId)}.mdx`;
+	const path = projectLibraryPath(connection.contentPath, 'discussion-events', slug(input.discussionId), `${occurredAt.replace(/[^0-9]/gu, '')}-${discussionEventPathIdentity(eventId)}.mdx`);
 	const eventRefs = (input.event.refs && typeof input.event.refs === 'object') ? input.event.refs as Row : {};
 	const refs = Object.values(eventRefs).flatMap((value) => Array.isArray(value) ? value : [value]).map(String).filter(Boolean);
 	const context = (input.event.context && typeof input.event.context === 'object') ? input.event.context as Row : {};
@@ -348,7 +348,7 @@ export async function appendDiscussionEvent(input: {
 export async function changeDiscussionStatus(input:{store:any;projectId:string;teamId:string;discussionId:string;status:'active'|'archived';principal:Row}){
 	const connection=await resolveKnowledgeGatewayConnection(input.store,{projectId:input.projectId,write:true,communicationPaths:true});
 	if(!connection)throw new Error('The project TreeDX repository is unavailable for Discussion lifecycle changes.');
-	const path=`${connection.contentPath}/discussions/${slug(input.discussionId)}.mdx`; const branchName=`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`;
+	const path=projectLibraryPath(connection.contentPath,'discussions',`${slug(input.discussionId)}.mdx`); const branchName=`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`;
 	const read=await connection.client.readRepositoryFiles({repoId:connection.repositoryId,ref:branchName,paths:[path],encoding:'utf8',parseFrontmatter:false,allowProtected:true}); const file=(read.files??[])[0] as Row|undefined;
 	if(!file)throw Object.assign(new Error('Unknown Discussion.'),{status:404,code:'discussion_not_found'});
 	const before=text(file.content); const parsed=parseFrontmatterDocument(before); const prior=text(parsed.frontmatter.status);

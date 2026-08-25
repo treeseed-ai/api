@@ -1,5 +1,5 @@
 import type { OperationInvocationContext } from '../catalog/operation-registry.ts';
-import { digestSeedBundle, validateSeedBundle, type SeedBundleV2 } from '@treeseed/sdk/operator-contracts';
+import { digestSeedBundle, validateSeedBundle, type SeedBundleV3 } from '@treeseed/sdk/operator-contracts';
 import { applySeedWithStore, planSeedWithStore, resolveSeedResource } from '../../../control-plane/seeds/apply.js';
 import { SeedOperationError } from './seed-operation-error.ts';
 import { CapacityGrantService } from '../../capacity/services/capacity/allocations/grant-service.ts';
@@ -24,14 +24,17 @@ const environments = (value: unknown) => Array.isArray(value)
 const existingTeams = (plan: any) => [...new Set<string>(plan.actions.filter((action: any) => action.kind === 'team' && action.existing?.id).map((action: any) => String(action.existing.id)))];
 const createsTeams = (plan: any) => plan.actions.some((action: any) => action.kind === 'team' && action.action === 'create');
 const seedAdmin = (principal: Principal) => principal.permissions?.includes('*:*:*') || principal.permissions?.includes('seeds:apply:global') || principal.roles?.includes('platform_admin');
-function bundle(body: Record<string, unknown>): SeedBundleV2 {
-	const value = (body.bundle ?? body) as SeedBundleV2;
-	if (!value || typeof value !== 'object' || value.schemaVersion !== 'treeseed.seed-bundle/v2') {
-		throw new SeedOperationError(400, 'seed_bundle_required', 'A portable treeseed.seed-bundle/v2 bundle is required.');
+function bundle(body: Record<string, unknown>): SeedBundleV3 {
+	const value = (body.bundle ?? body) as SeedBundleV3;
+	if (value && typeof value === 'object' && value.schemaVersion === 'treeseed.seed-bundle/v2') {
+		throw new SeedOperationError(409, 'seed_bundle_v2_migration_required', 'Historical v2 bundles are readable receipts but must be migrated to treeseed.seed-bundle/v3 before reconciliation.');
+	}
+	if (!value || typeof value !== 'object' || value.schemaVersion !== 'treeseed.seed-bundle/v3') {
+		throw new SeedOperationError(400, 'seed_bundle_required', 'A portable treeseed.seed-bundle/v3 bundle is required.');
 	}
 	return value;
 }
-async function validateBundle(value: SeedBundleV2) {
+async function validateBundle(value: SeedBundleV3) {
 	const diagnostics = validateSeedBundle(value);
 	const computedDigest = await digestSeedBundle(value);
 	if (computedDigest !== value.digest) diagnostics.push({ code: 'seed_bundle_digest_mismatch', path: 'digest', message: 'The seed bundle digest does not match its canonical content.' });
@@ -110,7 +113,7 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 			if (String(run.seed_name ?? run.seedName) !== name) continue;
 			const plan = run.plan && typeof run.plan === 'object' ? run.plan as Record<string, unknown> : {};
 			const source = plan.sourceBundle;
-			if (source && typeof source === 'object' && !Array.isArray(source)) return source as SeedBundleV2;
+			if (source && typeof source === 'object' && !Array.isArray(source)) return source as SeedBundleV3;
 		}
 		throw new SeedOperationError(409, 'seed_source_bundle_unavailable', 'No applied seed run retains the exact portable source bundle; apply the current bundle before verification.');
 	}
