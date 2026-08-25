@@ -45,7 +45,7 @@ export class TreeDxInfrastructureClient {
 	getPlacement(repoId: string) { return this.upstream.registry.getPlacement(repoId) as Promise<any>; }
 
 	readRepositoryFile(input: Input) { const { repoId, ...body } = input; return this.upstream.query.readFile(this.repositoryId(repoId), body) as Promise<any>; }
-	readRepositoryFiles(input: Input) { const { repoId, ...body } = input; return this.upstream.query.repository(this.repositoryId(repoId), { ...body, type: body.type ?? 'files' }) as Promise<any>; }
+	readRepositoryFiles(input: Input) { const { repoId, ...body } = input; return this.upstream.query.readFile(this.repositoryId(repoId), body) as Promise<any>; }
 	listRepositoryPaths(input: Input) { const { repoId, ...body } = input; return this.upstream.query.listPaths(this.repositoryId(repoId), body) as Promise<any>; }
 	searchRepositoryFiles(input: Input) { const { repoId, ...body } = input; return this.upstream.query.searchFiles(this.repositoryId(repoId), body) as Promise<any>; }
 	queryRepository(input: Input) { const { repoId, ...body } = input; return this.upstream.query.repository(this.repositoryId(repoId), body) as Promise<any>; }
