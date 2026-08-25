@@ -16,6 +16,9 @@ type Store = {
 	all(query: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
 	run(query: string, params?: unknown[]): Promise<unknown>;
 };
+type ProviderEnrollmentService = {
+	connect(principal: Principal, teamId: string, idempotencyKey: string): Promise<Record<string, unknown>>;
+};
 
 const text = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
 const environments = (value: unknown) => Array.isArray(value)
@@ -45,10 +48,9 @@ function requirePrincipal(principal: OperationInvocationContext['principal']): P
 	return principal;
 }
 
-export function createSeedOperationService(store: Store, _legacyConfig?: { repoRoot: string }) {
+export async function reconcileSeedProviderPrerequisites(store: Store, config: { providers?: ProviderEnrollmentService }, plan: any, mutate: boolean, principal?: Principal) {
 	const grants = new CapacityGrantService(store as any);
-	async function reconcileProviderPrerequisites(plan: any, mutate: boolean) {
-		const receipts = [];
+	const receipts = [];
 		for (const prerequisite of plan.runtime.capacityProviders ?? []) {
 			const teamAction = plan.actions.find((action: any) => action.key === prerequisite.team);
 			const team = teamAction?.existing ?? (teamAction ? await (store as any).getTeamBySlug(teamAction.payload.slug) : null);
@@ -57,7 +59,17 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 				INNER JOIN capacity_providers provider ON provider.id = membership.capacity_provider_id
 				WHERE membership.team_id = ? AND membership.status = 'approved' AND provider.status = 'active'
 				ORDER BY membership.approved_at DESC LIMIT 1`, [team.id]);
-			if (!membership) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', teamId: team.id, blockers: ['provider_enrollment_and_owner_approval_required'] }); continue; }
+			if (!membership) {
+				if (mutate && principal && config.providers) {
+					const connectionId = `local-${team.id}`;
+					const enrollment = await config.providers.connect(principal, team.id,
+						`seed:${plan.seed}:${plan.version}:${prerequisite.key}:enroll`);
+					receipts.push({ key: prerequisite.key, status: 'enrollment_required', teamId: team.id, connectionId,
+						approval: prerequisite.approval, ...enrollment });
+					continue;
+				}
+				receipts.push({ key: prerequisite.key, status: 'waiting_provider', teamId: team.id, blockers: ['provider_enrollment_and_owner_approval_required'] }); continue;
+			}
 			const session = await store.first(`SELECT * FROM capacity_provider_availability_sessions WHERE membership_id = ? AND status = 'open' AND expires_at > ? ORDER BY refreshed_at DESC LIMIT 1`, [membership.id, new Date().toISOString()]);
 			if (!session) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', teamId: team.id, membershipId: membership.id, blockers: ['provider_health_required'] }); continue; }
 			const lanes = await store.all(`SELECT lane.* FROM capacity_provider_lanes lane
@@ -97,8 +109,10 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 				membershipId: membership.id, providerId: membership.capacity_provider_id, sessionId: session.id, projects: projectReceipts,
 				...(missingLanes.length ? { blockers: missingLanes.map((purpose: string) => `lane_execution_unavailable:${purpose}`) } : {}) });
 		}
-		return { status: receipts.every((entry) => entry.status === 'verified') ? 'verified' : receipts.some((entry) => entry.status === 'blocked') ? 'blocked' : 'waiting_provider', receipts };
-	}
+	return { status: receipts.every((entry) => entry.status === 'verified') ? 'verified' : receipts.some((entry) => entry.status === 'blocked') ? 'blocked' : 'waiting_provider', receipts };
+}
+
+export function createSeedOperationService(store: Store, config: { repoRoot?: string; providers?: ProviderEnrollmentService } = {}) {
 	async function requirePlanAccess(principal: Principal, plan: any) {
 		for (const teamId of existingTeams(plan)) if (!await store.principalCanAccessTeam(principal, teamId)) throw new SeedOperationError(403, 'seed_team_access_denied', 'The principal cannot read every team selected by this seed.');
 	}
@@ -160,7 +174,7 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 				throw new SeedOperationError(502, 'seed_reconciliation_failed', detail);
 			}
 			if (applied.result?.blocked === true) throw new SeedOperationError(409, 'seed_apply_blocked', String(applied.result.reason ?? 'The seed application is blocked.'));
-			const providerClosure = await reconcileProviderPrerequisites(applied.plan, true);
+			const providerClosure = await reconcileSeedProviderPrerequisites(store, config, applied.plan, true, principal);
 			return { seed: applied.plan.seed, mode: 'apply', environments: applied.plan.environments, summary: applied.plan.summary, runtime: applied.plan.runtime, actions: applied.plan.actions, diagnostics: applied.plan.diagnostics, run: applied.run, result: { ...applied.result, providerClosure } };
 		},
 		async show(principalValue: OperationInvocationContext['principal'], name: string) {
@@ -179,7 +193,7 @@ export function createSeedOperationService(store: Store, _legacyConfig?: { repoR
 			if (!planned.plan) throw new SeedOperationError(400, 'seed_plan_invalid', 'The seed could not be verified.');
 			await requirePlanAccess(principal, planned.plan);
 			const drift = planned.plan.actions.filter((action: any) => ['create', 'update', 'delete', 'error'].includes(action.action));
-			const providerClosure = await reconcileProviderPrerequisites(planned.plan, false);
+			const providerClosure = await reconcileSeedProviderPrerequisites(store, config, planned.plan, false);
 			return { seed: name, digest: value.digest, verified: drift.length === 0 && providerClosure.status === 'verified', drift, summary: planned.plan.summary,
 				providerClosure };
 		},
