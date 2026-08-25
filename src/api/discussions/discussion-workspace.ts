@@ -24,6 +24,7 @@ export async function openDiscussionWorkspace(input: {
 	store: WorkspaceStore;
 	connection: WorkspaceConnection;
 	projectId: string;
+	baseRef: string;
 	branchName: string;
 	operationKey: string;
 }) {
@@ -58,7 +59,7 @@ export async function openDiscussionWorkspace(input: {
 	});
 	try {
 		const workspace=await input.connection.client.createWorkspace({
-			workspaceId,repoId:input.connection.repositoryId,baseRef:input.branchName,
+			workspaceId,repoId:input.connection.repositoryId,baseRef:input.baseRef,
 			branchName:input.branchName,mode:'writable',allowedPaths:input.connection.allowedPaths,ttlSeconds:600,
 		});
 		return { workspace, async close() {

@@ -177,7 +177,7 @@ export async function commitDiscussionMessage(input: {
 		assertDiscussionContent(path, source);
 	}
 	const branchName = authoringRef || `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
-	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,branchName,
+	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('message',`${discussionId}\n${messageId}`) });
 	const workspace = session.workspace;
 	try {
@@ -324,7 +324,7 @@ export async function appendDiscussionEvent(input: {
 	};
 	const observed = await observeExisting();
 	if (observed) return observed;
-	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,branchName,
+	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('event',path) });
 	const workspace = session.workspace;
 	try {
@@ -355,7 +355,7 @@ export async function changeDiscussionStatus(input:{store:any;projectId:string;t
 	const before=text(file.content); const parsed=parseFrontmatterDocument(before); const prior=text(parsed.frontmatter.status);
 	if(prior===input.status)return {discussionId:input.discussionId,path,status:input.status,replayed:true,commitSha:text((read as Row).resolvedRef,branchName)};
 	const now=new Date().toISOString(); const after=serializeFrontmatterDocument({...parsed.frontmatter,status:input.status,...((prior==='open'||prior==='resolved')?{legacyStatus:prior}:{}),updatedAt:now},parsed.body); assertDiscussionContent(path,after);
-	const session=await openDiscussionWorkspace({store:input.store,connection,projectId:input.projectId,branchName,
+	const session=await openDiscussionWorkspace({store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('status',`${input.discussionId}\n${input.status}`)}); const workspace=session.workspace;
 	try{
 		await applyTextChangeset({client:connection.client,workspace,changes:[{path,before,after}]}); const actor=text(input.principal.displayName,input.principal.id,'Discussion operator');
