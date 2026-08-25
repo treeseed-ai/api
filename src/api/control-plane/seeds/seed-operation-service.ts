@@ -3,6 +3,7 @@ import { digestSeedBundle, validateSeedBundle, type SeedBundleV3 } from '@treese
 import { applySeedWithStore, planSeedWithStore, resolveSeedResource } from '../../../control-plane/seeds/apply.js';
 import { SeedOperationError } from './seed-operation-error.ts';
 import { CapacityGrantService } from '../../capacity/services/capacity/allocations/grant-service.ts';
+import { CapacityAllocationService } from '../../capacity/services/capacity/allocations/allocation-service.ts';
 import { createHash } from 'node:crypto';
 
 type Principal = NonNullable<OperationInvocationContext['principal']>;
@@ -50,6 +51,7 @@ function requirePrincipal(principal: OperationInvocationContext['principal']): P
 
 export async function reconcileSeedProviderPrerequisites(store: Store, config: { providers?: ProviderEnrollmentService }, plan: any, mutate: boolean, principal?: Principal) {
 	const grants = new CapacityGrantService(store as any);
+	const allocations = new CapacityAllocationService(store as any);
 	const receipts = [];
 		for (const prerequisite of plan.runtime.capacityProviders ?? []) {
 			const teamAction = plan.actions.find((action: any) => action.key === prerequisite.team);
@@ -81,10 +83,12 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 			if (!lanes.length) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', blockers: missingLanes.map((purpose: string) => `lane_execution_unavailable:${purpose}`) }); continue; }
 			const executionProviderIds = [...new Set(lanes.map((lane) => String(lane.execution_provider_id)))];
 			const projectReceipts = [];
+			const projectIds: string[] = [];
 			for (const projectKey of prerequisite.projects) {
 				const projectAction = plan.actions.find((action: any) => action.key === projectKey);
 				const project = projectAction?.existing ?? (projectAction ? await (store as any).getProjectByTeamAndSlug(team.id, projectAction.payload.slug) : null);
 				if (!project?.id) { projectReceipts.push({ projectKey, status: 'blocked', blocker: 'project_not_ready' }); continue; }
+				projectIds.push(String(project.id));
 				for (const environment of prerequisite.environments) {
 					const existing = await store.first(`SELECT * FROM capacity_grants WHERE membership_id = ? AND project_id = ? AND environment = ? AND status IN ('planned','active','paused') LIMIT 1`, [membership.id, project.id, environment]);
 					if (existing) {
@@ -105,8 +109,32 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 				}
 			}
 			const projectsReady = projectReceipts.every((entry) => entry.status === 'active');
-			receipts.push({ key: prerequisite.key, status: projectsReady && missingLanes.length === 0 ? 'verified' : 'waiting_provider', teamId: team.id,
+			let allocation: Record<string, unknown> = { status: 'waiting', blocker: 'active_allocation_required' };
+			const activeAllocation = await allocations.getActive(String(team.id));
+			const coversProjects = activeAllocation && projectIds.every((projectId) => activeAllocation.slices.some((slice) => slice.scope === 'project' && slice.targetId === projectId));
+			if (coversProjects) allocation = { status: 'active', allocationSetId: activeAllocation.id, version: activeAllocation.version };
+			else if (mutate && projectsReady && missingLanes.length === 0 && !activeAllocation) {
+				const allocationSetId = `seed-allocation:${createHash('sha256').update(`${plan.seed}\0${prerequisite.key}\0${team.id}`).digest('hex').slice(0, 32)}`;
+				let allocated = 0;
+				const slices = projectIds.map((projectId, index) => {
+					const targetPercent = index === projectIds.length - 1 ? 100 - allocated : 100 / projectIds.length;
+					allocated += targetPercent;
+					return { id: `seed-project:${createHash('sha256').update(`${allocationSetId}\0${projectId}`).digest('hex').slice(0, 24)}`,
+						scope: 'project', targetId: projectId, policy: { minPercent: 0, targetPercent, maxPercent: 100, hardCapPercent: 100 },
+						metadata: { seedName: plan.seed, seedVersion: plan.version, prerequisiteKey: prerequisite.key } };
+				});
+				const candidate = await allocations.create(String(team.id), { id: allocationSetId, effectiveFrom: new Date().toISOString(),
+					reservePolicy: { percent: 0, overflow: 'deny' }, slices, borrowingRules: [],
+					metadata: { seedName: plan.seed, seedVersion: plan.version, prerequisiteKey: prerequisite.key } }, principal?.id ?? null,
+					`seed:${plan.seed}:${plan.version}:${prerequisite.key}:allocation:create`);
+				const activated = await allocations.activate(String(team.id), candidate.id,
+					`seed:${plan.seed}:${plan.version}:${prerequisite.key}:allocation:activate`);
+				allocation = activated ? { status: 'active', allocationSetId: activated.id, version: activated.version } : allocation;
+			} else if (activeAllocation) allocation = { status: 'blocked', allocationSetId: activeAllocation.id, blocker: 'active_allocation_missing_seed_projects' };
+			const allocationReady = allocation.status === 'active';
+			receipts.push({ key: prerequisite.key, status: projectsReady && missingLanes.length === 0 && allocationReady ? 'verified' : 'waiting_provider', teamId: team.id,
 				membershipId: membership.id, providerId: membership.capacity_provider_id, sessionId: session.id, projects: projectReceipts,
+				allocation,
 				...(missingLanes.length ? { blockers: missingLanes.map((purpose: string) => `lane_execution_unavailable:${purpose}`) } : {}) });
 		}
 	return { status: receipts.every((entry) => entry.status === 'verified') ? 'verified' : receipts.some((entry) => entry.status === 'blocked') ? 'blocked' : 'waiting_provider', receipts };
