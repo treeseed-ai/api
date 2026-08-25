@@ -54,7 +54,7 @@ function queryResult(response: unknown) {
 }
 
 function resultItems(result: Record<string, unknown>): unknown[] {
-	for (const key of ['results', 'paths', 'items', 'files']) {
+	for (const key of ['results', 'paths', 'items', 'files', 'entries']) {
 		if (Array.isArray(result[key])) return result[key] as unknown[];
 	}
 	return [];
