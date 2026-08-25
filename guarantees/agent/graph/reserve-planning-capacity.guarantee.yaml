@@ -7,7 +7,7 @@ journey: Reserve Planning Capacity
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Synthesized planning assignments create planning capacity reservations before lease."
-status: active
+status: planned
 actors:
   allowed: [project_manager, capacity_operator, team_owner]
   forbidden: [anonymous_user, unauthorized_user]
@@ -29,3 +29,5 @@ negativeCases:
     verifierRefs: [api.agent.graph.reserve-planning-capacity]
 evidence:
   required: [guarantee_report, verifier_evidence]
+notes:
+  - "Planned until reservation and assignment creation are atomic and every billable planning assignment carries a durable reservation."

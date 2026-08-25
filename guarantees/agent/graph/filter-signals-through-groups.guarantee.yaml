@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.graph.filter-signals-through-groups.757
+journeyIndex: 757
+type: agent
+subtype: graph
+journey: Filter signal evidence through project groups
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Signal contracts alone form assignment DAG edges while frozen project-local group membership filters which evidence an activity profile may receive.
+status: planned
+dependencies: { journeys: [], guarantees: [guarantee.agent.control-plane.replay-agent-atlas-evidence.756] }
+actors: { allowed: [authenticated_user, team_owner, capacity_provider], forbidden: [unauthorized_user] }
+devices: { required: [], optional: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: ["A workday freezes agent, content, and group membership with signal subscriptions."] }
+api: { required: true, verifierRefs: [] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: ["A group cannot create an assignment without a matching durable signal.", "Agent class cannot imply group membership.", "Cross-project group links cannot propagate membership.", "Equal-specificity group matches block instead of choosing lexically."]
+evidence: { required: [guarantee_report, verifier_evidence] }
+notes: ["Keep planned until TreeDX content-group snapshots and live group-scoped planning scenes are repeatable."]

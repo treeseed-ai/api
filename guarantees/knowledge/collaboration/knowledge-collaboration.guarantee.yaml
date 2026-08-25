@@ -1,0 +1,23 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.knowledge.collaboration.production-readiness.568
+type: knowledge
+subtype: collaboration
+journey: Knowledge Collaboration Control Plane Readiness
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Require isolated TreeDX workspaces, reviews, exact-ref publication, relationships, packs, audits, and transactional workflow state.
+status: blocked
+actors: { allowed: [knowledge_author, knowledge_reviewer, project_manager, team_owner], forbidden: [anonymous_user, non_member] }
+gates: [core, security, release]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.knowledge.control-plane, api.knowledge.run-correlated, api.knowledge.pack.run-correlated, api.knowledge.collection.run-correlated, api.knowledge.lifecycle.run-correlated, api.knowledge.contextual-policy] }
+content: { required: true, verifierRefs: [sdk.knowledge.safe-content, sdk.knowledge.content-sync, sdk.knowledge.pack-integrity] }
+audit: { required: true, verifierRefs: [api.knowledge.run-correlated, api.knowledge.pack.run-correlated, api.knowledge.collection.run-correlated, api.knowledge.lifecycle.run-correlated] }
+negativeCases:
+  - { id: anonymous-control-plane-denied, actor: anonymous_user, verifierRefs: [api.knowledge.control-plane] }
+  - { id: nonmember-control-plane-denied, actor: non_member, verifierRefs: [api.knowledge.control-plane, api.knowledge.contextual-policy] }
+evidence: { required: [api_verification_log, treedx_content_ref, audit_event_id] }
+notes:
+  - Blocked until exact UI run identifiers correlate isolated TreeDX workspaces, reviews, commits, publications, packs, lifecycle events, remote provider publication, and cleanup in two current-source runs.
+  - TreeSeed Guide submissions now record a context digest and require independent technical and audience approvals, graph approval for structural changes, human approval, and an operations-runner recheck against the exact reviewed commit. These controls remain supporting implementation evidence until the existing integrated verifier set proves the complete lifecycle.
+run: { requiredForRelease: true }

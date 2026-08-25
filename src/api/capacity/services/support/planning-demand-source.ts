@@ -1,0 +1,244 @@
+import type { CapacityGovernanceDatabase } from '../../database.ts';
+import { decodeDurableJsonArray, decodeDurableJsonObject } from '../../durable-json.ts';
+import type { DurableCapacityWorkdayRun } from '../../repositories/capacity/workdays/workday-run.ts';
+import { serializeResearchWorkflowRow } from '../../repositories/operations/research-workflow.ts';
+import { listCapacityWorkdayContentArtifactRefs,type CapacityWorkdayResolvedIntent } from '../capacity/workdays/assignments/workday-assignment-context-service.ts';
+import { listTreeDxPlanningDemandSources,type TreeDxPlanningDemandSource } from '../capacity/workdays/content/workday-content-demand-source.ts';
+import type { CapacityWorkdayAgent } from '../capacity/workdays/policy/workday-agent-policy.ts';
+import type { WorkdayProject } from '../capacity/workdays/policy/workday-project-policy.ts';
+import type { WorkdayTreeDxConnectionStore } from '../capacity/workdays/treedx/workday-treedx-connection.ts';
+
+export interface PlanningDemandSource {
+	sourceType: 'objective' | 'question' | 'proposal' | 'decision-review' | 'knowledge-gap' | 'release-readiness'
+		| 'idle-intent' | 'planning-input' | 'assignment-completion' | 'assignment-blockage' | 'workday-summary' | 'handoff'
+		| 'research-workflow';
+	sourceId: string;
+	decisionId: string | null;
+	priority: number;
+	payload: Record<string, unknown>;
+}
+
+function record(value: unknown): Record<string, unknown> {
+	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function isTreeDxStore(value: CapacityGovernanceDatabase): value is CapacityGovernanceDatabase & WorkdayTreeDxConnectionStore {
+	const candidate = value as Partial<WorkdayTreeDxConnectionStore>;
+	return Boolean(candidate.config && typeof candidate.getProjectTreeDxLibrary === 'function');
+}
+
+function preferredContentSource(agent: CapacityWorkdayAgent, sources: TreeDxPlanningDemandSource[]) {
+	const identity = `${agent.slug}:${agent.activityType}:${agent.handler}`.toLowerCase();
+	const preference = identity.includes('review') ? ['proposal', 'decision-review', 'objective', 'question']
+		: identity.includes('research') ? ['knowledge-gap', 'question', 'objective', 'proposal']
+			: ['objective', 'question', 'knowledge-gap', 'proposal', 'decision-review'];
+	for (const type of preference) {
+		const source = sources.find((candidate) => candidate.sourceType === type);
+		if (source) return source;
+	}
+	return null;
+}
+
+function researchRole(agent: CapacityWorkdayAgent) {
+	const identity = `${agent.slug}:${agent.activityType}:${agent.handler}`.toLowerCase();
+	if (identity.includes('technical-writer') || identity.includes('technical_writer')) return 'technical-writer';
+	if (identity.includes('review')) return 'reviewer';
+	if (identity.includes('report')) return 'reporter';
+	if (identity.includes('research')) return 'researcher';
+	return null;
+}
+
+function researchQuestionSlug(questionRef: string) {
+	return questionRef.replace(/^question:/u, '').trim();
+}
+
+function researchStageIntent(stage: string, intent: CapacityWorkdayResolvedIntent, questionRef: string): CapacityWorkdayResolvedIntent {
+	const artifactKind = stage === 'question-decomposition' ? 'planning_question'
+		: stage === 'cited-knowledge-publication' ? 'knowledge_page'
+			: stage === 'workday-report' ? 'workday_summary'
+				: 'planning_note';
+	return {
+		...intent,
+		artifactKind,
+		subjectModel: 'question',
+		subjectId: researchQuestionSlug(questionRef) || 'what-should-this-research-map-first',
+	};
+}
+
+async function researchWorkflowSource(
+	database: CapacityGovernanceDatabase,
+	project: WorkdayProject,
+	agent: CapacityWorkdayAgent,
+	intent: CapacityWorkdayResolvedIntent,
+): Promise<PlanningDemandSource | null> {
+	const role = researchRole(agent);
+	if (!role) return null;
+	const rows = await database.all(
+		`SELECT * FROM research_workflows WHERE project_id = ? AND status IN ('ready','running') ORDER BY created_at ASC, id ASC LIMIT 25`,
+		[project.id],
+	);
+	for (const row of rows) {
+		const workflow = serializeResearchWorkflowRow(row);
+		const node = workflow?.nodes.find((candidate) => candidate.status === 'ready');
+		if (!workflow || !node || node.role !== role) continue;
+		const reviewAttempts = Array.isArray(workflow.metadata?.reviewAttempts) ? workflow.metadata.reviewAttempts : [];
+		const latestReviewAttempt = reviewAttempts.length ? reviewAttempts.at(-1) : undefined;
+		return {
+			sourceType: 'research-workflow', sourceId: `${workflow.id}:${node.stage}`, decisionId: null, priority: 100,
+			payload: {
+				intent: researchStageIntent(node.stage, intent, workflow.questionRef), planningSource: 'research-workflow', researchWorkflowId: workflow.id, researchWorkflowStateVersion: workflow.stateVersion,
+				researchStage: node.stage, objectiveRef: workflow.objectiveRef, questionRef: workflow.questionRef,
+				minimumIndependentSources: workflow.minimumIndependentSources, maxRevisionCycles: workflow.maxRevisionCycles,
+				citations: workflow.citations, claims: workflow.claims,
+				reviewerRejectedUnsupportedClaims: workflow.reviewerRejectedUnsupportedClaims,
+				reviewerApprovedRevision: workflow.reviewerApprovedRevision, revisionCount: workflow.revisionCount,
+				...(latestReviewAttempt ? { latestReviewAttempt } : {}),
+			},
+		};
+	}
+	return null;
+}
+
+async function operationalSource(
+	database: CapacityGovernanceDatabase,
+	run: DurableCapacityWorkdayRun,
+	project: WorkdayProject,
+	agent: CapacityWorkdayAgent,
+): Promise<PlanningDemandSource | null> {
+	const identity = `${agent.slug}:${agent.activityType}:${agent.handler}`.toLowerCase();
+	const failed = await database.first(
+		`SELECT assignment.id, assignment.lifecycle_code, assignment.lifecycle_reason FROM capacity_provider_assignments assignment
+		 JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
+		 WHERE demand.workday_run_id = ? AND demand.project_id = ? AND assignment.status = 'failed'
+		 ORDER BY assignment.updated_at ASC, assignment.id ASC LIMIT 1`, [run.id, project.id],
+	);
+	if (failed && (identity.includes('review') || identity.includes('architect') || identity.includes('engineer'))) return {
+		sourceType: 'assignment-blockage', sourceId: `assignment:${String(failed.id)}`, decisionId: null, priority: 95,
+		payload: { planningSource: 'assignment-blockage', assignmentId: failed.id,
+			lifecycleCode: failed.lifecycle_code ?? null, lifecycleReason: failed.lifecycle_reason ?? null },
+	};
+	const completed = await database.first(
+		`SELECT assignment.id FROM capacity_provider_assignments assignment JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
+		 WHERE demand.workday_run_id = ? AND demand.project_id = ? AND assignment.status = 'completed'
+		 ORDER BY assignment.completed_at ASC, assignment.id ASC LIMIT 1`, [run.id, project.id],
+	);
+	if (completed && identity.includes('review')) return {
+		sourceType: 'assignment-completion', sourceId: `assignment:${String(completed.id)}`, decisionId: null, priority: 90,
+		payload: { planningSource: 'assignment-completion', assignmentId: completed.id },
+	};
+	if (completed && identity.includes('release')) return {
+		sourceType: 'release-readiness', sourceId: `run:${run.id}:project:${project.id}`, decisionId: null, priority: 85,
+		payload: { planningSource: 'release-readiness', completedAssignmentId: completed.id },
+	};
+	if (completed && identity.includes('report')) return {
+		...(await listCapacityWorkdayContentArtifactRefs(database, run, project.id)).some((artifact) =>
+			artifact.artifactKind === 'workday_summary' || artifact.artifactKind === 'workday-summary')
+			? { sourceType: 'handoff' as const, sourceId: `run:${run.id}:project:${project.id}:handoff`, priority: 35,
+				payload: { planningSource: 'handoff', completedAssignmentId: completed.id } }
+			: { sourceType: 'workday-summary' as const, sourceId: `run:${run.id}:project:${project.id}`, priority: 40,
+				payload: { planningSource: 'workday-summary', completedAssignmentId: completed.id } },
+		decisionId: null,
+	};
+	return null;
+}
+
+function text(value: unknown): string | null { return typeof value === 'string' && value.trim() ? value.trim() : null; }
+function positive(value: unknown, fallback: number): number {
+	const candidate = Number(value ?? fallback);
+	return Number.isFinite(candidate) && candidate > 0 ? candidate : fallback;
+}
+
+export async function resolvePlanningDemandSource(
+	database: CapacityGovernanceDatabase,
+	run: DurableCapacityWorkdayRun,
+	project: WorkdayProject,
+	agent: CapacityWorkdayAgent,
+	intent: CapacityWorkdayResolvedIntent,
+): Promise<PlanningDemandSource> {
+	if (agent.activityType === 'chat') {
+		const invocation = await database.first(
+			`SELECT * FROM agent_invocation_requests
+			 WHERE team_id = ? AND project_id = ? AND execution_id = ? AND agent_id = ?
+			   AND execution_kind = 'conversation' AND status = 'admitted'
+			 ORDER BY priority_class DESC, requested_at ASC, id ASC LIMIT 1`,
+			[run.teamId, project.id, run.id, agent.slug],
+		);
+		if (invocation) {
+			const workdayParameters=record(run.parameters);
+			const metadata = decodeDurableJsonObject(invocation.metadata_json, {
+				owner: 'agent invocation', ownerId: String(invocation.id), column: 'metadata_json',
+			});
+			const contentRefs = decodeDurableJsonArray<string>(invocation.content_refs_json, {
+				owner: 'agent invocation', ownerId: String(invocation.id), column: 'content_refs_json',
+			});
+			return {
+				sourceType: 'planning-input', sourceId: String(invocation.id), decisionId: text(invocation.decision_id),
+				priority: invocation.priority_class === 'human-interactive' ? 400
+					: invocation.priority_class === 'workday-blocking-agent' ? 300
+						: invocation.priority_class === 'agent-asynchronous' ? 200 : 100,
+				payload: {
+					intent: { ...intent, discussionIntent: 'discuss' }, planningSource: 'discussion-invocation',
+					agentInvocationId: String(invocation.id), discussionId: text(metadata.discussionId),
+					discussionMessageId: text(metadata.sourceMessageId), subjectPath: contentRefs[0] ?? null,
+					contentBaseRef: text(metadata.sourceCommit), contextPack: { digest: invocation.subject_digest ?? null, refs: contentRefs },
+					parentWorkdayId: text(invocation.parent_workday_id), parentAssignmentId: text(invocation.parent_assignment_id),
+					providerSourceClosureDigest: text(workdayParameters.providerSourceClosureDigest),
+					handoffRootId: text(invocation.handoff_root_id), handoffParentId: text(invocation.handoff_parent_id),
+					handoffDepth: Number(invocation.handoff_depth ?? 0), triggerKind: text(invocation.trigger_kind),
+				},
+			};
+		}
+	}
+	const discussion = record(record(run.parameters).discussion);
+	if (agent.activityType === 'chat' && text(discussion.discussionId) && text(discussion.messageId)) return {
+		sourceType: 'planning-input', sourceId: `discussion-message:${text(discussion.messageId)}`, decisionId: text(discussion.decisionId), priority: 110,
+		payload: {
+			intent: { ...intent, discussionIntent: text(discussion.intent) ?? 'discuss' }, planningSource: 'discussion-message',
+			discussionId: text(discussion.discussionId), discussionMessageId: text(discussion.messageId),
+			subjectPath: text(discussion.messagePath), contentBaseRef: text(discussion.commitSha),
+			contextPack: { digest: text(discussion.snapshotDigest), refs: [text(discussion.messagePath)].filter(Boolean) },
+		},
+	};
+	const research = await researchWorkflowSource(database, project, agent, intent);
+	if (research) return research;
+	const rows = await database.all(
+		`SELECT * FROM agent_invocation_requests
+		 WHERE team_id = ? AND project_id = ? AND execution_kind = 'workday' AND status = 'queued'
+		   AND (project_agent_class_id = ? OR project_agent_class_id IS NULL)
+		 ORDER BY requested_at ASC, id ASC LIMIT 25`,
+		[run.teamId, project.id, agent.projectAgentClassId],
+	);
+	for (const row of rows) {
+		const metadata = decodeDurableJsonObject(row.metadata_json, {
+			owner: 'planning input request', ownerId: String(row.id ?? ''), column: 'metadata_json',
+		});
+		const requestedAgent = text(metadata.agentId ?? metadata.agentSlug);
+		if (requestedAgent && requestedAgent !== agent.slug) continue;
+		const requestedActivity = text(metadata.activityType);
+		if (requestedActivity && requestedActivity !== agent.activityType) continue;
+		const assignmentInput = record(metadata.assignmentInput);
+		return {
+			sourceType: 'planning-input', sourceId: String(row.id), decisionId: text(row.decision_id),
+			priority: Number.isFinite(Number(metadata.priority)) ? Number(metadata.priority) : 50,
+			payload: {
+				...assignmentInput, intent: { ...intent, ...assignmentInput }, prompt: text(row.prompt), planningInputRequestId: String(row.id), scopeHash: row.scope_hash ?? null,
+				planningSource: metadata.planningSource ?? 'planning-input',
+				...(text(metadata.objectiveId) ? { objectiveId: text(metadata.objectiveId) } : {}),
+			},
+		};
+	}
+	const operational = await operationalSource(database, run, project, agent);
+	if (operational) return { ...operational, payload: { intent, ...operational.payload } };
+	if (isTreeDxStore(database)) {
+		const content = preferredContentSource(agent, await listTreeDxPlanningDemandSources(database, run, project));
+		if (content) return {
+			sourceType: content.sourceType, sourceId: content.sourceId, decisionId: null, priority: content.priority,
+			payload: { intent, ...content.payload, subjectPath: content.payload.contentPath },
+		};
+	}
+	return {
+		sourceType: 'idle-intent', sourceId: `${run.id}:${project.id}:${agent.slug}`,
+		decisionId: null, priority: agent.planningPriority ?? 0,
+		payload: { intent, planningSource: 'configured-idle-intent' },
+	};
+}

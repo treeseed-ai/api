@@ -1,0 +1,25 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.stream-durable-boundaries.934
+journeyIndex: 934
+type: agent
+subtype: discussion
+journey: Separate transient deltas from durable replay
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Reconnect replays TreeDX messages and lifecycle events while token deltas remain transient and non-persisted.
+status: planned
+capabilityId: agent.communication.streaming-durability
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.discussion-read], minimumRepositoryPostconditions: 0, outcomePredicates: { communication.streaming: [stream.durable-replay, stream.transient-not-stored, response.one-final] } }
+outcomes: [{ id: communication.streaming, kind: required, description: Cursor replay contains durable messages/events and excludes token deltas while one final response remains authoritative., evidenceKinds: [stream_replay, treedx_read_back], authoritativeSubjects: [discussion, responseMessage] }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.admit-after-treedx-readback.931] }
+actors: { allowed: [authenticated_user, capacity_operator], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

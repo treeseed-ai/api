@@ -1,0 +1,42 @@
+import type { ControlPlaneStore } from '../../persistence/store.ts';
+import { getProjectAccessSummaryMethod } from '../projects/access/queries/get-project-access-summary.ts';
+import { projectArchitectureContentBindingsMethod } from '../projects/projects-core/contracts/project-architecture-content-bindings.ts';
+import { createProjectMethod } from '../projects/projects-core/creation/create-project.ts';
+import { upsertProjectArchitectureMethod } from '../projects/projects-core/creation/upsert-project-architecture.ts';
+import { upsertProjectSummarySnapshotMethod } from '../projects/projects-core/creation/upsert-project-summary-snapshot.ts';
+import { updateProjectMethod } from '../projects/projects-core/updates/update-project.ts';
+import { listProjectActivityMethod } from '../projects/queries/activity/list-project-activity.ts';
+import { listRecentJobsForProjectMethod } from '../projects/queries/activity/list-recent-jobs-for-project.ts';
+import { getProjectArchitectureMethod } from '../projects/queries/configuration/get-project-architecture.ts';
+import { getProjectByTeamAndSlugMethod } from '../projects/queries/identity/get-project-by-team-and-slug.ts';
+import { getProjectMethod } from '../projects/queries/identity/get-project.ts';
+import { listProjectsForPrincipalMethod } from '../projects/queries/identity/list-projects-for-principal.ts';
+import { listPublicProjectsMethod } from '../projects/queries/identity/list-public-projects.ts';
+import { listTeamProjectsMethod } from '../projects/queries/identity/list-team-projects.ts';
+import { getProjectDetailsMethod } from '../projects/queries/summaries/get-project-details.ts';
+import { getProjectSummarySnapshotMethod } from '../projects/queries/summaries/get-project-summary-snapshot.ts';
+import { getProjectSummaryMethod } from '../projects/queries/summaries/get-project-summary.ts';
+import { upsertProjectRepositoryTopologyMethod } from '../projects/repositories/creation/upsert-project-repository-topology.ts';
+import { getProjectRepositoryTopologyMethod } from '../projects/repositories/queries/get-project-repository-topology.ts';
+
+export function installProjectsStoreMethods(prototype: ControlPlaneStore) {
+	prototype.getProjectAccessSummary = getProjectAccessSummaryMethod;
+	prototype.getProjectRepositoryTopology = getProjectRepositoryTopologyMethod;
+	prototype.upsertProjectRepositoryTopology = upsertProjectRepositoryTopologyMethod;
+	prototype.getProjectArchitecture = getProjectArchitectureMethod;
+	prototype.upsertProjectArchitecture = upsertProjectArchitectureMethod;
+	prototype.projectArchitectureContentBindings = projectArchitectureContentBindingsMethod;
+	prototype.listProjectsForPrincipal = listProjectsForPrincipalMethod;
+	prototype.listPublicProjects = listPublicProjectsMethod;
+	prototype.listTeamProjects = listTeamProjectsMethod;
+	prototype.createProject = createProjectMethod;
+	prototype.updateProject = updateProjectMethod;
+	prototype.getProject = getProjectMethod;
+	prototype.getProjectByTeamAndSlug = getProjectByTeamAndSlugMethod;
+	prototype.getProjectDetails = getProjectDetailsMethod;
+	prototype.listRecentJobsForProject = listRecentJobsForProjectMethod;
+	prototype.listProjectActivity = listProjectActivityMethod;
+	prototype.getProjectSummary = getProjectSummaryMethod;
+	prototype.getProjectSummarySnapshot = getProjectSummarySnapshotMethod;
+	prototype.upsertProjectSummarySnapshot = upsertProjectSummarySnapshotMethod;
+}

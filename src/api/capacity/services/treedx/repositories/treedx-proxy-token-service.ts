@@ -1,0 +1,141 @@
+import { createHash } from 'node:crypto';
+import { treeDxDelegationAuthority, type TreeDxDelegationAuthority } from '../../../../control-plane/treedx/delegation-authority.ts';
+import { CapacityGovernanceError } from '../../../database.ts';
+import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
+
+export interface TreeDxProxyScope {
+	repoIds: string[];
+	capabilities: string[];
+	refs: string[];
+	paths: string[];
+}
+
+export interface TreeDxProxyRuntime {
+	env?: Record<string, unknown>;
+	treeDxDelegationAuthority?: TreeDxDelegationAuthority;
+	fetchImpl?: typeof fetch;
+}
+
+function text(value: unknown): string {
+	return typeof value === 'string' ? value.trim() : '';
+}
+
+function record(value: unknown): Record<string, unknown> {
+	return value && typeof value === 'object' && !Array.isArray(value)
+		? value as Record<string, unknown>
+		: {};
+}
+
+export function treeDxRuntimeEnv(runtime: TreeDxProxyRuntime): Record<string, string | undefined> {
+	return { ...process.env, ...(runtime.env && typeof runtime.env === 'object' ? runtime.env : {}) } as Record<string, string | undefined>;
+}
+
+export function treeDxProxyActorId(env: Record<string, string | undefined>): string {
+	return text(env.TREESEED_TREEDX_PROXY_ACTOR_ID) || text(env.TREESEED_TREEDX_ACTOR_ID) || 'treeseed-api';
+}
+
+export function treeDxProxyTenantId(env: Record<string, string | undefined>): string {
+	return text(env.TREESEED_TREEDX_PROXY_TENANT_ID) || text(env.TREESEED_TREEDX_TENANT_ID) || 'treeseed-control-plane';
+}
+
+export function treeDxTokenScope(input: Partial<TreeDxProxyScope> & { repoId?: string | null } = {}): TreeDxProxyScope {
+	const repoIds = input.repoIds?.map(String).map((value) => value.trim()).filter(Boolean);
+	return {
+		repoIds: repoIds?.length ? [...new Set(repoIds)] : input.repoId ? [input.repoId] : ['*'],
+		capabilities: [...new Set((input.capabilities ?? []).map(String).map((value) => value.trim()).filter(Boolean))],
+		refs: input.refs ?? ['*'],
+		paths: input.paths ?? [],
+	};
+}
+
+export function treeDxRepoScopedContextBody(value: unknown, repoId: string): Record<string, unknown> {
+	const body = value && typeof value === 'object' && !Array.isArray(value) ? { ...value as Record<string, unknown> } : {};
+	delete body.repoIds;
+	delete body.refs;
+	if (body.paths && !Array.isArray(body.paths)) delete body.paths;
+	return { ...body, repoId };
+}
+
+export function treeDxPathScope(filePath: unknown): string[] {
+	const normalized = String(filePath ?? '').replace(/^\/+/, '');
+	return normalized ? [normalized] : [];
+}
+
+export function treeDxChangesetPaths(value: unknown): string[] {
+	const body = record(value);
+	const encoded = text(body.patch);
+	if (!encoded) throw new CapacityGovernanceError('treedx_changeset_paths_required', 'Changeset patch is required.', 400);
+	const patch = encoded;
+	const paths = [...patch.matchAll(/^\+\+\+ (?:b\/([^\t\r\n]+)|\/dev\/null)$/gmu)]
+		.map((match) => match[1]).filter((path): path is string => Boolean(path));
+	const deleted = [...patch.matchAll(/^--- a\/([^\t\r\n]+)$/gmu)].map((match) => match[1]!);
+	const all = [...new Set([...paths, ...deleted])];
+	if (!all.length) throw new CapacityGovernanceError('treedx_changeset_paths_required', 'Changeset file headers are required.', 400);
+	return all;
+}
+
+export function resolveTreeDxProxyBaseUrl(runtime: TreeDxProxyRuntime, library: Record<string, unknown> | null): string {
+	const env = treeDxRuntimeEnv(runtime);
+	const topology = record(library?.topology);
+	const contentRepository = record(topology.contentRepository);
+	const treeDx = record(contentRepository.treeDx);
+	const value = text(treeDx.baseUrl)
+		|| text(env.TREESEED_TREEDX_URL)
+		|| text(env.TREESEED_TREEDX_BASE_URL)
+		|| text(env.TREESEED_PUBLIC_TREEDX_BASE_URL)
+		|| 'http://127.0.0.1:4000';
+	let parsed: URL;
+	try { parsed = new URL(value); } catch { throw new CapacityGovernanceError('treedx_connection_invalid', 'TreeDX connection URL is invalid.', 409); }
+	if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+		throw new CapacityGovernanceError('treedx_connection_invalid', 'TreeDX connection requires a credential-free HTTP service URL without query or fragment data.', 409);
+	}
+	const local = env.TREESEED_ENVIRONMENT === 'local' || env.TREESEED_ENVIRONMENT === 'test' || env.NODE_ENV === 'test'
+		|| env.LOCAL_DEV_MODE === '1';
+	if (parsed.protocol !== 'https:' && !local) {
+		throw new CapacityGovernanceError('treedx_connection_tls_required', 'TreeDX connections require TLS outside explicit local development.', 409);
+	}
+	return parsed.toString().replace(/\/+$/u, '');
+}
+
+export function resolveTreeDxProxyToken(runtime: TreeDxProxyRuntime, baseUrl: string, projectId: string, requestedScope: TreeDxProxyScope,
+	identity: { actorId?: string; tenantId?: string; connectionId?: string } = {}) {
+	const env = treeDxRuntimeEnv(runtime);
+	const scope = treeDxTokenScope(requestedScope);
+	return (runtime.treeDxDelegationAuthority ?? treeDxDelegationAuthority()).mint({
+		actorId: identity.actorId || treeDxProxyActorId(env),
+		tenantId: identity.tenantId || treeDxProxyTenantId(env),
+		projectId,
+		connectionId: identity.connectionId || `treedx-${createHash('sha256').update(baseUrl).digest('hex').slice(0, 16)}`,
+		scope: { repositoryIds: scope.repoIds, capabilities: scope.capabilities, refs: scope.refs, paths: scope.paths },
+	}).token;
+}
+
+export async function verifyTreeDxWorkspace(input: {
+	runtime: TreeDxProxyRuntime;
+	projectId: string;
+	library: Record<string, unknown> | null;
+	workspaceId: string;
+	fetchImpl?: typeof fetch;
+}): Promise<void> {
+	const topology = record(input.library?.topology);
+	const contentRepository = record(topology.contentRepository);
+	const treeDx = record(contentRepository.treeDx);
+	const rawRepositoryId = input.library?.repositoryId ?? treeDx.repositoryId ?? null;
+	const repositoryId = typeof rawRepositoryId === 'string' ? rawRepositoryId : null;
+	if (!repositoryId) throw new CapacityGovernanceError('treedx_repository_not_bound', 'TreeDX repository is not bound to this project.', 404, { projectId: input.projectId });
+	const baseUrl = resolveTreeDxProxyBaseUrl(input.runtime, input.library);
+	const token = resolveTreeDxProxyToken(input.runtime, baseUrl, input.projectId, treeDxTokenScope({ repoId: repositoryId, capabilities: ['files:read'], paths: ['**'] }));
+	let payload: unknown;
+	try {
+		const transport = new FetchTransport({ baseUrl, token, fetchImpl: input.fetchImpl, timeoutMs: 15_000 });
+		payload = await new TreeDxClient({ baseUrl, transport }).workspaces.get(input.workspaceId);
+	} catch (error) {
+		throw new CapacityGovernanceError('treedx_workspace_verification_failed', 'TreeDX workspace could not be verified for this project.', 503, {
+			projectId: input.projectId, workspaceId: input.workspaceId,
+		});
+	}
+	const payloadRecord = record(payload); const nestedPayload = record(payloadRecord.payload);
+	const workspace = record(payloadRecord.workspace ?? nestedPayload.workspace ?? payloadRecord.payload ?? payload);
+	const actualRepositoryId = workspace?.repoId ?? workspace?.repositoryId ?? null;
+	if (actualRepositoryId !== repositoryId) throw new CapacityGovernanceError('treedx_workspace_project_mismatch', 'TreeDX workspace is not bound to this project repository.', 403, { projectId: input.projectId, workspaceId: input.workspaceId, repositoryId: actualRepositoryId, expectedRepositoryId: repositoryId });
+}

@@ -7,7 +7,7 @@ journey: Create Provider Assignment
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Verify API control-plane behavior for Create Provider Assignment."
-status: active
+status: planned
 dependencies:
   journeys:
     - 60
@@ -57,4 +57,3 @@ evidence:
     - verifier_evidence
 notes:
   - "API companion guarantee for Create Provider Assignment."
-

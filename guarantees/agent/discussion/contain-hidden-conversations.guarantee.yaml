@@ -1,0 +1,25 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.contain-hidden-conversations.932
+journeyIndex: 932
+type: agent
+subtype: discussion
+journey: Contain hidden conversation executions
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Standalone conversations use hidden executions while normal workday and Atlas selectors return workdays only.
+status: planned
+capabilityId: agent.communication.hidden-containment
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.workday-runs, capacity.agent-invocation], minimumRepositoryPostconditions: 0, outcomePredicates: { communication.hidden-containment: [conversation.hidden, workday.default-filter, parent.exact] } }
+outcomes: [{ id: communication.hidden-containment, kind: required, description: Conversation execution is forensic and exact-parented but absent from default workday projections., evidenceKinds: [execution_read_back, selector_read_back], authoritativeSubjects: [conversationExecution, workdayQuery] }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.admit-after-treedx-readback.931] }
+actors: { allowed: [capacity_operator], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: false, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

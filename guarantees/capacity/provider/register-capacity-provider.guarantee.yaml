@@ -6,7 +6,7 @@ subtype: provider
 journey: Register Capacity Provider
 ownerPackage: "@treeseed/api"
 summary: Create provider identity capabilities constraints and team eligibility before key rotation approval or deployment.
-status: active
+status: planned
 dependencies:
   journeys:
     - 4

@@ -7,7 +7,7 @@ journey: Transition Assignment Lease State
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Verify API control-plane behavior for Transition Assignment Lease State."
-status: active
+status: planned
 dependencies:
   journeys:
     - 60
@@ -39,6 +39,8 @@ api:
   required: true
   verifierRefs:
     - api.agent.assignment-lease.transitioned
+    - api.capacity.assignment.closeout-window-lease-denied
+    - api.capacity.assignment.required-discussion-response-suspends
 content:
   required: false
   verifierRefs: []
@@ -46,15 +48,20 @@ audit:
   required: true
   verifierRefs:
     - api.agent.assignment-lease.transitioned
+    - api.capacity.assignment.required-discussion-response-suspends
 negativeCases:
   - id: unauthorized-actor-denied
     actor: anonymous_user
     verifierRefs:
       - api.agent.assignment-lease.transitioned
+  - id: closeout-window-lease-denied
+    actor: capacity_operator
+    verifierRefs:
+      - api.capacity.assignment.closeout-window-lease-denied
 evidence:
   required:
     - guarantee_report
     - verifier_evidence
 notes:
-  - "API companion guarantee for Transition Assignment Lease State."
-
+  - "API lease authority rejects returned work once its immutable assignment deadline enters the configured closeout window and caps every granted lease at that deadline."
+  - "An agent message requiring a human response commits through TreeDX only after checkpoint evidence, releases the lease, terminalizes the prior demand, and permits a new provenance-linked invocation and assignment only after a human Discussion response."

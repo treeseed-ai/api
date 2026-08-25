@@ -1,0 +1,25 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.approve-operation-handoffs.937
+journeyIndex: 937
+type: agent
+subtype: discussion
+journey: Govern operation handoffs from communication
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Chat may prepare an exact operation handoff, but approval and the existing capacity lifecycle alone can admit operation-lane work.
+status: planned
+capabilityId: agent.communication.approval-operation-handoff
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.discussion-read, capacity.capacity-plan, capacity.assignment], minimumRepositoryPostconditions: 0, outcomePredicates: { communication.operation-handoff: [handoff.exact-inputs, handoff.approval, operation.governed-admission, operation.lane] } }
+outcomes: [{ id: communication.operation-handoff, kind: required, description: Exact refs prove the communication assignment completed without acting authority and approved work used the governed operation lane., evidenceKinds: [approval_read_back, assignment_read_back, discussion_read_back], authoritativeSubjects: [operationHandoff, approvalRequest, operationAssignment] }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.isolate-communication-lanes.930] }
+actors: { allowed: [capacity_operator, simulated_human], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

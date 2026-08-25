@@ -1,0 +1,53 @@
+import { randomUUID } from 'node:crypto';
+import { CapacityWorkdayMaintenanceScheduler } from '../../../api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.js';
+import { ContextQueryCheckMaintenanceScheduler } from '../../../api/capacity/services/capacity/agents/context-query-check-maintenance-service.js';
+import { ContextQueryCheckService } from '../../../api/capacity/services/capacity/agents/context-query-check-service.js';
+import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
+import { createClient,createControlPlaneStore,createExecutorsForOptions,loadConfig,packageVersion,registerAndHeartbeat } from '../index.js';
+import { runPlatformOperationOnce } from './operation-execution.js';
+
+export async function runOnceWithClient(config, client, version, options: any = {}) {
+    const controlPlaneStore = options.controlPlaneStore ?? options.store ?? null;
+    await registerAndHeartbeat(client, config, version, { ...options, controlPlaneStore, config });
+	const result = await runPlatformOperationOnce({
+		client,
+		runnerId: options.operationRunnerId ?? config.runnerId,
+        workspaceRoot: config.dataDir,
+        environment: config.environment,
+        executors: createExecutorsForOptions({ ...options, controlPlaneStore, config }),
+        operationId: options.operationId ?? null,
+        limit: Math.max(1, Number(options.maxJobs ?? 1) || 1),
+        leaseSeconds: 300,
+    });
+    console.log(JSON.stringify(result));
+    if (!result.ok) {
+        process.exitCode = 1;
+        return result;
+    }
+    return result;
+}
+
+export async function runOnce(options: any = {}) {
+    const config = await loadConfig();
+    const version = await packageVersion();
+    const client = await createClient(config);
+    const controlPlaneStore = options.controlPlaneStore ?? createControlPlaneStore(config);
+    try {
+		const operationRunnerId = options.operationRunnerId ?? `${config.runnerId}:process:${process.pid}:${randomUUID()}`;
+		const result = await runOnceWithClient(config, client, version, { ...options, controlPlaneStore, operationRunnerId });
+        if (controlPlaneStore) {
+            const maintenance = new CapacityWorkdayMaintenanceScheduler(controlPlaneStore, config.capacityWorkdayMaintenanceIntervalMs);
+            await maintenance.runIfDue();
+			const contextChecks = new ContextQueryCheckMaintenanceScheduler(new ContextQueryCheckService(controlPlaneStore), config.capacityWorkdayMaintenanceIntervalMs);
+			await contextChecks.runIfDue();
+			const feedbackRetention = new FeedbackRetentionScheduler(controlPlaneStore, config.feedbackRetentionIntervalMs);
+			await feedbackRetention.runIfDue();
+        }
+        return result;
+    }
+    finally {
+        if ('close' in client && typeof client.close === 'function')
+            await client.close();
+        await controlPlaneStore?.db?.close?.();
+    }
+}

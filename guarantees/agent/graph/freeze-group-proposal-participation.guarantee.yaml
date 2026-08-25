@@ -1,0 +1,21 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.agent.graph.freeze-group-proposal-participation.912
+journeyIndex: 912
+type: agent
+subtype: graph
+journey: Freeze group proposal participation
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Group-scoped proposals freeze every enabled effective member and require exact-version, author-independent proposal-ready participation.
+status: planned
+dependencies: { journeys: [], guarantees: [guarantee.agent.graph.filter-signals-through-groups.757] }
+actors: { allowed: [authenticated_user, capacity_provider], forbidden: [unauthorized_user] }
+devices: { required: [], optional: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: ["The workday contains a frozen group topology and proposal contract."] }
+api: { required: true, verifierRefs: [] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: ["Stale proposal-version participation cannot satisfy readiness.", "The proposal author cannot independently review their own artifact.", "A disabled or outside-scope member cannot be injected after the freeze."]
+evidence: { required: [guarantee_report, verifier_evidence] }
+notes: ["Keep planned until repeated group-scoped workdays prove interruption and revision behavior."]

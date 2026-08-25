@@ -1,0 +1,19 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.knowledge.publication.remote-provider-publication.732
+journeyIndex: 732
+type: knowledge
+subtype: publication
+journey: Guarded Remote Provider Publication
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: A reviewed commit is pushed through an explicit repository authority, read back remotely, reconciled into TreeDX, and promoted through an atomic R2 pointer.
+status: blocked
+actors: { allowed: [knowledge_publisher, operations_runner], forbidden: [unauthorized_user, capacity_provider] }
+devices: { required: [desktop_chromium] }
+gates: [security, release]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [A disposable remote repository and R2 acceptance prefix are required.] }
+api: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [api_acceptance_report, treedx_report, audit_log, cleanup_report] }
+notes: [Blocked until current-source live GitHub, TreeDX, and R2 acceptance passes twice.]

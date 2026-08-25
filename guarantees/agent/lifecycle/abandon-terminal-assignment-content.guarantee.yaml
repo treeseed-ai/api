@@ -1,0 +1,40 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.lifecycle.abandon-terminal-assignment-content.938
+journeyIndex: 938
+type: agent
+subtype: lifecycle
+journey: Abandon terminal assignment content without touching canonical refs
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Rejected completed, failed, cancelled, or expired assignments can retire only their exact isolated TreeDX ref and leave no unpublished journal state.
+status: planned
+capabilityId: agent.lifecycle.terminal-content-abandonment
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof:
+  requiredCommands: [capacity.assignment, capacity.content-abandon, platform.status]
+  minimumRepositoryPostconditions: 1
+  outcomePredicates:
+    abandonment.exact-and-isolated: [abandonment.terminal-state, abandonment.exact-commit-set, abandonment.assignment-ref-only, abandonment.read-back]
+    abandonment.zero-residue: [abandonment.no-ref, abandonment.no-unpublished-journal, abandonment.no-authority]
+outcomes:
+  - id: abandonment.exact-and-isolated
+    kind: required
+    description: Authenticated simulated-human evidence retires the complete exact commit set from only refs/heads/{assignmentId}; canonical refs are rejected.
+    evidenceKinds: [cli_transcript, treedx_ref_read_back, authoring_journal]
+    authoritativeSubjects: [assignment, assignmentRef]
+  - id: abandonment.zero-residue
+    kind: required
+    description: Fresh assignment cleanup reports no unpublished branch, workspace, lease, or stale authority after replay.
+    evidenceKinds: [cleanup, audit_log]
+    authoritativeSubjects: [assignment]
+dependencies: { journeys: [], guarantees: [guarantee.work.agents.recover-a-failed-agent-execution.669] }
+actors: { allowed: [capacity_operator, simulated_human], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [terminal_isolated_assignment, rejected_completed_checkpoint] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: [protected_ref_rejected, partial_commit_set_rejected, active_lease_rejected, integrated_result_rejected]
+evidence: { required: [verifier_evidence, redacted_cli_transcript] }

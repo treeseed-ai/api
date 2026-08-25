@@ -1,0 +1,77 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.capacity.provider.require-synthesis-authority.504
+journeyIndex: 504
+type: capacity
+subtype: provider
+journey: Require Provider Synthesis Authority
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Request-scoped provider assignment synthesis requires complete authority and records every pre-admission denial in the durable capacity audit ledger."
+status: planned
+dependencies:
+  journeys: []
+  guarantees:
+    - guarantee.capacity.provider.run-membership-admission-workflow.501
+actors:
+  allowed:
+    - capacity_provider
+    - capacity_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required: []
+gates:
+  - core
+  - release
+  - security
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "Uses one request-scoped synthesis path invoked by authenticated provider polling; no in-memory background synthesis queue exists."
+scene:
+  required: false
+api:
+  required: true
+  verifierRefs:
+    - api.capacity.provider.synthesis-authority-fail-closed
+    - api.capacity.provider.assignment-context-fails-closed
+    - api.capacity.admission.durable-json-fails-closed
+    - api.capacity.provider.synthesis-denial-audited
+    - api.capacity.provider.workday-synthesis-source-fails-closed
+    - api.capacity.provider.workday-synthesis-collection-fails-closed
+    - api.capacity.provider.workday-workspace-response-fails-closed
+content:
+  required: false
+  verifierRefs: []
+audit:
+  required: true
+  verifierRefs:
+    - api.capacity.provider.synthesis-authority-fail-closed
+    - api.capacity.provider.assignment-context-fails-closed
+    - api.capacity.admission.durable-json-fails-closed
+    - api.capacity.provider.synthesis-denial-audited
+    - api.capacity.provider.workday-synthesis-source-fails-closed
+    - api.capacity.provider.workday-synthesis-collection-fails-closed
+    - api.capacity.provider.workday-workspace-response-fails-closed
+negativeCases:
+  - id: database-uncertainty-cannot-authorize-synthesis
+    actor: capacity_provider
+    verifierRefs:
+      - api.capacity.provider.synthesis-authority-fail-closed
+      - api.capacity.provider.assignment-context-fails-closed
+      - api.capacity.admission.durable-json-fails-closed
+      - api.capacity.provider.workday-synthesis-source-fails-closed
+      - api.capacity.provider.workday-synthesis-collection-fails-closed
+      - api.capacity.provider.workday-workspace-response-fails-closed
+evidence:
+  required:
+    - guarantee_report
+    - verifier_evidence
+notes:
+  - "Unknown explicit sessions are rejected rather than replaced by a different open session; expired and cross-environment sessions are rejected."
+  - "Planning-input, capacity-plan, and live-workday denials are inspectable through the capacity audit API and `trsd capacity audit-events`."
+  - "Live-workday synthesis strictly decodes its durable run and artifact evidence sources and fails visibly when that state is corrupt or unavailable."
+  - "Assignment admission propagates project architecture/team storage uncertainty and never fabricates fallback project context from an incomplete control-plane read."
+  - "Admission, grant, workday, allocation, session, and replay JSON use one strict durable-state decoder; malformed governance evidence cannot become empty/default policy."

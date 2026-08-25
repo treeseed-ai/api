@@ -1,0 +1,26 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.archive-cancels-communication.935
+journeyIndex: 935
+type: agent
+subtype: discussion
+journey: Archive and restore communication safely
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Reversible archive retains TreeDX history, cancels queued invocations, and requests cancellation of active communication without deleting evidence.
+status: planned
+capabilityId: agent.communication.archive-cancellation
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.discussion-read, capacity.agent-invocations], minimumRepositoryPostconditions: 1, outcomePredicates: { communication.archive: [discussion.archived, invocation.cancelled, assignment.cancel-requested, assignment.cancelled, assignment.lease-released, assignment.workspace-cleanup, discussion.restored] } }
+outcomes: [{ id: communication.archive, kind: required, description: Exact TreeDX and control-plane read-back proves reversible archive and race-safe cancellation without evidence loss., evidenceKinds: [treedx_read_back, invocation_read_back, assignment_read_back], authoritativeSubjects: [discussion, invocation, assignment] }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.stream-durable-boundaries.934] }
+actors: { allowed: [authenticated_user, team_owner], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }
+notes: ["Unleased assignments cancel through the normal API lifecycle; leased providers must observe the request, abort, terminalize cancellation, settle, release resources, and retain all TreeDX and forensic evidence."]

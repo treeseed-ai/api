@@ -6,15 +6,11 @@ subtype: assignment
 journey: Inspect Assignment Leases
 ownerPackage: "@treeseed/api"
 summary: Review active renewed completed returned and failed assignment leases so scheduling behavior is auditable.
-status: active
+status: planned
 dependencies:
   journeys:
-    - 27
-    - 28
     - 80
   guarantees:
-    - guarantee.capacity.capacity.approve-capacity.027
-    - guarantee.capacity.capacity.deploy-capacity.028
     - guarantee.capacity.provider.register-capacity-provider.080
 actors:
   allowed:

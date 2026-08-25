@@ -1,0 +1,71 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.capacity.assignment.preserve-terminal-recovery-evidence.505
+journeyIndex: 505
+type: capacity
+subtype: assignment
+journey: Preserve Terminal Recovery Evidence
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Assignment lease selection, fallback evidence, settlement, terminalization, and stale-workday recovery fail closed and remain replay safe."
+status: planned
+dependencies:
+  journeys: []
+  guarantees:
+    - guarantee.capacity.assignment.preserve-execution-run-evidence.502
+actors:
+  allowed:
+    - capacity_provider
+    - capacity_operator
+  forbidden:
+    - anonymous_user
+    - unauthorized_user
+devices:
+  required: []
+gates:
+  - core
+  - release
+  - security
+preconditions:
+  fixtures:
+    - integrated_treeseed_project
+  notes:
+    - "The operations runner invokes the same typed terminalization service exercised by this guarantee."
+scene:
+  required: false
+api:
+  required: true
+  verifierRefs:
+    - api.capacity.assignment.terminalization-requires-settlement
+    - api.capacity.assignment.fallback-evidence-required
+    - api.capacity.assignment.expired-lease-recovery-converges
+    - api.capacity.workday.envelope-terminalization-exact
+content:
+  required: false
+  verifierRefs: []
+audit:
+  required: true
+  verifierRefs:
+    - api.capacity.assignment.fallback-evidence-replay-safe
+    - api.capacity.assignment.repository-fails-closed
+    - api.capacity.assignment.expired-lease-recovery-converges
+    - api.capacity.workday.schedule-recovery-required
+negativeCases:
+  - id: storage-uncertainty-cannot-terminalize-assignment
+    actor: capacity_provider
+    verifierRefs:
+      - api.capacity.assignment.terminalization-requires-settlement
+      - api.capacity.assignment.fallback-evidence-required
+      - api.capacity.workday.envelope-terminalization-exact
+      - api.capacity.workday.schedule-recovery-required
+  - id: expired-runner-cannot-terminalize-assignment
+    actor: capacity_provider
+    verifierRefs:
+      - api.capacity.assignment.expired-lease-denied
+evidence:
+  required:
+    - guarantee_report
+    - verifier_evidence
+notes:
+  - "A failed settlement leaves the assignment and mode run recoverable; fallback evidence is persisted before a lease is released and replays preserve the original identity."
+  - "Expired leases are never overwritten by lease selection; bounded recovery preserves safe reservations, settles exhausted retries, recovers proven completion, and holds uncertain side effects for operator action."
+  - "Workday envelopes have exact durable run ownership, and scheduling failure attempts envelope closure, audit evidence, and run failure independently before reporting incomplete recovery."

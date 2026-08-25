@@ -1,0 +1,41 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.control-plane.gate-assignment-on-tested-context.914
+journeyIndex: 914
+type: agent
+subtype: control-plane
+journey: Prove dynamic context readiness
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Dynamic TreeDX queries are tested independently against current authoritative data and only passing exact revisions are selectable.
+status: planned
+capabilityId: agent.context.dynamic-readiness
+catalog: agent.system
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof:
+  requiredCommands: [capacity.context-query-checks, capacity.context-query-test]
+  minimumRepositoryPostconditions: 0
+  outcomePredicates:
+    context.current-results: [context.required-tests-pass, context.definitions-selectable, context.current-source-ref]
+    context.results-not-persisted: [context.no-result-payload]
+outcomes:
+  - id: context.current-results
+    kind: required
+    description: Current results match exact identities, paths, models, relations, bounds, and permissions.
+    evidenceKinds: [query_assertions, treedx_read_back]
+    authoritativeSubjects: [queryRevision, observedSourceRef]
+  - id: context.results-not-persisted
+    kind: forbidden
+    description: Query result payloads are never stored or committed as test evidence.
+    evidenceKinds: [persistence_audit]
+    authoritativeSubjects: [checkRecord]
+dependencies: { journeys: [], guarantees: [guarantee.agent.content.read-context-through-treedx-proxy.153] }
+actors: { allowed: [capacity_operator, team_owner, project_lead], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project], notes: ["TreeDX authoritative data may change between executions."] }
+api: { required: true, verifierRefs: [api.agent-catalog.control-plane-live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }
+notes: ["Latency is diagnostic unless the query contract explicitly declares a correctness bound."]

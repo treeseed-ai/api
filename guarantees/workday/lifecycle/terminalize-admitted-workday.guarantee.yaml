@@ -1,0 +1,26 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.workday.lifecycle.terminalize-admitted-workday.815
+journeyIndex: 816
+type: workday
+subtype: lifecycle
+journey: "Terminalize every admitted workday outcome"
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "A workday closes admission before terminal evaluation and cannot report successful completion until every admitted assignment, mode run, settlement, and required content integration is terminal, read back, and successful."
+status: planned
+dependencies: { journeys: [], guarantees: [] }
+actors: { allowed: [capacity_operator, team_owner], forbidden: [capacity_provider, unauthorized_user] }
+devices: { required: [] }
+gates: [future]
+preconditions: { fixtures: [integrated_treeseed_project], notes: [] }
+api: { required: false, verifierRefs: [] }
+content: { required: false, verifierRefs: [] }
+audit: { required: false, verifierRefs: [] }
+negativeCases:
+  - "A failed required assignment cannot coexist with a successfully completed parent workday."
+  - "Late admission, a nonterminal mode run, or unsettled terminal usage prevents terminal success."
+  - "A completed assignment with a provisional mutation receipt remains nonterminal at the parent boundary until an exact reviewed integration receipt and read-back exist."
+  - "Repeated admission fences and terminal ticks cannot create a second outcome or reopen demand."
+evidence: { required: [guarantee_report, api_verification_log] }
+notes:
+  - "Admission fencing, atomic integration requirements, authoritative reread, repeat safety, failed-assignment propagation, and bounded summary evidence are implemented with focused API/SDK tests. Activate only after repeat live interruption, late-report, integration-delay, restart, and clean-recovery evidence."

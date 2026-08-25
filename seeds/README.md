@@ -1,6 +1,8 @@
 # TreeSeed Seeds
 
-Seed manifests define named, declarative market portfolios that can be validated and planned with the Treeseed CLI.
+Seed manifests define named, declarative portfolios that can be validated and planned with the Treeseed CLI. This directory intentionally contains no tenant manifest: `@treeseed/api` applies seeds but does not own Market or customer topology.
+
+The integrated TreeSeed portfolio lives in the Market repository at `seeds/treeseed.yaml`. A standalone deployment supplies its tenant seed directory through `TREESEED_SEED_ROOT`; the resolved tenant repository root remains the compatibility fallback. Package tests use `tests/fixtures/seed-project` and do not represent a deployable portfolio.
 
 Seed ownership is split across packages:
 
@@ -24,11 +26,11 @@ idempotent:
 trsd seed treeseed --environments local --apply
 ```
 
-Local apply creates or updates seeded teams, projects, repository hosts,
-capacity providers, execution providers, capacity grants, work policies,
-products, catalog artifacts, project hosting records, and project repository
-bindings. It can attach an existing authenticated or bootstrap user as a
-`team_owner`, but seed manifests do not create user accounts.
+Local apply creates or updates the non-secret teams, projects, products,
+catalog artifacts, content bindings, and operation recipes declared by the
+manifest. It can attach an existing authenticated or bootstrap user as a
+`team_owner`, but seed manifests do not create user accounts, service
+connections, vault grants, credential envelopes, or provider resources.
 
 Production apply is guarded by approval records. A production apply without a
 matching approved request creates or returns the approval requirement instead
@@ -36,8 +38,8 @@ of mutating resources.
 
 Seed manifests must not store provider or cloud secrets. They may reference
 credential locations such as `env:TREESEED_GITHUB_TOKEN`. Local-only
-capacity-provider bootstrap may use a deterministic disposable provider API key
-through the API key registration flow, but non-local provider connection
-material should be generated or configured outside the manifest. Returned seed
-run records redact plaintext provider keys; the CLI stores newly-created local
-provider connection material in encrypted TreeSeed config.
+capacity-provider bootstrap uses signed provider identity and approval-only team membership
+through the broadcast registration-key flow. Provider manifests store only identity,
+registration-key, and membership-credential references. Registration keys and membership
+credentials are created and rotated through the capacity API or CLI and never returned in
+seed run records.

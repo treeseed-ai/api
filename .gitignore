@@ -2,6 +2,7 @@ node_modules/
 dist/
 .local/
 coverage/
+release-assets/
 *.log
 *.tgz
 scripts/.ts-run-*.mjs

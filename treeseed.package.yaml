@@ -42,7 +42,6 @@ releaseGate:
   workflow: verify.yml
   timeoutSeconds: 1800
 dockerImages:
-  releaseWorkflow: deploy.yml
   architectures:
     - amd64
     - arm64
@@ -51,12 +50,12 @@ dockerImages:
       - "<version>"
       - latest
 projectArchitecture:
-  topology: single_repository_site
+  topology: split_site_content
   rootPath: .
   sitePath: docs
-  contentPath: docs/src/content
-  contentRuntimeSource: r2_published_manifest
-  localContentMaterialization: existing_path
+  contentPath: src/content
+  contentRuntimeSource: r2_preview_overlay
+  localContentMaterialization: none
   contentPublishTarget:
     kind: cloudflare_r2
     prefix: packages/api
@@ -67,7 +66,7 @@ localDev:
       hostEnv: HOST
       portEnv: PORT
       defaultPort: 3000
-      healthPath: /healthz
+      healthPath: /v1/health/ready
     operationsRunner:
       script: dev:runner
   database:
@@ -86,4 +85,29 @@ localDev:
   migrations:
     command: node
     args:
-      - scripts/migrate-db.ts
+      - scripts/support/migrate-db.ts
+packageRuntime:
+  schemaVersion: treeseed.package-runtime/v1
+  componentId: api
+  services:
+    - id: api
+      composeService: api
+      endpoints:
+        - id: http
+          protocol: http
+          port: 3000
+          visibility: host
+          defaultAlias: api.treeseed.localhost
+          aliasOverride: true
+          tls: edge
+          authentication: application
+          healthGate: { protocol: http, path: /v1/health/ready, timeoutSeconds: 120 }
+    - id: operations-runner
+      composeService: operations-runner
+      endpoints: []
+    - id: database
+      composeService: database
+      endpoints: []
+    - id: migration
+      composeService: migration
+      endpoints: []

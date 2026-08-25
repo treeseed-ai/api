@@ -7,7 +7,7 @@ journey: Authorize Assignment Scoped Proxy
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
 summary: "Verify API control-plane behavior for Authorize Assignment Scoped Proxy."
-status: active
+status: planned
 dependencies:
   journeys:
     - 60
@@ -57,4 +57,3 @@ evidence:
     - verifier_evidence
 notes:
   - "API companion guarantee for Authorize Assignment Scoped Proxy."
-

@@ -1,0 +1,43 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.handoff.exact-and-independent.916
+journeyIndex: 916
+type: agent
+subtype: handoff
+journey: Prove exact independent handoffs
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Every workflow stage consumes immutable explicit predecessor refs and preserves independent identities.
+status: planned
+capabilityId: agent.handoff.exact-and-independent
+catalog: agent.system
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof:
+  requiredCommands: [governance.proposal-show, capacity.decision-planning, capacity.capacity-plan, capacity.assignment, capacity.workday-summary]
+  minimumRepositoryPostconditions: 1
+  outcomePredicates:
+    handoff.exact-chain: [handoff.proposal-revision, handoff.estimate, handoff.accepted-plan, handoff.actor-checkpoint, handoff.review, handoff.revised-checkpoint, handoff.final-approval, handoff.report]
+    handoff.distinct-authorities: [handoff.distinct-author, handoff.simulated-human-authority, handoff.distinct-actor, handoff.distinct-reviewer]
+outcomes:
+  - id: handoff.exact-chain
+    kind: required
+    description: Proposal, estimate, plan, checkpoint, review, revision, approval, and report resolve exact immutable refs rather than ambient latest records.
+    evidenceKinds: [workflow_graph, provenance_read_back]
+    authoritativeSubjects: [proposalRevision, acceptedPlan, checkpointRef, reviewRef, reportRef]
+  - id: handoff.distinct-authorities
+    kind: required
+    description: Author, simulated-human decision authority, actor, and reviewer are distinct as required.
+    evidenceKinds: [identity_audit, cli_transcript]
+    authoritativeSubjects: [proposalRevision, decision, actorAssignment, reviewAssignment]
+dependencies:
+  journeys: []
+  guarantees:
+    - guarantee.agent.profile.reviewing-outcome.915
+actors: { allowed: [capacity_operator, team_owner], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [bounded_source_project] }
+api: { required: true, verifierRefs: [api.agent-catalog.control-plane-live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

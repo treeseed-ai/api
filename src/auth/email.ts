@@ -9,6 +9,7 @@ interface AuthEmailMessage {
 }
 
 interface SmtpConfig {
+	localCapture: boolean;
 	host: string;
 	port: number;
 	username: string;
@@ -138,7 +139,8 @@ async function authenticateStreamSmtp(context: StreamSocketContext, smtp: SmtpCo
 }
 
 async function sendWithCloudflareSockets(message: AuthEmailMessage, smtp: SmtpConfig, siteUrl: string) {
-	const { connect } = await import('cloudflare:sockets');
+	const socketsModule = 'cloudflare:sockets';
+	const { connect } = await import(socketsModule) as { connect: (...args: any[]) => any };
 	const secureMode = String(smtp.secure ?? '').toLowerCase();
 	const secureTransport = ['true', '1', 'tls', 'ssl', 'on'].includes(secureMode)
 		? 'on'
@@ -335,7 +337,7 @@ export async function sendAuthEmail(context: Pick<APIContext, 'locals'> | undefi
 
 	assertSmtpConfigured(smtp);
 
-	if (isLocalAuthUrl(config.betterAuthBaseUrl) && isLocalSmtpHost(smtp.host)) {
+	if (smtp.localCapture && isLocalSmtpHost(smtp.host)) {
 		try {
 			await sendWithNodeSockets(message, smtp, config.siteBaseUrl);
 			return;
@@ -354,7 +356,7 @@ export async function sendAuthEmail(context: Pick<APIContext, 'locals'> | undefi
 			await sendWithNodeSockets(message, smtp, config.siteBaseUrl);
 			return;
 		} catch (nodeError) {
-			if (isLocalAuthUrl(config.betterAuthBaseUrl)) {
+			if (smtp.localCapture) {
 				console.info(`[auth-email] SMTP delivery failed (${errorMessage(cloudflareError)}; ${errorMessage(nodeError)}); using console fallback.`);
 				logConsoleFallback(message);
 				return;

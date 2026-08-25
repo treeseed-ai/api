@@ -1,0 +1,73 @@
+name: Publish protected API runtime revision
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact annotated runtime tag, for example 0.8.0-rc.12-runtime.2
+        required: true
+      application_tag:
+        description: Existing immutable application image tag
+        required: true
+      component_revision:
+        description: Positive Debian component revision
+        required: true
+
+jobs:
+  publish:
+    environment: development
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: { ref: "${{ inputs.tag }}", fetch-depth: 0 }
+      - name: Require an exact reviewed Compose-only revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git describe --tags --exact-match HEAD)" = "${{ inputs.tag }}"
+          test "$(git cat-file -t refs/tags/${{ inputs.tag }})" = tag
+          git merge-base --is-ancestor HEAD origin/staging
+          test "${{ inputs.tag }}" = "${{ inputs.application_tag }}-runtime.${{ inputs.component_revision }}"
+          [[ "${{ inputs.application_tag }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]
+          [[ "${{ inputs.component_revision }}" =~ ^[2-9][0-9]*$ ]]
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 24, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: npm run verify:direct
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          username: ${{ vars.TREESEED_DOCKERHUB_USERNAME }}
+          password: ${{ secrets.TREESEED_DOCKERHUB_TOKEN }}
+      - name: Read back the unchanged exact multi-architecture images
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in api=treeseed/api runner=treeseed/op-runner database=treeseed/api-postgres; do
+            name="${pair%%=*}"; image="${pair#*=}"; ref="${image}:${{ inputs.application_tag }}"
+            raw="$(docker buildx imagetools inspect --raw "${ref}")"
+            grep -q '"vnd.docker.reference.type"[[:space:]]*:[[:space:]]*"attestation-manifest"' <<<"${raw}"
+            digest="$(docker buildx imagetools inspect "${ref}" --format '{{json .Manifest}}' | jq -r '.digest')"
+            [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]
+            echo "${name}=${digest}" >> "$GITHUB_OUTPUT"
+          done
+      - name: Build the exact revised runtime bundle
+        env:
+          TREESEED_RELEASE: ${{ inputs.application_tag }}
+          TREESEED_COMPONENT_REVISION: ${{ inputs.component_revision }}
+          TREESEED_SOURCE_COMMIT: ${{ github.sha }}
+          TREESEED_API_DIGEST: ${{ steps.images.outputs.api }}
+          TREESEED_RUNNER_DIGEST: ${{ steps.images.outputs.runner }}
+          TREESEED_DATABASE_DIGEST: ${{ steps.images.outputs.database }}
+        run: node --import tsx scripts/release/create-component-release.ts
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
+        with:
+          subject-path: release-assets/*
+      - name: Publish immutable runtime assets
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: gh release create "${{ inputs.tag }}" release-assets/* --generate-notes --verify-tag --prerelease

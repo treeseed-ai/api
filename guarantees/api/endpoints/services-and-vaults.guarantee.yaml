@@ -1,0 +1,27 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.services-and-vaults.410
+journeyIndex: 410
+type: api
+subtype: endpoints
+journey: Service And Vault Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Provider service, capability, encrypted credential, vault grant, and operation-lease endpoints are descriptor-covered with management access gates."
+status: active
+actors:
+  allowed: [team_owner, project_manager, platform_admin]
+  forbidden: [anonymous_user, unauthorized_user]
+gates: [core, release, security]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.services-and-vaults]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.services-and-vaults]
+negativeCases:
+  - id: unauthorized-secret-access-denied
+    verifierRefs: [api.endpoints.services-and-vaults]
+evidence:
+  required: [guarantee_report, api_acceptance_report]

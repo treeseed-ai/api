@@ -1,0 +1,26 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.complete-after-integrated-readback.939
+journeyIndex: 939
+type: agent
+subtype: discussion
+journey: Complete conversations only after integrated read-back
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: Provider completion releases communication capacity, but invocation and conversation success remain pending until the exact final response and operational content are reviewed, integrated, read back, and residue-free.
+status: planned
+capabilityId: agent.communication.integrated-terminal-truth
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.agent-invocation, capacity.assignment, capacity.content-integrate, capacity.workday-runs], minimumRepositoryPostconditions: 2, outcomePredicates: { communication.integrated-terminal-truth: [provider.capacity-released, invocation.integration-pending, conversation.integration-pending, receipts.integrated-read-back, cleanup.zero, simulation.upstream-unchanged] } }
+outcomes: [{ id: communication.integrated-terminal-truth, kind: required, description: The provider assignment may release its lease after producing the exact response, while the invocation and hidden execution become successful only after reviewed integration, authoritative read-back, settlement, and zero residue., evidenceKinds: [assignment_read_back, invocation_read_back, execution_read_back, artifact_mutation_receipt, treedx_read_back, settlement, cleanup], authoritativeSubjects: [assignment, invocation, conversationExecution, responseMessage, assignmentOperationalContent, simulationTargetRef, canonicalContentRef] }]
+forbiddenOutcomes: [{ id: communication.process-completion-success, description: Provider process completion, a final-message path, or provisional commits alone must not complete the invocation or conversation execution. }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.admit-after-treedx-readback.931, guarantee.agent.discussion.contain-hidden-conversations.932] }
+actors: { allowed: [capacity_operator], forbidden: [anonymous_user, unauthorized_user, assignment_agent] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: [provider-completion-without-integration, final-message-with-provisional-receipt-only, integration-replay-after-terminalization]
+evidence: { required: [verifier_evidence] }

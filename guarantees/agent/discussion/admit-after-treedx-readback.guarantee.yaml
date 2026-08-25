@@ -1,0 +1,25 @@
+schemaVersion: treeseed.guarantee/v2
+id: guarantee.agent.discussion.admit-after-treedx-readback.931
+journeyIndex: 931
+type: agent
+subtype: discussion
+journey: Admit communication only after TreeDX read-back
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: A Discussion invocation is created only after the exact message is committed and authoritatively read back through TreeDX.
+status: planned
+capabilityId: agent.communication.treedx-before-invocation
+catalog: agent.system.dependencies
+activation: { minimumConsecutivePasses: 3, requiredVariants: [baseline, clean-repeat, interruption-resume], invalidateOnSourceChange: true }
+proof: { requiredCommands: [capacity.discussion-read, capacity.agent-invocation], minimumRepositoryPostconditions: 1, outcomePredicates: { communication.authoritative-ingress: [discussion.commit, discussion.read-back, invocation.opaque-ref] } }
+outcomes: [{ id: communication.authoritative-ingress, kind: required, description: The invocation contains opaque exact message refs and no copied body after TreeDX read-back succeeds., evidenceKinds: [treedx_read_back, invocation_read_back], authoritativeSubjects: [requestMessage, invocation] }]
+dependencies: { journeys: [], guarantees: [guarantee.agent.discussion.persist-discussion-only-in-treedx.744] }
+actors: { allowed: [authenticated_user, capacity_operator], forbidden: [anonymous_user, unauthorized_user] }
+devices: { required: [] }
+gates: [core]
+preconditions: { fixtures: [integrated_treeseed_project] }
+api: { required: true, verifierRefs: [api.communication.live-proof] }
+content: { required: true, verifierRefs: [] }
+audit: { required: true, verifierRefs: [] }
+negativeCases: []
+evidence: { required: [verifier_evidence] }

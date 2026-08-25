@@ -1,0 +1,29 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.endpoints.feedback-management.416
+journeyIndex: 416
+type: api
+subtype: endpoints
+journey: Feedback Management Endpoint Reliability
+ownerPackage: "@treeseed/api"
+surface: api-control-plane
+summary: "Authenticated feedback, private attachments, platform administration, status history, and privacy-safe exports are descriptor-covered."
+status: blocked
+actors:
+  allowed: [authenticated_user, platform_admin]
+  forbidden: [anonymous_user, non_platform_admin]
+gates: [core, security, release]
+preconditions:
+  fixtures: [integrated_treeseed_project]
+api:
+  required: true
+  verifierRefs: [api.endpoints.feedback-management]
+audit:
+  required: true
+  verifierRefs: [api.endpoints.feedback-management]
+negativeCases:
+  - id: non-platform-admin-feedback-administration-denied
+    verifierRefs: [api.endpoints.feedback-management]
+evidence:
+  required: [guarantee_report, api_acceptance_report]
+notes:
+  - Blocked until the complete attachment-retention and export acceptance graph passes against current source.

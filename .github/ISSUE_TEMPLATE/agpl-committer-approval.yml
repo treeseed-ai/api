@@ -4,7 +4,8 @@ title: "[committer approval] "
 body:
   - type: markdown
     attributes:
-      value: This is a one-time account-level request. Do not enter an email address, password, token, or other secret.
+      value: |
+        This is a one-time account-level request. Do not enter an email address, password, token, or other secret.
   - type: input
     id: github_username
     attributes:

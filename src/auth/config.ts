@@ -1,5 +1,5 @@
-import type { APIContext } from 'astro';
 import type { CloudflareRuntime } from '@treeseed/core/types/cloudflare';
+import type { APIContext } from 'astro';
 
 export const WEB_SESSION_COOKIE = 'ts_session';
 export const WEB_CSRF_COOKIE = 'ts_csrf';
@@ -7,7 +7,7 @@ const DEFAULT_WEB_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_EMAIL_TOKEN_TTL_SECONDS = 60 * 60;
 const DEFAULT_LOCAL_SMTP_HOST = '127.0.0.1';
 const DEFAULT_LOCAL_SMTP_PORT = 1025;
-const DEFAULT_LOCAL_AUTH_EMAIL_FROM = 'Treeseed Market <auth@treeseed.local>';
+const DEFAULT_LOCAL_AUTH_EMAIL_FROM = 'TreeSeed <auth@treeseed.local>';
 export const BETTER_AUTH_BASE_PATH = '/v1/auth';
 const AUTH_MODES = new Set(['internal-first', 'internal-only', 'providers-only']);
 const INTERNAL_SIGNUP_MODES = new Set(['open', 'invite', 'admin']);
@@ -16,7 +16,7 @@ const LOCAL_AUTH_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1'
 type RuntimeEnv = CloudflareRuntime['env'];
 
 function runtimeEnv(context?: Pick<APIContext, 'locals'>) {
-	return ((context?.locals as App.Locals | undefined)?.runtime as CloudflareRuntime | undefined)?.env;
+	return ((context?.locals as { runtime?: CloudflareRuntime } | undefined)?.runtime)?.env;
 }
 
 function envValue(name: string, env?: RuntimeEnv) {
@@ -116,8 +116,9 @@ export function getSiteAuthConfig(context?: Pick<APIContext, 'locals'> & Partial
 	const configuredSiteBaseUrl = envValue('TREESEED_SITE_URL', env) || envValue('TREESEED_BETTER_AUTH_URL', env) || requestOrigin || 'http://127.0.0.1:4321';
 	const siteBaseUrl = normalizeSiteBaseUrl(configuredSiteBaseUrl);
 	const betterAuthBaseUrl = normalizeBetterAuthBaseUrl(envValue('TREESEED_BETTER_AUTH_URL', env) || siteBaseUrl);
-	const localAuthEmail = isLocalUrl(siteBaseUrl) || isLocalUrl(betterAuthBaseUrl);
-	const localMailpitHost = envValue('TREESEED_MAILPIT_SMTP_HOST', env) || DEFAULT_LOCAL_SMTP_HOST;
+	const configuredMailpitHost = envValue('TREESEED_MAILPIT_SMTP_HOST', env);
+	const localAuthEmail = Boolean(configuredMailpitHost) || isLocalUrl(siteBaseUrl) || isLocalUrl(betterAuthBaseUrl);
+	const localMailpitHost = configuredMailpitHost || DEFAULT_LOCAL_SMTP_HOST;
 	const localMailpitPort = parseIntEnv('TREESEED_MAILPIT_SMTP_PORT', DEFAULT_LOCAL_SMTP_PORT, env);
 	const authEmailFrom = firstEnvValue(env, 'TREESEED_AUTH_EMAIL_FROM', 'TREESEED_SMTP_FROM')
 		|| (localAuthEmail ? DEFAULT_LOCAL_AUTH_EMAIL_FROM : '');
@@ -134,13 +135,14 @@ export function getSiteAuthConfig(context?: Pick<APIContext, 'locals'> & Partial
 		betterAuthBaseUrl,
 		apiServiceId: firstEnvValue(env, 'TREESEED_WEB_SERVICE_ID', 'TREESEED_API_WEB_SERVICE_ID') || 'web',
 		apiServiceSecret: firstEnvValue(env, 'TREESEED_WEB_SERVICE_SECRET', 'TREESEED_API_WEB_SERVICE_SECRET') || 'treeseed-web-service-dev-secret',
-		apiAssertionSecret: firstEnvValue(env, 'TREESEED_WEB_ASSERTION_SECRET', 'TREESEED_API_WEB_ASSERTION_SECRET') || 'treeseed-web-assertion-dev-secret',
+		apiAssertionSecret: firstEnvValue(env, 'TREESEED_API_WEB_ASSERTION_SECRET', 'TREESEED_WEB_ASSERTION_SECRET') || 'treeseed-web-assertion-dev-secret',
 		csrfSecret: envValue('TREESEED_WEB_CSRF_SECRET', env) || 'treeseed-web-csrf-dev-secret',
 		sessionTtlSeconds: parseIntEnv('TREESEED_WEB_SESSION_TTL', DEFAULT_WEB_SESSION_TTL_SECONDS, env),
 		passwordResetTtlSeconds: parseIntEnv('TREESEED_AUTH_PASSWORD_RESET_TTL', DEFAULT_EMAIL_TOKEN_TTL_SECONDS, env),
 		emailVerificationTtlSeconds: parseIntEnv('TREESEED_AUTH_EMAIL_VERIFICATION_TTL', DEFAULT_EMAIL_TOKEN_TTL_SECONDS, env),
 		emailVerificationEnabled: parseBooleanEnv('TREESEED_AUTH_EMAIL_VERIFICATION_ENABLED', true, env),
 		authEmail: {
+			localCapture: localAuthEmail,
 			host: localAuthEmail ? localMailpitHost : envValue('TREESEED_SMTP_HOST', env),
 			port: localAuthEmail ? localMailpitPort : parseIntEnv('TREESEED_SMTP_PORT', 465, env),
 			username: localAuthEmail ? '' : envValue('TREESEED_SMTP_USERNAME', env),
