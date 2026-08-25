@@ -17,4 +17,19 @@ describe('TreeDX infrastructure client', () => {
 		});
 		expect(result).toEqual({ changedPaths: ['discussions/topic.mdx'] });
 	});
+
+	it('routes bulk repository reads through the files read operation', async () => {
+		const readFile = vi.fn(async () => ({ files: [{ path: 'discussions/topic.mdx' }] }));
+		const client = new TreeDxInfrastructureClient({ query: { readFile } } as never, 'repo_one');
+		const result = await client.readRepositoryFiles({
+			ref: '0123456789012345678901234567890123456789',
+			paths: ['discussions/topic.mdx'],
+		});
+
+		expect(readFile).toHaveBeenCalledWith('repo_one', {
+			ref: '0123456789012345678901234567890123456789',
+			paths: ['discussions/topic.mdx'],
+		});
+		expect(result).toEqual({ files: [{ path: 'discussions/topic.mdx' }] });
+	});
 });
