@@ -224,6 +224,10 @@ export async function ensureProjectKnowledgeBinding(input: {
 		ref: requestedRef, paths: ['**'], forceFull: true,
 	}));
 	await client.searchIndex.refresh(repository.repoId, { ref: requestedRef, paths: ['**'], incremental: false });
+	const index = object(object(await client.searchIndex.status(repository.repoId, { ref: requestedRef })).index);
+	if (index.ready !== true || !(typeof index.segmentCount === 'number' && index.segmentCount > 0)) {
+		throw new Error('TreeDX library search index is not ready after refresh.');
+	}
 	const listing = queryResult(await client.query.listPaths(repository.repoId, {
 		ref: requestedRef, paths: ['**'], kinds: ['blob'], limit: 1, allowProtected: true,
 	}));
@@ -244,7 +248,7 @@ export async function ensureProjectKnowledgeBinding(input: {
 			?? existing?.contentRepositoryDefaultBranch ?? 'main',
 		contentRepositoryRef: requestedRef,
 		metadata: { repositoryName, libraryRoot: input.libraryRoot ?? '.', upstreamBacked: true,
-			upstreamHeads, resolvedRef: text(listing.resolvedRef), reconciledLocalRuntime: true },
+			upstreamHeads, resolvedRef: text(listing.resolvedRef), searchIndex: { ready: true, segmentCount: index.segmentCount }, reconciledLocalRuntime: true },
 	});
 	const agents = await reconcileProjectAgentClasses({ store: input.store, client, repositoryId: repository.repoId,
 		projectId: input.projectId, teamId: input.teamId, projectSlug: input.projectSlug, ref: requestedRef });
