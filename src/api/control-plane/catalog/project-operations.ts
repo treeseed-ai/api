@@ -28,6 +28,20 @@ function visibleProjects(projects: Array<Record<string, any>>) {
 	return projects.filter((project) => project.metadata?.inventory?.status !== 'archived');
 }
 
+function pagedProjects(projects: Array<Record<string, any>>, query: { limit?: number; cursor?: string }) {
+	const limit = Math.max(1, Math.min(200, Number(query.limit) || 50));
+	let offset = 0;
+	if (query.cursor) {
+		const decoded = Buffer.from(query.cursor, 'base64url').toString('utf8');
+		if (!/^\d+$/u.test(decoded)) throw new ControlPlaneOperationError(400, 'project_cursor_invalid', 'The project cursor is invalid.');
+		offset = Number(decoded);
+	}
+	const items = projects.slice(offset, offset + limit);
+	const nextOffset = offset + items.length;
+	const hasMore = nextOffset < projects.length;
+	return { items, page: { limit, hasMore, nextCursor: hasMore ? Buffer.from(String(nextOffset)).toString('base64url') : null } };
+}
+
 async function projectAccess(dependencies: ProjectOperationDependencies, projectId: string, context: { principal?: Record<string, any> }) {
 	const principal = context.principal;
 	if (!principal) throw new ControlPlaneOperationError(401, 'authentication_required', 'Authentication is required.');
@@ -243,7 +257,7 @@ export function createProjectsListOperation(dependencies: ProjectOperationDepend
 		async handler(input, context) {
 			const principal = context.principal;
 			if (!principal) throw new ControlPlaneOperationError(401, 'authentication_required', 'Authentication is required.');
-			if (!input.query.teamId) return { projects: visibleProjects(await dependencies.store.listProjectsForPrincipal(principal)) };
+			if (!input.query.teamId) return pagedProjects(visibleProjects(await dependencies.store.listProjectsForPrincipal(principal)), input.query);
 			const administrator = principal.roles?.some((role) => role === 'admin' || role === 'platform_admin')
 				|| principal.permissions?.includes('*:*:*');
 			if (!administrator && !await dependencies.store.principalCanAccessTeam(principal, input.query.teamId)) {
@@ -253,7 +267,7 @@ export function createProjectsListOperation(dependencies: ProjectOperationDepend
 				&& !principal.permissions?.some((permission) => permission === '*:*:*' || permission === 'projects:read:team')) {
 				throw new ControlPlaneOperationError(403, 'team_permission_denied', 'The credential cannot read team projects.');
 			}
-			return { projects: visibleProjects(await dependencies.store.listTeamProjects(input.query.teamId)) };
+			return pagedProjects(visibleProjects(await dependencies.store.listTeamProjects(input.query.teamId)), input.query);
 		},
 	};
 }
