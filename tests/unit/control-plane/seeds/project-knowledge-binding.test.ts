@@ -21,6 +21,7 @@ describe('seed TreeDX knowledge binding', () => {
 			] });
 			if (method === 'POST' && url.pathname === '/api/v1/repos/repo-platform/graph/refresh') return Response.json({ ok: true, graph: { status: 'completed', graphVersion: 'graph-1' } });
 			if (method === 'POST' && url.pathname === '/api/v1/repos/repo-platform/search/index/refresh') return Response.json({ ok: true, index: { status: 'ready', indexVersion: 'index-1' } });
+			if (method === 'GET' && url.pathname === '/api/v1/repos/repo-platform/search/index/status') return Response.json({ ok: true, index: { ready: true, segmentCount: 1 } });
 			if (method === 'POST' && url.pathname === '/api/v1/repos/repo-platform/paths/list') {
 				if ((body as { paths?: string[] }).paths?.[0] === 'agents/**') return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), results: [] } });
 				return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), results: [{ path: 'documentation/README.mdx' }] } });
@@ -48,6 +49,7 @@ describe('seed TreeDX knowledge binding', () => {
 			{ method: 'GET', path: '/api/v1/repos/repo-platform/refs', body: undefined },
 			{ method: 'POST', path: '/api/v1/repos/repo-platform/graph/refresh', body: { ref: 'refs/remotes/origin/staging', paths: ['**'], forceFull: true } },
 			{ method: 'POST', path: '/api/v1/repos/repo-platform/search/index/refresh', body: { ref: 'refs/remotes/origin/staging', paths: ['**'], incremental: false } },
+			{ method: 'GET', path: '/api/v1/repos/repo-platform/search/index/status', body: undefined },
 			{ method: 'POST', path: '/api/v1/repos/repo-platform/paths/list', body: { ref: 'refs/remotes/origin/staging', paths: ['**'], kinds: ['blob'], limit: 1, allowProtected: true } },
 			{ method: 'POST', path: '/api/v1/repos/repo-platform/paths/list', body: { ref: 'refs/remotes/origin/staging', paths: ['agents/**'], extensions: ['.md', '.mdx', '.yaml', '.yml'], kinds: ['blob'], limit: 500, allowProtected: true } },
 		]);
