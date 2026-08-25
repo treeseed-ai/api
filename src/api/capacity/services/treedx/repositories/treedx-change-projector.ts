@@ -3,7 +3,7 @@ import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 
 function subjectKind(path: string) {
-	const match = path.match(/(?:^|\/)content\/(books|knowledge|notes|proposals|questions)\//u);
+	const match = path.match(/(?:^|\/)(?:content\/)?(books|knowledge|notes|proposals|questions)\//u);
 	return match?.[1] === 'books' ? 'book' : match?.[1] === 'proposals' ? 'proposal'
 		: match?.[1] === 'questions' ? 'question' : match?.[1] === 'notes' ? 'note' : match?.[1] === 'knowledge' ? 'knowledge' : null;
 }

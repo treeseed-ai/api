@@ -36,9 +36,7 @@ function normalizedPem(value: string | undefined) {
 
 function localDevelopment(environment: NodeJS.ProcessEnv) {
 	if (environment.TREESEED_ENVIRONMENT === 'local' || environment.TREESEED_ENVIRONMENT === 'test' || environment.NODE_ENV === 'test' || environment.LOCAL_DEV_MODE === '1') return true;
-	try {
-		return ['localhost', '127.0.0.1', '::1'].includes(new URL(String(environment.TREESEED_API_BASE_URL ?? '')).hostname);
-	} catch { return false; }
+	return false;
 }
 
 function keyMaterial(environment: NodeJS.ProcessEnv) {

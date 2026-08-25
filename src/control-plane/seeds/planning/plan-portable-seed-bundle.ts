@@ -1,14 +1,14 @@
 import {
 	digestSeedBundle,
 	validateSeedBundle,
-	type SeedBundleV2,
+	type SeedBundleV3,
 } from '@treeseed/sdk/operator-contracts';
 
-const ownership = (bundle: SeedBundleV2, resourceKey: string) => ({
+const ownership = (bundle: SeedBundleV3, resourceKey: string) => ({
 	seed: { name: bundle.name, resourceKey, version: bundle.version },
 });
 
-function selectedEnvironments(bundle: SeedBundleV2, requested?: string) {
+function selectedEnvironments(bundle: SeedBundleV3, requested?: string) {
 	const selected = requested
 		? requested.split(',').map((entry) => entry.trim()).filter(Boolean)
 		: bundle.environments.includes('local') ? ['local'] : [...bundle.environments];
@@ -17,7 +17,7 @@ function selectedEnvironments(bundle: SeedBundleV2, requested?: string) {
 }
 
 export async function planPortableSeedBundle(input: {
-	bundle: SeedBundleV2;
+	bundle: SeedBundleV3;
 	seedName: string;
 	environments?: string;
 	mode: 'plan' | 'apply';
@@ -63,6 +63,7 @@ export async function planPortableSeedBundle(input: {
 	});
 	for (const project of bundle.resources.projects) {
 		const primary = project.primaryRepository ? repositories.get(project.primaryRepository) : undefined;
+		const library = repositories.get(project.libraryRepository);
 		actions.push({
 			kind: 'project', key: project.key, label: `${project.team.replace(/^team:/u, '')}/${project.slug}`,
 			environments: environments.selected, action: 'create',
@@ -71,6 +72,8 @@ export async function planPortableSeedBundle(input: {
 				repository: primary ? { role: primary.role, provider: primary.provider, owner: primary.owner, name: primary.name,
 					gitUrl: primary.gitUrl, defaultBranch: primary.defaultBranch, repositoryPolicy: primary.repositoryPolicy,
 					submodulePath: primary.submodulePath ?? primary.checkoutPath ?? null } : null,
+				library: library ? { role: library.role, provider: library.provider, owner: library.owner, name: library.name,
+					gitUrl: library.gitUrl, defaultBranch: library.defaultBranch, repositoryPolicy: library.repositoryPolicy } : null,
 				architecture: project.metadata?.architecture ?? {},
 				metadata: { ...(project.metadata ?? {}), ...ownership(bundle, project.key) } },
 		});

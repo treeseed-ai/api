@@ -1,6 +1,6 @@
 import { parseBook, parseKnowledgePage, validateKnowledgeCatalog } from './runtime/catalog.ts';
 import type { KnowledgeSnapshotProject } from './packs/knowledge-pack-builder.ts';
-import { resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
 import { listKnowledgeContentPaths } from './read-model/repository-paths.ts';
 
 async function documents(connection: any, resolvedRef: string, paths: string[]) {
@@ -42,8 +42,8 @@ export async function loadKnowledgeSnapshotProjects(store: any, input: {
 			throw new Error(`The knowledge repository binding changed while project ${project.id} was loading.`);
 		}
 		const paths = (listed.entries ?? []).map((entry: any) => String(entry.path ?? '')).filter(Boolean);
-		const bookRoot = `${connection.contentPath}/books/`;
-		const pageRoot = `${connection.contentPath}/knowledge/`;
+		const bookRoot = `${projectLibraryPath(connection.contentPath, 'books')}/`;
+		const pageRoot = `${projectLibraryPath(connection.contentPath, 'knowledge')}/`;
 		const [bookFiles, pageFiles] = await Promise.all([
 			documents(connection, commitSha, paths.filter((path: string) => path.startsWith(bookRoot))),
 			documents(connection, commitSha, paths.filter((path: string) => path.startsWith(pageRoot))),
