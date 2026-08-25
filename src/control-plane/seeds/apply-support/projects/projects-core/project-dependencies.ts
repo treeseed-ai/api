@@ -1,5 +1,6 @@
 import { mergeSeedMetadata,projectSeedMetadata } from '../../index.js';
 import { ensureProjectKnowledgeBinding } from './project-knowledge-binding.js';
+import { reconcileLibraryProvider } from './library-provider-reconciliation.js';
 
 export async function ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt, env, localOnly, dependencyState, plan }) {
     if (action.kind !== 'project')
@@ -45,6 +46,10 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
     }
 	if (localOnly === true) {
 		if (!action.payload.library) throw new Error(`Project ${action.key} is missing its required library repository.`);
+		const provider = await reconcileLibraryProvider({ store, teamId, projectId, projectSlug:action.payload.slug,
+			owner:action.payload.library.owner,name:action.payload.library.name,
+			visibility:action.payload.library.repositoryPolicy?.visibility ?? 'private',
+			lifecycle:action.payload.library.repositoryPolicy?.lifecycle ?? 'adopt-only',env:env ?? process.env,fetchImpl:store.config?.fetchImpl });
         repairs.push(await ensureProjectKnowledgeBinding({
             store,
             projectId,
@@ -54,6 +59,8 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
 			libraryRef: 'refs/remotes/origin/staging',
 			libraryRepositoryUrl: action.payload.library.gitUrl,
 			libraryDefaultBranch: action.payload.library.defaultBranch ?? 'main',
+			libraryCredentialId: provider.credentialId,
+			expectedUpstreamHeads: provider.heads,
             env,
             dependencyState,
         }));
