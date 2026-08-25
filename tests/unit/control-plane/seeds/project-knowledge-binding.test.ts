@@ -23,8 +23,8 @@ describe('seed TreeDX knowledge binding', () => {
 			if (method === 'POST' && url.pathname === '/api/v1/repos/repo-platform/search/index/refresh') return Response.json({ ok: true, index: { status: 'ready', indexVersion: 'index-1' } });
 			if (method === 'GET' && url.pathname === '/api/v1/repos/repo-platform/search/index/status') return Response.json({ ok: true, index: { ready: true, segmentCount: 1 } });
 			if (method === 'POST' && url.pathname === '/api/v1/repos/repo-platform/paths/list') {
-				if ((body as { paths?: string[] }).paths?.[0] === 'agents/**') return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), results: [] } });
-				return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), results: [{ path: 'documentation/README.mdx' }] } });
+				if ((body as { paths?: string[] }).paths?.[0] === 'agents/**') return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), entries: [] } });
+				return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), entries: [{ path: 'documentation/README.mdx' }] } });
 			}
 			throw new Error(`Unexpected fake TreeDX request: ${method} ${url.pathname}`);
 		};
