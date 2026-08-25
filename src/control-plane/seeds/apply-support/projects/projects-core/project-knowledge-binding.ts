@@ -170,6 +170,7 @@ export async function ensureProjectKnowledgeBinding(input: {
 	libraryRepositoryUrl: string;
 	libraryDefaultBranch?: string;
 	libraryCredentialId?: string;
+	expectedUpstreamHeads?: Record<string,string>;
 	env?: NodeJS.ProcessEnv;
 	dependencyState?: { repositoryCatalog?: Promise<unknown> };
 }) {
@@ -210,6 +211,10 @@ export async function ensureProjectKnowledgeBinding(input: {
 	const upstreamHeads = Object.fromEntries(remoteRefs.map((ref) => [ref, refHead(refs, ref)]));
 	for (const ref of remoteRefs) {
 		if (!upstreamHeads[ref]) throw new Error(`TreeDX did not fetch an immutable ${ref} library head.`);
+	}
+	for (const branch of branches) {
+		const expected = input.expectedUpstreamHeads?.[branch]; const observed = upstreamHeads[`refs/remotes/origin/${branch}`];
+		if (expected && observed !== expected) throw new Error(`TreeDX ${branch} library head moved or mismatched during reconciliation.`);
 	}
 	const requestedRef = input.libraryRef ?? `refs/remotes/origin/${input.libraryDefaultBranch ?? 'main'}`;
 	if (!upstreamHeads[requestedRef] && !refHead(refs, requestedRef)) {
