@@ -88,8 +88,8 @@ async function reconcileProjectAgentClasses(input: {
 		throw new Error(`SDK library reconciliation requires exactly eight agent definitions; TreeDX returned ${paths.length}.`);
 	}
 	if (!paths.length) return { count: 0, immutableRef: text(listed.resolvedRef) };
-	const read = queryResult(await input.client.query.repository(input.repositoryId, {
-		ref: text(listed.resolvedRef, input.ref), type: 'files', paths, encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
+	const read = queryResult(await input.client.query.readFile(input.repositoryId, {
+		ref: text(listed.resolvedRef, input.ref), paths, encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
 	}));
 	const files = resultItems(read);
 	if (files.length !== paths.length) throw new Error('TreeDX did not read back every discovered agent definition.');

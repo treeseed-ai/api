@@ -26,6 +26,9 @@ describe('seed TreeDX knowledge binding', () => {
 				if ((body as { paths?: string[] }).paths?.[0] === 'agents/**') return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), entries: [] } });
 				return Response.json({ ok: true, query: { resolvedRef: '2'.repeat(40), entries: [{ path: 'documentation/README.mdx' }] } });
 			}
+			if (method === 'POST' && url.pathname === '/api/v1/repos/repo-platform/files/read') {
+				return Response.json({ ok: true, resolvedRef: '2'.repeat(40), files: [] });
+			}
 			throw new Error(`Unexpected fake TreeDX request: ${method} ${url.pathname}`);
 		};
 		const store = {
