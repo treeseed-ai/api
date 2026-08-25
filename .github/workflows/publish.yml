@@ -2,7 +2,9 @@ name: Publish TreeSeed API images
 
 on:
   push:
-    tags: ["*.*.*"]
+    tags:
+      - "*.*.*"
+      - "!*-runtime.*"
 
 jobs:
   verify:

@@ -16,7 +16,8 @@ describe('managed API release publication', () => {
 	});
 
 	it('publishes API, runner, and database RC architecture manifests', () => {
-		const workflow = parse(readFileSync('.github/workflows/publish.yml', 'utf8')) as { jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } } }> };
+		const workflow = parse(readFileSync('.github/workflows/publish.yml', 'utf8')) as { on?: { push?: { tags?: string[] } }; jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } } }> };
+		expect(workflow.on?.push?.tags).toContain('!*-runtime.*');
 		const images = workflow.jobs.build?.strategy?.matrix?.include?.map((entry) => entry.image) ?? [];
 		expect(images.filter((image) => image === 'treeseed/api')).toHaveLength(2);
 		expect(images.filter((image) => image === 'treeseed/op-runner')).toHaveLength(2);
