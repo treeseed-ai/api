@@ -35,6 +35,7 @@ describe('managed API release publication', () => {
 		expect(compose).toContain(`treeseed/op-runner@${hash('c')}`);
 		expect(compose).toContain(`treeseed/api-postgres@${hash('d')}`);
 		expect(compose).toContain("fetch('http://127.0.0.1:3000/v1/health/ready')");
+		expect(compose).toContain('test: ["CMD-SHELL", "kill -0 1"]');
 		expect(compose).not.toContain('/healthz');
 		expect(bundle.images).toHaveLength(3);
 		expect(bundle.track).toBe('development');
@@ -42,5 +43,15 @@ describe('managed API release publication', () => {
 		expect(bundle.release).toBe('0.8.0~rc8-1');
 		expect(bundle.revision).toBe(1);
 		expect(bundle.runtime.compose.files).toEqual([{ path: 'compose.yml', digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) }]);
+	});
+
+	it('publishes Compose-only runtime revisions without rebuilding images', () => {
+		const workflow = parse(readFileSync('.github/workflows/publish-runtime.yml', 'utf8')) as { on?: { workflow_dispatch?: unknown }; jobs: Record<string, { environment?: string; permissions?: Record<string, string> }> };
+		expect(workflow.on?.workflow_dispatch).toBeDefined();
+		expect(workflow.jobs.publish?.environment).toBe('development');
+		expect(workflow.jobs.publish?.permissions).toMatchObject({ contents: 'write', 'id-token': 'write', attestations: 'write' });
+		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/release/create-component-release.ts'], { env: { ...process.env, TREESEED_RELEASE: '0.8.0-rc.12', TREESEED_COMPONENT_REVISION: '2', TREESEED_SOURCE_COMMIT: 'e'.repeat(40), TREESEED_API_DIGEST: hash('b'), TREESEED_RUNNER_DIGEST: hash('c'), TREESEED_DATABASE_DIGEST: hash('d') } });
+		const bundle = JSON.parse(readFileSync('release-assets/component-release.json', 'utf8')) as { applicationVersion: string; release: string; revision: number };
+		expect(bundle).toMatchObject({ applicationVersion: '0.8.0-rc.12', release: '0.8.0~rc12-2', revision: 2 });
 	});
 });
