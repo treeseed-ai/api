@@ -92,4 +92,15 @@ describe('planning and estimate catalog operations', () => {
 			recipients: ['architect'], addressRequirements: { architect: 'required' },
 		}), 'request-a');
 	});
+
+	it('reads communication send identities from the text-backed JSON column with PostgreSQL JSONB semantics', async () => {
+		const queries: string[] = [];
+		const service = createCommunicationService(store({
+			async all(query: string) { queries.push(query); return []; },
+		}));
+
+		await expect(service.sendStatus(principal, 'team-a', 'send-a'))
+			.rejects.toMatchObject({ code: 'communication_send_not_found', status: 404 });
+		expect(queries[0]).toContain("metadata_json::jsonb->'communication'->>'sendId'");
+	});
 });

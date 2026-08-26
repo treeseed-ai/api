@@ -67,12 +67,12 @@ async function invocation(store: any, teamId: string, invocationId: string) {
 export function createCommunicationService(store: any, discussions?: { create(principal: CapacityPrincipal, body: Row, idempotencyKey?: string): Promise<Row> }, contentStore: any = store) {
 	async function sendReceipt(teamId: string, sendId: string, replayed = false) {
 		const invocations = await store.all(`SELECT * FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
-			AND metadata_json->'communication'->>'sendId'=? ORDER BY requested_at,id`, [teamId, sendId]);
+			AND metadata_json::jsonb->'communication'->>'sendId'=? ORDER BY requested_at,id`, [teamId, sendId]);
 		if (!invocations.length) throw new CapacityOperationError(404, 'communication_send_not_found', 'Communication send not found.');
 		const assignments = await store.all(`SELECT assignment.* FROM capacity_provider_assignments assignment
 			JOIN agent_invocation_requests invocation ON invocation.id=assignment.invocation_id AND invocation.team_id=assignment.team_id
 			WHERE invocation.team_id=? AND invocation.execution_kind='conversation'
-			AND invocation.metadata_json->'communication'->>'sendId'=? ORDER BY assignment.updated_at DESC`, [teamId, sendId]);
+			AND invocation.metadata_json::jsonb->'communication'->>'sendId'=? ORDER BY assignment.updated_at DESC`, [teamId, sendId]);
 		const assignmentByInvocation = new Map<string, Row>();
 		for (const assignment of assignments) if (!assignmentByInvocation.has(text(assignment.invocation_id))) assignmentByInvocation.set(text(assignment.invocation_id), assignment);
 		const projectId = text(invocations[0]?.project_id);
