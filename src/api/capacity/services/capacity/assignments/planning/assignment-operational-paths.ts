@@ -1,13 +1,15 @@
 function normalizedRoot(contentRoot: string) {
-	return contentRoot.replace(/\/+$/u, '');
+	const root = contentRoot.replace(/\\/gu, '/').replace(/\/+$/u, '').replace(/^\.\//u, '');
+	return root === '.' ? '' : root;
 }
 
 export function assignmentOperationalContentPaths(contentRoot: string, assignmentId: string) {
 	const root = normalizedRoot(contentRoot);
+	const prefix = root ? `${root}/` : '';
 	return [
-		`${root}/assignment-plans/${assignmentId}.mdx`,
-		`${root}/assignment-statuses/${assignmentId}-status-*`,
-		`${root}/assignment-summaries/${assignmentId}.mdx`,
+		`${prefix}assignment-plans/${assignmentId}.mdx`,
+		`${prefix}assignment-statuses/${assignmentId}-status-*`,
+		`${prefix}assignment-summaries/${assignmentId}.mdx`,
 	];
 }
 
