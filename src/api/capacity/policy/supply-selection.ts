@@ -14,6 +14,11 @@ function pressureRank(value: CapacitySupplyCandidate['pressure']) {
 	return { idle: 0, normal: 1, busy: 2, throttled: 3, exhausted: 4 }[value] ?? 5;
 }
 
+export function capacitySupplyCandidateStatus(value: unknown) {
+	const status = String(value ?? 'unavailable');
+	return status === 'active' ? 'available' : status;
+}
+
 export function selectCapacitySupply(input: {
 	candidates: CapacitySupplyCandidate[];
 	requiredCapabilities: string[];
