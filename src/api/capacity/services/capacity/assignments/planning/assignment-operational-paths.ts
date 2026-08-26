@@ -67,6 +67,11 @@ export function mergeAssignmentPathScopes(...scopes: string[][]) {
 	return [...new Set(scopes.flat().map((path) => path.trim()).filter(Boolean))];
 }
 
+export function assignmentDiscussionMessageReadPaths(refs: unknown[]) {
+	return mergeAssignmentPathScopes(refs.map(String).map((path) => path.replace(/\\/gu, '/').replace(/^\.\//u, ''))
+		.filter((path) => path.startsWith('discussion-messages/') || path.includes('/discussion-messages/')));
+}
+
 export function assignmentTreeDxProxyHandle(input: {
 	assignmentId: string; teamId: string; projectId: string; executionMode: 'simulation' | 'production';
 	repositoryId: string; workspaceId: string; allowedPaths: string[]; allowedReadPaths: string[];

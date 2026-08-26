@@ -26,7 +26,7 @@ import { compileAssignmentTimeBudget } from './assignment-time-budget.ts';
 import { selectAssignmentLane } from './assignment-lane-selection.ts';
 import { assertBatteryAdmission } from './admission/battery-admission.ts';
 import { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './planning-assignment-contract.ts';
-import { assignmentBootstrapReadPaths,assignmentContextQueryReadPaths,assignmentInstructionTemplateReadPaths,assignmentOperationalContentPaths,assignmentTreeDxProxyHandle,mergeAssignmentPathScopes } from './assignment-operational-paths.ts';
+import { assignmentBootstrapReadPaths,assignmentContextQueryReadPaths,assignmentDiscussionMessageReadPaths,assignmentInstructionTemplateReadPaths,assignmentOperationalContentPaths,assignmentTreeDxProxyHandle,mergeAssignmentPathScopes } from './assignment-operational-paths.ts';
 export { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './planning-assignment-contract.ts';
 export { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
 import { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
@@ -170,6 +170,11 @@ async function assignmentInput(
 		minimumDeadlineAt: null,
 	} : null;
   const taskReadPaths = resolveAssignmentContentPathScope(payload, 'read', contentRoot, ["**"]);
+  const sourceMessageRefs = [...new Set([
+	text(payload.discussionMessageId), text(payload.subjectPath),
+	...(Array.isArray(payload.operationHandoffSourceMessageRefs) ? payload.operationHandoffSourceMessageRefs.map(String) : []),
+  ].filter(Boolean))];
+  const discussionMessageReadPaths = executionKind === 'conversation' ? assignmentDiscussionMessageReadPaths(sourceMessageRefs) : [];
   const chatWritePaths=['discussion-messages','discussion-events','notes','questions','proposals'].flatMap((collection)=>[`${contentRoot}/${collection}`,`${contentRoot}/${collection}/**`]);
   const taskWritePaths = activityType==='chat'
 	? resolveAssignmentContentPathScope(payload,'write',contentRoot,chatWritePaths)
@@ -180,7 +185,7 @@ async function assignmentInput(
   const bootstrapReadPaths = assignmentBootstrapReadPaths(contentRoot, payload.agentContentPath, intent.subjectPath);
   const contextQueryReadPaths = assignmentContextQueryReadPaths(contentRoot, payload.contextQueryRefs, payload.contextQueryChecks);
   const instructionTemplateReadPaths = assignmentInstructionTemplateReadPaths(contentRoot, payload.instructionTemplateRefs);
-  const allowedReadPaths = mergeAssignmentPathScopes(taskReadPaths, bootstrapReadPaths, contextQueryReadPaths, instructionTemplateReadPaths, operationalPaths);
+  const allowedReadPaths = mergeAssignmentPathScopes(taskReadPaths, discussionMessageReadPaths, bootstrapReadPaths, contextQueryReadPaths, instructionTemplateReadPaths, operationalPaths);
   const allowedWritePaths = mergeAssignmentPathScopes(taskWritePaths, operationalPaths);
   const workspaceAllowedPaths = mergeAssignmentPathScopes(allowedReadPaths, allowedWritePaths);
   const workspaceId = workdayTreeDxWorkspaceId(id);
@@ -273,10 +278,7 @@ async function assignmentInput(
 	 handoffRootId: text(demand.metadata.handoffRootId) || null,
 	 handoffParentId: text(demand.metadata.handoffParentId) || null,
 	 handoffDepth: Math.max(0,Number(demand.metadata.handoffDepth??0)),
-	 sourceMessageRefs: [...new Set([
-		text(payload.discussionMessageId), text(payload.subjectPath),
-		...(Array.isArray(payload.operationHandoffSourceMessageRefs) ? payload.operationHandoffSourceMessageRefs.map(String) : []),
-	 ].filter(Boolean))],
+	 sourceMessageRefs,
 	 operationHandoffId: text(demand.metadata.operationHandoffId) || text(payload.operationHandoffId) || null,
     projectAgentClassId: demand.projectAgentClassId,
     mode: demand.mode,
