@@ -7,7 +7,7 @@ const context = { principal: { id: 'user-1' }, interface: 'rest' as const, reque
 function fixture() {
 	const rows = new Map<string, any>();
 	const batch = vi.fn(async () => undefined);
-	const run = vi.fn(async () => undefined);
+	const run = vi.fn(async () => ({ meta: { changes: 1 } }));
 	const dependencies = { store: {
 		async first(query: string) {
 			if (query.includes('COUNT(*)')) return { count: 2 };
