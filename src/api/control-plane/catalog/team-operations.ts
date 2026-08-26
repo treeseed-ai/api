@@ -6,7 +6,7 @@ import { consumeReauthentication } from '../../app/support/accounts/authenticati
 export interface TeamOperationDependencies {
 	store: {
 		listTeamsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
-		loadTeamProfileByName(name: string, principal: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+		loadTeamProfileByName(name: string, principal?: Record<string, unknown> | null): Promise<Record<string, unknown> | null>;
 		getTeam(teamId: string): Promise<Record<string, unknown> | null>;
 		principalCanAccessTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
 		principalCanManageTeam(principal: Record<string, unknown>, teamId: string): Promise<boolean>;
@@ -86,8 +86,7 @@ export function createTeamProfileOperation(
 	return {
 		binding: CONTROL_PLANE_OPERATIONS.teams.profile,
 		async handler(input, context) {
-			if (!context.principal) throw new ControlPlaneOperationError(401, 'authentication_required', 'Authentication is required.');
-			const profile = await dependencies.store.loadTeamProfileByName(input.path.name, context.principal);
+			const profile = await dependencies.store.loadTeamProfileByName(input.path.name, context.principal ?? null);
 			if (!profile) throw new ControlPlaneOperationError(404, 'team_profile_not_found', 'The team profile was not found.');
 			return profile;
 		},

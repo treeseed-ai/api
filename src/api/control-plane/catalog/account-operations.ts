@@ -5,6 +5,7 @@ export interface AccountOperationDependencies {
 	store: {
 		listTeamsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 		listProjectsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, any>>>;
+		loadUserProfileByUsername(username: string, principal?: Record<string, unknown> | null): Promise<Record<string, unknown> | null>;
 		teamPublicNameExists(name: string, excludeTeamId?: string | null): Promise<boolean>;
 		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
 		all(query: string, parameters?: unknown[]): Promise<Array<Record<string, any>>>;
@@ -103,6 +104,19 @@ export function createCurrentAccountOperation(
 				principal: context.principal,
 				teams: await dependencies.store.listTeamsForPrincipal(context.principal),
 			};
+		},
+	};
+}
+
+export function createAccountPublicProfileOperation(
+	dependencies: AccountOperationDependencies,
+): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.publicProfile> {
+	return {
+		binding: CONTROL_PLANE_OPERATIONS.accounts.publicProfile,
+		async handler(input, context) {
+			const profile = await dependencies.store.loadUserProfileByUsername(input.path.username, context.principal ?? null);
+			if (!profile) throw new ControlPlaneOperationError(404, 'user_profile_missing', 'The public user profile was not found.');
+			return profile;
 		},
 	};
 }
