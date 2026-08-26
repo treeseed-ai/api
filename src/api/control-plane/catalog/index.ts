@@ -1,5 +1,6 @@
 import { OperationRegistry } from './operation-registry.ts';
 import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation, createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
+import { createAccountAdminOperations } from './accounts/admin-operations.ts';
 import { createCapacityPlanOperations, type CapacityPlanOperationDependencies } from './capacity/plans.ts';
 import { createPlanningAndEstimateOperations, type PlanningAndEstimateOperationDependencies } from './capacity/planning-and-estimates.ts';
 import { createAgentGovernanceOperations, type AgentGovernanceOperationDependencies } from './capacity/agent-governance.ts';
@@ -22,7 +23,7 @@ import { createTreeDxOperations, type TreeDxOperationDependencies } from './tree
 import { createRealtimeOperations, type RealtimeOperationDependencies } from './realtime/index.ts';
 import { createSeedOperations, type SeedOperationDependencies } from './seeds/index.ts';
 import { createFeedbackOperations, type FeedbackOperationDependencies } from './feedback/index.ts';
-import { createTeamAccessOperation, createTeamArchiveOperation, createTeamCreateOperation, createTeamDeletionReadinessOperation, createTeamInviteAcceptOperation, createTeamInviteOperation, createTeamInvitesOperation, createTeamInviteShowOperation, createTeamLeaveOperation, createTeamMembersOperation, createTeamMemberRemoveOperation, createTeamMemberUpdateOperation, createTeamOwnershipTransferOperation, createTeamProfileOperation, createTeamRestoreOperation, createTeamsListOperation, createTeamUpdateOperation, type TeamOperationDependencies } from './team-operations.ts';
+import { createTeamAccessOperation, createTeamArchiveOperation, createTeamCreateOperation, createTeamDeleteOperation, createTeamDeletionReadinessOperation, createTeamInviteAcceptOperation, createTeamInviteOperation, createTeamInviteResendOperation, createTeamInviteRevokeOperation, createTeamInvitesOperation, createTeamInviteShowOperation, createTeamLeaveOperation, createTeamMemberRemovalBlockersOperation, createTeamMembersOperation, createTeamMemberRemoveOperation, createTeamMemberUpdateOperation, createTeamOwnershipTransferOperation, createTeamProfileOperation, createTeamRestoreOperation, createTeamsListOperation, createTeamUpdateOperation, type TeamOperationDependencies } from './team-operations.ts';
 
 export * from './operation-registry.ts';
 
@@ -74,6 +75,7 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		createAccountPreferencesUpdateOperation(dependencies),
 		createAccountNotificationsOperation(dependencies),
 		createAccountNotificationReadOperation(dependencies),
+		...createAccountAdminOperations(dependencies),
 		createTeamsListOperation(dependencies),
 		createTeamProfileOperation(dependencies),
 		createTeamCreateOperation(dependencies),
@@ -91,6 +93,10 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		createTeamInviteShowOperation(dependencies),
 		createTeamInviteAcceptOperation(dependencies),
 		createTeamDeletionReadinessOperation(dependencies),
+		createTeamMemberRemovalBlockersOperation(dependencies),
+		createTeamInviteRevokeOperation(dependencies),
+		createTeamInviteResendOperation(dependencies),
+		createTeamDeleteOperation(dependencies),
 		createProjectsListOperation(dependencies),
 		createProjectShowOperation(dependencies),
 		createProjectCreateOperation(dependencies),

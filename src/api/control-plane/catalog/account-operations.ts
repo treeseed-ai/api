@@ -5,8 +5,10 @@ export interface AccountOperationDependencies {
 	store: {
 		listTeamsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 		listProjectsForPrincipal(principal: Record<string, unknown>): Promise<Array<Record<string, any>>>;
+		teamPublicNameExists(name: string, excludeTeamId?: string | null): Promise<boolean>;
 		first(query: string, parameters?: unknown[]): Promise<Record<string, any> | null>;
 		all(query: string, parameters?: unknown[]): Promise<Array<Record<string, any>>>;
+		batch?(operations: Array<{ query: string; params?: unknown[] }>): Promise<unknown>;
 		run(query: string, parameters?: unknown[]): Promise<unknown>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
