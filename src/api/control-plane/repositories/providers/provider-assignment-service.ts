@@ -112,7 +112,7 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			for (const address of addresses) if (address.projectSlug && ![projectSlug, assignment.projectId].includes(address.projectSlug)) throw new CapacityGovernanceError(
 				'communication_target_project_mismatch', `Agent target ${address.address} does not belong to project ${projectSlug}.`, 409);
 			const existingChain = await store.all(`SELECT agent_id,trigger_kind FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
-				AND metadata_json->'communication'->>'sendId'=?`, [actor.teamId, String(communication.sendId ?? '')]);
+				AND metadata_json::jsonb->'communication'->>'sendId'=?`, [actor.teamId, String(communication.sendId ?? '')]);
 			const priorAgents = new Set(existingChain.map((row: Record<string, unknown>) => String(row.agent_id ?? '')));
 			const followupRequirements = new Map<string, 'required' | 'optional'>();
 			for (const address of addresses) if (!priorAgents.has(address.agentSlug)
