@@ -7,7 +7,7 @@ const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { 
 	interface: 'rest' as const, requestId: 'request-1', ifMatch: 'account-v1' };
 
 function dependencies() {
-	const run = vi.fn(async () => undefined);
+	const run = vi.fn(async (query: string, parameters?: unknown[]) => ({ meta: { changes: query.includes('COALESCE(updated_at') && parameters?.at(-1) !== 'account-v1' ? 0 : 1 } }));
 	const recordAuditEvent = vi.fn(async () => undefined);
 	return { run, recordAuditEvent, value: {
 		store: {
@@ -93,7 +93,8 @@ describe('account catalog operations', () => {
 			.rejects.toMatchObject({ status: 412, code: 'account_precondition_failed' });
 		await expect(createAccountPreferencesUpdateOperation(fixture.value).handler({ path: {}, query: {}, body: { timeZone: 'UTC' } }, { ...context, ifMatch: 'stale' }))
 			.rejects.toMatchObject({ status: 412, code: 'account_preferences_precondition_failed' });
-		expect(fixture.run).not.toHaveBeenCalled();
+		expect(fixture.run).toHaveBeenCalledTimes(1);
+		expect(fixture.run.mock.calls[0]?.[0]).toContain('COALESCE(updated_at');
 	});
 
 	it('filters notifications by accessible projects and marks one read', async () => {
