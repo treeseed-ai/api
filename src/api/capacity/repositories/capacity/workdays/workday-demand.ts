@@ -160,6 +160,13 @@ export class CapacityWorkdayDemandRepository {
 		);
 	}
 
+	async cancelClaim(demandId: string, claimToken: string, now: string): Promise<void> {
+		await this.database.run(
+			`UPDATE capacity_workday_demands SET status = 'cancelled', claim_token = NULL, completed_at = ?, updated_at = ?
+			 WHERE id = ? AND status = 'claimed' AND claim_token = ?`, [now, now, demandId, claimToken],
+		);
+	}
+
 	async listProvisioning(teamId: string, providerId: string, limit = 25): Promise<CapacityWorkdayDemandRecord[]> {
 		const rows = await this.database.all(
 			`SELECT demand.* FROM capacity_workday_demands demand

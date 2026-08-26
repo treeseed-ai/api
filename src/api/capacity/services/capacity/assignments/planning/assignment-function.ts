@@ -457,7 +457,7 @@ export async function assignNextCompiledDemand(
     now,
   });
   if (!continuation.continue) {
-    await demands.releaseClaim(demand.id, demand.claimToken!, now);
+    await demands.cancelClaim(demand.id, demand.claimToken!, now);
     return null;
   }
   let input: ReturnType<typeof assignmentInput>;
