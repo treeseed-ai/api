@@ -74,9 +74,13 @@ export async function resolveOAuthClient(
 		fetch?: typeof fetch;
 		lookup?: typeof lookup;
 	} = {},
+	adminCallbackUrl?: string,
 ): Promise<OAuthClientMetadata> {
 	if (isFirstPartyOAuthClient(clientId)) return {
-		clientId, redirectUris: [], grantTypes: ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
+		clientId, redirectUris: clientId === 'treeseed-admin' && adminCallbackUrl ? [adminCallbackUrl] : [],
+		grantTypes: clientId === 'trsd'
+			? ['authorization_code', 'urn:ietf:params:oauth:grant-type:device_code', 'refresh_token']
+			: ['authorization_code', 'refresh_token'],
 		responseTypes: ['code'], tokenEndpointAuthMethod: 'none', firstParty: true,
 	};
 	let documentUrl: URL;
@@ -117,6 +121,7 @@ export async function resolveOAuthClient(
 
 export function clientAllowsRedirect(client: OAuthClientMetadata, value: string) {
 	if (client.firstParty) {
+		if (client.clientId === 'treeseed-admin') return client.redirectUris.length === 1 && client.redirectUris[0] === value;
 		try {
 			const url = new URL(value);
 			return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '::1'].includes(url.hostname) && !url.username && !url.password && !url.hash;

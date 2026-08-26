@@ -7,7 +7,6 @@ import { installControlPlaneProtocolRoutes } from '../control-plane/http/protoco
 import { ConfirmationService } from '../control-plane/confirmation/confirmation-service.ts';
 import { createAccountEmailService } from '../control-plane/accounts/account-email-service.ts';
 import { createAccountRegistrationService } from '../control-plane/accounts/account-registration-service.ts';
-import { installAccountConfirmationRoutes } from '../control-plane/accounts/account-confirmation-routes.ts';
 import { createAccountSecurityService } from '../control-plane/accounts/account-security-service.ts';
 import { createKnowledgeReaderService } from '../control-plane/knowledge/knowledge-reader-service.ts';
 import { createKnowledgeWorkspaceService } from '../control-plane/knowledge/knowledge-workspace-service.ts';
@@ -209,7 +208,6 @@ export function createPlatformApiApp(options: any = {}) {
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
 	const accountRegistration = createAccountRegistrationService(store, authProvider, invitationContext);
-	installAccountConfirmationRoutes(app, accountRegistration);
 	const knowledgeReader = createKnowledgeReaderService({ store, options });
 	const discussions = createDiscussionService({ store, capacity, sessionEvents });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
@@ -250,7 +248,7 @@ export function createPlatformApiApp(options: any = {}) {
 		}), confirmations, async (principal) => {
 			const teams = await store.listTeamsForPrincipal(principal);
 			return new SessionEventMcpBus(sessionEvents, teams.map((team) => String(team.id)).filter(Boolean));
-		}, config.baseUrl);
+		}, config.baseUrl, String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)));
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));

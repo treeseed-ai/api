@@ -36,35 +36,29 @@ describe('OAuth protocol', () => {
 			revokeOAuthToken,
 		};
 		const app = new Hono();
-		installControlPlaneProtocolRoutes(app, async (token) => token === 'user-session' ? { principal: { id: 'user-a', scopes: ['treeseed:read'] }, credential: { id: 'session-a' } } : null, provider);
+		installControlPlaneProtocolRoutes(app, async (token) => token === 'user-session' ? { principal: { id: 'user-a', scopes: ['treeseed:read'] }, credential: { id: 'session-a' } } : null, provider,
+			undefined, undefined, undefined, 'http://localhost', 'https://admin.treeseed.localhost');
 
 		const resource = await app.request('/.well-known/oauth-protected-resource/mcp');
 		expect(await resource.json()).toMatchObject({ resource: 'http://localhost/mcp', authorization_servers: ['http://localhost'] });
 		const metadata = await (await app.request('/.well-known/oauth-authorization-server')).json() as any;
 		expect(metadata).toMatchObject({ grant_types_supported: ['authorization_code', DEVICE_GRANT, 'refresh_token'],
-			authorization_endpoint: 'http://localhost/oauth/authorize', revocation_endpoint: 'http://localhost/oauth/revoke',
+			authorization_endpoint: 'https://admin.treeseed.localhost/auth/authorize', revocation_endpoint: 'http://localhost/oauth/revoke',
 			code_challenge_methods_supported: ['S256'] });
 
 		const started = await app.request('/oauth/device_authorization', { method: 'POST',
 			headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'client_id=trsd&scope=treeseed%3Aread' });
 		expect(await started.json()).toMatchObject({ device_code: 'device-code', user_code: 'ABCD-EFGH', expires_in: 600 });
 		const approvalPage = await app.request('/auth/device/approve?user_code=ABCD-EFGH');
-		expect(approvalPage.headers.get('content-type')).toContain('text/html');
-		expect(await approvalPage.text()).toContain('ABCD-EFGH');
+		expect(approvalPage.status).toBe(404);
 		const deviceApproval = await app.request('/auth/device/approve', { method: 'POST', headers: {
 			'content-type': 'application/json', authorization: 'Bearer user-session',
 		}, body: JSON.stringify({ userCode: 'ABCD-EFGH' }) });
 		expect(deviceApproval.status).toBe(200);
-		const formApproval = await app.request('/auth/device/approve', { method: 'POST', headers: {
-			'content-type': 'application/x-www-form-urlencoded',
-		}, body: new URLSearchParams({ user_code: 'ABCD-EFGH', identifier: 'human@example.test', password: 'correct-password' }).toString() });
-		expect(formApproval.status).toBe(200);
-		expect(await formApproval.text()).toContain('Device approved');
-		const rejectedForm = await app.request('/auth/device/approve', { method: 'POST', headers: {
-			'content-type': 'application/x-www-form-urlencoded',
-		}, body: new URLSearchParams({ user_code: 'ABCD-EFGH', identifier: 'human@example.test', password: 'wrong-password' }).toString() });
-		expect(rejectedForm.status).toBe(401);
-		expect(await rejectedForm.text()).not.toContain('wrong-password');
+		const unauthenticatedApproval = await app.request('/auth/device/approve', { method: 'POST', headers: {
+			'content-type': 'application/json',
+		}, body: JSON.stringify({ userCode: 'ABCD-EFGH' }) });
+		expect(await unauthenticatedApproval.json()).toMatchObject({ error: 'invalid_token' });
 		const escalated = await app.request('/oauth/authorize', { method: 'POST', headers: {
 			'content-type': 'application/x-www-form-urlencoded', authorization: 'Bearer user-session',
 		}, body: new URLSearchParams({ client_id: 'trsd', redirect_uri: 'http://127.0.0.1:8765/callback', response_type: 'code',
@@ -79,12 +73,28 @@ describe('OAuth protocol', () => {
 		expect(approved.headers.get('cache-control')).toBe('no-store');
 		const verifier = 'a'.repeat(43);
 		const challenge = createHash('sha256').update(verifier).digest('base64url');
+		const adminPresentation = await app.request(`/oauth/authorize?${new URLSearchParams({ client_id: 'treeseed-admin',
+			redirect_uri: 'https://admin.treeseed.localhost/auth/callback/treeseed', response_type: 'code',
+			code_challenge: challenge, code_challenge_method: 'S256', scope: 'treeseed:read', state: 'admin-state' })}`);
+		expect(await adminPresentation.json()).toMatchObject({ schemaVersion: 'treeseed.oauth.authorization-presentation/v1',
+			clientId: 'treeseed-admin', redirectOrigin: 'https://admin.treeseed.localhost' });
+		const tamperedAdmin = await app.request(`/oauth/authorize?${new URLSearchParams({ client_id: 'treeseed-admin',
+			redirect_uri: 'https://evil.example/auth/callback/treeseed', response_type: 'code',
+			code_challenge: challenge, code_challenge_method: 'S256', scope: 'treeseed:read' })}`);
+		expect(await tamperedAdmin.json()).toMatchObject({ error: 'invalid_request' });
+		const denied = await app.request('/oauth/authorize', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ client_id: 'treeseed-admin', redirect_uri: 'https://admin.treeseed.localhost/auth/callback/treeseed',
+				response_type: 'code', code_challenge: challenge, code_challenge_method: 'S256', scope: 'treeseed:read', state: 'admin-state',
+				decision: 'deny', identifier: 'human@example.test', password: 'correct-password' }).toString() });
+		expect(await denied.json()).toMatchObject({ approved: false,
+			redirectTo: 'https://admin.treeseed.localhost/auth/callback/treeseed?error=access_denied&state=admin-state' });
 		const authorization = await app.request('/oauth/authorize', { method: 'POST', headers: {
 			'content-type': 'application/x-www-form-urlencoded', authorization: 'Bearer user-session' }, body: new URLSearchParams({
 			client_id: 'trsd', redirect_uri: 'http://127.0.0.1:8765/callback', response_type: 'code',
 			code_challenge: challenge, code_challenge_method: 'S256', scope: 'treeseed:read', decision: 'approve', state: 'state-a',
 		}).toString() });
-		expect(await authorization.json()).toMatchObject({ code: 'authorization-code', state: 'state-a' });
+		expect(await authorization.json()).toMatchObject({ approved: true,
+			redirectTo: 'http://127.0.0.1:8765/callback?code=authorization-code&state=state-a' });
 		const exchanged = await app.request('/oauth/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
 			body: new URLSearchParams({ client_id: 'trsd', grant_type: 'authorization_code', code: 'authorization-code',
 				redirect_uri: 'http://127.0.0.1:8765/callback', code_verifier: verifier }).toString() });
