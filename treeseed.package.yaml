@@ -13,12 +13,12 @@ githubEnvironments:
   - staging
   - production
 requiredSecrets:
-  - TREESEED_DOCKERHUB_TOKEN
+  - DOCKERHUB_TOKEN
   - TREESEED_TREEDX_ADMIN_TOKEN
   - TREESEED_TREEDX_SECRET_KEY_BASE
   - TREESEED_TREEDX_JWT_HS256_SECRET
 requiredVariables:
-  - TREESEED_DOCKERHUB_USERNAME
+  - DOCKERHUB_USERNAME
 verify:
   fast: npm run verify
   local: npm run verify:local
@@ -115,6 +115,19 @@ development:
       logs: [.treeseed/development/operations-runner.log]
       forbiddenOperations: [hot-reload, automatic-assignment-cancel]
       promotion: { liveAdmissible: false, candidateRequiresVerification: true }
+standards:
+  schemaVersion: 1
+  workflow: { enabled: true }
+  acceptedBaseline: { packageName: "@treeseed/api", packageVersion: "0.8.0-rc.41" }
+  produced:
+    - { id: "@treeseed/api/control-plane", family: http-api, version: "1.0.0", semanticRange: "^1.0.0", source: src/api/control-plane, artifact: docs/api/openapi.json, verifier: scripts/packages/release-verify.ts }
+    - { id: "@treeseed/api/identity-team-verifier", family: behavioral, version: "1.0.0", semanticRange: "^1.0.0", source: src/standards/verifiers, artifact: dist/standards/verifiers/identity-team-live.js, verifier: dist/standards/verifiers/identity-team-live.js }
+  consumed:
+    - { id: "@treeseed/sdk/control-plane-catalog", family: json-schema, version: "1.0.0", semanticRange: "^1.0.0", source: node_modules/@treeseed/sdk, verifier: scripts/packages/release-verify.ts }
+  guarantees: [authentication-lifecycle, account-custody, team-authority, immutable-live-verifier]
+  deprecations: []
+  runtimes: [node>=22, cloudflare-workers]
+  rollbackOperations: [restore-prior-component-release, restore-prior-database-backup]
 localDev:
   services:
     api:
