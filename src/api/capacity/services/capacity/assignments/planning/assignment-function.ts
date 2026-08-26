@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import {
   type CapacitySupplyPolicy,
 } from "@treeseed/sdk/agent-capacity";
-import { selectCapacitySupply } from '../../../../policy/supply-selection.ts';
+import { capacitySupplyCandidateStatus, selectCapacitySupply } from '../../../../policy/supply-selection.ts';
 import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
 import type { CapacityGovernanceDatabase } from "../../../../database.ts";
 import { CapacityGovernanceError } from "../../../../database.ts";
@@ -127,7 +127,7 @@ async function assignmentInput(
 	      providerSessionId: sessionId,
 	      grantId: text(selectedSupply.grantId),
       executionProviderId: provider.id,
-      status: provider.status,
+      status: capacitySupplyCandidateStatus(provider.status),
       capabilities: provider.capabilities,
       reliability: provider.reliability ?? 1,
       pressure: provider.pressure ?? 'normal',
