@@ -1,5 +1,6 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
+import { requireAccountRevision, requireRevision, touchAccountRevision } from './accounts/concurrency.ts';
 
 export interface AccountOperationDependencies {
 	store: {
@@ -76,6 +77,7 @@ export function createAccountDeletionBlockersOperation(dependencies: AccountOper
 
 export function createAccountDeleteOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.remove> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.remove, async handler(input, context) {
+		await requireAccountRevision(dependencies.store, principal(context).id, context.ifMatch);
 		return serviceResult(await dependencies.accountSecurity.removeAccount(principal(context), input.body as Record<string, unknown>), 'Account deletion failed.');
 	} };
 }
@@ -127,7 +129,7 @@ export function createAccountIdentityOperation(dependencies: AccountOperationDep
 		async handler(_input, context) {
 			const actor = principal(context);
 			const [user, credential, identities, emails] = await Promise.all([
-				dependencies.store.first('SELECT id, username, display_name, metadata_json FROM users WHERE id = ? LIMIT 1', [actor.id]),
+				dependencies.store.first('SELECT id, username, display_name, metadata_json, updated_at FROM users WHERE id = ? LIMIT 1', [actor.id]),
 				dependencies.store.first("SELECT user_id FROM control_plane_auth_credentials WHERE user_id = ? AND status = 'active' LIMIT 1", [actor.id]),
 				dependencies.store.all("SELECT id, provider, email, created_at FROM user_identities WHERE user_id = ? AND provider <> 'credential' ORDER BY created_at", [actor.id]),
 				dependencies.listUserEmailAddresses(actor.id),
@@ -139,6 +141,7 @@ export function createAccountIdentityOperation(dependencies: AccountOperationDep
 				lastName: metadata.lastName ?? null, image: metadata.image ?? null, headline: metadata.headline ?? null,
 				profileSummary: metadata.profileSummary ?? null, location: metadata.location ?? null, website: metadata.website ?? null,
 				expertise: Array.isArray(metadata.expertise) ? metadata.expertise : [], hasCredential: Boolean(credential), emails,
+				updatedAt: String(user?.updated_at ?? '0'),
 				providers: identities.map((identity) => ({ id: identity.id, provider: identity.provider, email: identity.email,
 					linkedAt: identity.created_at, canUnlink: methods > 1 })) };
 		},
@@ -182,7 +185,9 @@ export function createAccountEmailVerifyOperation(dependencies: AccountOperation
 
 export function createAccountEmailPrimaryOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.makePrimaryEmail> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.makePrimaryEmail, async handler(input, context) {
-		const result = await dependencies.accountEmails.makePrimary(principal(context), input.path.emailId);
+		const actor = principal(context);
+		await requireAccountRevision(dependencies.store, actor.id, context.ifMatch);
+		const result = await dependencies.accountEmails.makePrimary(actor, input.path.emailId);
 		if (!result.ok) emailFailure(result, 'The primary email could not be changed.');
 		return { emailAddress: result.emailAddress };
 	} };
@@ -190,8 +195,11 @@ export function createAccountEmailPrimaryOperation(dependencies: AccountOperatio
 
 export function createAccountEmailRemoveOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.removeEmail> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.removeEmail, async handler(input, context) {
-		const result = await dependencies.accountEmails.remove(principal(context), input.path.emailId);
+		const actor = principal(context);
+		await requireAccountRevision(dependencies.store, actor.id, context.ifMatch);
+		const result = await dependencies.accountEmails.remove(actor, input.path.emailId);
 		if (!result.ok) emailFailure(result, 'The email address could not be removed.');
+		await touchAccountRevision(dependencies.store, actor.id);
 		return { items: result.items };
 	} };
 }
@@ -240,6 +248,7 @@ export function createAccountProfileUpdateOperation(dependencies: AccountOperati
 		binding: CONTROL_PLANE_OPERATIONS.accounts.updateProfile,
 		async handler(input, context) {
 			const actor = principal(context);
+			await requireAccountRevision(dependencies.store, actor.id, context.ifMatch);
 			const body = input.body as Record<string, unknown>;
 			const firstName = optionalString(body.firstName), lastName = optionalString(body.lastName);
 			const displayName = String(body.displayName ?? body.name ?? [firstName, lastName].filter(Boolean).join(' ')).trim();
@@ -252,9 +261,10 @@ export function createAccountProfileUpdateOperation(dependencies: AccountOperati
 				.map((entry) => String(entry).trim()).filter(Boolean).slice(0, 8);
 			const metadata = { ...(actor.metadata ?? {}), firstName, lastName, image: optionalString(body.image), headline,
 				profileSummary, location: optionalString(body.location), website, expertise };
+			const updatedAt = new Date().toISOString();
 			await dependencies.store.run('UPDATE users SET display_name = ?, metadata_json = ?, updated_at = ? WHERE id = ?',
-				[displayName, JSON.stringify(metadata), new Date().toISOString(), actor.id]);
-			return { changed: true };
+				[displayName, JSON.stringify(metadata), updatedAt, actor.id]);
+			return { changed: true, updatedAt };
 		},
 	};
 }
@@ -262,20 +272,21 @@ export function createAccountProfileUpdateOperation(dependencies: AccountOperati
 function preferenceView(row: Record<string, any> | null) {
 	const interval = Number(row?.real_time_polling_interval_seconds);
 	return { timeZone: row?.time_zone ?? 'UTC', realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
-		realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(interval) ? interval : 5 };
+		realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(interval) ? interval : 5, updatedAt: String(row?.updated_at ?? '0') };
 }
 
 export function createAccountPreferencesOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.preferences> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.preferences, async handler(_input, context) {
 		const actor = principal(context);
-		return preferenceView(await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]));
+		return preferenceView(await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]));
 	} };
 }
 
 export function createAccountPreferencesUpdateOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.updatePreferences> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.updatePreferences, async handler(input, context) {
 		const actor = principal(context), body = input.body as Record<string, unknown>;
-		const existing = await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]);
+		const existing = await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]);
+		requireRevision(existing?.updated_at, context.ifMatch, 'account_preferences');
 		const timeZone = optionalString(body.timeZone) ?? String(existing?.time_zone ?? 'UTC');
 		try { new Intl.DateTimeFormat('en', { timeZone }).format(); } catch { throw new ControlPlaneOperationError(400, 'invalid_time_zone', 'Select a valid IANA time zone.'); }
 		const realTimeUpdates = body.realTimeUpdates === undefined ? preferenceView(existing).realTimeUpdates
@@ -289,7 +300,7 @@ export function createAccountPreferencesUpdateOperation(dependencies: AccountOpe
 			[actor.id, timeZone, realTimeUpdates ? 1 : 0, interval, now, now]);
 		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: actor.id, eventType: 'account.preferences.updated', targetType: 'user', targetId: actor.id,
 			data: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
-		return { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval };
+		return { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval, updatedAt: now };
 	} };
 }
 

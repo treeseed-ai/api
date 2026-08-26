@@ -4,7 +4,7 @@ import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, c
 import { createAccountSecurityService } from '../../../src/api/control-plane/accounts/account-security-service.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
-	interface: 'rest' as const, requestId: 'request-1' };
+	interface: 'rest' as const, requestId: 'request-1', ifMatch: 'account-v1' };
 
 function dependencies() {
 	const run = vi.fn(async () => undefined);
@@ -15,7 +15,7 @@ function dependencies() {
 			async listTeamsForPrincipal() { return []; },
 			async listProjectsForPrincipal() { return [{ id: 'project-1' }]; },
 			async first(query: string) {
-				if (query.includes('FROM users')) return { username: 'adrian', display_name: 'Adrian', metadata_json: '{"expertise":["systems"]}' };
+				if (query.includes('FROM users')) return { username: 'adrian', display_name: 'Adrian', metadata_json: '{"expertise":["systems"]}', updated_at: 'account-v1' };
 				if (query.includes('control_plane_auth_credentials')) return { user_id: 'user-1' };
 				return { revoked_at: null };
 			},
@@ -81,10 +81,19 @@ describe('account catalog operations', () => {
 		} }, context);
 		const preferences = await createAccountPreferencesUpdateOperation(fixture.value).handler({ path: {}, query: {}, body: {
 			timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5,
-		} }, context);
-		expect(profile).toEqual({ changed: true });
-		expect(preferences).toEqual({ timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5 });
+		} }, { ...context, ifMatch: '0' });
+		expect(profile).toMatchObject({ changed: true, updatedAt: expect.any(String) });
+		expect(preferences).toMatchObject({ timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5, updatedAt: expect.any(String) });
 		expect(createAccountPreferencesOperation(fixture.value).binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.preferences);
+	});
+
+	it('rejects stale account and preference revisions without mutation', async () => {
+		const fixture = dependencies();
+		await expect(createAccountProfileUpdateOperation(fixture.value).handler({ path: {}, query: {}, body: { displayName: 'Changed' } }, { ...context, ifMatch: 'stale' }))
+			.rejects.toMatchObject({ status: 412, code: 'account_precondition_failed' });
+		await expect(createAccountPreferencesUpdateOperation(fixture.value).handler({ path: {}, query: {}, body: { timeZone: 'UTC' } }, { ...context, ifMatch: 'stale' }))
+			.rejects.toMatchObject({ status: 412, code: 'account_preferences_precondition_failed' });
+		expect(fixture.run).not.toHaveBeenCalled();
 	});
 
 	it('filters notifications by accessible projects and marks one read', async () => {
