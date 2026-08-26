@@ -2,6 +2,7 @@ import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonArray } from '../../../durable-json.ts';
 import type { MinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider/contracts';
+import { capacitySupplyCandidateStatus } from '../../../policy/supply-selection.ts';
 
 type Row = Record<string, unknown>;
 
@@ -91,7 +92,7 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		owner: 'provider availability session', ownerId: text(row.id), column: 'execution_providers_json',
 	}).map((provider) => ({
 		id: String(provider.id ?? '').trim(),
-		status: String(provider.status ?? 'unavailable'),
+		status: capacitySupplyCandidateStatus(provider.status),
 		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(String(provider.pressure)) ? provider.pressure as ProviderSynthesisExecutionProvider['pressure'] : 'normal',

@@ -1,5 +1,5 @@
 import { type CapacitySupplyCandidate } from '@treeseed/sdk/agent-capacity';
-import { selectCapacitySupply } from '../../../policy/supply-selection.ts';
+import { capacitySupplyCandidateStatus,selectCapacitySupply } from '../../../policy/supply-selection.ts';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable-json.ts';
 import { teamSupplyPolicy } from '../../../domain/supply-policy.ts';
@@ -26,7 +26,7 @@ function providers(row: Row, grants: Row[], mode: string): CapacitySupplyCandida
 		return ({
 		capacityProviderId: String(row.capacity_provider_id), membershipId: String(row.membership_id),
 		providerSessionId: String(row.id), grantId: String(grant.id), executionProviderId: String(provider.id ?? ''),
-		status: String(provider.status ?? 'unavailable'),
+		status: capacitySupplyCandidateStatus(provider.status),
 		capabilities: advertised.filter((capability) => granted.has(capability)),
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle','normal','busy','throttled','exhausted'].includes(String(provider.pressure)) ? provider.pressure as CapacitySupplyCandidate['pressure'] : 'normal',
