@@ -141,6 +141,7 @@ export async function commitDiscussionMessage(input: {
 	handoffId?: string | null; parentWorkdayId?: string | null; resultingOperationId?: string | null;
 	assignmentId?: string | null;
 	authoringRef?: string | null;
+	authoringWorkspace?: { workspaceId: string; baseCommitSha: string; baseRef: string } | null;
 }) {
 	const authoringRef = text(input.authoringRef);
 	if (input.authorType === 'agent' && input.assignmentId && !/^refs\/heads\/assignment_[A-Za-z0-9_-]+$/u.test(authoringRef)) {
@@ -178,7 +179,9 @@ export async function commitDiscussionMessage(input: {
 	}
 	const branchName = authoringRef || `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
-		operationKey:discussionWorkspaceOperationKey('message',`${discussionId}\n${messageId}`) });
+		operationKey:discussionWorkspaceOperationKey('message',`${discussionId}\n${messageId}`),
+		...(input.authoringWorkspace ? { existingWorkspace: input.authoringWorkspace } : {}),
+	});
 	const workspace = session.workspace;
 	try {
 		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [

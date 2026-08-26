@@ -2,6 +2,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { openDiscussionWorkspace } from '../../../../src/api/discussions/discussion-workspace.ts';
 
 describe('Discussion workspace authoring', () => {
+	it('reuses an exact assignment workspace without competing for its isolated branch', async () => {
+		const createWorkspace = vi.fn();
+		const closeWorkspace = vi.fn();
+		const existingWorkspace = { workspaceId: 'workspace-assignment-1', baseCommitSha: 'commit-1', baseRef: 'commit-1' };
+		const session = await openDiscussionWorkspace({
+			store: {} as never,
+			connection: { repositoryId: 'repo-1', allowedPaths: ['discussion-messages/**'], client: { createWorkspace, closeWorkspace } },
+			projectId: 'project-1', baseRef: 'commit-2', branchName: 'refs/heads/assignment_1', operationKey: 'message:assignment-1',
+			existingWorkspace,
+		});
+
+		expect(session.workspace).toEqual(existingWorkspace);
+		expect(createWorkspace).not.toHaveBeenCalled();
+		await session.close();
+		expect(closeWorkspace).not.toHaveBeenCalled();
+	});
+
 	it('branches the governed authoring ref from the reconciled exact base ref', async () => {
 		const createWorkspace = vi.fn(async (input) => ({ ...input }));
 		const closeWorkspace = vi.fn(async () => undefined);

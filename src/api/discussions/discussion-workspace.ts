@@ -33,7 +33,9 @@ export async function openDiscussionWorkspace(input: {
 	baseRef: string;
 	branchName: string;
 	operationKey: string;
+	existingWorkspace?: { workspaceId: string; baseCommitSha: string; baseRef: string };
 }) {
+	if (input.existingWorkspace) return { workspace: input.existingWorkspace, async close() {} };
 	const prior = await listOpenTreeDxWorkspaces(input.store, {
 		projectId: input.projectId,
 		repositoryId: input.connection.repositoryId,

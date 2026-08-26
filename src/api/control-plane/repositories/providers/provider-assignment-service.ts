@@ -131,12 +131,17 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 				.map(([agentSlug, requirement]) => ({ agentSlug, requirement }));
 			if (Number(invocation.handoff_depth ?? 0) >= 3 || followupCount >= 16) followupAddresses.splice(0);
 			const messageId = `response-${createHash('sha256').update(`${assignmentId}:${idempotencyKey}`).digest('hex').slice(0, 24)}`;
+			const workspaceId = String(handle.workspaceId ?? '').trim();
+			const baseCommitSha = String(handle.baseCommitSha ?? handle.baseRef ?? '').trim();
+			const baseRef = String(handle.baseRef ?? handle.baseCommitSha ?? '').trim();
+			if (!workspaceId || !baseCommitSha || !baseRef) throw new CapacityGovernanceError('provider_discussion_workspace_required',
+				'Discussion response requires the exact assignment authoring workspace.', 409);
 			const authored = await commitDiscussionMessage({ store: contentStore, projectId: assignment.projectId, teamId: assignment.teamId,
 				principal: { id: assignment.agentId ?? 'project-agent', displayName: assignment.agentId ?? 'Project agent', email: `${assignment.agentId ?? 'agent'}@agents.treeseed.local` },
 				body: markdown, intent: 'discuss', discussionId, messageId, createDiscussion: false, replyTo: sourceMessageId,
 				sourceMessageRefs: assignment.sourceMessageRefs, authorType: 'agent', authorAgentId: assignment.agentId,
 				recipients: followupAddresses.map((address) => address.agentSlug),
-				assignmentId: assignment.id, authoringRef,
+				assignmentId: assignment.id, authoringRef, authoringWorkspace: { workspaceId, baseCommitSha, baseRef },
 			});
 			await suspendAssignmentForDiscussionResponse(store, { assignmentId, teamId: assignment.teamId, leaseToken,
 				discussionId, messageId: authored.message.id, message: String(body.summary ?? markdown.slice(0, 500)),
