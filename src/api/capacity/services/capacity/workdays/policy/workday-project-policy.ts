@@ -64,6 +64,8 @@ export function capacityWorkdayContentRoot(project: WorkdayProject): string {
 	const architecture = record(project.metadata?.architecture ?? project.architecture);
 	const contentPath = text(architecture.contentPath).replace(/^\/+|\/+$/gu, '');
 	if (contentPath) return contentPath;
+	const library = record(record(project.metadata).library);
+	if (text(library.role) === 'library') return '.';
 	throw new CapacityGovernanceError(
 		'capacity_workday_content_path_missing',
 		`Capacity workday project ${project.slug ?? project.id} has no configured content path.`,
