@@ -4,6 +4,7 @@ import { isValidPersonalThemeDraft, normalizeNotificationPreferences } from '@tr
 import { normalizeUsername, validateUsername } from '../../../../auth/profile-validation.ts';
 import { ControlPlaneOperationError, type BoundOperation } from '../operation-registry.ts';
 import type { AccountOperationDependencies } from '../account-operations.ts';
+import { requireAccountRevision, requireRevision } from './concurrency.ts';
 
 function actor(context: { principal?: Record<string, any> }) {
 	if (!context.principal) throw new ControlPlaneOperationError(401, 'authentication_required', 'Authentication is required.');
@@ -20,6 +21,7 @@ export function createAccountAdminOperations(dependencies: AccountOperationDepen
 	return [
 		{ binding: operations.updateUsername, async handler(input, context) {
 			const principal = actor(context), username = normalizeUsername(String((input.body as any).username ?? ''));
+			await requireAccountRevision(dependencies.store, principal.id, context.ifMatch);
 			const validation = validateUsername(username);
 			if (!validation.ok) throw new ControlPlaneOperationError(400, 'invalid_username', validation.message);
 			if (await dependencies.store.first('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id <> ? LIMIT 1', [username, principal.id])
@@ -35,16 +37,18 @@ export function createAccountAdminOperations(dependencies: AccountOperationDepen
 		{ binding: operations.notificationPreferences, async handler(_input, context) {
 			const principal = actor(context);
 			const [preference, globalTypes, overrides] = await Promise.all([
-				dependencies.store.first('SELECT email_cadence FROM user_notification_preferences WHERE user_id = ?', [principal.id]),
+				dependencies.store.first('SELECT email_cadence, updated_at FROM user_notification_preferences WHERE user_id = ?', [principal.id]),
 				dependencies.store.all('SELECT content_type FROM user_notification_global_content_types WHERE user_id = ? ORDER BY content_type', [principal.id]),
 				dependencies.store.all('SELECT project_id, content_type FROM user_notification_project_content_types WHERE user_id = ? ORDER BY project_id, content_type', [principal.id]),
 			]);
 			const grouped = new Map<string, string[]>();
 			for (const row of overrides) grouped.set(row.project_id, [...(grouped.get(row.project_id) ?? []), row.content_type]);
-			return normalizeNotificationPreferences({ emailCadence: preference?.email_cadence, globalContentTypes: globalTypes.map((row) => row.content_type), projectOverrides: [...grouped].map(([projectId, contentTypes]) => ({ projectId, contentTypes })) } as any);
+			return { ...normalizeNotificationPreferences({ emailCadence: preference?.email_cadence, globalContentTypes: globalTypes.map((row) => row.content_type), projectOverrides: [...grouped].map(([projectId, contentTypes]) => ({ projectId, contentTypes })) } as any), updatedAt: String(preference?.updated_at ?? '0') };
 		} },
 		{ binding: operations.updateNotificationPreferences, async handler(input, context) {
 			const principal = actor(context), preferences = normalizeNotificationPreferences(input.body as any), now = new Date().toISOString();
+			const existing = await dependencies.store.first('SELECT updated_at FROM user_notification_preferences WHERE user_id = ?', [principal.id]);
+			requireRevision(existing?.updated_at, context.ifMatch, 'notification_preferences');
 			const allowedProjects = new Set((await dependencies.store.listProjectsForPrincipal(principal)).map((project) => project.id));
 			if (preferences.projectOverrides.some((override) => !allowedProjects.has(override.projectId)))
 				throw new ControlPlaneOperationError(403, 'notification_project_forbidden', 'Notification overrides may reference only accessible projects.');
@@ -57,7 +61,7 @@ export function createAccountAdminOperations(dependencies: AccountOperationDepen
 			for (const contentType of preferences.globalContentTypes) statements.push({ query: 'INSERT INTO user_notification_global_content_types (user_id, content_type) VALUES (?, ?)', params: [principal.id, contentType] });
 			for (const override of preferences.projectOverrides) for (const contentType of override.contentTypes) statements.push({ query: 'INSERT INTO user_notification_project_content_types (user_id, project_id, content_type) VALUES (?, ?, ?)', params: [principal.id, override.projectId, contentType] });
 			await dependencies.store.batch!(statements);
-			return preferences;
+			return { ...preferences, updatedAt: now };
 		} },
 		{ binding: operations.themes, async handler(_input, context) {
 			return { items: (await dependencies.store.all('SELECT * FROM user_personal_themes WHERE user_id = ? ORDER BY updated_at DESC', [actor(context).id])).map(theme) };
@@ -74,11 +78,16 @@ export function createAccountAdminOperations(dependencies: AccountOperationDepen
 			if (!isValidPersonalThemeDraft(draft)) throw new ControlPlaneOperationError(400, 'invalid_theme', 'Provide a valid personal theme.');
 			const now = new Date().toISOString(), existing = await dependencies.store.first('SELECT * FROM user_personal_themes WHERE id = ? AND user_id = ?', [input.path.themeId, principal.id]);
 			if (!existing) throw new ControlPlaneOperationError(404, 'theme_missing', 'The personal theme was not found.');
+			requireRevision(existing.updated_at, context.ifMatch, 'personal_theme');
 			await dependencies.store.run('UPDATE user_personal_themes SET name = ?, normalized_name = ?, base_scheme = ?, palette_json = ?, updated_at = ? WHERE id = ? AND user_id = ?', [draft.name.trim(), draft.name.trim().toLowerCase(), draft.baseScheme, JSON.stringify(draft.palette), now, input.path.themeId, principal.id]);
 			return theme({ ...existing, name: draft.name.trim(), base_scheme: draft.baseScheme, palette_json: JSON.stringify(draft.palette), updated_at: now });
 		} },
 		{ binding: operations.deleteTheme, async handler(input, context) {
-			await dependencies.store.run('DELETE FROM user_personal_themes WHERE id = ? AND user_id = ?', [input.path.themeId, actor(context).id]);
+			const principal = actor(context);
+			const existing = await dependencies.store.first('SELECT updated_at FROM user_personal_themes WHERE id = ? AND user_id = ?', [input.path.themeId, principal.id]);
+			if (!existing) throw new ControlPlaneOperationError(404, 'theme_missing', 'The personal theme was not found.');
+			requireRevision(existing.updated_at, context.ifMatch, 'personal_theme');
+			await dependencies.store.run('DELETE FROM user_personal_themes WHERE id = ? AND user_id = ?', [input.path.themeId, principal.id]);
 			return { deleted: true, id: input.path.themeId };
 		} },
 		{ binding: operations.unlinkProvider, async handler(input, context) {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { createAccountAdminOperations } from '../../../../src/api/control-plane/catalog/accounts/admin-operations.ts';
 
-const context = { principal: { id: 'user-1' }, interface: 'rest' as const, requestId: 'request-1' };
+const context = { principal: { id: 'user-1' }, interface: 'rest' as const, requestId: 'request-1', ifMatch: 'notification-v1' };
 
 function fixture() {
 	const rows = new Map<string, any>();
@@ -11,7 +11,8 @@ function fixture() {
 	const dependencies = { store: {
 		async first(query: string) {
 			if (query.includes('COUNT(*)')) return { count: 2 };
-			if (query.includes('user_notification_preferences')) return { email_cadence: 'weekly' };
+			if (query.includes('user_notification_preferences')) return { email_cadence: 'weekly', updated_at: 'notification-v1' };
+			if (query.includes('FROM users')) return { updated_at: 'account-v1' };
 			return rows.get(query) ?? null;
 		},
 		async all(query: string) {
@@ -30,10 +31,18 @@ describe('Admin account catalog operations', () => {
 		const value = fixture();
 		const read = value.operations.get(CONTROL_PLANE_OPERATIONS.accounts.notificationPreferences.descriptor.operationId)!;
 		const update = value.operations.get(CONTROL_PLANE_OPERATIONS.accounts.updateNotificationPreferences.descriptor.operationId)!;
-		expect(await read.handler({ path: {}, query: {}, body: undefined }, context)).toEqual({ emailCadence: 'weekly', globalContentTypes: ['agents'], projectOverrides: [{ projectId: 'project-1', contentTypes: ['decisions'] }] });
+		expect(await read.handler({ path: {}, query: {}, body: undefined }, context)).toEqual({ emailCadence: 'weekly', globalContentTypes: ['agents'], projectOverrides: [{ projectId: 'project-1', contentTypes: ['decisions'] }], updatedAt: 'notification-v1' });
 		await update.handler({ path: {}, query: {}, body: { emailCadence: 'immediate', globalContentTypes: ['agents'], projectOverrides: [] } }, context);
 		expect(value.batch).toHaveBeenCalledOnce();
 		expect(value.batch.mock.calls[0]![0]).toEqual(expect.arrayContaining([expect.objectContaining({ query: expect.stringContaining('DELETE FROM user_notification_global_content_types') })]));
+	});
+
+	it('rejects a stale notification preference revision before replacing rows', async () => {
+		const value = fixture();
+		const update = value.operations.get(CONTROL_PLANE_OPERATIONS.accounts.updateNotificationPreferences.descriptor.operationId)!;
+		await expect(update.handler({ path: {}, query: {}, body: { emailCadence: 'daily', globalContentTypes: [], projectOverrides: [] } }, { ...context, ifMatch: 'stale' }))
+			.rejects.toMatchObject({ status: 412, code: 'notification_preferences_precondition_failed' });
+		expect(value.batch).not.toHaveBeenCalled();
 	});
 
 	it('rejects provider unlinking when it would remove the last authentication method', async () => {

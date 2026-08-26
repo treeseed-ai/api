@@ -79,8 +79,11 @@ export function createAccountSecurityService(store: any, emailContext: any) {
 		},
 
 		async deletionBlockers(user: Record<string, any>) {
-			const blockers = await accountDeletionBlockers(store, user);
-			return { blockers, canDelete: blockers.length === 0 };
+			const [blockers, account] = await Promise.all([
+				accountDeletionBlockers(store, user),
+				store.first('SELECT updated_at FROM users WHERE id = ? LIMIT 1', [user.id]),
+			]);
+			return { blockers, canDelete: blockers.length === 0, updatedAt: String(account?.updated_at ?? '0') };
 		},
 
 		async removeAccount(user: Record<string, any>, input: Record<string, unknown>): Promise<ServiceResult> {
