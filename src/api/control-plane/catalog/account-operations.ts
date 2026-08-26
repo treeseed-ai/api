@@ -270,22 +270,27 @@ export function createAccountProfileUpdateOperation(dependencies: AccountOperati
 
 function preferenceView(row: Record<string, any> | null) {
 	const interval = Number(row?.real_time_polling_interval_seconds);
-	return { timeZone: row?.time_zone ?? 'UTC', realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
+	return { colorScheme: row?.color_scheme ?? 'fern', themeMode: row?.theme_mode ?? 'system',
+		timeZone: row?.time_zone ?? 'UTC', realTimeUpdates: row ? Number(row.real_time_updates) !== 0 : true,
 		realTimePollingIntervalSeconds: [2, 5, 15, 30].includes(interval) ? interval : 5, updatedAt: String(row?.updated_at ?? '0') };
 }
 
 export function createAccountPreferencesOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.preferences> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.preferences, async handler(_input, context) {
 		const actor = principal(context);
-		return preferenceView(await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]));
+		return preferenceView(await dependencies.store.first('SELECT color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]));
 	} };
 }
 
 export function createAccountPreferencesUpdateOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.updatePreferences> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.updatePreferences, async handler(input, context) {
 		const actor = principal(context), body = input.body as Record<string, unknown>;
-		const existing = await dependencies.store.first('SELECT time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]);
+		const existing = await dependencies.store.first('SELECT color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, updated_at FROM user_preferences WHERE user_id = ? LIMIT 1', [actor.id]);
 		requireRevision(existing?.updated_at, context.ifMatch, 'account_preferences');
+		const colorScheme = optionalString(body.colorScheme) ?? String(existing?.color_scheme ?? 'fern');
+		const themeMode = optionalString(body.themeMode) ?? String(existing?.theme_mode ?? 'system');
+		if (!/^[a-z0-9][a-z0-9-]{0,63}$/u.test(colorScheme)) throw new ControlPlaneOperationError(400, 'invalid_color_scheme', 'Select a valid color scheme.');
+		if (!['light', 'dark', 'system'].includes(themeMode)) throw new ControlPlaneOperationError(400, 'invalid_theme_mode', 'Select a supported theme mode.');
 		const timeZone = optionalString(body.timeZone) ?? String(existing?.time_zone ?? 'UTC');
 		try { new Intl.DateTimeFormat('en', { timeZone }).format(); } catch { throw new ControlPlaneOperationError(400, 'invalid_time_zone', 'Select a valid IANA time zone.'); }
 		const realTimeUpdates = body.realTimeUpdates === undefined ? preferenceView(existing).realTimeUpdates
@@ -294,14 +299,14 @@ export function createAccountPreferencesUpdateOperation(dependencies: AccountOpe
 		if (![2, 5, 15, 30].includes(interval)) throw new ControlPlaneOperationError(400, 'invalid_realtime_polling_interval', 'Select a supported real-time polling interval.');
 		const now = new Date().toISOString();
 		const result = existing
-			? await dependencies.store.run(`UPDATE user_preferences SET time_zone = ?, real_time_updates = ?, real_time_polling_interval_seconds = ?, updated_at = ?
-				WHERE user_id = ? AND updated_at = ?`, [timeZone, realTimeUpdates ? 1 : 0, interval, now, actor.id, context.ifMatch])
+			? await dependencies.store.run(`UPDATE user_preferences SET color_scheme = ?, theme_mode = ?, time_zone = ?, real_time_updates = ?, real_time_polling_interval_seconds = ?, updated_at = ?
+				WHERE user_id = ? AND updated_at = ?`, [colorScheme, themeMode, timeZone, realTimeUpdates ? 1 : 0, interval, now, actor.id, context.ifMatch])
 			: await dependencies.store.run(`INSERT INTO user_preferences (user_id, color_scheme, theme_mode, time_zone, real_time_updates, real_time_polling_interval_seconds, created_at, updated_at)
-				VALUES (?, 'fern', 'system', ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO NOTHING`, [actor.id, timeZone, realTimeUpdates ? 1 : 0, interval, now, now]);
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user_id) DO NOTHING`, [actor.id, colorScheme, themeMode, timeZone, realTimeUpdates ? 1 : 0, interval, now, now]);
 		if (affected(result) !== 1) throw new ControlPlaneOperationError(412, 'account_preferences_precondition_failed', 'The account preferences changed after they were inspected.');
 		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: actor.id, eventType: 'account.preferences.updated', targetType: 'user', targetId: actor.id,
-			data: { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
-		return { timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval, updatedAt: now };
+			data: { colorScheme, themeMode, timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval } });
+		return { colorScheme, themeMode, timeZone, realTimeUpdates, realTimePollingIntervalSeconds: interval, updatedAt: now };
 	} };
 }
 

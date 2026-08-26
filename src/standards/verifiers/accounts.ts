@@ -29,7 +29,10 @@ export async function verifyAccountJourneys(http: VerifierHttp, mailpitOrigin: s
 	expectStatus(await client.request('PATCH', '/v1/auth/web/profile', { displayName: 'Guarantee Owner', website: 'https://example.test' }, { 'if-match': etag }), 200, 'profile update');
 	const preferences = expectStatus(await client.request('GET', '/v1/auth/web/preferences'), 200, 'preferences read');
 	const preferenceTag = preferences.headers.get('etag') ?? '0';
-	expectStatus(await client.request('PATCH', '/v1/auth/web/preferences', { timeZone: 'America/New_York', realTimeUpdates: true }, { 'if-match': preferenceTag }), 200, 'preferences update');
+	const updatedPreferences = expectStatus(await client.request('PATCH', '/v1/auth/web/preferences', {
+		colorScheme: 'fern', themeMode: 'dark', timeZone: 'America/New_York', realTimeUpdates: true,
+	}, { 'if-match': preferenceTag }), 200, 'preferences update');
+	if ((updatedPreferences.data as { themeMode?: string }).themeMode !== 'dark') throw new Error(`Appearance preference was not persisted: ${JSON.stringify(updatedPreferences.data)}`);
 	expectStatus(await client.request('GET', '/v1/auth/web/sessions'), 200, 'session list');
 	expectStatus(await client.request('GET', '/v1/auth/web/notifications'), 200, 'notification list');
 	expectStatus(await client.request('GET', '/v1/auth/web/account/deletion-blockers'), 200, 'account deletion blockers');

@@ -6,6 +6,9 @@ export async function principalForUserMethod(this: PostgresAuthStore, userId: st
     }
     const roles = await this.rolesForUser(userId);
     const permissions = await this.permissionsForUser(userId);
+    const preferences = await this.first<{ color_scheme?: string; theme_mode?: string }>(
+        'SELECT color_scheme, theme_mode FROM user_preferences WHERE user_id = ? LIMIT 1', [userId]);
+    const metadata = parseJson(user.metadata_json, {});
     return {
         userId,
         principal: {
@@ -15,11 +18,15 @@ export async function principalForUserMethod(this: PostgresAuthStore, userId: st
             permissions,
             scopes: this.scopesForPrincipal(permissions),
             metadata: {
-                ...parseJson(user.metadata_json, {}),
+                ...metadata,
+                appearance: preferences ? {
+                    ...(metadata.appearance && typeof metadata.appearance === 'object' ? metadata.appearance : {}),
+                    scheme: preferences.color_scheme ?? 'fern',
+                    mode: preferences.theme_mode ?? 'system',
+                } : metadata.appearance,
                 email: user.email ?? undefined,
                 username: user.username ?? undefined,
             },
         },
     };
 }
-
