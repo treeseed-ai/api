@@ -1,5 +1,7 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
+import { deleteTeamCapacityAggregate } from '../../capacity/services/teams/team-deletion-service.ts';
+import { consumeReauthentication } from '../../app/support/accounts/authentication-password.ts';
 
 export interface TeamOperationDependencies {
 	store: {
@@ -27,6 +29,7 @@ export interface TeamOperationDependencies {
 		restoreTeam(teamId: string, input: { lifecycleVersion: number; now?: Date }): Promise<Record<string, any>>;
 		transferTeamOwnership(teamId: string, input: { fromMembershipId: string; toMembershipId: string; expectedVersion?: string }): Promise<Record<string, any>>;
 		leaveTeam(teamId: string, userId: string): Promise<Record<string, any>>;
+		prepareTeamDeletion(teamId: string, confirmation: string): Promise<Record<string, any>>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
 	};
 	deliverTeamInvite(input: { invite: Record<string, any>; team: Record<string, unknown>; token: string }): Promise<void>;
@@ -378,4 +381,57 @@ export function createTeamLeaveOperation(dependencies: TeamOperationDependencies
 			return result;
 		},
 	};
+}
+
+export function createTeamMemberRemovalBlockersOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.memberRemovalBlockers> {
+	return { binding: CONTROL_PLANE_OPERATIONS.teams.memberRemovalBlockers, async handler(input, context) {
+		await requireTeamManagement(dependencies, input.path.teamId, context);
+		const members = await dependencies.store.listTeamMembers(input.path.teamId);
+		const target = members.find((member) => member.id === input.path.membershipId);
+		if (!target) throw new ControlPlaneOperationError(404, 'member_missing', 'The team member was not found.');
+		const targetRoles = await dependencies.store.listRoleKeysForMembership(input.path.membershipId);
+		const ownerCount = members.filter((member) => member.roles?.includes('team_owner')).length;
+		const blockers = targetRoles.includes('team_owner') && ownerCount <= 1
+			? [{ code: 'last_owner', label: 'Transfer ownership before removing the final owner.' }] : [];
+		return { eligible: blockers.length === 0, blockers };
+	} };
+}
+
+export function createTeamInviteRevokeOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.revokeInvite> {
+	return { binding: CONTROL_PLANE_OPERATIONS.teams.revokeInvite, async handler(input, context) {
+		const access = await requireTeamManagement(dependencies, input.path.teamId, context);
+		await dependencies.store.revokeTeamInvite(input.path.teamId, input.path.inviteId);
+		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id, eventType: 'team.invitation.revoked', targetType: 'team', targetId: input.path.teamId, data: { invitationId: input.path.inviteId } });
+		return { ok: true, invitationId: input.path.inviteId };
+	} };
+}
+
+export function createTeamInviteResendOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.resendInvite> {
+	return { binding: CONTROL_PLANE_OPERATIONS.teams.resendInvite, async handler(input, context) {
+		const access = await requireTeamManagement(dependencies, input.path.teamId, context);
+		const existing = (await dependencies.store.listTeamInvites(input.path.teamId)).find((invite: any) => invite.id === input.path.inviteId);
+		if (!existing || existing.status !== 'pending') throw new ControlPlaneOperationError(404, 'team_invite_missing', 'The pending invitation was not found.');
+		const result = await dependencies.store.createTeamInvite(input.path.teamId, { email: existing.email, roleKey: existing.roleKey, invitedByUserId: access.principal.id });
+		if (!result.ok || !result.invite || !result.token) teamMutationFailure(result, 'team_invite_resend_failed', 'The invitation could not be resent.');
+		await dependencies.deliverTeamInvite({ invite: result.invite, team: access.team, token: result.token });
+		await dependencies.store.revokeTeamInvite(input.path.teamId, input.path.inviteId);
+		return { ok: true, invite: result.invite };
+	} };
+}
+
+export function createTeamDeleteOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.remove> {
+	return { binding: CONTROL_PLANE_OPERATIONS.teams.remove, async handler(input, context) {
+		const access = await requireTeamOwner(dependencies, input.path.teamId, context);
+		const body = input.body as Record<string, unknown>;
+		const prepared = await dependencies.store.prepareTeamDeletion(input.path.teamId, String(body.confirmation ?? ''));
+		if (!prepared.ok) teamMutationFailure(prepared, 'team_delete_failed', 'The team could not be deleted.');
+		const currentVersion = Number(access.team.lifecycleVersion ?? access.team.lifecycle_version);
+		if (Number.isFinite(currentVersion) && Number(context.ifMatch) !== currentVersion)
+			throw new ControlPlaneOperationError(409, 'stale', 'The team changed before deletion could be authorized.');
+		if (!await consumeReauthentication(dependencies.store, access.principal, 'team_delete', body))
+			throw new ControlPlaneOperationError(401, 'reauthentication_required', 'Current credentials were not accepted.');
+		const result = await deleteTeamCapacityAggregate(dependencies.store as any, input.path.teamId, String(body.confirmation ?? ''));
+		if (!result.ok) teamMutationFailure(result, 'team_delete_failed', 'The team could not be deleted.');
+		return { ok: true, deleted: true, teamId: input.path.teamId };
+	} };
 }

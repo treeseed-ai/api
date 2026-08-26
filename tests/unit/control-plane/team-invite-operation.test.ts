@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createTeamInviteOperation } from '../../../src/api/control-plane/catalog/team-operations.ts';
+import { createTeamInviteOperation, createTeamInviteResendOperation } from '../../../src/api/control-plane/catalog/team-operations.ts';
 
 function dependencies(deliverTeamInvite = vi.fn(async () => undefined)) {
 	const revokeTeamInvite = vi.fn(async () => ({ ok: true }));
@@ -43,5 +43,14 @@ describe('team invitation operation', () => {
 			status: 503, code: 'team_invite_delivery_failed',
 		});
 		expect(fixture.revokeTeamInvite).toHaveBeenCalledWith('team-a', 'invite-1');
+	});
+
+	it('rotates the invitation token on resend without returning either token', async () => {
+		const fixture = dependencies();
+		fixture.value.store.listTeamInvites = async () => [{ id: 'invite-old', email: 'member@example.test', roleKey: 'contributor', status: 'pending' }];
+		const output = await createTeamInviteResendOperation(fixture.value).handler({ path: { teamId: 'team-a', inviteId: 'invite-old' }, query: {}, body: {} }, { principal: { id: 'user-1' }, interface: 'rest', requestId: 'request-1' });
+		expect(output).toEqual({ ok: true, invite: expect.objectContaining({ id: 'invite-1' }) });
+		expect(JSON.stringify(output)).not.toContain('secret-token');
+		expect(fixture.revokeTeamInvite).toHaveBeenCalledWith('team-a', 'invite-old');
 	});
 });
