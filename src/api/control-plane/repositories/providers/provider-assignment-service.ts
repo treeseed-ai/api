@@ -17,6 +17,16 @@ type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: 
 
 function objectValue(value: unknown): Record<string, unknown> { return record(value); }
 
+export function discussionInvocationProvenance(invocation: Record<string, unknown>) {
+	let metadata = record(invocation.metadata_json);
+	if (typeof invocation.metadata_json === 'string') try { metadata = record(JSON.parse(invocation.metadata_json)); } catch { metadata = {}; }
+	return {
+		metadata,
+		discussionId: String(metadata.discussionId ?? '').trim(),
+		sourceMessageId: String(metadata.sourceMessageId ?? '').trim(),
+	};
+}
+
 function providerEventInput(assignment: Record<string, unknown>, body: Record<string, unknown>) {
 	const id = typeof body.id === 'string' ? body.id.trim() : '';
 	const eventType = typeof body.eventType === 'string' ? body.eventType.trim() : '';
@@ -93,12 +103,11 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 				schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId, invocationId: assignment.invocationId,
 				messageRef: String(invocation.final_message_ref), status: String(record(invocation.response_json).outcome) === 'abstained' ? 'abstained' : 'responded', settledAt: String(invocation.completed_at ?? assignment.returnedAt ?? new Date().toISOString()),
 			};
-			const metadata = record(assignment.metadata); const handle = record(assignment.treedxProxyHandle);
-			const discussionId = String(metadata.discussionId ?? '').trim();
-			const sourceMessageId = String(metadata.sourceMessageId ?? '').trim();
+			const provenance = discussionInvocationProvenance(invocation); const invocationMetadata = provenance.metadata;
+			const { discussionId, sourceMessageId } = provenance; const handle = record(assignment.treedxProxyHandle);
 			const authoringRef = String(handle.branchName ?? '').trim();
 			const outcome = body.outcome === 'abstained' ? 'abstained' : 'responded';
-			const communication = record(record(invocation.metadata_json).communication);
+			const communication = record(invocationMetadata.communication);
 			if (outcome === 'abstained' && String(communication.requirement ?? 'required') === 'required') throw new CapacityGovernanceError(
 				'communication_required_response_missing', 'A directly addressed agent must respond and cannot abstain.', 409);
 			const markdown = outcome === 'abstained'
