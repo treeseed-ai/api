@@ -163,8 +163,8 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const headers = { authorization: 'Bearer test-token' };
 		expect(await (await app.request('/v1/teams', { headers })).json()).toEqual({ data: { teams: [{ id: 'team-a', name: 'TreeSeed' }] } });
-		expect(await (await app.request('/v1/teams/by-name/treeseed/profile', { headers })).json()).toEqual({ data: { id: 'team-a', name: 'TreeSeed' } });
-		expect((await app.request('/v1/teams/by-name/missing/profile', { headers })).status).toBe(404);
+		expect(await (await app.request('/v1/teams/by-name/treeseed/profile')).json()).toEqual({ data: { id: 'team-a', name: 'TreeSeed' } });
+		expect((await app.request('/v1/teams/by-name/missing/profile')).status).toBe(404);
 		expect(registry.require('teams.list').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.list);
 		expect(registry.require('teams.profile.show').binding).toBe(CONTROL_PLANE_OPERATIONS.teams.profile);
 	});
