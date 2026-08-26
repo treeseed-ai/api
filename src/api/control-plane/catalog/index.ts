@@ -1,5 +1,5 @@
 import { OperationRegistry } from './operation-registry.ts';
-import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation, createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
+import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountPublicProfileOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation, createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
 import { createAccountAdminOperations } from './accounts/admin-operations.ts';
 import { createCapacityPlanOperations, type CapacityPlanOperationDependencies } from './capacity/plans.ts';
 import { createPlanningAndEstimateOperations, type PlanningAndEstimateOperationDependencies } from './capacity/planning-and-estimates.ts';
@@ -35,6 +35,7 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		createReadinessOperation(dependencies),
 		createDeepHealthOperation(dependencies),
 		createCurrentAccountOperation(dependencies),
+		createAccountPublicProfileOperation(dependencies),
 		createAccountRegisterOperation(dependencies),
 		createAccountEmailConfirmOperation(dependencies),
 		createAccountPasswordResetRequestOperation(dependencies),

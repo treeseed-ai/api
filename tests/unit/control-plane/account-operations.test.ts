@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
-import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
+import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountPublicProfileOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation } from '../../../src/api/control-plane/catalog/account-operations.ts';
 import { createAccountSecurityService } from '../../../src/api/control-plane/accounts/account-security-service.ts';
 
 const context = { principal: { id: 'user-1', displayName: 'Adrian', metadata: { sessionId: 'current-session' } },
@@ -11,6 +11,7 @@ function dependencies() {
 	const recordAuditEvent = vi.fn(async () => undefined);
 	return { run, recordAuditEvent, value: {
 		store: {
+			async loadUserProfileByUsername(username: string) { return username === 'adrian' ? { user: { username: 'adrian', displayName: 'Adrian' }, knowledge: [] } : null; },
 			async listTeamsForPrincipal() { return []; },
 			async listProjectsForPrincipal() { return [{ id: 'project-1' }]; },
 			async first(query: string) {
@@ -43,6 +44,14 @@ function dependencies() {
 }
 
 describe('account catalog operations', () => {
+	it('serves public user profiles without requiring a principal', async () => {
+		const operation = createAccountPublicProfileOperation(dependencies().value);
+		await expect(operation.handler({ path: { username: 'adrian' }, query: {}, body: undefined }, { interface: 'rest', requestId: 'public-1' }))
+			.resolves.toMatchObject({ user: { username: 'adrian' } });
+		await expect(operation.handler({ path: { username: 'missing' }, query: {}, body: undefined }, { interface: 'rest', requestId: 'public-2' }))
+			.rejects.toMatchObject({ status: 404, code: 'user_profile_missing' });
+		expect(operation.binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.publicProfile);
+	});
 	it('projects identity, emails, and sessions without transport-owned behavior', async () => {
 		const fixture = dependencies();
 		const input = { path: {}, query: {}, body: undefined };
