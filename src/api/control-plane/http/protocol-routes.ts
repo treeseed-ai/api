@@ -23,6 +23,7 @@ export function installControlPlaneProtocolRoutes(
 	confirmations?: ConfirmationService,
 	mcpBusForPrincipal?: (principal: AuthenticatedPrincipal['principal']) => Promise<ServerEventBus | undefined>,
 	publicBaseUrl = process.env.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3002',
+	presentationBaseUrl = process.env.TREESEED_API_AUTH_APPROVAL_BASE_URL ?? process.env.TREESEED_SITE_URL ?? publicBaseUrl,
 ) {
 	const document = generateOpenApi(registry, publicBaseUrl.replace(/\/+$/u, ''));
 	const digest = openApiDigest(document);
@@ -64,7 +65,7 @@ export function installControlPlaneProtocolRoutes(
 	app.get('/openapi.json', (context) => context.json(document, 200, { 'x-treeseed-contract-digest': digest }));
 	app.get('/mcp/catalog.json', (context) => context.json(mcpCatalog, 200, { 'x-treeseed-contract-digest': mcpDigest }));
 	app.get('/docs', (context) => context.html(`<!doctype html><html><head><title>TreeSeed Control Plane</title></head><body><main><h1>TreeSeed Control Plane</h1><p>OpenAPI 3.1.1 contract: <a href="/openapi.json">openapi.json</a> (<code>${digest}</code>)</p><p>MCP endpoint: <code>POST /mcp</code>, protocol <code>2026-07-28</code>. <a href="/mcp/catalog.json">MCP catalog</a> (<code>${mcpDigest}</code>).</p></main></body></html>`));
-	installOAuthProtocolRoutes(app, oauthProvider, authenticateBearerToken);
+	installOAuthProtocolRoutes(app, oauthProvider, authenticateBearerToken, presentationBaseUrl);
 	app.route('/mcp', protocolApp);
 
 	for (const operation of registry.operations.values()) {
