@@ -59,6 +59,62 @@ projectArchitecture:
   contentPublishTarget:
     kind: cloudflare_r2
     prefix: packages/api
+development:
+  schemaVersion: treeseed.development-runtime/v1
+  project: { id: api, repository: treeseed-ai/api }
+  defaults: { leaseSeconds: 14400, restoreOnFailure: true }
+  targets:
+    - id: service
+      kind: live-api
+      platforms: [linux-amd64, linux-arm64, darwin-arm64, darwin-amd64]
+      runtimeRequirements: [node>=22, postgresql]
+      sourceRoots: [src, migrations]
+      ignoredPaths: [dist, node_modules]
+      operations:
+        start: { command: node, args: [--watch, --import, tsx, src/api/support/server.ts], environment: { HOST: 127.0.0.1, PORT: "3000" }, timeoutSeconds: 86400 }
+        build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
+        verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
+      ready: { kind: http, path: /v1/health/ready, expectedStatus: 200, timeoutSeconds: 120 }
+      outputs: [{ path: docs/api/openapi.json, mediaType: application/vnd.oai.openapi+json, digestAlgorithm: sha256 }]
+      endpoints: [{ id: http, protocol: http, port: 3000, canonicalAlias: api.treeseed.localhost, visibility: host, authentication: application }]
+      dependencies: [{ id: sdk, target: package, locality: local, reaction: restart }]
+      statePolicy: shared-compatible
+      migrationPolicy: explicit-review
+      secretRefs: { TREESEED_DATABASE_URL: api-database-url }
+      shutdown: { graceSeconds: 30, activeWorkPolicy: drain }
+      resources: {}
+      logs: [.treeseed/development/api.log]
+      forbiddenOperations: [automatic-shared-migration, credential-log]
+      freeze:
+        kind: archive
+        operation: { command: npm, args: [pack, --json], environment: {}, timeoutSeconds: 1800 }
+        artifacts: [treeseed-api-*.tgz]
+        contractOperations: []
+      promotion: { liveAdmissible: false, candidateRequiresVerification: true }
+    - id: operations-runner
+      kind: rebuild-restart
+      platforms: [linux-amd64, linux-arm64]
+      runtimeRequirements: [node>=22]
+      sourceRoots: [src/operations-runner]
+      ignoredPaths: [dist, node_modules]
+      operations:
+        build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
+        start: { command: npm, args: [run, start:runner], environment: {}, timeoutSeconds: 86400 }
+        verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
+      ready: { kind: process, graceSeconds: 5 }
+      outputs: [{ path: dist/operations-runner, mediaType: application/vnd.treeseed.node-runtime, digestAlgorithm: sha256 }]
+      endpoints: []
+      dependencies:
+        - { id: sdk, target: package, locality: local, reaction: rebuild }
+        - { id: api, target: service, locality: local, reaction: restart }
+      statePolicy: shared-compatible
+      migrationPolicy: explicit-review
+      secretRefs: { TREESEED_DATABASE_URL: api-database-url }
+      shutdown: { graceSeconds: 60, activeWorkPolicy: drain }
+      resources: {}
+      logs: [.treeseed/development/operations-runner.log]
+      forbiddenOperations: [hot-reload, automatic-assignment-cancel]
+      promotion: { liveAdmissible: false, candidateRequiresVerification: true }
 localDev:
   services:
     api:
