@@ -397,7 +397,8 @@ export function createTeamMemberRemovalBlockersOperation(dependencies: TeamOpera
 export function createTeamInviteRevokeOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.revokeInvite> {
 	return { binding: CONTROL_PLANE_OPERATIONS.teams.revokeInvite, async handler(input, context) {
 		const access = await requireTeamManagement(dependencies, input.path.teamId, context);
-		await dependencies.store.revokeTeamInvite(input.path.teamId, input.path.inviteId);
+		const result = await dependencies.store.revokeTeamInvite(input.path.teamId, input.path.inviteId, context.ifMatch);
+		if (!result.ok) teamMutationFailure(result, 'team_invite_revoke_failed', 'The invitation could not be revoked.');
 		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id, eventType: 'team.invitation.revoked', targetType: 'team', targetId: input.path.teamId, data: { invitationId: input.path.inviteId } });
 		return { ok: true, invitationId: input.path.inviteId };
 	} };
@@ -408,10 +409,14 @@ export function createTeamInviteResendOperation(dependencies: TeamOperationDepen
 		const access = await requireTeamManagement(dependencies, input.path.teamId, context);
 		const existing = (await dependencies.store.listTeamInvites(input.path.teamId)).find((invite: any) => invite.id === input.path.inviteId);
 		if (!existing || existing.status !== 'pending') throw new ControlPlaneOperationError(404, 'team_invite_missing', 'The pending invitation was not found.');
-		const result = await dependencies.store.createTeamInvite(input.path.teamId, { email: existing.email, roleKey: existing.roleKey, invitedByUserId: access.principal.id });
+		const result = await dependencies.store.createTeamInvite(input.path.teamId, { email: existing.email, roleKey: existing.roleKey, invitedByUserId: access.principal.id, replaceInviteId: existing.id });
 		if (!result.ok || !result.invite || !result.token) teamMutationFailure(result, 'team_invite_resend_failed', 'The invitation could not be resent.');
-		await dependencies.deliverTeamInvite({ invite: result.invite, team: access.team, token: result.token });
-		await dependencies.store.revokeTeamInvite(input.path.teamId, input.path.inviteId);
+		try {
+			await dependencies.deliverTeamInvite({ invite: result.invite, team: access.team, token: result.token });
+		} catch {
+			await dependencies.store.revokeTeamInvite(input.path.teamId, result.invite.id).catch(() => undefined);
+			throw new ControlPlaneOperationError(503, 'team_invite_delivery_failed', 'The invitation could not be delivered. Try again later.');
+		}
 		return { ok: true, invite: result.invite };
 	} };
 }
