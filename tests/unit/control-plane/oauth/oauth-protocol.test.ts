@@ -10,6 +10,11 @@ describe('OAuth protocol', () => {
 		const revokeOAuthToken = vi.fn();
 		const provider = {
 			async approveDeviceFlow() { return { ok: true as const }; },
+			async describeDeviceFlow({ userCode }: { userCode: string }) {
+				if (userCode !== 'ABCD-EFGH') throw new Error('unknown');
+				return { schemaVersion: 'treeseed.oauth.device-approval-presentation/v1' as const, clientId: 'trsd', clientName: 'TreeSeed CLI',
+					userCode, scopes: ['treeseed:read' as const], expiresAt: '2026-08-27T12:00:00.000Z', status: 'pending' as const };
+			},
 			async authenticatePassword(identifier: string, password: string) {
 				return identifier === 'human@example.test' && password === 'correct-password'
 					? { principal: { id: 'user-a', displayName: 'Human', scopes: ['treeseed:read'] } }
@@ -49,8 +54,15 @@ describe('OAuth protocol', () => {
 		const started = await app.request('/oauth/device_authorization', { method: 'POST',
 			headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'client_id=trsd&scope=treeseed%3Aread' });
 		expect(await started.json()).toMatchObject({ device_code: 'device-code', user_code: 'ABCD-EFGH', expires_in: 600 });
-		const approvalPage = await app.request('/auth/device/approve?user_code=ABCD-EFGH');
-		expect(approvalPage.status).toBe(404);
+		const unauthenticatedPresentation = await app.request('/auth/device/approve?user_code=ABCD-EFGH');
+		expect(unauthenticatedPresentation.status).toBe(401);
+		const approvalPresentation = await app.request('/auth/device/approve?user_code=ABCD-EFGH', { headers: { authorization: 'Bearer user-session' } });
+		expect(await approvalPresentation.json()).toMatchObject({ schemaVersion: 'treeseed.oauth.device-approval-presentation/v1',
+			clientId: 'trsd', userCode: 'ABCD-EFGH', scopes: ['treeseed:read'], status: 'pending' });
+		expect(approvalPresentation.headers.get('cache-control')).toBe('no-store');
+		const expiredPresentation = await app.request('/auth/device/approve?user_code=EXPIRED-CODE', { headers: { authorization: 'Bearer user-session' } });
+		expect(await expiredPresentation.json()).toMatchObject({ error: 'invalid_grant',
+			error_description: expect.stringContaining('Request a new code') });
 		const deviceApproval = await app.request('/auth/device/approve', { method: 'POST', headers: {
 			'content-type': 'application/json', authorization: 'Bearer user-session',
 		}, body: JSON.stringify({ userCode: 'ABCD-EFGH' }) });

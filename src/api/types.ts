@@ -1,5 +1,5 @@
 import type { Hono } from 'hono';
-import type { ApiPrincipal } from '@treeseed/sdk/operator-contracts';
+import type { ApiPrincipal, OAuthDeviceApprovalPresentation } from '@treeseed/sdk/operator-contracts';
 
 export type { ApiPrincipal };
 export type ApiScope = string;
@@ -8,6 +8,7 @@ export interface DeviceCodeStartResponse { ok: true; deviceCode: string; userCod
 export type DeviceCodePollResponse = { ok: true; status: 'pending'; intervalSeconds: number } | { ok: true; status: 'approved'; accessToken: string; refreshToken: string; tokenType: 'Bearer'; expiresAt: string; expiresInSeconds: number; principal: ApiPrincipal } | { ok: false; status: 'expired' | 'invalid' | 'already_used'; error: string };
 export interface DeviceCodePollRequest { deviceCode: string }
 export interface DeviceCodeApproveRequest { userCode: string; principalId: string; displayName?: string; scopes?: ApiScope[]; metadata?: Record<string, unknown> }
+export interface DeviceCodeApprovalPresentationRequest { userCode: string }
 export interface TokenRefreshRequest { refreshToken: string }
 export interface TokenRefreshResponse { ok: true; accessToken: string; refreshToken: string; tokenType: 'Bearer'; expiresAt: string; expiresInSeconds: number; principal: ApiPrincipal }
 export interface AuthorizationCodeStartRequest { clientId: string; userId: string; redirectUri: string; codeChallenge: string; scopes: string[] }
@@ -26,6 +27,7 @@ export interface ApiAuthProvider {
 	exchangeAuthorizationCode(request: AuthorizationCodeExchangeRequest): Promise<TokenRefreshResponse>;
 	revokeOAuthToken(token: string): Promise<void>;
 	approveDeviceFlow(request: DeviceCodeApproveRequest): Promise<{ ok: true }>;
+	describeDeviceFlow(request: DeviceCodeApprovalPresentationRequest): Promise<OAuthDeviceApprovalPresentation>;
 	authenticatePassword?(identifier: string, password: string): Promise<{ principal: ApiPrincipal } | null>;
 	authenticateBearerToken(token: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;
 	authenticateServiceCredential(serviceId: string, secret: string): Promise<{ principal: ApiPrincipal; credential: ApiCredential } | null>;
