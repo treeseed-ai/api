@@ -397,7 +397,8 @@ export function createTeamMemberRemovalBlockersOperation(dependencies: TeamOpera
 export function createTeamInviteRevokeOperation(dependencies: TeamOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.teams.revokeInvite> {
 	return { binding: CONTROL_PLANE_OPERATIONS.teams.revokeInvite, async handler(input, context) {
 		const access = await requireTeamManagement(dependencies, input.path.teamId, context);
-		await dependencies.store.revokeTeamInvite(input.path.teamId, input.path.inviteId);
+		const result = await dependencies.store.revokeTeamInvite(input.path.teamId, input.path.inviteId, context.ifMatch);
+		if (!result.ok) teamMutationFailure(result, 'team_invite_revoke_failed', 'The invitation could not be revoked.');
 		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id, eventType: 'team.invitation.revoked', targetType: 'team', targetId: input.path.teamId, data: { invitationId: input.path.inviteId } });
 		return { ok: true, invitationId: input.path.inviteId };
 	} };
