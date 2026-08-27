@@ -16,6 +16,7 @@ export { createServiceCredentialMethod } from './configuration/create-service-cr
 export { rotateServiceCredentialMethod } from './configuration/rotate-service-credential.ts';
 export { upsertServiceCredentialMethod } from './configuration/upsert-service-credential.ts';
 export { approveDeviceFlowMethod } from './runtime/approve-device-flow.ts';
+export { describeDeviceFlowMethod } from './runtime/describe-device-flow.ts';
 export { exchangeAuthorizationCodeMethod } from './runtime/exchange-authorization-code.ts';
 export { pollDeviceFlowMethod } from './runtime/poll-device-flow.ts';
 export { startAuthorizationCodeMethod } from './runtime/start-authorization-code.ts';

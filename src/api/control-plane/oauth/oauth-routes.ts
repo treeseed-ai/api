@@ -1,4 +1,5 @@
 import type { Hono } from 'hono';
+import type { OAuthDeviceApprovalPresentation } from '@treeseed/sdk/operator-contracts';
 import { authorizationServerMetadata, isFirstPartyOAuthClient, normalizeRequestedScopes, protectedResourceMetadata } from './oauth-metadata.ts';
 import { clientAllowsRedirect, resolveOAuthClient } from './oauth-clients.ts';
 
@@ -25,6 +26,7 @@ interface ApprovedTokenResult {
 export interface OAuthRuntimeProvider {
 	startDeviceFlow(request: { clientName: string; scopes: string[] }): Promise<DeviceStartResult>;
 	approveDeviceFlow(request: { userCode: string; principalId: string; displayName?: string; metadata?: Record<string, unknown> }): Promise<{ ok: true }>;
+	describeDeviceFlow(request: { userCode: string }): Promise<OAuthDeviceApprovalPresentation>;
 	pollDeviceFlow(request: { deviceCode: string }): Promise<ApprovedTokenResult | { ok?: boolean; status: string; intervalSeconds?: number; error?: string }>;
 	refreshAccessToken(request: { refreshToken: string }): Promise<ApprovedTokenResult>;
 	startAuthorizationCode(request: { clientId: string; userId: string; redirectUri: string; codeChallenge: string; scopes: string[] }): Promise<{ code: string; expiresInSeconds: number }>;
@@ -70,6 +72,20 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 	const adminCallbackUrl = presentationOrigin ? `${presentationOrigin}/auth/callback/treeseed` : undefined;
 	app.get('/.well-known/oauth-protected-resource/mcp', (context) => context.json(protectedResourceMetadata(context.req.url)));
 	app.get('/.well-known/oauth-authorization-server', (context) => context.json(authorizationServerMetadata(context.req.url, presentationBaseUrl)));
+
+	app.get('/auth/device/approve', async (context) => {
+		if (!provider || !authenticateBearer) return oauthError(context, 503, 'temporarily_unavailable', 'OAuth device approval is not configured.');
+		const authorization = context.req.header('authorization') ?? '';
+		const authenticated = authorization.startsWith('Bearer ') ? await authenticateBearer(authorization.slice(7).trim()) : null;
+		if (!authenticated) return oauthError(context, 401, 'invalid_token', 'An authenticated user session is required.');
+		const userCode = context.req.query('user_code')?.trim().toUpperCase() ?? '';
+		if (!userCode) return oauthError(context, 400, 'invalid_request', 'user_code is required.');
+		try {
+			return context.json(await provider.describeDeviceFlow({ userCode }), 200, { 'cache-control': 'no-store', pragma: 'no-cache' });
+		} catch {
+			return oauthError(context, 400, 'invalid_grant', 'The device code is unknown, expired, or no longer pending. Request a new code from the CLI.');
+		}
+	});
 
 	app.post('/auth/device/approve', async (context) => {
 		if (!provider || !authenticateBearer) return oauthError(context, 503, 'temporarily_unavailable', 'OAuth device approval is not configured.');
