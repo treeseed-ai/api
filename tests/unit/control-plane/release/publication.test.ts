@@ -47,6 +47,20 @@ describe('managed API release publication', () => {
 		expect(bundle.runtime.compose.files).toEqual([{ path: 'compose.yml', digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) }]);
 	});
 
+	it('keeps live source inside private managed networks with loopback-only ingress', () => {
+		const compose = readFileSync('compose.development.yml', 'utf8');
+		const manifest = parse(readFileSync('treeseed.package.yaml', 'utf8')) as { development: { targets: Array<{ id: string; operations: { start?: { command: string; args: string[] } }; secretRefs: Record<string, string> }> } };
+		const service = manifest.development.targets.find((target) => target.id === 'service');
+		expect(compose).toContain('127.0.0.1:3000:3000');
+		expect(compose).toContain('name: treeseed-api_private');
+		expect(compose).toContain('name: treeseed-edge');
+		expect(compose).toContain('name: treeseed-platform');
+		expect(compose).not.toMatch(/network_mode:\s*host/u);
+		expect(compose).not.toMatch(/5432:5432/u);
+		expect(service?.operations.start).toMatchObject({ command: 'docker', args: expect.arrayContaining(['compose', 'compose.development.yml', 'treeseed-api-development']) });
+		expect(service?.secretRefs).toMatchObject({ TREESEED_DATABASE_URL: 'api-database-url', SESSION_SECRET: 'api-session-secret' });
+	});
+
 	it('publishes Compose-only runtime revisions without rebuilding images', () => {
 		const workflow = parse(readFileSync('.github/workflows/publish-runtime.yml', 'utf8')) as { on?: { workflow_dispatch?: unknown }; jobs: Record<string, { environment?: string; permissions?: Record<string, string> }> };
 		expect(workflow.on?.workflow_dispatch).toBeDefined();
