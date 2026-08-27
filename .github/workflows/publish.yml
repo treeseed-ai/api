@@ -1,31 +1,31 @@
-name: Publish TreeSeed API images
+name: Build or Promote TreeSeed API Candidate
 
 on:
   push:
-    tags:
-      - "*.*.*"
-      - "!*-runtime.*"
+    branches: [staging]
+    tags: ["*.*.*", "!*-runtime.*"]
 
 jobs:
-  verify:
-    if: startsWith(github.ref, 'refs/tags/')
+  candidate-source:
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-24.04
     permissions: { contents: read }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: { node-version: 24 }
-      - run: npm run release:setup
-      - run: npm run release:check-tag
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run verify:direct
+      - run: mkdir -p source-assets && npm pack --json --ignore-scripts --pack-destination source-assets && npm sbom --sbom-format cyclonedx > source-assets/sbom.cdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: { name: "api-source-${{ github.sha }}", path: source-assets/, if-no-files-found: error }
 
-  build:
-    needs: verify
+  candidate-build:
+    if: github.ref == 'refs/heads/staging'
+    needs: candidate-source
     runs-on: ${{ matrix.runner }}
-    permissions: { contents: read, id-token: write, packages: write }
     environment: production
     strategy:
-      fail-fast: true
       matrix:
         include:
           - { image: "treeseed/api", target: api, arch: amd64, platform: "linux/amd64", runner: ubuntu-24.04 }
@@ -36,112 +36,84 @@ jobs:
           - { image: "treeseed/api-postgres", target: database, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with: { node-version: 24 }
-      - run: npm ci --ignore-scripts
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        with: { username: "${{ vars.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
           target: ${{ matrix.target }}
           platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ matrix.image }}:${{ github.ref_name }}-${{ matrix.arch }}
+          tags: ${{ matrix.image }}:candidate-${{ github.sha }}-${{ matrix.arch }}
           sbom: true
           provenance: mode=max
 
-  manifest:
-    needs: build
+  candidate-seal:
+    if: github.ref == 'refs/heads/staging'
+    needs: candidate-build
     runs-on: ubuntu-24.04
-    permissions: { contents: read, packages: write }
-    environment: production
-    strategy:
-      matrix:
-        image: ["treeseed/api", "treeseed/op-runner", "treeseed/api-postgres"]
-    steps:
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Publish and read back multi-architecture manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          image="${{ matrix.image }}"; version="${GITHUB_REF_NAME#v}"
-          docker buildx imagetools create -t "${image}:${version}" "${image}:${version}-amd64" "${image}:${version}-arm64"
-          for ref in "${image}:${version}-amd64" "${image}:${version}-arm64" "${image}:${version}"; do
-            raw="$(docker buildx imagetools inspect --raw "${ref}")"
-            grep -q '"vnd.docker.reference.type"[[:space:]]*:[[:space:]]*"attestation-manifest"' <<<"${raw}"
-            grep -q '"vnd.docker.reference.digest"[[:space:]]*:[[:space:]]*"sha256:' <<<"${raw}"
-          done
-
-  component-release:
-    needs: manifest
-    runs-on: ubuntu-24.04
-    permissions: { contents: read, packages: read }
     environment: production
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: { node-version: 24 }
-      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts --no-audit --no-fund
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Read exact Docker Hub digests
-        id: images
+        with: { username: "${{ vars.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: "api-source-${{ github.sha }}", path: release-assets }
+      - name: Seal exact manifests and component assets
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
           for pair in api=treeseed/api runner=treeseed/op-runner database=treeseed/api-postgres; do
-            name="${pair%%=*}"; image="${pair#*=}"
-            digest="$(docker buildx imagetools inspect "${image}:${version}" --format '{{json .Manifest}}' | jq -r '.digest')"
-            [[ "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; echo "${name}=${digest}" >> "$GITHUB_OUTPUT"
+            key="${pair%%=*}"; image="${pair#*=}"; candidate="candidate-${GITHUB_SHA}"
+            docker buildx imagetools create -t "${image}:${candidate}" "${image}:${candidate}-amd64" "${image}:${candidate}-arm64"
+            digest="$(docker buildx imagetools inspect "${image}:${candidate}" --format '{{json .Manifest}}' | jq -r '.digest')"
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; export "TREESEED_${key^^}_DIGEST=$digest"
           done
-      - name: Build exact component release
-        env:
-          TREESEED_RELEASE: ${{ github.ref_name }}
-          TREESEED_SOURCE_COMMIT: ${{ github.sha }}
-          TREESEED_API_DIGEST: ${{ steps.images.outputs.api }}
-          TREESEED_RUNNER_DIGEST: ${{ steps.images.outputs.runner }}
-          TREESEED_DATABASE_DIGEST: ${{ steps.images.outputs.database }}
-        run: node --import tsx scripts/release/create-component-release.ts
-      - name: Build immutable external verifier artifact
-        run: npm run build:dist && npm pack --ignore-scripts --pack-destination release-assets
+          export TREESEED_RELEASE="$(node -p "require('./package.json').version")" TREESEED_SOURCE_COMMIT="$GITHUB_SHA"
+          export TREESEED_RUNNER_DIGEST TREESEED_DATABASE_DIGEST TREESEED_API_DIGEST
+          node --import tsx scripts/release/create-component-release.ts
+          npm run release:custody -- seal release-assets/release-evidence-v1.json release-assets
+          npm run release:custody -- verify release-assets/release-evidence-v1.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: api-component-release-${{ github.sha }}
-          path: release-assets/
-          if-no-files-found: error
+        with: { name: "api-candidate-${{ github.sha }}", path: release-assets/, if-no-files-found: error, retention-days: 30 }
 
-  prerelease:
-    needs: [verify, manifest, component-release]
-    if: contains(github.ref_name, '-rc.')
+  promote:
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
-    permissions: { contents: write }
+    permissions: { actions: read, contents: write }
+    environment: production
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with: { name: "api-component-release-${{ github.sha }}", path: release-assets }
-      - env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
-        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --generate-notes --verify-tag --prerelease
-
-  release:
-    needs: [verify, manifest, component-release]
-    if: ${{ !contains(github.ref_name, '-') }}
-    runs-on: ubuntu-24.04
-    permissions: { contents: write }
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with: { name: "api-component-release-${{ github.sha }}", path: release-assets }
-      - env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
-        run: gh release create "${GITHUB_REF_NAME}" release-assets/* --generate-notes --verify-tag
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 24 }
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with: { username: "${{ vars.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - name: Download accepted staging candidate
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/staging)"
+          run_id="$(gh run list --workflow publish.yml --branch staging --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          test -n "$run_id"; gh run download "$run_id" --name "api-candidate-${GITHUB_SHA}" --dir candidate
+          npm run release:check-tag
+          npm run release:custody -- verify candidate/release-evidence-v1.json
+      - name: Promote exact OCI manifests without building
+        run: |
+          node -e "const e=require('./candidate/release-evidence-v1.json'); for(const a of e.artifacts.filter(x=>x.kind==='oci-image')) console.log(a.identity)" | while read -r identity; do
+            image="${identity%@*}"; digest="${identity#*@}"
+            docker buildx imagetools inspect "${image}@${digest}" >/dev/null
+            docker buildx imagetools create -t "${image}:${GITHUB_REF_NAME}" "${image}@${digest}"
+            test "$(docker buildx imagetools inspect "${image}:${GITHUB_REF_NAME}" --format '{{json .Manifest}}' | jq -r '.digest')" = "$digest"
+          done
+      - name: Publish unchanged release assets
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        run: |
+          flags=(); if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" candidate/* --generate-notes --verify-tag "${flags[@]}"
