@@ -431,6 +431,8 @@ export function createTeamDeleteOperation(dependencies: TeamOperationDependencie
 			throw new ControlPlaneOperationError(401, 'reauthentication_required', 'Current credentials were not accepted.');
 		const result = await deleteTeamCapacityAggregate(dependencies.store as any, input.path.teamId, String(body.confirmation ?? ''));
 		if (!result.ok) teamMutationFailure(result, 'team_delete_failed', 'The team could not be deleted.');
+		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
+			eventType: 'team.deleted', targetType: 'team', targetId: input.path.teamId });
 		return { ok: true, deleted: true, teamId: input.path.teamId };
 	} };
 }

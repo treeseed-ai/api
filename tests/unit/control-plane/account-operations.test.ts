@@ -16,6 +16,7 @@ function dependencies() {
 			async listProjectsForPrincipal() { return [{ id: 'project-1' }]; },
 			async first(query: string) {
 				if (query.includes('FROM users')) return { username: 'adrian', display_name: 'Adrian', metadata_json: '{"expertise":["systems"]}', updated_at: 'account-v1' };
+				if (query.includes('FROM user_preferences')) return null;
 				if (query.includes('control_plane_auth_credentials')) return { user_id: 'user-1' };
 				return { revoked_at: null };
 			},
@@ -83,7 +84,7 @@ describe('account catalog operations', () => {
 			timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5,
 		} }, { ...context, ifMatch: '0' });
 		expect(profile).toMatchObject({ changed: true, updatedAt: expect.any(String) });
-		expect(preferences).toMatchObject({ timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5, updatedAt: expect.any(String) });
+		expect(preferences).toMatchObject({ colorScheme: 'fern', themeMode: 'system', timeZone: 'America/New_York', realTimeUpdates: true, realTimePollingIntervalSeconds: 5, updatedAt: expect.any(String) });
 		expect(createAccountPreferencesOperation(fixture.value).binding).toBe(CONTROL_PLANE_OPERATIONS.accounts.preferences);
 	});
 
