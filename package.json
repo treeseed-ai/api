@@ -60,6 +60,7 @@
     "release:setup": "npm run setup:ci",
     "release:check-tag": "node --import tsx ./scripts/packages/assert-release-tag-version.ts",
     "release:verify": "npm run check:file-lengths && node --import tsx ./scripts/packages/release-verify.ts",
+    "release:custody": "node --import tsx ./scripts/release/release-custody.ts",
     "release:publish": "node --import tsx ./scripts/packages/publish-package.ts"
   },
   "dependencies": {
@@ -68,7 +69,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/sdk": "0.13.0-rc.45",
+    "@treeseed/sdk": "0.13.0-rc.47",
     "@treeseed/treedx": "0.3.0-rc.3",
     "drizzle-orm": "^0.45.2",
     "hono": "4.13.3",

@@ -16,15 +16,19 @@ describe('managed API release publication', () => {
 		}
 	});
 
-	it('publishes API, runner, and database RC architecture manifests', () => {
-		const workflow = parse(readFileSync('.github/workflows/publish.yml', 'utf8')) as { on?: { push?: { tags?: string[] } }; jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } } }> };
+	it('builds API, runner, and database staging candidates once and promotes without rebuilding', () => {
+		const workflowSource = readFileSync('.github/workflows/publish.yml', 'utf8');
+		const workflow = parse(workflowSource) as { on?: { push?: { branches?: string[]; tags?: string[] } }; jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } }; steps?: Array<{ uses?: string; name?: string }> }> };
 		expect(workflow.on?.push?.tags).toContain('!*-runtime.*');
-		const images = workflow.jobs.build?.strategy?.matrix?.include?.map((entry) => entry.image) ?? [];
+		expect(workflow.on?.push?.branches).toContain('staging');
+		const images = workflow.jobs['candidate-build']?.strategy?.matrix?.include?.map((entry) => entry.image) ?? [];
 		expect(images.filter((image) => image === 'treeseed/api')).toHaveLength(2);
 		expect(images.filter((image) => image === 'treeseed/op-runner')).toHaveLength(2);
 		expect(images.filter((image) => image === 'treeseed/api-postgres')).toHaveLength(2);
-		expect(workflow.jobs['component-release']?.needs).toBe('manifest');
-		expect(workflow.jobs.prerelease?.needs).toEqual(['verify', 'manifest', 'component-release']);
+		expect(workflow.jobs['candidate-seal']?.needs).toBe('candidate-build');
+		expect(workflow.jobs.promote?.steps?.some(({ uses }) => uses?.includes('docker/build-push-action'))).toBe(false);
+		expect(workflowSource).toContain('release-evidence-v1.json');
+		expect(workflowSource).toContain('imagetools create -t');
 	});
 
 	it('materializes exact production images without a source build or host port', () => {
