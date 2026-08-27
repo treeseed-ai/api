@@ -60,6 +60,9 @@ describe('OAuth protocol', () => {
 		expect(await approvalPresentation.json()).toMatchObject({ schemaVersion: 'treeseed.oauth.device-approval-presentation/v1',
 			clientId: 'trsd', userCode: 'ABCD-EFGH', scopes: ['treeseed:read'], status: 'pending' });
 		expect(approvalPresentation.headers.get('cache-control')).toBe('no-store');
+		const expiredPresentation = await app.request('/auth/device/approve?user_code=EXPIRED-CODE', { headers: { authorization: 'Bearer user-session' } });
+		expect(await expiredPresentation.json()).toMatchObject({ error: 'invalid_grant',
+			error_description: expect.stringContaining('Request a new code') });
 		const deviceApproval = await app.request('/auth/device/approve', { method: 'POST', headers: {
 			'content-type': 'application/json', authorization: 'Bearer user-session',
 		}, body: JSON.stringify({ userCode: 'ABCD-EFGH' }) });
