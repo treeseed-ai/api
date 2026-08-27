@@ -1,0 +1,61 @@
+services:
+  api-live:
+    image: node:24-bookworm-slim
+    working_dir: /workspace
+    init: true
+    read_only: true
+    command: ["node", "--watch", "--import", "tsx", "src/api/support/server.ts"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3000"
+      NODE_ENV:
+      LOCAL_DEV_MODE:
+      TREESEED_ENVIRONMENT:
+      TREESEED_LOCAL_DEV_MODE:
+      TREESEED_COMPONENT_DATA_ROOT:
+      TREESEED_API_BASE_URL:
+      TREESEED_SITE_URL:
+      TREESEED_API_AUTH_APPROVAL_BASE_URL:
+      TREESEED_API_BOOTSTRAP_ADMIN_ALLOWLIST:
+      TREESEED_MAILPIT_SMTP_HOST:
+      TREESEED_MAILPIT_SMTP_PORT:
+      TREESEED_TREEDX_URL:
+      TREESEED_TREEDX_JWT_ISSUER:
+      TREESEED_TREEDX_JWT_AUDIENCE:
+      POSTGRES_USER:
+      POSTGRES_DB:
+      POSTGRES_PASSWORD:
+      TREESEED_DATABASE_URL:
+      SESSION_SECRET:
+      TREESEED_TREEDX_DELEGATION_PRIVATE_KEY:
+      TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION:
+      TREESEED_GITHUB_TOKEN:
+      TREESEED_DEVELOPMENT_SESSION_ID:
+      TREESEED_DEVELOPMENT_MODE:
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./:/workspace:ro
+    tmpfs:
+      - /tmp
+    networks:
+      - api-private
+      - edge
+      - platform
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    stop_grace_period: 30s
+
+networks:
+  api-private:
+    external: true
+    name: treeseed-api_private
+  edge:
+    external: true
+    name: treeseed-edge
+  platform:
+    external: true
+    name: treeseed-platform

@@ -68,10 +68,10 @@ development:
       kind: live-api
       platforms: [linux-amd64, linux-arm64, darwin-arm64, darwin-amd64]
       runtimeRequirements: [node>=22, postgresql]
-      sourceRoots: [src, migrations]
+      sourceRoots: [src, migrations, compose.development.yml]
       ignoredPaths: [dist, node_modules]
       operations:
-        start: { command: node, args: [--watch, --import, tsx, src/api/support/server.ts], environment: { HOST: 127.0.0.1, PORT: "3000" }, timeoutSeconds: 86400 }
+        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --abort-on-container-exit, --exit-code-from, api-live], environment: {}, timeoutSeconds: 86400 }
         build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
         verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
       ready: { kind: http, path: /v1/health/ready, expectedStatus: 200, timeoutSeconds: 120 }
@@ -80,11 +80,17 @@ development:
       dependencies: [{ id: sdk, target: package, locality: local, reaction: restart }]
       statePolicy: shared-compatible
       migrationPolicy: explicit-review
-      secretRefs: { TREESEED_DATABASE_URL: api-database-url }
+      secretRefs:
+        POSTGRES_PASSWORD: api-postgres-password
+        TREESEED_DATABASE_URL: api-database-url
+        SESSION_SECRET: api-session-secret
+        TREESEED_TREEDX_DELEGATION_PRIVATE_KEY: api-treedx-delegation-private-key
+        TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION: treedx-credential-broker-assertion
+        TREESEED_GITHUB_TOKEN: github-repository-token
       shutdown: { graceSeconds: 30, activeWorkPolicy: drain }
       resources: {}
       logs: [.treeseed/development/api.log]
-      forbiddenOperations: [automatic-shared-migration, credential-log]
+      forbiddenOperations: [automatic-shared-migration, credential-log, host-network, public-database-port]
       freeze:
         kind: archive
         operation: { command: npm, args: [pack, --json], environment: {}, timeoutSeconds: 1800 }
