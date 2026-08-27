@@ -71,7 +71,7 @@ development:
       sourceRoots: [src, migrations, compose.development.yml]
       ignoredPaths: [dist, node_modules]
       operations:
-        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --abort-on-container-exit, --exit-code-from, api-live], environment: {}, timeoutSeconds: 86400 }
+        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --abort-on-container-exit, --exit-code-from, api-live], environment: { TREESEED_DEVELOPMENT_EDGE_HOST: api-live }, timeoutSeconds: 86400 }
         cleanup: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, down, --remove-orphans], environment: {}, timeoutSeconds: 120 }
         build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
         verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
