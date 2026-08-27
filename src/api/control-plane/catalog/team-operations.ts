@@ -252,8 +252,7 @@ export function createTeamUpdateOperation(dependencies: TeamOperationDependencie
 				expectedUpdatedAt: context.ifMatch,
 			});
 			if (!result) throw new ControlPlaneOperationError(404, 'team_missing', 'The team was not found.');
-			if (!result.ok) throw new ControlPlaneOperationError(String(result.code) === 'stale' ? 409 : 400,
-				String(result.code ?? 'team_update_failed'), 'The team could not be updated.');
+			if (!result.ok) teamMutationFailure(result, 'team_update_failed', 'The team could not be updated.');
 			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
 				eventType: 'team.updated', targetType: 'team', targetId: input.path.teamId });
 			return result;
@@ -279,8 +278,7 @@ export function createTeamMemberUpdateOperation(dependencies: TeamOperationDepen
 			const targetRoles = await dependencies.store.listRoleKeysForMembership(input.path.membershipId);
 			if (role === 'team_owner' || targetRoles.includes('team_owner')) await requireTeamOwner(dependencies, input.path.teamId, context);
 			const result = await dependencies.store.updateTeamMemberRole(input.path.teamId, input.path.membershipId, role, context.ifMatch);
-			if (!result.ok) throw new ControlPlaneOperationError(String(result.code) === 'stale' ? 409 : 400,
-				String(result.code ?? 'team_member_update_failed'), 'The team member could not be updated.');
+			if (!result.ok) teamMutationFailure(result, 'team_member_update_failed', 'The team member could not be updated.');
 			await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
 				eventType: 'team.member.role_changed', targetType: 'team', targetId: input.path.teamId,
 				data: { membershipId: input.path.membershipId, roleKey: role } });
