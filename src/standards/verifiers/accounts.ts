@@ -27,6 +27,11 @@ export async function verifyAccountJourneys(http: VerifierHttp, mailpitOrigin: s
 	const identity = expectStatus(await client.request('GET', '/v1/auth/web/account/identity'), 200, 'account identity');
 	const etag = identity.headers.get('etag') ?? String((identity.data as { updatedAt?: string }).updatedAt ?? '0');
 	expectStatus(await client.request('PATCH', '/v1/auth/web/profile', { displayName: 'Guarantee Owner', website: 'https://example.test' }, { 'if-match': etag }), 200, 'profile update');
+	const publicProfile = expectStatus(await http.request('GET', `/v1/users/by-username/${encodeURIComponent(account.username)}/profile`), 200, 'public account profile');
+	const publicProfileText = JSON.stringify(publicProfile.data);
+	for (const privateValue of [account.email, account.password, account.accessToken, account.refreshToken]) {
+		if (publicProfileText.includes(privateValue)) throw new Error('Public account profile disclosed private account state.');
+	}
 	const preferences = expectStatus(await client.request('GET', '/v1/auth/web/preferences'), 200, 'preferences read');
 	const preferenceTag = preferences.headers.get('etag') ?? '0';
 	const updatedPreferences = expectStatus(await client.request('PATCH', '/v1/auth/web/preferences', {
