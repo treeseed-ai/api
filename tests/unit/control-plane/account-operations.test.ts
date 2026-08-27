@@ -147,6 +147,13 @@ describe('account catalog operations', () => {
 		expect(await createAccountDeleteOperation(fixture.value).handler({ path: {}, query: {}, body: { confirmation: 'DELETE MY ACCOUNT' } }, context)).toMatchObject({ deleted: true });
 	});
 
+	it('rejects an invalid account deletion confirmation before claiming the account revision', async () => {
+		const fixture = dependencies();
+		await expect(createAccountDeleteOperation(fixture.value).handler({ path: {}, query: {}, body: { confirmation: 'DELETE' } }, context))
+			.rejects.toMatchObject({ status: 409, code: 'confirmation_required' });
+		expect(fixture.run).not.toHaveBeenCalled();
+	});
+
 	it('claims a password reset token atomically before changing the credential', async () => {
 		const statements: string[] = [];
 		const store = {

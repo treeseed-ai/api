@@ -1,4 +1,5 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
+import { accountDeletionConfirmationMatches } from '../../../auth/account.ts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
 import { affected, claimAccountRevision, requireRevision, touchAccountRevision } from './accounts/concurrency.ts';
 
@@ -77,6 +78,9 @@ export function createAccountDeletionBlockersOperation(dependencies: AccountOper
 
 export function createAccountDeleteOperation(dependencies: AccountOperationDependencies): BoundOperation<typeof CONTROL_PLANE_OPERATIONS.accounts.remove> {
 	return { binding: CONTROL_PLANE_OPERATIONS.accounts.remove, async handler(input, context) {
+		if (!accountDeletionConfirmationMatches(String((input.body as Record<string, unknown>).confirmation ?? ''))) {
+			throw new ControlPlaneOperationError(409, 'confirmation_required', 'Type "DELETE MY ACCOUNT" to delete this account.');
+		}
 		await claimAccountRevision(dependencies.store, principal(context).id, context.ifMatch);
 		return serviceResult(await dependencies.accountSecurity.removeAccount(principal(context), input.body as Record<string, unknown>), 'Account deletion failed.');
 	} };
