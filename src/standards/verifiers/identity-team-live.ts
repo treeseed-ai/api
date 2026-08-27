@@ -3,6 +3,7 @@ import { createVerifiedAccount, deleteVerifiedAccount, verifyAccountJourneys } f
 import { VerifierHttp } from './http.ts';
 import { verifyTeamJourneys } from './teams.ts';
 import { verifyDeviceFlow } from './oauth.ts';
+import { verifyAuditEvidence } from './audit.ts';
 
 function option(name: string, fallback = '') {
 	const index = process.argv.indexOf(`--${name}`);
@@ -26,14 +27,17 @@ let owner: Awaited<ReturnType<typeof createVerifiedAccount>> | null = null;
 await check('api.identity.registration-confirmation-oauth', async () => {
 	owner = await createVerifiedAccount(http, mailpitOrigin, adminOrigin, 'owner');
 });
-if (owner) await check('api.identity.account-lifecycle', async () => verifyAccountJourneys(http, mailpitOrigin, owner!));
+if (owner) await check('api.identity.account-lifecycle', async () => verifyAccountJourneys(http, mailpitOrigin, adminOrigin, owner!));
 else checks.push({ id: 'api.identity.account-lifecycle', status: 'failed', durationMs: 0, error: 'Registration prerequisite failed.' });
 if (owner) await check('api.identity.device-approval', async () => verifyDeviceFlow(http, owner!.accessToken));
 else checks.push({ id: 'api.identity.device-approval', status: 'failed', durationMs: 0, error: 'Identity prerequisite failed.' });
-if (owner) await check('api.teams.lifecycle-authority-cleanup', async () => verifyTeamJourneys(http, mailpitOrigin, adminOrigin, owner!));
+let team: Awaited<ReturnType<typeof verifyTeamJourneys>> | null = null;
+if (owner) await check('api.teams.lifecycle-authority-cleanup', async () => { team = await verifyTeamJourneys(http, mailpitOrigin, adminOrigin, owner!); });
 else checks.push({ id: 'api.teams.lifecycle-authority-cleanup', status: 'failed', durationMs: 0, error: 'Identity prerequisite failed.' });
 if (owner) await check('api.identity.cleanup', async () => deleteVerifiedAccount(http, owner!));
 else checks.push({ id: 'api.identity.cleanup', status: 'failed', durationMs: 0, error: 'Identity prerequisite failed.' });
+if (owner && team) await check('api.identity.audit-evidence', async () => verifyAuditEvidence(owner!.id, team!.teamId));
+else checks.push({ id: 'api.identity.audit-evidence', status: 'failed', durationMs: 0, error: 'Identity or team prerequisite failed.' });
 
 const report = {
 	schemaVersion: 'treeseed.guarantee-verifier-result/v1', verifierId: '@treeseed/api/identity-team-live',

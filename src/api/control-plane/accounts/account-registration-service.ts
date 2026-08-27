@@ -61,6 +61,8 @@ export function createAccountRegistrationService(store: any, authProvider: any, 
 				const confirmation = await createControlPlaneEmailConfirmation(store, emailContext, {
 					email, emailAddressId, displayName, returnTo: String(input.returnTo ?? '/app/'),
 				});
+				await store.recordAuditEvent({ actorType: 'system', actorId: null, eventType: 'auth.user.registered',
+					targetType: 'user', targetId: synced.principal.id });
 				return { ok: true, confirmationRequired: true, email, expiresInSeconds: confirmation.expiresInSeconds };
 			} catch {
 				await rollbackRegistration(store, synced.principal.id, emailAddressId);

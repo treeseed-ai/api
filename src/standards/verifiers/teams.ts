@@ -79,4 +79,5 @@ export async function verifyTeamJourneys(http: VerifierHttp, mailpitOrigin: stri
 	}, { 'if-match': String(current.lifecycleVersion ?? 0) }), 200, 'team permanent deletion');
 	await deleteVerifiedAccount(http, member);
 	await deleteVerifiedAccount(http, mismatch);
+	return { teamId: team.id };
 }
