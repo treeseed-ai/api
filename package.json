@@ -1,6 +1,6 @@
 {
   "name": "@treeseed/api",
-  "version": "0.8.0-rc.42",
+  "version": "0.8.0-rc.43",
   "description": "TreeSeed control-plane API and operations runner.",
   "license": "AGPL-3.0-only",
   "repository": {
