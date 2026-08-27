@@ -103,7 +103,7 @@ export function createOperationHttpHandler(
 				}
 			}
 			const providerIdentity = providerAuth?.principal;
-			const output = operation.binding.schema.output.parse(await operation.handler(input, {
+			const handled = await operation.handler(input, {
 				interface: 'rest',
 				requestId,
 				requestUrl: context.req.url,
@@ -121,7 +121,9 @@ export function createOperationHttpHandler(
 				principal: authInfo?.extra?.principal as { id: string; roles?: string[]; permissions?: string[] } | undefined
 					?? (providerIdentity ? { id: `capacity-provider:${providerIdentity.capacityProviderId ?? providerIdentity.membershipId}`,
 						roles: ['capacity_provider'], permissions: providerIdentity.scopes ?? [], metadata: { membershipId: providerIdentity.membershipId, teamId: providerIdentity.teamId } } : undefined),
-			}));
+			});
+			if (handled instanceof Response) return handled;
+			const output = operation.binding.schema.output.parse(handled);
 			if (descriptor.operationId === 'repositories.github.callback' && typeof (output as any).redirect === 'string') {
 				return context.redirect((output as any).redirect, 302);
 			}
