@@ -1,7 +1,7 @@
 services:
   api-live:
     image: node:24-bookworm-slim
-    working_dir: /workspace
+    working_dir: ${TREESEED_DEVELOPMENT_WORKTREE:?TreeSeed development worktree is required}
     init: true
     read_only: true
     command: ["node", "--watch", "--import", "tsx", "src/api/support/server.ts"]
@@ -35,7 +35,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
-      - ./:/workspace:ro
+      - ${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:ro
     tmpfs:
       - /tmp
     networks:
