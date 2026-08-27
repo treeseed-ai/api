@@ -15,6 +15,18 @@ export async function createTeamInviteMethod(this: ControlPlaneStore, teamId, in
         ORDER BY created_at DESC LIMIT 1`, [teamId, email]);
     if (existing?.id) {
         if (new Date(String(existing.expires_at)).getTime() > Date.now()) {
+            if (String(input.replaceInviteId ?? '') === String(existing.id)) {
+                await this.run(`UPDATE team_invites SET role_key = ?, token_prefix = ?, token_hash = ?, invited_by_user_id = ?, expires_at = ?, updated_at = ? WHERE id = ?`, [
+                    roleKey,
+                    tokenPrefix(token),
+                    stableHash(token, String(this.config.authSecret)),
+                    typeof input.invitedByUserId === 'string' ? input.invitedByUserId : null,
+                    expiresAt,
+                    timestamp,
+                    existing.id,
+                ]);
+                return { ok: true, invite: await this.getTeamInvite(existing.id), token };
+            }
             return {
                 ok: false,
                 code: 'invite_already_pending',
