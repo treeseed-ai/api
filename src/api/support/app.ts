@@ -33,6 +33,7 @@ import { createProviderAssignmentService } from '../control-plane/repositories/p
 import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
+import { environmentTreeAiNodeResolver, TreeAiProxyService } from '../control-plane/treeai/proxy-service.ts';
 import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
 import { installRemoteCredentialBrokerRoute } from '../control-plane/treedx/remote-credential-broker.ts';
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
@@ -200,6 +201,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
 	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
+	const treeAiProxy = new TreeAiProxyService(environmentTreeAiNodeResolver(process.env), options.fetchImpl ?? fetch);
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
@@ -226,6 +228,7 @@ export function createPlatformApiApp(options: any = {}) {
 			providerSignals,
 			providerWorkflows,
 			treeDxProxy,
+			treeAiProxy,
 			realtime: createRealtimeOperationService(store, sessionEvents),
 			seeds: createSeedOperationService(store, { providers }),
 			feedback: createFeedbackOperationService(store, options),
