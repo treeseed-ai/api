@@ -24,6 +24,7 @@ import { createCapacityPlanService } from '../control-plane/repositories/capacit
 import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
 import { createAgentGovernanceService } from '../control-plane/repositories/capacity/agent-governance-service.ts';
 import { createCommunicationService } from '../control-plane/repositories/capacity/communication-service.ts';
+import { createDiagnosticEnvelopeService } from '../../security/diagnostic-envelope.ts';
 import { createWorkdayService } from '../control-plane/repositories/capacity/workday-service.ts';
 import { createAgentQueryService } from '../control-plane/repositories/capacity/agent-query-service.ts';
 import { createCapacityQueryService } from '../control-plane/repositories/capacity/capacity-query-service.ts';
@@ -198,7 +199,8 @@ export function createPlatformApiApp(options: any = {}) {
 		await next();
 	});
 	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config }, store);
-	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store);
+	const diagnosticEnvelopes = createDiagnosticEnvelopeService({ ...config, ...runtime.resolved.config });
+	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store, diagnosticEnvelopes);
 	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
 	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
@@ -213,7 +215,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const accountRegistration = createAccountRegistrationService(store, authProvider, invitationContext);
 	const knowledgeReader = createKnowledgeReaderService({ store, options });
 	const discussions = createDiscussionService({ store, capacity, sessionEvents });
-	const communications = createCommunicationService(capacity, discussions, store);
+	const communications = createCommunicationService(capacity, discussions, store, diagnosticEnvelopes);
 	const governance = createGovernanceService(store);
 	const inbox = createInboxService({ store, discussions, communications, governance });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,

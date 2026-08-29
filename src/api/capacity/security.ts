@@ -5,8 +5,6 @@ CapacityProviderPublicJwk,
 CapacityProviderSignedProof,
 } from '@treeseed/sdk/capacity-provider/contracts';
 import {
-createCipheriv,
-createDecipheriv,
 createHash,
 createHmac,
 createPublicKey,
@@ -14,6 +12,7 @@ randomBytes,
 timingSafeEqual,
 verify,
 } from 'node:crypto';
+import { EncryptedEnvelopeCodec, StaticEnvelopeKeyProvider, encryptedEnvelopeSchema } from '@treeseed/sdk/security';
 import { CapacityGovernanceError } from './database.ts';
 
 export type CapacitySecretKind = 'registration' | 'credential' | 'access';
@@ -39,12 +38,14 @@ export function capacityProviderFingerprint(publicJwk: CapacityProviderPublicJwk
 
 export class CapacitySecretCodec {
 	readonly #hashKey: Buffer;
-	readonly #encryptionKey: Buffer;
+	readonly #envelopes: EncryptedEnvelopeCodec;
 
-	constructor(secret: string) {
+	constructor(secret: string, encryptionSecret = 'treeseed-test-only-capacity-encryption-key', keyVersion = 1, historical: Array<{ version: number; secret: string }> = []) {
 		if (secret.trim().length < 24) throw new Error('Capacity governance secret must be at least 24 characters.');
+		if (encryptionSecret.trim().length < 24) throw new Error('Capacity encryption key must be at least 24 characters.');
 		this.#hashKey = createHash('sha256').update(`treeseed-capacity-hash:${secret}`).digest();
-		this.#encryptionKey = createHash('sha256').update(`treeseed-capacity-encryption:${secret}`).digest();
+		const key = createHash('sha256').update(encryptionSecret).digest();
+		this.#envelopes = new EncryptedEnvelopeCodec(new StaticEnvelopeKeyProvider('systemd-credential', { id: 'capacity-governance', version: keyVersion, key }, historical.map((entry) => ({ id: 'capacity-governance', version: entry.version, key: createHash('sha256').update(entry.secret).digest() }))));
 	}
 
 	issue(kind: CapacitySecretKind) {
@@ -77,24 +78,21 @@ export class CapacitySecretCodec {
 		return actual.length === expected.length && timingSafeEqual(actual, expected);
 	}
 
-	encrypt(plaintext: string) {
-		const iv = randomBytes(12);
-		const cipher = createCipheriv('aes-256-gcm', this.#encryptionKey, iv);
-		const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-		return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`;
+	encrypt(plaintext: string, resourceId = 'capacity-registration-reveal') {
+		return JSON.stringify(this.#envelopes.encrypt(plaintext, { purpose: 'capacity-secret', resourceType: 'registration-reveal', resourceId, schemaVersion: 'treeseed.encrypted-envelope/v1' }));
 	}
 
-	decrypt(envelope: string) {
-		const [ivValue, tagValue, encryptedValue] = envelope.split('.');
-		if (!ivValue || !tagValue || !encryptedValue) throw new CapacityGovernanceError('registration_key_reveal_invalid', 'Registration key reveal envelope is invalid.', 500);
+	decrypt(envelope: string, expectedResourceId?: string) {
 		try {
-			const decipher = createDecipheriv('aes-256-gcm', this.#encryptionKey, Buffer.from(ivValue, 'base64url'));
-			decipher.setAuthTag(Buffer.from(tagValue, 'base64url'));
-			return Buffer.concat([decipher.update(Buffer.from(encryptedValue, 'base64url')), decipher.final()]).toString('utf8');
+			const parsed = encryptedEnvelopeSchema.parse(JSON.parse(envelope));
+			if (expectedResourceId && parsed.aad.resourceId !== expectedResourceId) throw new Error('Capacity secret envelope resource binding mismatch.');
+			return this.#envelopes.decrypt(parsed).toString('utf8');
 		} catch {
 			throw new CapacityGovernanceError('registration_key_reveal_invalid', 'Registration key reveal envelope cannot be authenticated by the active secret generation.', 500);
 		}
 	}
+
+	rewrap(envelope: string) { return JSON.stringify(this.#envelopes.rewrap(encryptedEnvelopeSchema.parse(JSON.parse(envelope)))); }
 }
 
 export interface VerifiedProviderProof {

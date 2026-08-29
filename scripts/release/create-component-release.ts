@@ -18,7 +18,7 @@ const runtime = {
 	schemaVersion: 'treeseed.package-runtime/v1' as const, componentId: 'api', version: debianRelease,
 	compose: { projectName: 'treeseed-api', files: [{ path: 'compose.yml', digest: composeDigest }] },
 	services: [
-		{ id: 'database', composeService: 'database', endpoints: [] }, { id: 'migration', composeService: 'migration', endpoints: [] },
+		{ id: 'database', composeService: 'database', endpoints: [] }, { id: 'migration', composeService: 'migration', endpoints: [] }, { id: 'diagnostics-backfill', composeService: 'diagnostics-backfill', endpoints: [] },
 		{ id: 'api', composeService: 'api', endpoints: [{ id: 'http', protocol: 'http' as const, port: 3000, visibility: 'host' as const, defaultAlias: 'api.treeseed.localhost', aliasOverride: true, tls: 'edge' as const, authentication: 'application' as const, healthGate: { protocol: 'http' as const, path: '/v1/health/ready', timeoutSeconds: 120 } }] },
 		{ id: 'operations-runner', composeService: 'operations-runner', endpoints: [] },
 	],

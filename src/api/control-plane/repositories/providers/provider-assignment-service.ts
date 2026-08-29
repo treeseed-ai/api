@@ -14,6 +14,7 @@ import { commitDiscussionMessage } from '../../../discussions/content.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { suspendAssignmentForDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-suspension-service.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
+import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
@@ -77,7 +78,7 @@ async function ownedAssignment(store: ProviderAssignmentStore, assignmentId: str
 	return assignment;
 }
 
-export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue) {
+export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue, diagnosticEnvelopes?: DiagnosticEnvelopeService) {
 	const store = storeValue;
 	const principal = (auth: unknown, scopes: string[]) => providerPrincipal(auth, scopes);
 	const lifecycle = async (auth: unknown, assignmentId: string, body: Record<string, unknown>, scope: string,
@@ -230,11 +231,17 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			const provenance = await communicationProvenance(store, assignment); if (!provenance) throw new CapacityGovernanceError('communication_trace_provenance_missing', 'Communication provenance is unavailable.', 409);
 			const sanitized = redactTranscriptValue(body.payload) as Record<string, unknown>; const protectedPayload = body.protectedPayload ? redactTranscriptValue(body.protectedPayload) as Record<string, unknown> : null;
 			if (JSON.stringify(sanitized).length > 262_144 || JSON.stringify(protectedPayload).length > 1_048_576) throw new CapacityGovernanceError('communication_trace_payload_too_large', 'Trace evidence exceeds its bounded payload size.', 413);
-			const id = `trace-${stableId(assignmentId, String(sequence))}`, acceptedAt = new Date().toISOString(), expiresAt = protectedPayload ? new Date(Date.now() + 30 * 86_400_000).toISOString() : null;
+			if (protectedPayload && !diagnosticEnvelopes) throw new CapacityGovernanceError('diagnostics_encryption_unavailable', 'Protected diagnostics require an active encryption key.', 503);
+			const id = `trace-${stableId(assignmentId, String(sequence))}`;
+			const envelope = protectedPayload ? diagnosticEnvelopes!.encrypt(protectedPayload, { teamId: actor.teamId, resourceId: id,
+				topicId: provenance.topic.id, ...(provenance.communication.sendId ? { sendId: String(provenance.communication.sendId) } : {}),
+				...(assignment.invocation_id ? { invocationId: String(assignment.invocation_id) } : {}), assignmentId, sequence, eventType: String(body.type) }) : null;
+			const acceptedAt = new Date().toISOString(), expiresAt = protectedPayload ? new Date(Date.now() + 30 * 86_400_000).toISOString() : null;
 			const existing = await store.first('SELECT id FROM communication_execution_trace_events WHERE assignment_id=? AND sequence=?', [assignmentId, sequence]);
-			await store.run(`INSERT INTO communication_execution_trace_events (id,team_id,topic_id,send_id,invocation_id,assignment_id,sequence,event_type,occurred_at,accepted_at,summary,payload_json,protected_payload_json,protected_payload_expires_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?) ON CONFLICT (assignment_id,sequence) DO NOTHING`, [id, actor.teamId, provenance.topic.id, provenance.communication.sendId ?? null,
-				assignment.invocation_id ?? null, assignmentId, sequence, body.type, body.occurredAt, acceptedAt, body.summary, JSON.stringify(sanitized), protectedPayload ? JSON.stringify(protectedPayload) : null, expiresAt]);
+			await store.run(`INSERT INTO communication_execution_trace_events (id,team_id,topic_id,send_id,invocation_id,assignment_id,sequence,event_type,occurred_at,accepted_at,summary,payload_json,protected_payload_json,protected_payload_envelope_json,protected_payload_digest,protected_payload_key_id,protected_payload_key_version,protected_payload_expires_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, NULL, ?::jsonb, ?, ?, ?, ?) ON CONFLICT (assignment_id,sequence) DO NOTHING`, [id, actor.teamId, provenance.topic.id, provenance.communication.sendId ?? null,
+				assignment.invocation_id ?? null, assignmentId, sequence, body.type, body.occurredAt, acceptedAt, body.summary, JSON.stringify(sanitized), envelope ? JSON.stringify(envelope) : null,
+				envelope?.ciphertextDigest ?? null, envelope?.keyId ?? null, envelope?.keyVersion ?? null, expiresAt]);
 			const traceType = String(body.type);
 			if (traceType === 'execution.failed') await appendCommunicationEvent(store, assignment, 'agent.failed', String(body.summary), { kind: 'agent', id: String(assignment.agent_id ?? 'agent') }, { traceSequence: sequence });
 			else if (traceType.includes('message') || traceType.includes('progress')) await appendCommunicationEvent(store, assignment, 'agent.progress', String(body.summary), { kind: 'agent', id: String(assignment.agent_id ?? 'agent') }, { traceSequence: sequence });
