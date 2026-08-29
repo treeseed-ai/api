@@ -7,6 +7,7 @@ import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { CapacityGovernanceRepository } from '../../../capacity/repositories/governance/policy/governance.ts';
 import { CapacitySecretCodec } from '../../../capacity/security.ts';
+import { readFileSync } from 'node:fs';
 import { AvailabilitySessionService } from '../../../capacity/services/accounts/availability-session-service.ts';
 import { CapacityRegistrationService } from '../../../capacity/services/support/registration-service.ts';
 
@@ -65,8 +66,18 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 	const rawSecret = String(secretSource ?? 'treeseed-local-capacity-governance-secret');
 	if (rawSecret.trim().length < 24 && !['local', 'test'].includes(environment)) throw new Error('TREESEED_CAPACITY_GOVERNANCE_SECRET must contain at least 24 characters.');
 	const configuredSecret = rawSecret.trim().length >= 24 ? rawSecret : `treeseed-local:${rawSecret}:capacity-governance`;
+	const encryptionFile = String(config.capacityEncryptionKeyFile ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY_FILE ?? '');
+	const directEncryption = config.capacityEncryptionKey ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY;
+	if (directEncryption && !['local', 'test'].includes(environment)) throw new Error('Production capacity encryption keys must use service-vault file custody, not environment values.');
+	const encryptionSource = encryptionFile ? readFileSync(encryptionFile, 'utf8').trim() : directEncryption
+		?? (['local', 'test'].includes(environment) ? 'treeseed-local-capacity-encryption-key' : undefined);
+	if (!encryptionSource) throw new Error('TREESEED_CAPACITY_ENCRYPTION_KEY is required outside local/test environments.');
 	const audience = String(config.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/u, '');
-	const registration = new CapacityRegistrationService(new CapacityGovernanceRepository(store), new CapacitySecretCodec(configuredSecret), audience);
+	const keyVersion = Math.max(1, Number(config.TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION ?? 1));
+	const historical = String(config.TREESEED_CAPACITY_HISTORICAL_KEY_FILES ?? process.env.TREESEED_CAPACITY_HISTORICAL_KEY_FILES ?? '').split(',').map((entry) => entry.trim()).filter(Boolean).map((entry) => {
+		const match = /^(\d+):(.+)$/u.exec(entry); if (!match) throw new Error('Historical capacity keys must use VERSION:/absolute/path entries.'); return { version: Number(match[1]), secret: readFileSync(match[2]!, 'utf8').trim() };
+	});
+	const registration = new CapacityRegistrationService(new CapacityGovernanceRepository(store), new CapacitySecretCodec(configuredSecret, String(encryptionSource), keyVersion, historical), audience);
 	const availability = new AvailabilitySessionService(store);
 	const requireUser = (principal: UserPrincipal | null | undefined) => {
 		if (!principal) throw new CapacityGovernanceError('authentication_required', 'An authenticated team principal is required.', 401);

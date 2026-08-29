@@ -6,6 +6,7 @@ import { CapacityOperationError } from './capacity-operation-error.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
+import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
 
 type Row = Record<string, unknown>;
 type ProviderSnapshot = Row & { maxConcurrentRunners?: number; lanes?: unknown[] };
@@ -63,7 +64,7 @@ async function invocation(store: any, teamId: string, invocationId: string) {
 	return row as Row;
 }
 
-export function createCommunicationService(store: any, discussions?: { create(principal: CapacityPrincipal, body: Row, idempotencyKey?: string): Promise<Row> }, contentStore: any = store) {
+export function createCommunicationService(store: any, discussions?: { create(principal: CapacityPrincipal, body: Row, idempotencyKey?: string): Promise<Row> }, contentStore: any = store, diagnosticEnvelopes?: DiagnosticEnvelopeService) {
 	async function topicView(teamId: string, topic: Row) {
 		const streams = await store.all('SELECT * FROM communication_discussion_streams WHERE team_id=? AND topic_id=? ORDER BY project_id', [teamId, topic.id]);
 		const subscriptions = await store.all("SELECT * FROM communication_topic_subscriptions WHERE team_id=? AND topic_id=? AND status='active' ORDER BY project_id,agent_slug", [teamId, topic.id]);
@@ -160,12 +161,13 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 	}
 
 	async function diagnosticsFor(assignment: Row, invocation: Row, full: boolean) {
-		await store.run(`UPDATE communication_execution_trace_events SET protected_payload_json=NULL
+		await store.run(`UPDATE communication_execution_trace_events SET protected_payload_json=NULL,protected_payload_envelope_json=NULL
 			WHERE assignment_id=? AND protected_payload_expires_at IS NOT NULL AND protected_payload_expires_at<=?`, [assignment.id, new Date().toISOString()]);
 		const traces = text(assignment.id) ? await store.all('SELECT * FROM communication_execution_trace_events WHERE assignment_id=? ORDER BY sequence', [assignment.id]) : [];
 		const metadata = record(invocation.metadata_json); const capacity = record(assignment.capacity_envelope_json);
 		const traceEvents = traces.map((trace: Row) => ({ sequence: Number(trace.sequence), type: text(trace.event_type), occurredAt: timestamp(trace.occurred_at), summary: text(trace.summary), payload: record(trace.payload_json),
-			...(full && trace.protected_payload_json ? { protectedPayload: record(trace.protected_payload_json) } : {}) }));
+			...(full && trace.protected_payload_envelope_json ? { protectedPayload: diagnosticEnvelopes?.decrypt(record(trace.protected_payload_envelope_json)) ?? { unavailable: 'diagnostics_encryption_key_unavailable' } }
+				: full && trace.protected_payload_json ? { protectedPayload: record(trace.protected_payload_json), legacyPlaintext: true } : {}) }));
 		const started = traceEvents.find((event) => event.type === 'execution.started'); const startedPayload = record(started?.payload);
 		const terminal = [...traceEvents].reverse().find((event) => event.type === 'execution.completed'); const terminalPayload = record(terminal?.payload);
 		return { availability: traces.length ? 'available' : 'unavailable', reason: traces.length ? null : 'provider_trace_unavailable',

@@ -25,7 +25,6 @@ function secretPrefix(value: string) {
 function nowIso(now?: Date) {
 	return (now ?? new Date()).toISOString();
 }
-
 export class CapacityRegistrationService {
 	private readonly auditRepository: CapacityAuditRepository;
 	private readonly credentialAuthorizationRepository: CapacityCredentialAuthorizationRepository;
@@ -53,7 +52,7 @@ export class CapacityRegistrationService {
 		if (existing) return existing;
 		const issued = this.secrets.issue('registration');
 		const now = nowIso();
-		const created = await this.repository.createRegistrationKey({ id: randomUUID(), teamId, generation: 1, prefix: issued.prefix, hash: issued.hash, encryptedRevealValue: this.secrets.encrypt(issued.plaintext), actorId, now });
+		const created = await this.repository.createRegistrationKey({ id: randomUUID(), teamId, generation: 1, prefix: issued.prefix, hash: issued.hash, encryptedRevealValue: this.secrets.encrypt(issued.plaintext, `${teamId}:1`), actorId, now });
 await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-principal', actorId, action: 'registration-key.created', resourceType: 'team-capacity-registration-key', resourceId: created?.keyPrefix, now });
 		return created;
 	}
@@ -65,22 +64,23 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		const now = nowIso();
 		await this.repository.recordRegistrationKeyReveal(teamId, now);
 		await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-principal', actorId, action: 'registration-key.revealed', resourceType: 'team-capacity-registration-key', resourceId: String(row.key_prefix), now });
-		return { ...(await this.repository.registrationKeyMetadata(teamId)), registrationKey: this.secrets.decrypt(String(row.encrypted_reveal_value)) };
+		return { ...(await this.repository.registrationKeyMetadata(teamId)), registrationKey: this.secrets.decrypt(String(row.encrypted_reveal_value), `${teamId}:${Number(row.generation)}`) };
 	}
 
 	async rotateRegistrationKey(teamId: string, actorId: string | null, idempotencyKey: string) {
 		if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Idempotency-Key is required.', 400);
 		await this.assertTeamExists(teamId);
 		const prior = await this.repository.registrationKeyByRotationIdempotency(teamId, idempotencyKey);
-		if (prior) return { ...prior.metadata, registrationKey: this.secrets.decrypt(prior.encryptedRevealValue) };
+		if (prior) return { ...prior.metadata, registrationKey: this.secrets.decrypt(prior.encryptedRevealValue, `${teamId}:${prior.metadata.generation}`) };
 		const current = await this.repository.currentRegistrationKeyRow(teamId);
 		const issued = this.secrets.derive('registration', `team-registration-key:${teamId}:${idempotencyKey}`);
 		const now = nowIso();
-		const rotated = await this.repository.rotateRegistrationKey({ id: randomUUID(), teamId, generation: Number(current?.generation ?? 0) + 1, prefix: issued.prefix, hash: issued.hash, encryptedRevealValue: this.secrets.encrypt(issued.plaintext), idempotencyKey, actorId, now });
+		const generation = Number(current?.generation ?? 0) + 1;
+		const rotated = await this.repository.rotateRegistrationKey({ id: randomUUID(), teamId, generation, prefix: issued.prefix, hash: issued.hash, encryptedRevealValue: this.secrets.encrypt(issued.plaintext, `${teamId}:${generation}`), idempotencyKey, actorId, now });
 		const committed = await this.repository.registrationKeyByRotationIdempotency(teamId, idempotencyKey);
 		if (!committed) throw new CapacityGovernanceError('registration_key_rotation_conflict', 'Registration key rotation did not commit its idempotent result.', 409);
 		if (committed.metadata.createdAt === now) await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-principal', actorId, action: 'registration-key.rotated', resourceType: 'team-capacity-registration-key', resourceId: rotated?.keyPrefix, idempotencyKey, metadata: { previousGeneration: Number(current?.generation ?? 0), generation: rotated?.generation }, now });
-		return { ...committed.metadata, registrationKey: this.secrets.decrypt(committed.encryptedRevealValue) };
+		return { ...committed.metadata, registrationKey: this.secrets.decrypt(committed.encryptedRevealValue, `${teamId}:${committed.metadata.generation}`) };
 	}
 
 	async setRegistrationKeyStatus(teamId: string, actorId: string | null, status: 'active' | 'disabled', idempotencyKey: string) {
