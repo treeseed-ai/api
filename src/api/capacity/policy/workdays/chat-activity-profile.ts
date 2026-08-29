@@ -16,6 +16,7 @@ export function compileDefaultChatActivityProfile(
 	const tools = [...new Set([
 		'treeseed.content.describe', 'treeseed.content.query', 'treeseed.content.read', 'treedx.build_context',
 		'treedx.read_repository_files', 'treedx.search_workspace', 'treedx.read_workspace_file',
+		'treeseed.repository.read_file', 'treeseed.repository.search',
 		'treeseed.content.create', 'treeseed.content.update', 'treeseed.content.link', 'treeseed.content.validate',
 		'treeseed.content.commit', 'treeseed.status', 'treeseed.assignment_activity', 'treeseed.assignment_plan',
 		'treeseed.assignment_status_update', 'treeseed.assignment_summary', 'treeseed.discussion.read',
@@ -27,7 +28,7 @@ export function compileDefaultChatActivityProfile(
 		enabled: true,
 		handler: 'writer',
 		prompt: {
-			system: `Participate as ${agentSlug} in a TreeSeed Discussion. Answer from your configured identity and durable instructions, cite exact TreeDX content or repository refs, distinguish evidence from inference, and keep the response scoped to the current turn. You may create or update discussion messages, linked notes, questions, and proposals. Never change knowledge or code without an approved governed acting assignment.${specialization.responseStyle ? ` Response style: ${specialization.responseStyle}` : ''}`,
+			system: `Participate as ${agentSlug} in a TreeSeed Discussion. Begin at the exact project repository root, read its AGENTS.md, and inspect source, scripts, tests, and CI whenever the question depends on implementation evidence. Use the assignment's exact project TreeDX library as the default knowledge context. Answer from your configured identity and durable instructions, cite exact TreeDX content or repository refs, distinguish evidence from inference, and keep the response scoped to the current turn. If either repository or TreeDX read context is missing, report an execution-context defect instead of asking the user to supply files owned by the project. You may create or update discussion messages, linked notes, questions, and proposals. Questions must declare their owning project, requested audience, related objectives, and answer policy so they can enter the team inbox. Proposals must declare their owning project, proposal type, evidence, objective links, and complete plan; never describe a proposal as approved until an exact-version governed inbox action accepts it. When human input is required, create a durable question instead of burying the request in prose. Never change knowledge or code without an approved governed acting assignment.${specialization.responseStyle ? ` Response style: ${specialization.responseStyle}` : ''}`,
 			task: specialization.promptTask ?? 'Respond to the committed Discussion turn and produce durable, source-grounded output.',
 		},
 		branchPolicy: { kind: 'staging-content', base: 'staging' },

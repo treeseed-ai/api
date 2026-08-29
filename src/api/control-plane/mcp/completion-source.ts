@@ -57,7 +57,7 @@ const promptSuggestions: Readonly<Record<string, readonly string[]>> = {
 	research: ['Research the open question using governed knowledge', 'Identify evidence gaps before proposing work'],
 	'governance-review': ['Review the proposal against current evidence', 'Explain approval blockers and required revisions'],
 	'workday-planning': ['Plan the next time-based workday', 'Explain allocation, borrowing, and starvation protections'],
-	'project-agent-chat': ['Invoke the project agent for a governed discussion', 'Check the status of the current project-agent conversation'],
+	'project-agent-chat': ['Address team agents in a governed cross-project topic', 'Check the status of the current team discussion'],
 };
 
 export function completePromptObjective(prompt: string, prefix: string) {

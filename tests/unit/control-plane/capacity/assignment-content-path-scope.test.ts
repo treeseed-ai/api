@@ -9,6 +9,13 @@ describe('assignment content path scope', () => {
 		}, 'read', '.', ['**'])).toEqual(['agents/**', 'knowledge/**']);
 	});
 
+	it('preserves declared project-wide repository read access alongside TreeDX collections', () => {
+		expect(resolveAssignmentContentPathScope({ permissions: {
+			content: { agent: { operations: ['read'] }, knowledge: { operations: ['query'] } },
+			repository: { readPaths: ['**'], writePaths: [] },
+		} }, 'read', '.', ['fallback/**'])).toEqual(['agents/**', 'knowledge/**', '**']);
+	});
+
 	it('normalizes fallback and operational paths for a top-level library root', () => {
 		expect(resolveAssignmentContentPathScope({}, 'write', '.', [
 			'./discussion-messages', './discussion-messages/**',

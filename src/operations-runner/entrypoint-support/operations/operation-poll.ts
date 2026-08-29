@@ -3,6 +3,7 @@ import { CapacityWorkdayMaintenanceScheduler } from '../../../api/capacity/servi
 import { ContextQueryCheckMaintenanceScheduler } from '../../../api/capacity/services/capacity/agents/context-query-check-maintenance-service.js';
 import { ContextQueryCheckService } from '../../../api/capacity/services/capacity/agents/context-query-check-service.js';
 import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
+import { TreeDxCommitReplicationScheduler } from '../../treedx/commit-replication-scheduler.js';
 import { createClient,createControlPlaneStore,createExecutorsForOptions,loadConfig,packageVersion,registerAndHeartbeat } from '../index.js';
 import { runPlatformOperationOnce } from './operation-execution.js';
 
@@ -42,6 +43,8 @@ export async function runOnce(options: any = {}) {
 			await contextChecks.runIfDue();
 			const feedbackRetention = new FeedbackRetentionScheduler(controlPlaneStore, config.feedbackRetentionIntervalMs);
 			await feedbackRetention.runIfDue();
+			const treeDxCommitReplication = new TreeDxCommitReplicationScheduler(controlPlaneStore);
+			await treeDxCommitReplication.runIfDue();
         }
         return result;
     }

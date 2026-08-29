@@ -13,6 +13,7 @@ import { createKnowledgeWorkspaceService } from '../control-plane/knowledge/know
 import { createKnowledgeReviewService } from '../control-plane/knowledge/knowledge-review-service.ts';
 import { createDiscussionService } from '../discussions/discussion-service.ts';
 import { createGovernanceService } from '../control-plane/governance/governance-service.ts';
+import { createInboxService } from '../control-plane/inbox/inbox-service.ts';
 import { createProjectRepositoryService } from '../control-plane/repositories/project-repository-service.ts';
 import { createWorkflowService } from '../control-plane/repositories/workflow-service.ts';
 import { createWorkflowConfigurationService } from '../control-plane/repositories/workflow-configuration-service.ts';
@@ -212,12 +213,16 @@ export function createPlatformApiApp(options: any = {}) {
 	const accountRegistration = createAccountRegistrationService(store, authProvider, invitationContext);
 	const knowledgeReader = createKnowledgeReaderService({ store, options });
 	const discussions = createDiscussionService({ store, capacity, sessionEvents });
+	const communications = createCommunicationService(capacity, discussions, store);
+	const governance = createGovernanceService(store);
+	const inbox = createInboxService({ store, discussions, communications, governance });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
 			plans: createCapacityPlanService(capacity),
 			planningAndEstimates: createPlanningAndEstimateService(capacity),
 			agentGovernance: createAgentGovernanceService(capacity),
-			communications: createCommunicationService(capacity, discussions, store),
+			communications,
+			inbox,
 			workdays: createWorkdayService(capacity),
 			agents: createAgentQueryService(capacity),
 			capacityQueries: createCapacityQueryService(capacity),
@@ -244,7 +249,7 @@ export function createPlatformApiApp(options: any = {}) {
 			knowledgeWorkspaces: createKnowledgeWorkspaceService(store, knowledgeReader),
 			knowledgeReviews: createKnowledgeReviewService(store),
 			discussions,
-			governance: createGovernanceService(store),
+			governance,
 			repositories: createProjectRepositoryService(store),
 			workflows: createWorkflowService(store),
 			workflowConfiguration: createWorkflowConfigurationService(store),

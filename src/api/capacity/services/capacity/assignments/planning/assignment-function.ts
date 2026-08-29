@@ -1,7 +1,4 @@
-import { createHash } from "node:crypto";
-import {
-  type CapacitySupplyPolicy,
-} from "@treeseed/sdk/agent-capacity";
+import type { CapacitySupplyPolicy } from "@treeseed/sdk/agent-capacity";
 import { capacitySupplyCandidateStatus, selectCapacitySupply } from '../../../../policy/supply-selection.ts';
 import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
 import type { CapacityGovernanceDatabase } from "../../../../database.ts";
@@ -9,10 +6,7 @@ import { CapacityGovernanceError } from "../../../../database.ts";
 import type { DurableProviderAssignment } from "../../../../repositories/capacity/assignments/assignment.ts";
 import { CapacityWorkdayDemandRepository } from "../../../../repositories/capacity/workdays/workday-demand.ts";
 import { CapacityWorkdayParticipationRepository } from "../../../../repositories/capacity/workdays/workday-participation.ts";
-import {
-CapacityWorkdayRunRepository,
-type DurableCapacityWorkdayRun,
-} from "../../../../repositories/capacity/workdays/workday-run.ts";
+import { CapacityWorkdayRunRepository,type DurableCapacityWorkdayRun } from "../../../../repositories/capacity/workdays/workday-run.ts";
 import { CapacityAuditRepository } from "../../../../repositories/support/audit.ts";
 import type { ProviderLeasePrincipal } from "../../../accounts/lease-authority-service.ts";
 import type { ProviderSynthesisExecutionProvider } from "../../providers/provider-synthesis-context-service.ts";
@@ -33,10 +27,10 @@ import { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
 import { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
 import { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
 import { bindOperationHandoffAssignment } from '../handoffs/operation-handoff-lifecycle-service.ts';
+import { assignmentErrorCode as errorCode, assignmentRecord as record, assignmentText as text,
+	deterministicAssignmentId as assignmentId, type AssignmentJsonRecord as JsonRecord } from './support/assignment-function-support.ts';
 export { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
 export { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
-
-type JsonRecord = Record<string, unknown>;
 interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
   getProject(projectId: string): Promise<JsonRecord | null>;
   getTeam(teamId: string): Promise<JsonRecord | null>;
@@ -51,26 +45,6 @@ interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
     run: DurableCapacityWorkdayRun,
     input: ConfiguredWorkspaceInput,
   ): Promise<JsonRecord>;
-}
-
-function record(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : {};
-}
-function text(value: unknown, fallback = ""): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-function assignmentId(demandId: string, generation: number): string {
-	return `assignment_${createHash("sha256").update(`${demandId}:${generation}`).digest("base64url").slice(0, 32)}`;
-}
-function errorCode(error: unknown): string {
-  return typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string"
-    ? error.code
-    : "capacity_admission_denied";
 }
 async function assignmentInput(
 	store: AssignmentFunctionStore,
@@ -107,9 +81,21 @@ async function assignmentInput(
       { demandId: demand.id },
     );
   const contentBaseRef = resolveAssignmentContentBaseRef(payload);
+  const project = await store.getProject(demand.projectId);
+  if (!project) throw new CapacityGovernanceError(
+    "capacity_workday_demand_project_missing",
+    "Demand project is unavailable while composing assignment identity.",
+    409,
+    { demandId: demand.id, projectId: demand.projectId },
+  );
   const planning = demand.mode === "planning";
-	// The admitted demand freezes the selected profile. Optional intent payloads
-	// may describe a subject, but must never decide assignment authority.
+	const contentPrefix = contentRoot === '.' ? '' : `${contentRoot.replace(/\/+$/u, '')}/`;
+	const projectSlug = text(project.slug) || demand.projectId;
+	const coreObjectivePath = `${contentPrefix}objectives/core`;
+	const coreObjectiveCandidates = [`${coreObjectivePath}.mdx`, `${coreObjectivePath}.md`];
+	const projectReadmePath = `${contentPrefix}README.md`;
+	const identityAnchorPaths = [...coreObjectiveCandidates, projectReadmePath];
+	// The admitted demand freezes the selected profile; intent cannot decide authority.
 	const activityType=demand.activityType;
 	const executionMode = demand.metadata.executionMode === 'production' ? 'production' as const : 'simulation' as const;
   const requiredCapabilities = Array.isArray(demand.metadata.requiredCapabilities)
@@ -185,7 +171,7 @@ async function assignmentInput(
   const bootstrapReadPaths = assignmentBootstrapReadPaths(contentRoot, payload.agentContentPath, intent.subjectPath);
   const contextQueryReadPaths = assignmentContextQueryReadPaths(contentRoot, payload.contextQueryRefs, payload.contextQueryChecks);
   const instructionTemplateReadPaths = assignmentInstructionTemplateReadPaths(contentRoot, payload.instructionTemplateRefs);
-  const allowedReadPaths = mergeAssignmentPathScopes(taskReadPaths, discussionMessageReadPaths, bootstrapReadPaths, contextQueryReadPaths, instructionTemplateReadPaths, operationalPaths);
+  const allowedReadPaths = mergeAssignmentPathScopes(taskReadPaths, discussionMessageReadPaths, bootstrapReadPaths, identityAnchorPaths, contextQueryReadPaths, instructionTemplateReadPaths, operationalPaths);
   const allowedWritePaths = mergeAssignmentPathScopes(taskWritePaths, operationalPaths);
   const workspaceAllowedPaths = mergeAssignmentPathScopes(allowedReadPaths, allowedWritePaths);
   const workspaceId = workdayTreeDxWorkspaceId(id);
@@ -326,6 +312,17 @@ async function assignmentInput(
 	  upstreamMutationPolicy: executionMode === 'production' ? 'checkpoint-only' : 'denied',
       activityType: demand.activityType,
 	  chatProfile: record(payload.chatProfile),
+	  identityManifest: executionKind === 'conversation' ? {
+		  schemaVersion: 'treeseed.agent-identity-manifest/v1',
+		  agentHandle: `@${projectSlug}/${text(demand.agentId)}`,
+		  teamId: demand.teamId, projectId: demand.projectId, projectSlug,
+		  agentSlug: text(demand.agentId), repositoryId, immutableRef: contentBaseRef,
+		  agentProfile: { path: text(payload.agentContentPath), expectedRevision: contentBaseRef },
+		  coreObjective: { path: coreObjectivePath, candidates: coreObjectiveCandidates, expectedRevision: contentBaseRef },
+		  projectReadme: { path: projectReadmePath, expectedRevision: contentBaseRef },
+		  instructionTemplates: instructionTemplateReadPaths.map((path) => ({ path, expectedRevision: contentBaseRef })),
+	  } : {},
+	  contextManifest: allowedReadPaths.map((path) => ({ path, immutableRef: contentBaseRef, access: 'read' })),
 		agentClassSlug: text(demand.metadata.agentClassSlug),
       contentRoot,
       agentContentPath: text(payload.agentContentPath),

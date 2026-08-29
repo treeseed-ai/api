@@ -32,6 +32,8 @@ export function projectLibraryPath(root: string, ...parts: string[]): string {
 
 export interface KnowledgeGatewayConnection {
 	client: TreeDxInfrastructureClient;
+	baseUrl: string;
+	accessToken: string;
 	repositoryId: string;
 	baseRef: string;
 	contentPath: string;
@@ -45,6 +47,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	write: boolean;
 	publishRefs?: string[];
 	maintenanceRefs?: string[];
+	replicationRefs?: string[];
 	readRefs?: string[];
 	workspaceRefs?: string[];
 	relationPaths?: boolean;
@@ -64,7 +67,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	const repositoryId = text(library.repositoryId, treeDx.repositoryId);
 	if (!repositoryId) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
-	const allowedPaths = [projectLibraryPath(contentPath, 'books/**'), projectLibraryPath(contentPath, 'knowledge/**'), projectLibraryPath(contentPath, 'assets/**'),
+	const allowedPaths = input.replicationRefs?.length ? ['**'] : [projectLibraryPath(contentPath, 'books/**'), projectLibraryPath(contentPath, 'knowledge/**'), projectLibraryPath(contentPath, 'assets/**'),
 		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
 			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
 		...(input.communicationPaths ? ['discussions', 'discussion-messages', 'discussion-events']
@@ -81,7 +84,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		tenantId: text(store.config.TREESEED_TREEDX_PROXY_TENANT_ID, process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
 		projectId: input.projectId,
 		connectionId: text(library.instanceId, treeDx.connectionId, treeDx.instanceId, 'treedx-project-binding'),
-		scope: { repositoryIds: [repositoryId], capabilities: input.maintenanceRefs?.length
+		scope: { repositoryIds: [repositoryId], capabilities: input.replicationRefs?.length
+			? ['repos:read', 'files:read', 'git:read', 'git:fetch', 'git:push', 'registry:read', 'snapshot:build', 'artifact:export']
+			: input.maintenanceRefs?.length
 			? ['repos:read', 'files:read', 'git:read', 'git:diff', 'git:fetch', 'git:push', 'registry:read', 'policy:write']
 			: input.publishRefs?.length
 			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:fetch', 'git:push', 'registry:read', 'graph:query', 'graph:refresh']
@@ -90,13 +95,15 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query'],
 		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
 			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
-			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []),
+			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []), ...(input.replicationRefs ?? []),
 			...(input.workspaceRefs ?? [])])],
 		paths: allowedPaths },
 	}).token;
 	const transport = new FetchTransport({ baseUrl: baseUrl.replace(/\/+$/u, ''), token, timeoutMs: 15_000, fetchImpl: store.config.fetchImpl });
 	return {
 		client: new TreeDxInfrastructureClient(new TreeDxClient({ baseUrl: baseUrl.replace(/\/+$/u, ''), transport }), repositoryId),
+		baseUrl: baseUrl.replace(/\/+$/u, ''),
+		accessToken: token,
 		repositoryId,
 		baseRef: text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
 		contentPath,

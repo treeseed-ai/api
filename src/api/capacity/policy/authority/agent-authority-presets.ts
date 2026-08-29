@@ -15,6 +15,7 @@ const SOURCE_EXECUTION_TOOLS = [...SOURCE_READ_TOOLS,'treeseed.checkpoint'];
 const RAW_CONTENT_MUTATION_TOOLS = new Set(['treedx.apply_workspace_changeset','treedx.commit_workspace']);
 const CHAT_ALLOWED_TOOLS = new Set([
 	...OPERATIONAL_TOOLS, ...MESSAGING_TOOLS, ...CONTENT_TOOLS,
+	...SOURCE_READ_TOOLS,
 	'treedx.build_context', 'treedx.read_repository_files', 'treedx.search_workspace', 'treedx.read_workspace_file',
 	'treeseed.discussion.create_artifact', 'treeseed.operation.prepare_handoff', 'treeseed.client_session.request_action',
 ]);
@@ -25,7 +26,7 @@ const PROFILE_PRESETS: Record<AgentActivityType,AgentAuthorityPresetId[]> = {
 	acting: ['source-execution','influence'],
 	reviewing: ['review-authority','plan-contribution'],
 	reporting: ['messaging','reporting'],
-	chat: ['influence'],
+	chat: ['review-authority'],
 };
 
 function toolsForPreset(preset: AgentAuthorityPresetId) {

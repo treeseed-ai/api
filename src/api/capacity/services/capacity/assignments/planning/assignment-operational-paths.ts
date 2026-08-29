@@ -15,17 +15,18 @@ export function assignmentOperationalContentPaths(contentRoot: string, assignmen
 
 export function assignmentBootstrapReadPaths(contentRoot: string, agentContentPath: unknown, subjectPath: unknown) {
 	const root = normalizedRoot(contentRoot);
+	const prefix = root ? `${root}/` : '';
+	const identityAnchors = [`${prefix}README.md`];
 	const editorialAnchors = typeof agentContentPath === 'string' && agentContentPath.includes('/agents/editorial/')
 		? [
-			`${root}/objectives/core.mdx`,
-			`${root}/objectives/core.md`,
-			`${root}/notes/editorial/core.mdx`,
-			`${root}/notes/editorial/core.md`,
-			`${root}/notes/editorial/books/treeseed-guide/core.mdx`,
-			`${root}/notes/editorial/books/treeseed-guide/core.md`,
+			`${prefix}README.md`,
+			`${prefix}notes/editorial/core.mdx`,
+			`${prefix}notes/editorial/core.md`,
+			`${prefix}notes/editorial/books/treeseed-guide/core.mdx`,
+			`${prefix}notes/editorial/books/treeseed-guide/core.md`,
 		]
 		: [];
-	return [agentContentPath, subjectPath, ...editorialAnchors]
+	return [agentContentPath, subjectPath, ...identityAnchors, ...editorialAnchors]
 		.filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
 		.map((path) => path.trim());
 }

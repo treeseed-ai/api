@@ -12,6 +12,7 @@ import { createWorkdayOperations, type WorkdayOperationDependencies } from './ca
 import { createDeepHealthOperation, createReadinessOperation, statusOperation, type DeepHealthDependencies } from './core-operations.ts';
 import { createDiscussionOperations, type DiscussionOperationDependencies } from './discussion-operations.ts';
 import { createGovernanceOperations, type GovernanceOperationDependencies } from './governance-operations.ts';
+import { createInboxOperations, type InboxOperationDependencies } from './inbox/index.ts';
 import { createKnowledgeOperations, type KnowledgeOperationDependencies } from './knowledge-operations.ts';
 import { createProjectAccessOperation, createProjectArchiveOperation, createProjectCreateOperation, createProjectDeleteOperation, createProjectDeletionBlockersOperation, createProjectRestoreOperation, createProjectShowOperation, createProjectSummaryOperation, createProjectUpdateOperation, createProjectsListOperation, type ProjectOperationDependencies } from './project-operations.ts';
 import { createRepositoryOperations, type RepositoryOperationDependencies } from './repositories/index.ts';
@@ -30,7 +31,7 @@ export * from './operation-registry.ts';
 
 export const controlPlaneOperations = new OperationRegistry([statusOperation]);
 
-export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CapacityPlanOperationDependencies & PlanningAndEstimateOperationDependencies & AgentGovernanceOperationDependencies & CommunicationOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies & AssignmentOperationDependencies & PlatformOperationDependencies & ProviderOperationDependencies & ProviderAssignmentOperationDependencies & TreeDxOperationDependencies & TreeAiOperationDependencies & RealtimeOperationDependencies & SeedOperationDependencies & FeedbackOperationDependencies) {
+export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & InboxOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CapacityPlanOperationDependencies & PlanningAndEstimateOperationDependencies & AgentGovernanceOperationDependencies & CommunicationOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies & AssignmentOperationDependencies & PlatformOperationDependencies & ProviderOperationDependencies & ProviderAssignmentOperationDependencies & TreeDxOperationDependencies & TreeAiOperationDependencies & RealtimeOperationDependencies & SeedOperationDependencies & FeedbackOperationDependencies) {
 	return new OperationRegistry([
 		statusOperation,
 		createReadinessOperation(dependencies),
@@ -47,6 +48,7 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		...createKnowledgeOperations(dependencies),
 		...createDiscussionOperations(dependencies),
 		...createGovernanceOperations(dependencies),
+		...createInboxOperations(dependencies),
 		...createRepositoryOperations(dependencies),
 		...createServiceOperations(dependencies),
 		...createCapacityPlanOperations(dependencies),
