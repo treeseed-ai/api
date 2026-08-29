@@ -85,7 +85,7 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 			const session = await store.first(`SELECT * FROM capacity_provider_availability_sessions WHERE membership_id = ? AND status = 'open' AND expires_at > ? ORDER BY refreshed_at DESC LIMIT 1`, [membership.id, new Date().toISOString()]);
 			if (!session) { receipts.push({ key: prerequisite.key, status: 'waiting_provider', teamId: team.id, membershipId: membership.id, blockers: ['provider_health_required'] }); continue; }
 			const lanes = await store.all(`SELECT lane.*, execution_provider.capabilities_json AS execution_provider_capabilities_json FROM capacity_provider_lanes lane
-				INNER JOIN capacity_execution_providers execution_provider ON execution_provider.id = lane.execution_provider_id
+				INNER JOIN capacity_execution_providers execution_provider ON execution_provider.capacity_provider_id = lane.capacity_provider_id AND execution_provider.id = lane.execution_provider_id
 				WHERE lane.capacity_provider_id = ? AND lane.status = 'active' AND execution_provider.status = 'active'
 				ORDER BY lane.purpose, lane.id`, [membership.capacity_provider_id]);
 			const purposes = new Set(lanes.map((lane) => String(lane.purpose)));
@@ -110,12 +110,16 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 						projectReceipts.push({ projectKey, environment, status: active.status, grantId: existing.id }); continue;
 					}
 					if (!mutate) { projectReceipts.push({ projectKey, environment, status: 'planned' }); continue; }
-					const grantId = `seed-grant:${createHash('sha256').update(`${plan.seed}\0${prerequisite.key}\0${project.id}\0${environment}`).digest('hex').slice(0, 32)}`;
+					// Provider enrollment is replaceable. Bind both the resource identity and
+					// operation receipts to the approved membership so a replacement local
+					// provider cannot collide with its predecessor's sealed create receipt.
+					const grantIdentity = `${plan.seed}\0${prerequisite.key}\0${membership.id}\0${project.id}\0${environment}`;
+					const grantId = `seed-grant:${createHash('sha256').update(grantIdentity).digest('hex').slice(0, 32)}`;
 					const candidate = await grants.create(team.id, { id: grantId, membershipId: membership.id, projectId: project.id, environment,
 						executionProviderIds, laneIds: lanes.map((entry) => String(entry.id)),
 						capabilities, allowedModes: prerequisite.allowedModes, unmetered: true,
-						metadata: { seedName: plan.seed, seedVersion: plan.version, prerequisiteKey: prerequisite.key, manifestDigest: prerequisite.manifestDigest } }, `seed:${plan.seed}:${prerequisite.key}:${project.id}:${environment}:create`);
-					const active = await grants.transition(team.id, candidate.id, 'active', `seed:${plan.seed}:${prerequisite.key}:${project.id}:${environment}:activate`);
+						metadata: { seedName: plan.seed, seedVersion: plan.version, prerequisiteKey: prerequisite.key, manifestDigest: prerequisite.manifestDigest } }, `seed:${plan.seed}:${prerequisite.key}:${membership.id}:${project.id}:${environment}:create`);
+					const active = await grants.transition(team.id, candidate.id, 'active', `seed:${plan.seed}:${prerequisite.key}:${membership.id}:${project.id}:${environment}:activate`);
 					projectReceipts.push({ projectKey, environment, status: active.status, grantId: active.id });
 				}
 			}

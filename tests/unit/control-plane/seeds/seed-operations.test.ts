@@ -109,6 +109,7 @@ describe('seed catalog operations', () => {
 
 		await reconcileSeedProviderPrerequisites(store as any, {}, plan, true, { id: 'owner-1' });
 
+		expect(store.all).toHaveBeenCalledWith(expect.stringContaining('execution_provider.capacity_provider_id = lane.capacity_provider_id'), ['provider-1']);
 		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('capabilities_json = ?'), [
 			JSON.stringify(['execution-1']), JSON.stringify(['communication', 'workday']),
 			JSON.stringify(['communication', 'agent-execution']), expect.any(String), 'grant-1', 'membership-1',

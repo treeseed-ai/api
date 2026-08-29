@@ -94,7 +94,7 @@ export class WorkdayPreflightService {
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
 			parameters:{ profileId:intent.profileId,allocationSetId:String(allocation.id),projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
-				objectiveRefs:intent.objectiveFilters??[],planningOnly:false,planningSession:{rounds:3,assignmentTimeboxSeconds:60},timePolicy:{cooperativePlanningPercent,governedExecutionPercent:100-reservePercent-cooperativePlanningPercent,reservePercent} },
+				objectiveRefs:intent.objectiveFilters??[],planningOnly:false,planningSession:{rounds:3,assignmentTimeboxSeconds:900},timePolicy:{cooperativePlanningPercent,governedExecutionPercent:100-reservePercent-cooperativePlanningPercent,reservePercent} },
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
 		const participants=Array.isArray(projection.planningParticipants)?projection.planningParticipants.map(record):[];

@@ -184,7 +184,10 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 	let selectedAgent: Row | null = null;
 	const agentClass = agentClasses.find((candidate) => {
 		const agents = record(candidate.handler_refs_json).agents;
-		selectedAgent = Array.isArray(agents) ? agents.map(record).find((agent) => text(agent.slug ?? agent.agentId) === agentSlug && record(record(agent.activities).chat).enabled !== false) ?? null : null;
+		selectedAgent = Array.isArray(agents) ? agents.map(record).find((agent) => {
+			const chat = record(record(agent.activities).chat);
+			return text(agent.slug ?? agent.agentId) === agentSlug && Object.keys(chat).length > 0 && chat.enabled !== false;
+		}) ?? null : null;
 		return Boolean(selectedAgent);
 	});
 	if (!agentClass) throw new CapacityGovernanceError('discussion_agent_chat_profile_missing', `Agent ${agentSlug} has no enabled Chat profile in the selected project.`, 409, { agentSlug });
