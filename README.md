@@ -1,5 +1,7 @@
 # @treeseed/api
 
+The governance inbox API aggregates TreeDX-backed questions, versioned proposals, and their Discussion threads for an active team. PostgreSQL stores the query projection, routing timeline, action receipts, and private per-user drafts while authored content retains exact TreeDX provenance.
+
 `@treeseed/api` runs the TreeSeed control plane: typed REST operations, deterministic OpenAPI, the remote MCP endpoint, PostgreSQL-backed state, authentication, governance, operation lifecycle, seed application, capacity coordination, assignments, and TreeDX federation hosting.
 
 The package owns its control-plane database baseline and seed validation/application, not tenant topology. Set `TREESEED_SEED_ROOT` to the deployment-owned directory containing `seeds/*.yaml`. External product integrations are not bundled into this repository.
@@ -117,6 +119,8 @@ Provider credentials are required only for enabled operation types. Manage them 
 API owns durable provider availability sessions, assignment leases, reservations, mode-run records, usage actuals, and ledger settlement. The assignment function is request-scoped and runs during provider check-in, next-assignment requests, or explicit operator actions.
 
 `@treeseed/agent` owns provider-local runtime behavior and AgentKernel execution. `@treeseed/sdk` owns portable contracts. Admin and CLI consume API contracts for operator visibility.
+
+Team discussion topics are cross-project coordination scopes. The API resolves qualified `@project/agent` addresses exactly and expands bare `@agent` handles across every active project, writes the message through each addressed project's TreeDX stream, and tracks the complete response and handoff chain under one PostgreSQL send identity.
 
 Provider runners should receive project-scoped TreeDX proxy handles rather than raw TreeDX credentials. API owns authentication, project scope checks, TreeDX node resolution, credential holding, and forwarding allowed `/v1/dx/projects/:projectId/...` operations.
 

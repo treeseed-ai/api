@@ -11,11 +11,34 @@ import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
 import { assignmentActivityType, assignmentRecord as record, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
 import { commitDiscussionMessage } from '../../../discussions/content.ts';
+import { loadDiscussions } from '../../../discussions/content.ts';
 import { suspendAssignmentForDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-suspension-service.ts';
+import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
 function objectValue(value: unknown): Record<string, unknown> { return record(value); }
+function stableId(scope: string, value: string) { return createHash('sha256').update(`${scope}:${value}`).digest('hex').slice(0, 32); }
+
+async function communicationProvenance(store: ProviderAssignmentStore, assignment: Record<string, unknown>) {
+	if (String(assignment.execution_kind ?? assignment.executionKind ?? '') !== 'conversation') return null;
+	const invocationId = String(assignment.invocation_id ?? assignment.invocationId ?? '');
+	const invocation = invocationId ? await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1', [invocationId, assignment.team_id ?? assignment.teamId]) : null;
+	if (!invocation) return null; const metadata = discussionInvocationProvenance(invocation).metadata; const communication = record(metadata.communication);
+	const topicId = String(communication.topicId ?? ''); const topic = topicId ? await store.first('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [topicId, assignment.team_id ?? assignment.teamId]) : null;
+	return topic ? { invocation, metadata, communication, topic } : null;
+}
+
+async function appendCommunicationEvent(store: ProviderAssignmentStore, assignment: Record<string, unknown>, type: string, summary: string, actor: { kind: string; id: string; handle?: string }, payload: Record<string, unknown> = {}) {
+	const provenance = await communicationProvenance(store, assignment); if (!provenance) return null;
+	const assignmentId = String(assignment.id), invocationId = String(assignment.invocation_id ?? assignment.invocationId ?? ''), sendId = String(provenance.communication.sendId ?? '');
+	const eventIdentity = payload.traceSequence == null ? type : `${type}:${String(payload.traceSequence)}`;
+	const id = `topic-event-${stableId(String(provenance.topic.id), `${assignmentId}:${eventIdentity}`)}`, now = new Date().toISOString();
+	await store.run(`INSERT INTO communication_topic_events (id,topic_id,team_id,event_type,occurred_at,send_id,invocation_id,assignment_id,actor_kind,actor_id,actor_handle,summary,payload_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb) ON CONFLICT (id) DO NOTHING`, [id, provenance.topic.id, assignment.team_id ?? assignment.teamId, type, now,
+		sendId || null, invocationId || null, assignmentId, actor.kind, actor.id, actor.handle ?? null, summary, JSON.stringify(payload)]);
+	return now;
+}
 
 export function discussionInvocationProvenance(invocation: Record<string, unknown>) {
 	let metadata = record(invocation.metadata_json);
@@ -89,7 +112,13 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		async show(auth: unknown, assignmentId: string) { const actor = principal(auth, ['provider:assignments:read']); return assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'access'); },
 		async explain(auth: unknown, assignmentId: string) { return record((await this.show(auth, assignmentId)).explanation); },
 		renew: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:read', 'renewProviderAssignmentLease'),
-		startExecution: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => startAssignmentExecutionWindow(store, principal(auth, ['provider:assignments:write']), assignmentId, body),
+		async startExecution(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
+			const actor = principal(auth, ['provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
+			const result = await startAssignmentExecutionWindow(store, actor, assignmentId, body);
+			const acceptedAt = await appendCommunicationEvent(store, assignment, 'response_lease.accepted', 'Response lease accepted; execution is starting.', { kind: 'provider', id: actor.capacityProviderId }, { runnerId: body.runnerId ?? null });
+			if (acceptedAt) await store.run('UPDATE capacity_provider_assignments SET communication_lease_accepted_at=COALESCE(communication_lease_accepted_at,?) WHERE id=?', [acceptedAt, assignmentId]);
+			return result;
+		},
 		startCloseout: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => startAssignmentCloseoutWindow(store, principal(auth, ['provider:assignments:write']), assignmentId, body),
 		preflight: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => store.preflightProviderAssignmentCompletion(principal(auth, ['provider:assignments:write']), assignmentId, body),
 		async respondToDiscussion(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
@@ -118,18 +147,15 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			const project = await contentStore.getProjectDetails(assignment.projectId);
 			const projectSlug = String(project?.project?.slug ?? assignment.projectId);
 			const addresses = outcome === 'responded' ? parseCommunicationAddresses(markdown) : [];
-			for (const address of addresses) if (address.projectSlug && ![projectSlug, assignment.projectId].includes(address.projectSlug)) throw new CapacityGovernanceError(
-				'communication_target_project_mismatch', `Agent target ${address.address} does not belong to project ${projectSlug}.`, 409);
-			const existingChain = await store.all(`SELECT agent_id,trigger_kind FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
+			const resolvedTargets = addresses.length ? await resolveTeamCommunicationTargets(contentStore, actor.teamId, addresses) : [];
+			const existingChain = await store.all(`SELECT project_id,agent_id,trigger_kind FROM agent_invocation_requests WHERE team_id=? AND execution_kind='conversation'
 				AND metadata_json::jsonb->'communication'->>'sendId'=?`, [actor.teamId, String(communication.sendId ?? '')]);
-			const priorAgents = new Set(existingChain.map((row: Record<string, unknown>) => String(row.agent_id ?? '')));
-			const followupRequirements = new Map<string, 'required' | 'optional'>();
-			for (const address of addresses) if (!priorAgents.has(address.agentSlug)
-				&& (!followupRequirements.has(address.agentSlug) || address.requirement === 'required')) followupRequirements.set(address.agentSlug, address.requirement);
+			const priorAgents = new Set(existingChain.map((row: Record<string, unknown>) => `${String(row.project_id ?? '')}/${String(row.agent_id ?? '')}`));
 			const followupCount = existingChain.filter((row: Record<string, unknown>) => String(row.trigger_kind ?? '') === 'agent-handoff').length;
-			const followupAddresses = [...followupRequirements].slice(0, Math.min(2, Math.max(0, 16 - followupCount)))
-				.map(([agentSlug, requirement]) => ({ agentSlug, requirement }));
-			if (Number(invocation.handoff_depth ?? 0) >= 3 || followupCount >= 16) followupAddresses.splice(0);
+			const followupTargets = resolvedTargets.filter((target) => !priorAgents.has(`${target.projectId}/${target.agentSlug}`))
+				.slice(0, Math.max(0, 16 - followupCount));
+			if (Number(invocation.handoff_depth ?? 0) >= 3 || followupCount >= 16) followupTargets.splice(0);
+			const localTargets = followupTargets.filter((target) => target.projectId === assignment.projectId);
 			const messageId = `response-${createHash('sha256').update(`${assignmentId}:${idempotencyKey}`).digest('hex').slice(0, 24)}`;
 			const workspaceId = String(handle.workspaceId ?? '').trim();
 			const baseCommitSha = String(handle.baseCommitSha ?? handle.baseRef ?? '').trim();
@@ -140,24 +166,79 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 				principal: { id: assignment.agentId ?? 'project-agent', displayName: assignment.agentId ?? 'Project agent', email: `${assignment.agentId ?? 'agent'}@agents.treeseed.local` },
 				body: markdown, intent: 'discuss', discussionId, messageId, createDiscussion: false, replyTo: sourceMessageId,
 				sourceMessageRefs: assignment.sourceMessageRefs, authorType: 'agent', authorAgentId: assignment.agentId,
-				recipients: followupAddresses.map((address) => address.agentSlug),
+				recipients: localTargets.map((target) => target.agentSlug),
 				assignmentId: assignment.id, authoringRef, authoringWorkspace: { workspaceId, baseCommitSha, baseRef },
 			});
+			if (localTargets.length) {
+				await admitDiscussionInvocations(store, { teamId: assignment.teamId, projectId: assignment.projectId,
+					projectSlug, discussionId, messageId: authored.message.id, messagePath: authored.message.path, messageCommit: authored.commitSha,
+					contextRefs: [], agentSlugs: localTargets.map((target) => target.agentSlug), idempotencyKey: `${idempotencyKey}:followup:${assignment.projectId}`,
+					handoffRootId: String(invocation.handoff_root_id ?? invocation.id), handoffParentId: String(invocation.id),
+					handoffDepth: Number(invocation.handoff_depth ?? 0) + 1, triggerKind: 'agent-handoff', durationSeconds: 900, requestedById: String(assignment.agentId ?? ''),
+					communication: { ...communication, parentInvocationId: invocation.id }, addressRequirements: Object.fromEntries(localTargets.map((target) => [target.agentSlug, target.requirement])) });
+			}
+			for (const targetProjectId of [...new Set(followupTargets.filter((target) => target.projectId !== assignment.projectId).map((target) => target.projectId))]) {
+				const projectTargets = followupTargets.filter((target) => target.projectId === targetProjectId);
+				const topicId = String(communication.topicId ?? ''); const topic = await store.first(
+					'SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? AND status=\'active\' LIMIT 1', [topicId, assignment.teamId]);
+				if (!topic) throw new CapacityGovernanceError('communication_topic_unavailable', 'Cross-project handoff requires its active team topic.', 409);
+				const streamId = `stream-${stableId(topicId, targetProjectId)}`;
+				const targetDiscussionId = `discussion-${stableId(assignment.teamId, `${topicId}:${targetProjectId}`)}`; const now = new Date().toISOString();
+				await store.run(`INSERT INTO communication_discussion_streams (id,topic_id,team_id,project_id,discussion_id,created_at,updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+					ON CONFLICT (topic_id,project_id) DO NOTHING`, [streamId, topicId, assignment.teamId, targetProjectId, targetDiscussionId, now, now]);
+				const stream = await store.first('SELECT id,discussion_id FROM communication_discussion_streams WHERE topic_id=? AND project_id=? LIMIT 1', [topicId, targetProjectId]);
+				if (!stream) throw new CapacityGovernanceError('communication_topic_stream_unavailable', 'Cross-project handoff stream could not be established.', 503);
+				const existing = await loadDiscussions({ store: contentStore, projectId: targetProjectId, discussionId: String(stream.discussion_id), collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] }));
+				const delivered = await commitDiscussionMessage({ store: contentStore, projectId: targetProjectId, teamId: assignment.teamId,
+					principal: { id: 'treeseed-communication-router', displayName: `@${projectSlug}/${assignment.agentId ?? 'agent'}`, email: 'communication-router@services.treeseed.local' },
+					body: markdown, intent: 'discuss', discussionId: String(stream.discussion_id),
+					messageId: `handoff-${stableId(assignment.id, `${idempotencyKey}:${targetProjectId}`)}`, createDiscussion: !existing.discussions.length,
+					topic: String(topic.slug), sourceMessageRefs: [authored.message.path], authorType: 'system',
+					recipients: projectTargets.map((target) => target.agentSlug), handoffId: String(invocation.id),
+				});
+				await admitDiscussionInvocations(store, { teamId: assignment.teamId, projectId: targetProjectId,
+					projectSlug: projectTargets[0]!.projectSlug, discussionId: delivered.discussion.id, messageId: delivered.message.id,
+					messagePath: delivered.message.path, messageCommit: delivered.commitSha, contextRefs: [], agentSlugs: projectTargets.map((target) => target.agentSlug),
+					idempotencyKey: `${idempotencyKey}:followup:${targetProjectId}`, handoffRootId: String(invocation.handoff_root_id ?? invocation.id),
+					handoffParentId: String(invocation.id), handoffDepth: Number(invocation.handoff_depth ?? 0) + 1, triggerKind: 'agent-handoff', durationSeconds: 900,
+					requestedById: String(assignment.agentId ?? ''), communication: { ...communication, streamId: stream.id, parentInvocationId: invocation.id },
+					addressRequirements: Object.fromEntries(projectTargets.map((target) => [target.agentSlug, target.requirement])) });
+			}
 			await suspendAssignmentForDiscussionResponse(store, { assignmentId, teamId: assignment.teamId, leaseToken,
 				discussionId, messageId: authored.message.id, message: String(body.summary ?? markdown.slice(0, 500)),
 				messagePath: authored.message.path, checkpoint: { summary: body.summary ?? null, usage: record(body.usage), commitSha: authored.commitSha },
 			});
 			await store.run(`UPDATE agent_invocation_requests SET response_json=?,updated_at=? WHERE id=? AND team_id=?`, [JSON.stringify({ outcome }), new Date().toISOString(), invocation.id, actor.teamId]);
-			if (followupAddresses.length) {
-				await admitDiscussionInvocations(store, { teamId: assignment.teamId, projectId: assignment.projectId,
-					projectSlug, discussionId, messageId: authored.message.id, messagePath: authored.message.path, messageCommit: authored.commitSha,
-					contextRefs: [], agentSlugs: followupAddresses.map((address) => address.agentSlug), idempotencyKey: `${idempotencyKey}:followup`,
-					parentAssignmentId: assignment.id, handoffRootId: String(invocation.handoff_root_id ?? invocation.id), handoffParentId: String(invocation.id),
-					handoffDepth: Number(invocation.handoff_depth ?? 0) + 1, triggerKind: 'agent-handoff', durationSeconds: 900, requestedById: String(assignment.agentId ?? ''),
-					communication: { ...communication, parentInvocationId: invocation.id }, addressRequirements: Object.fromEntries(followupAddresses.map((address) => [address.agentSlug, address.requirement])) });
-			}
+			await appendCommunicationEvent(store, assignment, outcome === 'abstained' ? 'agent.abstained' : 'agent.response', outcome === 'abstained' ? 'Agent abstained.' : 'Agent response posted.',
+				{ kind: 'agent', id: String(assignment.agentId ?? 'project-agent'), handle: `@${projectSlug}/${String(assignment.agentId ?? 'agent')}` }, { messageRef: authored.message.path, markdown });
 			return { schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId,
 				invocationId: assignment.invocationId, messageRef: authored.message.path, status: outcome, settledAt: new Date().toISOString() };
+		},
+		async acknowledgeCommunication(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
+			const actor = principal(auth, ['provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
+			if (String(assignment.execution_kind) !== 'conversation') throw new CapacityGovernanceError('communication_assignment_required', 'Only conversation assignments have mention notifications.', 409);
+			if (String(body.providerId ?? '') !== actor.capacityProviderId || !String(body.runnerId ?? '').trim()) throw new CapacityGovernanceError('communication_acknowledgement_invalid', 'Provider and runner identity are required.', 400);
+			const existing = String(assignment.communication_acknowledged_at ?? ''); const acknowledgedAt = existing || String(body.observedAt ?? new Date().toISOString());
+			if (!existing) await store.run('UPDATE capacity_provider_assignments SET communication_acknowledged_at=? WHERE id=? AND membership_id=?', [acknowledgedAt, assignmentId, actor.membershipId]);
+			await appendCommunicationEvent(store, assignment, 'mention.acknowledged', 'Mention acknowledged by the execution provider.', { kind: 'provider', id: actor.capacityProviderId }, { runnerId: body.runnerId });
+			return { assignmentId, acknowledgedAt, replayed: Boolean(existing) };
+		},
+		async traceCommunication(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
+			const actor = principal(auth, ['provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
+			if (String(assignment.execution_kind) !== 'conversation' || String(body.leaseToken ?? '') !== String(assignment.lease_token ?? '')) throw new CapacityGovernanceError('communication_trace_lease_invalid', 'Exact conversation lease authority is required.', 409);
+			const sequence = Number(body.sequence); if (!Number.isInteger(sequence) || sequence < 0) throw new CapacityGovernanceError('communication_trace_sequence_invalid', 'Trace sequence must be non-negative.', 400);
+			const provenance = await communicationProvenance(store, assignment); if (!provenance) throw new CapacityGovernanceError('communication_trace_provenance_missing', 'Communication provenance is unavailable.', 409);
+			const sanitized = redactTranscriptValue(body.payload) as Record<string, unknown>; const protectedPayload = body.protectedPayload ? redactTranscriptValue(body.protectedPayload) as Record<string, unknown> : null;
+			if (JSON.stringify(sanitized).length > 262_144 || JSON.stringify(protectedPayload).length > 1_048_576) throw new CapacityGovernanceError('communication_trace_payload_too_large', 'Trace evidence exceeds its bounded payload size.', 413);
+			const id = `trace-${stableId(assignmentId, String(sequence))}`, acceptedAt = new Date().toISOString(), expiresAt = protectedPayload ? new Date(Date.now() + 30 * 86_400_000).toISOString() : null;
+			const existing = await store.first('SELECT id FROM communication_execution_trace_events WHERE assignment_id=? AND sequence=?', [assignmentId, sequence]);
+			await store.run(`INSERT INTO communication_execution_trace_events (id,team_id,topic_id,send_id,invocation_id,assignment_id,sequence,event_type,occurred_at,accepted_at,summary,payload_json,protected_payload_json,protected_payload_expires_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?) ON CONFLICT (assignment_id,sequence) DO NOTHING`, [id, actor.teamId, provenance.topic.id, provenance.communication.sendId ?? null,
+				assignment.invocation_id ?? null, assignmentId, sequence, body.type, body.occurredAt, acceptedAt, body.summary, JSON.stringify(sanitized), protectedPayload ? JSON.stringify(protectedPayload) : null, expiresAt]);
+			const traceType = String(body.type);
+			if (traceType === 'execution.failed') await appendCommunicationEvent(store, assignment, 'agent.failed', String(body.summary), { kind: 'agent', id: String(assignment.agent_id ?? 'agent') }, { traceSequence: sequence });
+			else if (traceType.includes('message') || traceType.includes('progress')) await appendCommunicationEvent(store, assignment, 'agent.progress', String(body.summary), { kind: 'agent', id: String(assignment.agent_id ?? 'agent') }, { traceSequence: sequence });
+			return { assignmentId, sequence, acceptedAt, replayed: Boolean(existing) };
 		},
 		returnAssignment: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'returnProviderAssignment'),
 		complete: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment'),

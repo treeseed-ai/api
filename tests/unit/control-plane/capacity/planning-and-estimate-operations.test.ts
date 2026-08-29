@@ -10,6 +10,8 @@ const principal = { id: 'user-a', roles: [], permissions: [] };
 function store(overrides: Record<string, unknown> = {}) {
 	return {
 		async getProjectDetails() { return { project: { id: 'project-a', teamId: 'team-a' } }; },
+		async listTeamProjects() { return [{ id: 'project-a', slug: 'sdk', status: 'active' }]; },
+		async listProjectAgentClassesPage() { return { items: [{ handlerRefs: { agents: [{ slug: 'architect', activities: { chat: { enabled: true, handler: 'writer' } } }] } }] }; },
 		async principalCanAccessTeam() { return true; },
 		async getTeamAccessSummary() { return { permissions: ['projects:read:team', 'projects:manage:team'] }; },
 		...overrides,
@@ -33,6 +35,8 @@ describe('planning and estimate catalog operations', () => {
 		expect(createCommunicationOperations({ communications: service as never })
 			.map((operation) => operation.binding.descriptor.operationId)).toEqual([
 				'communications.send', 'communications.sends.show',
+				'communications.topics.list', 'communications.topics.show', 'communications.topics.timeline',
+				'communications.topics.subscriptions.put', 'communications.topics.subscriptions.delete',
 				'communications.invocations.list', 'communications.invocations.show', 'communications.status.show',
 				'communications.handoffs.list', 'communications.client.actions.list', 'communications.invocations.cancel',
 			]);
@@ -86,11 +90,28 @@ describe('planning and estimate catalog operations', () => {
 			async run() { return { meta: { changes: 1 } }; },
 		}), { create });
 		await expect(service.send(principal, 'team-a', 'Agent Chat', {
-			projectId: 'sdk', message: '@sdk/architect\nPlease coordinate with @architect.',
+			message: '@sdk/architect\nPlease coordinate with @architect.',
 		}, 'request-a')).rejects.toMatchObject({ code: 'communication_capacity_unavailable', status: 503 });
 		expect(create).toHaveBeenCalledWith(principal, expect.objectContaining({
 			recipients: ['architect'], addressRequirements: { architect: 'required' },
-		}), 'request-a');
+		}), 'request-a:project-a');
+	});
+
+	it('expands a bare handle into one project stream per matching team agent', async () => {
+		const create = vi.fn(async () => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
+		const service = createCommunicationService(store({
+			async listTeamProjects() { return [{ id: 'project-api', slug: 'api', status: 'active' }, { id: 'project-sdk', slug: 'sdk', status: 'active' }]; },
+			async first(query: string, parameters: string[]) {
+				if (query.includes('communication_discussion_topics')) return { id: 'topic-a', slug: 'agent-chat', status: 'active' };
+				if (query.includes('communication_discussion_streams')) return { id: `stream-${parameters[1]}`, discussion_id: `discussion-${parameters[1]}` };
+				return null;
+			},
+			async run() { return { meta: { changes: 1 } }; },
+		}), { create });
+		await expect(service.send(principal, 'team-a', 'Agent Chat', { message: '@architect Please coordinate.' }, 'request-a'))
+			.rejects.toMatchObject({ code: 'communication_capacity_unavailable', status: 503 });
+		expect(create).toHaveBeenCalledTimes(2);
+		expect(create.mock.calls.map((call) => call[1].projectId).sort()).toEqual(['project-api', 'project-sdk']);
 	});
 
 	it('reads communication send identities from the text-backed JSON column with PostgreSQL JSONB semantics', async () => {

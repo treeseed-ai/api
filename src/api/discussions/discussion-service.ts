@@ -168,7 +168,9 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					intent: body.intent === 'propose' ? 'propose' : 'discuss', discussionId, messageId,
 					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
 					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
-					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [], ...(continuation ?? {}) });
+					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [],
+					inboxIntent: ['comment', 'answer', 'reply'].includes(text(body.inboxIntent)) ? body.inboxIntent as 'comment'|'answer'|'reply' : undefined,
+					replyTo: text(body.replyTo) || undefined, ...(continuation ?? {}) });
 			} catch (error) { failure(error, 503, 'discussion_content_unavailable'); }
 			const observed = await loadDiscussions({ store, projectId, discussionId: authored.discussion.id,
 				query: authored.message.id, collection: 'messages' });

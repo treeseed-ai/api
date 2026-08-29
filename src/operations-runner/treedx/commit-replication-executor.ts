@@ -1,0 +1,186 @@
+import { createHash } from 'node:crypto';
+import { resolveKnowledgeGatewayConnection } from '../../api/knowledge/gateway-treedx-connection.ts';
+import { R2S3PublicationClient } from '../../api/providers/cloudflare/r2-s3-publication-client.ts';
+import { githubRepositoryHead } from '../../providers/github/repository-client.ts';
+import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
+import { createRemoteGitCredentialDelivery } from '../../security/remote-git-credential-delivery.ts';
+
+const sha256 = (value: Uint8Array) => createHash('sha256').update(value).digest('hex');
+
+function setting(options: any, name: string) {
+	return String(options.config?.[name] ?? process.env[name] ?? '').trim();
+}
+
+async function verifyPrivateBucket(options: any, bucket: string) {
+	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
+	const apiToken = setting(options, 'TREESEED_CLOUDFLARE_API_TOKEN');
+	if (!accountId || !apiToken) throw new Error('Cloudflare management authority is required to verify that the R2 backup bucket is private.');
+	const root = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/r2/buckets/${encodeURIComponent(bucket)}/domains`;
+	const request = async (path: string) => {
+		const response = await (options.fetchImpl ?? fetch)(`${root}/${path}`, { headers: { authorization: `Bearer ${apiToken}` } });
+		if (!response.ok) throw new Error(`Cloudflare could not verify R2 bucket privacy (HTTP ${response.status}).`);
+		const payload = await response.json() as any;
+		if (payload.success === false) throw new Error('Cloudflare rejected the R2 bucket privacy check.');
+		return payload.result;
+	};
+	const [managed, custom] = await Promise.all([request('managed'), request('custom')]);
+	if (managed?.enabled || (custom?.domains ?? []).some((domain: any) => domain?.enabled)) {
+		throw new Error('The configured R2 backup bucket has public domain access enabled.');
+	}
+	return { verifiedPrivate: true, managedDomainEnabled: false, enabledCustomDomainCount: 0 };
+}
+
+async function resolveExactSourceRef(connection: any, row: any) {
+	const response: any = await connection.client.upstream.repositories.refs(connection.repositoryId);
+	const refs = Array.isArray(response?.refs) ? response.refs : [];
+	const preservationRef = `refs/treedx/commits/${row.commit_sha}`;
+	for (const name of [preservationRef, row.source_ref]) {
+		const ref = refs.find((candidate: any) => candidate?.name === name);
+		if (String(ref?.target ?? ref?.sha ?? '') === row.commit_sha) return name;
+	}
+	throw new Error('TreeDX no longer has an authorized ref pointing to the exact commit.');
+}
+
+async function replicateGitHub(options: any, row: any, connection: any, operationId: string, sourceRef: string) {
+	const store = options.controlPlaneStore;
+	const binding: any = await store.first('SELECT * FROM project_remote_repository_bindings WHERE project_id = ?', [row.project_id]);
+	if (!binding || binding.grant_status !== 'ready') throw new Error('A ready GitHub repository binding is required for commit replication.');
+	const credential = await resolveGitHubCredentialAuthority({ store, authorityId: binding.authority_id,
+		repositoryBindingId: binding.id, capability: 'repository-hosting', fetchImpl: options.fetchImpl });
+	const provenNode: any = await store.first(`SELECT d.node_id FROM remote_credential_deliveries d
+		JOIN remote_git_operation_grants g ON g.id=d.grant_id
+		WHERE g.repository_binding_id=? AND d.status='consumed' ORDER BY d.consumed_at DESC LIMIT 1`, [binding.id]);
+	const localNode = (options.config?.environment ?? process.env.TREESEED_ENVIRONMENT) === 'local' ? 'node_local' : '';
+	const nodeId = String(provenNode?.node_id || setting(options, 'TREESEED_TREEDX_CREDENTIAL_BROKER_NODE_ID') || localNode).trim();
+	if (!nodeId) throw new Error('No previously verified TreeDX credential-broker node identity is available.');
+	const current = await githubRepositoryHead(options.fetchImpl ?? fetch, credential.token, binding.owner, binding.name, row.github_ref);
+	if (current && current !== row.commit_sha) throw new Error(`Immutable GitHub backup ref ${row.github_ref} points to a different commit.`);
+	let push: any = null;
+	if (!current) {
+		const delivery = await createRemoteGitCredentialDelivery({ store, operationId, actorId: 'treedx-commit-replicator',
+			teamId: row.team_id, projectId: row.project_id, repositoryBindingId: binding.id,
+			credentialAuthorityId: binding.authority_id, nodeId, sourceRef,
+			destinationRef: row.github_ref, reviewedCommit: row.commit_sha, expectedRemoteHead: null, purpose: 'push' });
+		push = await connection.client.push({ repoId: row.repository_id, remoteName: 'origin', remoteUrl: binding.clone_url,
+			credentialId: delivery.deliveryId, refspecs: [`${sourceRef}:${row.github_ref}`], expectedRemoteHead: '' });
+	}
+	const observed = await githubRepositoryHead(options.fetchImpl ?? fetch, credential.token, binding.owner, binding.name, row.github_ref);
+	if (observed !== row.commit_sha) throw new Error('GitHub did not retain the exact TreeDX commit after push.');
+	return { provider: 'github', repository: `${binding.owner}/${binding.name}`, ref: row.github_ref,
+		commitSha: observed, verifiedAt: new Date().toISOString(), push: push ? { updatedRefs: push.updatedRefs ?? [] } : null };
+}
+
+async function downloadSnapshot(options: any, connection: any, snapshotId: string) {
+	const response = await (options.fetchImpl ?? fetch)(
+		`${connection.baseUrl}/api/v1/repos/${encodeURIComponent(connection.repositoryId)}/artifacts/export`, {
+			method: 'POST', headers: { authorization: `Bearer ${connection.accessToken}`, 'content-type': 'application/json' },
+			body: JSON.stringify({ snapshotId, download: true }),
+		},
+	);
+	if (!response.ok) throw new Error(`TreeDX snapshot download failed (HTTP ${response.status}).`);
+	return { bytes: new Uint8Array(await response.arrayBuffer()),
+		artifactChecksum: response.headers.get('x-treedx-artifact-checksum') };
+}
+
+async function replicateR2(options: any, row: any, connection: any, sourceRef: string) {
+	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
+	const bucket = setting(options, 'TREESEED_CONTENT_BUCKET_NAME');
+	const accessKeyId = setting(options, 'TREESEED_R2_ACCESS_KEY_ID');
+	const secretAccessKey = setting(options, 'TREESEED_R2_SECRET_ACCESS_KEY');
+	if (!accountId || !bucket || !accessKeyId || !secretAccessKey) {
+		throw new Error('R2 commit replication requires the Cloudflare account, private team bucket, and scoped S3 credentials.');
+	}
+	const privacy = await verifyPrivateBucket(options, bucket);
+	const built: any = await connection.client.upstream.snapshots.build(connection.repositoryId, {
+		ref: sourceRef, paths: ['**'], allowProtected: true, includeGraph: true, kind: 'repository_snapshot',
+	});
+	const snapshot = built?.snapshot;
+	if (!snapshot?.snapshotId || snapshot.commitSha !== row.commit_sha) throw new Error('TreeDX did not build an exact snapshot of the requested commit.');
+	const artifact = await downloadSnapshot(options, connection, snapshot.snapshotId);
+	const digest = sha256(artifact.bytes);
+	const headerChecksum = String(artifact.artifactChecksum ?? '').trim();
+	const snapshotChecksum = String(snapshot.artifact?.checksum ?? '').trim();
+	if (headerChecksum && snapshotChecksum && headerChecksum !== snapshotChecksum) {
+		throw new Error('TreeDX snapshot checksum metadata did not match the artifact response.');
+	}
+	const sourceChecksum = headerChecksum || snapshotChecksum;
+	if (sourceChecksum && !/^(?:blake3|sha256):[a-f0-9]{64}$/u.test(sourceChecksum)) {
+		throw new Error('TreeDX returned an unsupported artifact checksum.');
+	}
+	if (sourceChecksum.startsWith('sha256:') && sourceChecksum.slice('sha256:'.length) !== digest) {
+		throw new Error('TreeDX snapshot checksum did not match the downloaded artifact.');
+	}
+	const client = new R2S3PublicationClient({ accountId, bucket, accessKeyId, secretAccessKey }, options.fetchImpl ?? fetch);
+	await client.putBytes(row.r2_object_key, artifact.bytes, { contentType: 'application/zstd', ifNoneMatch: '*',
+		metadata: { sha256: digest, 'commit-sha': row.commit_sha, 'repository-id': row.repository_id } });
+	const readback = await client.getBytes(row.r2_object_key);
+	if (!readback || sha256(readback.body) !== digest) throw new Error('R2 did not retain the exact TreeDX snapshot bytes.');
+	const receipt = { provider: 'cloudflare-r2', bucket, objectKey: row.r2_object_key, commitSha: row.commit_sha,
+		snapshotId: snapshot.snapshotId, sourceChecksum: sourceChecksum || null, sha256: digest, byteLength: artifact.bytes.byteLength, privacy,
+		verifiedAt: new Date().toISOString() };
+	await client.put(`${row.r2_object_key}.receipt.json`, `${JSON.stringify(receipt, null, 2)}\n`, {
+		contentType: 'application/json; charset=utf-8', ifNoneMatch: '*', metadata: { sha256: digest },
+	});
+	return receipt;
+}
+
+export function createTreeDxCommitReplicationExecutor(options: any) {
+	return {
+		namespace: 'treedx', operation: 'replicate_commit',
+		async run(input: any, context: any) {
+			const store = options.controlPlaneStore;
+			if (!store) throw new Error('TreeDX commit replication requires a control-plane store.');
+			const row: any = await store.first('SELECT * FROM treedx_commit_replications WHERE id = ?', [String(input?.replicationId ?? '')]);
+			if (!row) throw new Error('TreeDX commit replication record was not found.');
+			if (row.status === 'complete') return { replicationId: row.id, status: 'complete', replayed: true };
+			const now = new Date().toISOString();
+			await store.run(`UPDATE treedx_commit_replications SET status='replicating', attempts=attempts+1,
+				last_error=NULL, updated_at=? WHERE id=?`, [now, row.id]);
+			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: row.project_id,
+				write: false, replicationRefs: [row.source_ref, `refs/treedx/commits/${row.commit_sha}`, row.commit_sha, row.github_ref] });
+			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
+			const sourceRef = await resolveExactSourceRef(connection, row);
+			let githubReceipt = row.github_receipt_json ?? {};
+			let r2Receipt = row.r2_receipt_json ?? {};
+			const failures: string[] = [];
+			if (row.github_status !== 'verified') {
+				await store.run("UPDATE treedx_commit_replications SET github_status='replicating',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
+				try {
+					githubReceipt = await replicateGitHub(options, row, connection, context.operation.id, sourceRef);
+					await store.run("UPDATE treedx_commit_replications SET github_status='verified',github_receipt_json=?,updated_at=? WHERE id=?",
+						[JSON.stringify(githubReceipt), new Date().toISOString(), row.id]);
+				} catch (error) {
+					failures.push(`GitHub: ${error instanceof Error ? error.message : String(error)}`);
+					await store.run("UPDATE treedx_commit_replications SET github_status='failed',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
+				}
+			}
+			if (row.r2_status !== 'verified') {
+				await store.run("UPDATE treedx_commit_replications SET r2_status='replicating',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
+				try {
+					r2Receipt = await replicateR2(options, row, connection, sourceRef);
+					await store.run("UPDATE treedx_commit_replications SET r2_status='verified',r2_receipt_json=?,updated_at=? WHERE id=?",
+						[JSON.stringify(r2Receipt), new Date().toISOString(), row.id]);
+				} catch (error) {
+					failures.push(`R2: ${error instanceof Error ? error.message : String(error)}`);
+					await store.run("UPDATE treedx_commit_replications SET r2_status='failed',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
+				}
+			}
+			if (failures.length) {
+				const configurationBlocked = failures.some((failure) => failure.includes('requires the Cloudflare account')
+					|| failure.includes('management authority is required'));
+				const retryDelay = configurationBlocked ? 3_600_000
+					: Math.min(3_600_000, 15_000 * 2 ** Math.min(Number(row.attempts ?? 0), 8));
+				const retryAt = new Date(Date.now() + retryDelay).toISOString();
+				await store.run("UPDATE treedx_commit_replications SET status='degraded',last_error=?,next_attempt_at=?,updated_at=? WHERE id=?",
+					[failures.join(' | '), retryAt, new Date().toISOString(), row.id]);
+				throw new Error(failures.join(' | '));
+			}
+			const completedAt = new Date().toISOString();
+			await store.run("UPDATE treedx_commit_replications SET status='complete',next_attempt_at=NULL,completed_at=?,updated_at=? WHERE id=?",
+				[completedAt, completedAt, row.id]);
+			await context.checkpoint({ phase: 'treedx.commit.replicated', replicationId: row.id, commitSha: row.commit_sha },
+				{ kind: 'treedx.commit.replicated', data: { projectId: row.project_id, commitSha: row.commit_sha } });
+			return { replicationId: row.id, status: 'complete', commitSha: row.commit_sha, github: githubReceipt, r2: r2Receipt };
+		},
+	};
+}

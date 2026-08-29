@@ -138,6 +138,7 @@ export async function commitDiscussionMessage(input: {
 	authorType?: 'user' | 'agent' | 'system'; messageId?: string;
 	createDiscussion?: boolean;
 	replyTo?: string | null; sourceMessageRefs?: string[]; recipients?: string[]; authorAgentId?: string | null;
+	inboxIntent?: 'comment' | 'answer' | 'reply';
 	handoffId?: string | null; parentWorkdayId?: string | null; resultingOperationId?: string | null;
 	assignmentId?: string | null;
 	authoringRef?: string | null;
@@ -170,6 +171,7 @@ export async function commitDiscussionMessage(input: {
 	const discussion = serializeFrontmatterDocument({ title: topic, topic, status: 'active', teamId: input.teamId, projectId: input.projectId, visibility: 'team', participantIds: [authorId], agentIds: mentions, createdAt: now, updatedAt: now }, `# ${topic}\n`);
 	const message = serializeFrontmatterDocument({ title: `${authorName}: ${topic}`.slice(0, 120), discussionId, authorId, authorType: input.authorType ?? 'user', intent: input.intent,
 		mentionedAgents, recipientIds: recipients, fileRefs: Array.isArray(input.fileRefs) ? input.fileRefs : [], contextRefs: input.contextRefs ?? [],
+		...(input.inboxIntent ? { inboxIntent: input.inboxIntent } : {}),
 		...(input.replyTo ? { replyTo: input.replyTo } : {}), sourceMessageRefs: input.sourceMessageRefs ?? [],
 		...(input.authorAgentId ? { authorAgentId: input.authorAgentId } : {}), ...(input.handoffId ? { handoffId: input.handoffId } : {}),
 		...(input.parentWorkdayId ? { parentWorkdayId: input.parentWorkdayId } : {}), ...(input.resultingOperationId ? { resultingOperationId: input.resultingOperationId } : {}), createdAt: now }, `${input.body}\n`);

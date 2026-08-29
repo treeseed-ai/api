@@ -4,6 +4,7 @@ import { ContextQueryCheckService } from '../../../api/capacity/services/capacit
 import { randomUUID } from 'node:crypto';
 import { drainNotificationEmailOutbox } from '../../../notifications/service.js';
 import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
+import { TreeDxCommitReplicationScheduler } from '../../treedx/commit-replication-scheduler.js';
 import { createClient,createControlPlaneStore,loadConfig,loadHealthConfig,packageVersion,parseRunnerOptions,registerAndHeartbeat,runOnceWithClient,startHealthServer } from '../index.js';
 
 export async function runLoop() {
@@ -20,6 +21,7 @@ export async function runLoop() {
     let capacityWorkdayMaintenance = null;
 	let feedbackRetention = null;
 	let contextQueryCheckMaintenance = null;
+	let treeDxCommitReplication = null;
 	let operationRunnerId = null;
     while (!stopping) {
         try {
@@ -37,6 +39,7 @@ export async function runLoop() {
 					? new ContextQueryCheckMaintenanceScheduler(new ContextQueryCheckService(controlPlaneStore), config.capacityWorkdayMaintenanceIntervalMs)
 					: null;
 				feedbackRetention = controlPlaneStore ? new FeedbackRetentionScheduler(controlPlaneStore, config.feedbackRetentionIntervalMs) : null;
+				treeDxCommitReplication = controlPlaneStore ? new TreeDxCommitReplicationScheduler(controlPlaneStore) : null;
                 await registerAndHeartbeat(client, config, version, { ...options, controlPlaneStore });
             }
             healthState.ready = true;
@@ -48,6 +51,7 @@ export async function runLoop() {
             await capacityWorkdayMaintenance?.runIfDue();
 			await contextQueryCheckMaintenance?.runIfDue();
 			await feedbackRetention?.runIfDue();
+			await treeDxCommitReplication?.runIfDue();
         }
         catch (error) {
             healthState.ready = false;
@@ -66,6 +70,7 @@ export async function runLoop() {
             capacityWorkdayMaintenance = null;
 			contextQueryCheckMaintenance = null;
 			feedbackRetention = null;
+			treeDxCommitReplication = null;
         }
         await new Promise((resolveSleep) => setTimeout(resolveSleep, options.pollIntervalMs));
     }

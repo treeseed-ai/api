@@ -30,6 +30,8 @@ export function createProviderAssignmentOperations(dependencies: ProviderAssignm
 		{ binding: operations.startCloseout, handler: (input, context) => result(() => assignments.startCloseout(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.completionPreflight, handler: (input, context) => result(() => assignments.preflight(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.discussionResponse, handler: (input, context) => result(() => assignments.respondToDiscussion(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>, context.idempotencyKey)) },
+		{ binding: operations.notificationAcknowledge, handler: (input, context) => result(() => assignments.acknowledgeCommunication(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
+		{ binding: operations.traceEvent, handler: (input, context) => result(() => assignments.traceCommunication(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.returnAssignment, handler: (input, context) => result(() => assignments.returnAssignment(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.completeAssignment, handler: (input, context) => result(() => assignments.complete(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },
 		{ binding: operations.failAssignment, handler: (input, context) => result(() => assignments.fail(context.providerAuth, input.path.assignmentId, input.body as Record<string, unknown>)) },

@@ -75,6 +75,50 @@ function records(value: unknown): Row[] { if (Array.isArray(value)) return value
 function digest(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function stableId(scope: string, value: string): string { return createHash('sha256').update(`${scope}:${value}`).digest('hex').slice(0, 32); }
 
+const TERMINAL_ASSIGNMENT_STATUSES = ['completed', 'failed', 'cancelled', 'returned', 'expired'];
+
+async function appendTerminalAssignmentFailureEvent(store: DiscussionInvocationStore, invocation: Row, assignment: Row, blockingState: Row, now: string) {
+	const metadata = record(invocation.metadata_json), communication = record(metadata.communication);
+	const topicId = text(communication.topicId), sendId = text(communication.sendId);
+	if (!topicId) return;
+	const project = await store.first('SELECT slug FROM projects WHERE id=? LIMIT 1', [invocation.project_id]);
+	const actorHandle = `@${text(project?.slug, text(invocation.project_id))}/${text(invocation.agent_id, 'agent')}`;
+	const eventId = `topic-event-${stableId(topicId, `${text(assignment.id)}:terminal-assignment-failure`)}`;
+	await store.run(`INSERT INTO communication_topic_events
+		(id,topic_id,team_id,event_type,occurred_at,send_id,invocation_id,assignment_id,actor_kind,actor_id,actor_handle,summary,payload_json)
+		VALUES (?, ?, ?, 'agent.failed', ?, ?, ?, ?, 'agent', ?, ?, ?, ?::jsonb) ON CONFLICT (id) DO NOTHING`,
+	[eventId, topicId, invocation.team_id, now, sendId || null, invocation.id, assignment.id, invocation.agent_id, actorHandle,
+		'The agent could not respond because its execution assignment ended.', JSON.stringify(blockingState)]);
+}
+
+/** Reconcile provider-terminal assignments before they can serialize later topic messages forever. */
+export async function reconcileTerminalConversationInvocations(store: DiscussionInvocationStore, teamId: string) {
+	const active = await store.all(`SELECT * FROM agent_invocation_requests
+		WHERE team_id=? AND execution_kind='conversation' AND status IN ('admitted','running')
+		ORDER BY requested_at LIMIT 100`, [teamId]);
+	let reconciled = 0;
+	for (const invocation of active) {
+		const assignment = await store.first(`SELECT id,status,lifecycle_code,lifecycle_reason FROM capacity_provider_assignments
+			WHERE team_id=? AND invocation_id=? ORDER BY updated_at DESC LIMIT 1`, [teamId, invocation.id]);
+		if (!assignment || !TERMINAL_ASSIGNMENT_STATUSES.includes(text(assignment.status))) continue;
+		const integrated = text(assignment.status) === 'completed' && text(invocation.final_message_ref)
+			? await store.first("SELECT id FROM audit_events WHERE target_type='capacity_provider_assignment' AND target_id=? AND event_type='assignment.content.integrated' LIMIT 1", [assignment.id])
+			: null;
+		const successful = text(assignment.status) === 'completed' && Boolean(text(invocation.final_message_ref)) && Boolean(integrated);
+		const now = new Date().toISOString();
+		const blockingState = successful
+			? { code: 'durable_final_response', assignmentStatus: assignment.status }
+			: { code: 'terminal_assignment_without_final_response', assignmentStatus: assignment.status,
+				lifecycleCode: assignment.lifecycle_code ?? null, lifecycleReason: assignment.lifecycle_reason ?? null };
+		await store.run(`UPDATE agent_invocation_requests SET status=?,assignment_id=?,completed_at=COALESCE(completed_at,?),blocking_state_json=?,updated_at=?
+			WHERE id=? AND team_id=? AND status IN ('admitted','running')`,
+		[successful ? 'completed' : 'failed', assignment.id, now, JSON.stringify(blockingState), now, invocation.id, teamId]);
+		if (!successful) await appendTerminalAssignmentFailureEvent(store, invocation, assignment, blockingState, now);
+		reconciled += 1;
+	}
+	return { reconciled };
+}
+
 export async function resolveDiscussionInvocationAgents(store:Pick<DiscussionInvocationStore,'first'>,input:{
 	teamId:string;projectId:string;discussionId:string;parentAssignmentId?:string|null;mentionedAgents:string[];
 }) {
@@ -266,6 +310,7 @@ async function nextConversationRunId(store: DiscussionInvocationStore, teamId: s
 }
 
 export async function admitDiscussionInvocations(store: DiscussionInvocationStore, input: DiscussionInvocationInput) {
+	await reconcileTerminalConversationInvocations(store, input.teamId);
 	const parent = await assertExactParent(store, input);
 	const supply = await communicationSupply(store, input.teamId);
 	const results = [];
@@ -324,6 +369,7 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 }
 
 export async function reconcileBlockedDiscussionInvocations(store:DiscussionInvocationStore,teamId:string){
+	await reconcileTerminalConversationInvocations(store,teamId);
 	const supply=await communicationSupply(store,teamId);if(!supply)return {admitted:0,blocked:true};
 	const now=new Date();const staleClaimBefore=new Date(now.getTime()-60_000).toISOString();
 	const rows=await store.all(`SELECT invocation.*,project.slug AS project_slug FROM agent_invocation_requests invocation JOIN projects project ON project.id=invocation.project_id WHERE invocation.team_id=? AND invocation.execution_kind='conversation' AND (invocation.status IN ('queued','blocked') OR (invocation.status='admitted' AND invocation.assignment_id IS NULL AND invocation.updated_at<=?)) AND invocation.available_at<=? ORDER BY CASE invocation.priority_class WHEN 'human-interactive' THEN 400 WHEN 'workday-blocking-agent' THEN 300 WHEN 'agent-asynchronous' THEN 200 ELSE 100 END DESC,invocation.available_at,invocation.requested_at LIMIT 20`,[teamId,staleClaimBefore,now.toISOString()]);

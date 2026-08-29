@@ -68,7 +68,7 @@ development:
       kind: live-api
       platforms: [linux-amd64, linux-arm64, darwin-arm64, darwin-amd64]
       runtimeRequirements: [node>=22, postgresql]
-      sourceRoots: [src, migrations, compose.development.yml]
+      sourceRoots: [src, drizzle, compose.development.yml]
       ignoredPaths: [dist, node_modules]
       operations:
         start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --abort-on-container-exit, --exit-code-from, api-live], environment: { TREESEED_DEVELOPMENT_EDGE_HOST: api-live }, timeoutSeconds: 86400 }
@@ -102,7 +102,7 @@ development:
       kind: rebuild-restart
       platforms: [linux-amd64, linux-arm64]
       runtimeRequirements: [node>=22]
-      sourceRoots: [src/operations-runner]
+      sourceRoots: [src/operations-runner, src/api/knowledge, src/api/providers/cloudflare, src/security, src/providers, drizzle]
       ignoredPaths: [dist, node_modules]
       operations:
         build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
@@ -116,7 +116,14 @@ development:
         - { id: api, target: service, locality: local, reaction: restart }
       statePolicy: shared-compatible
       migrationPolicy: explicit-review
-      secretRefs: { TREESEED_DATABASE_URL: api-database-url }
+      secretRefs:
+        TREESEED_DATABASE_URL: api-database-url
+        TREESEED_GITHUB_TOKEN: github-repository-token
+        TREESEED_CLOUDFLARE_ACCOUNT_ID: cloudflare-r2-account-id
+        TREESEED_CLOUDFLARE_API_TOKEN: cloudflare-r2-management-token
+        TREESEED_CONTENT_BUCKET_NAME: cloudflare-r2-bucket-name
+        TREESEED_R2_ACCESS_KEY_ID: cloudflare-r2-access-key-id
+        TREESEED_R2_SECRET_ACCESS_KEY: cloudflare-r2-secret-access-key
       shutdown: { graceSeconds: 60, activeWorkPolicy: drain }
       resources: {}
       logs: [.treeseed/development/operations-runner.log]
