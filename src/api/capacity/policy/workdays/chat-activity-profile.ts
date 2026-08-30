@@ -51,6 +51,15 @@ export function compileDefaultChatActivityProfile(
 			subjectId: null,
 		},
 		questionPolicy: { blockExecutionWhenCreated: false, defaultAnswerPolicy: { kind: 'team-human' } },
+		capabilityRequirements: specialization.capabilityRequirements ?? [{
+			capabilityId: 'treeseed.coordination.conversation', versionRange: '^1.0.0', requirement: 'required',
+			configuration: {
+				'instructions.system': { value: 'profile', requirement: 'required' },
+				'instructions.task': { value: 'profile', requirement: 'required' },
+				'context.queries': { value: 'assignment', requirement: 'required' },
+				'tools.policy': { value: 'assignment', requirement: 'required' },
+			},
+		}],
 		execution: {
 			requiredCapabilities: specialization.requiredCapabilities ?? ['agent-execution'],
 			maxRuntimeSeconds: specialization.maxRuntimeSeconds ?? 900, maxRetries: 1, verificationRequired: false,

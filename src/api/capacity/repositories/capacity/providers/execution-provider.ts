@@ -44,6 +44,8 @@ export function upsertCapacityExecutionProviderOperations(input: {
 			params: [input.createdAt, input.providerId, ...providerIds, ...guardValues] },
 		{ query: `UPDATE capacity_provider_lanes SET status = 'paused', updated_at = ? WHERE capacity_provider_id = ?${laneIds.size ? ` AND id NOT IN (${[...laneIds].map(() => '?').join(',')})` : ''}${guard}`,
 			params: [input.createdAt, input.providerId, ...laneIds, ...guardValues] },
+		{ query: `UPDATE execution_capability_offers SET status = 'unavailable', last_seen_at = ? WHERE capacity_provider_id = ?${guard}`,
+			params: [input.createdAt, input.providerId, ...guardValues] },
 	];
 	const upserts = input.executionProviders.flatMap((value) => {
 		const entry = record(value);
@@ -152,7 +154,11 @@ export function upsertCapacityExecutionProviderOperations(input: {
 				],
 			} satisfies CapacityDatabaseOperation];
 		}) : [];
-		return [executionProviderOperation, ...laneOperations];
+		const offerOperations: CapacityDatabaseOperation[] = Array.isArray(entry.offers) ? entry.offers.map((offerValue) => {
+			const offer = record(offerValue);
+			return { query: `INSERT INTO execution_capability_offers (capacity_provider_id,execution_provider_id,offer_id,offer_digest,offer_json,status,last_seen_at) VALUES (?,?,?,?,?,'active',?) ON CONFLICT (capacity_provider_id,offer_id) DO UPDATE SET execution_provider_id=EXCLUDED.execution_provider_id,offer_digest=EXCLUDED.offer_digest,offer_json=EXCLUDED.offer_json,status='active',last_seen_at=EXCLUDED.last_seen_at`, params: [input.providerId,id,String(offer.offerId),String(offer.offerDigest),JSON.stringify(offer),input.createdAt] };
+		}) : [];
+		return [executionProviderOperation, ...laneOperations, ...offerOperations];
 	});
 	return [...cleanup, ...upserts];
 }

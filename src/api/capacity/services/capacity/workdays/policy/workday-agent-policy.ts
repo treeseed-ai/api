@@ -32,6 +32,7 @@ export type CapacityWorkdayAgent = {
 	toolPolicy: UnknownRecord;
 	authorityPresetIds: AgentAuthorityPresetId[];
 	execution: UnknownRecord;
+	capabilityRequirements: UnknownRecord[];
 	planningPriority: number | null;
 	planningAllocationPercent: number | null;
 	activityType: 'planning' | 'estimating' | 'reviewing' | 'reporting' | 'chat';
@@ -185,6 +186,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				toolPolicy: record(authority.tools),
 				authorityPresetIds: authority.presetIds,
 				execution: record(profile.execution),
+				capabilityRequirements: array(profile.capabilityRequirements).map(record),
 				planningPriority: Number.isFinite(priority) ? priority : null,
 				planningAllocationPercent: Number.isFinite(allocation) && allocation > 0 ? allocation : null,
 				activityType: selectedActivity.activityType as CapacityWorkdayAgent['activityType'],

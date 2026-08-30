@@ -5,6 +5,7 @@ import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../../repositories/accounts/availability-session.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
+import { capabilityOfferDigest, capabilityOfferSchema, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
 
 type JsonRecord = Record<string, unknown>;
 export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: string; capacityProviderId: string; }
@@ -45,6 +46,7 @@ export class AvailabilitySessionService {
 
 	async open(principal: ProviderAvailabilityPrincipal, input: JsonRecord) {
 		await this.assertMembership(principal);
+		await this.validateOfferReferences(principal, input);
 		const now = new Date().toISOString();
 		const write = this.write(principal, randomUUID(), 1, input, now);
 		return this.repository.open(write, upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now }));
@@ -52,6 +54,7 @@ export class AvailabilitySessionService {
 
 	async refresh(principal: ProviderAvailabilityPrincipal, sessionId: string, input: JsonRecord) {
 		await this.assertMembership(principal);
+		await this.validateOfferReferences(principal, input);
 		const expectedSequence = Number(input.expectedSequence);
 		if (!Number.isInteger(expectedSequence) || expectedSequence < 1) throw new CapacityGovernanceError('provider_availability_sequence_required', 'expectedSequence must be a positive integer.', 400);
 		const now = new Date().toISOString();
@@ -75,6 +78,26 @@ export class AvailabilitySessionService {
 		if (!membership) throw new CapacityGovernanceError('provider_membership_not_approved', 'Provider membership is not approved and active.', 403);
 	}
 
+	private async validateOfferReferences(principal: ProviderAvailabilityPrincipal, input: JsonRecord) {
+		for (const [index, route] of objects(input.offers).entries()) {
+			const parsed = capabilityOfferSchema.safeParse(route.offer);
+			if (!parsed.success) throw new CapacityGovernanceError('provider_capability_offer_invalid', `Capability offer ${index} is invalid.`, 400, { issues: parsed.error.issues });
+			const { offerDigest, ...material } = parsed.data;
+			if (capabilityOfferDigest(material) !== offerDigest) throw new CapacityGovernanceError('provider_capability_offer_digest_mismatch', `Capability offer ${index} digest is invalid.`, 400);
+			for (const reference of parsed.data.capabilities) {
+				const core = await this.database.first(`SELECT definition_digest,status,definition_json FROM capability_definitions WHERE capability_id=? AND version=? ORDER BY generation DESC LIMIT 1`, [reference.id, reference.version]);
+				const extension = core ? null : await this.database.first(`SELECT definition_digest,status,definition_json FROM provider_capability_proposals WHERE capacity_provider_id=? AND capability_id=? AND version=? ORDER BY created_at DESC LIMIT 1`, [principal.capacityProviderId, reference.id, reference.version]);
+				const definition = core ?? extension;
+				if (!definition || definition.status === 'revoked' || String(definition.definition_digest) !== reference.digest) throw new CapacityGovernanceError('provider_capability_offer_unknown', `Offer references unavailable capability ${reference.id}@${reference.version}.`, 409);
+				const conformance = parsed.data.conformance.find((entry) => entry.capability.id === reference.id && entry.capability.version === reference.version && entry.capability.digest === reference.digest);
+				if (!conformance || conformance.providerId !== principal.capacityProviderId || conformance.status !== 'passed' || (conformance.expiresAt && Date.parse(conformance.expiresAt) <= Date.now())) throw new CapacityGovernanceError('provider_capability_conformance_invalid', `Offer lacks current provider conformance for ${reference.id}@${reference.version}.`, 409);
+				const definitionValue = (typeof definition.definition_json === 'string' ? JSON.parse(definition.definition_json) : definition.definition_json) as CapabilityDefinition;
+				const tiers = ['signed-attestation', 'automated-suite', 'reviewed-certification'];
+				if (tiers.indexOf(conformance.tier) < tiers.indexOf(definitionValue.qualificationTier)) throw new CapacityGovernanceError('provider_capability_qualification_insufficient', `Offer qualification is below the required tier for ${reference.id}.`, 409);
+			}
+		}
+	}
+
 	private write(principal: ProviderAvailabilityPrincipal, id: string, sequence: number, input: JsonRecord, now: string): AvailabilitySessionWrite {
 		const ttlSeconds = ttl(input.ttlSeconds);
 		const expiresAt = new Date(Date.parse(now) + ttlSeconds * 1000).toISOString();
@@ -82,9 +105,14 @@ export class AvailabilitySessionService {
 		const availableUntil = input.availableUntil == null ? null : timestamp(input.availableUntil, expiresAt);
 		if (availableUntil && Date.parse(availableUntil) <= Date.parse(availableFrom)) throw new CapacityGovernanceError('provider_availability_window_invalid', 'availableUntil must be after availableFrom.', 400);
 		if ('executionProviders' in input || 'execution_providers' in input) throw new CapacityGovernanceError('provider_availability_legacy_shape', 'Availability must use provider v3 adapters and lanes.', 400);
-		const adapters = objects(input.adapters);
+		const offerRoutes = objects(input.offers);
+		const adapters = offerRoutes.length ? offerRoutes.map((route) => {
+			const offer = object(route.offer); const offerId = String(offer.offerId);
+			return { id: `offer:${offerId}`, status: route.status, laneIds: route.laneIds, maxConcurrentWorkers: route.maxConcurrentWorkers,
+				offers: [offer], capabilities: objects(offer.capabilities).map((reference) => String(reference.id)), metadata: { opaqueOfferRoute: true } };
+		}) : objects(input.adapters);
 		const lanes = objects(input.lanes);
-		if (!adapters.length || adapters.some((entry) => typeof entry.id !== 'string' || !entry.id.trim())) throw new CapacityGovernanceError('provider_adapter_invalid', 'Availability requires at least one identified execution adapter.', 400);
+		if (!adapters.length || adapters.some((entry) => typeof entry.id !== 'string' || !entry.id.trim())) throw new CapacityGovernanceError('provider_adapter_invalid', 'Availability requires at least one routed capability offer or legacy execution adapter.', 400);
 		if (lanes.length !== 3 || new Set(lanes.map((entry) => entry.purpose)).size !== 3 || !['communication', 'platform', 'workday'].every((purpose) => lanes.some((entry) => entry.purpose === purpose))) throw new CapacityGovernanceError('provider_lanes_invalid', 'Availability requires exactly the communication, platform, and workday lanes.', 400);
 		if (lanes.some((entry) => entry.minimumAssignmentDuration !== undefined && !isMinimumAssignmentDuration(entry.minimumAssignmentDuration))) throw new CapacityGovernanceError('provider_lane_minimum_duration_invalid', 'Every advertised minimum assignment duration must satisfy the SDK contract.', 400);
 		const executionProviders = adapters.map((adapter) => ({

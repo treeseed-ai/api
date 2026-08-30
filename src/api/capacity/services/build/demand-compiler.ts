@@ -25,6 +25,16 @@ import { loadPlanningGraphEvidence,planningGraphGroupContext,selectedPlanningGra
 import { currentCooperativePlanningWave } from '../capacity/workdays/scheduling/cooperative-planning-session-service.ts';
 import { ContextQueryCheckService } from '../capacity/agents/context-query-check-service.ts';
 import { resolveProviderSynthesisContext } from '../capacity/providers/provider-synthesis-context-service.ts';
+import {
+	CORE_CAPABILITY_DEFINITIONS,
+	capabilityDemandDigest,
+	capabilityDemandSchema,
+	capabilityDefinitionSchema,
+	resolveLegacyCapability,
+	semverSatisfies,
+	type CapabilityDefinition,
+	type CapabilityDemand,
+} from '@treeseed/sdk/capacity-provider';
 
 interface DemandCompilerStore extends CapacityGovernanceDatabase {
 	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
@@ -40,6 +50,49 @@ function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 function jsonRecord(value: unknown) { if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return record(value); }
+async function capabilityDefinitions(store: CapacityGovernanceDatabase): Promise<{ generation: number; definitions: CapabilityDefinition[] }> {
+	try {
+		const active = await store.first(`SELECT generation FROM capability_ontology_generations WHERE status = 'active' ORDER BY generation DESC LIMIT 1`);
+		const rows = await store.all(`SELECT definition_json FROM capability_definitions WHERE status = 'active'
+			UNION ALL SELECT definition_json FROM provider_capability_proposals WHERE status = 'active-namespaced'`);
+		const parsed = rows.flatMap((row) => {
+			try { return [capabilityDefinitionSchema.parse(typeof row.definition_json === 'string' ? JSON.parse(row.definition_json) : row.definition_json)]; }
+			catch { return []; }
+		});
+		return { generation: Number(active?.generation ?? 1), definitions: parsed.length ? parsed : CORE_CAPABILITY_DEFINITIONS };
+	} catch { return { generation: 1, definitions: CORE_CAPABILITY_DEFINITIONS }; }
+}
+async function compileCapabilityDemand(store: CapacityGovernanceDatabase, agent: {
+	activityType: string; capabilityRequirements: Record<string, unknown>[]; execution: Record<string, unknown>;
+	permissions: Record<string, unknown>; toolPolicy: Record<string, unknown>; contextQueryRefs: unknown[]; contextQuerySetRefs: unknown[];
+}): Promise<CapabilityDemand> {
+	const configured = agent.capabilityRequirements.length ? agent.capabilityRequirements : (
+		Array.isArray(agent.execution.requiredCapabilities) ? agent.execution.requiredCapabilities : ['agent-execution']
+	).map((legacy) => ({ capabilityId: resolveLegacyCapability(String(legacy), agent.activityType), versionRange: '^1.0.0', requirement: 'required' }));
+	const requirements = configured.map((entry) => ({
+		capabilityId: text(entry.capabilityId), versionRange: text(entry.versionRange) || '^1.0.0',
+		requirement: entry.requirement === 'preferred' ? 'preferred' as const : 'required' as const,
+		alternativeGroup: text(entry.alternativeGroup) || null,
+		requiredFeatures: Array.isArray(entry.requiredFeatures) ? entry.requiredFeatures.map(String) : [],
+		configuration: record(entry.configuration),
+	}));
+	if (requirements.some((entry) => !entry.capabilityId)) throw new CapacityGovernanceError('capability_translation_ambiguous', 'A legacy capability cannot be translated unambiguously.', 409);
+	const ontology = await capabilityDefinitions(store); const definitions = ontology.definitions;
+	const resolved = requirements.map((requirement) => {
+		const candidates = definitions.filter((definition) => definition.id === requirement.capabilityId && definition.status === 'active' && semverSatisfies(definition.version, requirement.versionRange));
+		const selected = candidates.sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
+		if (!selected && requirement.requirement === 'required') throw new CapacityGovernanceError('capability_version_unavailable', `No active ${requirement.capabilityId} version satisfies ${requirement.versionRange}.`, 409);
+		return selected ? { id: selected.id, version: selected.version, digest: selected.digest } : null;
+	}).filter((value): value is NonNullable<typeof value> => Boolean(value));
+	const permissionClasses = [
+		Object.keys(agent.permissions).length ? 'content-policy' : '',
+		Array.isArray(agent.toolPolicy.allowed) && agent.toolPolicy.allowed.length ? 'tool-policy' : '',
+	].filter(Boolean);
+	const contextModes = agent.contextQueryRefs.length || agent.contextQuerySetRefs.length ? ['manifest'] : [];
+	const material = { schemaVersion: 'treeseed.capability-demand/v1' as const, ontologyGeneration: ontology.generation, requirements, resolved,
+		permissionClasses, contextModes, inputContracts: [], outputContracts: [] };
+	return capabilityDemandSchema.parse({ ...material, demandDigest: capabilityDemandDigest(material) });
+}
 function successfulArtifactHistory(row: Record<string,unknown>) {
 	const lifecycle = jsonRecord(row.lifecycle_output_json);
 	const output = record(lifecycle.output);
@@ -241,7 +294,8 @@ async function compilePlanningDemands(
 		const idempotencyKey = `workday:${run.id}:${project.id}:${wave ? `wave:${wave.id}` : `cycle:${cycle.cycleNumber}`}:node:${entry.agentId}`;
 		const sessionTimebox = Number(record(run.parameters.planningSession).assignmentTimeboxSeconds);
 		const estimate = await estimateRequestedAgentSeconds(store, agent, source.payload);
-		const requiredCapabilities = Array.isArray(agent.execution.requiredCapabilities) ? agent.execution.requiredCapabilities.map(String) : [];
+		const capabilityDemand = await compileCapabilityDemand(store, agent);
+		const requiredCapabilities = capabilityDemand.resolved.map((entry) => entry.id);
 		const compatibleProviders = supply.executionProviders.filter((provider) => provider.status === 'available'
 			&& requiredCapabilities.every((capability) => provider.capabilities.includes(capability)));
 		const allocation = Number.isInteger(sessionTimebox) && sessionTimebox > 0
@@ -287,7 +341,7 @@ async function compilePlanningDemands(
 				agentDefinition:{ agentId:agent.slug,contentPath:agent.contentPath,immutableRef:definitionBaseRef },
 				chatProfile: agent.activityType === 'chat' ? { identity: agent.identity, summary: agent.summary, purpose: agent.purpose,
 					prompt: { task: agent.promptTask }, execution: agent.execution, outputContract: agent.outputContract,
-					permissions: agent.permissions, tools: agent.toolPolicy } : undefined,
+					permissions: agent.permissions, tools: agent.toolPolicy, capabilityRequirements: agent.capabilityRequirements } : undefined,
 				groupIds:agent.groupIds,
 				contextQueryRefs:contextReferences,
 				instructionTemplateRefs:agent.instructionTemplateRefs,
@@ -314,7 +368,7 @@ async function compilePlanningDemands(
 				cooperativePlanning: wave ? { sessionWaveId: wave.id, round: wave.round, snapshotRef: wave.snapshotRef, snapshot: wave.snapshot } : null,
 				cycle: cycle.cycleNumber,
 			},
-			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment, executionMode: run.executionMode ?? run.parameters.executionMode ?? 'simulation', executionKind: run.executionKind ?? 'workday', triggerKind: source.payload.triggerKind ?? run.triggerKind ?? 'scheduled', invocationId: source.payload.agentInvocationId ?? record(run.parameters.discussion).invocationId ?? null, parentWorkdayId: source.payload.parentWorkdayId ?? null, parentAssignmentId: source.payload.parentAssignmentId ?? record(run.parameters.discussion).parentAssignmentId ?? null, handoffRootId: source.payload.handoffRootId ?? record(run.parameters.discussion).handoffRootId ?? null, handoffParentId: source.payload.handoffParentId ?? record(run.parameters.discussion).handoffParentId ?? null, handoffDepth: source.payload.handoffDepth ?? record(run.parameters.discussion).handoffDepth ?? 0, communication: record(source.payload.communication), agentClassSlug: agent.projectAgentClassSlug, requiredCapabilities, planningStage, planningGraphNodeId: graphNodeId, planningWaveId: wave?.id ?? null, planningRound: wave?.round ?? null, planningSnapshotRef: wave?.snapshotRef ?? null, admissionEstimate: { ...estimate, requestedSeconds, providerFloorSeconds: allocation.providerFloor, providerFloorSource: allocation.floorSource, sessionCapSeconds: Number.isInteger(sessionTimebox) && sessionTimebox > 0 ? sessionTimebox : null } }, availableAt: now, now,
+			metadata: { participationCycleId: cycle.id, participationEntryId: entry.id, environment: run.environment, executionMode: run.executionMode ?? run.parameters.executionMode ?? 'simulation', executionKind: run.executionKind ?? 'workday', triggerKind: source.payload.triggerKind ?? run.triggerKind ?? 'scheduled', invocationId: source.payload.agentInvocationId ?? record(run.parameters.discussion).invocationId ?? null, parentWorkdayId: source.payload.parentWorkdayId ?? null, parentAssignmentId: source.payload.parentAssignmentId ?? record(run.parameters.discussion).parentAssignmentId ?? null, handoffRootId: source.payload.handoffRootId ?? record(run.parameters.discussion).handoffRootId ?? null, handoffParentId: source.payload.handoffParentId ?? record(run.parameters.discussion).handoffParentId ?? null, handoffDepth: source.payload.handoffDepth ?? record(run.parameters.discussion).handoffDepth ?? 0, communication: record(source.payload.communication), agentClassSlug: agent.projectAgentClassSlug, requiredCapabilities, capabilityDemand, planningStage, planningGraphNodeId: graphNodeId, planningWaveId: wave?.id ?? null, planningRound: wave?.round ?? null, planningSnapshotRef: wave?.snapshotRef ?? null, admissionEstimate: { ...estimate, requestedSeconds, providerFloorSeconds: allocation.providerFloor, providerFloorSource: allocation.floorSource, sessionCapSeconds: Number.isInteger(sessionTimebox) && sessionTimebox > 0 ? sessionTimebox : null } }, availableAt: now, now,
 		});
 		await participation.bindDemand(entry.id, demand.id, now);
 		created += 1;
