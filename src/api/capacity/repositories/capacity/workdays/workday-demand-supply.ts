@@ -3,6 +3,7 @@ import { capacitySupplyCandidateStatus,selectCapacitySupply } from '../../../pol
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable-json.ts';
 import { teamSupplyPolicy } from '../../../domain/supply-policy.ts';
+import { providerCapabilityCompatibility } from '../../../policy/capability-compatibility.ts';
 
 type Row = Record<string, unknown>;
 
@@ -21,8 +22,8 @@ function providers(row: Row, grants: Row[], mode: string): CapacitySupplyCandida
 			&& (!executionProviderIds.length || executionProviderIds.includes(String(provider.id)))
 			&& allowedModes.includes(mode);
 	}).map((grant) => {
-		const granted = new Set(strings(grant.capabilities_json, { owner: 'capacity grant', ownerId: String(grant.id), column: 'capabilities_json' }));
-		const advertised = Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [];
+		const granted = new Set(providerCapabilityCompatibility(strings(grant.capabilities_json, { owner: 'capacity grant', ownerId: String(grant.id), column: 'capabilities_json' })));
+		const advertised = providerCapabilityCompatibility(provider.capabilities);
 		return ({
 		capacityProviderId: String(row.capacity_provider_id), membershipId: String(row.membership_id),
 		providerSessionId: String(row.id), grantId: String(grant.id), executionProviderId: String(provider.id ?? ''),

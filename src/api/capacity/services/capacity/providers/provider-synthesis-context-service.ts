@@ -4,6 +4,7 @@ import { decodeDurableJsonArray } from '../../../durable-json.ts';
 import type { MinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapabilityOffer } from '@treeseed/sdk/capacity-provider';
 import { capacitySupplyCandidateStatus } from '../../../policy/supply-selection.ts';
+import { providerCapabilityCompatibility } from '../../../policy/capability-compatibility.ts';
 
 type Row = Record<string, unknown>;
 
@@ -95,7 +96,7 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 	}).map((provider) => ({
 		id: String(provider.id ?? '').trim(),
 		status: capacitySupplyCandidateStatus(provider.status),
-		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
+		capabilities: providerCapabilityCompatibility(provider.capabilities),
 		offers: Array.isArray(provider.offers) ? provider.offers as CapabilityOffer[] : [],
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(String(provider.pressure)) ? provider.pressure as ProviderSynthesisExecutionProvider['pressure'] : 'normal',
@@ -109,7 +110,7 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 			return id && purpose ? [{ id, purpose, maxConcurrentRunners: Math.max(1, Number(lane.maxConcurrentRunners ?? 1)),
 				priority: Number(lane.priority ?? 0), reservedConcurrentWorkers: Math.max(0, Number(lane.reservedConcurrentWorkers ?? 0)),
 				borrowWhenIdle: Boolean(lane.borrowWhenIdle), lendWhenIdle: Boolean(lane.lendWhenIdle), queueLimit: Math.max(0, Number(lane.queueLimit ?? 0)),
-				capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String).filter(Boolean) : [],
+				capabilities: providerCapabilityCompatibility(lane.capabilities),
 				...(lane.minimumAssignmentDuration ? { minimumAssignmentDuration: lane.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}) }] : [];
 		}) : [],
 	})).filter((provider) => provider.id);
