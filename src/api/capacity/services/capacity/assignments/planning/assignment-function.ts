@@ -109,7 +109,8 @@ async function assignmentInput(
     policy,
     requiredCapabilities,
 	assignmentWindow: { startedAt: now, durationSeconds: demand.requestedSeconds },
-	    candidates: executionProviders.filter((provider) => (!selectedExecutionProviderId || provider.id === selectedExecutionProviderId) && (!capabilityDemand || provider.offers.some((offer) => offerNegotiations.has(`${provider.id}:${offer.offerId}`)))).map((provider) => ({
+	    candidates: executionProviders.filter((provider) => (!selectedExecutionProviderId || provider.id === selectedExecutionProviderId)
+		&& (!capabilityDemand || provider.legacyCapabilityBridge || provider.offers.some((offer) => offerNegotiations.has(`${provider.id}:${offer.offerId}`)))).map((provider) => ({
 	      capacityProviderId: principal.capacityProviderId,
 	      membershipId: principal.membershipId,
 	      providerSessionId: sessionId,

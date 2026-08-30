@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { providerCapabilityCompatibility } from '../../../../../src/api/capacity/policy/capability-compatibility.ts';
+import { providerCapabilityCompatibility, usesLegacyCapabilityCompatibility } from '../../../../../src/api/capacity/policy/capability-compatibility.ts';
 
 describe('provider capability compatibility', () => {
 	it('adds exact ontology identities for legacy v4 supply', () => {
@@ -18,5 +18,11 @@ describe('provider capability compatibility', () => {
 			'treeseed.coordination.conversation',
 			'treeseed.coordination.conversation',
 		])).toEqual(['treeseed.coordination.conversation']);
+	});
+
+	it('limits the no-offer migration bridge to genuinely legacy declarations', () => {
+		expect(usesLegacyCapabilityCompatibility(['communication'])).toBe(true);
+		expect(usesLegacyCapabilityCompatibility(['treeseed.coordination.conversation'])).toBe(false);
+		expect(usesLegacyCapabilityCompatibility([])).toBe(false);
 	});
 });

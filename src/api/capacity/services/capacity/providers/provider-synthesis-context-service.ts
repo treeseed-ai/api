@@ -4,7 +4,7 @@ import { decodeDurableJsonArray } from '../../../durable-json.ts';
 import type { MinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapabilityOffer } from '@treeseed/sdk/capacity-provider';
 import { capacitySupplyCandidateStatus } from '../../../policy/supply-selection.ts';
-import { providerCapabilityCompatibility } from '../../../policy/capability-compatibility.ts';
+import { providerCapabilityCompatibility, usesLegacyCapabilityCompatibility } from '../../../policy/capability-compatibility.ts';
 
 type Row = Record<string, unknown>;
 
@@ -44,6 +44,7 @@ export interface ProviderSynthesisExecutionProvider {
 	status: string;
 	capabilities: string[];
 	offers: CapabilityOffer[];
+	legacyCapabilityBridge: boolean;
 	reliability?: number;
 	pressure?: 'idle' | 'normal' | 'busy' | 'throttled' | 'exhausted';
 	availableConcurrency?: number;
@@ -98,6 +99,7 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		status: capacitySupplyCandidateStatus(provider.status),
 		capabilities: providerCapabilityCompatibility(provider.capabilities),
 		offers: Array.isArray(provider.offers) ? provider.offers as CapabilityOffer[] : [],
+		legacyCapabilityBridge: !Array.isArray(provider.offers) && usesLegacyCapabilityCompatibility(provider.capabilities),
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(String(provider.pressure)) ? provider.pressure as ProviderSynthesisExecutionProvider['pressure'] : 'normal',
 		availableConcurrency: Number.isInteger(Number(provider.availableConcurrency)) ? Math.max(0, Number(provider.availableConcurrency)) : 1,
