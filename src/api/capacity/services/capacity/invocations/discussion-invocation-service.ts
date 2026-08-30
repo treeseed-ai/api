@@ -77,17 +77,17 @@ function stableId(scope: string, value: string): string { return createHash('sha
 
 const TERMINAL_ASSIGNMENT_STATUSES = ['completed', 'failed', 'cancelled', 'returned', 'expired'];
 
-async function appendTerminalAssignmentFailureEvent(store: DiscussionInvocationStore, invocation: Row, assignment: Row, blockingState: Row, now: string) {
+async function appendInvocationFailureEvent(store: DiscussionInvocationStore, invocation: Row, assignmentId: string | null, blockingState: Row, now: string) {
 	const metadata = record(invocation.metadata_json), communication = record(metadata.communication);
 	const topicId = text(communication.topicId), sendId = text(communication.sendId);
 	if (!topicId) return;
 	const project = await store.first('SELECT slug FROM projects WHERE id=? LIMIT 1', [invocation.project_id]);
 	const actorHandle = `@${text(project?.slug, text(invocation.project_id))}/${text(invocation.agent_id, 'agent')}`;
-	const eventId = `topic-event-${stableId(topicId, `${text(assignment.id)}:terminal-assignment-failure`)}`;
+	const eventId = `topic-event-${stableId(topicId, `${assignmentId ?? text(invocation.execution_id)}:terminal-invocation-failure`)}`;
 	await store.run(`INSERT INTO communication_topic_events
 		(id,topic_id,team_id,event_type,occurred_at,send_id,invocation_id,assignment_id,actor_kind,actor_id,actor_handle,summary,payload_json)
 		VALUES (?, ?, ?, 'agent.failed', ?, ?, ?, ?, 'agent', ?, ?, ?, ?::jsonb) ON CONFLICT (id) DO NOTHING`,
-	[eventId, topicId, invocation.team_id, now, sendId || null, invocation.id, assignment.id, invocation.agent_id, actorHandle,
+	[eventId, topicId, invocation.team_id, now, sendId || null, invocation.id, assignmentId, invocation.agent_id, actorHandle,
 		'The agent could not respond because its execution assignment ended.', JSON.stringify(blockingState)]);
 }
 
@@ -100,7 +100,22 @@ export async function reconcileTerminalConversationInvocations(store: Discussion
 	for (const invocation of active) {
 		const assignment = await store.first(`SELECT id,status,lifecycle_code,lifecycle_reason FROM capacity_provider_assignments
 			WHERE team_id=? AND invocation_id=? ORDER BY updated_at DESC LIMIT 1`, [teamId, invocation.id]);
-		if (!assignment || !TERMINAL_ASSIGNMENT_STATUSES.includes(text(assignment.status))) continue;
+		if (!assignment) {
+			const executionId = text(invocation.execution_id);
+			const usefulDemand = executionId ? await store.first(`SELECT id FROM capacity_workday_demands
+				WHERE team_id=? AND workday_run_id=? AND status IN ('pending','claimed','admitted') LIMIT 1`, [teamId, executionId]) : null;
+			if (usefulDemand) continue;
+			const execution = executionId ? await store.first(`SELECT status FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1`, [executionId, teamId]) : null;
+			if (!execution || !['completed','failed','cancelled','degraded'].includes(text(execution.status))) continue;
+			const now = new Date().toISOString();
+			const blockingState = { code: 'terminal_conversation_without_assignment', executionStatus: execution.status, executionId };
+			await store.run(`UPDATE agent_invocation_requests SET status='failed',completed_at=COALESCE(completed_at,?),blocking_state_json=?,updated_at=?
+				WHERE id=? AND team_id=? AND status IN ('admitted','running')`, [now, JSON.stringify(blockingState), now, invocation.id, teamId]);
+			await appendInvocationFailureEvent(store, invocation, null, blockingState, now);
+			reconciled += 1;
+			continue;
+		}
+		if (!TERMINAL_ASSIGNMENT_STATUSES.includes(text(assignment.status))) continue;
 		const integrated = text(assignment.status) === 'completed' && text(invocation.final_message_ref)
 			? await store.first("SELECT id FROM audit_events WHERE target_type='capacity_provider_assignment' AND target_id=? AND event_type='assignment.content.integrated' LIMIT 1", [assignment.id])
 			: null;
@@ -113,7 +128,7 @@ export async function reconcileTerminalConversationInvocations(store: Discussion
 		await store.run(`UPDATE agent_invocation_requests SET status=?,assignment_id=?,completed_at=COALESCE(completed_at,?),blocking_state_json=?,updated_at=?
 			WHERE id=? AND team_id=? AND status IN ('admitted','running')`,
 		[successful ? 'completed' : 'failed', assignment.id, now, JSON.stringify(blockingState), now, invocation.id, teamId]);
-		if (!successful) await appendTerminalAssignmentFailureEvent(store, invocation, assignment, blockingState, now);
+		if (!successful) await appendInvocationFailureEvent(store, invocation, text(assignment.id), blockingState, now);
 		reconciled += 1;
 	}
 	return { reconciled };
