@@ -41,6 +41,7 @@ import { installRemoteCredentialBrokerRoute } from '../control-plane/treedx/remo
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
 import { createSeedOperationService } from '../control-plane/seeds/seed-operation-service.ts';
 import { createFeedbackOperationService } from '../control-plane/feedback/feedback-operation-service.ts';
+import { createCapabilityOntologyService } from '../control-plane/repositories/capabilities/capability-ontology-service.ts';
 import { createCapacityProviderAccessMiddleware } from '../capacity/provider-access-middleware.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { SessionEventService } from '../realtime/session-events.ts';
@@ -199,6 +200,7 @@ export function createPlatformApiApp(options: any = {}) {
 		await next();
 	});
 	const providers = createProviderRuntimeService(capacity, { ...config, ...runtime.resolved.config }, store);
+	const capabilityOntology = createCapabilityOntologyService(capacity);
 	const diagnosticEnvelopes = createDiagnosticEnvelopeService({ ...config, ...runtime.resolved.config });
 	const providerAssignments = createProviderAssignmentService(capacity, sessionEvents, store, diagnosticEnvelopes);
 	const providerSignals = createProviderSignalService(capacity);
@@ -220,6 +222,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const inbox = createInboxService({ store, discussions, communications, governance });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
+			capabilityOntology,
 			plans: createCapacityPlanService(capacity),
 			planningAndEstimates: createPlanningAndEstimateService(capacity),
 			agentGovernance: createAgentGovernanceService(capacity),

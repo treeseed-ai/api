@@ -37,7 +37,6 @@ export function selectCapacitySupply(input: {
 			...(candidate.availableConcurrency < 1 ? ['concurrency_exhausted'] : []),
 			...(candidate.reliability < input.policy.reliabilityFloor ? ['reliability_below_floor'] : []),
 			...(input.policy.disallowedCapacityProviderIds?.includes(candidate.capacityProviderId) ? ['capacity_provider_disallowed'] : []),
-			...(input.policy.disallowedExecutionProviderIds?.includes(candidate.executionProviderId) ? ['execution_provider_disallowed'] : []),
 			...(minimumWindow !== null && input.assignmentWindow!.durationSeconds < minimumWindow ? ['assignment_duration_below_provider_minimum'] : []),
 			...required.filter((capability) => !candidate.capabilities.includes(capability)).map((capability) => `missing_capability:${capability}`),
 		];
@@ -47,7 +46,6 @@ export function selectCapacitySupply(input: {
 		right.reliability - left.reliability
 		|| pressureRank(left.pressure) - pressureRank(right.pressure)
 		|| position(input.policy.preferredCapacityProviderIds, left.capacityProviderId) - position(input.policy.preferredCapacityProviderIds, right.capacityProviderId)
-		|| position(input.policy.preferredExecutionProviderIds, left.executionProviderId) - position(input.policy.preferredExecutionProviderIds, right.executionProviderId)
 		|| Number(Boolean(right.preferred)) - Number(Boolean(left.preferred))
 		|| (left.estimatedCost ?? Number.MAX_SAFE_INTEGER) - (right.estimatedCost ?? Number.MAX_SAFE_INTEGER)
 		|| left.capacityProviderId.localeCompare(right.capacityProviderId)

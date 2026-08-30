@@ -7,7 +7,6 @@ import type { DurableProviderAssignment } from "../../../../repositories/capacit
 import { CapacityWorkdayDemandRepository } from "../../../../repositories/capacity/workdays/workday-demand.ts";
 import { CapacityWorkdayParticipationRepository } from "../../../../repositories/capacity/workdays/workday-participation.ts";
 import { CapacityWorkdayRunRepository,type DurableCapacityWorkdayRun } from "../../../../repositories/capacity/workdays/workday-run.ts";
-import { CapacityAuditRepository } from "../../../../repositories/support/audit.ts";
 import type { ProviderLeasePrincipal } from "../../../accounts/lease-authority-service.ts";
 import type { ProviderSynthesisExecutionProvider } from "../../providers/provider-synthesis-context-service.ts";
 import { evaluateDurableWorkdayContinuation } from "../../workdays/lifecycle/workday-continuation-service.ts";
@@ -25,10 +24,12 @@ export { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './
 export { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
 import { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
 import { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
+import { negotiateAssignmentCapabilityOffers, persistCapabilityNegotiation } from './support/capability-offer-negotiation.ts';
 import { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
 import { bindOperationHandoffAssignment } from '../handoffs/operation-handoff-lifecycle-service.ts';
-import { assignmentErrorCode as errorCode, assignmentRecord as record, assignmentText as text,
+import { assignmentRecord as record, assignmentText as text,
 	deterministicAssignmentId as assignmentId, type AssignmentJsonRecord as JsonRecord } from './support/assignment-function-support.ts';
+import { recordAssignmentDenial } from './support/assignment-denial.ts';
 export { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
 export { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
 interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
@@ -101,13 +102,14 @@ async function assignmentInput(
   const requiredCapabilities = Array.isArray(demand.metadata.requiredCapabilities)
     ? demand.metadata.requiredCapabilities.map(String).filter(Boolean)
     : [];
+	const { capabilityDemand, offerNegotiations } = negotiateAssignmentCapabilityOffers(demand.metadata.capabilityDemand, executionProviders);
 	const selectedSupply = record(demand.metadata.supplySelection);
 	const selectedExecutionProviderId = text(selectedSupply.executionProviderId);
   const selection = selectCapacitySupply({
     policy,
     requiredCapabilities,
 	assignmentWindow: { startedAt: now, durationSeconds: demand.requestedSeconds },
-	    candidates: executionProviders.filter((provider) => !selectedExecutionProviderId || provider.id === selectedExecutionProviderId).map((provider) => ({
+	    candidates: executionProviders.filter((provider) => (!selectedExecutionProviderId || provider.id === selectedExecutionProviderId) && (!capabilityDemand || provider.offers.some((offer) => offerNegotiations.has(`${provider.id}:${offer.offerId}`)))).map((provider) => ({
 	      capacityProviderId: principal.capacityProviderId,
 	      membershipId: principal.membershipId,
 	      providerSessionId: sessionId,
@@ -122,7 +124,7 @@ async function assignmentInput(
 	  minimumAssignmentDuration: provider.minimumAssignmentDuration,
     })),
   });
-  const executionProvider = executionProviders.find((provider) => provider.id === selection.selected?.executionProviderId);
+	const executionProvider = executionProviders.find((provider) => provider.id === selection.selected?.executionProviderId);
   if (!executionProvider) {
     throw new CapacityGovernanceError(
       "capacity_execution_provider_unavailable",
@@ -141,6 +143,8 @@ async function assignmentInput(
 		const count = await store.first(`SELECT COUNT(*) AS count FROM capacity_provider_assignments WHERE capacity_provider_id = ? AND lane_id = ? AND status IN ('pending','leased','running')`, [principal.capacityProviderId, candidate.id]);
 		laneLoads.set(candidate.id, Number(count?.count ?? 0));
 	}
+	const selectedOffer = capabilityDemand ? executionProvider.offers.find((offer) => offerNegotiations.has(`${executionProvider.id}:${offer.offerId}`)) : null;
+	const negotiationReceipt = selectedOffer ? offerNegotiations.get(`${executionProvider.id}:${selectedOffer.offerId}`) : null;
 	const { lane, communicationOverflow } = selectAssignmentLane(executionKind, compatibleLanes, laneLoads, requestedLane);
 	if (!lane) throw new CapacityGovernanceError('capacity_provider_lane_unavailable', `No ${requestedLane} lane satisfies this demand.`, 409, { executionProviderId: executionProvider.id, lanePurpose: requestedLane });
 	await assertBatteryAdmission({ store, teamId: demand.teamId, providerId: principal.capacityProviderId,
@@ -253,6 +257,9 @@ async function assignmentInput(
 	    grantId: text(selectedSupply.grantId) || null,
     providerSessionId: sessionId,
     executionProviderId: executionProvider.id,
+	 offerId: selectedOffer?.offerId ?? null,
+	 capabilityDemand,
+	 capabilityNegotiation: negotiationReceipt,
 	 laneId: lane.id,
 	 lanePurpose: effectiveLanePurpose,
 	 communicationOverflow,
@@ -308,9 +315,12 @@ async function assignmentInput(
     },
     metadata: {
       demandId: demand.id,
+	  offerId: selectedOffer?.offerId ?? null,
+	  capabilityDemand,
+	  capabilityNegotiation: negotiationReceipt,
 	  executionMode,
 	  upstreamMutationPolicy: executionMode === 'production' ? 'checkpoint-only' : 'denied',
-      activityType: demand.activityType,
+	  activityType: demand.activityType,
 	  chatProfile: record(payload.chatProfile),
 	  identityManifest: executionKind === 'conversation' ? {
 		  schemaVersion: 'treeseed.agent-identity-manifest/v1',
@@ -390,38 +400,6 @@ async function provisionWorkspace(
   });
 }
 
-async function recordDenial(
-  store: AssignmentFunctionStore,
-  principal: ProviderLeasePrincipal,
-  demandId: string,
-  error: unknown,
-  now: string,
-) {
-  const code = errorCode(error);
-  const details = error && typeof error === "object" && "details" in error
-    && error.details && typeof error.details === "object" && !Array.isArray(error.details)
-    ? error.details as JsonRecord
-    : {};
-  await new CapacityAuditRepository(store).record({
-    id: `audit:${demandId}:${code}`,
-    teamId: principal.teamId,
-    providerId: principal.capacityProviderId,
-    membershipId: principal.membershipId,
-    actorType: "provider-membership",
-    actorId: principal.membershipId,
-    action: "assignment-function.denied",
-    resourceType: "capacity-workday-demand",
-    resourceId: demandId,
-    idempotencyKey: `${demandId}:${code}`,
-    metadata: {
-      reasons: [code],
-      message: error instanceof Error ? error.message : String(error),
-      details,
-    },
-    now,
-  });
-}
-
 export async function assignNextCompiledDemand(
   store: AssignmentFunctionStore,
   principal: ProviderLeasePrincipal,
@@ -464,7 +442,7 @@ export async function assignNextCompiledDemand(
     input = await assignmentInput(store, demand, principal, sessionId, executionProviders, policy, now);
   } catch (error) {
     await demands.releaseClaim(demand.id, demand.claimToken!, now);
-    await recordDenial(store, principal, demand.id, error, now);
+    await recordAssignmentDenial(store, principal, demand.id, error, now);
     return null;
   }
   let assignment: DurableProviderAssignment | null;
@@ -476,7 +454,7 @@ export async function assignNextCompiledDemand(
     );
   } catch (error) {
     await demands.releaseClaim(demand.id, demand.claimToken!, now);
-    await recordDenial(store, principal, demand.id, error, now);
+    await recordAssignmentDenial(store, principal, demand.id, error, now);
     return null;
   }
   if (!assignment) {
@@ -484,6 +462,8 @@ export async function assignNextCompiledDemand(
     return null;
   }
   await demands.markAdmitted(demand.id, demand.claimToken!, assignment.id, now);
+	await persistCapabilityNegotiation(store, { assignmentId: assignment.id, teamId: demand.teamId,
+		receipt: input.capabilityNegotiation, now });
 	if (assignment.operationHandoffId && assignment.decisionId) await bindOperationHandoffAssignment(store, assignment.operationHandoffId, assignment.id, assignment.decisionId, now);
   await new CapacityWorkdayParticipationRepository(store).bindAssignment(
     demand.id,
