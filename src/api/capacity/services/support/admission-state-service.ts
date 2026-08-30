@@ -5,6 +5,7 @@ import { resolveCapacityAllocationPath } from '../../domain/allocation-path.ts';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../durable-json.ts';
 import { serializeCapacityAllocationSetRow } from '../../repositories/capacity/allocations/allocation-set.ts';
 import { serializeCapacityGrantRow } from '../../repositories/capacity/allocations/grant.ts';
+import { providerCapabilityCompatibility } from '../../policy/capability-compatibility.ts';
 
 export interface CapacityAdmissionStateRequest {
 	teamId: string;
@@ -75,7 +76,11 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 		database.first(`SELECT * FROM capacity_grants WHERE id = ? AND membership_id = ? AND team_id = ? AND project_id = ? AND environment = ? AND status = 'active' LIMIT 1`, [grantId, request.membershipId, request.teamId, request.projectId, request.environment]),
 		allocationSetId ? database.first(`SELECT * FROM capacity_allocation_sets WHERE id = ? AND team_id = ? LIMIT 1`, [allocationSetId, request.teamId]) : database.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND status = 'active' AND effective_from <= ? AND (effective_until IS NULL OR effective_until > ?) ORDER BY effective_from DESC, version DESC LIMIT 1`, [request.teamId, now, now]),
 	]);
-	const selectedGrant = grantRow ? serializeCapacityGrantRow(grantRow) : null;
+	const serializedGrant = grantRow ? serializeCapacityGrantRow(grantRow) : null;
+	const selectedGrant = serializedGrant ? {
+		...serializedGrant,
+		capabilities: providerCapabilityCompatibility(serializedGrant.capabilities),
+	} : null;
 	if (!selectedGrant) throw new CapacityGovernanceError('capacity_workday_grant_invalid', 'Capacity workday grant provenance is not active for this membership, project, and environment.', 409, { workDayId: request.workDayId, grantId });
 	const selectedAllocation = serializeCapacityAllocationSetRow(allocationRow);
 	const workdayEnvelope = decodeDurableJsonObject(workday.envelope_json, workdayContext('envelope_json'));
@@ -107,7 +112,9 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const committedBorrowedSecondsByRule = Object.fromEntries(borrowingRuleIds.map((ruleId, index) => [ruleId, borrowedSeconds[index] ?? 0]));
 	const sessionContext = (column: string) => ({ owner: 'provider availability session', ownerId: sessionRow ? String(sessionRow.id ?? '') : null, column });
 	const nativeLimits = sessionRow ? decodeDurableJsonObject(sessionRow.native_limits_json, sessionContext('native_limits_json')) : {};
-	const providerCapabilities = sessionRow ? decodeDurableJsonArray<string>(sessionRow.capabilities_json, sessionContext('capabilities_json')) : [];
+	const providerCapabilities = providerCapabilityCompatibility(
+		sessionRow ? decodeDurableJsonArray<string>(sessionRow.capabilities_json, sessionContext('capabilities_json')) : [],
+	);
 	const runnerPressure = sessionRow ? decodeDurableJsonObject(sessionRow.runner_pressure_json, sessionContext('runner_pressure_json')) : {};
 	const constraints = sessionRow ? decodeDurableJsonObject(sessionRow.constraints_json, sessionContext('constraints_json')) : {};
 	const maxConcurrent = numeric(runnerPressure.maxConcurrentRunners, nativeLimits.maxConcurrentRunners) ?? 0;

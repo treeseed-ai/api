@@ -1,5 +1,14 @@
 import { resolveLegacyCapability } from '@treeseed/sdk/capacity-provider';
 
+const LEGACY_ACTIVITY_TYPES = ['chat', 'planning', 'estimating', 'reviewing', 'acting', 'reporting'] as const;
+
+function providerCapabilityIdentities(value: string): string[] {
+	return [...new Set([
+		resolveLegacyCapability(value),
+		...LEGACY_ACTIVITY_TYPES.map((activityType) => resolveLegacyCapability(value, activityType)),
+	].filter((resolved): resolved is string => Boolean(resolved)))];
+}
+
 /**
  * Preserve the provider's declared capability while adding the exact ontology
  * identity for legacy v4 advertisements. Exact v5 capability identities pass
@@ -8,8 +17,8 @@ import { resolveLegacyCapability } from '@treeseed/sdk/capacity-provider';
 export function providerCapabilityCompatibility(values: unknown): string[] {
 	const declared = Array.isArray(values) ? values.map(String).map((value) => value.trim()).filter(Boolean) : [];
 	return [...new Set(declared.flatMap((value) => {
-		const resolved = resolveLegacyCapability(value);
-		return resolved && resolved !== value ? [value, resolved] : [value];
+		const resolved = providerCapabilityIdentities(value).filter((identity) => identity !== value);
+		return [value, ...resolved];
 	}))];
 }
 
@@ -21,8 +30,5 @@ export function providerCapabilityCompatibility(values: unknown): string[] {
  */
 export function usesLegacyCapabilityCompatibility(values: unknown): boolean {
 	const declared = Array.isArray(values) ? values.map(String).map((value) => value.trim()).filter(Boolean) : [];
-	return declared.some((value) => {
-		const resolved = resolveLegacyCapability(value);
-		return Boolean(resolved && resolved !== value);
-	});
+	return declared.some((value) => providerCapabilityIdentities(value).some((identity) => identity !== value));
 }

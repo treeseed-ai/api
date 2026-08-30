@@ -24,4 +24,41 @@ describe('terminal conversation invocation reconciliation', () => {
 		expect(run).toHaveBeenCalledWith(expect.stringContaining('UPDATE agent_invocation_requests'), expect.arrayContaining(['failed', 'assignment-1']));
 		expect(run).toHaveBeenCalledWith(expect.stringContaining("'agent.failed'"), expect.arrayContaining(['@sdk/architect']));
 	});
+
+	it('fails a terminal conversation execution that never received an assignment', async () => {
+		const invocation = {
+			id: 'invocation-orphan', team_id: 'team-1', project_id: 'project-1', agent_id: 'architect',
+			status: 'admitted', execution_id: 'conversation-orphan', execution_kind: 'conversation', final_message_ref: null,
+			metadata_json: { communication: { topicId: 'topic-1', sendId: 'send-1' } },
+		};
+		const run = vi.fn(async () => ({ changes: 1 }));
+		const store = {
+			all: vi.fn(async () => [invocation]),
+			first: vi.fn(async (query: string) => {
+				if (query.includes('capacity_provider_assignments')) return null;
+				if (query.includes('capacity_workday_demands')) return null;
+				if (query.includes('capacity_workday_runs')) return { status: 'degraded' };
+				if (query.includes('FROM projects')) return { slug: 'sdk' };
+				return null;
+			}),
+			run,
+			createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn(),
+		};
+
+		await expect(reconcileTerminalConversationInvocations(store, 'team-1')).resolves.toEqual({ reconciled: 1 });
+		expect(run).toHaveBeenCalledWith(expect.stringContaining("status='failed'"), expect.arrayContaining(['invocation-orphan']));
+		expect(run).toHaveBeenCalledWith(expect.stringContaining("'agent.failed'"), expect.arrayContaining(['@sdk/architect']));
+	});
+
+	it('keeps an admitted invocation active while its pending demand is useful', async () => {
+		const invocation = { id: 'invocation-live', team_id: 'team-1', execution_id: 'conversation-live', execution_kind: 'conversation', status: 'admitted' };
+		const store = {
+			all: vi.fn(async () => [invocation]),
+			first: vi.fn(async (query: string) => query.includes('capacity_workday_demands') ? { id: 'demand-live' } : null),
+			run: vi.fn(), createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn(),
+		};
+
+		await expect(reconcileTerminalConversationInvocations(store, 'team-1')).resolves.toEqual({ reconciled: 0 });
+		expect(store.run).not.toHaveBeenCalled();
+	});
 });
