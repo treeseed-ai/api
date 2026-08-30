@@ -10,6 +10,19 @@ describe('provider capability compatibility', () => {
 			'treeseed.coordination.planning',
 			'repository_work',
 			'treeseed.engineering.repository-analysis',
+			'treeseed.engineering.code-change',
+		]);
+	});
+
+	it('expands activity-dependent agent execution for all legacy profile kinds', () => {
+		expect(providerCapabilityCompatibility(['agent-execution'])).toEqual([
+			'agent-execution',
+			'treeseed.coordination.conversation',
+			'treeseed.coordination.planning',
+			'treeseed.coordination.estimation',
+			'treeseed.engineering.review',
+			'treeseed.engineering.code-change',
+			'treeseed.coordination.reporting',
 		]);
 	});
 
