@@ -1,11 +1,9 @@
-import { createHash } from 'node:crypto';
 import { resolveKnowledgeGatewayConnection } from '../../api/knowledge/gateway-treedx-connection.ts';
 import { R2S3PublicationClient } from '../../api/providers/cloudflare/r2-s3-publication-client.ts';
 import { githubRepositoryHead } from '../../providers/github/repository-client.ts';
 import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
 import { createRemoteGitCredentialDelivery } from '../../security/remote-git-credential-delivery.ts';
-
-const sha256 = (value: Uint8Array) => createHash('sha256').update(value).digest('hex');
+import { isR2ReplicationReceipt, mirrorTreeDxCommit, resolveCanonicalTreeDxRef, TREE_DX_MIRROR_SCHEMA, TREE_DX_MIRROR_SKIPPED_SCHEMA } from './r2-file-mirror.ts';
 
 function setting(options: any, name: string) {
 	return String(options.config?.[name] ?? process.env[name] ?? '').trim();
@@ -14,7 +12,7 @@ function setting(options: any, name: string) {
 async function verifyPrivateBucket(options: any, bucket: string) {
 	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
 	const apiToken = setting(options, 'TREESEED_CLOUDFLARE_API_TOKEN');
-	if (!accountId || !apiToken) throw new Error('Cloudflare management authority is required to verify that the R2 backup bucket is private.');
+	if (!accountId || !apiToken) throw new Error('Cloudflare management authority is required to verify that the R2 library mirror bucket is private.');
 	const root = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/r2/buckets/${encodeURIComponent(bucket)}/domains`;
 	const request = async (path: string) => {
 		const response = await (options.fetchImpl ?? fetch)(`${root}/${path}`, { headers: { authorization: `Bearer ${apiToken}` } });
@@ -25,7 +23,7 @@ async function verifyPrivateBucket(options: any, bucket: string) {
 	};
 	const [managed, custom] = await Promise.all([request('managed'), request('custom')]);
 	if (managed?.enabled || (custom?.domains ?? []).some((domain: any) => domain?.enabled)) {
-		throw new Error('The configured R2 backup bucket has public domain access enabled.');
+		throw new Error('The configured R2 library mirror bucket has public domain access enabled.');
 	}
 	return { verifiedPrivate: true, managedDomainEnabled: false, enabledCustomDomainCount: 0 };
 }
@@ -70,58 +68,38 @@ async function replicateGitHub(options: any, row: any, connection: any, operatio
 		commitSha: observed, verifiedAt: new Date().toISOString(), push: push ? { updatedRefs: push.updatedRefs ?? [] } : null };
 }
 
-async function downloadSnapshot(options: any, connection: any, snapshotId: string) {
-	const response = await (options.fetchImpl ?? fetch)(
-		`${connection.baseUrl}/api/v1/repos/${encodeURIComponent(connection.repositoryId)}/artifacts/export`, {
-			method: 'POST', headers: { authorization: `Bearer ${connection.accessToken}`, 'content-type': 'application/json' },
-			body: JSON.stringify({ snapshotId, download: true }),
-		},
-	);
-	if (!response.ok) throw new Error(`TreeDX snapshot download failed (HTTP ${response.status}).`);
-	return { bytes: new Uint8Array(await response.arrayBuffer()),
-		artifactChecksum: response.headers.get('x-treedx-artifact-checksum') };
-}
-
 async function replicateR2(options: any, row: any, connection: any, sourceRef: string) {
 	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
 	const bucket = setting(options, 'TREESEED_CONTENT_BUCKET_NAME');
 	const accessKeyId = setting(options, 'TREESEED_R2_ACCESS_KEY_ID');
 	const secretAccessKey = setting(options, 'TREESEED_R2_SECRET_ACCESS_KEY');
 	if (!accountId || !bucket || !accessKeyId || !secretAccessKey) {
-		throw new Error('R2 commit replication requires the Cloudflare account, private team bucket, and scoped S3 credentials.');
+		throw new Error('R2 library mirroring requires the Cloudflare account, private team bucket, and scoped S3 credentials.');
 	}
 	const privacy = await verifyPrivateBucket(options, bucket);
-	const built: any = await connection.client.upstream.snapshots.build(connection.repositoryId, {
-		ref: sourceRef, paths: ['**'], allowProtected: true, includeGraph: true, kind: 'repository_snapshot',
-	});
-	const snapshot = built?.snapshot;
-	if (!snapshot?.snapshotId || snapshot.commitSha !== row.commit_sha) throw new Error('TreeDX did not build an exact snapshot of the requested commit.');
-	const artifact = await downloadSnapshot(options, connection, snapshot.snapshotId);
-	const digest = sha256(artifact.bytes);
-	const headerChecksum = String(artifact.artifactChecksum ?? '').trim();
-	const snapshotChecksum = String(snapshot.artifact?.checksum ?? '').trim();
-	if (headerChecksum && snapshotChecksum && headerChecksum !== snapshotChecksum) {
-		throw new Error('TreeDX snapshot checksum metadata did not match the artifact response.');
-	}
-	const sourceChecksum = headerChecksum || snapshotChecksum;
-	if (sourceChecksum && !/^(?:blake3|sha256):[a-f0-9]{64}$/u.test(sourceChecksum)) {
-		throw new Error('TreeDX returned an unsupported artifact checksum.');
-	}
-	if (sourceChecksum.startsWith('sha256:') && sourceChecksum.slice('sha256:'.length) !== digest) {
-		throw new Error('TreeDX snapshot checksum did not match the downloaded artifact.');
-	}
 	const client = new R2S3PublicationClient({ accountId, bucket, accessKeyId, secretAccessKey }, options.fetchImpl ?? fetch);
-	await client.putBytes(row.r2_object_key, artifact.bytes, { contentType: 'application/zstd', ifNoneMatch: '*',
-		metadata: { sha256: digest, 'commit-sha': row.commit_sha, 'repository-id': row.repository_id } });
-	const readback = await client.getBytes(row.r2_object_key);
-	if (!readback || sha256(readback.body) !== digest) throw new Error('R2 did not retain the exact TreeDX snapshot bytes.');
-	const receipt = { provider: 'cloudflare-r2', bucket, objectKey: row.r2_object_key, commitSha: row.commit_sha,
-		snapshotId: snapshot.snapshotId, sourceChecksum: sourceChecksum || null, sha256: digest, byteLength: artifact.bytes.byteLength, privacy,
-		verifiedAt: new Date().toISOString() };
-	await client.put(`${row.r2_object_key}.receipt.json`, `${JSON.stringify(receipt, null, 2)}\n`, {
-		contentType: 'application/json; charset=utf-8', ifNoneMatch: '*', metadata: { sha256: digest },
-	});
-	return receipt;
+	const project: any = await options.controlPlaneStore.first('SELECT id,team_id,slug FROM projects WHERE id = ? LIMIT 1', [row.project_id]);
+	if (!project || project.team_id !== row.team_id) throw new Error('R2 mirror project scope does not belong to the replication team.');
+	const branch = setting(options, 'TREESEED_LIBRARY_BRANCH') || (setting(options, 'TREESEED_ENVIRONMENT') === 'production' ? 'main' : 'staging');
+	const library: any = await options.controlPlaneStore.first(`SELECT content_repository_ref,topology_json FROM treedx_project_libraries
+		WHERE team_id=? AND project_id=?`, [row.team_id, row.project_id]);
+	const refsResponse: any = await connection.client.upstream.repositories.refs(connection.repositoryId);
+	const availableRefs = Array.isArray(refsResponse?.refs) ? refsResponse.refs : [];
+	const canonical = resolveCanonicalTreeDxRef(availableRefs, branch, library?.content_repository_ref);
+	const canonicalRef = canonical.name, canonicalCommit = canonical.commit;
+	if (canonicalCommit !== row.commit_sha) return { schemaVersion: TREE_DX_MIRROR_SKIPPED_SCHEMA,
+		commitSha: row.commit_sha, sourceRef, canonicalRef, canonicalCommit: canonicalCommit || null,
+		reason: 'non-canonical-commit', verifiedAt: new Date().toISOString() };
+	const mirror = await mirrorTreeDxCommit({ client, connection, teamId: row.team_id, projectId: row.project_id,
+		projectSlug: String(project.slug), repositoryId: row.repository_id, commitSha: row.commit_sha, sourceRef: canonicalRef });
+	const now = new Date().toISOString();
+	const topology = typeof library?.topology_json === 'string' ? JSON.parse(library.topology_json) : structuredClone(library?.topology_json ?? {});
+	topology.contentRepository ??= {}; topology.contentRepository.r2 = { bucketName: bucket, manifestKey: mirror.manifestKey };
+	await options.controlPlaneStore.run(`UPDATE treedx_project_libraries SET r2_bucket_name=?,r2_manifest_key=?,topology_json=?,updated_at=?
+		WHERE team_id=? AND project_id=?`, [bucket, mirror.manifestKey, JSON.stringify(topology), now, row.team_id, row.project_id]);
+	await options.controlPlaneStore.run(`UPDATE hub_content_sources SET r2_bucket_name=?,r2_manifest_key=?,latest_content_version=?,updated_at=?
+		WHERE team_id=? AND hub_id=?`, [bucket, mirror.manifestKey, row.commit_sha, now, row.team_id, row.project_id]);
+	return { provider: 'cloudflare-r2', bucket, privacy, ...mirror };
 }
 
 export function createTreeDxCommitReplicationExecutor(options: any) {
@@ -132,7 +110,11 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 			if (!store) throw new Error('TreeDX commit replication requires a control-plane store.');
 			const row: any = await store.first('SELECT * FROM treedx_commit_replications WHERE id = ?', [String(input?.replicationId ?? '')]);
 			if (!row) throw new Error('TreeDX commit replication record was not found.');
-			if (row.status === 'complete') return { replicationId: row.id, status: 'complete', replayed: true };
+			const priorR2 = typeof row.r2_receipt_json === 'string' ? JSON.parse(row.r2_receipt_json) : row.r2_receipt_json;
+			if (row.status === 'complete' && priorR2?.schemaVersion === TREE_DX_MIRROR_SCHEMA
+				&& isR2ReplicationReceipt(priorR2, row.commit_sha)) {
+				return { replicationId: row.id, status: 'complete', replayed: true };
+			}
 			const now = new Date().toISOString();
 			await store.run(`UPDATE treedx_commit_replications SET status='replicating', attempts=attempts+1,
 				last_error=NULL, updated_at=? WHERE id=?`, [now, row.id]);
@@ -154,7 +136,8 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 					await store.run("UPDATE treedx_commit_replications SET github_status='failed',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
 				}
 			}
-			if (row.r2_status !== 'verified') {
+			if (row.r2_status !== 'verified' || priorR2?.schemaVersion !== TREE_DX_MIRROR_SCHEMA
+				|| !isR2ReplicationReceipt(priorR2, row.commit_sha)) {
 				await store.run("UPDATE treedx_commit_replications SET r2_status='replicating',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
 				try {
 					r2Receipt = await replicateR2(options, row, connection, sourceRef);
