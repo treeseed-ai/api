@@ -39,14 +39,14 @@ describe('seed catalog operations', () => {
 	});
 
 	it('turns a trusted local seed prerequisite into a bounded enrollment handoff', async () => {
-		const providers = { connect: vi.fn().mockResolvedValue({ enrollmentToken: 'one-time', connectionState: 'enrollment_required' }) };
+		const providers = { connect: vi.fn().mockResolvedValue({ registrationCode: 'team-code', connectionState: 'registration_ready', expiresAfterUse: false }) };
 		const plan = { seed: 'treeseed', version: 4, actions: [{ key: 'team:treeseed', existing: { id: 'team-1' } }], runtime: { capacityProviders: [{
 			key: 'capacity-provider:treeseed/local', team: 'team:treeseed', approval: 'trusted-local-owner', requiredLanePurposes: ['communication', 'platform', 'workday'], projects: [], environments: ['local'],
 		}] } };
 		const closure = await reconcileSeedProviderPrerequisites({ first: vi.fn().mockResolvedValue(null) } as any, { providers }, plan, true, { id: 'owner-1' });
 		expect(providers.connect).toHaveBeenCalledWith({ id: 'owner-1' }, 'team-1', 'seed:treeseed:4:capacity-provider:treeseed/local:enroll');
 		expect(closure).toEqual({ status: 'waiting_provider', receipts: [expect.objectContaining({
-			key: 'capacity-provider:treeseed/local', status: 'enrollment_required', teamId: 'team-1', connectionId: 'local-team-1', approval: 'trusted-local-owner', enrollmentToken: 'one-time',
+			key: 'capacity-provider:treeseed/local', status: 'enrollment_required', teamId: 'team-1', connectionId: 'local-team-1', approval: 'trusted-local-owner', registrationCode: 'team-code', expiresAfterUse: false,
 		})] });
 	});
 
