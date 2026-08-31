@@ -55,4 +55,25 @@ describe('TreeDX commit replication outbox', () => {
 		expect(result).toMatchObject({ scheduled: true, queued: 1 });
 		expect(retried).toEqual(['operation']);
 	});
+
+	it('periodically requeues canonical file mirrors so bucket resets are repaired', async () => {
+		const retried: string[] = [];
+		const runs: Array<{ query: string; params?: unknown[] }> = [];
+		const store: any = {
+			async run(query: string, params?: unknown[]) { runs.push({ query, params }); },
+			async all(query: string, params?: unknown[]) {
+				if (query.includes('treedx_project_libraries')) return [];
+				expect(query).toContain("r.source_ref IN (?,?)");
+				expect(query).toContain('NOT EXISTS (SELECT 1 FROM treedx_commit_replications newer');
+				expect(params).toContain('2026-08-28T23:55:00.000Z');
+				return [{ id: 'canonical', operation_id: 'operation', operation_status: 'succeeded' }];
+			},
+			async retryPlatformOperation(id: string) { retried.push(id); },
+		};
+		const result = await new TreeDxCommitReplicationScheduler(store, 1).runIfDue(Date.parse('2026-08-29T00:00:00.000Z'));
+		expect(result).toMatchObject({ scheduled: true, queued: 1 });
+		expect(retried).toEqual(['operation']);
+		expect(runs[0]?.query).toContain("status='cancelled'");
+		expect(runs[0]?.params?.[0]).toContain('superseded_canonical_replication');
+	});
 });
