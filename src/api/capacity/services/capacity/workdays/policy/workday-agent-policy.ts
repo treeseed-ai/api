@@ -1,4 +1,4 @@
-import { ENGINEERING_HANDLER_KINDS,type AgentActivityProfile,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
+import { ENGINEERING_HANDLER_KINDS,type AgentActivityProfile,type AgentChatProfileConfiguration,type EngineeringHandlerKind } from '@treeseed/sdk/types/agents';
 import { type AgentAuthorityPresetId } from '@treeseed/sdk/agent-capacity';
 import { compileAgentAuthoritySnapshot } from '../../../../policy/authority/agent-authority-presets.ts';
 import { compileDefaultChatActivityProfile } from '../../../../policy/workdays/chat-activity-profile.ts';
@@ -71,6 +71,25 @@ function handler(value: unknown): EngineeringHandlerKind | null {
 	return ENGINEERING_HANDLER_KINDS.includes(candidate as EngineeringHandlerKind)
 		? candidate as EngineeringHandlerKind
 		: null;
+}
+
+function chatSpecialization(profile: UnknownRecord): AgentChatProfileConfiguration {
+	const execution = record(profile.execution);
+	const specialization: AgentChatProfileConfiguration = { foundation: 'discussion-v1' };
+	const reasoningEffort = text(execution.reasoningEffort);
+	if (['minimal', 'low', 'medium', 'high', 'xhigh'].includes(reasoningEffort)) specialization.reasoningEffort = reasoningEffort as AgentChatProfileConfiguration['reasoningEffort'];
+	for (const key of ['maxRuntimeSeconds', 'maxTotalTokens', 'warningTokens'] as const) {
+		const value = Number(execution[key]);
+		if (Number.isInteger(value) && value > 0) specialization[key] = value;
+	}
+	const maxCostAmount = Number(execution.maxCostAmount);
+	if (Number.isFinite(maxCostAmount) && maxCostAmount >= 0) specialization.maxCostAmount = maxCostAmount;
+	const costCurrency = text(execution.costCurrency);
+	if (costCurrency) specialization.costCurrency = costCurrency;
+	const promptTask = text(record(profile.prompt).task);
+	if (promptTask) specialization.promptTask = promptTask;
+	if (Array.isArray(profile.capabilityRequirements)) specialization.capabilityRequirements = profile.capabilityRequirements as NonNullable<AgentChatProfileConfiguration['capabilityRequirements']>;
+	return specialization;
 }
 
 export function capacityWorkdayRuntimeHandler(agent: Pick<CapacityWorkdayAgent, 'handler'> | UnknownRecord) {
@@ -154,11 +173,9 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		for (const selectedActivity of selectedProfiles.values()) {
 			const slug = selectedActivity.agentId;
 			const configuredProfile = selectedActivity.profile;
-			const configuredReasoning = text(record(configuredProfile.execution).reasoningEffort);
-			const profile = selectedActivity.activityType === 'chat' ? compileDefaultChatActivityProfile(slug, {
-				foundation: 'discussion-v1',
-				...(['minimal', 'low', 'medium', 'high', 'xhigh'].includes(configuredReasoning) ? { reasoningEffort: configuredReasoning as 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' } : {}),
-			}) : configuredProfile;
+			const profile = selectedActivity.activityType === 'chat'
+				? compileDefaultChatActivityProfile(slug, chatSpecialization(configuredProfile))
+				: configuredProfile;
 			const configuredHandler = handler(selectedActivity.handlerId);
 			if (!configuredHandler) continue;
 			const authority = compileAgentAuthoritySnapshot(
