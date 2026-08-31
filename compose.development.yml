@@ -49,6 +49,31 @@ services:
       retries: 60
     stop_grace_period: 30s
 
+  operations-runner-live:
+    image: node:24-bookworm-slim
+    working_dir: ${TREESEED_DEVELOPMENT_WORKTREE:?TreeSeed development worktree is required}
+    init: true
+    read_only: true
+    command: ["node", "./dist/operations-runner/entrypoint.js", "run"]
+    environment:
+      NODE_ENV:
+      LOCAL_DEV_MODE:
+      TREESEED_ENVIRONMENT:
+      TREESEED_LOCAL_DEV_MODE:
+      TREESEED_COMPONENT_DATA_ROOT:
+      TREESEED_DATABASE_URL:
+      TREESEED_PLATFORM_RUNNER_DATA_DIR: /tmp/treeseed-operations-runner
+      TREESEED_DEVELOPMENT_SESSION_ID:
+      TREESEED_DEVELOPMENT_MODE:
+    volumes:
+      - ${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:ro
+    tmpfs:
+      - /tmp
+    networks:
+      - api-private
+      - platform
+    stop_grace_period: 60s
+
 networks:
   api-private:
     external: true

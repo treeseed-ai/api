@@ -122,7 +122,6 @@ async function reconcileProjectAgentClasses(input: {
 		});
 		const profiles = members.flatMap(({ definition }) => Object.entries(object(definition.activityProfiles)));
 		const allowedModes = [...new Set(profiles.flatMap(([activity, value]) => object(value).enabled === false ? [] : [activity === 'acting' ? 'acting' : 'planning']))];
-		const requiredCapabilities = [...new Set(profiles.flatMap(([, value]) => strings(object(object(value).execution).requiredCapabilities)))];
 		const metadata = { source: 'project-library', immutableRef, libraryRef: input.ref,
 			definitionPaths: members.map(({ path }) => path), definitionDigest: createHash('sha256').update(members.map(({ source }) => source).join('\n')).digest('hex') };
 		await input.store.run(`INSERT INTO project_agent_classes
@@ -132,7 +131,7 @@ async function reconcileProjectAgentClasses(input: {
 			required_capabilities_json=excluded.required_capabilities_json,handler_refs_json=excluded.handler_refs_json,
 			metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`, [
 			classId,input.teamId,input.projectId,classSlug,text(members[0]?.definition.projectAgentClassName, classSlug),
-			JSON.stringify(allowedModes.length ? allowedModes : ['planning']),JSON.stringify(requiredCapabilities),JSON.stringify({}),JSON.stringify({}),
+			JSON.stringify(allowedModes.length ? allowedModes : ['planning']),JSON.stringify([]),JSON.stringify({}),JSON.stringify({}),
 			JSON.stringify({ agents }),JSON.stringify({}),JSON.stringify(metadata),text(existing?.created_at, now),now,
 		]);
 	}

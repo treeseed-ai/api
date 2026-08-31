@@ -46,7 +46,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				return existing;
 			}
 			const branchName = `refs/heads/knowledge/${id}`;
-			const connection = await resolveKnowledgeGatewayConnection(store, { projectId, write: true, workspaceRefs: [branchName] });
+			const connection = await resolveKnowledgeGatewayConnection(store, { projectId, write: true, workspaceRefs: [branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			let remote;
 			try {
@@ -73,9 +73,12 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			const path = text(pathValue);
 			if (!allowedKnowledgePath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'Choose a knowledge file in this project workspace.');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-				write: false, workspaceRefs: [access.workspace.branchName] });
+				write: false, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const file = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path });
+			if (path.startsWith(projectLibraryPath(connection.contentPath, 'agents') + '/')) {
+				return { kind: 'agent-profile', path, expectedSha: file.sha, content: file.content };
+			}
 			try {
 				const isBook = path.startsWith(`${projectLibraryPath(connection.contentPath, 'books')}/`);
 				const definition = isBook ? parseBook({ path, raw: file.content }) : parseKnowledgePage({ path, raw: file.content });
@@ -95,9 +98,25 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (!['draft', 'changes-requested'].includes(access.workspace.status)) throw new KnowledgeOperationError(409, 'knowledge_workspace_locked', 'This draft is locked while it is in review or publication.');
 			if (Number(input.version) !== access.workspace.version) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-				write: true, workspaceRefs: [access.workspace.branchName] });
+				write: true, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const sourcePath = text(input.sourcePath);
+			if (input.kind === 'agent-profile') {
+				if (!sourcePath.startsWith(projectLibraryPath(connection.contentPath, 'agents') + '/')) throw new KnowledgeOperationError(422, 'agent_profile_path_invalid', 'Agent profiles must remain in the agents collection.');
+				if (!allowedKnowledgePath(access.workspace, sourcePath)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The agent profile path is outside this workspace.');
+				const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
+				if (!text(input.expectedSha) || text(input.expectedSha) !== current.sha) throw new KnowledgeOperationError(409, 'stale_workspace_file', 'The agent profile changed. Reload before saving.');
+				const content = typeof input.content === 'string' ? input.content : '';
+				if (!content.trim()) throw new KnowledgeOperationError(422, 'agent_profile_content_required', 'Agent profile content is required.');
+				const result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
+					baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: [{ path: sourcePath, before: current.content, after: content }],
+					idempotencyKey: `agent-profile-${workspaceId}-${access.workspace.version}` });
+				const updated = await store.updateKnowledgeWorkspace(workspaceId, { version: access.workspace.version, status: 'draft' });
+				if (!updated.ok) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
+				await store.recordAuditEvent({ eventType: 'agent.profile.updated', actorType: 'user', actorId: access.principal.id,
+					targetType: 'agent_profile', targetId: sourcePath, data: { workspaceId, projectId: access.workspace.projectId, path: sourcePath } });
+				return { result, workspace: updated.workspace };
+			}
 			let before: string | null = null, status: 'published' | 'archived' = 'published';
 			if (sourcePath) {
 				const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
@@ -137,7 +156,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (!['draft', 'changes-requested'].includes(access.workspace.status)) throw new KnowledgeOperationError(409, 'knowledge_workspace_locked', 'This workspace has already been submitted.');
 			if (Number(input.version) !== access.workspace.version) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before submitting.');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-				write: true, workspaceRefs: [access.workspace.branchName] });
+				write: true, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const diff = await connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId });
 			if (!diff.changedPaths.length) throw new KnowledgeOperationError(422, 'empty_knowledge_draft', 'The draft has no changes.');
@@ -173,7 +192,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 		async diff(principal: KnowledgePrincipal, workspaceId: string) {
 			const access = await workspaceAccess(principal, workspaceId, 'knowledge:read');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-				write: false, workspaceRefs: [access.workspace.branchName] });
+				write: false, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			return connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId });
 		},
@@ -184,7 +203,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (!['draft', 'changes-requested'].includes(access.workspace.status)) throw new KnowledgeOperationError(409, 'knowledge_workspace_locked', 'A submitted or published workspace cannot be abandoned.');
 			if (Number(input.version) !== access.workspace.version) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before abandoning it.');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-				write: true, workspaceRefs: [access.workspace.branchName] });
+				write: true, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			await connection.client.closeWorkspace(access.workspace.treeDxWorkspaceId);
 			const updated = await store.updateKnowledgeWorkspace(workspaceId, { version: access.workspace.version, status: 'abandoned' });

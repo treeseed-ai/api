@@ -54,7 +54,7 @@ setup:
     role: owner
   dev:
     required: true
-    command: trsd dev start --web-runtime local --json
+    command: trsd dev session start development.acceptance.session.yaml --actor scene-runner --json
     reuseExisting: true
 artifacts:
   trace: true

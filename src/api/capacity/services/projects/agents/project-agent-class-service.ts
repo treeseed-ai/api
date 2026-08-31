@@ -84,17 +84,17 @@ export class ProjectAgentClassService {
 	private value(teamId: string, projectId: string, id: string, classSlug: string, input: JsonRecord): ProjectAgentClass {
 		const candidateStatus = String(input.status ?? 'active') as ProjectAgentClassStatus;
 		if (!STATUSES.has(candidateStatus)) throw new CapacityGovernanceError('project_agent_class_status_invalid', `Unknown project agent class status ${candidateStatus}.`, 400);
-		const allowedModes = strings(input.allowedModes ?? input.allowed_modes);
+		const allowedModes = strings(input.allowedModes);
 		const modes = allowedModes.length ? allowedModes : ['planning', 'acting'];
 		if (modes.some((mode) => mode !== 'planning' && mode !== 'acting')) throw new CapacityGovernanceError('project_agent_class_modes_invalid', 'allowedModes must contain only planning and/or acting.', 400);
-		const handlerRefs = object(input.handlerRefs ?? input.handler_refs);
+		const handlerRefs = object(input.handlerRefs);
 		const handlerRefIssues = validateProjectAgentActivityRefs(handlerRefs);
 		if (handlerRefIssues.length) throw new CapacityGovernanceError('project_agent_activity_refs_invalid', 'Project agent activity references are invalid.', 400, { diagnostics: handlerRefIssues });
 		return {
 			id, teamId, projectId, slug: classSlug, name: String(input.name ?? classSlug).trim() || classSlug, status: candidateStatus,
-			allowedModes: modes as ProjectAgentClass['allowedModes'], requiredCapabilities: strings(input.requiredCapabilities ?? input.required_capabilities),
-			kernelProfile: object(input.kernelProfile ?? input.kernel_profile), kernelPolicy: object(input.kernelPolicy ?? input.kernel_policy),
-			handlerRefs, outputContracts: object(input.outputContracts ?? input.output_contracts), metadata: object(input.metadata),
+			allowedModes: modes as ProjectAgentClass['allowedModes'],
+			kernelProfile: object(input.kernelProfile), kernelPolicy: object(input.kernelPolicy),
+			handlerRefs, outputContracts: object(input.outputContracts), metadata: object(input.metadata),
 		};
 	}
 }

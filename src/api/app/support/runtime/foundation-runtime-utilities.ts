@@ -229,7 +229,7 @@ export function uiRuntimeLocals(config) {
 export const AGENT_TASK_SIGNATURES = {
     'question.summarize': {
         defaultSeconds: 300,
-        requiredCapabilities: ['agent-execution'],
+        requiredCapabilities: ['treeseed.coordination.question-answering'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -237,7 +237,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'proposal.draft': {
         defaultSeconds: 600,
-        requiredCapabilities: ['agent-execution'],
+        requiredCapabilities: ['treeseed.publishing.drafting'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -245,7 +245,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'proposal.compare': {
         defaultSeconds: 600,
-        requiredCapabilities: ['agent-execution'],
+        requiredCapabilities: ['treeseed.coordination.review'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -253,7 +253,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'decision.summary': {
         defaultSeconds: 480,
-        requiredCapabilities: ['agent-execution', 'reporting'],
+        requiredCapabilities: ['treeseed.coordination.reporting'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -261,7 +261,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'release.summary': {
         defaultSeconds: 480,
-        requiredCapabilities: ['agent-execution', 'reporting'],
+        requiredCapabilities: ['treeseed.publishing.release-notes'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,
@@ -269,7 +269,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'repository.change.apply': {
         defaultSeconds: 1200,
-        requiredCapabilities: ['agent-execution', 'repository_work'],
+        requiredCapabilities: ['treeseed.engineering.code-change'],
         repositoryMutation: true,
         bindingWork: true,
         productionAllowed: false,
@@ -277,7 +277,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'verification.run': {
         defaultSeconds: 900,
-        requiredCapabilities: ['agent-execution', 'repository_work', 'reporting'],
+        requiredCapabilities: ['treeseed.engineering.integration-testing'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: false,
@@ -285,7 +285,7 @@ export const AGENT_TASK_SIGNATURES = {
     },
     'workday.report': {
         defaultSeconds: 300,
-        requiredCapabilities: ['agent-execution', 'reporting'],
+        requiredCapabilities: ['treeseed.coordination.reporting'],
         repositoryMutation: false,
         bindingWork: false,
         productionAllowed: true,

@@ -17,6 +17,17 @@ function uniqueStrings(values: string[]): string[] {
 	return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
 }
 
+function engineeringStageCapability(stage: string) {
+	const capabilities: Record<string, string> = {
+		research: 'treeseed.research.synthesis', architecture: 'treeseed.engineering.architecture', test: 'treeseed.engineering.unit-testing',
+		implementation: 'treeseed.engineering.code-change', verification: 'treeseed.engineering.integration-testing', review: 'treeseed.engineering.review',
+		documentation: 'treeseed.publishing.documentation', release: 'treeseed.engineering.release', operations: 'treeseed.engineering.operations',
+	};
+	const capability = capabilities[stage];
+	if (!capability) throw new Error(`Engineering stage ${stage} has no standardized capability.`);
+	return capability;
+}
+
 function diagnostic(
 	diagnostics: AgentCapacityContractDiagnostic[],
 	code: string,
@@ -62,7 +73,8 @@ export function validateDecisionDependencySpec(dependency: DecisionDependencySpe
 		diagnostic(diagnostics, 'invalid_dependency_required_before', `Dependency ${dependency.id || '<unknown>'} has an invalid requiredBefore value.`, `${path}.requiredBefore`);
 	}
 	if (dependency.type === 'artifact' && !dependency.deliverableType) diagnostic(diagnostics, 'artifact_dependency_missing_deliverable_type', 'Artifact dependencies must declare deliverableType.', `${path}.deliverableType`);
-	if (dependency.type === 'capability' && !dependency.capability && !dependency.agentClass) diagnostic(diagnostics, 'capability_dependency_missing_capability', 'Capability dependencies must declare capability or agentClass.', `${path}.capability`);
+	if (dependency.type === 'capability' && !dependency.capability) diagnostic(diagnostics, 'capability_dependency_missing_capability', 'Capability dependencies must declare an exact standardized capability.', `${path}.capability`);
+	if (dependency.capability && !/^(?:treeseed|provider\.[a-z0-9-]+)\.[a-z0-9.-]+$/u.test(dependency.capability)) diagnostic(diagnostics, 'capability_dependency_invalid', 'Capabilities must use a TreeSeed or provider namespace.', `${path}.capability`);
 	if (dependency.type === 'human-input') {
 		const policy = dependency.humanInputPolicy;
 		if (!policy || !['team-human', 'any-human', 'any-human-or-agent'].includes(policy.requiredFrom)) {
@@ -208,7 +220,7 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 		for (const dependency of estimate.dependencies.filter((entry) => entry.type === 'artifact' && entry.deliverableType)) {
 			const contractId = dependencyToContractId(input.projectId, input.decisionId, dependency);
 			if (!contractMap.has(contractId)) {
-				const producerClass = dependency.agentClass || dependency.capability || dependency.deliverableType || 'producer';
+				const producerClass = dependency.capability || dependency.deliverableType || 'producer';
 				contractMap.set(contractId, {
 					id: contractId,
 					teamId: input.teamId,
@@ -269,7 +281,7 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 			estimateId: estimate.id,
 			groupSnapshot: estimate.groupSnapshot,
 			handler: null,
-			requiredCapabilities: uniqueStrings(estimate.dependencies.map((dependency) => dependency.capability ?? dependency.agentClass ?? '').filter(Boolean)),
+			requiredCapabilities: uniqueStrings(estimate.dependencies.map((dependency) => dependency.capability ?? '').filter(Boolean)),
 			requiredDeliverableContractIds,
 			inputRefs,
 			outputRequirements: estimate.expectedOutputs,
@@ -299,7 +311,7 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 			nodes.push({
 				id: reviewNodeId, decisionId: input.decisionId, projectId: input.projectId, targetAgentClass: reviewerClass,
 				activityType: 'reviewing', estimateId: estimate.id, groupSnapshot: estimate.groupSnapshot, handler: null,
-				requiredCapabilities: ['independent-review'], requiredDeliverableContractIds: [outputContractId], inputRefs,
+				requiredCapabilities: ['treeseed.engineering.review'], requiredDeliverableContractIds: [outputContractId], inputRefs,
 				outputRequirements: [{ id: reviewContractId, outputType: 'review_disposition', required: true }],
 				capacity: { expectedSeconds: Math.max(1, estimate.workBreakdown?.independentReviewSeconds ?? 300), maxSeconds: Math.max(1, estimate.workBreakdown?.finalReviewSeconds ?? estimate.workBreakdown?.independentReviewSeconds ?? 300) },
 				status: 'pending', metadata: { stage: 'review', reviewedNodeId: nodeId, reviewedContractId: outputContractId,
@@ -325,7 +337,7 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 	});
 	nodes.push({
 		id: integrationNodeId, decisionId: input.decisionId, projectId: input.projectId, targetAgentClass: 'platform-integration',
-		activityType: 'acting', handler: 'platform-integration', requiredCapabilities: ['governed-integration'],
+		activityType: 'acting', handler: 'platform-integration', requiredCapabilities: ['treeseed.engineering.code-change'],
 		requiredDeliverableContractIds: reviewNodes.map((node) => String(node.metadata?.producesDeliverableContractId)), inputRefs: [],
 		outputRequirements: [{ id: integrationContractId, outputType: 'governed_integration_receipt', required: true }],
 		capacity: { expectedSeconds: 1, maxSeconds: 1 }, status: 'pending',
@@ -338,7 +350,7 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 		deliverableType: 'assignment_workflow_report', producerAgentClasses: [input.reportingAgentClass ?? 'reporter'],
 		acceptanceCriteria: ['Report must preserve terminal repository outcomes, reviews, failures, usage, settlement, remaining work, and cleanup evidence.'], status: 'required', metadata: { terminalOnly: true } });
 	nodes.push({ id: reportNodeId, decisionId: input.decisionId, projectId: input.projectId, targetAgentClass: input.reportingAgentClass ?? 'reporter',
-		activityType: 'reporting', handler: 'reporter', requiredCapabilities: ['terminal-reporting'],
+		activityType: 'reporting', handler: 'reporter', requiredCapabilities: ['treeseed.coordination.reporting'],
 		requiredDeliverableContractIds: [integrationContractId], inputRefs: [],
 		outputRequirements: [{ id: reportContractId, outputType: 'assignment_workflow_report', required: true }],
 		capacity: { expectedSeconds: Math.max(1, ...estimates.map((estimate) => estimate.workBreakdown?.reportingSeconds ?? 300)), maxSeconds: Math.max(1, ...estimates.map((estimate) => estimate.workBreakdown?.reportingSeconds ?? 300)) },
@@ -399,7 +411,7 @@ export function compileEngineeringAssignmentGraph(input: EngineeringAssignmentGr
 			targetAgentClass: stage.role,
 			activityType: stage.key === 'review' ? 'reviewing' : 'acting',
 			handler: null,
-			requiredCapabilities: [`engineering:${stage.key}`],
+			requiredCapabilities: [engineeringStageCapability(stage.key)],
 			requiredDeliverableContractIds: previous ? [previous.id] : [],
 			inputRefs: [],
 			outputRequirements: [{ id: contracts[index]!.id, outputType: stage.output, required: true }],

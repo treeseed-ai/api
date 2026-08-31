@@ -78,7 +78,7 @@ describe('planning and estimate catalog operations', () => {
 		expect(update).not.toHaveBeenCalled();
 	});
 
-	it('collapses duplicate addresses with required precedence and fails explicitly without communication capacity', async () => {
+	it('collapses duplicate addresses and keeps an accepted send durable while capacity reconciles', async () => {
 		const create = vi.fn(async () => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
 		const service = createCommunicationService(store({
 			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
@@ -88,10 +88,11 @@ describe('planning and estimate catalog operations', () => {
 				return null;
 			},
 			async run() { return { meta: { changes: 1 } }; },
+			async all() { return []; },
 		}), { create });
 		await expect(service.send(principal, 'team-a', 'Agent Chat', {
 			message: '@sdk/architect\nPlease coordinate with @architect.',
-		}, 'request-a')).rejects.toMatchObject({ code: 'communication_capacity_unavailable', status: 503 });
+		}, 'request-a')).rejects.toMatchObject({ code: 'communication_send_not_found', status: 404 });
 		expect(create).toHaveBeenCalledWith(principal, expect.objectContaining({
 			recipients: ['architect'], addressRequirements: { architect: 'required' },
 		}), 'request-a:project-a');
@@ -107,9 +108,10 @@ describe('planning and estimate catalog operations', () => {
 				return null;
 			},
 			async run() { return { meta: { changes: 1 } }; },
+			async all() { return []; },
 		}), { create });
 		await expect(service.send(principal, 'team-a', 'Agent Chat', { message: '@architect Please coordinate.' }, 'request-a'))
-			.rejects.toMatchObject({ code: 'communication_capacity_unavailable', status: 503 });
+			.rejects.toMatchObject({ code: 'communication_send_not_found', status: 404 });
 		expect(create).toHaveBeenCalledTimes(2);
 		expect(create.mock.calls.map((call) => call[1].projectId).sort()).toEqual(['project-api', 'project-sdk']);
 	});

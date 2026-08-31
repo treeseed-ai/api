@@ -5,7 +5,6 @@ import { resolveCapacityAllocationPath } from '../../domain/allocation-path.ts';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../durable-json.ts';
 import { serializeCapacityAllocationSetRow } from '../../repositories/capacity/allocations/allocation-set.ts';
 import { serializeCapacityGrantRow } from '../../repositories/capacity/allocations/grant.ts';
-import { providerCapabilityCompatibility } from '../../policy/capability-compatibility.ts';
 
 export interface CapacityAdmissionStateRequest {
 	teamId: string;
@@ -77,10 +76,7 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 		allocationSetId ? database.first(`SELECT * FROM capacity_allocation_sets WHERE id = ? AND team_id = ? LIMIT 1`, [allocationSetId, request.teamId]) : database.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND status = 'active' AND effective_from <= ? AND (effective_until IS NULL OR effective_until > ?) ORDER BY effective_from DESC, version DESC LIMIT 1`, [request.teamId, now, now]),
 	]);
 	const serializedGrant = grantRow ? serializeCapacityGrantRow(grantRow) : null;
-	const selectedGrant = serializedGrant ? {
-		...serializedGrant,
-		capabilities: providerCapabilityCompatibility(serializedGrant.capabilities),
-	} : null;
+	const selectedGrant = serializedGrant;
 	if (!selectedGrant) throw new CapacityGovernanceError('capacity_workday_grant_invalid', 'Capacity workday grant provenance is not active for this membership, project, and environment.', 409, { workDayId: request.workDayId, grantId });
 	const selectedAllocation = serializeCapacityAllocationSetRow(allocationRow);
 	const workdayEnvelope = decodeDurableJsonObject(workday.envelope_json, workdayContext('envelope_json'));
@@ -112,9 +108,7 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const committedBorrowedSecondsByRule = Object.fromEntries(borrowingRuleIds.map((ruleId, index) => [ruleId, borrowedSeconds[index] ?? 0]));
 	const sessionContext = (column: string) => ({ owner: 'provider availability session', ownerId: sessionRow ? String(sessionRow.id ?? '') : null, column });
 	const nativeLimits = sessionRow ? decodeDurableJsonObject(sessionRow.native_limits_json, sessionContext('native_limits_json')) : {};
-	const providerCapabilities = providerCapabilityCompatibility(
-		sessionRow ? decodeDurableJsonArray<string>(sessionRow.capabilities_json, sessionContext('capabilities_json')) : [],
-	);
+	const providerCapabilities = sessionRow ? decodeDurableJsonArray<string>(sessionRow.capabilities_json, sessionContext('capabilities_json')) : [];
 	const runnerPressure = sessionRow ? decodeDurableJsonObject(sessionRow.runner_pressure_json, sessionContext('runner_pressure_json')) : {};
 	const constraints = sessionRow ? decodeDurableJsonObject(sessionRow.constraints_json, sessionContext('constraints_json')) : {};
 	const maxConcurrent = numeric(runnerPressure.maxConcurrentRunners, nativeLimits.maxConcurrentRunners) ?? 0;
@@ -123,6 +117,11 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const localMaxConcurrent = numeric(constraints.maxConcurrentRunners, maxConcurrent) ?? 0;
 	const localActive = numeric(constraints.activeRunners, activeRunners) ?? 0;
 	const localAgentSeconds = numeric(constraints.availableAgentSeconds, availableAgentSeconds) ?? totalSeconds;
+	const requestedCapabilities = [...new Set((request.requiredCapabilities ?? []).map(String).filter(Boolean))];
+	if (requestedCapabilities.length === 0 || requestedCapabilities.some((capability) => !capability.startsWith('treeseed.') && !capability.startsWith('provider.'))) {
+		throw new CapacityGovernanceError('capacity_capability_demand_invalid', 'Admission requires resolved standardized capability identities.', 409);
+	}
+	const requiredCapabilities = requestedCapabilities;
 	let acting: CapacityAdmissionInput['acting'];
 	if (request.mode === 'acting') {
 		const [readiness, capacityPlan] = request.decisionId ? await Promise.all([
@@ -133,7 +132,7 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	}
 	return {
 		now,
-		request: { teamId: request.teamId, providerId: request.providerId, membershipId: request.membershipId, projectId: request.projectId, environment: request.environment, agentClassId: request.projectAgentClassId, mode: request.mode, executionProviderId: request.executionProviderId ?? null, laneId: request.laneId ?? null, requiredCapabilities: [...new Set([...decodeDurableJsonArray<string>(agentClass.required_capabilities_json, { owner: 'project agent class', ownerId: request.projectAgentClassId, column: 'required_capabilities_json' }), ...(request.requiredCapabilities ?? [])])], requestedSeconds: request.requestedSeconds, budget: request.budget ?? null },
+		request: { teamId: request.teamId, providerId: request.providerId, membershipId: request.membershipId, projectId: request.projectId, environment: request.environment, agentClassId: request.projectAgentClassId, mode: request.mode, executionProviderId: request.executionProviderId ?? null, laneId: request.laneId ?? null, requiredCapabilities, requestedSeconds: request.requestedSeconds, budget: request.budget ?? null },
 		membership: { id: String(membership.id), teamId: String(membership.team_id), providerId: String(membership.capacity_provider_id), status: String(membership.status) as CapacityAdmissionInput['membership']['status'] },
 		availability: { status: String(sessionRow?.status ?? 'closed') as CapacityAdmissionInput['availability']['status'], availableFrom: String(sessionRow?.available_from ?? sessionRow?.opened_at ?? now), availableUntil: sessionRow?.available_until || sessionRow?.expires_at ? String(sessionRow.available_until ?? sessionRow.expires_at) : null },
 		grant: selectedGrant,

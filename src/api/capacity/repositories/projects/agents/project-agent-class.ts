@@ -26,13 +26,9 @@ export function serializeProjectAgentClassRow(row: Row | null): ProjectAgentClas
 	if (allowedModes.length === 0 || allowedModes.some((mode) => mode !== 'planning' && mode !== 'acting') || new Set(allowedModes).size !== allowedModes.length) {
 		throw new CapacityGovernanceError('project_agent_class_modes_invalid', `Project agent class ${id} has invalid allowed modes.`, 500, { projectAgentClassId: id });
 	}
-	const requiredCapabilities = decodeDurableJsonArray<string>(row.required_capabilities_json, context(id, 'required_capabilities_json'));
-	if (requiredCapabilities.some((capability) => typeof capability !== 'string' || !capability.trim()) || new Set(requiredCapabilities).size !== requiredCapabilities.length) {
-		throw new CapacityGovernanceError('project_agent_class_capabilities_invalid', `Project agent class ${id} has invalid required capabilities.`, 500, { projectAgentClassId: id });
-	}
 	return {
 		id, teamId: text(row.team_id), projectId: text(row.project_id), slug: text(row.slug), name: text(row.name), status: status(row.status, id),
-		allowedModes: allowedModes as ProjectAgentClass['allowedModes'], requiredCapabilities,
+		allowedModes: allowedModes as ProjectAgentClass['allowedModes'],
 		kernelProfile: decodeDurableJsonObject(row.kernel_profile_json, context(id, 'kernel_profile_json')),
 		kernelPolicy: decodeDurableJsonObject(row.kernel_policy_json, context(id, 'kernel_policy_json')),
 		handlerRefs: decodeDurableJsonObject(row.handler_refs_json, context(id, 'handler_refs_json')),
@@ -76,7 +72,7 @@ export class ProjectAgentClassRepository {
 	async create(value: ProjectAgentClass, operations: CapacityDatabaseOperation[] = [], now = new Date().toISOString()): Promise<ProjectAgentClass> {
 		await this.database.ensureInitialized();
 		await this.database.batch([
-			{ query: `INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, params: [value.id, value.teamId, value.projectId, value.slug, value.name, value.status, JSON.stringify(value.allowedModes), JSON.stringify(value.requiredCapabilities), JSON.stringify(value.kernelProfile), JSON.stringify(value.kernelPolicy), JSON.stringify(value.handlerRefs), JSON.stringify(value.outputContracts), JSON.stringify(value.metadata ?? {}), now, now] },
+			{ query: `INSERT INTO project_agent_classes (id, team_id, project_id, slug, name, status, allowed_modes_json, required_capabilities_json, kernel_profile_json, kernel_policy_json, handler_refs_json, output_contracts_json, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?)`, params: [value.id, value.teamId, value.projectId, value.slug, value.name, value.status, JSON.stringify(value.allowedModes), JSON.stringify(value.kernelProfile), JSON.stringify(value.kernelPolicy), JSON.stringify(value.handlerRefs), JSON.stringify(value.outputContracts), JSON.stringify(value.metadata ?? {}), now, now] },
 			...operations,
 		]);
 		return this.required(value.projectId, value.id);
@@ -85,7 +81,7 @@ export class ProjectAgentClassRepository {
 	async update(value: ProjectAgentClass, operations: CapacityDatabaseOperation[] = [], now = new Date().toISOString()): Promise<ProjectAgentClass> {
 		await this.database.ensureInitialized();
 		await this.database.batch([
-			{ query: `UPDATE project_agent_classes SET slug = ?, name = ?, status = ?, allowed_modes_json = ?, required_capabilities_json = ?, kernel_profile_json = ?, kernel_policy_json = ?, handler_refs_json = ?, output_contracts_json = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND project_id = ?`, params: [value.slug, value.name, value.status, JSON.stringify(value.allowedModes), JSON.stringify(value.requiredCapabilities), JSON.stringify(value.kernelProfile), JSON.stringify(value.kernelPolicy), JSON.stringify(value.handlerRefs), JSON.stringify(value.outputContracts), JSON.stringify(value.metadata ?? {}), now, value.id, value.projectId] },
+			{ query: `UPDATE project_agent_classes SET slug = ?, name = ?, status = ?, allowed_modes_json = ?, required_capabilities_json = '[]', kernel_profile_json = ?, kernel_policy_json = ?, handler_refs_json = ?, output_contracts_json = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND project_id = ?`, params: [value.slug, value.name, value.status, JSON.stringify(value.allowedModes), JSON.stringify(value.kernelProfile), JSON.stringify(value.kernelPolicy), JSON.stringify(value.handlerRefs), JSON.stringify(value.outputContracts), JSON.stringify(value.metadata ?? {}), now, value.id, value.projectId] },
 			...operations,
 		]);
 		return this.required(value.projectId, value.id);

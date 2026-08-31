@@ -274,9 +274,13 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 	}
 	const definitionRevision = text(record(agentClass.metadata_json).immutableRef);
 	const chatProfileRevision = digest(record(record(selectedAgent).activities).chat);
-	const subjectDigest = digest({ discussionId: input.discussionId, agentSlug, subject: text(input.subject) || null });
+	// A topic is durable conversation history, not one indefinitely reused execution
+	// chain. Each posted message starts an independent root unless the caller supplies
+	// explicit handoff/continuation provenance.
+	const subjectDigest = digest({ discussionId: input.discussionId, messageId: input.messageId,
+		sendId: text(input.communication?.sendId) || null, agentSlug, subject: text(input.subject) || null });
 	const pending=await store.first(`SELECT id,content_refs_json FROM agent_invocation_requests WHERE team_id=? AND project_id=? AND agent_id=? AND subject_digest=? AND status IN ('queued','blocked') ORDER BY requested_at LIMIT 1`,[input.teamId,input.projectId,agentSlug,subjectDigest]);
-	const prior = await store.first(`SELECT id,assignment_id,handoff_root_id,handoff_depth FROM agent_invocation_requests WHERE team_id = ? AND project_id = ? AND agent_id = ? AND subject_digest = ? AND status = 'suspended' ORDER BY completed_at DESC,requested_at DESC LIMIT 1`, [input.teamId,input.projectId,agentSlug,subjectDigest]);
+	const prior = input.continuationOfAssignmentId ? await store.first(`SELECT id,assignment_id,handoff_root_id,handoff_depth FROM agent_invocation_requests WHERE team_id = ? AND project_id = ? AND agent_id = ? AND assignment_id = ? AND status = 'suspended' ORDER BY completed_at DESC,requested_at DESC LIMIT 1`, [input.teamId,input.projectId,agentSlug,input.continuationOfAssignmentId]) : null;
 	const continuationParentAssignmentId = text(prior?.assignment_id) || input.continuationOfAssignmentId || input.parentAssignmentId || null;
 	const handoffParentId = text(input.handoffParentId) || text(prior?.id) || null;
 	const handoffRootId = text(input.handoffRootId) || text(prior?.handoff_root_id) || handoffParentId;

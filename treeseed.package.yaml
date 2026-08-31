@@ -71,7 +71,7 @@ development:
       sourceRoots: [src, drizzle, compose.development.yml]
       ignoredPaths: [dist, node_modules]
       operations:
-        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --abort-on-container-exit, --exit-code-from, api-live], environment: { TREESEED_DEVELOPMENT_EDGE_HOST: api-live }, timeoutSeconds: 86400 }
+        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --no-deps, api-live], environment: { TREESEED_DEVELOPMENT_EDGE_HOST: api-live }, timeoutSeconds: 86400 }
         cleanup: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, down, --remove-orphans], environment: {}, timeoutSeconds: 120 }
         build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
         verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
@@ -106,7 +106,7 @@ development:
       ignoredPaths: [dist, node_modules]
       operations:
         build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }
-        start: { command: npm, args: [run, start:runner], environment: {}, timeoutSeconds: 86400 }
+        start: { command: docker, args: [compose, --file, compose.development.yml, --project-name, treeseed-api-development, up, --no-deps, operations-runner-live], environment: { TREESEED_DEVELOPMENT_EDGE_HOST: operations-runner-live }, timeoutSeconds: 86400 }
         verify: { command: npm, args: [run, test:control-plane], environment: {}, timeoutSeconds: 1800 }
       ready: { kind: process, graceSeconds: 5 }
       outputs: [{ path: dist/operations-runner, mediaType: application/vnd.treeseed.node-runtime, digestAlgorithm: sha256 }]
@@ -118,12 +118,6 @@ development:
       migrationPolicy: explicit-review
       secretRefs:
         TREESEED_DATABASE_URL: api-database-url
-        TREESEED_GITHUB_TOKEN: github-repository-token
-        TREESEED_CLOUDFLARE_ACCOUNT_ID: cloudflare-r2-account-id
-        TREESEED_CLOUDFLARE_API_TOKEN: cloudflare-r2-management-token
-        TREESEED_CONTENT_BUCKET_NAME: cloudflare-r2-bucket-name
-        TREESEED_R2_ACCESS_KEY_ID: cloudflare-r2-access-key-id
-        TREESEED_R2_SECRET_ACCESS_KEY: cloudflare-r2-secret-access-key
       shutdown: { graceSeconds: 60, activeWorkPolicy: drain }
       resources: {}
       logs: [.treeseed/development/operations-runner.log]

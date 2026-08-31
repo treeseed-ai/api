@@ -89,8 +89,8 @@ describe('seed catalog operations', () => {
 		const store = {
 			ensureInitialized: vi.fn(),
 			all: vi.fn().mockResolvedValue([
-				{ id: 'communication', purpose: 'communication', execution_provider_id: 'execution-1', execution_provider_capabilities_json: JSON.stringify(['communication', 'agent-execution']) },
-				{ id: 'workday', purpose: 'workday', execution_provider_id: 'execution-1', execution_provider_capabilities_json: JSON.stringify(['communication', 'agent-execution']) },
+				{ id: 'communication', purpose: 'communication', execution_provider_id: 'execution-1', execution_provider_capabilities_json: JSON.stringify(['treeseed.coordination.conversation']) },
+				{ id: 'workday', purpose: 'workday', execution_provider_id: 'execution-1', execution_provider_capabilities_json: JSON.stringify(['treeseed.engineering.code-change']) },
 			]),
 			first: vi.fn(async (query: string) => {
 				if (query.includes('capacity_provider_team_memberships membership')) return { id: 'membership-1', capacity_provider_id: 'provider-1' };
@@ -112,7 +112,7 @@ describe('seed catalog operations', () => {
 		expect(store.all).toHaveBeenCalledWith(expect.stringContaining('execution_provider.capacity_provider_id = lane.capacity_provider_id'), ['provider-1']);
 		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('capabilities_json = ?'), [
 			JSON.stringify(['execution-1']), JSON.stringify(['communication', 'workday']),
-			JSON.stringify(['communication', 'agent-execution']), expect.any(String), 'grant-1', 'membership-1',
+			JSON.stringify(['treeseed.coordination.conversation', 'treeseed.engineering.code-change']), expect.any(String), 'grant-1', 'membership-1',
 		]);
 	});
 
