@@ -100,7 +100,15 @@ jobs:
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
           test "$(git rev-parse HEAD)" = "$(git rev-parse origin/staging)"
-          run_id="$(gh run list --workflow publish.yml --branch staging --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          run_id=""
+          for attempt in {1..120}; do
+            run_id="$(gh run list --workflow publish.yml --branch staging --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            [[ -n "$run_id" ]] && break
+            if (( attempt % 6 == 0 )); then
+              echo "Waiting for the exact staging image candidate (${attempt}0s elapsed)."
+            fi
+            sleep 10
+          done
           test -n "$run_id"; gh run download "$run_id" --name "api-candidate-${GITHUB_SHA}" --dir candidate
           npm run release:check-tag
           npm run release:custody -- verify candidate/release-evidence-v1.json
