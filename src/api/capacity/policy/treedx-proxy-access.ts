@@ -14,6 +14,15 @@ function globLikePathMatches(pattern: string, candidate: string): boolean {
 	return normalizedCandidate === normalizedPattern || normalizedCandidate.startsWith(`${normalizedPattern}/`);
 }
 
+export function treeDxProxyAuthorizedPathPatterns(handle: TreeDxProxyHandle | Record<string, unknown> | null | undefined, operation?: string | null) {
+	const candidate = record(handle); const writeOperation = operation === 'files:write' || operation === 'git:commit';
+	const readPaths = Array.isArray(candidate.allowedReadPaths) ? candidate.allowedReadPaths.map(String).filter(Boolean) : [];
+	const writePaths = Array.isArray(candidate.allowedWritePaths) ? candidate.allowedWritePaths.map(String).filter(Boolean) : [];
+	const fallbackPaths = Array.isArray(candidate.allowedPaths) ? candidate.allowedPaths.map(String).filter(Boolean) : [];
+	const paths = writeOperation ? (writePaths.length ? writePaths : fallbackPaths) : (readPaths.length ? readPaths : fallbackPaths);
+	return paths.some((path) => path === '**' || path === '*') ? ['**'] : [...new Set(paths)];
+}
+
 export function evaluateTreeDxProxyHandleAccess(handle: TreeDxProxyHandle | Record<string, unknown> | null | undefined, request: TreeDxProxyAccessRequest): TreeDxProxyAccessResult {
 	const candidate = record(handle);
 	if (!candidate.id) return { ok: false, code: 'treedx_proxy_handle_missing', reason: 'TreeDX proxy handle is required.' };
@@ -43,13 +52,7 @@ export function evaluateTreeDxProxyHandleAccess(handle: TreeDxProxyHandle | Reco
 		return { ok: false, code: 'treedx_proxy_operation_denied', reason: 'TreeDX proxy handle does not allow this operation.', metadata: { operation, allowedOperations } };
 	}
 	const path = request.path ? String(request.path).replace(/^\/+/, '') : null;
-	const writeOperation = operation === 'files:write' || operation === 'git:commit';
-	const readPaths = Array.isArray(candidate.allowedReadPaths) ? candidate.allowedReadPaths.map(String).filter(Boolean) : [];
-	const writePaths = Array.isArray(candidate.allowedWritePaths) ? candidate.allowedWritePaths.map(String).filter(Boolean) : [];
-	const fallbackPaths = Array.isArray(candidate.allowedPaths) ? candidate.allowedPaths.map(String).filter(Boolean) : [];
-	const allowedPaths = writeOperation
-		? (writePaths.length ? writePaths : fallbackPaths)
-		: (readPaths.length ? readPaths : fallbackPaths);
+	const allowedPaths = treeDxProxyAuthorizedPathPatterns(candidate, operation);
 	if (path && allowedPaths.length && !allowedPaths.some((pattern) => globLikePathMatches(pattern, path))) {
 		return { ok: false, code: 'treedx_proxy_path_denied', reason: 'TreeDX proxy handle does not allow this path.', metadata: { path, allowedPaths } };
 	}
