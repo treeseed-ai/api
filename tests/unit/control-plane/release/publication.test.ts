@@ -76,7 +76,7 @@ describe('managed API release publication', () => {
 	it('publishes Compose-only runtime revisions without rebuilding images', () => {
 		const workflow = parse(readFileSync('.github/workflows/publish-runtime.yml', 'utf8')) as { on?: { workflow_dispatch?: unknown }; jobs: Record<string, { environment?: string; permissions?: Record<string, string> }> };
 		expect(workflow.on?.workflow_dispatch).toBeDefined();
-		expect(workflow.jobs.publish?.environment).toBe('development');
+		expect(workflow.jobs.publish?.environment).toBe('staging');
 		expect(workflow.jobs.publish?.permissions).toMatchObject({ contents: 'write', 'id-token': 'write', attestations: 'write' });
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/release/create-component-release.ts'], { env: { ...process.env, TREESEED_RELEASE: '0.8.0-rc.12', TREESEED_COMPONENT_REVISION: '2', TREESEED_SOURCE_COMMIT: 'e'.repeat(40), TREESEED_API_DIGEST: hash('b'), TREESEED_RUNNER_DIGEST: hash('c'), TREESEED_DATABASE_DIGEST: hash('d') } });
 		const bundle = JSON.parse(readFileSync('release-assets/component-release.json', 'utf8')) as { applicationVersion: string; release: string; revision: number };
