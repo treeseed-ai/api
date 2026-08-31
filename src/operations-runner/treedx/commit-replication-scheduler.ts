@@ -52,6 +52,23 @@ export class TreeDxCommitReplicationScheduler {
 		if (time - this.lastAttemptAt < this.intervalMs) return { scheduled: false };
 		this.lastAttemptAt = time;
 		const now = new Date(time).toISOString();
+		const verificationBefore = new Date(time - 5 * 60_000).toISOString();
+		// A moving branch name can appear on many historical outbox rows. Once a
+		// newer row exists for the same project, an older queued branch operation
+		// can no longer be the canonical mirror. Cancel those inherited queue rows
+		// in one pass so reset recovery is not starved by obsolete exact commits.
+		if (typeof this.store.run === 'function') {
+			await this.store.run(`UPDATE platform_operations SET status='cancelled',lease_expires_at=NULL,
+				error_json=?,finished_at=COALESCE(finished_at,?),updated_at=?
+				WHERE namespace='treedx' AND operation='replicate_commit' AND status='queued'
+				AND EXISTS (SELECT 1 FROM treedx_commit_replications stale
+					WHERE stale.id=platform_operations.idempotency_key AND stale.source_ref IN (?,?)
+					AND EXISTS (SELECT 1 FROM treedx_commit_replications newer
+						WHERE newer.project_id=stale.project_id AND newer.source_ref IN (?,?)
+						AND (newer.created_at>stale.created_at OR (newer.created_at=stale.created_at AND newer.id>stale.id))))`,
+				[JSON.stringify({ code: 'superseded_canonical_replication', message: 'A newer canonical TreeDX commit superseded this queued mirror operation.' }),
+					now, now, this.canonicalRef, this.canonicalRemoteRef, this.canonicalRef, this.canonicalRemoteRef]);
+		}
 		let discovered = 0;
 		if (!this.backfilled) {
 			discovered = await this.backfillHeadsAndPreservedCommits(now);
@@ -63,10 +80,20 @@ export class TreeDxCommitReplicationScheduler {
 			WHERE ((r.status IN ('pending','degraded') AND (r.next_attempt_at IS NULL OR r.next_attempt_at <= ?))
 				OR (r.status='replicating' AND p.status IN ('failed','cancelled'))
 				OR (r.status='complete' AND CAST(r.r2_receipt_json AS TEXT) NOT LIKE '%treeseed.treedx-r2-file-mirror/v2%'
-					AND CAST(r.r2_receipt_json AS TEXT) NOT LIKE '%treeseed.treedx-r2-file-mirror-skipped/v1%'))
+					AND CAST(r.r2_receipt_json AS TEXT) NOT LIKE '%treeseed.treedx-r2-file-mirror-skipped/v1%')
+				OR (r.status='complete' AND r.source_ref IN (?,?) AND r.updated_at <= ?
+					AND NOT EXISTS (SELECT 1 FROM treedx_commit_replications newer
+						WHERE newer.project_id=r.project_id AND newer.source_ref IN (?,?)
+						AND (newer.created_at>r.created_at OR (newer.created_at=r.created_at AND newer.id>r.id)))
+					AND CAST(r.r2_receipt_json AS TEXT) LIKE '%treeseed.treedx-r2-file-mirror/v2%'))
+			AND NOT (r.source_ref IN (?,?) AND EXISTS (SELECT 1 FROM treedx_commit_replications newer
+				WHERE newer.project_id=r.project_id AND newer.source_ref IN (?,?)
+				AND (newer.created_at>r.created_at OR (newer.created_at=r.created_at AND newer.id>r.id))))
 			AND (r.status IN ('pending','complete') OR NOT EXISTS (SELECT 1 FROM treedx_commit_replications pending WHERE pending.status='pending'))
 			ORDER BY CASE WHEN r.source_ref=? THEN 0 WHEN r.source_ref=? THEN 1 ELSE 2 END,r.created_at DESC LIMIT 10`,
-			[now, this.canonicalRef, this.canonicalRemoteRef]);
+			[now, this.canonicalRef, this.canonicalRemoteRef, verificationBefore, this.canonicalRef, this.canonicalRemoteRef,
+				this.canonicalRef, this.canonicalRemoteRef, this.canonicalRef, this.canonicalRemoteRef,
+				this.canonicalRef, this.canonicalRemoteRef]);
 		let queued = 0;
 		for (const row of rows) {
 			if (!row.operation_id) {

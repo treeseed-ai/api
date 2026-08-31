@@ -102,6 +102,17 @@ async function replicateR2(options: any, row: any, connection: any, sourceRef: s
 	return { provider: 'cloudflare-r2', bucket, privacy, ...mirror };
 }
 
+async function retainedR2MirrorExists(options: any, receipt: any) {
+	if (receipt?.schemaVersion !== TREE_DX_MIRROR_SCHEMA || typeof receipt?.manifestKey !== 'string') return false;
+	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
+	const bucket = setting(options, 'TREESEED_CONTENT_BUCKET_NAME');
+	const accessKeyId = setting(options, 'TREESEED_R2_ACCESS_KEY_ID');
+	const secretAccessKey = setting(options, 'TREESEED_R2_SECRET_ACCESS_KEY');
+	if (!accountId || !bucket || !accessKeyId || !secretAccessKey) return false;
+	const client = new R2S3PublicationClient({ accountId, bucket, accessKeyId, secretAccessKey }, options.fetchImpl ?? fetch);
+	return client.exists(receipt.manifestKey);
+}
+
 export function createTreeDxCommitReplicationExecutor(options: any) {
 	return {
 		namespace: 'treedx', operation: 'replicate_commit',
@@ -111,8 +122,10 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 			const row: any = await store.first('SELECT * FROM treedx_commit_replications WHERE id = ?', [String(input?.replicationId ?? '')]);
 			if (!row) throw new Error('TreeDX commit replication record was not found.');
 			const priorR2 = typeof row.r2_receipt_json === 'string' ? JSON.parse(row.r2_receipt_json) : row.r2_receipt_json;
-			if (row.status === 'complete' && priorR2?.schemaVersion === TREE_DX_MIRROR_SCHEMA
-				&& isR2ReplicationReceipt(priorR2, row.commit_sha)) {
+			const retainedR2Available = row.status === 'complete' && priorR2?.schemaVersion === TREE_DX_MIRROR_SCHEMA
+				&& isR2ReplicationReceipt(priorR2, row.commit_sha) && await retainedR2MirrorExists(options, priorR2);
+			if (retainedR2Available) {
+				await store.run('UPDATE treedx_commit_replications SET updated_at=? WHERE id=?', [new Date().toISOString(), row.id]);
 				return { replicationId: row.id, status: 'complete', replayed: true };
 			}
 			const now = new Date().toISOString();
@@ -121,7 +134,15 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: row.project_id,
 				write: false, replicationRefs: [row.source_ref, `refs/treedx/commits/${row.commit_sha}`, row.commit_sha, row.github_ref] });
 			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
-			const sourceRef = await resolveExactSourceRef(connection, row);
+			let sourceRef: string;
+			try { sourceRef = await resolveExactSourceRef(connection, row); }
+			catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const retryAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
+				await store.run("UPDATE treedx_commit_replications SET status='degraded',last_error=?,next_attempt_at=?,updated_at=? WHERE id=?",
+					[message, retryAt, new Date().toISOString(), row.id]);
+				throw error;
+			}
 			let githubReceipt = row.github_receipt_json ?? {};
 			let r2Receipt = row.r2_receipt_json ?? {};
 			const failures: string[] = [];
@@ -136,7 +157,7 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 					await store.run("UPDATE treedx_commit_replications SET github_status='failed',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
 				}
 			}
-			if (row.r2_status !== 'verified' || priorR2?.schemaVersion !== TREE_DX_MIRROR_SCHEMA
+			if (!retainedR2Available || row.r2_status !== 'verified' || priorR2?.schemaVersion !== TREE_DX_MIRROR_SCHEMA
 				|| !isR2ReplicationReceipt(priorR2, row.commit_sha)) {
 				await store.run("UPDATE treedx_commit_replications SET r2_status='replicating',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
 				try {
