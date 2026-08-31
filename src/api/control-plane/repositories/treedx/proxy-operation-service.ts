@@ -3,7 +3,7 @@ import { TreeDxApiError } from '@treeseed/treedx/treedx/client';
 import { TREEDX_OPENAPI_CONTRACT } from '@treeseed/treedx/openapi';
 import type { ControlPlaneOperationDescriptor } from '@treeseed/sdk/operator-contracts';
 import { treeDxProxyOperationMapping } from '@treeseed/sdk/treedx';
-import { evaluateTreeDxProxyHandleAccess } from '../../../capacity/policy/treedx-proxy-access.ts';
+import { evaluateTreeDxProxyHandleAccess, treeDxProxyAuthorizedPathPatterns } from '../../../capacity/policy/treedx-proxy-access.ts';
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { projectTreeDxProxyCommit, recordTreeDxProxySuccess, type TreeDxProxyStore } from '../../../capacity/services/treedx/repositories/treedx-proxy-effects.ts';
@@ -126,11 +126,14 @@ async function authorize(store: Store, projectId: string, permission: Permission
 	if (!handle || handle.assignmentId && handle.assignmentId !== identity.assignmentId) return reject('treedx_proxy_scope_mismatch', 'TreeDX proxy handle scope does not match the active assignment.');
 	if (handle.tokenHash && (!identity.token || createHash('sha256').update(identity.token).digest('hex') !== handle.tokenHash)) return reject('treedx_proxy_token_mismatch', 'TreeDX proxy handle token does not match.');
 	if (!requiredHandleScopes(scope).some((value) => (handle.scopes as unknown[] ?? []).map(String).includes(value))) return reject('treedx_proxy_scope_denied', 'TreeDX proxy handle does not allow this operation.');
-	const evaluated = evaluateTreeDxProxyHandleAccess(handle, { teamId: principal.teamId, projectId, assignmentId: identity.assignmentId,
-		repositoryId: String(resources.repoId ?? scope.repoIds.find((value) => value !== '*') ?? '') || null,
-		workspaceId: typeof resources.workspaceId === 'string' ? resources.workspaceId : null, operation: scope.capabilities[0] ?? null,
-		path: scope.paths.find((value) => value !== '**') ?? null, token: identity.token });
-	if (!evaluated.ok) return reject(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
+	const requestPaths = scope.paths.filter((value) => value !== '**' && value !== '*');
+	for (const pathValue of requestPaths.length ? requestPaths : [null]) {
+		const evaluated = evaluateTreeDxProxyHandleAccess(handle, { teamId: principal.teamId, projectId, assignmentId: identity.assignmentId,
+			repositoryId: String(resources.repoId ?? scope.repoIds.find((value) => value !== '*') ?? '') || null,
+			workspaceId: typeof resources.workspaceId === 'string' ? resources.workspaceId : null, operation: scope.capabilities[0] ?? null,
+			path: pathValue, token: identity.token });
+		if (!evaluated.ok) return reject(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
+	}
 	return { actorType: 'capacity_provider', principal, details, assignment, handle };
 }
 
@@ -210,7 +213,10 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			// TreeDX grants upstream authority to the control-plane service identity. The
 			// end user or capacity provider remains the audited actor below, but must not
 			// replace the service principal in the bounded delegation token.
-			const token = resolveTreeDxProxyToken(runtime, baseUrl, projectId, scope, { connectionId: connectionId(library, baseUrl) });
+			const compactScope = access.actorType === 'capacity_provider' ? { ...scope,
+				paths: treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null).length
+					? treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null) : ['**'] } : scope;
+			const token = resolveTreeDxProxyToken(runtime, baseUrl, projectId, compactScope, { connectionId: connectionId(library, baseUrl) });
 			try {
 				const payload = await admission.run({ connectionId: connectionId(library, baseUrl), projectId, actorId: actorId(access),
 					retryable: descriptor.kind === 'read' || Boolean(context.idempotencyKey), signal: context.signal,

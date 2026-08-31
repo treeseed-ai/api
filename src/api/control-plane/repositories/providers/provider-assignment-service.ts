@@ -20,6 +20,11 @@ type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: 
 
 function objectValue(value: unknown): Record<string, unknown> { return record(value); }
 function stableId(scope: string, value: string) { return createHash('sha256').update(`${scope}:${value}`).digest('hex').slice(0, 32); }
+export function normalizeStoredTimestamp(value: unknown) {
+	if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString();
+	if (typeof value !== 'string' || !value.trim()) return '';
+	const parsed = new Date(value); return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+}
 
 async function communicationProvenance(store: ProviderAssignmentStore, assignment: Record<string, unknown>) {
 	if (String(assignment.execution_kind ?? assignment.executionKind ?? '') !== 'conversation') return null;
@@ -219,7 +224,8 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			const actor = principal(auth, ['provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
 			if (String(assignment.execution_kind) !== 'conversation') throw new CapacityGovernanceError('communication_assignment_required', 'Only conversation assignments have mention notifications.', 409);
 			if (String(body.providerId ?? '') !== actor.capacityProviderId || !String(body.runnerId ?? '').trim()) throw new CapacityGovernanceError('communication_acknowledgement_invalid', 'Provider and runner identity are required.', 400);
-			const existing = String(assignment.communication_acknowledged_at ?? ''); const acknowledgedAt = existing || String(body.observedAt ?? new Date().toISOString());
+			const existing = normalizeStoredTimestamp(assignment.communication_acknowledged_at);
+			const acknowledgedAt = existing || normalizeStoredTimestamp(body.observedAt) || new Date().toISOString();
 			if (!existing) await store.run('UPDATE capacity_provider_assignments SET communication_acknowledged_at=? WHERE id=? AND membership_id=?', [acknowledgedAt, assignmentId, actor.membershipId]);
 			await appendCommunicationEvent(store, assignment, 'mention.acknowledged', 'Mention acknowledged by the execution provider.', { kind: 'provider', id: actor.capacityProviderId }, { runnerId: body.runnerId });
 			return { assignmentId, acknowledgedAt, replayed: Boolean(existing) };
