@@ -19,7 +19,7 @@ export async function enqueueTreeDxCommitReplication(database: CapacityGovernanc
 	const id = replicationId(input.projectId, input.commitSha);
 	const sourceRef = input.sourceRef ?? `refs/treedx/commits/${input.commitSha}`;
 	const githubRef = `refs/heads/treedx-backups/${input.commitSha}`;
-	const r2ObjectKey = `teams/${input.teamId}/libraries/${input.projectId}/commits/${input.commitSha}.tar.zst`;
+	const r2ObjectKey = `_treeseed/mirrors/teams/${input.teamId}/projects/${input.projectId}/manifest.json`;
 	await database.run(`INSERT INTO treedx_commit_replications
 		(id,team_id,project_id,repository_id,commit_sha,source_ref,github_ref,r2_object_key,status,github_status,r2_status,created_at,updated_at)
 		VALUES (?,?,?,?,?,?,?,?, 'pending','pending','pending',?,?) ON CONFLICT(project_id,commit_sha) DO NOTHING`, [

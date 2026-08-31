@@ -22,6 +22,14 @@ const runtime = {
 		{ id: 'api', composeService: 'api', endpoints: [{ id: 'http', protocol: 'http' as const, port: 3000, visibility: 'host' as const, defaultAlias: 'api.treeseed.localhost', aliasOverride: true, tls: 'edge' as const, authentication: 'application' as const, healthGate: { protocol: 'http' as const, path: '/v1/health/ready', timeoutSeconds: 120 } }] },
 		{ id: 'operations-runner', composeService: 'operations-runner', endpoints: [] },
 	],
+	configuration: {
+		environment: [{ name: 'TREESEED_LIBRARY_BRANCH', required: false, source: 'configuration' as const }],
+		secretEnvironment: [
+			'TREESEED_CLOUDFLARE_ACCOUNT_ID', 'TREESEED_CLOUDFLARE_API_TOKEN', 'TREESEED_CONTENT_BUCKET_NAME',
+			'TREESEED_R2_ACCESS_KEY_ID', 'TREESEED_R2_SECRET_ACCESS_KEY',
+		].map((name) => ({ name, required: false })),
+		secretFiles: [], files: [],
+	},
 	stateVolumes: [{ id: 'postgres', volume: '/var/lib/treeseed/components/api/postgres', backup: 'required' as const }, { id: 'operations-runner', volume: '/var/lib/treeseed/components/api/operations-runner', backup: 'required' as const }],
 	migrations: [{ id: 'control-plane-postgres', order: 0, backupRequired: true }], requiredCapabilities: ['docker-compose'], dependencies: [],
 };

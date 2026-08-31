@@ -20,7 +20,7 @@ describe('TreeDX commit replication outbox', () => {
 		});
 		expect(result.sourceRef).toBe(`refs/treedx/commits/${commitSha}`);
 		expect(result.githubRef).toBe(`refs/heads/treedx-backups/${commitSha}`);
-		expect(result.r2ObjectKey).toBe(`teams/team/libraries/sdk/commits/${commitSha}.tar.zst`);
+		expect(result.r2ObjectKey).toBe('_treeseed/mirrors/teams/team/projects/sdk/manifest.json');
 		expect(runs[0]?.query).toContain('INSERT INTO treedx_commit_replications');
 		expect(operations[0]).toMatchObject({ namespace: 'treedx', operation: 'replicate_commit',
 			idempotencyKey: result.id, input: { replicationId: result.id } });
@@ -32,6 +32,22 @@ describe('TreeDX commit replication outbox', () => {
 			async all(query: string) {
 				if (query.includes('treedx_project_libraries')) return [];
 				return [{ id: 'replication', operation_id: 'operation', operation_status: 'failed' }];
+			},
+			async retryPlatformOperation(id: string) { retried.push(id); },
+		};
+		const result = await new TreeDxCommitReplicationScheduler(store, 1).runIfDue(Date.parse('2026-08-29T00:00:00.000Z'));
+		expect(result).toMatchObject({ scheduled: true, queued: 1 });
+		expect(retried).toEqual(['operation']);
+	});
+
+	it('requeues completed archive operations so they are upgraded to file mirrors', async () => {
+		const retried: string[] = [];
+		const store: any = {
+			async all(query: string) {
+				if (query.includes('treedx_project_libraries')) return [];
+				expect(query).toContain('treeseed.treedx-r2-file-mirror/v2');
+				return [{ id: 'replication', operation_id: 'operation', operation_status: 'succeeded',
+					commit_sha: 'a'.repeat(40), r2_receipt_json: { objectKey: 'old.tar.zst' } }];
 			},
 			async retryPlatformOperation(id: string) { retried.push(id); },
 		};
