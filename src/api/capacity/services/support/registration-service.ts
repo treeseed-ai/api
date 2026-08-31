@@ -153,7 +153,7 @@ await this.auditRepository.record({ id: randomUUID(), teamId, actorType: 'team-p
 		});
 		if (!request) throw new CapacityGovernanceError('registration_key_disabled', 'Team capacity registration key was disabled or rotated before registration committed.', 403);
 		if (!(await this.repository.registrationRequestByIdempotency(String(keyRow.team_id), idempotencyKey))) throw new CapacityGovernanceError('provider_registration_exists', 'Provider already has a registration request for this key generation.', 409, { requestId: request.id, status: request.status });
-		await this.auditRepository.record({ id: randomUUID(), teamId: request.teamId, providerId: request.providerId, actorType: 'provider-identity', actorId: request.providerFingerprint, action: 'provider-registration.requested', resourceType: 'provider-registration-request', resourceId: request.id, requestId: request.id, idempotencyKey, now }); await this.setRegistrationKeyStatus(request.teamId, null, 'disabled', `consume:${request.id}`);
+		await this.auditRepository.record({ id: randomUUID(), teamId: request.teamId, providerId: request.providerId, actorType: 'provider-identity', actorId: request.providerFingerprint, action: 'provider-registration.requested', resourceType: 'provider-registration-request', resourceId: request.id, requestId: request.id, idempotencyKey, metadata: { registrationKeyGeneration: request.registrationKeyGeneration }, now });
 		return request;
 	}
 

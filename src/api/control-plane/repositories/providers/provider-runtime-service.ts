@@ -57,6 +57,12 @@ export function providerAvailabilityIsRunnable(sessions: Record<string, unknown>
 	return activeExecutionProviderCount > 0 && sessions.some((entry) => entry.status === 'open' && Date.parse(String(entry.expires_at)) > now);
 }
 
+export async function revealReusableRegistrationCode(registration: Pick<CapacityRegistrationService, 'revealRegistrationKey'>, teamId: string, actorId: string) {
+	const issued = await registration.revealRegistrationKey(teamId, actorId);
+	return { teamId, connectionState: 'registration_ready', expiresAfterUse: false,
+		registrationCode: issued.registrationKey, codePrefix: issued.keyPrefix, generation: issued.generation };
+}
+
 export function createProviderRuntimeService(store: CapacityGovernanceDatabase, config: Record<string, unknown>, ownerStore: OwnerStore = store as OwnerStore) {
 	const environment = String(config.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local');
 	const secretSource = config.capacityGovernanceSecret ?? config.TREESEED_CAPACITY_GOVERNANCE_SECRET
@@ -118,11 +124,9 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 			const status = await this.status(principal, teamId, providerId);
 			return { ...status, blockers: status.healthy ? [] : ['provider_availability_unhealthy'], nextActions: status.healthy ? [] : ['Start or reconcile the local provider manager.'] };
 		},
-		async connect(principal: UserPrincipal | null | undefined, teamId: string, idempotencyKey: string) {
+		async connect(principal: UserPrincipal | null | undefined, teamId: string, _idempotencyKey: string) {
 			const actor = await requireManage(principal, teamId);
-			const issued = await registration.rotateRegistrationKey(teamId, actor.id, idempotencyKey);
-			return { teamId, connectionState: 'enrollment_required', expiresAfterUse: true,
-				enrollmentToken: issued.registrationKey, keyPrefix: issued.keyPrefix, generation: issued.generation };
+			return revealReusableRegistrationCode(registration, teamId, actor.id);
 		},
 		async disconnect(principal: UserPrincipal | null | undefined, teamId: string, connectionId: string, idempotencyKey: string) {
 			const actor = await requireManage(principal, teamId);
