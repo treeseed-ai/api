@@ -34,7 +34,7 @@ describe('managed API release publication', () => {
 	it('materializes exact production images without a source build or host port', () => {
 		execFileSync(process.execPath, ['--import', 'tsx', 'scripts/release/create-component-release.ts'], { env: { ...process.env, TREESEED_RELEASE: '0.8.0-rc.8', TREESEED_SOURCE_COMMIT: 'a'.repeat(40), TREESEED_API_DIGEST: hash('b'), TREESEED_RUNNER_DIGEST: hash('c'), TREESEED_DATABASE_DIGEST: hash('d') } });
 		const compose = readFileSync('release-assets/compose.yml', 'utf8');
-		const bundle = JSON.parse(readFileSync('release-assets/component-release.json', 'utf8')) as { release: string; revision: number; runtime: { compose: { files: Array<{ path: string; digest: string }> } }; track: string; stableBase: { catalogDigest: unknown }; images: unknown[] };
+		const bundle = JSON.parse(readFileSync('release-assets/component-release.json', 'utf8')) as { release: string; revision: number; runtime: { compose: { files: Array<{ path: string; digest: string }> }; configuration: { environment: Array<{ name: string }>; secretEnvironment: Array<{ name: string }> } }; track: string; stableBase: { catalogDigest: unknown }; images: unknown[] };
 		expect(compose).not.toMatch(/\bbuild\s*:/u);
 		expect(compose).not.toMatch(/^\s+ports:/mu);
 		expect(compose).toContain(`treeseed/api@${hash('b')}`);
@@ -49,6 +49,8 @@ describe('managed API release publication', () => {
 		expect(bundle.release).toBe('0.8.0~rc8-1');
 		expect(bundle.revision).toBe(1);
 		expect(bundle.runtime.compose.files).toEqual([{ path: 'compose.yml', digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) }]);
+		expect(bundle.runtime.configuration.environment.map(({ name }) => name)).toEqual(expect.arrayContaining(['NODE_ENV', 'TREESEED_API_BASE_URL', 'TREESEED_LIBRARY_BRANCH', 'TREESEED_TREEDX_URL']));
+		expect(bundle.runtime.configuration.secretEnvironment.map(({ name }) => name)).toEqual(expect.arrayContaining(['TREESEED_DATABASE_URL', 'TREESEED_GITHUB_TOKEN', 'TREESEED_R2_SECRET_ACCESS_KEY', 'TREESEED_TREEDX_DELEGATION_PRIVATE_KEY']));
 	});
 
 	it('keeps live source inside private managed networks with loopback-only ingress', () => {
