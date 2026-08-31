@@ -7,6 +7,12 @@ function nextCycle(graph: DecisionAssignmentGraph) {
 	return Math.max(0,...graph.nodes.map((node)=>Number(node.metadata?.revisionCycle??0)).filter(Number.isFinite))+1;
 }
 
+function revisionStageCapability(stage: 'implementation' | 'verification' | 'review') {
+	return stage === 'implementation' ? 'treeseed.engineering.code-change'
+		: stage === 'verification' ? 'treeseed.engineering.integration-testing'
+			: 'treeseed.engineering.review';
+}
+
 export function compileEngineeringRevisionCycle(graph: DecisionAssignmentGraph,rejectedReviewContractId:string,reason:string):EngineeringRevisionCycleResult|null {
 	if(graph.metadata?.workflowKind!=='engineering-test-first') return null;
 	const review=graph.nodes.find((node)=>node.metadata?.producesDeliverableContractId===rejectedReviewContractId&&node.metadata?.stage==='review');
@@ -23,7 +29,7 @@ export function compileEngineeringRevisionCycle(graph: DecisionAssignmentGraph,r
 		acceptanceCriteria:[`Revision cycle ${revisionCycle} must resolve the rejected review with exact source-ref provenance.`],status:'required',
 		metadata:{workflowKind:'engineering-test-first',stage:stage.key,revisionCycle,rejectedReviewContractId}}));
 	const revisionNodes=stages.map((stage,index):DecisionAssignmentGraphNode=>({id:`${prefix}:node:${stage.key}`,decisionId:graph.decisionId,projectId:graph.projectId,
-		targetAgentClass:stage.role,activityType:stage.key==='review'?'reviewing':'acting',handler:null,requiredCapabilities:[`engineering:${stage.key}`],
+		targetAgentClass:stage.role,activityType:stage.key==='review'?'reviewing':'acting',handler:null,requiredCapabilities:[revisionStageCapability(stage.key)],
 		requiredDeliverableContractIds:index===0?[]:[newContracts[index-1]!.id],inputRefs:[],outputRequirements:[{id:newContracts[index]!.id,outputType:stage.output,required:true}],
 		capacity:{expectedSeconds:900,maxSeconds:900},status:index===0?'ready':'pending',metadata:{workflowKind:'engineering-test-first',stage:stage.key,revisionCycle,
 			exactBaseRef:graph.metadata?.exactBaseRef,producesDeliverableContractId:newContracts[index]!.id,revisionReason:reason,revisionOfNodeId:review.id,
@@ -48,10 +54,10 @@ export function compileGovernedRevisionCycle(graph:DecisionAssignmentGraph,input
 		metadata:{revisionCycle,rejectedReviewNodeId:rejected.id,rejectedCheckpointRef:input.rejectedCheckpointRef,findingsRef:input.findingsRef}};
 	const reviewContract:DeliverableContract={id:`${prefix}:deliverable:review`,teamId:graph.teamId,projectId:graph.projectId,decisionId:graph.decisionId,
 		deliverableType:'review_disposition',producerAgentClasses:[input.reviewerAgentClass],reviewerAgentClasses:[input.reviewerAgentClass],acceptanceCriteria:['Review the exact revised checkpoint; any prior approval is stale.'],status:'required',metadata:{revisionCycle,reviewedContractId:revisionContract.id}};
-	const revisionNode:DecisionAssignmentGraphNode={id:`${prefix}:node:acting`,decisionId:graph.decisionId,projectId:graph.projectId,targetAgentClass:input.actorAgentClass,activityType:'acting',requiredCapabilities:['governed-revision'],requiredDeliverableContractIds:[],
+	const revisionNode:DecisionAssignmentGraphNode={id:`${prefix}:node:acting`,decisionId:graph.decisionId,projectId:graph.projectId,targetAgentClass:input.actorAgentClass,activityType:'acting',requiredCapabilities:['treeseed.engineering.code-change'],requiredDeliverableContractIds:[],
 		inputRefs:[{model:'note',collection:'notes',slug:input.findingsRef,id:input.findingsRef}],outputRequirements:[{id:revisionContract.id,outputType:'implementation_revision',required:true}],capacity:{expectedSeconds:input.availableSeconds,maxSeconds:input.availableSeconds},status:'ready',
 		metadata:{stage:'revision',revisionCycle,priorCheckpointRef:input.rejectedCheckpointRef,findingsRef:input.findingsRef,producesDeliverableContractId:revisionContract.id}};
-	const reviewNode:DecisionAssignmentGraphNode={id:`${prefix}:node:review`,decisionId:graph.decisionId,projectId:graph.projectId,targetAgentClass:input.reviewerAgentClass,activityType:'reviewing',requiredCapabilities:['independent-review'],requiredDeliverableContractIds:[revisionContract.id],inputRefs:[],
+	const reviewNode:DecisionAssignmentGraphNode={id:`${prefix}:node:review`,decisionId:graph.decisionId,projectId:graph.projectId,targetAgentClass:input.reviewerAgentClass,activityType:'reviewing',requiredCapabilities:['treeseed.engineering.review'],requiredDeliverableContractIds:[revisionContract.id],inputRefs:[],
 		outputRequirements:[{id:reviewContract.id,outputType:'review_disposition',required:true}],capacity:{expectedSeconds:Math.max(1,Math.floor(input.availableSeconds/3)),maxSeconds:Math.max(1,Math.floor(input.availableSeconds/3))},status:'pending',
 		metadata:{stage:'review',revisionCycle,reviewedNodeId:revisionNode.id,reviewedContractId:revisionContract.id,exactCheckpointRequired:true,maximumRevisionCycles:maximum,rejectionCreatesRevision:true,producesDeliverableContractId:reviewContract.id}};
 	const integration=graph.nodes.find((node)=>node.metadata?.platformControlled===true&&node.metadata?.stage==='integration');

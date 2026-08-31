@@ -67,8 +67,8 @@ export function createOperationHttpHandler(
 ) {
 	return async (context: Context) => {
 		const requestId = context.req.header('x-request-id')?.trim() || randomUUID();
+		const descriptor = operation.binding.descriptor;
 		try {
-			const descriptor = operation.binding.descriptor;
 			const idempotencyKey = context.req.header(descriptor.idempotency.header)
 				?? (descriptor.operationId === 'repositories.github.webhook' ? context.req.header('x-github-delivery') : undefined);
 			const providerAuth = context.get('capacityProviderAccessAuth') as { principal?: { membershipId?: string; capacityProviderId?: string; teamId?: string; scopes?: string[] } } | undefined;
@@ -123,7 +123,15 @@ export function createOperationHttpHandler(
 						roles: ['capacity_provider'], permissions: providerIdentity.scopes ?? [], metadata: { membershipId: providerIdentity.membershipId, teamId: providerIdentity.teamId } } : undefined),
 			});
 			if (handled instanceof Response) return handled;
-			const output = operation.binding.schema.output.parse(handled);
+			let output: unknown;
+			try { output = operation.binding.schema.output.parse(handled); }
+			catch (error) {
+				if (!isZodValidationError(error)) throw error;
+				const issues = (error as { issues?: Array<{ path?: PropertyKey[]; message?: string }> }).issues ?? [];
+				console.error(JSON.stringify({ level: 'error', event: 'operation.output-contract-invalid', operationId: descriptor.operationId,
+					requestId, issues: issues.map((issue) => ({ path: (issue.path ?? []).map(String).join('.'), message: issue.message ?? 'Invalid output.' })) }));
+				throw new ControlPlaneOperationError(500, 'operation_output_contract_invalid', 'The operation produced an invalid contract response.');
+			}
 			if (descriptor.operationId === 'repositories.github.callback' && typeof (output as any).redirect === 'string') {
 				return context.redirect((output as any).redirect, 302);
 			}
@@ -133,9 +141,17 @@ export function createOperationHttpHandler(
 				...(descriptor.concurrency.required || descriptor.kind === 'read' ? { etag: etag(output) } : {}),
 			});
 		} catch (error) {
+			if (!(error instanceof ControlPlaneOperationError) && !isZodValidationError(error)) {
+				const internal = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+				console.error(JSON.stringify({ level: 'error', event: 'operation.internal-error', operationId: descriptor.operationId, requestId,
+					name: error instanceof Error ? error.name : 'UnknownError', message: error instanceof Error ? error.message.slice(0, 1_024) : String(error).slice(0, 1_024),
+					code: typeof internal.code === 'string' ? internal.code : null, constraint: typeof internal.constraint === 'string' ? internal.constraint : null }));
+			}
 			const failure = error instanceof ControlPlaneOperationError ? error
 				: isZodValidationError(error) ? new ControlPlaneOperationError(400, 'operation_input_invalid', 'The operation input is invalid.')
 					: new ControlPlaneOperationError(500, 'operation_failed', 'The operation failed.');
+			if (failure.status >= 500) console.error(JSON.stringify({ level: 'error', event: 'operation.failed', operationId: descriptor.operationId,
+				requestId, status: failure.status, code: failure.code, message: failure.message }));
 			return problem(context, failure, requestId);
 		}
 	};

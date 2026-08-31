@@ -30,7 +30,6 @@ import {
 	capabilityDemandDigest,
 	capabilityDemandSchema,
 	capabilityDefinitionSchema,
-	resolveLegacyCapability,
 	semverSatisfies,
 	type CapabilityDefinition,
 	type CapabilityDemand,
@@ -53,7 +52,9 @@ function jsonRecord(value: unknown) { if (typeof value === 'string') try { retur
 async function capabilityDefinitions(store: CapacityGovernanceDatabase): Promise<{ generation: number; definitions: CapabilityDefinition[] }> {
 	try {
 		const active = await store.first(`SELECT generation FROM capability_ontology_generations WHERE status = 'active' ORDER BY generation DESC LIMIT 1`);
-		const rows = await store.all(`SELECT definition_json FROM capability_definitions WHERE status = 'active'
+		const rows = await store.all(`SELECT definition.definition_json FROM capability_definitions definition
+			JOIN capability_ontology_generations generation ON generation.generation=definition.generation AND generation.status='active'
+			WHERE definition.status = 'active'
 			UNION ALL SELECT definition_json FROM provider_capability_proposals WHERE status = 'active-namespaced'`);
 		const parsed = rows.flatMap((row) => {
 			try { return [capabilityDefinitionSchema.parse(typeof row.definition_json === 'string' ? JSON.parse(row.definition_json) : row.definition_json)]; }
@@ -63,12 +64,13 @@ async function capabilityDefinitions(store: CapacityGovernanceDatabase): Promise
 	} catch { return { generation: 1, definitions: CORE_CAPABILITY_DEFINITIONS }; }
 }
 async function compileCapabilityDemand(store: CapacityGovernanceDatabase, agent: {
-	activityType: string; capabilityRequirements: Record<string, unknown>[]; execution: Record<string, unknown>;
+	capabilityRequirements: Record<string, unknown>[]; execution: Record<string, unknown>;
 	permissions: Record<string, unknown>; toolPolicy: Record<string, unknown>; contextQueryRefs: unknown[]; contextQuerySetRefs: unknown[];
 }): Promise<CapabilityDemand> {
-	const configured = agent.capabilityRequirements.length ? agent.capabilityRequirements : (
-		Array.isArray(agent.execution.requiredCapabilities) ? agent.execution.requiredCapabilities : ['agent-execution']
-	).map((legacy) => ({ capabilityId: resolveLegacyCapability(String(legacy), agent.activityType), versionRange: '^1.0.0', requirement: 'required' }));
+	if (agent.capabilityRequirements.length === 0) {
+		throw new CapacityGovernanceError('capability_requirements_required', 'The activity profile must declare at least one current capability requirement.', 409);
+	}
+	const configured = agent.capabilityRequirements;
 	const requirements = configured.map((entry) => ({
 		capabilityId: text(entry.capabilityId), versionRange: text(entry.versionRange) || '^1.0.0',
 		requirement: entry.requirement === 'preferred' ? 'preferred' as const : 'required' as const,
@@ -76,7 +78,14 @@ async function compileCapabilityDemand(store: CapacityGovernanceDatabase, agent:
 		requiredFeatures: Array.isArray(entry.requiredFeatures) ? entry.requiredFeatures.map(String) : [],
 		configuration: record(entry.configuration),
 	}));
-	if (requirements.some((entry) => !entry.capabilityId)) throw new CapacityGovernanceError('capability_translation_ambiguous', 'A legacy capability cannot be translated unambiguously.', 409);
+	const reasoningEffort = text(agent.execution.reasoningEffort);
+	if (reasoningEffort) {
+		for (const requirement of requirements) requirement.configuration = {
+			...requirement.configuration,
+			'intelligence.reasoning-effort': { value: reasoningEffort, requirement: 'required' },
+		};
+	}
+	if (requirements.some((entry) => !entry.capabilityId)) throw new CapacityGovernanceError('capability_requirement_invalid', 'A capability requirement must name a standardized capability ID.', 409);
 	const ontology = await capabilityDefinitions(store); const definitions = ontology.definitions;
 	const resolved = requirements.map((requirement) => {
 		const candidates = definitions.filter((definition) => definition.id === requirement.capabilityId && definition.status === 'active' && semverSatisfies(definition.version, requirement.versionRange));
@@ -334,13 +343,14 @@ async function compilePlanningDemands(
 			payload: {
 				...source.payload, stageInstructions: agent.promptTask, repositoryId: capacityWorkdayRepositoryId(project, run.parameters),
 				capacityEnvelope: profileCapacityEnvelope(agent),
+				executionPolicy: agent.execution,
 				contentRoot: capacityWorkdayContentRoot(project), agentContentPath: agent.contentPath,
 				contentBaseRef,
 				contextDefinitionRef:definitionBaseRef,
 				contextRuntimeRef:contentBaseRef,
 				agentDefinition:{ agentId:agent.slug,contentPath:agent.contentPath,immutableRef:definitionBaseRef },
 				chatProfile: agent.activityType === 'chat' ? { identity: agent.identity, summary: agent.summary, purpose: agent.purpose,
-					prompt: { task: agent.promptTask }, execution: agent.execution, outputContract: agent.outputContract,
+					prompt: { system: agent.promptSystem, task: agent.promptTask }, execution: agent.execution, outputContract: agent.outputContract,
 					permissions: agent.permissions, tools: agent.toolPolicy, capabilityRequirements: agent.capabilityRequirements } : undefined,
 				groupIds:agent.groupIds,
 				contextQueryRefs:contextReferences,

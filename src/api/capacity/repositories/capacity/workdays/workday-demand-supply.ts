@@ -3,7 +3,6 @@ import { capacitySupplyCandidateStatus,selectCapacitySupply } from '../../../pol
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable-json.ts';
 import { teamSupplyPolicy } from '../../../domain/supply-policy.ts';
-import { providerCapabilityCompatibility } from '../../../policy/capability-compatibility.ts';
 
 type Row = Record<string, unknown>;
 
@@ -22,8 +21,8 @@ function providers(row: Row, grants: Row[], mode: string): CapacitySupplyCandida
 			&& (!executionProviderIds.length || executionProviderIds.includes(String(provider.id)))
 			&& allowedModes.includes(mode);
 	}).map((grant) => {
-		const granted = new Set(providerCapabilityCompatibility(strings(grant.capabilities_json, { owner: 'capacity grant', ownerId: String(grant.id), column: 'capabilities_json' })));
-		const advertised = providerCapabilityCompatibility(provider.capabilities);
+		const granted = new Set(strings(grant.capabilities_json, { owner: 'capacity grant', ownerId: String(grant.id), column: 'capabilities_json' }));
+		const advertised = Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [];
 		return ({
 		capacityProviderId: String(row.capacity_provider_id), membershipId: String(row.membership_id),
 		providerSessionId: String(row.id), grantId: String(grant.id), executionProviderId: String(provider.id ?? ''),
@@ -41,7 +40,7 @@ function providers(row: Row, grants: Row[], mode: string): CapacitySupplyCandida
 export async function selectWorkdayDemandSupply(database: CapacityGovernanceDatabase, demand: Row, now: string) {
 	const metadata = decodeDurableJsonObject(demand.metadata_json, { owner: 'capacity workday demand', ownerId: String(demand.id), column: 'metadata_json' });
 	const environment = String(metadata.environment ?? 'local');
-	const [team, sessions, grants, agentClass] = await Promise.all([
+	const [team, sessions, grants] = await Promise.all([
 		database.first('SELECT metadata_json FROM teams WHERE id = ? LIMIT 1', [demand.team_id]),
 		database.all(`SELECT session.* FROM capacity_provider_availability_sessions session
 			JOIN capacity_provider_team_memberships membership ON membership.id = session.membership_id
@@ -53,11 +52,15 @@ export async function selectWorkdayDemandSupply(database: CapacityGovernanceData
 			[demand.team_id, now, now, now]),
 		database.all(`SELECT * FROM capacity_grants WHERE team_id = ? AND project_id = ? AND environment = ?
 			AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)`, [demand.team_id, demand.project_id, environment, now]),
-		database.first('SELECT required_capabilities_json FROM project_agent_classes WHERE id = ? AND project_id = ? LIMIT 1', [demand.project_agent_class_id, demand.project_id]),
 	]);
 	const policy = teamSupplyPolicy(team);
-	const classCapabilities = strings(agentClass?.required_capabilities_json, { owner: 'project agent class', ownerId: String(demand.project_agent_class_id), column: 'required_capabilities_json' });
-	const requiredCapabilities = [...new Set([...(Array.isArray(metadata.requiredCapabilities) ? metadata.requiredCapabilities.map(String).filter(Boolean) : []), ...classCapabilities])];
+	const capabilityDemand = metadata.capabilityDemand && typeof metadata.capabilityDemand === 'object' && !Array.isArray(metadata.capabilityDemand)
+		? metadata.capabilityDemand as Row : {};
+	const resolvedCapabilities = Array.isArray(capabilityDemand.resolved)
+		? capabilityDemand.resolved.flatMap((entry) => entry && typeof entry === 'object' && !Array.isArray(entry) && typeof (entry as Row).id === 'string' ? [String((entry as Row).id)] : [])
+		: [];
+	if (resolvedCapabilities.length === 0) throw new Error(`Capacity demand ${String(demand.id)} has no resolved capability snapshot.`);
+	const requiredCapabilities = [...new Set(resolvedCapabilities)];
 	const primaryProviderId = String(demand.primary_provider_id ?? '');
 	const failoverCount = Math.max(0, Number(metadata.failoverCount ?? 0));
 	const failoverAllowed = failoverCount < policy.maxFailovers && (demand.mode === 'acting' ? policy.allowActingFailover : policy.allowPlanningFailover);

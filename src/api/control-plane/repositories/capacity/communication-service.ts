@@ -37,7 +37,13 @@ function record(value: unknown): Row {
 }
 
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
-function timestamp(value: unknown, fallback = '') { return value instanceof Date ? value.toISOString() : text(value, fallback); }
+function timestamp(value: unknown, fallback = '') {
+	if (value instanceof Date) return value.toISOString();
+	const candidate = text(value);
+	if (!candidate) return fallback;
+	const milliseconds = Date.parse(candidate);
+	return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : fallback;
+}
 function stableId(scope: string, value: string) { return createHash('sha256').update(`${scope}:${value}`).digest('hex').slice(0, 32); }
 function channelSlug(value: unknown) {
 	const slug = text(value).toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72);
@@ -284,7 +290,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 				if (!stream) throw new CapacityOperationError(503, 'communication_topic_stream_unavailable', 'Discussion topic project stream could not be established.');
 				const communication = { channel: slug, topicId: topic.id, streamId: stream.id, sendId };
 				created.push(await discussions.create(principal, { teamId, projectId, discussionId: text(stream.discussion_id), createDiscussion: true,
-					body: body.message, topic: slug, recipients: projectTargets.map((target) => target.agentSlug), durationSeconds: 900, communication,
+					body: body.message, topic: slug, recipients: projectTargets.map((target) => target.agentSlug), durationSeconds: 60, communication,
 					addressRequirements: Object.fromEntries(projectTargets.map((target) => [target.agentSlug, target.requirement])) }, `${idempotencyKey}:${projectId}`));
 			}
 			for (const target of targets) {
@@ -297,9 +303,10 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 				payload: { messageRefs: created.map((entry: Row) => record(entry.message).path).filter(Boolean), markdown: text(body.message), targets: targets.map((target) => `@${target.projectSlug}/${target.agentSlug}`) }, idempotency: `${sendId}:message.posted` });
 			await store.run('UPDATE communication_discussion_topics SET updated_at=? WHERE id=?', [now, topic.id]);
 			await store.run('UPDATE communication_discussion_streams SET updated_at=? WHERE topic_id=?', [now, topic.id]);
-			const unavailable = created.flatMap((entry: Row) => Array.isArray(entry.invocations) ? entry.invocations : []).find((candidate: Row) => text(candidate.blocker) === 'communication_supply_unavailable');
-			if (unavailable) throw new CapacityOperationError(503, 'communication_capacity_unavailable',
-				'No approved healthy capacity provider with an active communication lane is available.');
+			// The message and invocation are durable at this point. Capacity may be
+			// reconciled immediately after discussion creation, so a creation-time
+			// blocker must remain receipt state rather than turning an accepted send
+			// into a false HTTP failure.
 			return sendReceipt(teamId, sendId, created.every((entry: Row) => entry.replayed === true));
 		},
 		async sendStatus(principal: CapacityPrincipal, teamId: string, sendId: string, query: Row = {}) {

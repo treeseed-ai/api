@@ -35,7 +35,7 @@ export interface CapacitySettlementRequest {
 const ACTUAL_SETTLEMENT_PHASE = 'task_completed_actual_settlement';
 
 function positiveOrZero(value: number, name: string) {
-	if (!Number.isFinite(value) || value < 0) throw new CapacityGovernanceError(`${name}_invalid`, `${name} must be a finite value greater than or equal to zero.`, 400);
+	if (!Number.isInteger(value) || value < 0) throw new CapacityGovernanceError(`${name}_invalid`, `${name} must be a non-negative integer number of seconds.`, 400);
 	return value;
 }
 

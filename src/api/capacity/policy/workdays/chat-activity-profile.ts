@@ -37,6 +37,8 @@ export function compileDefaultChatActivityProfile(
 				operations: writableModels.has(model) ? ['describe', 'query', 'read', 'create', 'update', 'link', 'validate', 'commit'] : ['describe', 'query', 'read'],
 			}])),
 			commit: { allowed: true },
+			repository: { readPaths: ['**'], writePaths: [], allowCodeMutation: false },
+			shell: { allowCommands: false, allowedCommands: [] },
 		},
 		tools: { allowed: tools },
 		outputs: {
@@ -61,11 +63,14 @@ export function compileDefaultChatActivityProfile(
 			},
 		}],
 		execution: {
-			requiredCapabilities: specialization.requiredCapabilities ?? ['agent-execution'],
-			maxRuntimeSeconds: specialization.maxRuntimeSeconds ?? 900, maxRetries: 1, verificationRequired: false,
+			// Interactive chat favors latency by default, while each agent can raise or
+			// lower reasoning through its chat profile. Capability selection is owned
+			// exclusively by capabilityRequirements above.
+			reasoningEffort: specialization.reasoningEffort ?? 'low',
+			maxRuntimeSeconds: specialization.maxRuntimeSeconds ?? 60, maxRetries: 1, verificationRequired: false,
 			maxTotalTokens: specialization.maxTotalTokens ?? 136_000, warningTokens: specialization.warningTokens ?? 100_000,
 			maxCostAmount: specialization.maxCostAmount, costCurrency: specialization.costCurrency ?? 'USD',
-			pricingGeneration: 'provider-runtime', enforcementConfidence: 'bounded', closeoutWarningSeconds: 180,
+			pricingGeneration: 'provider-runtime', enforcementConfidence: 'bounded', closeoutWarningSeconds: 10,
 		},
 	};
 }

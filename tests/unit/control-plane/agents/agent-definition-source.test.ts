@@ -24,6 +24,10 @@ activityProfiles:
     handler: writer
     prompt: { system: Inspect evidence. }
     branchPolicy: { kind: staging-content, base: staging }
+    capabilityRequirements:
+      - capabilityId: treeseed.coordination.planning
+        versionRange: ^1.0.0
+        requirement: required
     tools: { allowed: [treeseed.content.create] }
     outputs: { messageTypes: [], modelMutations: [proposal:create] }
 ---

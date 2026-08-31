@@ -1,7 +1,7 @@
 import type { CapacityPageCursor } from '@treeseed/sdk/capacity-pagination';
 import type { ProviderAvailabilitySessionStatus } from '@treeseed/sdk/capacity-provider/contracts';
 import { randomUUID } from 'node:crypto';
-import type { CapacityGovernanceDatabase } from '../../database.ts';
+import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../../repositories/accounts/availability-session.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
@@ -37,6 +37,20 @@ function ttl(value: unknown): number {
 	return parsed;
 }
 
+function reconcileSeedGrantOperations(write: AvailabilitySessionWrite): CapacityDatabaseOperation[] {
+	const executionProviderIds = write.executionProviders.map((provider) => String(provider.id ?? '')).filter(Boolean);
+	const lanes = write.executionProviders.flatMap((provider) => objects(provider.lanes));
+	const laneIds = [...new Set(lanes.map((lane) => String(lane.id ?? '')).filter(Boolean))];
+	const capabilities = [...new Set(write.executionProviders.flatMap((provider) => strings(provider.capabilities)))];
+	if (!executionProviderIds.length || !laneIds.length || !capabilities.length) return [];
+	return [{
+		query: `UPDATE capacity_grants SET execution_provider_ids_json = ?, lane_ids_json = ?, capabilities_json = ?, updated_at = ?
+			WHERE membership_id = ? AND capacity_provider_id = ? AND status IN ('planned','active','paused')
+			  AND metadata_json::jsonb->>'seedName' IS NOT NULL`,
+		params: [JSON.stringify(executionProviderIds), JSON.stringify(laneIds), JSON.stringify(capabilities), write.refreshedAt, write.membershipId, write.providerId],
+	}];
+}
+
 export class AvailabilitySessionService {
 	private readonly repository: AvailabilitySessionRepository;
 	constructor(private readonly database: CapacityGovernanceDatabase) { this.repository = new AvailabilitySessionRepository(database); }
@@ -49,7 +63,7 @@ export class AvailabilitySessionService {
 		await this.validateOfferReferences(principal, input);
 		const now = new Date().toISOString();
 		const write = this.write(principal, randomUUID(), 1, input, now);
-		return this.repository.open(write, upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now }));
+		return this.repository.open(write, [...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now }), ...reconcileSeedGrantOperations(write)]);
 	}
 
 	async refresh(principal: ProviderAvailabilityPrincipal, sessionId: string, input: JsonRecord) {
@@ -60,7 +74,7 @@ export class AvailabilitySessionService {
 		const now = new Date().toISOString();
 		const write = this.write(principal, sessionId, expectedSequence, input, now);
 		const guard = { sessionId, membershipId: principal.membershipId, teamId: principal.teamId, expectedSequence };
-		return this.repository.refresh(write, expectedSequence, upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now, availabilityGuard: guard }));
+		return this.repository.refresh(write, expectedSequence, [...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now, availabilityGuard: guard }), ...reconcileSeedGrantOperations(write)]);
 	}
 
 	async close(principal: ProviderAvailabilityPrincipal, sessionId: string) {
@@ -119,7 +133,9 @@ export class AvailabilitySessionService {
 			...adapter,
 			status: adapter.status === 'available' ? 'active' : adapter.status,
 			maxConcurrentRunners: adapter.maxConcurrentWorkers,
-			lanes: lanes.filter((lane) => Array.isArray(adapter.laneIds) && adapter.laneIds.includes(lane.id)).map((lane) => ({ ...lane, maxConcurrentRunners: lane.maxConcurrentWorkers })),
+			lanes: lanes.filter((lane) => Array.isArray(adapter.laneIds) && adapter.laneIds.includes(lane.id)).map((lane) => ({ ...lane,
+				id: object(adapter.metadata).opaqueOfferRoute === true ? `${adapter.id}:${lane.id}` : lane.id,
+				maxConcurrentRunners: lane.maxConcurrentWorkers })),
 		}));
 		const capacity = object(input.capacity);
 		return {

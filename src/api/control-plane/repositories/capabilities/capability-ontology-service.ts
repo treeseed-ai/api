@@ -1,21 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import { capabilityContractDigest, capabilityDefinitionDigest, capabilityDefinitionSchema, CORE_CAPABILITY_DEFINITIONS, LEGACY_CAPABILITY_ALIASES, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
+import { capabilityContractDigest, capabilityDefinitionDigest, capabilityDefinitionSchema, CORE_CAPABILITY_DEFINITIONS, CORE_CAPABILITY_ONTOLOGY_CREATED_AT, CORE_CAPABILITY_ONTOLOGY_GENERATION, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 
 type ProviderAuth = { principal?: { capacityProviderId: string; teamId: string; membershipId: string } } | null | undefined;
-const createdAt = '2026-08-29T00:00:00.000Z';
 function decode<T>(value: unknown): T { return JSON.parse(String(value)) as T; }
 
 export function createCapabilityOntologyService(store: CapacityGovernanceDatabase) {
 	let initialized: Promise<void> | null = null;
 	const ensureSeed = () => initialized ??= (async () => {
 		await store.ensureInitialized();
-		const existing = await store.first(`SELECT generation FROM capability_ontology_generations WHERE status = 'active' LIMIT 1`);
-		if (existing) return;
-		const ontologyDigest = capabilityContractDigest({ generation: 1, definitions: CORE_CAPABILITY_DEFINITIONS, aliases: LEGACY_CAPABILITY_ALIASES });
-		await store.batch([{ query: `INSERT INTO capability_ontology_generations (generation,ontology_digest,status,signature_json,created_at) VALUES (1,?,'active',?,?) ON CONFLICT DO NOTHING`, params: [ontologyDigest, JSON.stringify({ keyId: 'sdk-release', algorithm: 'release-catalog', value: ontologyDigest }), createdAt] },
-			...CORE_CAPABILITY_DEFINITIONS.map((definition) => ({ query: `INSERT INTO capability_definitions (capability_id,version,definition_digest,generation,namespace,family,status,definition_json,created_at) VALUES (?,?,?,1,'treeseed',?,?,?,?) ON CONFLICT DO NOTHING`, params: [definition.id, definition.version, definition.digest, definition.family, definition.status, JSON.stringify(definition), definition.createdAt] }))]);
+		const ontologyDigest = capabilityContractDigest({ generation: CORE_CAPABILITY_ONTOLOGY_GENERATION, definitions: CORE_CAPABILITY_DEFINITIONS });
+		const existing = await store.first(`SELECT generation,ontology_digest FROM capability_ontology_generations WHERE status = 'active' ORDER BY generation DESC LIMIT 1`);
+		if (Number(existing?.generation) === CORE_CAPABILITY_ONTOLOGY_GENERATION && String(existing?.ontology_digest) === ontologyDigest) return;
+		await store.batch([
+			{ query: `UPDATE capability_ontology_generations SET status='superseded' WHERE status='active' AND generation<>?`, params: [CORE_CAPABILITY_ONTOLOGY_GENERATION] },
+			{ query: `INSERT INTO capability_ontology_generations (generation,ontology_digest,status,signature_json,created_at) VALUES (?,?,'active',?,?) ON CONFLICT (generation) DO UPDATE SET status='active'`, params: [CORE_CAPABILITY_ONTOLOGY_GENERATION, ontologyDigest, JSON.stringify({ keyId: 'sdk-release', algorithm: 'release-catalog', value: ontologyDigest }), CORE_CAPABILITY_ONTOLOGY_CREATED_AT] },
+			...CORE_CAPABILITY_DEFINITIONS.map((definition) => ({ query: `INSERT INTO capability_definitions (capability_id,version,definition_digest,generation,namespace,family,status,definition_json,created_at) VALUES (?,?,?,?,'treeseed',?,?,?,?) ON CONFLICT DO NOTHING`, params: [definition.id, definition.version, definition.digest, CORE_CAPABILITY_ONTOLOGY_GENERATION, definition.family, definition.status, JSON.stringify(definition), definition.createdAt] })),
+		]);
 	})();
 	return {
 		async list(query: Record<string, unknown>) {
@@ -41,7 +43,7 @@ export function createCapabilityOntologyService(store: CapacityGovernanceDatabas
 		},
 		async active() {
 			const page = await this.list({ limit: 500 }); const row = await store.first(`SELECT signature_json,created_at FROM capability_ontology_generations WHERE generation=?`, [page.generation]);
-			return { schemaVersion: 'treeseed.capability-ontology/v1', generation: page.generation, digest: page.ontologyDigest, definitions: page.items.filter(({ id }) => id.startsWith('treeseed.')), aliases: LEGACY_CAPABILITY_ALIASES, createdAt: String(row!.created_at), signature: decode(row!.signature_json) };
+			return { schemaVersion: 'treeseed.capability-ontology/v1', generation: page.generation, digest: page.ontologyDigest, definitions: page.items.filter(({ id }) => id.startsWith('treeseed.')), createdAt: String(row!.created_at), signature: decode(row!.signature_json) };
 		},
 		async propose(auth: ProviderAuth, body: Record<string, unknown>) {
 			await ensureSeed(); const principal = auth?.principal; if (!principal) throw new CapacityGovernanceError('provider_access_token_required','Provider authentication is required.',401);

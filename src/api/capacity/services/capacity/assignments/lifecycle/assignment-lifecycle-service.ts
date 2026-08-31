@@ -18,6 +18,7 @@ import { terminalizeOperationHandoff } from '../handoffs/operation-handoff-lifec
 import { archivedConversationCancellation,assignmentFailureDisposition } from './assignment-failure-policy.ts';
 import { contentIntegrationRequirementOperation } from './assignment-content-integration-requirement.ts';
 import { semanticCompletionPreflightRequired } from './assignment-completion-preflight-service.ts';
+import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
 type JsonRecord = Record<string, unknown>;
 export interface ExtendedProviderAssignmentLifecycleRequest extends ProviderAssignmentLifecycleRequest {
 	activeSeconds?: number | null;
@@ -57,16 +58,6 @@ function optionalFiniteNumber(value: unknown, field: string): number | null {
 		400,
 		{ field },
 	);
-}
-
-function assertCompletionEvidence(input: ExtendedProviderAssignmentLifecycleRequest) {
-	const completion = record(input.completion);
-	if (completion.disposition !== 'completed_early') return;
-	const checks = Array.isArray(completion.acceptanceChecks) ? completion.acceptanceChecks.map(record) : [];
-	const artifacts = Array.isArray(completion.durableArtifactRefs) ? completion.durableArtifactRefs.map(String).filter(Boolean) : [];
-	if (completion.noUsefulScopedWorkRemaining !== true || !String(completion.completionReason ?? '').trim() || !checks.length || checks.some((check) => check.passed !== true) || !artifacts.length || !Object.keys(record(completion.remainingBudget)).length) {
-		throw new CapacityGovernanceError('provider_assignment_early_completion_evidence_invalid', 'Early completion requires passed acceptance checks, durable artifacts, remaining budget, a reason, and noUsefulScopedWorkRemaining.', 409);
-	}
 }
 
 function terminalPerformance(
@@ -188,6 +179,9 @@ export class ProviderAssignmentLifecycleService {
 			await recordFailure('assignment_provider_mismatch');
 			return null;
 		}
+		if (record(assignment.metadata).cancellationRequested === true) {
+			await recordFailure('assignment_cancellation_requested'); return null;
+		}
 		const now = new Date().toISOString();
 		const authority = await evaluateProviderAssignmentLeaseAuthority(this.store, principal, assignment.id, now);
 		if (!authority.eligible) {
@@ -269,9 +263,15 @@ export class ProviderAssignmentLifecycleService {
 			return { assignment: repaired, leaseToken: null, leaseSeconds: null };
 		}
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
+		if (record(assignment.metadata).cancellationRequested === true) {
+			return this.transition(principal, assignment, input, now, {
+				status: 'cancelled', timestampColumn: 'failed_at', defaultCode: 'operator_cancelled', defaultReason: String(record(assignment.metadata).cancellationReason ?? 'Assignment cancelled by a team operator.'),
+				metadata: { ...record(assignment.metadata), operationalState: 'cancelled', cancelledAt: now },
+			});
+		}
 		const completionInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: 'completed' } };
-		assertCompletionEvidence(completionInput);
-		assertCompletionEvidence(input);
+		assertAssignmentCompletionEvidence(completionInput);
+		assertAssignmentCompletionEvidence(input);
 		const assignmentMetadata = record(assignment.metadata);
 		const envelopeMetadata = record(record(assignment.capacityEnvelope).metadata);
 		const configuredMaxAttempts = Number(

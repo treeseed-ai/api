@@ -23,6 +23,7 @@ export type CapacityWorkdayAgent = {
 	purpose: string;
 	identity: UnknownRecord;
 	summary: string | null;
+	promptSystem: string;
 	promptTask: string;
 	outputContract: UnknownRecord;
 	signalPolicy: UnknownRecord;
@@ -152,7 +153,12 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		}
 		for (const selectedActivity of selectedProfiles.values()) {
 			const slug = selectedActivity.agentId;
-			const profile = selectedActivity.profile;
+			const configuredProfile = selectedActivity.profile;
+			const configuredReasoning = text(record(configuredProfile.execution).reasoningEffort);
+			const profile = selectedActivity.activityType === 'chat' ? compileDefaultChatActivityProfile(slug, {
+				foundation: 'discussion-v1',
+				...(['minimal', 'low', 'medium', 'high', 'xhigh'].includes(configuredReasoning) ? { reasoningEffort: configuredReasoning as 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' } : {}),
+			}) : configuredProfile;
 			const configuredHandler = handler(selectedActivity.handlerId);
 			if (!configuredHandler) continue;
 			const authority = compileAgentAuthoritySnapshot(
@@ -177,6 +183,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				purpose: text(profile.purpose, `Perform configured planning work as ${slug}.`),
 				identity: selectedActivity.identity,
 				summary: selectedActivity.summary,
+				promptSystem: text(record(profile.prompt).system),
 				promptTask: text(stage.promptTask, text(record(profile.prompt).task)),
 				outputContract: record(profile.outputs),
 				signalPolicy: Object.keys(record(stage.signals)).length ? record(stage.signals) : record(profile.signals),

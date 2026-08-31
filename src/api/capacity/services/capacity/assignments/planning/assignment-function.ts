@@ -110,7 +110,7 @@ async function assignmentInput(
     requiredCapabilities,
 	assignmentWindow: { startedAt: now, durationSeconds: demand.requestedSeconds },
 	    candidates: executionProviders.filter((provider) => (!selectedExecutionProviderId || provider.id === selectedExecutionProviderId)
-		&& (!capabilityDemand || provider.legacyCapabilityBridge || provider.offers.some((offer) => offerNegotiations.has(`${provider.id}:${offer.offerId}`)))).map((provider) => ({
+		&& (!capabilityDemand || provider.offers.some((offer) => offerNegotiations.has(`${provider.id}:${offer.offerId}`)))).map((provider) => ({
 	      capacityProviderId: principal.capacityProviderId,
 	      membershipId: principal.membershipId,
 	      providerSessionId: sessionId,
@@ -322,6 +322,7 @@ async function assignmentInput(
 	  executionMode,
 	  upstreamMutationPolicy: executionMode === 'production' ? 'checkpoint-only' : 'denied',
 	  activityType: demand.activityType,
+	  executionPolicy: record(payload.executionPolicy),
 	  chatProfile: record(payload.chatProfile),
 	  identityManifest: executionKind === 'conversation' ? {
 		  schemaVersion: 'treeseed.agent-identity-manifest/v1',
