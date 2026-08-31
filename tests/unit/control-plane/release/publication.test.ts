@@ -53,6 +53,7 @@ describe('managed API release publication', () => {
 
 	it('keeps live source inside private managed networks with loopback-only ingress', () => {
 		const compose = readFileSync('compose.development.yml', 'utf8');
+		const cleanup = readFileSync('scripts/development/api-runtime.sh', 'utf8');
 		const manifest = parse(readFileSync('treeseed.package.yaml', 'utf8')) as { development: { targets: Array<{ id: string; operations: { start?: { command: string; args: string[]; environment: Record<string, string> }; cleanup?: { command: string; args: string[] } }; secretRefs: Record<string, string> }> } };
 		const service = manifest.development.targets.find((target) => target.id === 'service');
 		expect(compose).toContain('127.0.0.1:3000:3000');
@@ -65,7 +66,10 @@ describe('managed API release publication', () => {
 		expect(compose).not.toMatch(/5432:5432/u);
 		expect(service?.operations.start).toMatchObject({ command: 'docker', args: expect.arrayContaining(['compose', 'compose.development.yml', 'treeseed-api-development']) });
 		expect(service?.operations.start?.environment).toEqual({ TREESEED_DEVELOPMENT_EDGE_HOST: 'api-live' });
-		expect(service?.operations.cleanup).toMatchObject({ command: 'docker', args: expect.arrayContaining(['compose', 'compose.development.yml', 'treeseed-api-development', 'down', '--remove-orphans']) });
+		expect(service?.operations.cleanup).toMatchObject({ command: 'bash', args: ['scripts/development/api-runtime.sh', 'cleanup'] });
+		expect(cleanup).toContain('TREESEED_DEVELOPMENT_CLEANUP_SCOPE:-runtime');
+		expect(cleanup).toContain('down --remove-orphans');
+		expect(cleanup).toContain('rm --force api-live');
 		expect(service?.secretRefs).toMatchObject({ TREESEED_DATABASE_URL: 'api-database-url', SESSION_SECRET: 'api-session-secret' });
 	});
 
