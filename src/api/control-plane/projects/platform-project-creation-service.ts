@@ -46,6 +46,15 @@ async function templateFiles(buffer: Buffer, slug: string) {
 export function createPlatformProjectCreationService(store: any, options: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {}) {
 	const env = options.env ?? process.env; const fetchImpl = options.fetchImpl ?? fetch;
 	const token = () => text(env.TREESEED_GITHUB_TOKEN) || undefined;
+	const resolveTarget = async (input: Partial<ProjectCreateTarget>): Promise<ProjectCreateTarget> => {
+		const team = text(input.team); const slug = text(input.slug); const requested = record(input.repository); const template = record(input.template);
+		const teamRecord = team ? await store.getTeam?.(team) : null; const teamMetadata = record(teamRecord?.metadata);
+		let owner = text(requested.owner) || text(env.TREESEED_GITHUB_OWNER) || text(teamMetadata.githubOwner) || text(teamMetadata.repositoryOwner);
+		if (!owner && team) owner = text((await store.first?.(`SELECT owner FROM project_remote_repository_bindings WHERE team_id=? AND owner IS NOT NULL AND owner<>'' ORDER BY updated_at DESC LIMIT 1`, [team]))?.owner);
+		if (!team || !slug || !owner) throw new Error('Project creation requires an active team, a portable slug, and a configured GitHub repository owner.');
+		return { team, slug, template: { id: text(template.id), version: text(template.version), digest: text(template.digest) },
+			repository: { owner, name: text(requested.name) || slug, visibility: requested.visibility === 'public' ? 'public' : 'private' } };
+	};
 	const project = async (target: ProjectCreateTarget) => store.getProjectByTeamAndSlug(target.team, target.slug);
 	const remote = (target: ProjectCreateTarget) => github(fetchImpl, token(), `/repos/${encodeURIComponent(target.repository.owner)}/${encodeURIComponent(target.repository.name)}`);
 	const metadata = (value: unknown) => record(record(value).platformCreation);
@@ -123,7 +132,7 @@ export function createPlatformProjectCreationService(store: any, options: { env?
 	};
 
 	return {
-		plan: (target: ProjectCreateTarget) => planPlatformProjectCreate(target, authority),
+		plan: async (target: Partial<ProjectCreateTarget>) => planPlatformProjectCreate(await resolveTarget(target), authority),
 		async apply(plan: ProjectCreatePlan, idempotencyKey: string) {
 			const accepted = projectCreatePlanSchema.parse(plan); const prior = await store.first(`SELECT response_json,request_digest FROM capacity_operation_receipts WHERE team_id=? AND operation='platform-project-create' AND idempotency_key=?`, [accepted.team, idempotencyKey]);
 			if (prior) { if (prior.request_digest !== accepted.planDigest) throw new Error('The idempotency key was already used with a different project plan.'); return { ...record(typeof prior.response_json === 'string' ? JSON.parse(prior.response_json) : prior.response_json), replayed: true }; }

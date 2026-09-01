@@ -19,6 +19,13 @@ describe('Platform project creation authority observation', () => {
 		] });
 	});
 
+	it('derives the repository owner from portable team configuration', async () => {
+		const configuredStore = { ...store, async getTeam() { return { metadata: { repositoryOwner: 'example' } }; } };
+		const service = createPlatformProjectCreationService(configuredStore, { env: {}, fetchImpl: (async () => new Response(null, { status: 404 })) as typeof fetch });
+		await expect(service.plan({ ...target, repository: { name: 'example-app', visibility: 'private' } } as never))
+			.resolves.toMatchObject({ repository: { owner: 'example', name: 'example-app', visibility: 'private' } });
+	});
+
 	it('fails closed when a nonempty unmanaged repository already owns the requested identity', async () => {
 		const fetchImpl = async () => new Response(JSON.stringify({ id: 7, name: 'example-app', owner: { login: 'example' }, private: true, size: 12,
 			html_url: 'https://github.com/example/example-app' }), { status: 200, headers: { 'content-type': 'application/json' } });
