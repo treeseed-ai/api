@@ -117,6 +117,7 @@ export interface ApiConfig {
 	webAssertionSecret: string;
 	webExchangeTtlSeconds: number;
 	bootstrapAdminAllowlist: string[];
+	localFirstUserAdmin: boolean;
 	accessTokenTtlSeconds: number;
 	refreshTokenTtlSeconds: number;
 	deviceCodeTtlSeconds: number;

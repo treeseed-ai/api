@@ -1,5 +1,6 @@
 import type { UserIdentityProfileInput } from "../../../types.ts";
 import { PostgresAuthStore } from "../../postgres-store.ts";
+import { assignLocalFirstAdmin } from './local-first-admin.ts';
 export async function bootstrapRolesForUserMethod(this: PostgresAuthStore, userId: string, identity: UserIdentityProfileInput) {
     await this.assignRole(userId, 'member');
     if ((await this.rolesForUser(userId)).includes('platform_admin'))
@@ -17,6 +18,7 @@ export async function bootstrapRolesForUserMethod(this: PostgresAuthStore, userI
             targetId: userId,
             data: { matched: allowlist.includes(providerSubject) ? providerSubject : email },
         });
+		return;
     }
+	await assignLocalFirstAdmin(this, userId);
 }
-

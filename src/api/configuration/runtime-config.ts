@@ -52,6 +52,8 @@ export function resolveApiConfig(env: NodeJS.ProcessEnv = process.env) {
 	const publicHost = host === '0.0.0.0' ? '127.0.0.1' : host;
 	const baseUrl = trimUrl(env.TREESEED_API_BASE_URL?.trim() || (env.RAILWAY_PUBLIC_DOMAIN?.trim() ? `https://${env.RAILWAY_PUBLIC_DOMAIN.trim()}` : `http://${publicHost}:${port}`));
 	const local = loopback(baseUrl);
+	const environment = first(env, 'TREESEED_API_ENVIRONMENT', 'TREESEED_ENVIRONMENT');
+	const localFirstUserAdmin = env.LOCAL_DEV_MODE !== undefined || environment === 'local';
 	const approval = trimUrl(first(env, 'TREESEED_API_AUTH_APPROVAL_BASE_URL', 'TREESEED_SITE_URL', 'TREESEED_BETTER_AUTH_URL') ?? (local && new URL(baseUrl).port === '3000' ? `${new URL(baseUrl).protocol}//${new URL(baseUrl).hostname}:4321` : baseUrl));
 	if (!local && loopback(approval)) throw new Error(`Refusing loopback device approval URL "${approval}" for remote API "${baseUrl}".`);
 	return {
@@ -65,6 +67,7 @@ export function resolveApiConfig(env: NodeJS.ProcessEnv = process.env) {
 		webServiceSecret: first(env, 'TREESEED_WEB_SERVICE_SECRET', 'TREESEED_API_WEB_SERVICE_SECRET') || 'treeseed-web-service-dev-secret',
 		webAssertionSecret: first(env, 'TREESEED_API_WEB_ASSERTION_SECRET', 'TREESEED_WEB_ASSERTION_SECRET', 'TREESEED_API_AUTH_SECRET') || 'treeseed-web-assertion-dev-secret',
 		webExchangeTtlSeconds: integer(env.TREESEED_API_WEB_EXCHANGE_TTL, 300), bootstrapAdminAllowlist: csv(env.TREESEED_API_BOOTSTRAP_ADMIN_ALLOWLIST),
+		localFirstUserAdmin,
 		accessTokenTtlSeconds: integer(env.TREESEED_API_ACCESS_TOKEN_TTL, local ? LOCAL_AUTH_TTL_SECONDS : ACCESS_TOKEN_TTL_SECONDS),
 		refreshTokenTtlSeconds: integer(env.TREESEED_API_REFRESH_TOKEN_TTL, local ? LOCAL_AUTH_TTL_SECONDS : REFRESH_TOKEN_TTL_SECONDS),
 		deviceCodeTtlSeconds: integer(env.TREESEED_API_DEVICE_CODE_TTL, 600), deviceCodePollIntervalSeconds: integer(env.TREESEED_API_DEVICE_CODE_POLL_INTERVAL, 5),
