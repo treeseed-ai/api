@@ -44,13 +44,17 @@ export class TreeDxRemoteHeadReconciliationScheduler {
 				const metadata = parse(binding.metadata_json);
 				const currentResolvedRef = String(metadata.resolvedRef ?? '');
 				const canonicalRef = String(binding.content_repository_ref ?? '');
+				const remoteRef = `refs/remotes/origin/${publicationRef.slice('refs/heads/'.length)}`;
 				if (binding.expected_head === remoteHead && binding.observed_head === remoteHead
-					&& currentResolvedRef === remoteHead && canonicalRef === publicationRef) continue;
+					&& currentResolvedRef === remoteHead && canonicalRef === remoteRef) continue;
 				const idempotencyKey = operationKey(String(binding.project_id), publicationRef, remoteHead);
-				await this.store.createPlatformOperation({ namespace: 'treedx', operation: 'reconcile_remote_head',
+				const operation = await this.store.createPlatformOperation({ namespace: 'treedx', operation: 'reconcile_remote_head',
 					target: 'control_plane_operations_runner', idempotencyKey,
 					input: { teamId: binding.team_id, projectId: binding.project_id, publicationRef, remoteHead },
 					requestedByType: 'service', requestedById: 'treedx-remote-head-reconciliation-scheduler' });
+				if (['failed', 'cancelled'].includes(String(operation?.status ?? ''))) {
+					await this.store.retryPlatformOperation(operation.id);
+				}
 				queued += 1;
 			} catch {
 				// A broken provider binding must not block reconciliation for other projects.

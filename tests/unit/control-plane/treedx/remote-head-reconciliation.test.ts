@@ -46,7 +46,7 @@ describe('TreeDX protected branch reconciliation', () => {
 				owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
 				expected_head: newHead, observed_head: newHead, content_repository_ref: oldHead,
 				metadata_json: JSON.stringify({ resolvedRef: oldHead }) }]; },
-			async createPlatformOperation(value: any) { operations.push(value); },
+			async createPlatformOperation(value: any) { operations.push(value); return { id: 'operation', status: 'queued' }; },
 		};
 		const scheduler = new TreeDxRemoteHeadReconciliationScheduler(store, 1, githubFetch());
 		const first = await scheduler.runIfDue(Date.parse('2026-08-31T12:00:00.000Z'));
@@ -60,26 +60,39 @@ describe('TreeDX protected branch reconciliation', () => {
 		const operations: any[] = [];
 		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
 			authority_id: 'authority', owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
-			expected_head: newHead, observed_head: newHead, content_repository_ref: publicationRef,
+			expected_head: newHead, observed_head: newHead, content_repository_ref: 'refs/remotes/origin/staging',
 			metadata_json: JSON.stringify({ resolvedRef: newHead }) }]; },
-			async createPlatformOperation(value: any) { operations.push(value); } };
+			async createPlatformOperation(value: any) { operations.push(value); return { id: 'operation', status: 'queued' }; } };
 		const result = await new TreeDxRemoteHeadReconciliationScheduler(store, 1, githubFetch())
 			.runIfDue(Date.parse('2026-08-31T12:00:00.000Z'));
 		expect(result).toMatchObject({ queued: 0, failed: 0 });
 		expect(operations).toHaveLength(0);
 	});
 
-	it('fetches, promotes, indexes, advances the logical binding, and queues the exact R2 mirror', async () => {
+	it('retries the same exact-head operation after a recoverable failure', async () => {
+		const retried: string[] = [];
+		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
+			authority_id: 'authority', owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
+			expected_head: oldHead, observed_head: oldHead, content_repository_ref: publicationRef,
+			metadata_json: JSON.stringify({ resolvedRef: oldHead }) }]; },
+			async createPlatformOperation() { return { id: 'failed-operation', status: 'failed' }; },
+			async retryPlatformOperation(id: string) { retried.push(id); } };
+		const result = await new TreeDxRemoteHeadReconciliationScheduler(store, 1, githubFetch())
+			.runIfDue(Date.parse('2026-08-31T12:00:00.000Z'));
+		expect(result).toMatchObject({ queued: 1, failed: 0 });
+		expect(retried).toEqual(['failed-operation']);
+	});
+
+	it('fetches, indexes, advances the logical binding, and queues the exact R2 mirror', async () => {
 		const runs: Array<{ query: string; params: unknown[] }> = [];
 		const upserts: any[] = [];
-		let refs = [{ name: publicationRef, target: oldHead }, { name: 'refs/remotes/origin/staging', target: newHead }];
+		const remoteRef = 'refs/remotes/origin/staging';
+		const refs = [{ name: publicationRef, target: oldHead }, { name: remoteRef, target: newHead }];
 		const client: any = {
 			fetchRemote: vi.fn(async () => ({})),
 			upstream: { repositories: { refs: vi.fn(async () => ({ refs })) },
 				searchIndex: { status: vi.fn(async () => ({ index: { ready: true, stale: false,
 					resolvedRef: newHead, segmentCount: 4 } })) } },
-			promoteRef: vi.fn(async () => { refs = [{ name: publicationRef, target: newHead },
-				{ name: 'refs/remotes/origin/staging', target: newHead }]; return { beforeHead: oldHead, afterHead: newHead }; }),
 			refreshGraph: vi.fn(async () => ({ graph: { status: 'completed', resolvedRef: newHead, graphVersion: 'graph-1' } })),
 			refreshSearchIndex: vi.fn(async () => ({ index: { status: 'completed' } })),
 			getPlacement: vi.fn(async () => ({ primaryNodeId: 'node' })),
@@ -99,15 +112,14 @@ describe('TreeDX protected branch reconciliation', () => {
 		const executor = createTreeDxRemoteHeadReconciliationExecutor({ controlPlaneStore: store, fetchImpl: githubFetch() });
 		const result = await executor.run({ teamId: 'team', projectId: 'project', publicationRef, remoteHead: newHead },
 			{ operation: { id: 'operation' }, checkpoint: async (...values: any[]) => checkpoints.push(values) });
-		expect(client.fetchRemote).toHaveBeenCalledWith(expect.objectContaining({ refspecs: [`+${publicationRef}:refs/remotes/origin/staging`] }));
-		expect(client.promoteRef).toHaveBeenCalledWith(expect.objectContaining({ expectedDestinationHead: oldHead }));
-		expect(client.refreshGraph).toHaveBeenCalledWith(expect.objectContaining({ ref: publicationRef, forceFull: true }));
-		expect(client.refreshSearchIndex).toHaveBeenCalledWith(expect.objectContaining({ ref: publicationRef, incremental: false }));
-		expect(upserts[0]).toMatchObject({ contentRepositoryRef: publicationRef,
+		expect(client.fetchRemote).toHaveBeenCalledWith(expect.objectContaining({ refspecs: [`+${publicationRef}:${remoteRef}`] }));
+		expect(client.refreshGraph).toHaveBeenCalledWith(expect.objectContaining({ ref: remoteRef, forceFull: true }));
+		expect(client.refreshSearchIndex).toHaveBeenCalledWith(expect.objectContaining({ ref: remoteRef, incremental: false }));
+		expect(upserts[0]).toMatchObject({ contentRepositoryRef: remoteRef,
 			metadata: { retained: true, resolvedRef: newHead } });
 		expect(runs.some((entry) => entry.query.includes('UPDATE project_remote_repository_bindings'))).toBe(true);
 		expect(enqueueReplication).toHaveBeenCalledWith(store, expect.objectContaining({
-			teamId: 'team', projectId: 'project', commitSha: newHead, sourceRef: publicationRef,
+			teamId: 'team', projectId: 'project', commitSha: newHead, sourceRef: remoteRef,
 		}));
 		expect(checkpoints).toHaveLength(1);
 		expect(result).toMatchObject({ projectId: 'project', remoteHead: newHead,
