@@ -15,6 +15,7 @@ import { createDiscussionService } from '../discussions/discussion-service.ts';
 import { createGovernanceService } from '../control-plane/governance/governance-service.ts';
 import { createInboxService } from '../control-plane/inbox/inbox-service.ts';
 import { createProjectRepositoryService } from '../control-plane/repositories/project-repository-service.ts';
+import { createPlatformProjectCreationService } from '../control-plane/projects/platform-project-creation-service.ts';
 import { createWorkflowService } from '../control-plane/repositories/workflow-service.ts';
 import { createWorkflowConfigurationService } from '../control-plane/repositories/workflow-configuration-service.ts';
 import { createGitHubConnectorService } from '../control-plane/repositories/github-connector-service.ts';
@@ -223,6 +224,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const inbox = createInboxService({ store, discussions, communications, governance });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
+			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
 			capabilityOntology,
 			plans: createCapacityPlanService(capacity),
 			planningAndEstimates: createPlanningAndEstimateService(capacity),
