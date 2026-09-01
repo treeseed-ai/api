@@ -17,14 +17,16 @@ export async function claimPlatformOperationMethod(this: ControlPlaneStore, inpu
 				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
 				 )
 				 ${capabilityWhere}
-				 ORDER BY created_at ASC LIMIT ?`, [input.operationId, now, ...capabilities, limit])
+				 ORDER BY CASE namespace WHEN 'knowledge' THEN 0 WHEN 'feedback' THEN 1 ELSE 2 END,
+				          created_at ASC LIMIT ?`, [input.operationId, now, ...capabilities, limit])
         : await this.all(`SELECT * FROM platform_operations
 				 WHERE (
 				    status = 'queued'
 				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
 				 )
 				 ${capabilityWhere}
-				 ORDER BY created_at ASC LIMIT ?`, [now, ...capabilities, limit]);
+				 ORDER BY CASE namespace WHEN 'knowledge' THEN 0 WHEN 'feedback' THEN 1 ELSE 2 END,
+				          created_at ASC LIMIT ?`, [now, ...capabilities, limit]);
     const row = rows[0];
     if (!row)
         return null;

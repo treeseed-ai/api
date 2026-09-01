@@ -43,6 +43,7 @@ export function mentionedAgentSlugs(body: string) {
 export async function loadDiscussions(input: {
 	store: any; projectId: string; discussionId?: string; query?: string;
 	collection?: 'discussions' | 'messages' | 'events'; limit?: number; after?: string;
+	exactPaths?: string[]; exactMessageIds?: string[]; includeDiscussion?: boolean;
 }) {
 	const connection = await resolveKnowledgeGatewayConnection(input.store, {
 		projectId: input.projectId, write: false, communicationPaths: true,
@@ -50,10 +51,21 @@ export async function loadDiscussions(input: {
 	if (!connection) throw new Error('The project TreeDX repository is unavailable for Discussion history.');
 	const discussionRef = `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const selected = input.discussionId ? slug(input.discussionId) : null;
+	const exactPaths = [...new Set([
+		...(input.exactPaths ?? []).map((path) => text(path)).filter(Boolean),
+		...(selected ? (input.exactMessageIds ?? []).map((messageId) => projectLibraryPath(connection.contentPath,
+			'discussion-messages', selected, `${text(messageId)}.mdx`)).filter((path) => !path.endsWith('/.mdx')) : []),
+		...(selected && input.includeDiscussion === true
+			? [projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)] : []),
+	])];
 	const patterns = selected
 		? [projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`), projectLibraryPath(connection.contentPath, 'discussion-messages', selected, '**'), projectLibraryPath(connection.contentPath, 'discussion-events', selected, '**')]
 		: [projectLibraryPath(connection.contentPath, 'discussions/**')];
-	const listed = await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: discussionRef, paths: patterns, kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 1_000, allowProtected: true });
+	// Known messages and discussion records must be read directly. Enumerating a
+	// repository tree for an idempotency check made every chat send proportional
+	// to the size of the library and could exhaust the gateway request deadline.
+	const listed = exactPaths.length ? { entries: exactPaths.map((path) => ({ path })), resolvedRef: discussionRef }
+		: await connection.client.listRepositoryPaths({ repoId: connection.repositoryId, ref: discussionRef, paths: patterns, kinds: ['blob'], extensions: ['.md', '.mdx'], limit: 1_000, allowProtected: true });
 	const readableAuthoring = await listReadableTreeDxAuthoringState(input.store, input.projectId);
 	const branchPaths = (listed.entries ?? []).map((entry: unknown) => text((entry as Row)?.path)).filter(Boolean);
 	const journalPaths = readableAuthoring.flatMap((state) => Array.isArray(state.changedPaths)

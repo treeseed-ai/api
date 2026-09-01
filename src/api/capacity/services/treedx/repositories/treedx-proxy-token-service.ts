@@ -80,10 +80,10 @@ export function resolveTreeDxProxyBaseUrl(runtime: TreeDxProxyRuntime, library: 
 	const topology = record(library?.topology);
 	const contentRepository = record(topology.contentRepository);
 	const treeDx = record(contentRepository.treeDx);
-	const value = text(treeDx.baseUrl)
-		|| text(env.TREESEED_TREEDX_URL)
+	const value = text(env.TREESEED_TREEDX_URL)
 		|| text(env.TREESEED_TREEDX_BASE_URL)
 		|| text(env.TREESEED_PUBLIC_TREEDX_BASE_URL)
+		|| text(treeDx.baseUrl)
 		|| 'http://127.0.0.1:4000';
 	try { return resolveTreeDxServiceUrl(value, env); }
 	catch (error) {

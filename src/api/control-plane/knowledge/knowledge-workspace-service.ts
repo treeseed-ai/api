@@ -10,6 +10,11 @@ import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repos
 import { KnowledgeOperationError } from './knowledge-operation-error.ts';
 import { createKnowledgeAuthorization, type KnowledgePrincipal } from './knowledge-authorization.ts';
 import { allowedKnowledgePath } from './knowledge-path.ts';
+import { AGENT_OPERATIONAL_CONTENT_COLLECTIONS,validateContentFrontmatter } from '@treeseed/sdk/content-validation';
+import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
+
+const operationalModels=new Map([...Object.entries(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map(([model,collection])=>[collection,model] as const),['agent-tests','agent_test']]);
+function operationalModel(path:string){const collection=path.split('/').at(-2)??path.split('/')[0]??'';return operationalModels.get(collection)??operationalModels.get(path.split('/')[0]??'')??null;}
 
 export function createKnowledgeWorkspaceService(store: any, reader: { projectCatalog(principal: KnowledgePrincipal, projectId: string): Promise<Record<string, any>> }) {
 	const authorization = createKnowledgeAuthorization(store);
@@ -101,6 +106,17 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				write: true, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const sourcePath = text(input.sourcePath);
+			if(input.kind==='operational-content') {
+				const model=operationalModel(sourcePath);if(!model)throw new KnowledgeOperationError(422,'operational_content_path_invalid','Choose a registered operational-content collection.');
+				if(!allowedKnowledgePath(access.workspace,sourcePath))throw new KnowledgeOperationError(422,'knowledge_path_invalid','The operational content path is outside this workspace.');
+				const content=typeof input.content==='string'?input.content:'';if(!content.trim())throw new KnowledgeOperationError(422,'operational_content_required','Operational content is required.');
+				const validation=validateContentFrontmatter(model as never,parseFrontmatterDocument(content).frontmatter);if(!validation.ok)throw new KnowledgeOperationError(422,'operational_content_invalid',`The ${model} content is invalid: ${validation.diagnostics.map((entry)=>entry.message).join(' ')}`);
+				let before:null|string=null;if(input.create!==true){const current=await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:sourcePath});if(!text(input.expectedSha)||text(input.expectedSha)!==current.sha)throw new KnowledgeOperationError(409,'stale_workspace_file','The operational content changed. Reload before saving.');before=current.content;}
+				const result=await applyTextChangeset({client:connection.client,workspace:{workspaceId:access.workspace.treeDxWorkspaceId,baseCommitSha:access.workspace.baseCommitSha,baseRef:access.workspace.baseRef},changes:[{path:sourcePath,before,after:content}],idempotencyKey:`operational-content-${workspaceId}-${access.workspace.version}`});
+				const updated=await store.updateKnowledgeWorkspace(workspaceId,{version:access.workspace.version,status:'draft'});if(!updated.ok)throw new KnowledgeOperationError(409,'stale_workspace','The draft changed. Reload before saving.');
+				await store.recordAuditEvent({eventType:'knowledge.operational_content.updated',actorType:'user',actorId:access.principal.id,targetType:model,targetId:sourcePath,data:{workspaceId,projectId:access.workspace.projectId,path:sourcePath}});
+				return {result,workspace:updated.workspace};
+			}
 			if (input.kind === 'agent-profile') {
 				if (!sourcePath.startsWith(projectLibraryPath(connection.contentPath, 'agents') + '/')) throw new KnowledgeOperationError(422, 'agent_profile_path_invalid', 'Agent profiles must remain in the agents collection.');
 				if (!allowedKnowledgePath(access.workspace, sourcePath)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The agent profile path is outside this workspace.');

@@ -4,6 +4,7 @@ import { githubRepositoryHead } from '../../providers/github/repository-client.t
 import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
 import { createRemoteGitCredentialDelivery } from '../../security/remote-git-credential-delivery.ts';
 import { isR2ReplicationReceipt, mirrorTreeDxCommit, resolveCanonicalTreeDxRef, TREE_DX_MIRROR_SCHEMA, TREE_DX_MIRROR_SKIPPED_SCHEMA } from './r2-file-mirror.ts';
+import { markManagedTeamLibraryMirrorKnownGood } from '../../api/teams/managed-team-library-service.ts';
 
 function setting(options: any, name: string) {
 	return String(options.config?.[name] ?? process.env[name] ?? '').trim();
@@ -182,6 +183,8 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 			const completedAt = new Date().toISOString();
 			await store.run("UPDATE treedx_commit_replications SET status='complete',next_attempt_at=NULL,completed_at=?,updated_at=? WHERE id=?",
 				[completedAt, completedAt, row.id]);
+			await markManagedTeamLibraryMirrorKnownGood(store,{teamId:row.team_id,projectId:row.project_id,
+				commitSha:row.commit_sha,r2Receipt});
 			await context.checkpoint({ phase: 'treedx.commit.replicated', replicationId: row.id, commitSha: row.commit_sha },
 				{ kind: 'treedx.commit.replicated', data: { projectId: row.project_id, commitSha: row.commit_sha } });
 			return { replicationId: row.id, status: 'complete', commitSha: row.commit_sha, github: githubReceipt, r2: r2Receipt };

@@ -36,5 +36,6 @@ export async function createTeamMethod(this: ControlPlaneStore, input) {
     if (input.ownerUserId) {
         await this.upsertTeamMember(id, input.ownerUserId, 'team_owner');
     }
+	await this.ensureManagedTeamLibraryProject(id);
     return this.getTeam(id);
 }

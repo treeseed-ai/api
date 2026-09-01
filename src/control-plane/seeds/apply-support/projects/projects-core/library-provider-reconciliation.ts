@@ -25,6 +25,17 @@ async function repositoryHead(input: { fetchImpl: typeof fetch; token?: string; 
 	return head;
 }
 
+async function seedRepositoryFiles(input:{fetchImpl:typeof fetch;token:string;owner:string;name:string;branch:string;files:Record<string,string>}) {
+	for(const [path,content] of Object.entries(input.files).sort(([left],[right])=>left.localeCompare(right))) {
+		const endpoint=`/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
+		const existing=await github({...input,path:`${endpoint}?ref=${encodeURIComponent(input.branch)}`});
+		const decoded=typeof existing?.content==='string'?Buffer.from(existing.content.replace(/\s/gu,''),'base64').toString('utf8'):'';
+		const generatedReadme=path==='README.md'&&decoded.trim().toLowerCase()===`# ${input.name}`.toLowerCase();
+		if(existing&&!generatedReadme)continue;
+		await github({...input,path:endpoint,method:'PUT',body:{message:`Seed managed Team Library ${path}`,content:Buffer.from(content,'utf8').toString('base64'),branch:input.branch,...(existing?.sha?{sha:existing.sha}:{})}});
+	}
+}
+
 async function ensureEnvironmentAuthority(input: { store: any; teamId: string; projectId: string; owner: string; name: string; repository: Record<string, any>; heads: Record<string,string> }) {
 	const now = new Date().toISOString();
 	const connectionId = identifier('service-connection', `${input.teamId}:github:seed-library`);
@@ -64,7 +75,7 @@ async function ensureEnvironmentAuthority(input: { store: any; teamId: string; p
 
 export async function reconcileLibraryProvider(input: {
 	store: any; teamId: string; projectId: string; projectSlug: string; owner: string; name: string; visibility: 'public'|'private';
-	lifecycle: 'create-or-adopt'|'adopt-only'; env: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
+	lifecycle: 'create-or-adopt'|'adopt-only'; env: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;seedFiles?:Record<string,string>;
 }) {
 	const fetchImpl = input.fetchImpl ?? fetch; const token = String(input.env.TREESEED_GITHUB_TOKEN ?? '').trim() || undefined;
 	let repository = await github({ fetchImpl, token, path: `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}` });
@@ -85,13 +96,20 @@ export async function reconcileLibraryProvider(input: {
 	}
 	const observedVisibility = repository.private === true ? 'private' : 'public';
 	if (observedVisibility !== input.visibility) throw new Error(`GitHub library ${input.owner}/${input.name} visibility is ${observedVisibility}, expected ${input.visibility}.`);
-	const main = await repositoryHead({ fetchImpl, token, owner:input.owner,name:input.name,branch:'main' });
+	let main = await repositoryHead({ fetchImpl, token, owner:input.owner,name:input.name,branch:'main' });
 	let staging = await repositoryHead({ fetchImpl, token, owner:input.owner,name:input.name,branch:'staging', optional:true });
 	if (!staging) {
 		if (!token || input.lifecycle !== 'create-or-adopt') throw new Error(`GitHub library ${input.owner}/${input.name} is missing its required staging branch.`);
 		await github({ fetchImpl, token, path:`/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}/git/refs`,
 			method:'POST',body:{ref:'refs/heads/staging',sha:main} });
 		staging = await repositoryHead({ fetchImpl, token, owner:input.owner,name:input.name,branch:'staging' });
+	}
+	if(input.seedFiles&&Object.keys(input.seedFiles).length) {
+		if(!token)throw new Error(`TREESEED_GITHUB_TOKEN is required to seed managed library ${input.owner}/${input.name}.`);
+		await seedRepositoryFiles({fetchImpl,token,owner:input.owner,name:input.name,branch:'main',files:input.seedFiles});
+		await seedRepositoryFiles({fetchImpl,token,owner:input.owner,name:input.name,branch:'staging',files:input.seedFiles});
+		main=await repositoryHead({fetchImpl,token,owner:input.owner,name:input.name,branch:'main'});
+		staging=await repositoryHead({fetchImpl,token,owner:input.owner,name:input.name,branch:'staging'});
 	}
 	const heads = { main, staging };
 	if (!token) return { heads, credentialId: undefined };

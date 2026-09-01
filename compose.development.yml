@@ -20,6 +20,7 @@ services:
       TREESEED_MAILPIT_SMTP_HOST:
       TREESEED_MAILPIT_SMTP_PORT:
       TREESEED_TREEDX_URL:
+      TREESEED_LOCAL_TREEDX_HOSTS: treedx,host.docker.internal
       TREESEED_TREEDX_JWT_ISSUER:
       TREESEED_TREEDX_JWT_AUDIENCE:
       POSTGRES_USER:
@@ -36,6 +37,8 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - ${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     tmpfs:
       - /tmp
     networks:
@@ -63,6 +66,7 @@ services:
       TREESEED_COMPONENT_DATA_ROOT:
       TREESEED_API_BASE_URL:
       TREESEED_TREEDX_URL:
+      TREESEED_LOCAL_TREEDX_HOSTS: treedx,host.docker.internal
       TREESEED_TREEDX_JWT_ISSUER:
       TREESEED_TREEDX_JWT_AUDIENCE:
       TREESEED_DATABASE_URL:
@@ -80,6 +84,8 @@ services:
       TREESEED_DEVELOPMENT_MODE:
     volumes:
       - ${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     tmpfs:
       - /tmp
     networks:

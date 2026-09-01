@@ -21,6 +21,7 @@ function safeId(value:unknown) {
 }
 function path(root:string,collection:string,id:string) { return projectLibraryPath(root, collection, `${safeId(id)}.mdx`); }
 function digest(value:unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+function strings(value:unknown) { return Array.isArray(value)?[...new Set(value.map(String).map((item)=>item.trim()).filter(Boolean))]:[]; }
 export async function executeCurrentContext(connection:Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>,exactRef:string,request:Record<string,unknown>) {
 	if(!connection) throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
 	// A successful context response is not proof that TreeDX's derived graph includes
@@ -51,6 +52,43 @@ function rowCheck(row:Record<string,unknown>) {
 
 export class ContextQueryCheckService {
 	constructor(private readonly store:CapacityGovernanceDatabase) {}
+
+	private async queryProjects(teamId:string,projectId:string,query:DeclarativeContextQuery) {
+		const sources=query.sources?.length?query.sources:[{scope:'current-project' as const}],projects=new Map<string,{projectId:string;paths:string[];source:string}>();
+		const add=(id:string,paths:string[],source:string)=>projects.set(id,{projectId:id,paths:paths.length?paths:['**'],source});
+		for(const selector of sources) {
+			if(selector.scope==='current-project') { add(projectId,['**'],'current-project'); continue; }
+			if(selector.scope==='team-library') {
+				const teamProject=await (this.store as any).getProjectByTeamAndSlug(teamId,'team');
+				if(!teamProject) throw new CapacityGovernanceError('team_library_unavailable','The managed Team Library is unavailable.',409);
+				add(String(teamProject.id),['**'],'team-library'); continue;
+			}
+			if(selector.scope==='same-team') {
+				const teamProjects=await (this.store as any).listTeamProjects(teamId),ids=new Set(selector.projectIds??[]),slugs=new Set(selector.projectSlugs??[]);
+				const selected=ids.size||slugs.size?teamProjects.filter((project:Record<string,unknown>)=>ids.has(String(project.id))||slugs.has(String(project.slug))):teamProjects;
+				if(selected.length!==(ids.size+slugs.size||teamProjects.length))throw new CapacityGovernanceError('context_query_source_missing','A selected same-team project does not exist.',404);
+				for(const project of selected)add(String(project.id),['**'],'same-team');continue;
+			}
+			const shares=(await (this.store as any).listTreeDxSharesForRecipient(teamId)).filter((share:Record<string,unknown>)=>String(share.teamId)===selector.teamId&&share.status==='active'&&(!share.expiresAt||Date.parse(String(share.expiresAt))>Date.now()));
+			const eligible=new Map<string,Record<string,unknown>>();for(const share of shares){const grant=record(share.trustGrant);if(!strings(grant.operations).includes('context'))continue;for(const id of strings(grant.projectIds??share.projectId))eligible.set(id,grant);}
+			const selected=selector.projectIds?.length?selector.projectIds:[...eligible.keys()];
+			for(const id of selected){const grant=eligible.get(id);if(!grant)throw new CapacityGovernanceError('context_query_share_denied','An active knowledge share does not cover the selected project.',403);add(id,strings(grant.paths),`shared-team:${selector.teamId}`);}
+		}
+		return [...projects.values()];
+	}
+
+	private async executeQuerySources(teamId:string,projectId:string,query:DeclarativeContextQuery,request:Record<string,unknown>) {
+		const selected=await this.queryProjects(teamId,projectId,query),results=[] as Array<{projectId:string;source:string;ref:string;result:any}>;
+		for(const source of selected) {
+			const connection=await resolveKnowledgeGatewayConnection(this.store,{projectId:source.projectId,write:true,authoringPaths:true});
+			if(!connection)throw new CapacityGovernanceError('context_query_treedx_unavailable',`TreeDX content is unavailable for source project ${source.projectId}.`,409);
+			const result=await executeCurrentContext(connection,connection.baseRef,{...request,scopePaths:source.paths});
+			results.push({projectId:source.projectId,source:source.source,ref:connection.baseRef,result});
+		}
+		const unpack=(value:any)=>record(record(value).payload??value),nodes=results.flatMap((entry)=>Array.isArray(unpack(entry.result).nodes)?unpack(entry.result).nodes:[]),edges=results.flatMap((entry)=>Array.isArray(unpack(entry.result).edges)?unpack(entry.result).edges:[]);
+		return {nodes,edges,sources:results.map(({result,...source})=>{const value=unpack(result),sourceNodes=Array.isArray(value.nodes)?value.nodes.map(record):[];
+			return {...source,paths:[...new Set(sourceNodes.map((node)=>String(node.path??'').trim()).filter(Boolean))].sort()};}),memberResults:results.map((entry)=>entry.result)};
+	}
 
 	async definitionCommit(projectId:string) {
 		const connection=await resolveKnowledgeGatewayConnection(this.store,{projectId,write:false,authoringPaths:true});
@@ -125,13 +163,13 @@ export class ContextQueryCheckService {
 		// graph for the exact current ref, but it never writes or commits query results.
 		const exactConnection=await resolveKnowledgeGatewayConnection(this.store,{projectId,write:true,authoringPaths:true,readRefs:[exactRef]});
 		if(!exactConnection) throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
-		const execute=async(request:Record<string,unknown>)=>executeCurrentContext(exactConnection,exactRef,request);
 		let report:Record<string,unknown>; let definition:{kind:'query'|'query-set';id:string;revision:number;commit:string};
 		if(test.kind==='context-query') {
 			const querySource=await this.source(projectId,exactRef,path(initial.contentPath,COLLECTIONS.query,test.queryRef!.id));
 			const validation=validateContentFrontmatter('agent_context_query',querySource.frontmatter);
 			if(!validation.ok||!validation.data) throw new CapacityGovernanceError('context_query_definition_invalid','Context query definition is invalid.',422,{diagnostics:validation.diagnostics});
-			report=await executeContextQueryTest({query:validation.data as DeclarativeContextQuery,test,execute}) as Record<string,unknown>;
+			const query=validation.data as DeclarativeContextQuery;
+			report=await executeContextQueryTest({query,test,execute:(request)=>this.executeQuerySources(teamId,projectId,query,request)}) as Record<string,unknown>;
 			definition={kind:'query',id:test.queryRef!.id,revision:test.queryRef!.revision,commit:exactRef};
 		} else {
 			const setSource=await this.source(projectId,exactRef,path(initial.contentPath,COLLECTIONS.set,test.querySetRef!.id));
@@ -144,7 +182,7 @@ export class ContextQueryCheckService {
 				if(!validation.ok||!validation.data) throw new CapacityGovernanceError('context_query_definition_invalid','Query-set member is invalid.',422,{reference,diagnostics:validation.diagnostics});
 				queries.push(validation.data as DeclarativeContextQuery);
 			}
-			report=await executeContextQuerySetTest({querySet,queries,test,execute:async(_query,request)=>execute(request)}) as Record<string,unknown>;
+			report=await executeContextQuerySetTest({querySet,queries,test,execute:(query,request)=>this.executeQuerySources(teamId,projectId,query,request)}) as Record<string,unknown>;
 			definition={kind:'query-set',id:test.querySetRef!.id,revision:test.querySetRef!.revision,commit:exactRef};
 		}
 		const checkedAt=String(report.checkedAt??new Date().toISOString()); const fresh=Math.min(604_800,Math.max(300,Number(input.freshForSeconds??DEFAULT_FRESH_SECONDS)));

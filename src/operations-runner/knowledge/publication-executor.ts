@@ -19,6 +19,12 @@ export function isManagedLocalPublication(repository: { storageKind?: unknown; r
 		&& (repository.remoteUrl === null || repository.remoteUrl === undefined || repository.remoteUrl === '');
 }
 
+export function treeDxPrimaryNodeId(value: unknown) {
+	if (!value || typeof value !== 'object') return '';
+	const result = value as Record<string, any>;
+	return String(result.primaryNodeId ?? result.placement?.primaryNodeId ?? '');
+}
+
 export function knowledgeRunnerEnvironment(options: any) {
 	return options.environment ?? options.config?.environment
 		?? process.env.TREESEED_PLATFORM_RUNNER_ENVIRONMENT;
@@ -70,7 +76,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 		async run(input: any, context: any) {
 			const store = options.controlPlaneStore;
 			if (!store) throw new Error('Knowledge publication requires a control-plane store.');
-			const publication = await store.first('SELECT * FROM knowledge_publications WHERE id = ?', [String(input?.publicationId ?? '')]);
+			let publication = await store.first('SELECT * FROM knowledge_publications WHERE id = ?', [String(input?.publicationId ?? '')]);
 			if (!publication || !['queued', 'completed'].includes(publication.status)) {
 				throw new Error('Recoverable knowledge publication was not found.');
 			}
@@ -105,13 +111,19 @@ export function createKnowledgePublicationExecutor(options: any) {
 				throw new Error('Knowledge publication editorial context trace is missing or stale.');
 			}
 			const connection = await resolveConnection(store, { projectId: workspace.projectId,
-				write: false, publishRefs: [workspace.branchName, publication.published_ref] });
+				write: false, publishRefs: [workspace.branchName, publication.published_ref,
+					`refs/treedx/commits/${publication.commit_sha}`] });
 			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
+			if (publication.published_ref !== connection.publicationRef) {
+				await store.run('UPDATE knowledge_publications SET published_ref = ? WHERE id = ? AND status = ?',
+					[connection.publicationRef, publication.id, 'queued']);
+				publication = { ...publication, published_ref: connection.publicationRef };
+			}
 			const repository = await connection.client.getRepository(connection.repositoryId);
 			const managedLocal = isManagedLocalPublication(repository, environment);
 			const external = !managedLocal && !localPublicationRemote(repository.remoteUrl);
 			const publicationConnection = external ? { ...connection,
-				nodeId: (await connection.client.getPlacement(connection.repositoryId)).primaryNodeId } : connection;
+				nodeId: treeDxPrimaryNodeId(await connection.client.getPlacement(connection.repositoryId)) } : connection;
 			if (external && !publicationConnection.nodeId) throw new Error('TreeDX did not resolve the repository primary node for credential delivery.');
 			const recoveredManifest = await publicationStorage.readCurrent(workspace.teamId);
 			const publicationAlreadyApplied = containsPublicationCommit(recoveredManifest, publication, workspace);
@@ -124,10 +136,16 @@ export function createKnowledgePublicationExecutor(options: any) {
 				publicationRef: publication.published_ref, authoringRef: workspace.branchName,
 				fetchImpl: options.fetchImpl,
 			});
-			const push = publicationAlreadyApplied ? undefined : managedLocal
-				? await connection.client.promoteRef({ repoId: connection.repositoryId, sourceRef: workspace.branchName,
-					destinationRef: publication.published_ref, expectedDestinationHead: workspace.baseCommitSha })
-				: remote?.push ?? remote?.promotion;
+			let push = publicationAlreadyApplied ? undefined : remote?.push ?? remote?.promotion;
+			if (!publicationAlreadyApplied && managedLocal) {
+				const promote = (sourceRef: string) => connection.client.promoteRef({ repoId: connection.repositoryId, sourceRef,
+					destinationRef: publication.published_ref, expectedDestinationHead: workspace.baseCommitSha });
+				try { push = await promote(workspace.branchName); }
+				catch (error) {
+					if (!(error instanceof Error) || !/ref or object not found/iu.test(error.message)) throw error;
+					push = await promote(`refs/treedx/commits/${publication.commit_sha}`);
+				}
+			}
 			if (push?.rejectedRefs?.length) throw new Error('The publication ref changed after review. Rebase and review the knowledge again.');
 			const graph = publicationAlreadyApplied ? undefined : await completedGraphRefresh(connection.client,
 				{ repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths });

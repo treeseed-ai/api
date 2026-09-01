@@ -102,7 +102,7 @@ development:
       kind: rebuild-restart
       platforms: [linux-amd64, linux-arm64]
       runtimeRequirements: [node>=22]
-      sourceRoots: [src/operations-runner, src/api/knowledge, src/api/providers/cloudflare, src/security, src/providers, drizzle]
+      sourceRoots: [src/operations-runner, src/api, src/security, src/providers, drizzle]
       ignoredPaths: [dist, node_modules]
       operations:
         build: { command: npm, args: [run, build:dist], environment: {}, timeoutSeconds: 1800 }

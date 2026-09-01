@@ -180,10 +180,13 @@ export async function resolveProviderSynthesisContext(
 			sessionEnvironment: session.environment,
 		});
 	}
+	const unavailableOffers=await database.all(`SELECT execution_provider_id,offer_id,status FROM execution_capability_offers WHERE capacity_provider_id=? AND status<>'active'`,[principal.capacityProviderId]);
+	const blocked=new Set(unavailableOffers.map((offer)=>`${String(offer.execution_provider_id)}:${String(offer.offer_id)}`));
+	const eligibleProviders=executionProviders(row).map((provider)=>({...provider,offers:provider.offers.filter((offer)=>!blocked.has(`${provider.id}:${offer.offerId}`))}));
 	return {
 		provider: { id: String(authority.provider_id), status: String(authority.provider_status) },
 		session,
-		executionProviders: executionProviders(row),
+		executionProviders: eligibleProviders,
 		now,
 		environment: input.environment ?? session.environment,
 	};

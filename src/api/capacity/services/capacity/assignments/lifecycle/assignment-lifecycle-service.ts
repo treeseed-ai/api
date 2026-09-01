@@ -19,6 +19,7 @@ import { archivedConversationCancellation,assignmentFailureDisposition } from '.
 import { contentIntegrationRequirementOperation } from './assignment-content-integration-requirement.ts';
 import { semanticCompletionPreflightRequired } from './assignment-completion-preflight-service.ts';
 import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
+import { quarantineContextOverflowOffer } from './context-capacity/overflow.ts';
 type JsonRecord = Record<string, unknown>;
 export interface ExtendedProviderAssignmentLifecycleRequest extends ProviderAssignmentLifecycleRequest {
 	activeSeconds?: number | null;
@@ -30,20 +31,14 @@ export interface ExtendedProviderAssignmentLifecycleRequest extends ProviderAssi
 interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, AssignmentDeliverableStore, AssignmentPlanningOutputStore, ResearchWorkflowProjectionStore {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
 	recordAgentFallbackOutput(input: AgentFallbackOutputWrite): Promise<unknown>;
-	recordProviderAssignmentExplanation(
-		teamId: string,
-		assignmentId: string,
-		input: ProviderAssignmentExplanationWrite,
-	): Promise<ProviderAssignmentExplanation | null>;
+	recordProviderAssignmentExplanation(teamId:string,assignmentId:string,input:ProviderAssignmentExplanationWrite):Promise<ProviderAssignmentExplanation|null>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<JsonRecord | null>;
 }
-
 export interface ProviderAssignmentLifecycleMutationResult {
 	assignment: DurableProviderAssignment;
 	leaseToken: string | null;
 	leaseSeconds: number | null;
 }
-
 function record(value: unknown): JsonRecord {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
@@ -263,6 +258,7 @@ export class ProviderAssignmentLifecycleService {
 			return { assignment: repaired, leaseToken: null, leaseSeconds: null };
 		}
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
+		const contextCapacityAlert=await quarantineContextOverflowOffer({store:this.store,assignment,code:input.code,observedAt:now});
 		if (record(assignment.metadata).cancellationRequested === true) {
 			return this.transition(principal, assignment, input, now, {
 				status: 'cancelled', timestampColumn: 'failed_at', defaultCode: 'operator_cancelled', defaultReason: String(record(assignment.metadata).cancellationReason ?? 'Assignment cancelled by a team operator.'),
@@ -311,6 +307,7 @@ export class ProviderAssignmentLifecycleService {
 		if (input.fallbackOutput) await this.persistFallback(assignment, input.fallbackOutput);
 		const metadata = {
 			...record(assignment.metadata),
+			...(contextCapacityAlert?{contextCapacityAlert}:{}),
 			lastReturn: {
 				reason: input.reason ?? input.message ?? null,
 				code: input.code ?? null,

@@ -14,4 +14,11 @@ describe('authoritative TreeDX upstream operations', () => {
 		expect(treeDxQuery({ cursor: 'next', limit: 25, assignmentId: 'assignment-1', treeDxProxyToken: 'secret' }))
 			.toEqual({ cursor: 'next', limit: 25 });
 	});
+
+	it('authorizes the physical candidates for an extensionless content read', () => {
+		const operation = requireTreeDxOperation('readRepositoryFile');
+		expect(treeDxOperationScope(operation, { body: { paths: ['objectives/core'] } }, ['repo-1']).paths)
+			.toEqual(['objectives/core', 'objectives/core.mdx', 'objectives/core.md', 'objectives/core.markdown',
+				'objectives/core.json', 'objectives/core.yaml', 'objectives/core.yml', 'objectives/core.toml']);
+	});
 });

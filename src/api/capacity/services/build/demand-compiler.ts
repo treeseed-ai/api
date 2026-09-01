@@ -327,8 +327,10 @@ async function compilePlanningDemands(
 			: { requestedSeconds: estimate.seconds, providerFloor: 0, floorSource: 'unbounded-session' };
 		const requestedSeconds = allocation.requestedSeconds;
 		const contextReferences=[
-			...agent.contextQueryRefs.map((reference)=>({kind:'query' as const,...reference})),
-			...agent.contextQuerySetRefs.map((reference)=>({kind:'query-set' as const,...reference})),
+			...agent.contextQueryLayers.agent.queryRefs.map((reference)=>({kind:'query' as const,...reference,layer:'agent' as const})),
+			...agent.contextQueryLayers.agent.querySetRefs.map((reference)=>({kind:'query-set' as const,...reference,layer:'agent' as const})),
+			...agent.contextQueryLayers.activity.queryRefs.map((reference)=>({kind:'query' as const,...reference,layer:'activity' as const})),
+			...agent.contextQueryLayers.activity.querySetRefs.map((reference)=>({kind:'query-set' as const,...reference,layer:'activity' as const})),
 		];
 		const definitionBaseRef=capacityWorkdayContentBaseRef(run.environment,agent.branchPolicy,agent.sourceImmutableRef);
 		const contentBaseRef=capacityWorkdayRuntimeContentRef(source.payload,definitionBaseRef);
@@ -354,6 +356,7 @@ async function compilePlanningDemands(
 					permissions: agent.permissions, tools: agent.toolPolicy, capabilityRequirements: agent.capabilityRequirements } : undefined,
 				groupIds:agent.groupIds,
 				contextQueryRefs:contextReferences,
+				contextQueryLayers:agent.contextQueryLayers,
 				instructionTemplateRefs:agent.instructionTemplateRefs,
 				contextQueryChecks:verifiedContext.map((check)=>({ id:check.id,testId:check.testId,testRef:check.testRef,definition:check.definition,
 					checkedAt:check.checkedAt,expiresAt:check.expiresAt,latencyMs:check.latencyMs,stats:check.stats,assertions:check.assertions,

@@ -33,7 +33,8 @@ export async function evaluateTeamDeletionBlockersMethod(this: ControlPlaneStore
     const deletedProjectIds = new Set(projectRows
         .filter((row) => parseJson(row.metadata_json, {})?.deletion?.status === 'succeeded')
         .map((row) => row.id));
-    const projects = projectRows.filter((row) => !deletedProjectIds.has(row.id));
+    const projects = projectRows.filter((row) => !deletedProjectIds.has(row.id)
+        && parseJson(row.metadata_json, {})?.kind !== 'system-team-library');
     return [
         ...projects.map((row) => ({ code: 'project', id: row.id, label: row.name, href: `/app/projects/${row.id}/settings` })),
         ...services.map((row) => ({ code: 'service_connection', id: row.id, label: row.display_name, href: '/app/services' })),

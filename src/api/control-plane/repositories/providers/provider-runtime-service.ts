@@ -115,14 +115,27 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 		},
 		async status(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const item = await this.show(principal, teamId, providerId);
-			const sessions = await store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]);
-			const activeExecutionProvider = await store.first(`SELECT COUNT(*) AS count FROM capacity_execution_providers WHERE capacity_provider_id = ? AND status = 'active'`, [providerId]);
+			const [sessions, activeExecutionProvider, unavailableOffers] = await Promise.all([
+				store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]),
+				store.first(`SELECT COUNT(*) AS count FROM capacity_execution_providers WHERE capacity_provider_id = ? AND status = 'active'`, [providerId]),
+				store.all(`SELECT offer_id, execution_provider_id, status, last_seen_at FROM execution_capability_offers
+					WHERE capacity_provider_id = ? AND status <> 'active' ORDER BY last_seen_at DESC, offer_id ASC`, [providerId]),
+			]);
 			const activeExecutionProviderCount = Number(activeExecutionProvider?.count ?? 0);
-			return { provider: item, healthy: providerAvailabilityIsRunnable(sessions, activeExecutionProviderCount), activeExecutionProviderCount, availability: sessions };
+			return { provider: item, healthy: providerAvailabilityIsRunnable(sessions, activeExecutionProviderCount), activeExecutionProviderCount,
+				availability: sessions, unavailableOffers, alerts: unavailableOffers.map((offer) => ({
+					code: offer.status === 'context_overflow' ? 'provider_context_capacity_overflow' : 'provider_offer_unavailable',
+					offerId: offer.offer_id, executionProviderId: offer.execution_provider_id, status: offer.status,
+					observedAt: offer.last_seen_at,
+				})) };
 		},
 		async diagnose(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const status = await this.status(principal, teamId, providerId);
-			return { ...status, blockers: status.healthy ? [] : ['provider_availability_unhealthy'], nextActions: status.healthy ? [] : ['Start or reconcile the local provider manager.'] };
+			const offerBlockers = status.unavailableOffers.map((offer) => `${offer.status}:${offer.offer_id}`);
+			return { ...status, blockers: [...(status.healthy ? [] : ['provider_availability_unhealthy']), ...offerBlockers],
+				nextActions: [...(status.healthy ? [] : ['Start or reconcile the local provider manager.']),
+					...(status.unavailableOffers.some((offer) => offer.status === 'context_overflow')
+						? ['Publish an updated context-capacity offer and pass conformance before re-enabling it.'] : [])] };
 		},
 		async connect(principal: UserPrincipal | null | undefined, teamId: string, _idempotencyKey: string) {
 			const actor = await requireManage(principal, teamId);

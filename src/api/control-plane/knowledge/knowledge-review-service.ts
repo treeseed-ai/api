@@ -105,8 +105,10 @@ export function createKnowledgeReviewService(store: any) {
 			}
 			const gate = editorialReviewGate(review);
 			if (!gate.ok) throw new KnowledgeOperationError(409, gate.code, 'The editorial review gate is incomplete.');
+			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: workspace.projectId, write: false });
+			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const publication = await store.createKnowledgePublication({ workspaceId: workspace.id, reviewId,
-				projectId: workspace.projectId, commitSha: review.commitSha, publishedRef: workspace.baseRef });
+				projectId: workspace.projectId, commitSha: review.commitSha, publishedRef: connection.publicationRef });
 			const operation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'publish_review',
 				target: 'control_plane_operations_runner', idempotencyKey: `knowledge-publication:${publication.id}`,
 				input: { publicationId: publication.id, simulation: { ...simulation.evidence, operatorPrincipalId: access.principal.id } },

@@ -15,6 +15,10 @@ export interface ProjectAgentActivityRef {
 	contentPath: string | null;
 	contextQueryRefs: Array<{id:string;revision:number}>;
 	contextQuerySetRefs: Array<{id:string;revision:number}>;
+	contextQueryLayers: {
+		agent: {queryRefs:Array<{id:string;revision:number}>;querySetRefs:Array<{id:string;revision:number}>};
+		activity: {queryRefs:Array<{id:string;revision:number}>;querySetRefs:Array<{id:string;revision:number}>};
+	};
 	instructionTemplateRefs: Array<{id:string;revision:number}>;
 	activityType: string;
 	handlerId: string;
@@ -39,13 +43,16 @@ export function projectAgentActivityRefs(handlerRefs: unknown, activityType: str
 		if (profile.enabled === false) return [];
 		const agentId = text(agent.slug ?? agent.agentId);
 		const handlerId = text(profile.handler);
+		const agentQueryRefs=revisionRefs(agent.contextQueryRefs), activityQueryRefs=revisionRefs(profile.contextQueryRefs);
+		const agentQuerySetRefs=revisionRefs(agent.contextQuerySetRefs), activityQuerySetRefs=revisionRefs(profile.contextQuerySetRefs);
 		return agentId && handlerId ? [{
 			agentId,
 			agentName: text(agent.name ?? agent.title) ?? agentId,
 			groupIds: Array.isArray(agent.groupIds) ? agent.groupIds.map(String).filter(Boolean) : [],
 			contentPath: text(agent.contentPath), activityType, handlerId, profile, identity: record(agent.identity), summary: text(agent.summary),
-			contextQueryRefs:revisionRefs(agent.contextQueryRefs,profile.contextQueryRefs),
-			contextQuerySetRefs:revisionRefs(agent.contextQuerySetRefs,profile.contextQuerySetRefs),
+			contextQueryRefs:revisionRefs(agentQueryRefs,activityQueryRefs),
+			contextQuerySetRefs:revisionRefs(agentQuerySetRefs,activityQuerySetRefs),
+			contextQueryLayers:{agent:{queryRefs:agentQueryRefs,querySetRefs:agentQuerySetRefs},activity:{queryRefs:activityQueryRefs,querySetRefs:activityQuerySetRefs}},
 			instructionTemplateRefs:revisionRefs(agent.instructionTemplateRefs,profile.instructionTemplateRefs),
 		}] : [];
 	});

@@ -7,6 +7,8 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { createPlatformApiApp } from './app.js';
 import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
+import { ensureControlPlaneCredentialSchema } from '../app/support/runtime/foundation-runtime-utilities.ts';
+import { ControlPlaneStore } from '../persistence/store.js';
 
 function hasRequestBody(method) {
 	return method !== 'GET' && method !== 'HEAD';
@@ -61,10 +63,18 @@ export async function createApiServer(options: any = {}): Promise<ApiServerInsta
 		: createControlPlanePostgresDatabase(config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL);
 	const db = options.db ?? ownedDatabase;
 	await db.migrate();
+	const store = options.store ?? new ControlPlaneStore({
+		...config,
+		assertionSecret: config.webAssertionSecret,
+		serviceId: config.webServiceId,
+		serviceSecret: config.webServiceSecret,
+		fetchImpl: options.fetchImpl ?? fetch,
+	}, db);
 	const app = createPlatformApiApp({
 		...options,
 		config,
 		db,
+		store,
 	});
 	const server = createServer((req, res) => {
 		void honoNodeHandler(app, req, res).catch((error) => {
@@ -78,6 +88,12 @@ export async function createApiServer(options: any = {}): Promise<ApiServerInsta
 	await new Promise<void>((resolvePromise) => {
 		server.listen(config.port, config.host, () => resolvePromise());
 	});
+	try {
+		await ensureControlPlaneCredentialSchema(store);
+	} catch (error) {
+		await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+		throw error;
+	}
 
 	return {
 		app,

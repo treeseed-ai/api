@@ -42,7 +42,7 @@ describe('seed TreeDX knowledge binding', () => {
 			store, projectId: 'project-platform', teamId: 'team-treeseed', projectSlug: 'platform',
 			libraryRoot: '.', libraryRepositoryUrl: 'https://github.com/treeseed-ai/platform-library.git', libraryRef: 'refs/remotes/origin/staging',
 			env: { NODE_ENV: 'test', TREESEED_TREEDX_URL: 'http://127.0.0.1:4000' }, dependencyState: {},
-		})).resolves.toEqual({ kind: 'projectKnowledgeBinding', projectId: 'project-platform', repositoryId: 'repo-platform', agents: { count: 0, immutableRef: '2'.repeat(40) } });
+		})).resolves.toEqual({ kind: 'projectKnowledgeBinding', projectId: 'project-platform', repositoryId: 'repo-platform', resolvedRef:'2'.repeat(40),sourceRef:'refs/remotes/origin/staging',contextQueries:{references:0,tests:0},agents: { count: 0, immutableRef: '2'.repeat(40) } });
 			expect(calls).toEqual([
 			{ method: 'GET', path: '/api/v1/repos', body: undefined },
 			{ method: 'POST', path: '/api/v1/repos', body: { repositoryName: 'treeseed-platform', defaultRef: 'refs/heads/main' } },
