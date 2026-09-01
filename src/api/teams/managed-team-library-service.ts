@@ -2,6 +2,7 @@ import { ensureProjectKnowledgeBinding } from '../../control-plane/seeds/apply-s
 import { reconcileLibraryProvider } from '../../control-plane/seeds/apply-support/projects/projects-core/library-provider-reconciliation.ts';
 import { createR2PublicationClient } from '../providers/cloudflare/r2-publication-client.ts';
 import { enqueueTreeDxCommitReplication } from '../capacity/services/treedx/repositories/treedx-commit-replication.ts';
+import { isManagedTeamLibraryRepositoryName,managedTeamLibraryRepositoryName } from '../store/teams/contracts/managed-library/ensure-managed-team-library-project.ts';
 
 const text=(...values:unknown[])=>values.find((value)=>typeof value==='string'&&value.trim())?.toString().trim()??'';
 const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
@@ -35,8 +36,10 @@ export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:No
 		for(const candidate of projects)for(const repository of await store.listHubRepositories(String(candidate.id)))if(repository.owner){owner=String(repository.owner);break;}
 	}
 	if(!owner)throw new Error('A GitHub library owner must be configured before the managed Team Library can be provisioned.');
-	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:'team-library',visibility:'private',lifecycle:'create-or-adopt',env,fetchImpl:store.config?.fetchImpl,seedFiles});
-	const binding=await ensureProjectKnowledgeBinding({store,projectId:String(project.id),teamId,projectSlug:'team',libraryRoot:'.',libraryRef:'refs/remotes/origin/staging',libraryRepositoryUrl:`https://github.com/${owner}/team-library.git`,libraryDefaultBranch:'main',libraryCredentialId:provider.credentialId,expectedUpstreamHeads:provider.heads,env});
+	const projectLibrary=record(record(project.metadata).library),repositoryName=text(projectLibrary.repositoryName,managedTeamLibraryRepositoryName(teamId));
+	if(!isManagedTeamLibraryRepositoryName(teamId,repositoryName))throw new Error('Managed Team Library repository identity does not match its owning team.');
+	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility:'private',lifecycle:'create-or-adopt',env,fetchImpl:store.config?.fetchImpl,seedFiles});
+	const binding=await ensureProjectKnowledgeBinding({store,projectId:String(project.id),teamId,projectSlug:'team',libraryRoot:'.',libraryRef:'refs/remotes/origin/staging',libraryRepositoryUrl:`https://github.com/${owner}/${repositoryName}.git`,libraryDefaultBranch:'main',libraryCredentialId:provider.credentialId,expectedUpstreamHeads:provider.heads,env});
 	const now=new Date().toISOString();
 	await enqueueTreeDxCommitReplication(store,{teamId,projectId:String(project.id),commitSha:binding.resolvedRef,sourceRef:binding.sourceRef,createdAt:now});
 	const replication=await store.first(`SELECT status,r2_status,r2_receipt_json FROM treedx_commit_replications
@@ -46,11 +49,11 @@ export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:No
 		&&r2Receipt.schemaVersion==='treeseed.treedx-r2-file-mirror/v2'&&r2Receipt.commitSha===binding.resolvedRef;
 	const provisioning=mirrorReady?{state:'known-good',completedAt:now,requiredFiles:['README.md','objectives/core']}
 		:{state:'replicating',updatedAt:now,requiredFiles:['README.md','objectives/core']};
-	const projectMetadata={...record(project.metadata),library:{...record(record(project.metadata).library),status:mirrorReady?'known-good':'replicating',owner,repositoryName:'team-library',heads:provider.heads},provisioning};
+	const projectMetadata={...record(project.metadata),library:{...projectLibrary,status:mirrorReady?'known-good':'replicating',owner,repositoryName,heads:provider.heads},provisioning};
 	await store.run('UPDATE projects SET metadata_json = ?, updated_at = ? WHERE id = ?',[JSON.stringify(projectMetadata),now,project.id]);
-	const teamMetadata={...metadata,teamLibrary:{projectId:project.id,projectSlug:'team',state:mirrorReady?'known-good':'replicating',repository:`${owner}/team-library`,repositoryId:binding.repositoryId}};
+	const teamMetadata={...metadata,teamLibrary:{projectId:project.id,projectSlug:'team',state:mirrorReady?'known-good':'replicating',repository:`${owner}/${repositoryName}`,repositoryName,repositoryId:binding.repositoryId}};
 	await store.run('UPDATE teams SET metadata_json = ?, updated_at = ? WHERE id = ?',[JSON.stringify(teamMetadata),now,teamId]);
-	return {teamId,projectId:project.id,repository:`${owner}/team-library`,state:mirrorReady?'known-good':'replicating',...binding};
+	return {teamId,projectId:project.id,repository:`${owner}/${repositoryName}`,state:mirrorReady?'known-good':'replicating',...binding};
 }
 
 export async function markManagedTeamLibraryMirrorKnownGood(store:any,input:{teamId:string;projectId:string;commitSha:string;r2Receipt:unknown}) {
@@ -91,8 +94,8 @@ export async function deleteManagedTeamLibraryResources(input:{teamId:string;pro
 	if(input.project.metadata?.kind!=='system-team-library'||input.project.metadata?.systemManaged!==true)
 		throw new Error('Managed Team Library cleanup requires the protected system project.');
 	const env=input.env??process.env,fetchImpl=input.fetchImpl??fetch,library=record(input.project.metadata?.library);
-	const owner=text(library.owner),name=text(library.repositoryName,'team-library'),token=text(env.TREESEED_GITHUB_TOKEN);
-	if(!owner||name!=='team-library'||!token)throw new Error('Managed Team Library GitHub deletion authority is unavailable.');
+	const owner=text(library.owner),name=text(library.repositoryName),token=text(env.TREESEED_GITHUB_TOKEN);
+	if(!owner||!isManagedTeamLibraryRepositoryName(input.teamId,name)||!token)throw new Error('Managed Team Library GitHub deletion authority is unavailable.');
 	const response=await fetchImpl(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,{
 		method:'DELETE',headers:{accept:'application/vnd.github+json',authorization:`Bearer ${token}`,'user-agent':'treeseed-team-library-deleter','x-github-api-version':'2022-11-28'},
 	});
