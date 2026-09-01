@@ -5,7 +5,7 @@ import { ControlPlaneOperationError, type BoundOperation } from './operation-reg
 
 export interface ProjectOperationDependencies {
 	platformProjectCreation?: {
-		plan(target: ProjectCreateTarget): Promise<unknown>;
+		plan(target: Partial<ProjectCreateTarget>): Promise<unknown>;
 		apply(plan: ReturnType<typeof projectCreatePlanSchema.parse>, idempotencyKey: string): Promise<unknown>;
 	};
 	treeDxProxy: TreeDxProxyOperationService;
