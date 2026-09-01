@@ -68,23 +68,14 @@ export function createTreeDxRemoteHeadReconciliationExecutor(options: any) {
 			await connection.client.fetchRemote({ repoId: connection.repositoryId, remoteName: 'origin',
 				remoteUrl: binding.clone_url, credentialId: delivery.deliveryId,
 				refspecs: [`+${publicationRef}:${remoteRef}`] });
-			let repositoryRefs = refs(await connection.client.upstream.repositories.refs(connection.repositoryId));
+			const repositoryRefs = refs(await connection.client.upstream.repositories.refs(connection.repositoryId));
 			if (head(repositoryRefs, remoteRef) !== remoteHead) throw new Error('TreeDX did not fetch the protected branch head exactly.');
-			const beforeHead = head(repositoryRefs, publicationRef);
-			let promotion: any = { status: 'already_current', beforeHead, afterHead: beforeHead };
-			if (beforeHead !== remoteHead) {
-				promotion = await connection.client.promoteRef({ repoId: connection.repositoryId, sourceRef: remoteRef,
-					destinationRef: publicationRef, expectedDestinationHead: beforeHead });
-				if (promotion.afterHead !== remoteHead) throw new Error('TreeDX did not advance its current logical view to the protected branch head.');
-			}
-			repositoryRefs = refs(await connection.client.upstream.repositories.refs(connection.repositoryId));
-			if (head(repositoryRefs, publicationRef) !== remoteHead) throw new Error('TreeDX current logical view failed exact read-back verification.');
 			const graph = await completedGraphRefresh(connection.client, { repoId: connection.repositoryId,
-				ref: publicationRef, paths: ['**'], forceFull: true });
+				ref: remoteRef, paths: ['**'], forceFull: true });
 			await connection.client.refreshSearchIndex({ repoId: connection.repositoryId,
-				ref: publicationRef, paths: ['**'], incremental: false });
+				ref: remoteRef, paths: ['**'], incremental: false });
 			const search = result(await connection.client.upstream.searchIndex.status(connection.repositoryId,
-				{ ref: publicationRef }), 'index');
+				{ ref: remoteRef }), 'index');
 			if (String(graph.resolvedRef ?? remoteHead) !== remoteHead || String(search.resolvedRef ?? '') !== remoteHead
 				|| search.ready !== true || search.stale === true || !(Number(search.segmentCount) > 0)) {
 				throw new Error('TreeDX graph/search did not converge on the protected branch head.');
@@ -98,16 +89,16 @@ export function createTreeDxRemoteHeadReconciliationExecutor(options: any) {
 				repositoryId: connection.repositoryId, contentPath: library.contentPath,
 				contentRepositoryUrl: library.contentRepositoryUrl,
 				contentRepositoryDefaultBranch: library.contentRepositoryDefaultBranch,
-				contentRepositoryRef: publicationRef, metadata,
+				contentRepositoryRef: remoteRef, metadata,
 			});
 			if (!updated) throw new Error('TreeDX library binding could not be updated after reconciliation.');
 			await store.run(`UPDATE project_remote_repository_bindings SET expected_head=?,observed_head=?,drift='none',
 				version=version+1,updated_at=? WHERE id=?`, [remoteHead, remoteHead, now, binding.id]);
 			const replication = await enqueueTreeDxCommitReplication(store, { teamId, projectId, commitSha: remoteHead,
-				sourceRef: publicationRef, createdAt: now });
+				sourceRef: remoteRef, createdAt: now });
 			await context.checkpoint({ phase: 'treedx.remote-head.reconciled', projectId, remoteHead },
 				{ kind: 'treedx.remote-head.reconciled', data: { projectId, remoteHead, publicationRef } });
-			return { projectId, publicationRef, remoteHead, promotion, graph, search, replication };
+			return { projectId, publicationRef, currentLogicalRef: remoteRef, remoteHead, graph, search, replication };
 		},
 	};
 }

@@ -95,13 +95,15 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		scope: { repositoryIds: [repositoryId], capabilities: input.replicationRefs?.length
 			? ['repos:read', 'files:read', 'git:read', 'git:fetch', 'git:push', 'registry:read', 'snapshot:build', 'artifact:export']
 			: input.maintenanceRefs?.length
-			? ['repos:read', 'files:read', 'git:read', 'git:diff', 'git:fetch', 'git:push', 'registry:read', 'policy:write']
+			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'git:fetch', 'git:push',
+				'registry:read', 'graph:query', 'graph:refresh', 'policy:write']
 			: input.publishRefs?.length
 			? ['repos:read', 'files:read', 'files:search', 'git:read', 'git:fetch', 'git:push', 'registry:read', 'graph:query', 'graph:refresh']
 			: input.write
 			? ['repos:read', 'repos:write', 'workspace:create', 'files:read', 'files:search', 'files:write', 'files:delete', 'git:read', 'git:diff', 'git:commit', 'graph:query', 'graph:refresh']
 			: ['repos:read', 'files:read', 'files:search', 'git:read', 'git:diff', 'graph:query'],
 		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
+			canonicalTreeDxBranchRef(library.contentRepositoryDefaultBranch ?? 'main'),
 			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
 			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []), ...(input.replicationRefs ?? []),
 			...(input.workspaceRefs ?? [])])],
