@@ -1,16 +1,14 @@
 import type { CapacitySupplyPolicy } from "@treeseed/sdk/agent-capacity";
 import { capacitySupplyCandidateStatus, selectCapacitySupply } from '../../../../policy/supply-selection.ts';
 import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
-import type { CapacityGovernanceDatabase } from "../../../../database.ts";
 import { CapacityGovernanceError } from "../../../../database.ts";
 import type { DurableProviderAssignment } from "../../../../repositories/capacity/assignments/assignment.ts";
 import { CapacityWorkdayDemandRepository } from "../../../../repositories/capacity/workdays/workday-demand.ts";
 import { CapacityWorkdayParticipationRepository } from "../../../../repositories/capacity/workdays/workday-participation.ts";
-import { CapacityWorkdayRunRepository,type DurableCapacityWorkdayRun } from "../../../../repositories/capacity/workdays/workday-run.ts";
+import { CapacityWorkdayRunRepository } from "../../../../repositories/capacity/workdays/workday-run.ts";
 import type { ProviderLeasePrincipal } from "../../../accounts/lease-authority-service.ts";
 import type { ProviderSynthesisExecutionProvider } from "../../providers/provider-synthesis-context-service.ts";
 import { evaluateDurableWorkdayContinuation } from "../../workdays/lifecycle/workday-continuation-service.ts";
-import type { ConfiguredWorkspaceInput } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
 import { workdayTreeDxWorkspaceId } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
 import { admitSynthesizedProviderAssignment } from "../admission/assignment-admission-service.ts";
 import { teamSupplyPolicy } from "../../../../domain/supply-policy.ts";
@@ -27,26 +25,13 @@ import { assignmentConfigurationAttribution } from './assignment-configuration-a
 import { negotiateAssignmentCapabilityOffers, persistCapabilityNegotiation } from './support/capability-offer-negotiation.ts';
 import { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
 import { bindOperationHandoffAssignment } from '../handoffs/operation-handoff-lifecycle-service.ts';
+import { resolveCrossProjectReadRepositories } from './context/cross-project-read-repositories.ts';
 import { assignmentRecord as record, assignmentText as text,
 	deterministicAssignmentId as assignmentId, type AssignmentJsonRecord as JsonRecord } from './support/assignment-function-support.ts';
 import { recordAssignmentDenial } from './support/assignment-denial.ts';
+import type { AssignmentFunctionStore } from './support/assignment-function-store.ts';
 export { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
 export { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
-interface AssignmentFunctionStore extends CapacityGovernanceDatabase {
-  getProject(projectId: string): Promise<JsonRecord | null>;
-  getTeam(teamId: string): Promise<JsonRecord | null>;
-  listHubRepositories(projectId: string): Promise<JsonRecord[]>;
-  getProjectArchitecture(projectId: string): Promise<JsonRecord | null>;
-  getProviderAssignment(
-    teamId: string,
-    assignmentId: string,
-  ): Promise<DurableProviderAssignment | null>;
-  createCapacityWorkdayTreeDxWorkspace(
-    project: { id: string },
-    run: DurableCapacityWorkdayRun,
-    input: ConfiguredWorkspaceInput,
-  ): Promise<JsonRecord>;
-}
 async function assignmentInput(
 	store: AssignmentFunctionStore,
   demand: Awaited<ReturnType<CapacityWorkdayDemandRepository["claimNext"]>>,
@@ -89,6 +74,15 @@ async function assignmentInput(
     409,
     { demandId: demand.id, projectId: demand.projectId },
   );
+	const teamLibraryProject=await store.getProjectByTeamAndSlug(demand.teamId,'team');
+	if(!teamLibraryProject)throw new CapacityGovernanceError('capacity_team_library_missing','The managed Team Library project is unavailable.',409,{teamId:demand.teamId});
+	const teamLibraryProvisioning=record(record(teamLibraryProject.metadata).provisioning);
+	if(text(teamLibraryProvisioning.state)!=='known-good')throw new CapacityGovernanceError('capacity_team_library_not_ready','The managed Team Library has not reached a verified known-good state.',409,{teamId:demand.teamId,projectId:teamLibraryProject.id,state:text(teamLibraryProvisioning.state)||'unknown'});
+	const teamLibraryBinding=await store.getProjectTreeDxLibrary(text(teamLibraryProject.id));
+	const teamLibraryRepositoryId=text(teamLibraryBinding?.repositoryId,record(record(record(teamLibraryBinding?.topology).contentRepository).treeDx).repositoryId);
+	const teamLibraryRef=text(record(teamLibraryBinding?.metadata).resolvedRef,teamLibraryBinding?.contentRepositoryRef);
+	if(!teamLibraryRepositoryId||!teamLibraryRef)throw new CapacityGovernanceError('capacity_team_library_not_ready','The managed Team Library has no verified current TreeDX view.',409,{teamId:demand.teamId,projectId:teamLibraryProject.id});
+	const sameTeamReadRepositories=await resolveCrossProjectReadRepositories({store,teamId:demand.teamId,projectId:demand.projectId,teamLibraryProject,payload,now:new Date(now)});
   const planning = demand.mode === "planning";
 	const contentPrefix = contentRoot === '.' ? '' : `${contentRoot.replace(/\/+$/u, '')}/`;
 	const projectSlug = text(project.slug) || demand.projectId;
@@ -96,7 +90,6 @@ async function assignmentInput(
 	const coreObjectiveCandidates = [`${coreObjectivePath}.mdx`, `${coreObjectivePath}.md`];
 	const projectReadmePath = `${contentPrefix}README.md`;
 	const identityAnchorPaths = [...coreObjectiveCandidates, projectReadmePath];
-	// The admitted demand freezes the selected profile; intent cannot decide authority.
 	const activityType=demand.activityType;
 	const executionMode = demand.metadata.executionMode === 'production' ? 'production' as const : 'simulation' as const;
   const requiredCapabilities = Array.isArray(demand.metadata.requiredCapabilities)
@@ -160,7 +153,7 @@ async function assignmentInput(
 		startedAt: null,
 		minimumDeadlineAt: null,
 	} : null;
-  const taskReadPaths = resolveAssignmentContentPathScope(payload, 'read', contentRoot, ["**"]);
+  const taskReadPaths = resolveAssignmentContentPathScope(payload, 'read', contentRoot, executionKind === 'conversation' ? [] : ["**"]);
   const sourceMessageRefs = [...new Set([
 	text(payload.discussionMessageId), text(payload.subjectPath),
 	...(Array.isArray(payload.operationHandoffSourceMessageRefs) ? payload.operationHandoffSourceMessageRefs.map(String) : []),
@@ -176,7 +169,8 @@ async function assignmentInput(
   const bootstrapReadPaths = assignmentBootstrapReadPaths(contentRoot, payload.agentContentPath, intent.subjectPath);
   const contextQueryReadPaths = assignmentContextQueryReadPaths(contentRoot, payload.contextQueryRefs, payload.contextQueryChecks);
   const instructionTemplateReadPaths = assignmentInstructionTemplateReadPaths(contentRoot, payload.instructionTemplateRefs);
-  const allowedReadPaths = mergeAssignmentPathScopes(taskReadPaths, discussionMessageReadPaths, bootstrapReadPaths, identityAnchorPaths, contextQueryReadPaths, instructionTemplateReadPaths, operationalPaths);
+  const allowedReadPaths = mergeAssignmentPathScopes(taskReadPaths, discussionMessageReadPaths, bootstrapReadPaths, identityAnchorPaths,
+	[`${contentPrefix}agents/**`,`${contentPrefix}objectives/**`],contextQueryReadPaths, instructionTemplateReadPaths, operationalPaths);
   const allowedWritePaths = mergeAssignmentPathScopes(taskWritePaths, operationalPaths);
   const workspaceAllowedPaths = mergeAssignmentPathScopes(allowedReadPaths, allowedWritePaths);
   const workspaceId = workdayTreeDxWorkspaceId(id);
@@ -186,6 +180,8 @@ async function assignmentInput(
   const treedxProxyHandle = assignmentTreeDxProxyHandle({ assignmentId: id, teamId: demand.teamId, projectId: demand.projectId,
 	executionMode, repositoryId, workspaceId, allowedPaths: workspaceAllowedPaths, allowedReadPaths, allowedWritePaths,
 	expiresAt: authorityExpiresAt, demandId: demand.id, workdayRunId: demand.workdayRunId });
+	treedxProxyHandle.readRepositories=sameTeamReadRepositories;
+	treedxProxyHandle.metadata={...record(treedxProxyHandle.metadata),readRepositories:treedxProxyHandle.readRepositories};
   const capacityBudget = timing.capacityBudget;
   const capacityEnvelope = {
     ...record(payload.capacityEnvelope),
@@ -202,7 +198,6 @@ async function assignmentInput(
 		requestedSeconds: demand.requestedSeconds,
 		reservedSeconds: demand.requestedSeconds,
 		activeSeconds: 0,
-		elapsedSeconds: 0,
 		releasedSeconds: 0,
 		overrunSeconds: 0,
     budget: capacityBudget,
@@ -259,6 +254,7 @@ async function assignmentInput(
     providerSessionId: sessionId,
     executionProviderId: executionProvider.id,
 	 offerId: selectedOffer?.offerId ?? null,
+	 contextCapacity: selectedOffer?.contextCapacity ?? null,
 	 capabilityDemand,
 	 capabilityNegotiation: negotiationReceipt,
 	 laneId: lane.id,
@@ -317,6 +313,7 @@ async function assignmentInput(
     metadata: {
       demandId: demand.id,
 	  offerId: selectedOffer?.offerId ?? null,
+	  contextCapacity: selectedOffer?.contextCapacity ?? null,
 	  capabilityDemand,
 	  capabilityNegotiation: negotiationReceipt,
 	  executionMode,
@@ -324,14 +321,22 @@ async function assignmentInput(
 	  activityType: demand.activityType,
 	  executionPolicy: record(payload.executionPolicy),
 	  chatProfile: record(payload.chatProfile),
+	  permissions: record(payload.permissions),
+	  toolPolicy: record(payload.toolPolicy),
+	  contextQueryRefs: Array.isArray(payload.contextQueryRefs) ? payload.contextQueryRefs : [],
+	  contextQueryChecks: Array.isArray(payload.contextQueryChecks) ? payload.contextQueryChecks : [],
+	  contextQueryLayers: record(payload.contextQueryLayers),
+	  communication: record(demand.metadata.communication),
 	  identityManifest: executionKind === 'conversation' ? {
 		  schemaVersion: 'treeseed.agent-identity-manifest/v1',
 		  agentHandle: `@${projectSlug}/${text(demand.agentId)}`,
 		  teamId: demand.teamId, projectId: demand.projectId, projectSlug,
 		  agentSlug: text(demand.agentId), repositoryId, immutableRef: contentBaseRef,
 		  agentProfile: { path: text(payload.agentContentPath), expectedRevision: contentBaseRef },
-		  coreObjective: { path: coreObjectivePath, candidates: coreObjectiveCandidates, expectedRevision: contentBaseRef },
+		  coreObjective: { path: coreObjectivePath, expectedRevision: contentBaseRef },
 		  projectReadme: { path: projectReadmePath, expectedRevision: contentBaseRef },
+		  teamLibrary: { projectId:text(teamLibraryProject.id),projectSlug:'team',repositoryId:teamLibraryRepositoryId,immutableRef:teamLibraryRef,
+			readme:{path:'README.md',expectedRevision:teamLibraryRef},coreObjective:{path:'objectives/core',expectedRevision:teamLibraryRef} },
 		  instructionTemplates: instructionTemplateReadPaths.map((path) => ({ path, expectedRevision: contentBaseRef })),
 	  } : {},
 	  contextManifest: allowedReadPaths.map((path) => ({ path, immutableRef: contentBaseRef, access: 'read' })),

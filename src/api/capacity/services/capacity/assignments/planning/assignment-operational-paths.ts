@@ -83,8 +83,8 @@ export function assignmentTreeDxProxyHandle(input: {
 	return {
 		id: `tdx_${input.assignmentId}`, teamId: input.teamId, projectId: input.projectId, assignmentId: input.assignmentId,
 		executionMode: input.executionMode, repositoryId: input.repositoryId, workspaceId: input.workspaceId, status: 'provisioning',
-		scopes: ['project:read', 'project:write', 'workspace:read', 'workspace:write', 'files:read', 'files:search', 'files:write', 'git:commit'],
-		allowedOperations: ['files:read', 'files:search', 'files:write', 'git:commit', 'workspace:write'],
+		scopes: ['project:read', 'project:write', 'workspace:read', 'workspace:write', 'files:read', 'files:search', 'graph:query', 'files:write', 'git:commit'],
+		allowedOperations: ['files:read', 'files:search', 'graph:query', 'files:write', 'git:commit', 'workspace:write'],
 		allowedPaths: input.allowedPaths, allowedReadPaths: input.allowedReadPaths, allowedWritePaths: input.allowedWritePaths,
 		expiresAt: input.expiresAt,
 		metadata: { source: 'workday-demand', demandId: input.demandId, workdayRunId: input.workdayRunId,

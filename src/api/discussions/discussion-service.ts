@@ -137,9 +137,9 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					'The explicit parent assignment does not exist in this team and project.');
 				const waitingMessageId = text(record(parentAssignment?.metadata_json).waitingMessageId);
 				const continuationHistory = parentAssignment ? await loadDiscussions({ store, projectId, discussionId,
-					query: waitingMessageId || undefined, collection: 'messages', limit: 10 }) : { messages: [] };
+					exactMessageIds: waitingMessageId ? [waitingMessageId] : [], collection: 'messages', limit: 10 }) : { messages: [] };
 				const continuation = continuationEvidence(parentAssignment, discussionId, continuationHistory.messages);
-				const history = await loadDiscussions({ store, projectId, discussionId, query: messageId, collection: 'messages' }).catch(() => ({ messages: [] }));
+				const history = await loadDiscussions({ store, projectId, discussionId, exactMessageIds: [messageId], collection: 'messages' }).catch(() => ({ messages: [] }));
 				const replay = history.messages.find((entry: any) => text(entry.id) === messageId);
 				if (replay) {
 					if (text(replay.body) !== messageBody) throw new DiscussionServiceError(409, 'discussion_idempotency_conflict',
@@ -163,7 +163,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 				}
 				contextRefs = await validateDiscussionContextRefs({ store, projectId, teamId, values: body.contextRefs });
 				const existing = text(body.discussionId) ? await loadDiscussions({ store, projectId, discussionId,
-					collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] })) : { discussions: [] };
+					includeDiscussion: true, collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] })) : { discussions: [] };
 				authored = await commitDiscussionMessage({ store, projectId, teamId, principal, body: messageBody,
 					intent: body.intent === 'propose' ? 'propose' : 'discuss', discussionId, messageId,
 					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
@@ -173,7 +173,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					replyTo: text(body.replyTo) || undefined, ...(continuation ?? {}) });
 			} catch (error) { failure(error, 503, 'discussion_content_unavailable'); }
 			const observed = await loadDiscussions({ store, projectId, discussionId: authored.discussion.id,
-				query: authored.message.id, collection: 'messages' });
+				exactPaths: [authored.message.path], collection: 'messages' });
 			const observedMessage = observed.messages.find((entry: any) => text(entry.path) === authored.message.path);
 			if (!observedMessage || text(observedMessage.body) !== messageBody) throw new DiscussionServiceError(503,
 				'discussion_readback_failed', 'TreeDX did not authoritatively return the committed Discussion message.');

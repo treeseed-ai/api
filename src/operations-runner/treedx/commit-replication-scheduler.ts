@@ -24,25 +24,31 @@ export class TreeDxCommitReplicationScheduler {
 			WHERE repository_id IS NOT NULL ORDER BY project_id`);
 		let discovered = 0;
 		for (const library of libraries) {
-			const connection = await resolveKnowledgeGatewayConnection(this.store, { projectId: library.project_id, write: false });
-			if (!connection) continue;
-			const response = await connection.client.upstream.repositories.refs(connection.repositoryId);
-			const candidates = refs(response).filter((ref: any) => String(ref.name ?? '').startsWith('refs/heads/')
-				|| String(ref.name ?? '').startsWith('refs/treedx/commits/') || String(ref.name ?? '') === this.canonicalRemoteRef);
-			const byCommit = new Map<string, string>();
-			for (const ref of candidates) {
-				const commitSha = String(ref.target ?? ref.sha ?? '');
-				if (!/^[a-f0-9]{40}$/u.test(commitSha)) continue;
-				const name = String(ref.name);
-				const current = byCommit.get(commitSha);
-				const rank = (value: string) => value === this.canonicalRef ? 0 : value === this.canonicalRemoteRef ? 1
-					: value.startsWith('refs/heads/') ? 2 : 3;
-				if (!current || rank(name) < rank(current)) byCommit.set(commitSha, name);
-			}
-			for (const [commitSha, sourceRef] of byCommit) {
-				await enqueueTreeDxCommitReplication(this.store, { teamId: library.team_id, projectId: library.project_id,
-					commitSha, sourceRef, createdAt: now });
-				discovered += 1;
+			try {
+				const connection = await resolveKnowledgeGatewayConnection(this.store, { projectId: library.project_id, write: false });
+				if (!connection) continue;
+				const response = await connection.client.upstream.repositories.refs(connection.repositoryId);
+				const candidates = refs(response).filter((ref: any) => String(ref.name ?? '').startsWith('refs/heads/')
+					|| String(ref.name ?? '').startsWith('refs/treedx/commits/') || String(ref.name ?? '') === this.canonicalRemoteRef);
+				const byCommit = new Map<string, string>();
+				for (const ref of candidates) {
+					const commitSha = String(ref.target ?? ref.sha ?? '');
+					if (!/^[a-f0-9]{40}$/u.test(commitSha)) continue;
+					const name = String(ref.name);
+					const current = byCommit.get(commitSha);
+					const rank = (value: string) => value === this.canonicalRef ? 0 : value === this.canonicalRemoteRef ? 1
+						: value.startsWith('refs/heads/') ? 2 : 3;
+					if (!current || rank(name) < rank(current)) byCommit.set(commitSha, name);
+				}
+				for (const [commitSha, sourceRef] of byCommit) {
+					await enqueueTreeDxCommitReplication(this.store, { teamId: library.team_id, projectId: library.project_id,
+						commitSha, sourceRef, createdAt: now });
+					discovered += 1;
+				}
+			} catch {
+				// One stale or unavailable binding must not prevent canonical mirrors
+				// for every other team/project from being discovered and queued.
+				continue;
 			}
 		}
 		return discovered;

@@ -15,6 +15,7 @@ export type CapacityWorkdayAgent = {
 	contentPath: string | null;
 	contextQueryRefs:Array<{id:string;revision:number}>;
 	contextQuerySetRefs:Array<{id:string;revision:number}>;
+	contextQueryLayers:ProjectAgentActivityRef['contextQueryLayers'];
 	instructionTemplateRefs:Array<{id:string;revision:number}>;
 	sourceImmutableRef: string | null;
 	handler: EngineeringHandlerKind;
@@ -192,6 +193,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 				contentPath: selectedActivity.contentPath,
 				contextQueryRefs:selectedActivity.contextQueryRefs,
 				contextQuerySetRefs:selectedActivity.contextQuerySetRefs,
+				contextQueryLayers:selectedActivity.contextQueryLayers,
 				instructionTemplateRefs:selectedActivity.instructionTemplateRefs,
 				sourceImmutableRef: text(metadata.immutableRef) || null,
 				handler: configuredHandler,

@@ -30,17 +30,20 @@ export class TreeDxInfrastructureClient {
 	commit(input: Input) { const { workspaceId, ...body } = input; return this.upstream.files.commit(String(workspaceId), body) as Promise<any>; }
 
 	getRepository(repoId: string) { return this.upstream.repositories.get(repoId) as Promise<any>; }
-	push(input: Input) { const { repoId, ...body } = input; return this.upstream.repositories.push(String(repoId), body) as Promise<any>; }
-	fetchRemote(input: Input) { const { repoId, ...body } = input; return this.upstream.repositories.sync(String(repoId), body) as Promise<any>; }
-	promoteRef(input: Input) {
+	async listRepositoryRefs(repoId: string) { const result: any = await this.upstream.repositories.refs(repoId); return result?.refs ?? result; }
+	async push(input: Input) { const { repoId, ...body } = input; const result: any = await this.upstream.repositories.push(String(repoId), body); return result?.push ?? result; }
+	async fetchRemote(input: Input) { const { repoId, ...body } = input; const result: any = await this.upstream.repositories.sync(String(repoId), body); return result?.fetch ?? result?.sync ?? result; }
+	async promoteRef(input: Input) {
 		const { repoId, ...body } = input;
 		const operation = requireTreeDxOperation('promoteRepositoryRef');
-		return this.upstream.operation<any>(operation.method, operation.path, { pathParams: { repo_id: repoId }, body });
+		const result = await this.upstream.operation<any>(operation.method, operation.path, { pathParams: { repo_id: repoId }, body });
+		return result?.promotion ?? result;
 	}
-	retireRef(input: Input) {
+	async retireRef(input: Input) {
 		const { repoId, ...body } = input;
 		const operation = requireTreeDxOperation('retireRepositoryRef');
-		return this.upstream.operation<any>(operation.method, operation.path, { pathParams: { repo_id: repoId }, body });
+		const result = await this.upstream.operation<any>(operation.method, operation.path, { pathParams: { repo_id: repoId }, body });
+		return result?.retirement ?? result;
 	}
 	getPlacement(repoId: string) { return this.upstream.registry.getPlacement(repoId) as Promise<any>; }
 

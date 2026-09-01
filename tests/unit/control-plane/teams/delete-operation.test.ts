@@ -8,13 +8,16 @@ function dependencies(prepared: Record<string, unknown>) {
 		? { id: 'grant-1', expires_at: '2099-01-01T00:00:00Z' } : null);
 	const batch = vi.fn(async () => undefined);
 	const prepareTeamDeletion = vi.fn(async () => prepared);
+	const deleteManagedTeamLibraryResources = vi.fn(async () => ({ schemaVersion: 'treeseed.team-library-deletion-receipt/v1' }));
 	return { first, batch, prepareTeamDeletion, value: { store: {
 		async getTeam() { return { id: 'team-1', name: 'tree-team', status: 'archived', lifecycleVersion: 4 }; },
+		async getProjectByTeamAndSlug() { return { id: 'team-library-project', metadata: { kind: 'system-team-library', systemManaged: true } }; },
+		async getProjectTreeDxLibrary() { return { repositoryId: 'repo-team-library' }; },
 		async principalCanAccessTeam() { return true; },
 		async resolvePrincipalTeamContext() { return { roles: ['team_owner'] }; },
 		first, run: vi.fn(async () => undefined), all: vi.fn(async () => []), batch, prepareTeamDeletion,
 		listTeamMembers: vi.fn(async () => []), recordAuditEvent: vi.fn(async () => undefined),
-	} } as any };
+	}, treeDxProxy: { invoke: vi.fn(async () => ({ retired: true })) }, deleteManagedTeamLibraryResources } as any };
 }
 
 describe('team deletion catalog operation', () => {
@@ -31,7 +34,8 @@ describe('team deletion catalog operation', () => {
 		const fixture = dependencies({ ok: true, team: { id: 'team-1' } });
 		await expect(createTeamDeleteOperation(fixture.value).handler({ path: { teamId: 'team-1' }, query: {}, body: {
 			confirmation: 'DELETE tree-team', reauthenticationGrantId: 'grant-1',
-		} }, context)).resolves.toEqual({ ok: true, deleted: true, teamId: 'team-1' });
+		} }, context)).resolves.toEqual(expect.objectContaining({ ok: true, deleted: true, teamId: 'team-1',
+			receipt: expect.objectContaining({ schemaVersion: 'treeseed.team-deletion-receipt/v1' }) }));
 		expect(fixture.prepareTeamDeletion).toHaveBeenCalledTimes(2);
 		expect(fixture.batch).toHaveBeenCalledOnce();
 	});

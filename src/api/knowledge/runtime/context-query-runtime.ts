@@ -37,6 +37,8 @@ function unpack(value: unknown) {
 
 function resultFacts(value: unknown) {
 	const pack = unpack(value); const nodes = Array.isArray(pack.nodes) ? pack.nodes.map(record) : []; const edges = Array.isArray(pack.edges) ? pack.edges.map(record) : [];
+	const directSources=Array.isArray(pack.sources)?pack.sources.map(record):[];
+	const memberSources=Array.isArray(pack.memberResults)?pack.memberResults.flatMap((member)=>{const value=unpack(member);return Array.isArray(value.sources)?value.sources.map(record):[];}):[];
 	const serialized = JSON.stringify({ nodes, edges });
 	const identities = [...new Set(nodes.flatMap((node) => {
 		const data = record(node.data); const frontmatter = record(data.frontmatter);
@@ -46,7 +48,8 @@ function resultFacts(value: unknown) {
 	const paths = [...new Set(nodes.map((node) => node.path).filter((entry): entry is string => typeof entry === 'string'))].sort();
 	const schemaVersions = [...new Set(nodes.map((node) => record(record(node.data).frontmatter).schemaVersion).filter((entry): entry is string => typeof entry === 'string'))].sort();
 	const reportedTokens = typeof pack.totalTokenEstimate === 'number' ? pack.totalTokenEstimate : null;
-	return { itemCount: nodes.length, bytes: new TextEncoder().encode(serialized).byteLength, estimatedTokens: reportedTokens ?? Math.ceil(serialized.length / 4), reportedTokens, identities, relations, paths, schemaVersions };
+	return { itemCount: nodes.length, bytes: new TextEncoder().encode(serialized).byteLength, estimatedTokens: reportedTokens ?? Math.ceil(serialized.length / 4), reportedTokens, identities, relations, paths, schemaVersions,
+		sources:[...directSources,...memberSources].map((source)=>({projectId:String(source.projectId??''),source:String(source.source??''),ref:String(source.ref??''),paths:Array.isArray(source.paths)?source.paths.map(String):[]})).filter((source)=>source.projectId) };
 }
 
 function assertions(test: ContextQueryTestDefinition, stats: ReturnType<typeof resultFacts>, latencyMs: number): Assertion[] {

@@ -121,6 +121,7 @@ export function createProjectCreateOperation(dependencies: ProjectOperationDepen
 			const slug = String(body.slug ?? '').trim();
 			const name = String(body.name ?? '').trim();
 			if (!slug || !name) throw new ControlPlaneOperationError(400, 'project_input_invalid', 'Project slug and name are required.');
+			if (slug === 'team') throw new ControlPlaneOperationError(409,'system_project_reserved','The team project is created and managed automatically.');
 			try {
 				return await dependencies.store.createProject(input.path.teamId, {
 					...(typeof body.id === 'string' ? { id: body.id } : {}), slug, name,
@@ -149,6 +150,7 @@ export function createProjectUpdateOperation(dependencies: ProjectOperationDepen
 		binding: CONTROL_PLANE_OPERATIONS.projects.update,
 		async handler(input, context) {
 			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			if(access.details.project.metadata?.kind==='system-team-library')throw new ControlPlaneOperationError(409,'system_project_managed','The Team Library cannot be renamed, transferred, archived, or edited as a normal project.');
 			const currentRevision = String(access.details.project.updatedAt ?? '');
 			if (currentRevision !== context.ifMatch) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed since it was read.');
 			const body = input.body as Record<string, unknown>;
@@ -177,6 +179,7 @@ function projectInventoryOperation(
 		binding,
 		async handler(input, context) {
 			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			if(access.details.project.metadata?.kind==='system-team-library')throw new ControlPlaneOperationError(409,'system_project_managed','The Team Library lifecycle is bound to its team.');
 			if (status === 'archived') {
 				const blockers = await dependencies.capacity.evaluateProjectDeletionBlockers(input.path.projectId);
 				if (blockers.length) throw new ControlPlaneOperationError(409, 'project_blocked', 'The project still has active work and cannot be archived.');
@@ -214,6 +217,7 @@ export function createProjectDeleteOperation(dependencies: ProjectOperationDepen
 		binding: CONTROL_PLANE_OPERATIONS.projects.remove,
 		async handler(input, context) {
 			const access = await projectManageAccess(dependencies, input.path.projectId, context);
+			if(access.details.project.metadata?.kind==='system-team-library')throw new ControlPlaneOperationError(409,'system_project_managed','The Team Library is deleted only with its owning team.');
 			const currentRevision = String(access.details.project.updatedAt ?? '');
 			if (currentRevision !== context.ifMatch) throw new ControlPlaneOperationError(412, 'project_revision_changed', 'The project changed since it was read.');
 			const expected = `DELETE ${access.details.project.slug}`;

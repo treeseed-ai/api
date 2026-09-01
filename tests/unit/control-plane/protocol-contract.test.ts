@@ -40,7 +40,7 @@ describe('control-plane protocol contract', () => {
 		async listTeamProjects() { return []; },
 		async listTeamsForPrincipal() { return []; },
 		async loadTeamProfileByName() { return null; },
-		async getTeam(teamId: string) { return { id: teamId, name: 'TreeSeed', status: 'active', lifecycleVersion: 1, updatedAt: 'revision-1' }; },
+		async getTeam(teamId: string) { return teamId==='team-new'?{id:teamId,name:'treeseed-labs',displayName:'treeseed-labs',ownerUserId:'user_1',status:'active'}:{ id: teamId, name: 'TreeSeed', status: 'active', lifecycleVersion: 1, updatedAt: 'revision-1' }; },
 		async principalCanAccessTeam() { return true; },
 		async getTeamAccessSummary(teamId: string) { return { teamId, roles: ['project_lead'] }; },
 		async resolvePrincipalTeamContext() { return { roles: ['project_lead'] }; },
@@ -72,6 +72,7 @@ describe('control-plane protocol contract', () => {
 		...overrides,
 	});
 	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides), treeDxProxy: { async invoke() { throw new Error('Unexpected TreeDX proxy invocation.'); } }, capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
+		async reconcileManagedTeamLibrary(teamId:string) { return {teamId,state:'known-good'}; },
 		accountEmails: { async add() { return { ok: true }; }, async verify() { return { ok: true }; }, async makePrimary() { return { ok: true }; }, async remove() { return { ok: true, items: [] }; } } });
 	const confirmationService = () => {
 		const consumed = new Set<string>();

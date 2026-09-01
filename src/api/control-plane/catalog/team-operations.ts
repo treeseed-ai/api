@@ -31,8 +31,13 @@ export interface TeamOperationDependencies {
 		leaveTeam(teamId: string, userId: string): Promise<Record<string, any>>;
 		prepareTeamDeletion(teamId: string, confirmation: string): Promise<Record<string, any>>;
 		recordAuditEvent(event: Record<string, unknown>): Promise<unknown>;
+		getProjectByTeamAndSlug(teamId:string,slug:string):Promise<Record<string,any>|null>;
+		getProjectTreeDxLibrary(projectId:string):Promise<Record<string,any>|null>;
 	};
 	deliverTeamInvite(input: { invite: Record<string, any>; team: Record<string, unknown>; token: string }): Promise<void>;
+	reconcileManagedTeamLibrary(teamId:string):Promise<Record<string,unknown>>;
+	deleteManagedTeamLibraryResources(input:{teamId:string;project:Record<string,any>}):Promise<Record<string,unknown>>;
+	treeDxProxy:{invoke(descriptor:unknown,input:Record<string,unknown>,context:Record<string,unknown>):Promise<unknown>};
 }
 
 function authenticatedPrincipal(context: { principal?: Record<string, any> }) {
@@ -211,8 +216,10 @@ export function createTeamCreateOperation(dependencies: TeamOperationDependencie
 					logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : null,
 					profileSummary: typeof body.profileSummary === 'string' ? body.profileSummary : typeof body.description === 'string' ? body.description : null,
 					metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {}, ownerUserId: principal.id });
+				await dependencies.reconcileManagedTeamLibrary(String(team.id));
+				const readyTeam=await dependencies.store.getTeam(String(team.id));
 				await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: principal.id, eventType: 'team.created', targetType: 'team', targetId: team.id, data: { name: team.name } });
-				return team;
+				return readyTeam??team;
 			} catch (error) {
 				const message = error instanceof Error ? error.message : 'The team could not be created.';
 				const conflict = /already taken|already used/u.test(message);
@@ -432,10 +439,20 @@ export function createTeamDeleteOperation(dependencies: TeamOperationDependencie
 			throw new ControlPlaneOperationError(409, 'stale', 'The team changed before deletion could be authorized.');
 		if (!await consumeReauthentication(dependencies.store, access.principal, 'team_delete', body))
 			throw new ControlPlaneOperationError(401, 'reauthentication_required', 'Current credentials were not accepted.');
+		const teamLibrary=await dependencies.store.getProjectByTeamAndSlug(input.path.teamId,'team');
+		if(!teamLibrary||teamLibrary.metadata?.kind!=='system-team-library')
+			throw new ControlPlaneOperationError(409,'team_library_missing','The protected Team Library must be present before team deletion can complete.');
+		const library=await dependencies.store.getProjectTreeDxLibrary(String(teamLibrary.id));
+		let treeDx:unknown=null;
+		if(library?.repositoryId)treeDx=await dependencies.treeDxProxy.invoke(
+			CONTROL_PLANE_OPERATIONS.treedx.repositories.retire.descriptor,
+			{path:{projectId:String(teamLibrary.id),repoId:String(library.repositoryId)},query:{},body:{}},context as Record<string,unknown>);
+		const resources=await dependencies.deleteManagedTeamLibraryResources({teamId:input.path.teamId,project:teamLibrary});
 		const result = await deleteTeamCapacityAggregate(dependencies.store as any, input.path.teamId, String(body.confirmation ?? ''));
 		if (!result.ok) teamMutationFailure(result, 'team_delete_failed', 'The team could not be deleted.');
 		await dependencies.store.recordAuditEvent({ actorType: 'user', actorId: access.principal.id,
 			eventType: 'team.deleted', targetType: 'team', targetId: input.path.teamId });
-		return { ok: true, deleted: true, teamId: input.path.teamId };
+		return { ok: true, deleted: true, teamId: input.path.teamId,
+			receipt:{schemaVersion:'treeseed.team-deletion-receipt/v1',teamId:input.path.teamId,treeDx,resources,providerIds:result.providerIds??[],completedAt:new Date().toISOString()} };
 	} };
 }

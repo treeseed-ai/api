@@ -22,8 +22,9 @@ export async function resolveWorkdayTreeDxConnection(
 ) {
 	const library = await store.getProjectTreeDxLibrary(input.projectId);
 	const treeDx = record(record(record(library?.topology).contentRepository).treeDx);
-	const baseUrl = text(treeDx.baseUrl, treeDx.registryUrl, store.config.TREESEED_TREEDX_URL, store.config.TREESEED_TREEDX_BASE_URL,
-		store.config.treedxBaseUrl, process.env.TREESEED_TREEDX_URL, process.env.TREESEED_TREEDX_BASE_URL) || 'http://127.0.0.1:4000';
+	const baseUrl = text(process.env.TREESEED_TREEDX_URL, process.env.TREESEED_TREEDX_BASE_URL,
+		store.config.TREESEED_TREEDX_URL, store.config.TREESEED_TREEDX_BASE_URL, store.config.treedxBaseUrl,
+		treeDx.baseUrl, treeDx.registryUrl) || 'http://127.0.0.1:4000';
 	const repositoryId = text(input.repositoryId, library?.repositoryId, treeDx.repositoryId);
 	if (!repositoryId) return null;
 	const token = treeDxDelegationAuthority().mint({

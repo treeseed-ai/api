@@ -37,6 +37,11 @@ function record(value: unknown): Row {
 }
 
 function text(value: unknown, fallback = '') { return typeof value === 'string' && value.trim() ? value.trim() : fallback; }
+function strings(value: unknown): string[] {
+	if (Array.isArray(value)) return value.map(String).map((entry) => entry.trim()).filter(Boolean);
+	if (typeof value === 'string') try { return strings(JSON.parse(value)); } catch { return []; }
+	return [];
+}
 function timestamp(value: unknown, fallback = '') {
 	if (value instanceof Date) return value.toISOString();
 	const candidate = text(value);
@@ -201,7 +206,11 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			const invocation = invocations.find((row: Row) => text(row.project_id) === projectId)!;
 			const metadata = record(invocation.metadata_json); const communication = record(metadata.communication);
 			const discussionId = text(metadata.discussionId); const details = await contentStore.getProjectDetails(projectId);
-			const history = await loadDiscussions({ store: contentStore, projectId, discussionId, collection: 'messages', limit: 200 });
+			const exactPaths = [...new Set(invocations.filter((row: Row) => text(row.project_id) === projectId).flatMap((row: Row) => [
+				strings(row.content_refs_json)[0], text(row.final_message_ref),
+			]).filter(Boolean))];
+			const history = await loadDiscussions({ store: contentStore, projectId, discussionId,
+				exactPaths, collection: 'messages', limit: Math.max(1, exactPaths.length) });
 			const messages = history.messages as Row[]; const sourceMessageId = text(metadata.sourceMessageId);
 			const topic = await store.first('SELECT id,slug FROM communication_discussion_topics WHERE id=? AND team_id=? LIMIT 1', [text(communication.topicId), teamId]);
 			const stream = await store.first('SELECT id,project_id FROM communication_discussion_streams WHERE id=? AND team_id=? LIMIT 1', [text(communication.streamId), teamId]);
@@ -209,30 +218,32 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			projects.set(projectId, { slug: text(details?.project?.slug, projectId), discussionId, messages,
 				source: messages.find((message) => text(message.id) === sourceMessageId), topic, stream });
 		}
+		const first = projects.get(projectIds[0]!)!;
+		const eventRows = await store.all('SELECT * FROM communication_topic_events WHERE team_id=? AND topic_id=? AND send_id=? ORDER BY sequence', [teamId, first.topic.id, sendId]);
 		const responses = invocations.flatMap((invocation: Row) => {
 			const path = text(invocation.final_message_ref);
 			const message = projects.get(text(invocation.project_id))?.messages.find((candidate) => text(candidate.path) === path);
-			if (!message) return [];
-			const frontmatter = record(message.frontmatter);
+			const projected = eventRows.find((candidate: Row) => text(candidate.invocation_id) === text(invocation.id)
+				&& text(candidate.event_type) === 'agent.response' && text(record(candidate.payload_json).messageRef) === path);
+			if (!message && !projected) return [];
+			const frontmatter = record(message?.frontmatter), projectedPayload = record(projected?.payload_json);
 			const outcome = text(record(invocation.response_json).outcome, 'responded');
 			return [{ projectId: text(invocation.project_id), projectSlug: projects.get(text(invocation.project_id))?.slug ?? text(invocation.project_id),
 				agentSlug: text(invocation.agent_id), invocationId: text(invocation.id),
-				assignmentId: text(invocation.assignment_id) || null, messageRef: path, markdown: text(message.body), status: 'responded',
+				assignmentId: text(invocation.assignment_id) || null, messageRef: path, markdown: text(message?.body, text(projectedPayload.markdown)), status: 'responded',
 				requirement: text(record(record(invocation.metadata_json).communication).requirement, 'required'),
 				...(outcome === 'abstained' ? { status: 'abstained' } : {}),
-				createdAt: text(frontmatter.createdAt, timestamp(invocation.completed_at, new Date().toISOString())) }];
+				createdAt: text(frontmatter.createdAt, timestamp(projected?.occurred_at, timestamp(invocation.completed_at, new Date().toISOString()))) }];
 		});
 		const statuses = invocations.map((row: Row) => text(row.status));
 		const finished = statuses.filter((status: string) => ['completed', 'suspended', 'failed', 'cancelled'].includes(status)).length;
 		const status = finished === invocations.length
 			? responses.length === invocations.length ? 'complete' : responses.length ? 'partial' : 'failed'
 			: statuses.some((value: string) => ['admitted', 'running'].includes(value)) ? 'running' : 'queued';
-		const first = projects.get(projectIds[0]!)!;
 		const targetStatus = (row: Row) => text(record(row.response_json).outcome) === 'abstained' ? 'abstained'
 			: text(row.final_message_ref) || text(row.status) === 'suspended' ? 'responded'
 			: text(row.status) === 'failed' ? 'failed' : text(row.status) === 'cancelled' ? 'cancelled'
 				: ['admitted', 'running'].includes(text(row.status)) ? 'running' : 'queued';
-		const eventRows = await store.all('SELECT * FROM communication_topic_events WHERE team_id=? AND topic_id=? AND send_id=? ORDER BY sequence', [teamId, first.topic.id, sendId]);
 		const targets = await Promise.all(invocations.map(async (row: Row) => { const assignment = assignmentByInvocation.get(text(row.id)) ?? {}; return ({ projectId: text(row.project_id), projectSlug: projects.get(text(row.project_id))?.slug ?? text(row.project_id),
 			agentSlug: text(row.agent_id), definitionRevision: text(row.agent_revision), revisions: {
 				project: text(record(record(row.metadata_json).revisions).project, text(record(row.metadata_json).sourceCommit, text(row.agent_revision))),
@@ -252,7 +263,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			channel: text(first.topic.slug), topic: { id: text(first.topic.id), slug: text(first.topic.slug) },
 			projectStreams: projectIds.map((projectId) => { const project = projects.get(projectId)!; return {
 				id: text(project.stream.id), projectId, projectSlug: project.slug, discussionId: project.discussionId,
-				messageRef: text(project.source?.path),
+				messageRef: text(project.source?.path, strings(invocations.find((row: Row) => text(row.project_id) === projectId)?.content_refs_json)[0]),
 			}; }), status,
 			targets, responses, events: eventRows.map((row: Row) => eventRow(row, text(first.topic.slug))), createdAt: timestamp(invocations[0]?.requested_at, new Date().toISOString()),
 			updatedAt: timestamp(invocations.at(-1)?.updated_at, timestamp(invocations[0]?.requested_at, new Date().toISOString())), replayed };

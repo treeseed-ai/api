@@ -30,6 +30,13 @@ export function projectLibraryPath(root: string, ...parts: string[]): string {
 	return [normalizedRoot === '.' ? '' : normalizedRoot, ...normalizedParts].filter(Boolean).join('/');
 }
 
+export function canonicalTreeDxBranchRef(value: unknown): string {
+	const branch = text(value, 'staging')
+		.replace(/^refs\/heads\//u, '')
+		.replace(/^refs\/remotes\/origin\//u, '');
+	return `refs/heads/${branch}`;
+}
+
 export interface KnowledgeGatewayConnection {
 	client: TreeDxInfrastructureClient;
 	baseUrl: string;
@@ -40,6 +47,7 @@ export interface KnowledgeGatewayConnection {
 	allowedPaths: string[];
 	nodeId: string;
 	authoringBranch: string;
+	publicationRef: string;
 }
 
 export async function resolveKnowledgeGatewayConnection(store: any, input: {
@@ -59,9 +67,9 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	const topology = record(library.topology);
 	const contentRepository = record(topology.contentRepository);
 	const treeDx = record(contentRepository.treeDx);
-	const configuredBaseUrl = text(treeDx.baseUrl, treeDx.registryUrl, store.config.TREESEED_TREEDX_URL,
-		store.config.TREESEED_TREEDX_BASE_URL, store.config.treedxBaseUrl,
-		process.env.TREESEED_TREEDX_URL, process.env.TREESEED_TREEDX_BASE_URL) || 'http://127.0.0.1:4000';
+	const configuredBaseUrl = text(process.env.TREESEED_TREEDX_URL, process.env.TREESEED_TREEDX_BASE_URL,
+		store.config.TREESEED_TREEDX_URL, store.config.TREESEED_TREEDX_BASE_URL, store.config.treedxBaseUrl,
+		treeDx.baseUrl, treeDx.registryUrl) || 'http://127.0.0.1:4000';
 	const runtimeEnvironment = { ...process.env, ...store.config };
 	const baseUrl = resolveTreeDxServiceUrl(configuredBaseUrl, runtimeEnvironment);
 	const repositoryId = text(library.repositoryId, treeDx.repositoryId);
@@ -78,7 +86,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			'.treeseed/agents/**','.treeseed/governance/proposal-types/**','.treeseed/seeds/**','seeds/**','scenes/**',
 		] : [])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
-	const canonicalAuthoringRef = `refs/heads/${authoringBranch.replace(/^refs\/heads\//u, '')}`;
+	const canonicalAuthoringRef = canonicalTreeDxBranchRef(authoringBranch);
 	const token = treeDxDelegationAuthority().mint({
 		actorId: text(store.config.TREESEED_TREEDX_PROXY_ACTOR_ID, process.env.TREESEED_TREEDX_PROXY_ACTOR_ID) || 'treeseed-api',
 		tenantId: text(store.config.TREESEED_TREEDX_PROXY_TENANT_ID, process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
@@ -110,5 +118,6 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		allowedPaths,
 		nodeId: text(library.instanceId, treeDx.instanceId),
 		authoringBranch,
+		publicationRef: canonicalAuthoringRef,
 	};
 }

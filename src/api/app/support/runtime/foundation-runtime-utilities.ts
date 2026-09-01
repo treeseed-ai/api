@@ -1,5 +1,6 @@
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
 import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,redactedRequestTarget } from '../index.ts';
+import { reconcileManagedTeamLibraries } from '../../../teams/managed-team-library-service.ts';
 export async function accountDeletionBlockers(store, principal) {
     const teams = await store.listTeamsForPrincipal(principal);
     const blockers = teams
@@ -83,6 +84,8 @@ export function requestClientIp(c) {
 export async function ensureControlPlaneCredentialSchema(store) {
     await store.ensureInitialized();
     await backfillUserEmailAddresses(store);
+	await store.backfillManagedTeamLibraryProjects();
+	if(String(process.env.TREESEED_GITHUB_TOKEN??'').trim())await reconcileManagedTeamLibraries(store,process.env);
 }
 export function sanitizedReturnTo(value) {
     const target = String(value ?? '/app/');

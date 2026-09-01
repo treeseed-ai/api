@@ -55,6 +55,7 @@ import {
 } from '../app/support/index.ts';
 import { createControlPlanePostgresDatabase } from './control-plane-postgres.js';
 import { listUserEmailAddresses, sendTeamInviteEmail } from '../app/support/accounts/authentication-email.ts';
+import { deleteManagedTeamLibraryResources,reconcileManagedTeamLibrary } from '../teams/managed-team-library-service.ts';
 
 export * from '../app/support/index.ts';
 
@@ -246,6 +247,8 @@ export function createPlatformApiApp(options: any = {}) {
 			githubWebhook: createGitHubWebhookService(store),
 			services: createServiceConnectionService(store),
 			deliverTeamInvite: (input) => sendTeamInviteEmail(invitationContext, input),
+			reconcileManagedTeamLibrary: (teamId) => reconcileManagedTeamLibrary(store,teamId,process.env),
+			deleteManagedTeamLibraryResources: (input) => deleteManagedTeamLibraryResources({...input,env:process.env,fetchImpl:options.fetchImpl??fetch}),
 			listUserEmailAddresses: (userId) => listUserEmailAddresses(store, userId),
 			accountEmails: createAccountEmailService(store, invitationContext),
 			accountRegistration,

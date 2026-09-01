@@ -16,6 +16,10 @@ async function requireTreeDxRef(client: any, repositoryId: string, ref: string, 
 	if (head !== expectedHead) throw new Error(`TreeDX ref ${ref} did not resolve the reviewed publication commit.`);
 }
 
+function missingSourceRef(error: unknown) {
+	return error instanceof Error && /ref or object not found/iu.test(error.message);
+}
+
 async function remoteHead(input: { store: any; binding: any; fetchImpl?: typeof fetch }) {
 	const credential = await resolveGitHubCredentialAuthority({
 		store: input.store, authorityId: input.binding.authority_id,
@@ -40,14 +44,21 @@ export async function publishRemoteRepository(input: {
 	}
 	let push;
 	if (observed !== input.reviewedCommit) {
-		const credential = await createRemoteGitCredentialDelivery({
-			...input, repositoryBindingId: binding.id, credentialAuthorityId: binding.authority_id,
-			nodeId: input.connection.nodeId, sourceRef: fullHead(input.authoringRef),
-			destinationRef: fullHead(input.publicationRef), expectedRemoteHead, purpose: 'push',
-		});
-		push = await input.connection.client.push({ repoId: input.connection.repositoryId, remoteName: 'origin',
-			remoteUrl: binding.clone_url, credentialId: credential.deliveryId,
-			refspecs: [`${fullHead(input.authoringRef)}:${fullHead(input.publicationRef)}`], expectedRemoteHead: expectedRemoteHead ?? '' });
+		const destinationRef = fullHead(input.publicationRef);
+		const pushFrom = async (sourceRef: string) => {
+			const credential = await createRemoteGitCredentialDelivery({
+				...input, repositoryBindingId: binding.id, credentialAuthorityId: binding.authority_id,
+				nodeId: input.connection.nodeId, sourceRef, destinationRef, expectedRemoteHead, purpose: 'push',
+			});
+			return input.connection.client.push({ repoId: input.connection.repositoryId,
+				remoteName: 'origin', remoteUrl: binding.clone_url, credentialId: credential.deliveryId,
+				refspecs: [`${sourceRef}:${destinationRef}`], expectedRemoteHead: expectedRemoteHead ?? '' });
+		};
+		try { push = await pushFrom(fullHead(input.authoringRef)); }
+		catch (error) {
+			if (!missingSourceRef(error)) throw error;
+			push = await pushFrom(`refs/treedx/commits/${input.reviewedCommit}`);
+		}
 		if (push.afterHead !== input.reviewedCommit) throw new Error('Remote Git read-back did not match the reviewed commit.');
 		const readBack = await remoteHead({ store: input.store, binding, fetchImpl: input.fetchImpl });
 		if (readBack !== input.reviewedCommit) throw new Error('The provider remote did not retain the reviewed publication commit.');
