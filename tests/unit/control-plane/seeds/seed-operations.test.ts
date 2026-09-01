@@ -3,7 +3,7 @@ import { CONTROL_PLANE_OPERATIONS, digestSeedBundle } from '@treeseed/sdk/operat
 import { createSeedOperations } from '../../../../src/api/control-plane/catalog/seeds/index.ts';
 import { createSeedOperationService, reconcileSeedProviderPrerequisites } from '../../../../src/api/control-plane/seeds/seed-operation-service.ts';
 import { validateSeedSource } from '../../../../src/control-plane/seeds/contracts/index.ts';
-import { actionIsUnchanged } from '../../../../src/control-plane/seeds/apply-support/index.ts';
+import { actionIsUnchanged, ensureLocalSeedTeamMemberships } from '../../../../src/control-plane/seeds/apply-support/index.ts';
 
 describe('seed catalog operations', () => {
 	it('binds the complete SDK-owned portable seed lifecycle', () => {
@@ -120,6 +120,35 @@ describe('seed catalog operations', () => {
 		const service = createSeedOperationService({} as any, { repoRoot: '/tmp/unused' });
 		await expect(service.resolveResources({ id: 'user-1', roles: [], permissions: [] }, { keys: ['team:treeseed'] }))
 			.rejects.toMatchObject({ status: 403, code: 'seed_global_access_denied' });
+	});
+
+	it('makes the authenticated seed user an owner of every locally seeded team', async () => {
+		const store = {
+			resolvePrincipalTeamContext: vi.fn().mockResolvedValue(null),
+			upsertTeamMember: vi.fn(async (teamId: string, userId: string, role: string) => ({ teamId, userId, role })),
+		};
+		const plan = {
+			environments: ['local'],
+			actions: [
+				{ kind: 'team', key: 'team:treeseed', action: 'create', environments: ['local'] },
+				{ kind: 'team', key: 'team:custom', action: 'create', environments: ['local'] },
+			],
+		};
+		const memberships = await ensureLocalSeedTeamMemberships({
+			store,
+			plan,
+			ids: { teams: new Map([['team:treeseed', 'team-1'], ['team:custom', 'team-2']]) },
+			actor: { principal: { id: 'user-1', roles: ['member'], metadata: { email: 'user@example.test' } } },
+			env: {},
+		});
+
+		expect(store.upsertTeamMember).toHaveBeenCalledTimes(2);
+		expect(store.upsertTeamMember).toHaveBeenNthCalledWith(1, 'team-1', 'user-1', 'team_owner');
+		expect(store.upsertTeamMember).toHaveBeenNthCalledWith(2, 'team-2', 'user-1', 'team_owner');
+		expect(memberships).toEqual([
+			expect.objectContaining({ teamId: 'team-1', userId: 'user-1', role: 'team_owner' }),
+			expect.objectContaining({ teamId: 'team-2', userId: 'user-1', role: 'team_owner' }),
+		]);
 	});
 
 	it('rejects removed resource families instead of retaining dormant schemas', () => {
