@@ -4,6 +4,7 @@ import { createKnowledgePackCleanupExecutor, createKnowledgePackExecutor } from 
 import { createGitHubWorkflowExecutor } from '../../workflows/github-workflow-executor.ts';
 import { createGitHubConfigurationExecutor } from '../../workflows/github-configuration-executor.ts';
 import { createTreeDxCommitReplicationExecutor } from '../../treedx/commit-replication-executor.ts';
+import { createTreeDxRemoteHeadReconciliationExecutor } from '../../treedx/remote-head-reconciliation-executor.ts';
 
 export function createExecutors() {
 	return createExecutorsForOptions({});
@@ -28,6 +29,7 @@ export function createExecutorsForOptions(options: any = {}) {
 		createKnowledgePackExecutor(options),
 		createKnowledgePackCleanupExecutor(options),
 		createTreeDxCommitReplicationExecutor(options),
+		createTreeDxRemoteHeadReconciliationExecutor(options),
 		workflowExecutor,
 		workflowConfigurationExecutor,
 	].filter((executor) => !options.operationKey || `${executor.namespace}:${executor.operation}` === options.operationKey);

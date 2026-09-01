@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { drainNotificationEmailOutbox } from '../../../notifications/service.js';
 import { FeedbackRetentionScheduler } from '../../feedback/retention-scheduler.js';
 import { TreeDxCommitReplicationScheduler } from '../../treedx/commit-replication-scheduler.js';
+import { TreeDxRemoteHeadReconciliationScheduler } from '../../treedx/remote-head-reconciliation-scheduler.js';
 import { createClient,createControlPlaneStore,loadConfig,loadHealthConfig,packageVersion,parseRunnerOptions,registerAndHeartbeat,runOnceWithClient,startHealthServer } from '../index.js';
 
 export async function runLoop() {
@@ -22,6 +23,7 @@ export async function runLoop() {
 	let feedbackRetention = null;
 	let contextQueryCheckMaintenance = null;
 	let treeDxCommitReplication = null;
+	let treeDxRemoteHeadReconciliation = null;
 	let operationRunnerId = null;
     while (!stopping) {
         try {
@@ -40,6 +42,7 @@ export async function runLoop() {
 					: null;
 				feedbackRetention = controlPlaneStore ? new FeedbackRetentionScheduler(controlPlaneStore, config.feedbackRetentionIntervalMs) : null;
 				treeDxCommitReplication = controlPlaneStore ? new TreeDxCommitReplicationScheduler(controlPlaneStore) : null;
+				treeDxRemoteHeadReconciliation = controlPlaneStore ? new TreeDxRemoteHeadReconciliationScheduler(controlPlaneStore) : null;
                 await registerAndHeartbeat(client, config, version, { ...options, controlPlaneStore });
             }
             healthState.ready = true;
@@ -52,6 +55,7 @@ export async function runLoop() {
 			await contextQueryCheckMaintenance?.runIfDue();
 			await feedbackRetention?.runIfDue();
 			await treeDxCommitReplication?.runIfDue();
+			await treeDxRemoteHeadReconciliation?.runIfDue();
         }
         catch (error) {
             healthState.ready = false;
@@ -71,6 +75,7 @@ export async function runLoop() {
 			contextQueryCheckMaintenance = null;
 			feedbackRetention = null;
 			treeDxCommitReplication = null;
+			treeDxRemoteHeadReconciliation = null;
         }
         await new Promise((resolveSleep) => setTimeout(resolveSleep, options.pollIntervalMs));
     }
