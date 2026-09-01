@@ -4,6 +4,7 @@ import { createSeedOperations } from '../../../../src/api/control-plane/catalog/
 import { createSeedOperationService, reconcileSeedProviderPrerequisites } from '../../../../src/api/control-plane/seeds/seed-operation-service.ts';
 import { validateSeedSource } from '../../../../src/control-plane/seeds/contracts/index.ts';
 import { actionIsUnchanged, ensureLocalSeedTeamMemberships } from '../../../../src/control-plane/seeds/apply-support/index.ts';
+import { applyPlannedSeedActions } from '../../../../src/control-plane/seeds/apply-support/support/apply.ts';
 
 describe('seed catalog operations', () => {
 	it('binds the complete SDK-owned portable seed lifecycle', () => {
@@ -148,6 +149,50 @@ describe('seed catalog operations', () => {
 		expect(memberships).toEqual([
 			expect.objectContaining({ teamId: 'team-1', userId: 'user-1', role: 'team_owner' }),
 			expect.objectContaining({ teamId: 'team-2', userId: 'user-1', role: 'team_owner' }),
+		]);
+	});
+
+	it('grants local team ownership before applying dependent project actions', async () => {
+		const events: string[] = [];
+		let ownsTeam = false;
+		const ids = { teams: new Map(), projects: new Map(), projectTeams: new Map() };
+		const plan = {
+			environments: ['local'],
+			actions: [
+				{ kind: 'team', key: 'team:treeseed', action: 'create', environments: ['local'], payload: {} },
+				{ kind: 'project', key: 'project:treeseed/platform', action: 'create', environments: ['local'], payload: { teamKey: 'team:treeseed' } },
+			],
+		};
+
+		const result = await applyPlannedSeedActions({
+			plan, store: {}, ids, manifestHash: 'sha256:test', appliedAt: '2026-09-01T00:00:00.000Z',
+			localOnly: true, actor: { principal: { id: 'user-1', roles: ['member'] } }, dependencyState: {},
+		}, {
+			async applyAction({ action }: any) {
+				events.push(`apply:${action.kind}`);
+				if (action.kind === 'team') ids.teams.set(action.key, 'team-1');
+				if (action.kind === 'project') {
+					if (!ownsTeam) throw Object.assign(new Error('Permission denied.'), { code: 'permission_denied' });
+					ids.projects.set(action.key, 'project-1');
+				}
+			},
+			async ensureLocalSeedTeamMemberships() {
+				events.push('grant:team_owner');
+				ownsTeam = true;
+				return [{ teamId: 'team-1', userId: 'user-1', role: 'team_owner' }];
+			},
+			async ensureProjectSeedDependencies({ action }: any) {
+				events.push(`dependencies:${action.kind}`);
+				return [];
+			},
+		});
+
+		expect(events).toEqual([
+			'apply:team', 'grant:team_owner', 'dependencies:team',
+			'apply:project', 'dependencies:project',
+		]);
+		expect(result.localTeamMemberships).toEqual([
+			expect.objectContaining({ teamId: 'team-1', userId: 'user-1', role: 'team_owner' }),
 		]);
 	});
 
