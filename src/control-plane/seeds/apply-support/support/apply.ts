@@ -20,6 +20,44 @@ async function verifyAppliedSeed(input, store) {
     return { verified: true, manifestHash: observed.manifestHash, summary: observed.plan.summary };
 }
 
+export async function applyPlannedSeedActions(input, dependencies = {}) {
+    const apply = dependencies.applyAction ?? applyAction;
+    const ensureDependencies = dependencies.ensureProjectSeedDependencies ?? ensureProjectSeedDependencies;
+    const ensureMemberships = dependencies.ensureLocalSeedTeamMemberships ?? ensureLocalSeedTeamMemberships;
+    const repairs = [];
+    const localTeamMemberships = [];
+    for (const action of selectedActions(input.plan)) {
+        input.setActiveActionKey?.(action.key);
+        if (action.existing?.id) {
+            if (action.kind === 'team')
+                input.ids.teams.set(action.key, action.existing.id);
+            if (action.kind === 'project') {
+                input.ids.projects.set(action.key, action.existing.id);
+                input.ids.projectTeams.set(action.key, input.ids.teams.get(action.payload.teamKey));
+            }
+        }
+        await apply({ action, store: input.store, ids: input.ids, manifestHash: input.manifestHash, appliedAt: input.appliedAt, plan: input.plan });
+        // A project create is authorized through its team. Local seed actors must
+        // therefore receive ownership as soon as each team is reconciled, not
+        // after every dependent project and repository action has run.
+        if (input.localOnly === true && action.kind === 'team') {
+            localTeamMemberships.push(...await ensureMemberships({
+                store: input.store,
+                plan: input.plan,
+                ids: input.ids,
+                env: input.env,
+                actor: input.actor,
+            }));
+        }
+        repairs.push(...await ensureDependencies({
+            action, store: input.store, ids: input.ids, manifestHash: input.manifestHash,
+            appliedAt: input.appliedAt, env: input.env, localOnly: input.localOnly,
+            dependencyState: input.dependencyState, plan: input.plan,
+        }));
+    }
+    return { repairs, localTeamMemberships };
+}
+
 export async function applySeedWithStore(input) {
     const planned = await planSeedWithStore({
         projectRoot: input.projectRoot,
@@ -76,24 +114,12 @@ export async function applySeedWithStore(input) {
     const appliedAt = isoNow();
     const ids = { teams: new Map(), projects: new Map(), projectTeams: new Map() };
 	addSeedReferencesToIds(ids, await resolveSeedReferences(store, planned.plan.references ?? []));
-    const repairs = [];
     const dependencyState = {};
-	for (const action of selectedActions(planned.plan)) {
-		activeActionKey = action.key;
-        if (action.existing?.id) {
-            if (action.kind === 'team')
-                ids.teams.set(action.key, action.existing.id);
-            if (action.kind === 'project') {
-                ids.projects.set(action.key, action.existing.id);
-				ids.projectTeams.set(action.key, ids.teams.get(action.payload.teamKey));
-			}
-        }
-        await applyAction({ action, store, ids, manifestHash, appliedAt, plan: planned.plan });
-		repairs.push(...await ensureProjectSeedDependencies({
-            action, store, ids, manifestHash, appliedAt, env: input.env, localOnly: input.localOnly, dependencyState,
-			plan: planned.plan,
-		}));
-	}
+	const { repairs, localTeamMemberships } = await applyPlannedSeedActions({
+		plan: planned.plan, store, ids, manifestHash, appliedAt, env: input.env,
+		localOnly: input.localOnly, actor: input.actor, dependencyState,
+		setActiveActionKey(value) { activeActionKey = value; },
+	});
 	activeActionKey = null;
 	const membershipClaims = {
 		declared: selectedActions(planned.plan).filter((action) => action.kind === 'teamMembership').map((action) => action.key),
@@ -109,15 +135,6 @@ export async function applySeedWithStore(input) {
 			selectedActions(planned.plan).filter((action) => action.kind === 'servicePrincipalMembership').map((action) => action.key),
 		),
 	};
-    const localTeamMemberships = input.localOnly === true
-        ? await ensureLocalSeedTeamMemberships({
-            store,
-            plan: planned.plan,
-            ids,
-            env: input.env,
-            actor: input.actor,
-        })
-        : [];
 	const platformAdminOwnership = typeof store.syncPlatformAdminOwners === 'function'
 		? await store.syncPlatformAdminOwners()
 		: null;
