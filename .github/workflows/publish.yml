@@ -9,16 +9,23 @@ jobs:
   candidate-source:
     if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-24.04
-    permissions: { contents: read }
+    permissions: { actions: read, contents: read }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: { node-version: 24 }
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk download
+        env: { GH_TOKEN: "${{ secrets.TREESEED_GITHUB_TOKEN || github.token }}" }
+      - run: npm ci --ignore-scripts --no-audit --no-fund && ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk install
       - run: npm run verify:direct
       - run: mkdir -p source-assets && npm pack --json --ignore-scripts --pack-destination source-assets && npm sbom --sbom-format cyclonedx > source-assets/sbom.cdx.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with: { name: "api-source-${{ github.sha }}", path: source-assets/, if-no-files-found: error }
+        with:
+          name: "api-source-${{ github.sha }}"
+          path: |
+            source-assets/
+            artifacts/sealed-sdk/
+          if-no-files-found: error
 
   candidate-build:
     if: github.ref == 'refs/heads/staging'
@@ -36,6 +43,8 @@ jobs:
           - { image: "treeseed/api-postgres", target: database, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: "api-source-${{ github.sha }}", path: . }
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with: { username: "${{ vars.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
@@ -58,12 +67,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: { node-version: 24 }
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: "api-source-${{ github.sha }}", path: release-assets }
+      - run: npm ci --ignore-scripts --no-audit --no-fund && ./scripts/build/hydrate-exact-sdk.sh release-assets install
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
         with: { username: "${{ vars.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with: { name: "api-source-${{ github.sha }}", path: release-assets }
       - name: Seal exact manifests and component assets
         shell: bash
         run: |
@@ -92,10 +101,6 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: { node-version: 24 }
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
-        with: { username: "${{ vars.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
       - name: Download accepted staging candidate
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: |
@@ -110,6 +115,12 @@ jobs:
             sleep 10
           done
           test -n "$run_id"; gh run download "$run_id" --name "api-candidate-${GITHUB_SHA}" --dir candidate
+      - run: npm ci --ignore-scripts --no-audit --no-fund && ./scripts/build/hydrate-exact-sdk.sh candidate install
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with: { username: "${{ vars.DOCKERHUB_USERNAME }}", password: "${{ secrets.DOCKERHUB_TOKEN }}" }
+      - name: Verify accepted staging candidate
+        run: |
           npm run release:check-tag
           npm run release:custody -- verify candidate/release-evidence-v1.json
       - name: Promote exact OCI manifests without building

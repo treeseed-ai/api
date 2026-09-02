@@ -10,7 +10,8 @@ RUN npm config set fetch-retries 5 \
 	&& (npm ci --ignore-scripts || npm ci --ignore-scripts || npm ci --ignore-scripts)
 
 COPY . .
-RUN npm run build
+RUN ./scripts/build/hydrate-exact-sdk.sh artifacts/sealed-sdk install \
+	&& npm run build
 
 ENV NODE_ENV=production \
 	HOST=0.0.0.0 \
