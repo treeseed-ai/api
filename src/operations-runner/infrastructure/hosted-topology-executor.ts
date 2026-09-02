@@ -1,8 +1,8 @@
-import { authorizeHostedTopologyPlan, authorizeHostedTopologyRollback, deploymentDigest, hostedTopologyPlanSchema, hostedTopologyReceiptSchema, hostedTopologyRollbackSchema, verifyHostedTopologyReadback, type HostedResourceObservation } from '@treeseed/sdk/deployment';
+import { authorizeHostedTopologyPlan, authorizeHostedTopologyRollbackExecution, deploymentDigest, hostedTopologyPlanSchema, hostedTopologyReceiptSchema, hostedTopologyRollbackExecutionSchema, verifyHostedTopologyReadback, type AuthorizedHostedTopologyPlan, type HostedResourceObservation } from '@treeseed/sdk/deployment';
 
 export interface HostedTopologyExecutionAdapter {
-	apply(input: { teamId: string; plan: ReturnType<typeof hostedTopologyPlanSchema.parse>; approval: unknown }): Promise<HostedResourceObservation[]>;
-	rollback(input: { teamId: string; rollback: ReturnType<typeof hostedTopologyRollbackSchema.parse>; approval: unknown }): Promise<HostedResourceObservation[]>;
+	apply(input: { teamId: string; plan: AuthorizedHostedTopologyPlan; approval: unknown }): Promise<HostedResourceObservation[]>;
+	rollback(input: { teamId: string; execution: ReturnType<typeof hostedTopologyRollbackExecutionSchema.parse>; approval: unknown; sourceReceipt: unknown; sourcePlan: unknown; targetPlan: unknown }): Promise<HostedResourceObservation[]>;
 }
 
 async function latestReceipt(store: any, teamId: string, topologyId?: string) {
@@ -34,7 +34,7 @@ export function createHostedTopologyExecutors(options: { controlPlaneStore?: any
 		const teamId = String(input.teamId ?? ''), plan = hostedTopologyPlanSchema.parse(input.plan);
 		const authorized = authorizeHostedTopologyPlan(plan, input.approval as any), completedAt = new Date().toISOString();
 		await context.checkpoint({ phase: 'provider-apply', planDigest: plan.planDigest }, { kind: 'infrastructure.topology.apply.started', data: { teamId, planDigest: plan.planDigest } });
-		const resources = await adapter.apply({ teamId, plan, approval: input.approval });
+		const resources = await adapter.apply({ teamId, plan: authorized, approval: input.approval });
 		const previous = await latestReceipt(store, teamId, plan.topologyId);
 		const receipt = verifyHostedTopologyReadback({ plan: authorized, previousResources: previous?.resources ?? missingPrevious(plan, completedAt), resources, completedAt });
 		await persistReceipt(store, teamId, receipt);
@@ -43,11 +43,12 @@ export function createHostedTopologyExecutors(options: { controlPlaneStore?: any
 	} };
 	const rollback = { namespace: 'infrastructure', operation: 'hosted-topology-rollback', async run(input: Record<string, unknown>, context: any) {
 		if (!store) throw new Error('Hosted topology rollback requires the control-plane store.');
-		const teamId = String(input.teamId ?? ''), plan = hostedTopologyRollbackSchema.parse(input.rollback);
-		authorizeHostedTopologyRollback(plan, input.approval as any);
+		const teamId = String(input.teamId ?? ''), execution = hostedTopologyRollbackExecutionSchema.parse(input.execution);
+		authorizeHostedTopologyRollbackExecution(execution, input.approval as any);
+		const plan = execution.rollback;
 		const source = await latestReceipt(store, teamId); if (!source || source.receiptId !== plan.sourceReceiptId) throw new Error('Hosted topology rollback source is stale.');
 		await context.checkpoint({ phase: 'provider-rollback', rollbackDigest: plan.rollbackDigest }, { kind: 'infrastructure.topology.rollback.started', data: { teamId, rollbackDigest: plan.rollbackDigest } });
-		const resources = await adapter.rollback({ teamId, rollback: plan, approval: input.approval }), completedAt = new Date().toISOString();
+		const resources = await adapter.rollback({ teamId, execution, approval: input.approval, sourceReceipt: source, sourcePlan: input.sourcePlan, targetPlan: input.targetPlan }), completedAt = new Date().toISOString();
 		const receiptDigest = deploymentDigest({ sourceReceiptId: source.receiptId, resources, completedAt });
 		const receipt = hostedTopologyReceiptSchema.parse({ ...source, receiptId: `topology-receipt-${receiptDigest.slice(7, 23)}`, resources, previousResources: source.resources, completedAt });
 		await persistReceipt(store, teamId, receipt);

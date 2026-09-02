@@ -1,9 +1,9 @@
-import { authorizeHostedTopologyPlan, authorizeHostedTopologyRollback, hostedTopologyDeclarationSchema, hostedTopologyPlanSchema, hostedTopologyReceiptSchema, hostedTopologyRollbackSchema, planHostedTopology, type HostedResourceObservation, type HostedTopologyDeclaration } from '@treeseed/sdk/deployment';
+import { authorizeHostedTopologyPlan, authorizeHostedTopologyRollbackExecution, bindHostedStateBackend, hostedTopologyDeclarationSchema, hostedTopologyPlanSchema, hostedTopologyReceiptSchema, hostedTopologyRollbackExecutionSchema, hostedTopologyStateKey, planHostedTopology, planHostedTopologyRollbackExecution, type HostedResourceObservation, type HostedStateBackend, type HostedTopologyDeclaration } from '@treeseed/sdk/deployment';
 import { CapacityOperationError } from '../capacity/capacity-operation-error.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[] } | undefined;
 export interface HostedTopologyObserver {
-	observe(input: { teamId: string; declaration: HostedTopologyDeclaration; connections: Record<string, Record<string, unknown>> }): Promise<HostedResourceObservation[]>;
+	observe(input: { teamId: string; declaration: HostedTopologyDeclaration; stateBackend: HostedStateBackend; connections: Record<string, Record<string, unknown>> }): Promise<HostedResourceObservation[]>;
 }
 
 async function authorize(store: any, principal: Principal, teamId: string, permission: 'infrastructure:read:team' | 'infrastructure:write:team') {
@@ -35,6 +35,18 @@ async function connections(store: any, teamId: string, declaration: HostedTopolo
 	return selected;
 }
 
+async function stateBackend(store: any, teamId: string, declaration: HostedTopologyDeclaration) {
+	const connection = await store.getTeamServiceConnection(teamId, declaration.stateBackend.connectionRef);
+	if (!connection || connection.providerId !== 'cloudflare' || connection.status !== 'active') throw new CapacityOperationError(409, 'hosted_state_connection_unavailable', 'An active team Cloudflare R2 connection is required for OpenTofu state.');
+	if (!connection.capabilities?.some((binding: any) => binding.capabilityType === 'object-storage' && binding.credentialProfileId === 'cloudflare-storage' && binding.status === 'configured')) throw new CapacityOperationError(409, 'hosted_state_capability_unavailable', 'The state connection must enable its isolated object-storage capability.');
+	const config = connection.nonSecretConfig as Record<string, unknown> ?? {}, bucket = String(config.stateBucket ?? '').trim(), region = String(config.stateRegion ?? 'auto').trim();
+	const endpoint = String(config.stateEndpoint ?? '').trim(), encryptionKeyRef = String(config.stateEncryptionKeyRef ?? '').trim();
+	if (!bucket || !endpoint || !encryptionKeyRef) throw new CapacityOperationError(409, 'hosted_state_configuration_incomplete', 'The state connection requires non-secret bucket, endpoint, and encryption-key references.');
+	return bindHostedStateBackend({ schemaVersion: 'treeseed.hosted-state-backend/v1', type: 's3', teamId: declaration.teamId, deploymentId: declaration.deploymentId,
+		environment: declaration.environment, stackId: declaration.stackId, connectionRef: declaration.stateBackend.connectionRef, bucket,
+		key: hostedTopologyStateKey(declaration), region, endpoint, usePathStyle: config.stateUsePathStyle === undefined ? true : Boolean(config.stateUsePathStyle), encryptionKeyRef });
+}
+
 function snapshots(declaration: HostedTopologyDeclaration, selected: Record<string, Record<string, unknown>>) {
 	return Object.fromEntries(Object.entries(selected).map(([provider, connection]) => {
 		const entries = Object.entries(connection.nonSecretConfig as Record<string, unknown> ?? {});
@@ -60,14 +72,17 @@ export function createHostedTopologyService(store: any, observer: HostedTopology
 			await authorize(store, principal, teamId, 'infrastructure:read:team');
 			const forbidden = rejectCredentialMaterial(body); if (forbidden.length) throw new CapacityOperationError(400, 'plaintext_secret_rejected', `Credential-like topology fields are forbidden: ${forbidden.join(', ')}.`);
 			const declaration = hostedTopologyDeclarationSchema.parse(body.declaration);
+			if (declaration.teamId !== teamId) throw new CapacityOperationError(403, 'hosted_topology_team_mismatch', 'Topology custody must match the authorized team.');
 			const selected = await connections(store, teamId, declaration);
-			const observations = await observer.observe({ teamId, declaration, connections: selected });
-			return planHostedTopology({ declaration, observations, connections: snapshots(declaration, selected) });
+			const backend = await stateBackend(store, teamId, declaration), connectionSnapshots = snapshots(declaration, selected);
+			const observations = await observer.observe({ teamId, declaration, stateBackend: backend, connections: connectionSnapshots });
+			return planHostedTopology({ declaration, observations, connections: connectionSnapshots, stateBackend: backend });
 		},
 		async apply(principal: Principal, teamId: string, body: Record<string, unknown>, ifMatch?: string, idempotencyKey?: string) {
 			const actor = await authorize(store, principal, teamId, 'infrastructure:write:team');
 			const forbidden = rejectCredentialMaterial(body); if (forbidden.length) throw new CapacityOperationError(400, 'plaintext_secret_rejected', `Credential-like topology fields are forbidden: ${forbidden.join(', ')}.`);
 			const plan = hostedTopologyPlanSchema.parse(body.plan); authorizeHostedTopologyPlan(plan, body.approval as any);
+			if (plan.teamId !== teamId) throw new CapacityOperationError(403, 'hosted_topology_team_mismatch', 'Topology custody must match the authorized team.');
 			if (etag(ifMatch) !== plan.planDigest) throw new CapacityOperationError(412, 'hosted_topology_plan_precondition_failed', 'If-Match must bind the exact reviewed topology plan digest.');
 			return store.createPlatformOperation({ namespace: 'infrastructure', operation: 'hosted-topology-apply', target: 'control_plane_operations_runner', idempotencyKey,
 				input: { teamId, plan, approval: body.approval }, requestedByType: 'user', requestedById: actor.id });
@@ -79,12 +94,16 @@ export function createHostedTopologyService(store: any, observer: HostedTopology
 		},
 		async rollback(principal: Principal, teamId: string, body: Record<string, unknown>, ifMatch?: string, idempotencyKey?: string) {
 			const actor = await authorize(store, principal, teamId, 'infrastructure:write:team');
-			const rollback = hostedTopologyRollbackSchema.parse(body.rollback); authorizeHostedTopologyRollback(rollback, body.approval as any);
-			if (etag(ifMatch) !== rollback.rollbackDigest) throw new CapacityOperationError(412, 'hosted_topology_rollback_precondition_failed', 'If-Match must bind the exact reviewed rollback digest.');
+			const execution = hostedTopologyRollbackExecutionSchema.parse(body.execution); authorizeHostedTopologyRollbackExecution(execution, body.approval as any);
+			const sourcePlan = hostedTopologyPlanSchema.parse(body.sourcePlan), targetPlan = hostedTopologyPlanSchema.parse(body.targetPlan);
+			const rollback = execution.rollback;
+			if (etag(ifMatch) !== execution.executionDigest) throw new CapacityOperationError(412, 'hosted_topology_rollback_precondition_failed', 'If-Match must bind the exact reviewed rollback execution digest.');
 			const receipt = await latestReceipt(store, teamId);
 			if (!receipt || receipt.receiptId !== rollback.sourceReceiptId) throw new CapacityOperationError(409, 'hosted_topology_rollback_stale', 'Rollback must target the latest known-good topology receipt.');
+			const expected = planHostedTopologyRollbackExecution({ rollback, sourceReceipt: receipt, sourcePlan, targetPlan });
+			if (expected.executionDigest !== execution.executionDigest) throw new CapacityOperationError(409, 'hosted_topology_rollback_closure_mismatch', 'Rollback execution must bind the exact source receipt and source and target plans.');
 			return store.createPlatformOperation({ namespace: 'infrastructure', operation: 'hosted-topology-rollback', target: 'control_plane_operations_runner', idempotencyKey,
-				input: { teamId, rollback, approval: body.approval }, requestedByType: 'user', requestedById: actor.id });
+				input: { teamId, execution, approval: body.approval, sourcePlan, targetPlan }, requestedByType: 'user', requestedById: actor.id });
 		},
 	};
 }
