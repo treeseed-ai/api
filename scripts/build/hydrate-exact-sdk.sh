@@ -14,7 +14,15 @@ if [[ -z "${sdk_sha}" ]]; then
 fi
 
 mkdir -p "${archive_root}"
-sdk_archive="$(find "${archive_root}" -name '*.tgz' -type f -print -quit 2>/dev/null || true)"
+select_sdk_archive() {
+  mapfile -t sdk_archives < <(find "${archive_root}" -name 'treeseed-sdk-*.tgz' -type f -print 2>/dev/null | sort)
+  if (( ${#sdk_archives[@]} > 1 )); then
+    echo "Multiple sealed SDK artifacts were found in ${archive_root}." >&2
+    return 1
+  fi
+  printf '%s' "${sdk_archives[0]:-}"
+}
+sdk_archive="$(select_sdk_archive)"
 if [[ -z "${sdk_archive}" ]]; then
   [[ "${mode}" == "download" ]]
   artifact_name="sdk-${sdk_sha}"
@@ -30,7 +38,7 @@ if [[ -z "${sdk_archive}" ]]; then
   done
   [[ -n "${run_id}" ]]
   gh run download "${run_id}" --repo treeseed-ai/sdk --name "${artifact_name}" --dir "${archive_root}"
-  sdk_archive="$(find "${archive_root}" -name '*.tgz' -type f -print -quit)"
+  sdk_archive="$(select_sdk_archive)"
 fi
 
 [[ "${mode}" == "download" ]] && exit 0
