@@ -37,9 +37,14 @@ fi
 [[ "${mode}" == "install" ]]
 for target in node_modules/@treeseed/sdk node_modules/@treeseed/deployment/node_modules/@treeseed/sdk; do
   if [[ "${target}" == node_modules/@treeseed/sdk || -d "${target}" ]]; then
-    find "${target}" -mindepth 1 -delete 2>/dev/null || true
+    # npm ci has already materialized the exact transitive dependency tree from
+    # package-lock.json. Replace only the SDK package payload; deleting its
+    # node_modules directory makes Node fall through to incompatible top-level
+    # dependencies and also invalidates release SBOM generation.
+    find "${target}" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf -- {} +
     mkdir -p "${target}"
     tar -xzf "${sdk_archive}" --strip-components=1 -C "${target}"
     test -d "${target}/dist"
   fi
 done
+npm ls --all --omit=dev >/dev/null
