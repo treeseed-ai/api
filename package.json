@@ -71,7 +71,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/deployment": "https://github.com/treeseed-ai/deployment/releases/download/0.1.0-rc.222/treeseed-deployment-runtime-0.1.0-rc.222.tgz",
+    "@treeseed/deployment": "https://github.com/treeseed-ai/deployment/releases/download/0.1.0-rc.223/treeseed-deployment-runtime-0.1.0-rc.223.tgz",
     "@treeseed/sdk": "github:treeseed-ai/sdk#246ae35d16315ca27684b9fde8b573c5a4c33897",
     "@treeseed/treedx": "0.3.0-rc.3",
     "drizzle-orm": "^0.45.2",

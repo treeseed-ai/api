@@ -14,14 +14,14 @@ async function managedIds(store: any, teamId: string) {
 
 export function createDeploymentHostedAdapter(options: { store: any; dataDir: string; fetchImpl?: typeof fetch; env?: NodeJS.ProcessEnv;
 	externalAuthorityResolver?: Parameters<typeof resolveHostedVaultMaterial>[0]['externalResolver']; executor?: HostedInfrastructureExecutor }) {
-	const resolver = (stateConnectionRef: string) => (request: HostedInfrastructureAuthorityRequest) => resolveHostedVaultMaterial({ store: options.store, request,
-		stateConnectionRef, env: options.env, externalResolver: options.externalAuthorityResolver });
+	const resolver = (request: HostedInfrastructureAuthorityRequest) => resolveHostedVaultMaterial({ store: options.store, request,
+		env: options.env, externalResolver: options.externalAuthorityResolver });
 	const operationRoot = async () => { await mkdir(options.dataDir, { recursive: true, mode: 0o700 }); return mkdtemp(join(options.dataDir, 'hosted-opentofu-')); };
 	return {
 		async observe(input: { teamId: string; declaration: HostedTopologyDeclaration; stateBackend: HostedStateBackend; connections: Record<string, any> }): Promise<HostedResourceObservation[]> {
 			const requests = hostedInfrastructureDiscoveryRequests({ declaration: input.declaration, stateBackend: input.stateBackend });
 			const authority = { schemaVersion: 'treeseed.hosted-infrastructure-authority/v1' as const, environment: input.declaration.environment,
-				materials: await Promise.all(requests.map(resolver(input.stateBackend.connectionRef))) };
+				materials: await Promise.all(requests.map(resolver)) };
 			const root = await operationRoot();
 			try { return await discoverHostedInfrastructure({ declaration: input.declaration, stateBackend: input.stateBackend, connections: input.connections,
 				authority, managedProviderResourceIds: await managedIds(options.store, input.teamId), root, fetchImpl: options.fetchImpl }); }
@@ -29,7 +29,7 @@ export function createDeploymentHostedAdapter(options: { store: any; dataDir: st
 		},
 		async apply(input: { teamId: string; plan: AuthorizedHostedTopologyPlan }): Promise<HostedResourceObservation[]> {
 			const workspace = renderHostedInfrastructureWorkspace({ plan: input.plan }), root = await operationRoot();
-			const authority = await resolveHostedInfrastructureVaultAuthority(workspace, resolver(workspace.stateBackend.connectionRef));
+			const authority = await resolveHostedInfrastructureVaultAuthority(workspace, resolver);
 			const executor = options.executor ?? new HostedInfrastructureExecutor(undefined, options.fetchImpl);
 			try { const execution = await executor.plan(workspace, root, authority); await executor.apply(workspace, root, authority, execution); return executor.readback(workspace, root, authority); }
 			finally { await rm(root, { recursive: true, force: true }); }
@@ -37,7 +37,7 @@ export function createDeploymentHostedAdapter(options: { store: any; dataDir: st
 		async rollback(input: { teamId: string; execution: HostedTopologyRollbackExecution; approval: unknown; sourceReceipt: HostedTopologyReceipt; sourcePlan: unknown; targetPlan: unknown }): Promise<HostedResourceObservation[]> {
 			const workspace = renderHostedInfrastructureRollbackWorkspace({ execution: input.execution, approval: input.approval,
 				sourceReceipt: input.sourceReceipt, sourcePlan: input.sourcePlan, targetPlan: input.targetPlan }), root = await operationRoot();
-			const authority = await resolveHostedInfrastructureVaultAuthority(workspace, resolver(workspace.stateBackend.connectionRef));
+			const authority = await resolveHostedInfrastructureVaultAuthority(workspace, resolver);
 			const executor = options.executor ?? new HostedInfrastructureExecutor(undefined, options.fetchImpl);
 			try { const plan = await executor.plan(workspace, root, authority); await executor.apply(workspace, root, authority, plan); return executor.readback(workspace, root, authority); }
 			finally { await rm(root, { recursive: true, force: true }); }

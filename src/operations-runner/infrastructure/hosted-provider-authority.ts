@@ -6,12 +6,11 @@ type ExternalMaterial = { values: Record<string, string>; expiresAt: string | nu
 export async function resolveHostedVaultMaterial(input: {
 	store: any;
 	request: HostedInfrastructureAuthorityRequest;
-	stateConnectionRef?: string;
 	env?: NodeJS.ProcessEnv;
 	externalResolver?: (input: { authority: Record<string, unknown>; request: HostedInfrastructureAuthorityRequest }) => Promise<ExternalMaterial>;
 }): Promise<HostedInfrastructureVaultMaterial> {
 	const request = input.request, statePurpose = request.purpose !== 'provider';
-	const connectionRef = statePurpose ? input.stateConnectionRef : request.connectionRef;
+	const connectionRef = request.connectionRef;
 	const profile = statePurpose ? 'cloudflare-storage' : request.credentialProfileId;
 	if (!connectionRef) throw new Error('Hosted state authority has no team storage connection.');
 	const row = await input.store.first(`SELECT a.*, c.provider_id FROM provider_credential_authorities a
@@ -34,5 +33,6 @@ export async function resolveHostedVaultMaterial(input: {
 	return { schemaVersion: 'treeseed.service-credential-material/v1', source: 'treeseed-service-credential-vault', requestId: request.requestId,
 		teamId: request.teamId, deploymentId: request.deploymentId, stackId: request.stackId, authorityId: row.id, authorityVersion: Number(row.version),
 		environment: request.environment, backendBindingDigest: request.backendBindingDigest, provider: request.provider, connectionRef: request.connectionRef,
+		...(request.secretRef ? { secretRef: request.secretRef } : {}),
 		credentialProfileId: request.credentialProfileId, capabilities: request.capabilities, purpose: request.purpose, scheme: row.scheme, expiresAt: resolved.expiresAt, values: resolved.values };
 }
