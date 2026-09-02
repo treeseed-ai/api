@@ -21,6 +21,8 @@ import { createWorkflowConfigurationService } from '../control-plane/repositorie
 import { createGitHubConnectorService } from '../control-plane/repositories/github-connector-service.ts';
 import { createGitHubWebhookService } from '../control-plane/repositories/github-webhook-service.ts';
 import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
+import { createHostedTopologyService } from '../control-plane/repositories/infrastructure/hosted-topology-service.ts';
+import { createHostedProviderAdapter } from '../../operations-runner/infrastructure/hosted-provider-adapter.ts';
 import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
 import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
 import { createAgentGovernanceService } from '../control-plane/repositories/capacity/agent-governance-service.ts';
@@ -112,6 +114,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const authProvider = authProviderFor(options, config, db);
 	const delegationAuthority = options.treeDxDelegationAuthority ?? treeDxDelegationAuthority();
 	const capacity = createCapacityControlPlane(store);
+	const hostedTopologyObserver = options.hostedTopologyObserver ?? createHostedProviderAdapter({ store, fetchImpl: options.fetchImpl });
 	const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
 	const confirmations = new ConfirmationService(config.authSecret, {
 		async consume(nonce, claims) {
@@ -224,6 +227,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const inbox = createInboxService({ store, discussions, communications, governance });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity,
+			hostedTopology: createHostedTopologyService(store, hostedTopologyObserver),
 			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
 			capabilityOntology,
 			plans: createCapacityPlanService(capacity),
