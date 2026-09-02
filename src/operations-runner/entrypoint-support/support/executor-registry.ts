@@ -6,7 +6,7 @@ import { createGitHubConfigurationExecutor } from '../../workflows/github-config
 import { createTreeDxCommitReplicationExecutor } from '../../treedx/commit-replication-executor.ts';
 import { createTreeDxRemoteHeadReconciliationExecutor } from '../../treedx/remote-head-reconciliation-executor.ts';
 import { createHostedTopologyExecutors } from '../../infrastructure/hosted-topology-executor.ts';
-import { createHostedProviderAdapter } from '../../infrastructure/hosted-provider-adapter.ts';
+import { createDeploymentHostedAdapter } from '../../infrastructure/deployment-hosted-adapter.ts';
 
 export function createExecutors() {
 	return createExecutorsForOptions({});
@@ -14,7 +14,7 @@ export function createExecutors() {
 
 export function createExecutorsForOptions(options: any = {}) {
 	const hostedTopologyAdapter = options.hostedTopologyAdapter ?? (options.controlPlaneStore
-		? createHostedProviderAdapter({ store: options.controlPlaneStore, fetchImpl: options.fetchImpl, env: options.env, externalAuthorityResolver: options.externalAuthorityResolver })
+		? createDeploymentHostedAdapter({ store: options.controlPlaneStore, dataDir: options.config?.dataDir ?? '.treeseed/operations-runner', fetchImpl: options.fetchImpl, env: options.env, externalAuthorityResolver: options.externalAuthorityResolver })
 		: undefined);
 	const workflowExecutor = createGitHubWorkflowExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
 	const workflowConfigurationExecutor = createGitHubConfigurationExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });

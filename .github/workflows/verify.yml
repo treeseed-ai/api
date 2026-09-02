@@ -72,6 +72,11 @@ jobs:
             rm -rf node_modules/@treeseed/sdk
             mkdir -p node_modules/@treeseed/sdk
             tar -xzf "${sdk_archive}" --strip-components=1 -C node_modules/@treeseed/sdk
+            if [[ -d node_modules/@treeseed/deployment/node_modules/@treeseed/sdk ]]; then
+              rm -rf node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
+              mkdir -p node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
+              tar -xzf "${sdk_archive}" --strip-components=1 -C node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
+            fi
           else
             node -e "const expected=require('./package.json').dependencies['@treeseed/sdk']; const actual=require('./node_modules/@treeseed/sdk/package.json').version; if(actual!==expected) throw new Error('SDK version mismatch: expected '+expected+', received '+actual);"
           fi
