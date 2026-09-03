@@ -11,10 +11,11 @@ async function expectOk(response: Response, provider: string) {
 export async function validateProviderConnection(
 	connection: Connection,
 	values: Record<string, string>,
+	fetchImpl: typeof fetch = fetch,
 ) {
 	if (connection.providerId === 'github') {
 		if (!values.accessToken) throw new Error('A fine-grained GitHub token is required. Managed Apps are validated through the Connector flow.');
-		const response = await fetch('https://api.github.com/user', {
+		const response = await fetchImpl('https://api.github.com/user', {
 			headers: {
 				accept: 'application/vnd.github+json',
 				authorization: `Bearer ${values.accessToken}`,
@@ -27,7 +28,7 @@ export async function validateProviderConnection(
 	}
 	if (connection.providerId === 'cloudflare') {
 		if (!values.apiToken) throw new Error('Cloudflare API token is required.');
-		const response = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+		const response = await fetchImpl('https://api.cloudflare.com/client/v4/user/tokens/verify', {
 			headers: { authorization: `Bearer ${values.apiToken}` },
 		});
 		await expectOk(response, 'Cloudflare');
@@ -35,7 +36,7 @@ export async function validateProviderConnection(
 	}
 	if (connection.providerId === 'railway') {
 		if (!values.apiToken) throw new Error('Railway workspace token is required.');
-		const response = await fetch('https://backboard.railway.app/graphql/v2', {
+		const response = await fetchImpl('https://backboard.railway.app/graphql/v2', {
 			method: 'POST',
 			headers: {
 				authorization: `Bearer ${values.apiToken}`,
@@ -51,7 +52,7 @@ export async function validateProviderConnection(
 	if (connection.providerId === 'openbao') {
 		const address = String(connection.nonSecretConfig.address ?? '');
 		if (!address.startsWith('https://')) throw new Error('The external vault address must use HTTPS.');
-		const response = await fetch(new URL('/v1/sys/health?standbyok=true&perfstandbyok=true', address), {
+		const response = await fetchImpl(new URL('/v1/sys/health?standbyok=true&perfstandbyok=true', address), {
 			redirect: 'error',
 		});
 		if (![200, 429, 472, 473].includes(response.status)) {

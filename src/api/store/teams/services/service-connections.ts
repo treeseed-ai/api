@@ -171,6 +171,14 @@ export async function upsertTeamServiceCapabilityMethod(
 		[connectionId, input.capabilityType],
 	);
 	const now = new Date().toISOString();
+	if (input.credentialProfileId) {
+		await this.run(
+			`INSERT INTO team_service_credential_profiles (id, team_id, connection_id, definition_id, custody_mode, status, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, 'client_encrypted_vault', 'pending', ?, ?)
+			 ON CONFLICT(connection_id, definition_id) DO UPDATE SET updated_at = excluded.updated_at`,
+			[randomUUID(), teamId, connectionId, input.credentialProfileId, now, now],
+		);
+	}
 	if (existing) {
 		await this.run(
 			`UPDATE team_service_capability_bindings SET status = ?, credential_profile_id = ?, configuration_json = ?, updated_at = ? WHERE id = ?`,
