@@ -69,6 +69,15 @@ jobs:
         with: { node-version: 24 }
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with: { name: "api-source-${{ github.sha }}", path: release-assets }
+      - name: Promote declared source assets into the sealed candidate root
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' sourcePackages < <(find release-assets/source-assets -maxdepth 1 -type f -name '*.tgz' -print0)
+          test "${#sourcePackages[@]}" -eq 1
+          test -f release-assets/source-assets/sbom.cdx.json
+          install -m 0644 "${sourcePackages[0]}" release-assets/
+          install -m 0644 release-assets/source-assets/sbom.cdx.json release-assets/
       - run: npm ci --ignore-scripts --no-audit --no-fund && ./scripts/build/hydrate-exact-sdk.sh release-assets install
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
