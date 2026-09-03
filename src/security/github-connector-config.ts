@@ -19,7 +19,7 @@ export function isGitHubConnectorKind(value: string): value is GitHubConnectorKi
 
 export function githubConnectorRequiredPermissions(kind: GitHubConnectorKind) {
 	return kind === 'repository'
-		? { contents: 'write' as const, checks: 'read' as const }
+		? { contents: 'write' as const, checks: 'read' as const, administration: 'write' as const }
 		: { contents: 'read' as const, actions: 'write' as const, secrets: 'write' as const, variables: 'write' as const };
 }
 

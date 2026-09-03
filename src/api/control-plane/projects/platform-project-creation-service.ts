@@ -4,6 +4,7 @@ import { extract } from 'tar-stream';
 import { applyPlatformProjectCreate, planPlatformProjectCreate, projectCreatePlanSchema, type ProjectCreateAuthority, type ProjectCreateObservation, type ProjectCreatePlan, type ProjectCreateTarget } from '@treeseed/sdk/platform';
 import { ensureProjectKnowledgeBinding } from '../../../control-plane/seeds/apply-support/projects/projects-core/project-knowledge-binding.ts';
 import { reconcileLibraryProvider } from '../../../control-plane/seeds/apply-support/projects/projects-core/library-provider-reconciliation.ts';
+import { resolveGitHubRepositoryCreationAuthority } from '../../../security/provider-credential-authority.ts';
 
 type Row = Record<string, any>;
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
@@ -45,7 +46,13 @@ async function templateFiles(buffer: Buffer, slug: string) {
 
 export function createPlatformProjectCreationService(store: any, options: { env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch } = {}) {
 	const env = options.env ?? process.env; const fetchImpl = options.fetchImpl ?? fetch;
-	const token = () => text(env.TREESEED_GITHUB_TOKEN) || undefined;
+	const authorities = new Map<string, ReturnType<typeof resolveGitHubRepositoryCreationAuthority>>();
+	const repositoryAuthority = (target: ProjectCreateTarget) => {
+		const key = `${target.team}:${target.repository.owner.toLowerCase()}`;
+		const pending = authorities.get(key) ?? resolveGitHubRepositoryCreationAuthority({ store, teamId: target.team,
+			owner: target.repository.owner, env, fetchImpl });
+		authorities.set(key, pending); return pending;
+	};
 	const resolveTarget = async (input: Partial<ProjectCreateTarget>): Promise<ProjectCreateTarget> => {
 		const team = text(input.team); const slug = text(input.slug); const requested = record(input.repository); const template = record(input.template);
 		const teamRecord = team ? await store.getTeam?.(team) : null; const teamMetadata = record(teamRecord?.metadata);
@@ -65,7 +72,7 @@ export function createPlatformProjectCreationService(store: any, options: { env?
 			repository: { owner, name: text(requested.name) || slug, visibility: requested.visibility === 'public' ? 'public' : 'private' } };
 	};
 	const project = async (target: ProjectCreateTarget) => store.getProjectByTeamAndSlug(target.team, target.slug);
-	const remote = (target: ProjectCreateTarget) => github(fetchImpl, token(), `/repos/${encodeURIComponent(target.repository.owner)}/${encodeURIComponent(target.repository.name)}`);
+	const remote = (target: ProjectCreateTarget, credential?: string) => github(fetchImpl, credential, `/repos/${encodeURIComponent(target.repository.owner)}/${encodeURIComponent(target.repository.name)}`);
 	const metadata = (value: unknown) => record(record(value).platformCreation);
 
 	const authority: ProjectCreateAuthority = {
@@ -95,10 +102,10 @@ export function createPlatformProjectCreationService(store: any, options: { env?
 		},
 		async reconcileRepository(target) {
 			const current = await project(target); if (!current) throw new Error('Project authority is missing before repository reconciliation.');
-			let repository = await remote(target); const credential = token();
+			let repository = await remote(target); const authority = await repositoryAuthority(target);
+			if (!repository) repository = await remote(target, authority.token);
 			if (!repository) {
-				if (!credential) throw new Error('A configured repository-hosting authority is required to create the GitHub repository.');
-				repository = await github(fetchImpl, credential, `/orgs/${encodeURIComponent(target.repository.owner)}/repos`, { method: 'POST', body: JSON.stringify({ name: target.repository.name, private: target.repository.visibility === 'private', has_issues: true, auto_init: false }) });
+				repository = await github(fetchImpl, authority.token, `/orgs/${encodeURIComponent(target.repository.owner)}/repos`, { method: 'POST', body: JSON.stringify({ name: target.repository.name, private: target.repository.visibility === 'private', has_issues: true, auto_init: false }) });
 			}
 			if (!repository) throw new Error('GitHub did not return the reconciled repository.');
 			await store.upsertHubRepository(current.id, { teamId: target.team, role: 'primary', provider: 'github', owner: target.repository.owner,
@@ -109,8 +116,8 @@ export function createPlatformProjectCreationService(store: any, options: { env?
 			const tag = `template/${target.template.version}`; const artifactUrl = `https://github.com/treeseed-ai/template-${encodeURIComponent(target.template.id)}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(target.template.id)}-template.tgz`;
 			const response = await fetchImpl(artifactUrl); if (!response.ok) throw new Error(`Template artifact download failed (HTTP ${response.status}).`);
 			const artifact = Buffer.from(await response.arrayBuffer()); if (sha256(artifact) !== target.template.digest) throw new Error('Template artifact digest does not match the accepted release.');
-			const files = await templateFiles(artifact, target.slug); const base = `/repos/${encodeURIComponent(target.repository.owner)}/${encodeURIComponent(target.repository.name)}`; const credential = token();
-			if (!credential) throw new Error('Repository-hosting write authority is required to apply the project template.');
+			const files = await templateFiles(artifact, target.slug); const base = `/repos/${encodeURIComponent(target.repository.owner)}/${encodeURIComponent(target.repository.name)}`;
+			const credential = (await repositoryAuthority(target)).token;
 			const treeEntries = []; for (const [path, content] of [...files].sort(([left], [right]) => left.localeCompare(right))) {
 				const blob = await github(fetchImpl, credential, `${base}/git/blobs`, { method: 'POST', body: JSON.stringify({ content: content.toString('base64'), encoding: 'base64' }) });
 				treeEntries.push({ path, mode: '100644', type: 'blob', sha: blob?.sha });
@@ -127,8 +134,10 @@ export function createPlatformProjectCreationService(store: any, options: { env?
 		},
 		async reconcileLibrary(target) {
 			const current = await project(target); if (!current) throw new Error('Project authority is missing before TreeDX binding.'); const name = libraryName(target);
+			const authority = await repositoryAuthority(target);
 			const provider = await reconcileLibraryProvider({ store, teamId: target.team, projectId: current.id, projectSlug: target.slug, owner: target.repository.owner, name,
-				visibility: target.repository.visibility, lifecycle: 'create-or-adopt', env, fetchImpl, seedFiles: { 'README.md': `# ${target.slug} Library\n` } });
+				visibility: target.repository.visibility, lifecycle: 'create-or-adopt', env, fetchImpl, repositoryAuthority: authority,
+				seedFiles: { 'README.md': `# ${target.slug} Library\n` } });
 			await store.upsertHubRepository(current.id, { teamId: target.team, role: 'library', provider: 'github', owner: target.repository.owner, name,
 				url: repositoryUrl(target.repository.owner, name), defaultBranch: 'main', currentBranch: 'staging', status: 'active' });
 			await ensureProjectKnowledgeBinding({ store, projectId: current.id, teamId: target.team, projectSlug: target.slug, libraryRoot: '.', libraryRef: 'refs/remotes/origin/staging',

@@ -72,7 +72,7 @@
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
     "@treeseed/deployment": "https://github.com/treeseed-ai/deployment/releases/download/0.1.0-rc.227/treeseed-deployment-runtime-0.1.0-rc.227.tgz",
-    "@treeseed/sdk": "0.13.0-rc.80",
+    "@treeseed/sdk": "0.13.0-rc.82",
     "@treeseed/treedx": "0.3.0-rc.4",
     "drizzle-orm": "^0.45.2",
     "hono": "4.13.3",
