@@ -12,17 +12,17 @@ export async function resolveHostedVaultMaterial(input: {
 }): Promise<HostedInfrastructureVaultMaterial> {
 	const request = input.request, statePurpose = request.purpose !== 'provider';
 	const connectionRef = request.connectionRef;
-	const profile = statePurpose ? 'cloudflare-storage' : request.credentialProfileId;
+	const profile = request.credentialProfileId;
 	if (!connectionRef) throw new Error('Hosted state authority has no team storage connection.');
 	const row = await input.store.first(`SELECT a.*, c.provider_id FROM provider_credential_authorities a
 		JOIN team_service_connections c ON c.id = a.connection_id AND c.team_id = a.team_id
 		JOIN team_service_capability_bindings b ON b.connection_id = c.id AND b.team_id = c.team_id
 			AND b.credential_profile_id = a.credential_profile_id AND b.capability_type = ? AND b.status = 'configured'
 		WHERE a.team_id = ? AND (a.connection_id = ? OR c.display_name = ?) AND c.provider_id = ? AND c.status = 'active'
-		AND a.credential_profile_id = ? AND (a.status = 'ready' OR (a.scheme = 'client-encrypted' AND a.status = 'interactive-only'))`, [statePurpose ? 'object-storage' : request.capabilities[0], request.teamId, connectionRef, connectionRef, statePurpose ? 'cloudflare' : request.provider, profile]);
+		AND a.credential_profile_id = ? AND (a.status = 'ready' OR (a.scheme = 'client-encrypted' AND a.status = 'interactive-only'))`, [request.capabilities[0], request.teamId, connectionRef, connectionRef, statePurpose ? 'cloudflare' : request.provider, profile]);
 	if (!row) throw new Error(`Ready ${profile} service-vault authority is required for hosted ${request.purpose}.`);
 	const granted = JSON.parse(row.capabilities_json ?? '[]');
-	const requiredCapabilities = statePurpose ? ['object-storage'] : request.capabilities;
+	const requiredCapabilities = request.capabilities;
 	if (requiredCapabilities.some((capability) => !granted.includes(capability))) throw new Error(`The ${profile} authority does not grant the requested capabilities.`);
 	let resolved: ExternalMaterial;
 	if (row.scheme === 'environment-reference' && request.purpose === 'provider') {
