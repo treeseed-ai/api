@@ -51,6 +51,15 @@ export function createPlatformProjectCreationService(store: any, options: { env?
 		const teamRecord = team ? await store.getTeam?.(team) : null; const teamMetadata = record(teamRecord?.metadata);
 		let owner = text(requested.owner) || text(env.TREESEED_GITHUB_OWNER) || text(teamMetadata.githubOwner) || text(teamMetadata.repositoryOwner);
 		if (!owner && team) owner = text((await store.first?.(`SELECT owner FROM project_remote_repository_bindings WHERE team_id=? AND owner IS NOT NULL AND owner<>'' ORDER BY updated_at DESC LIMIT 1`, [team]))?.owner);
+		if (!owner && team) {
+			const projects = await store.listTeamProjects?.(team) ?? [];
+			for (const candidate of projects) {
+				const repositories = await store.listHubRepositories?.(String(candidate.id)) ?? [];
+				owner = text(repositories.find((repository: Row) => repository.role === 'primary' && text(repository.owner))?.owner)
+					|| text(repositories.find((repository: Row) => text(repository.owner))?.owner);
+				if (owner) break;
+			}
+		}
 		if (!team || !slug || !owner) throw new Error('Project creation requires an active team, a portable slug, and a configured GitHub repository owner.');
 		return { team, slug, template: { id: text(template.id), version: text(template.version), digest: text(template.digest) },
 			repository: { owner, name: text(requested.name) || slug, visibility: requested.visibility === 'public' ? 'public' : 'private' } };
