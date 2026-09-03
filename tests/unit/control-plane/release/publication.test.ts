@@ -21,6 +21,7 @@ describe('managed API release publication', () => {
 		const workflow = parse(workflowSource) as { on?: { push?: { branches?: string[]; tags?: string[] } }; jobs: Record<string, { needs?: string | string[]; strategy?: { matrix?: { include?: Array<{ image: string }> } }; steps?: Array<{ uses?: string; name?: string }> }> };
 		expect(workflow.on?.push?.tags).toContain('!*-runtime.*');
 		expect(workflow.on?.push?.branches).toContain('staging');
+		expect(workflow.on?.push?.branches).toContain('main');
 		const images = workflow.jobs['candidate-build']?.strategy?.matrix?.include?.map((entry) => entry.image) ?? [];
 		expect(images.filter((image) => image === 'treeseed/api')).toHaveLength(2);
 		expect(images.filter((image) => image === 'treeseed/op-runner')).toHaveLength(2);
@@ -32,6 +33,8 @@ describe('managed API release publication', () => {
 		expect(workflowSource).toContain('sourcePackages');
 		expect(workflowSource).toContain('install -m 0644 "${sourcePackages[0]}" release-assets/');
 		expect(workflowSource).toContain('install -m 0644 release-assets/source-assets/sbom.cdx.json release-assets/');
+		expect(workflowSource).toContain("environment: ${{ contains(github.ref_name, '-') && 'staging' || 'production' }}");
+		expect(workflowSource).toContain('candidate_branch=staging; else candidate_branch=main');
 	});
 
 	it('materializes exact production images without a source build or host port', () => {
