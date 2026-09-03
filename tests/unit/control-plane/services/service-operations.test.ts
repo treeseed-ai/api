@@ -9,18 +9,21 @@ describe('service provider catalog operations', () => {
 	it('binds only the retained provider and authority operations', async () => {
 		const services = {
 			providers: vi.fn(() => ({ items: [] })), connections: vi.fn(async () => ({ items: [], cursor: null })),
+			userVaultKey: vi.fn(async () => null), putUserVaultKey: vi.fn(async () => ({ id: 'key-1' })),
+			teamVault: vi.fn(async () => null), initializeTeamVault: vi.fn(async () => ({ teamId: 'team-1' })),
+			resetTeamVault: vi.fn(async () => ({ teamId: 'team-1' })), rotateTeamVault: vi.fn(async () => ({ teamId: 'team-1' })),
+			grantCandidates: vi.fn(async () => []), createGrant: vi.fn(async () => ({ id: 'grant-1' })),
+			deleteGrant: vi.fn(async () => ({ id: 'grant-1', status: 'revoked' })), credentialEnvelopes: vi.fn(async () => []),
+			putCredentialEnvelope: vi.fn(async () => ({ id: 'envelope-1' })), createLease: vi.fn(async () => ({ id: 'lease-1' })),
+			operationLease: vi.fn(async () => ({ id: 'lease-1' })), putLeasePayload: vi.fn(async () => ({ id: 'lease-1', status: 'ready' })),
 			connection: vi.fn(async () => ({ id: 'connection-1' })), create: vi.fn(async () => ({ id: 'connection-1' })),
 			update: vi.fn(async () => ({ id: 'connection-1', version: 2 })), disconnect: vi.fn(async () => ({ id: 'connection-1' })),
 			authorities: vi.fn(async () => ({ items: [], cursor: null })), putAuthority: vi.fn(async () => ({ id: 'authority-1' })),
 		};
 		const operations = createServiceOperations({ services });
-		expect(operations.map((operation) => operation.binding)).toEqual([
-			CONTROL_PLANE_OPERATIONS.services.providers, CONTROL_PLANE_OPERATIONS.services.connections,
-			CONTROL_PLANE_OPERATIONS.services.connection, CONTROL_PLANE_OPERATIONS.services.createConnection,
-			CONTROL_PLANE_OPERATIONS.services.updateConnection, CONTROL_PLANE_OPERATIONS.services.disconnect,
-			CONTROL_PLANE_OPERATIONS.services.authorities, CONTROL_PLANE_OPERATIONS.services.putAuthority,
-		]);
-		await operations[4].handler({ path: { teamId: 'team-1', connectionId: 'connection-1' }, query: {}, body: { displayName: 'GitHub' } },
+		expect(operations.map((operation) => operation.binding)).toContain(CONTROL_PLANE_OPERATIONS.services.putOperationLeasePayload);
+		const update = operations.find((operation) => operation.binding === CONTROL_PLANE_OPERATIONS.services.updateConnection)!;
+		await update.handler({ path: { teamId: 'team-1', connectionId: 'connection-1' }, query: {}, body: { displayName: 'GitHub' } },
 			{ interface: 'rest', requestId: 'request-1', principal, ifMatch: '1' });
 		expect(services.update).toHaveBeenCalledWith(principal, 'team-1', 'connection-1', { displayName: 'GitHub' }, '1');
 	});

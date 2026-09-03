@@ -6,8 +6,8 @@ import { createGitHubConfigurationExecutor } from '../../workflows/github-config
 import { createTreeDxCommitReplicationExecutor } from '../../treedx/commit-replication-executor.ts';
 import { createTreeDxRemoteHeadReconciliationExecutor } from '../../treedx/remote-head-reconciliation-executor.ts';
 import { createHostedTopologyExecutors } from '../../infrastructure/hosted-topology-executor.ts';
-import { createDeploymentHostedAdapter } from '../../infrastructure/deployment-hosted-adapter.ts';
 import { createOpenBaoHostedAuthorityResolver } from '../../infrastructure/openbao-vault-resolver.ts';
+import { createServiceCredentialValidationExecutor } from '../../security/service-credential-validation-executor.ts';
 
 export function createExecutors() {
 	return createExecutorsForOptions({});
@@ -15,9 +15,7 @@ export function createExecutors() {
 
 export function createExecutorsForOptions(options: any = {}) {
 	const externalAuthorityResolver = options.externalAuthorityResolver ?? (options.controlPlaneStore ? createOpenBaoHostedAuthorityResolver({ store: options.controlPlaneStore, env: options.env, fetchImpl: options.fetchImpl }) : undefined);
-	const hostedTopologyAdapter = options.hostedTopologyAdapter ?? (options.controlPlaneStore
-		? createDeploymentHostedAdapter({ store: options.controlPlaneStore, dataDir: options.config?.dataDir ?? '.treeseed/operations-runner', fetchImpl: options.fetchImpl, env: options.env, externalAuthorityResolver })
-		: undefined);
+	const hostedTopologyAdapter = options.hostedTopologyAdapter;
 	const workflowExecutor = createGitHubWorkflowExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
 	const workflowConfigurationExecutor = createGitHubConfigurationExecutor({ controlPlaneStore: options.controlPlaneStore, fetchImpl: options.fetchImpl });
 	const noop = {
@@ -37,7 +35,8 @@ export function createExecutorsForOptions(options: any = {}) {
 		createKnowledgePackCleanupExecutor(options),
 		createTreeDxCommitReplicationExecutor(options),
 		createTreeDxRemoteHeadReconciliationExecutor(options),
-		...createHostedTopologyExecutors({ ...options, hostedTopologyAdapter }),
+		...createHostedTopologyExecutors({ ...options, hostedTopologyAdapter, externalAuthorityResolver }),
+		createServiceCredentialValidationExecutor(options),
 		workflowExecutor,
 		workflowConfigurationExecutor,
 	].filter((executor) => !options.operationKey || `${executor.namespace}:${executor.operation}` === options.operationKey);
