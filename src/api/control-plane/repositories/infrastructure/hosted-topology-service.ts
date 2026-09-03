@@ -123,15 +123,15 @@ export function createHostedTopologyService(store: any, serviceVault: any) {
 		async apply(principal: Principal, teamId: string, body: Record<string, unknown>, ifMatch?: string, idempotencyKey?: string) {
 			const actor = await authorize(store, principal, teamId, 'infrastructure:write:team');
 			const forbidden = rejectCredentialMaterial(body); if (forbidden.length) throw new CapacityOperationError(400, 'plaintext_secret_rejected', `Credential-like topology fields are forbidden: ${forbidden.join(', ')}.`);
-			const plan = hostedTopologyPlanSchema.parse(body.plan); authorizeHostedTopologyPlan(plan, body.approval as any);
+			const plan = hostedTopologyPlanSchema.parse(body.plan); authorizeHostedTopologyPlan(plan);
 			if (plan.teamId !== teamId) throw new CapacityOperationError(403, 'hosted_topology_team_mismatch', 'Topology custody must match the authorized team.');
 			if (etag(ifMatch) !== plan.planDigest) throw new CapacityOperationError(412, 'hosted_topology_plan_precondition_failed', 'If-Match must bind the exact reviewed topology plan digest.');
-			const requests = renderHostedInfrastructureWorkspace({ plan: authorizeHostedTopologyPlan(plan, body.approval as any) }).authorities;
+			const requests = renderHostedInfrastructureWorkspace({ plan: authorizeHostedTopologyPlan(plan) }).authorities;
 			const hostedBinding = { subjectType: 'plan', subjectDigest: plan.planDigest, deploymentId: plan.deploymentId,
 				stackId: plan.stackId, environment: plan.environment };
 			const leases = await operationCredentialLeases(store, serviceVault, principal, teamId, 'hosted-topology-apply', hostedBinding, requests);
 			const operation = await store.createPlatformOperation({ namespace: 'infrastructure', operation: 'hosted-topology-apply', target: 'control_plane_operations_runner', idempotencyKey,
-				input: { teamId, plan, approval: body.approval, credentialLeaseIds: leases.map(({ id }) => id) }, requestedByType: 'user', requestedById: actor.id });
+				input: { teamId, plan, credentialLeaseIds: leases.map(({ id }) => id) }, requestedByType: 'user', requestedById: actor.id });
 			return { operation, credentialLeases: leases };
 		},
 		async status(principal: Principal, teamId: string) {
@@ -141,7 +141,7 @@ export function createHostedTopologyService(store: any, serviceVault: any) {
 		},
 		async rollback(principal: Principal, teamId: string, body: Record<string, unknown>, ifMatch?: string, idempotencyKey?: string) {
 			const actor = await authorize(store, principal, teamId, 'infrastructure:write:team');
-			const execution = hostedTopologyRollbackExecutionSchema.parse(body.execution); authorizeHostedTopologyRollbackExecution(execution, body.approval as any);
+			const execution = hostedTopologyRollbackExecutionSchema.parse(body.execution); authorizeHostedTopologyRollbackExecution(execution);
 			const sourcePlan = hostedTopologyPlanSchema.parse(body.sourcePlan), targetPlan = hostedTopologyPlanSchema.parse(body.targetPlan);
 			const rollback = execution.rollback;
 			if (etag(ifMatch) !== execution.executionDigest) throw new CapacityOperationError(412, 'hosted_topology_rollback_precondition_failed', 'If-Match must bind the exact reviewed rollback execution digest.');
@@ -149,12 +149,12 @@ export function createHostedTopologyService(store: any, serviceVault: any) {
 			if (!receipt || receipt.receiptId !== rollback.sourceReceiptId) throw new CapacityOperationError(409, 'hosted_topology_rollback_stale', 'Rollback must target the latest known-good topology receipt.');
 			const expected = planHostedTopologyRollbackExecution({ rollback, sourceReceipt: receipt, sourcePlan, targetPlan });
 			if (expected.executionDigest !== execution.executionDigest) throw new CapacityOperationError(409, 'hosted_topology_rollback_closure_mismatch', 'Rollback execution must bind the exact source receipt and source and target plans.');
-			const requests = renderHostedInfrastructureRollbackWorkspace({ execution, approval: body.approval, sourceReceipt: receipt, sourcePlan, targetPlan }).authorities;
+			const requests = renderHostedInfrastructureRollbackWorkspace({ execution, sourceReceipt: receipt, sourcePlan, targetPlan }).authorities;
 			const hostedBinding = { subjectType: 'rollback', subjectDigest: execution.executionDigest,
 				deploymentId: execution.deploymentId, stackId: execution.stackId, environment: execution.environment };
 			const leases = await operationCredentialLeases(store, serviceVault, principal, teamId, 'hosted-topology-rollback', hostedBinding, requests);
 			const operation = await store.createPlatformOperation({ namespace: 'infrastructure', operation: 'hosted-topology-rollback', target: 'control_plane_operations_runner', idempotencyKey,
-				input: { teamId, execution, approval: body.approval, sourcePlan, targetPlan,
+				input: { teamId, execution, sourcePlan, targetPlan,
 					credentialLeaseIds: leases.map(({ id }) => id) }, requestedByType: 'user', requestedById: actor.id });
 			return { operation, credentialLeases: leases };
 		},

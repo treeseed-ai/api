@@ -8,7 +8,7 @@ const digest = (marker: string) => `sha256:${marker.repeat(64)}`;
 const connections = { cloudflare: { connectionRef: 'cloudflare-production', nonSecretConfig: { deploymentEnvironment: 'production', accountId: 'account' } },
 	railway: { connectionRef: 'railway-production', nonSecretConfig: { deploymentEnvironment: 'production', workspaceId: 'workspace', projectId: 'project', environmentId: 'environment', environmentName: 'production' } } };
 function declaration(): HostedTopologyDeclaration { return hostedTopologyDeclarationSchema.parse({
-	schemaVersion: 'treeseed.hosted-topology/v1', id: 'production', teamId: 'team-1', deploymentId: 'treeseed-cloud', stackId: 'control-plane', environment: 'production', mutation: 'approval-required',
+	schemaVersion: 'treeseed.hosted-topology/v1', id: 'production', teamId: 'team-1', deploymentId: 'treeseed-cloud', stackId: 'control-plane', environment: 'production', mutation: 'agent-authorized',
 	platform: { repository: 'treeseed-ai/platform', commit: 'a'.repeat(40) },
 	stateBackend: { connectionRef: 'cloudflare-state' },
 	providerConnections: { cloudflare: { connectionRef: 'cloudflare-production' }, railway: { connectionRef: 'railway-production' } },
@@ -72,13 +72,12 @@ describe('hosted topology control-plane and runner', () => {
 		await expect(service.plan({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { declaration: value })).rejects.toMatchObject({ code: 'hosted_provider_connection_unavailable' });
 	});
 
-	it('queues only exact approved plans with concurrency and no plaintext credentials', async () => {
+	it('queues only exact agent-authorized plans with concurrency and no plaintext credentials', async () => {
 		const state = store(), value = declaration();
 		const service = createHostedTopologyService(state, unusedVault);
 		const plan = planHostedTopology({ declaration: value, observations: missing(value), connections, stateBackend: backend() });
-		const approval = { schemaVersion: 'treeseed.hosted-topology-approval/v1' as const, planDigest: plan.planDigest, teamId: plan.teamId, deploymentId: plan.deploymentId, stackId: plan.stackId, environment: plan.environment, backendBindingDigest: plan.stateBackend!.bindingDigest, decision: 'approved' as const, approvedBy: 'human-owner', approvedAt: now };
-		await expect(service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan, approval }, 'wrong', 'id-1')).rejects.toMatchObject({ code: 'hosted_topology_plan_precondition_failed' });
-		const queued = await service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan, approval }, `"${plan.planDigest}"`, 'id-1');
+		await expect(service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan }, 'wrong', 'id-1')).rejects.toMatchObject({ code: 'hosted_topology_plan_precondition_failed' });
+		const queued = await service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan }, `"${plan.planDigest}"`, 'id-1');
 		expect(queued).toMatchObject({ operation: { namespace: 'infrastructure', operation: 'hosted-topology-apply', idempotencyKey: 'id-1' }, credentialLeases: [] });
 		await expect(service.plan({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { declaration: value, apiToken: 'forbidden' })).rejects.toMatchObject({ code: 'plaintext_secret_rejected' });
 	});
@@ -95,10 +94,7 @@ describe('hosted topology control-plane and runner', () => {
 			},
 		});
 		const plan = planHostedTopology({ declaration: value, observations: missing(value), connections, stateBackend: backend() });
-		const approval = { schemaVersion: 'treeseed.hosted-topology-approval/v1' as const, planDigest: plan.planDigest,
-			teamId: plan.teamId, deploymentId: plan.deploymentId, stackId: plan.stackId, environment: plan.environment,
-			backendBindingDigest: plan.stateBackend!.bindingDigest, decision: 'approved' as const, approvedBy: 'human-owner', approvedAt: now };
-		const accepted = await service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan, approval }, plan.planDigest);
+		const accepted = await service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan }, plan.planDigest);
 		expect(accepted.credentialLeases).toHaveLength(4);
 		expect(created.map((item) => item.credentialProfileId).sort()).toEqual([
 			'cloudflare-runtime', 'opentofu-state-encryption', 'railway-workspace', 's3-state-session',
@@ -111,28 +107,25 @@ describe('hosted topology control-plane and runner', () => {
 	it('executes through an injected adapter, verifies read-back, and persists a redacted receipt', async () => {
 		const state = store(), value = declaration();
 		const plan = planHostedTopology({ declaration: value, observations: missing(value), connections, stateBackend: backend() });
-		const approval = { schemaVersion: 'treeseed.hosted-topology-approval/v1' as const, planDigest: plan.planDigest, teamId: plan.teamId, deploymentId: plan.deploymentId, stackId: plan.stackId, environment: plan.environment, backendBindingDigest: plan.stateBackend!.bindingDigest, decision: 'approved' as const, approvedBy: 'human-owner', approvedAt: now };
 		const [, executor, rollbackExecutor] = createHostedTopologyExecutors({ controlPlaneStore: state, hostedTopologyAdapter: {
 			async observe() { return missing(value); }, async apply() { return healthy(value); }, async rollback() { return missing(value); },
 		} });
 		const checkpoints: unknown[] = [];
-		const result = await executor!.run({ teamId: 'team-1', plan, approval }, { async checkpoint(output: unknown) { checkpoints.push(output); } }) as any;
+		const result = await executor!.run({ teamId: 'team-1', plan }, { async checkpoint(output: unknown) { checkpoints.push(output); } }) as any;
 		expect(result.receipt.state).toBe('known-good');
 		expect(state.records).toHaveLength(2);
-		expect(JSON.stringify(state.records)).not.toContain('human-owner');
+		expect(JSON.stringify(state.records)).not.toContain('approval');
 		expect(checkpoints).toHaveLength(2);
 		const rollback = planHostedTopologyRollback(result.receipt);
 		const targetDeclaration = hostedTopologyDeclarationSchema.parse({ ...value, resources: [] });
 		const targetPlan = planHostedTopology({ declaration: targetDeclaration, observations: [], connections, stateBackend: backend() });
 		const execution = planHostedTopologyRollbackExecution({ rollback, sourceReceipt: result.receipt, sourcePlan: plan, targetPlan });
-		const rollbackApproval = { schemaVersion: 'treeseed.hosted-topology-rollback-execution-approval/v1' as const,
-			executionDigest: execution.executionDigest, teamId: execution.teamId, deploymentId: execution.deploymentId, stackId: execution.stackId, environment: execution.environment, backendBindingDigest: execution.backendBindingDigest, decision: 'approved' as const, approvedBy: 'human-owner', approvedAt: now };
 		const service = createHostedTopologyService(state, unusedVault);
-		await expect(service.rollback({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { execution, approval: rollbackApproval, sourcePlan: plan, targetPlan }, 'wrong')).rejects.toMatchObject({ code: 'hosted_topology_rollback_precondition_failed' });
-		const queued = await service.rollback({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { execution, approval: rollbackApproval, sourcePlan: plan, targetPlan }, execution.executionDigest, 'rollback-1');
+		await expect(service.rollback({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { execution, sourcePlan: plan, targetPlan }, 'wrong')).rejects.toMatchObject({ code: 'hosted_topology_rollback_precondition_failed' });
+		const queued = await service.rollback({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { execution, sourcePlan: plan, targetPlan }, execution.executionDigest, 'rollback-1');
 		expect(queued).toMatchObject({ operation: { operation: 'hosted-topology-rollback', input: { execution: { executionDigest: execution.executionDigest } } }, credentialLeases: [] });
-		const rolledBack = await rollbackExecutor!.run({ teamId: 'team-1', execution, approval: rollbackApproval, sourcePlan: plan, targetPlan }, { async checkpoint() {} }) as any;
+		const rolledBack = await rollbackExecutor!.run({ teamId: 'team-1', execution, sourcePlan: plan, targetPlan }, { async checkpoint() {} }) as any;
 		expect(rolledBack).toMatchObject({ rolledBackFrom: result.receipt.receiptId, receipt: { resources: [{ state: 'missing' }, { state: 'missing' }] } });
-		expect(JSON.stringify(state.records)).not.toContain('human-owner');
+		expect(JSON.stringify(state.records)).not.toContain('approval');
 	});
 });

@@ -25,7 +25,7 @@ describe('catalogued POST read request bodies', () => {
 	it('accepts the current typed hosted-topology declaration at the REST boundary', async () => {
 		const declaration = {
 			schemaVersion: 'treeseed.hosted-topology/v1' as const, id: 'staging', teamId: 'team-1', deploymentId: 'treeseed-cloud', stackId: 'control-plane', environment: 'staging' as const,
-			mutation: 'approval-required' as const, platform: { repository: 'treeseed-ai/platform' as const, commit: 'a'.repeat(40) }, stateBackend: { connectionRef: 'cloudflare-state' }, providerConnections: { cloudflare: { connectionRef: 'cloudflare-hosting' } },
+			mutation: 'agent-authorized' as const, platform: { repository: 'treeseed-ai/platform' as const, commit: 'a'.repeat(40) }, stateBackend: { connectionRef: 'cloudflare-state' }, providerConnections: { cloudflare: { connectionRef: 'cloudflare-hosting' } },
 			artifacts: { admin: { kind: 'archive' as const, format: 'tar+gzip' as const, digest: `sha256:${'b'.repeat(64)}`, source: 'https://example.test/admin.tgz' } },
 			resources: [{ id: 'admin', provider: 'cloudflare' as const, kind: 'pages-application' as const, dependsOn: [], parameters: { name: { input: 'admin-name' }, artifact: { artifact: 'admin' }, 'artifact-format': { literal: 'tar+gzip' }, 'production-branch': { literal: 'staging' }, 'destination-dir': { literal: '.' } }, adoption: { mode: 'adopt-or-create' as const, replacement: 'forbidden' as const } }],
 		};
