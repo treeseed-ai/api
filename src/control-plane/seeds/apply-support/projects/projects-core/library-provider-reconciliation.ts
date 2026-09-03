@@ -73,11 +73,34 @@ async function ensureEnvironmentAuthority(input: { store: any; teamId: string; p
 	return { bindingId, authorityId };
 }
 
+async function ensureProvidedAuthority(input: { store: any; teamId: string; projectId: string; owner: string; name: string;
+	repository: Record<string, any>; heads: Record<string,string>; authority: RepositoryAuthority }) {
+	const now = new Date().toISOString();
+	const bindingId = identifier('repository-binding', `${input.projectId}:${input.owner}/${input.name}`);
+	await input.store.run(`INSERT INTO project_remote_repository_bindings
+		(id,project_id,team_id,service_connection_id,capability_binding_id,provider_id,provider_repository_id,owner,name,clone_url,
+		default_ref,publication_ref,authority_id,expected_head,observed_head,grant_status,drift,version,created_at,updated_at)
+		VALUES (?,?,?,?,?,'github',?,?,?,?, 'refs/heads/main','refs/heads/staging',?,?,?,'ready','none',1,?,?)
+		ON CONFLICT(project_id) DO UPDATE SET service_connection_id=excluded.service_connection_id,capability_binding_id=excluded.capability_binding_id,
+		provider_id='github',provider_repository_id=excluded.provider_repository_id,owner=excluded.owner,name=excluded.name,clone_url=excluded.clone_url,
+		default_ref=excluded.default_ref,publication_ref=excluded.publication_ref,authority_id=excluded.authority_id,expected_head=excluded.expected_head,
+		observed_head=excluded.observed_head,grant_status='ready',drift='none',version=project_remote_repository_bindings.version+1,updated_at=excluded.updated_at`, [
+		bindingId,input.projectId,input.teamId,input.authority.serviceConnectionId,input.authority.capabilityBindingId,
+		String(input.repository.id),input.owner,input.name,`https://github.com/${input.owner}/${input.name}.git`,input.authority.authorityId,
+		input.heads.staging,input.heads.staging,now,now,
+	]);
+	return { bindingId, authorityId: input.authority.authorityId };
+}
+
+type RepositoryAuthority = { token: string; authorityId: string; serviceConnectionId: string; capabilityBindingId: string };
+
 export async function reconcileLibraryProvider(input: {
 	store: any; teamId: string; projectId: string; projectSlug: string; owner: string; name: string; visibility: 'public'|'private';
 	lifecycle: 'create-or-adopt'|'adopt-only'; env: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;seedFiles?:Record<string,string>;
+	repositoryAuthority?: RepositoryAuthority;
 }) {
-	const fetchImpl = input.fetchImpl ?? fetch; const token = String(input.env.TREESEED_GITHUB_TOKEN ?? '').trim() || undefined;
+	const fetchImpl = input.fetchImpl ?? fetch;
+	const token = input.repositoryAuthority?.token ?? (String(input.env.TREESEED_GITHUB_TOKEN ?? '').trim() || undefined);
 	let repository = await github({ fetchImpl, token, path: `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}` });
 	if (!repository && token && input.name.endsWith('-library')) {
 		const legacyName = `${input.name.slice(0, -'-library'.length)}-content`;
@@ -113,7 +136,9 @@ export async function reconcileLibraryProvider(input: {
 	}
 	const heads = { main, staging };
 	if (!token) return { heads, credentialId: undefined };
-	const authority = await ensureEnvironmentAuthority({ ...input, repository, heads });
+	const authority = input.repositoryAuthority
+		? await ensureProvidedAuthority({ ...input, repository, heads, authority: input.repositoryAuthority })
+		: await ensureEnvironmentAuthority({ ...input, repository, heads });
 	if (input.visibility === 'public') return { heads, credentialId: undefined };
 	const refspecs = ['+refs/heads/main:refs/remotes/origin/main','+refs/heads/staging:refs/remotes/origin/staging'];
 	const delivery = await createRemoteGitCredentialDelivery({ store:input.store,

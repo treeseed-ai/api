@@ -34,7 +34,7 @@ function connectorEnvironment(profileId: string) {
 
 function permissionScope(profileId: string) {
 	return profileId === 'github-repository-app'
-		? { contents: 'write', checks: 'read' }
+		? { contents: 'write', checks: 'read', administration: 'write' }
 		: { actions: 'write', contents: 'read', secrets: 'write', variables: 'write' };
 }
 
@@ -42,7 +42,7 @@ async function mintInstallationToken(input: {
 	appId: string;
 	privateKey: string;
 	installationId: string;
-	repository: string;
+	repository?: string;
 	profileId: string;
 	fetchImpl: typeof fetch;
 }) {
@@ -54,13 +54,38 @@ async function mintInstallationToken(input: {
 				accept: 'application/vnd.github+json', authorization: `Bearer ${createGitHubAppJwt(input.appId, input.privateKey)}`,
 				'content-type': 'application/json', 'user-agent': 'treeseed-provider-authority', 'x-github-api-version': '2022-11-28',
 			},
-			body: JSON.stringify({ repositories: [input.repository], permissions: permissionScope(input.profileId) }),
+			body: JSON.stringify({ ...(input.repository ? { repositories: [input.repository] } : {}), permissions: permissionScope(input.profileId) }),
 		},
 	);
 	if (!response.ok) throw new Error(`GitHub rejected the scoped installation token request (HTTP ${response.status}).`);
 	const payload = await response.json() as { token?: string; expires_at?: string };
 	if (!payload.token) throw new Error('GitHub did not return a scoped installation token.');
 	return { token: payload.token, expiresAt: payload.expires_at ?? null };
+}
+
+export async function resolveGitHubRepositoryCreationAuthority(input: {
+	store: any; teamId: string; owner: string; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
+}) {
+	const rows: any[] = await input.store.all(`SELECT a.*, c.non_secret_config_json, c.id AS service_connection_id,
+		b.id AS capability_binding_id FROM provider_credential_authorities a
+		JOIN team_service_connections c ON c.id = a.connection_id AND c.team_id = ? AND c.provider_id = 'github' AND c.status = 'active'
+		JOIN team_service_capability_bindings b ON b.connection_id = c.id AND b.credential_profile_id = a.credential_profile_id
+			AND b.capability_type = 'repository-hosting' AND b.status = 'configured'
+		WHERE a.status = 'ready'`, [input.teamId]);
+	const owner = input.owner.toLowerCase();
+	const matches = rows.filter((row) => {
+		const config = json(row.non_secret_config_json);
+		const connector = json(json(config.githubConnectors).repository);
+		const configuredOwner = String(connector.accountLogin ?? config.organization ?? '').trim().toLowerCase();
+		if (configuredOwner !== owner) return false;
+		return row.scheme !== 'app-installation' || connector.repositorySelection === 'all';
+	});
+	if (!matches.length) throw new Error('A ready team GitHub repository-hosting authority with all-repository installation access is required.');
+	if (matches.length > 1) throw new Error('Multiple GitHub repository-hosting authorities match this team and owner; select one explicitly.');
+	const row = matches[0];
+	const credential = await credentialForRow(row, { capability: 'repository-hosting', env: input.env, fetchImpl: input.fetchImpl });
+	return { ...credential, authorityId: String(row.id), serviceConnectionId: String(row.service_connection_id),
+		capabilityBindingId: String(row.capability_binding_id) };
 }
 
 async function credentialForRow(row: any, input: {
