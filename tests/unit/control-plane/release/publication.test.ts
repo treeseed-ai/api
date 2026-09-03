@@ -29,6 +29,9 @@ describe('managed API release publication', () => {
 		expect(workflow.jobs.promote?.steps?.some(({ uses }) => uses?.includes('docker/build-push-action'))).toBe(false);
 		expect(workflowSource).toContain('release-evidence-v1.json');
 		expect(workflowSource).toContain('imagetools create -t');
+		expect(workflowSource).toContain('sourcePackages');
+		expect(workflowSource).toContain('install -m 0644 "${sourcePackages[0]}" release-assets/');
+		expect(workflowSource).toContain('install -m 0644 release-assets/source-assets/sbom.cdx.json release-assets/');
 	});
 
 	it('materializes exact production images without a source build or host port', () => {
