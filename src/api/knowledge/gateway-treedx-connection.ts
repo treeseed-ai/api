@@ -87,6 +87,10 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		] : [])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const canonicalAuthoringRef = canonicalTreeDxBranchRef(authoringBranch);
+	const integrationRefs = (input.publishRefs ?? []).flatMap((ref) => {
+		const match = /^refs\/treedx\/commits\/([a-f0-9]{40})$/iu.exec(ref);
+		return match ? [`refs/heads/treedx/incoming/${match[1]}`] : [];
+	});
 	const token = treeDxDelegationAuthority().mint({
 		actorId: text(store.config.TREESEED_TREEDX_PROXY_ACTOR_ID, process.env.TREESEED_TREEDX_PROXY_ACTOR_ID) || 'treeseed-api',
 		tenantId: text(store.config.TREESEED_TREEDX_PROXY_TENANT_ID, process.env.TREESEED_TREEDX_PROXY_TENANT_ID) || 'treeseed-control-plane',
@@ -105,7 +109,8 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		refs: [...new Set([text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
 			canonicalTreeDxBranchRef(library.contentRepositoryDefaultBranch ?? 'main'),
 			...(input.write || input.communicationPaths || input.authoringPaths ? [canonicalAuthoringRef] : []),
-			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...(input.maintenanceRefs ?? []), ...(input.replicationRefs ?? []),
+			...(input.readRefs ?? []), ...(input.publishRefs ?? []), ...integrationRefs,
+			...(input.maintenanceRefs ?? []), ...(input.replicationRefs ?? []),
 			...(input.workspaceRefs ?? [])])],
 		paths: allowedPaths },
 	}).token;

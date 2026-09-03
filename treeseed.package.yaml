@@ -78,7 +78,9 @@ development:
       ready: { kind: http, path: /v1/health/ready, expectedStatus: 200, timeoutSeconds: 120 }
       outputs: [{ path: docs/api/openapi.json, mediaType: application/vnd.oai.openapi+json, digestAlgorithm: sha256 }]
       endpoints: [{ id: http, protocol: http, port: 3000, canonicalAlias: api.treeseed.localhost, visibility: host, authentication: application }]
-      dependencies: [{ id: sdk, target: package, locality: local, reaction: restart }]
+      dependencies:
+        - { id: sdk, target: package, locality: local, reaction: restart }
+        - { id: deployment, target: package, locality: local, reaction: restart }
       statePolicy: shared-compatible
       migrationPolicy: explicit-review
       secretRefs:
@@ -115,6 +117,7 @@ development:
       endpoints: []
       dependencies:
         - { id: sdk, target: package, locality: local, reaction: rebuild }
+        - { id: deployment, target: package, locality: local, reaction: rebuild }
         - { id: api, target: service, locality: local, reaction: restart }
       statePolicy: shared-compatible
       migrationPolicy: explicit-review

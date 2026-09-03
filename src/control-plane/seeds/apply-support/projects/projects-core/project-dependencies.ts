@@ -51,20 +51,24 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
 		lifecycle:action.payload.library.repositoryPolicy?.lifecycle ?? 'adopt-only',env:env ?? process.env,fetchImpl:store.config?.fetchImpl });
 	repairs.push({ kind: 'libraryProvider', projectId, repository: `${action.payload.library.owner}/${action.payload.library.name}`, heads: provider.heads });
 	if (localOnly === true) {
-        repairs.push(await ensureProjectKnowledgeBinding({
-            store,
-            projectId,
-            teamId,
-            projectSlug: action.payload.slug,
-			libraryRoot: '.',
-			libraryRef: 'refs/remotes/origin/staging',
-			libraryRepositoryUrl: action.payload.library.gitUrl,
-			libraryDefaultBranch: action.payload.library.defaultBranch ?? 'main',
-			libraryCredentialId: provider.credentialId,
-			expectedUpstreamHeads: provider.heads,
-            env,
-            dependencyState,
-        }));
-    }
+		try {
+			repairs.push(await ensureProjectKnowledgeBinding({
+				store,
+				projectId,
+				teamId,
+				projectSlug: action.payload.slug,
+				libraryRoot: '.',
+				libraryRef: 'refs/remotes/origin/staging',
+				libraryRepositoryUrl: action.payload.library.gitUrl,
+				libraryDefaultBranch: action.payload.library.defaultBranch ?? 'main',
+				libraryCredentialId: provider.credentialId,
+				expectedUpstreamHeads: provider.heads,
+				env,
+				dependencyState,
+			}));
+		} catch (error) {
+			throw new Error(`${action.key}: ${error instanceof Error ? error.message : 'library reconciliation failed'}`);
+		}
+	}
     return repairs;
 }

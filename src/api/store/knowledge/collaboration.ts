@@ -19,11 +19,9 @@ function review(row: any) {
 		changedPaths: parseJson(row.changed_paths_json, []),
 		contextDigest: row.context_digest ?? undefined,
 		requiresEditorialReview: Number(row.requires_editorial_review ?? 0) === 1,
-		requiresGraphReview: Number(row.requires_graph_review ?? 0) === 1,
 		editorialGateSatisfied: Number(row.editorial_gate_satisfied ?? 0) === 1,
 		technicalReview: parseJson(row.technical_review_json, undefined),
 		audienceReview: parseJson(row.audience_review_json, undefined),
-		graphReview: parseJson(row.graph_review_json, undefined),
 		requiredReviewerIds: parseJson(row.required_reviewer_ids_json, {}),
 	} : null;
 }
@@ -62,10 +60,10 @@ export async function createKnowledgeReviewMethod(this: ControlPlaneStore, input
 	const timestamp = isoNow();
 	await this.run(`INSERT INTO knowledge_reviews
 		(id, workspace_id, status, submitted_by_user_id, notes, commit_sha, changed_paths_json, context_digest,
-			requires_editorial_review, requires_graph_review, editorial_gate_satisfied, required_reviewer_ids_json, created_at, updated_at)
-		VALUES (?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.workspaceId, input.submittedByUserId,
+			requires_editorial_review, editorial_gate_satisfied, required_reviewer_ids_json, created_at, updated_at)
+		VALUES (?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, input.workspaceId, input.submittedByUserId,
 		input.notes ?? null, input.commitSha ?? null, JSON.stringify(input.changedPaths ?? []), input.contextDigest ?? null,
-		input.requiresEditorialReview ? 1 : 0, input.requiresGraphReview ? 1 : 0, input.requiresEditorialReview ? 0 : 1,
+		input.requiresEditorialReview ? 1 : 0, input.requiresEditorialReview ? 0 : 1,
 		JSON.stringify(input.requiredReviewerIds ?? {}), timestamp, timestamp]);
 	return review(await this.first(`SELECT * FROM knowledge_reviews WHERE id = ?`, [id]));
 }
@@ -94,12 +92,12 @@ export async function submitKnowledgeWorkspaceMethod(this: ControlPlaneStore, in
 	), inserted_review AS (
 		INSERT INTO knowledge_reviews
 			(id, workspace_id, status, submitted_by_user_id, notes, commit_sha, changed_paths_json, context_digest,
-				requires_editorial_review, requires_graph_review, editorial_gate_satisfied, required_reviewer_ids_json, created_at, updated_at)
-		SELECT ?, id, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM updated_workspace RETURNING id
+				requires_editorial_review, editorial_gate_satisfied, required_reviewer_ids_json, created_at, updated_at)
+		SELECT ?, id, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM updated_workspace RETURNING id
 	)
 	SELECT id FROM inserted_review`, [input.workspaceId, input.workspaceVersion, timestamp, id,
 		input.submittedByUserId, input.notes ?? null, input.commitSha, JSON.stringify(input.changedPaths ?? []),
-		input.contextDigest ?? null, input.requiresEditorialReview ? 1 : 0, input.requiresGraphReview ? 1 : 0,
+		input.contextDigest ?? null, input.requiresEditorialReview ? 1 : 0,
 		input.requiresEditorialReview ? 0 : 1, JSON.stringify(input.requiredReviewerIds ?? {}), timestamp, timestamp]);
 	return inserted?.id ? { ok: true, review: await this.getKnowledgeReview(inserted.id),
 		workspace: await this.getKnowledgeWorkspace(input.workspaceId) }
@@ -148,26 +146,23 @@ export async function recordKnowledgeEditorialReviewMethod(this: ControlPlaneSto
 	await this.ensureInitialized();
 	const current = await this.getKnowledgeReview(id);
 	if (!current || current.status !== 'open') return { ok: false, code: 'stale_or_missing', review: current };
-	const existingReviewers = [current.technicalReview, current.audienceReview, current.graphReview]
+	const existingReviewers = [current.technicalReview, current.audienceReview]
 		.filter((entry: any) => entry && entry.kind !== input.result.kind).map((entry: any) => entry.reviewerId);
 	if (existingReviewers.includes(input.result.reviewerId)) return { ok: false, code: 'reviewer_independence_required', review: current };
 	const requiredReviewerId = current.requiredReviewerIds?.[input.result.kind];
 	if (requiredReviewerId && requiredReviewerId !== input.result.reviewerId) {
 		return { ok: false, code: 'rejecting_reviewer_required', review: current };
 	}
-	const field = input.result.kind === 'technical' ? 'technical_review_json'
-		: input.result.kind === 'audience' ? 'audience_review_json' : 'graph_review_json';
-	const reviews = { technical: current.technicalReview, audience: current.audienceReview, graph: current.graphReview,
+	const field = input.result.kind === 'technical' ? 'technical_review_json' : 'audience_review_json';
+	const reviews = { technical: current.technicalReview, audience: current.audienceReview,
 		[input.result.kind]: input.result } as Record<string, any>;
-	const satisfied = reviews.technical?.disposition === 'approved' && reviews.audience?.disposition === 'approved'
-		&& (!current.requiresGraphReview || reviews.graph?.disposition === 'approved');
-	const otherFields = ['technical_review_json', 'audience_review_json', 'graph_review_json'].filter((candidate) => candidate !== field);
+	const satisfied = reviews.technical?.disposition === 'approved' && reviews.audience?.disposition === 'approved';
+	const otherField = field === 'technical_review_json' ? 'audience_review_json' : 'technical_review_json';
 	const result = await this.run(`UPDATE knowledge_reviews SET ${field} = ?, editorial_gate_satisfied = ?, updated_at = ?
 		WHERE id = ? AND status = 'open' AND commit_sha = ? AND context_digest = ?
-			AND (${otherFields[0]} IS NULL OR ${otherFields[0]}::jsonb ->> 'reviewerId' <> ?)
-			AND (${otherFields[1]} IS NULL OR ${otherFields[1]}::jsonb ->> 'reviewerId' <> ?)`, [JSON.stringify(input.result),
+			AND (${otherField} IS NULL OR ${otherField}::jsonb ->> 'reviewerId' <> ?)`, [JSON.stringify(input.result),
 		satisfied ? 1 : 0, isoNow(), id, input.result.contentRevision, input.result.contextDigest,
-		input.result.reviewerId, input.result.reviewerId]);
+		input.result.reviewerId]);
 	return Number(result.meta?.changes ?? 0) === 1 ? { ok: true, review: await this.getKnowledgeReview(id) }
 		: { ok: false, code: 'stale_or_mismatched', review: await this.getKnowledgeReview(id) };
 }

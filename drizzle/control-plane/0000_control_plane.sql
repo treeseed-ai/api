@@ -2128,11 +2128,9 @@ CREATE TABLE "knowledge_reviews" (
 	"changed_paths_json" text DEFAULT '[]' NOT NULL,
 	"context_digest" text,
 	"requires_editorial_review" integer DEFAULT 0 NOT NULL,
-	"requires_graph_review" integer DEFAULT 0 NOT NULL,
 	"editorial_gate_satisfied" integer DEFAULT 0 NOT NULL,
 	"technical_review_json" text,
 	"audience_review_json" text,
-	"graph_review_json" text,
 	"required_reviewer_ids_json" text DEFAULT '{}' NOT NULL,
 	"created_at" text NOT NULL,
 	"updated_at" text NOT NULL

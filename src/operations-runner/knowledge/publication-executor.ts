@@ -19,6 +19,13 @@ export function isManagedLocalPublication(repository: { storageKind?: unknown; r
 		&& (repository.remoteUrl === null || repository.remoteUrl === undefined || repository.remoteUrl === '');
 }
 
+export function knowledgePublicationTransport(repository: { storageKind?: unknown; remoteUrl?: unknown },
+	environment: unknown, binding?: { clone_url?: unknown; grant_status?: unknown } | null) {
+	if (binding?.grant_status === 'ready' && !localPublicationRemote(binding.clone_url)) return 'external';
+	if (isManagedLocalPublication(repository, environment)) return 'managed-local';
+	return localPublicationRemote(repository.remoteUrl) ? 'local-remote' : 'external';
+}
+
 export function treeDxPrimaryNodeId(value: unknown) {
 	if (!value || typeof value !== 'object') return '';
 	const result = value as Record<string, any>;
@@ -30,11 +37,17 @@ export function knowledgeRunnerEnvironment(options: any) {
 		?? process.env.TREESEED_PLATFORM_RUNNER_ENVIRONMENT;
 }
 
-async function completedGraphRefresh(client: any, input: any) {
-	const refresh = await client.refreshGraph(input);
+export function treeDxResult(value: unknown, key: string) {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {} as any;
+	const record = value as Record<string, any>;
+	return record[key] && typeof record[key] === 'object' ? record[key] : record;
+}
+
+export async function completedGraphRefresh(client: any, input: any) {
+	const refresh = treeDxResult(await client.refreshGraph(input), 'graph');
 	if (!refresh.jobId) return refresh;
 	for (let attempt = 0; attempt < 60; attempt += 1) {
-		const job = await client.getGraphRefreshJob({ repoId: input.repoId, ref: input.ref, jobId: refresh.jobId });
+		const job = treeDxResult(await client.getGraphRefreshJob({ repoId: input.repoId, ref: input.ref, jobId: refresh.jobId }), 'job');
 		if (job.status === 'completed') return { ...refresh, graphVersion: job.graphVersion ?? refresh.graphVersion };
 		if (job.status === 'failed') throw new Error(`TreeDX graph refresh failed: ${job.errorCode ?? 'unknown error'}.`);
 		await new Promise((resolve) => setTimeout(resolve, 250));
@@ -48,7 +61,11 @@ export function requireIndexedSourceClosure(input: {
 	const graphRef = String(input.graph?.resolvedRef ?? '');
 	const searchRef = String(input.search?.resolvedRef ?? '');
 	if (graphRef !== input.commitSha || searchRef !== input.commitSha || input.search?.stale) {
-		throw new Error(`TreeDX graph/search closure is stale for project ${input.projectId}.`);
+		throw Object.assign(new Error(`TreeDX graph/search closure is stale for project ${input.projectId}.`), {
+			code: 'treedx_source_closure_stale',
+			details: [{ projectId: input.projectId, expectedRef: input.commitSha, graphRef, searchRef,
+				searchStale: Boolean(input.search?.stale) }],
+		});
 	}
 }
 
@@ -120,8 +137,13 @@ export function createKnowledgePublicationExecutor(options: any) {
 				publication = { ...publication, published_ref: connection.publicationRef };
 			}
 			const repository = await connection.client.getRepository(connection.repositoryId);
-			const managedLocal = isManagedLocalPublication(repository, environment);
-			const external = !managedLocal && !localPublicationRemote(repository.remoteUrl);
+			const remoteBinding = await store.first(
+				`SELECT clone_url, grant_status FROM project_remote_repository_bindings WHERE project_id = ? LIMIT 1`,
+				[workspace.projectId],
+			);
+			const transport = knowledgePublicationTransport(repository, environment, remoteBinding);
+			const external = transport === 'external';
+			const managedLocal = transport === 'managed-local';
 			const publicationConnection = external ? { ...connection,
 				nodeId: treeDxPrimaryNodeId(await connection.client.getPlacement(connection.repositoryId)) } : connection;
 			if (external && !publicationConnection.nodeId) throw new Error('TreeDX did not resolve the repository primary node for credential delivery.');
@@ -148,9 +170,10 @@ export function createKnowledgePublicationExecutor(options: any) {
 			}
 			if (push?.rejectedRefs?.length) throw new Error('The publication ref changed after review. Rebase and review the knowledge again.');
 			const graph = publicationAlreadyApplied ? undefined : await completedGraphRefresh(connection.client,
-				{ repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths });
-			const search = publicationAlreadyApplied ? undefined : await connection.client.refreshSearchIndex({ repoId: connection.repositoryId,
-				ref: publication.published_ref, paths: workspace.allowedPaths });
+				{ repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths,
+					changedPaths: Array.isArray(review.changedPaths) ? review.changedPaths : [] });
+			const search = publicationAlreadyApplied ? undefined : treeDxResult(await connection.client.refreshSearchIndex({ repoId: connection.repositoryId,
+				ref: publication.published_ref, paths: workspace.allowedPaths }), 'index');
 			if (!publicationAlreadyApplied) requireIndexedSourceClosure({ projectId: workspace.projectId,
 				commitSha: publication.commit_sha, graph, search });
 			const previous = recoveredManifest;
@@ -162,7 +185,8 @@ export function createKnowledgePublicationExecutor(options: any) {
 			} else {
 				const teamProjects = await store.listTeamProjects(workspace.teamId);
 				const snapshots = await loadSnapshots(store, { teamId: workspace.teamId,
-					...(previous ? { projectIds: new Set([workspace.projectId]) } : {}) });
+					...(previous ? { projectIds: new Set([workspace.projectId]) } : {}),
+					projectRefs: new Map([[workspace.projectId, publication.commit_sha]]) });
 				const graphRevisions: Record<string, string> = {};
 				const refs: Record<string, string> = {};
 				for (const snapshot of snapshots) {
@@ -182,8 +206,8 @@ export function createKnowledgePublicationExecutor(options: any) {
 						repoId: snapshot.repositoryId, ref: snapshotConnection.baseRef,
 						paths: snapshotConnection.allowedPaths,
 					});
-					const status = await snapshotConnection.client.refreshSearchIndex({ repoId: snapshot.repositoryId,
-						ref: snapshotConnection.baseRef, paths: snapshotConnection.allowedPaths });
+					const status = treeDxResult(await snapshotConnection.client.refreshSearchIndex({ repoId: snapshot.repositoryId,
+						ref: snapshotConnection.baseRef, paths: snapshotConnection.allowedPaths }), 'index');
 					requireIndexedSourceClosure({ projectId: snapshot.projectId, commitSha: snapshot.commitSha,
 						graph: refreshedGraph, search: status });
 					graphRevisions[snapshot.projectId] = String(refreshedGraph.graphVersion ?? status.graphVersion ?? status.indexVersion);

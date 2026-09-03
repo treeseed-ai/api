@@ -128,8 +128,12 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 			const activeAllocation = await allocations.getActive(String(team.id));
 			const coversProjects = activeAllocation && projectIds.every((projectId) => activeAllocation.slices.some((slice) => slice.scope === 'project' && slice.targetId === projectId));
 			if (coversProjects) allocation = { status: 'active', allocationSetId: activeAllocation.id, version: activeAllocation.version };
-			else if (mutate && projectsReady && missingLanes.length === 0 && !activeAllocation) {
-				const allocationSetId = `seed-allocation:${createHash('sha256').update(`${plan.seed}\0${prerequisite.key}\0${team.id}`).digest('hex').slice(0, 32)}`;
+			else if (mutate && projectsReady && missingLanes.length === 0) {
+				// Seed project closures evolve. Replace an older seed-owned allocation
+				// atomically instead of leaving a healthy provider blocked forever when a
+				// project is added to a later seed version.
+				const allocationIdentity=`${plan.seed}\0${plan.version}\0${prerequisite.key}\0${team.id}\0${[...projectIds].sort().join('\0')}`;
+				const allocationSetId = `seed-allocation:${createHash('sha256').update(allocationIdentity).digest('hex').slice(0, 32)}`;
 				let allocated = 0;
 				const slices = projectIds.map((projectId, index) => {
 					const targetPercent = index === projectIds.length - 1 ? 100 - allocated : 100 / projectIds.length;
@@ -142,8 +146,11 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 					reservePolicy: { percent: 0, overflow: 'deny' }, slices, borrowingRules: [],
 					metadata: { seedName: plan.seed, seedVersion: plan.version, prerequisiteKey: prerequisite.key } }, principal?.id ?? null,
 					`seed:${plan.seed}:${plan.version}:${prerequisite.key}:allocation:create`);
-				const activated = await allocations.activate(String(team.id), candidate.id,
-					`seed:${plan.seed}:${plan.version}:${prerequisite.key}:allocation:activate`);
+				const activated = activeAllocation
+					? (await allocations.supersede(String(team.id),candidate.id,activeAllocation.id,
+						`seed:${plan.seed}:${plan.version}:${prerequisite.key}:allocation:supersede`)).active
+					: await allocations.activate(String(team.id), candidate.id,
+						`seed:${plan.seed}:${plan.version}:${prerequisite.key}:allocation:activate`);
 				allocation = activated ? { status: 'active', allocationSetId: activated.id, version: activated.version } : allocation;
 			} else if (activeAllocation) allocation = { status: 'blocked', allocationSetId: activeAllocation.id, blocker: 'active_allocation_missing_seed_projects' };
 			const allocationReady = allocation.status === 'active';

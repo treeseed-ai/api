@@ -38,4 +38,13 @@ describe('OAuth Client ID Metadata Documents', () => {
 			fetch: vi.fn(async () => new Response('{}', { headers: { 'content-type': 'application/json', 'content-length': '65537' } })) as typeof fetch,
 		})).rejects.toThrow('64 KiB');
 	});
+
+	it('allows only the exact Admin callback on loopback when local development enables it', async () => {
+		const client = await resolveOAuthClient('treeseed-admin', {}, 'https://admin.treeseed.localhost/auth/callback/treeseed');
+		expect(clientAllowsRedirect(client, 'http://127.0.0.1:4322/auth/callback/treeseed')).toBe(false);
+		expect(clientAllowsRedirect(client, 'http://127.0.0.1:4322/auth/callback/treeseed', { allowAdminLoopback: true })).toBe(true);
+		expect(clientAllowsRedirect(client, 'http://localhost:4322/auth/callback/treeseed', { allowAdminLoopback: true })).toBe(true);
+		expect(clientAllowsRedirect(client, 'http://127.0.0.1:4322/auth/callback/other', { allowAdminLoopback: true })).toBe(false);
+		expect(clientAllowsRedirect(client, 'https://attacker.example.test/auth/callback/treeseed', { allowAdminLoopback: true })).toBe(false);
+	});
 });

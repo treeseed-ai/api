@@ -35,8 +35,30 @@ function unpack(value: unknown) {
 	return payload;
 }
 
+function graphNode(value: unknown) {
+	const candidate = record(value);
+	return record(candidate.node ?? candidate);
+}
+
+function graphEdge(value: unknown) {
+	const candidate = record(value);
+	return record(candidate.edge ?? candidate);
+}
+
+function tokenEstimate(value:unknown) {
+	const pack=unpack(value);
+	if(typeof pack.totalTokenEstimate==='number')return pack.totalTokenEstimate;
+	const estimate=record(record(pack.diagnostics).budget).estimatedTokens;
+	if(typeof estimate==='number')return estimate;
+	if(Array.isArray(pack.memberResults)&&pack.memberResults.length) {
+		const members=pack.memberResults.map(tokenEstimate);
+		if(members.every((member)=>member!==null))return members.reduce<number>((sum,member)=>sum+Number(member),0);
+	}
+	return null;
+}
+
 function resultFacts(value: unknown) {
-	const pack = unpack(value); const nodes = Array.isArray(pack.nodes) ? pack.nodes.map(record) : []; const edges = Array.isArray(pack.edges) ? pack.edges.map(record) : [];
+	const pack = unpack(value); const nodes = Array.isArray(pack.nodes) ? pack.nodes.map(graphNode) : []; const edges = Array.isArray(pack.edges) ? pack.edges.map(graphEdge) : [];
 	const directSources=Array.isArray(pack.sources)?pack.sources.map(record):[];
 	const memberSources=Array.isArray(pack.memberResults)?pack.memberResults.flatMap((member)=>{const value=unpack(member);return Array.isArray(value.sources)?value.sources.map(record):[];}):[];
 	const serialized = JSON.stringify({ nodes, edges });
@@ -47,7 +69,9 @@ function resultFacts(value: unknown) {
 	const relations = [...new Set(edges.map((edge) => String(edge.type ?? '').trim().toLowerCase().replaceAll('-', '_')).filter(Boolean))].sort();
 	const paths = [...new Set(nodes.map((node) => node.path).filter((entry): entry is string => typeof entry === 'string'))].sort();
 	const schemaVersions = [...new Set(nodes.map((node) => record(record(node.data).frontmatter).schemaVersion).filter((entry): entry is string => typeof entry === 'string'))].sort();
-	const reportedTokens = typeof pack.totalTokenEstimate === 'number' ? pack.totalTokenEstimate : null;
+	const directTokens=tokenEstimate(pack);
+	const memberTokens=Array.isArray(pack.memberResults)?pack.memberResults.map(tokenEstimate):[];
+	const reportedTokens=directTokens??(memberTokens.length&&memberTokens.every((value)=>value!==null)?memberTokens.reduce<number>((sum,value)=>sum+Number(value),0):null);
 	return { itemCount: nodes.length, bytes: new TextEncoder().encode(serialized).byteLength, estimatedTokens: reportedTokens ?? Math.ceil(serialized.length / 4), reportedTokens, identities, relations, paths, schemaVersions,
 		sources:[...directSources,...memberSources].map((source)=>({projectId:String(source.projectId??''),source:String(source.source??''),ref:String(source.ref??''),paths:Array.isArray(source.paths)?source.paths.map(String):[]})).filter((source)=>source.projectId) };
 }

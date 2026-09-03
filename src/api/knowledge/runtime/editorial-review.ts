@@ -1,4 +1,4 @@
-export const EDITORIAL_REVIEW_KINDS = ['technical', 'audience', 'graph'] as const;
+export const EDITORIAL_REVIEW_KINDS = ['technical', 'audience'] as const;
 export const EDITORIAL_REVIEW_DISPOSITIONS = ['approved', 'changes-requested'] as const;
 
 export type EditorialReviewKind = (typeof EDITORIAL_REVIEW_KINDS)[number];
