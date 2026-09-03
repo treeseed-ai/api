@@ -24,12 +24,16 @@ function healthy(value: HostedTopologyDeclaration) { return value.resources.map(
 
 function store() {
 	const operations: any[] = [], records: any[] = [];
+	const serviceConnections = [
+		{ id: 'connection-state-id', displayName: 'cloudflare-state', providerId: 'cloudflare', status: 'active', nonSecretConfig: { stateBucket: 'treeseed-state', stateRegion: 'auto', stateEndpoint: 'https://r2.example.test', stateEncryptionKeyRef: 'treeseed-cloud-state' }, capabilities: [{ capabilityType: 'object-storage', credentialProfileId: 'cloudflare-storage', status: 'configured' }] },
+		{ id: 'connection-cloudflare-id', displayName: 'cloudflare-production', providerId: 'cloudflare', status: 'active', nonSecretConfig: connections.cloudflare.nonSecretConfig },
+		{ id: 'connection-railway-id', displayName: 'railway-production', providerId: 'railway', status: 'active', nonSecretConfig: connections.railway.nonSecretConfig },
+	];
 	return {
 		operations, records,
 		async principalCanAccessTeam() { return true; }, async getTeamAccessSummary() { return { permissions: ['infrastructure:read:team', 'infrastructure:write:team'] }; },
-		async getTeamServiceConnection(_teamId: string, id: string) { return id === 'cloudflare-state'
-			? { id, providerId: 'cloudflare', status: 'active', nonSecretConfig: { stateBucket: 'treeseed-state', stateRegion: 'auto', stateEndpoint: 'https://r2.example.test', stateEncryptionKeyRef: 'treeseed-cloud-state' }, capabilities: [{ capabilityType: 'object-storage', credentialProfileId: 'cloudflare-storage', status: 'configured' }] }
-			: { id, providerId: id.startsWith('cloudflare') ? 'cloudflare' : 'railway', status: 'active', nonSecretConfig: connections[id.startsWith('cloudflare') ? 'cloudflare' : 'railway'].nonSecretConfig }; },
+		async getTeamServiceConnection(_teamId: string, id: string) { return serviceConnections.find((connection) => connection.id === id) ?? null; },
+		async listTeamServiceConnections() { return serviceConnections; },
 		async createPlatformOperation(input: any) { const operation = { id: `operation-${operations.length + 1}`, status: 'queued', ...input }; operations.push(operation); return operation; },
 		async first(sql: string) { if (sql.includes('runtime_records')) return records.at(-1) ?? null; return null; },
 		async findPlatformOperationById() { return null; },
@@ -44,6 +48,12 @@ describe('hosted topology control-plane and runner', () => {
 		const plan = await service.plan({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { declaration: value });
 		expect(plan.actions.every(({ action }) => action === 'create')).toBe(true);
 		state.getTeamServiceConnection = async () => null as any;
+		state.listTeamServiceConnections = async () => [
+			{ id: 'duplicate-1', displayName: 'cloudflare-production', providerId: 'cloudflare', status: 'active' },
+			{ id: 'duplicate-2', displayName: 'cloudflare-production', providerId: 'cloudflare', status: 'active' },
+		];
+		await expect(service.plan({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { declaration: value })).rejects.toMatchObject({ code: 'hosted_provider_connection_ambiguous' });
+		state.listTeamServiceConnections = async () => [];
 		await expect(service.plan({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { declaration: value })).rejects.toMatchObject({ code: 'hosted_provider_connection_unavailable' });
 	});
 

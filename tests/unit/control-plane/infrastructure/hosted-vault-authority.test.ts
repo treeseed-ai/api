@@ -9,7 +9,7 @@ describe('hosted service-vault authority', () => {
 		const store = { first: vi.fn(async () => ({ id: 'authority-1', version: 3, scheme: 'environment-reference', reference: 'TREESEED_RAILWAY_TOKEN', capabilities_json: '["backend-hosting"]' })) };
 		const material = await resolveHostedVaultMaterial({ store, request: request('provider'), env: { TREESEED_RAILWAY_TOKEN: 'runtime-only' } });
 		expect(material).toMatchObject({ source: 'treeseed-service-credential-vault', teamId: 'team-1', authorityVersion: 3, values: { apiToken: 'runtime-only' } });
-		expect(store.first.mock.calls[0]![1]).toEqual(['backend-hosting', 'team-1', 'railway-production', 'railway', 'railway-workspace']);
+		expect(store.first.mock.calls[0]![1]).toEqual(['backend-hosting', 'team-1', 'railway-production', 'railway-production', 'railway', 'railway-workspace']);
 	});
 
 	it('derives state sessions and encryption material only from the team storage authority', async () => {
@@ -19,7 +19,7 @@ describe('hosted service-vault authority', () => {
 			const material = await resolveHostedVaultMaterial({ store, request: request(purpose), externalResolver });
 			expect(material).toMatchObject({ teamId: 'team-1', deploymentId: 'treeseed-cloud', purpose, authorityId: 'state-authority' });
 		}
-		expect(store.first.mock.calls.every((call) => call[1][1] === 'team-1' && call[1][2] === 'cloudflare-state' && call[1][3] === 'cloudflare' && call[1][4] === 'cloudflare-storage')).toBe(true);
+		expect(store.first.mock.calls.every((call) => call[1][1] === 'team-1' && call[1][2] === 'cloudflare-state' && call[1][3] === 'cloudflare-state' && call[1][4] === 'cloudflare' && call[1][5] === 'cloudflare-storage')).toBe(true);
 		expect((externalResolver.mock.calls[1]![0] as any).request.secretRef).toBe('state-key-ref');
 	});
 });

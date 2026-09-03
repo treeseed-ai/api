@@ -15,6 +15,16 @@ async function authorize(store: any, principal: Principal, teamId: string, permi
 	return principal;
 }
 
+async function connectionByReference(store: any, teamId: string, provider: string, connectionRef: string) {
+	const direct = await store.getTeamServiceConnection(teamId, connectionRef);
+	if (direct) return direct;
+	const matches = (await store.listTeamServiceConnections(teamId))
+		.filter((connection: any) => connection.providerId === provider && connection.displayName === connectionRef);
+	if (matches.length > 1) throw new CapacityOperationError(409, 'hosted_provider_connection_ambiguous',
+		`More than one ${provider} connection uses portable reference ${connectionRef}.`);
+	return matches[0] ?? null;
+}
+
 function etag(value?: string) { return value?.replace(/^W\//u, '').replace(/^"|"$/gu, ''); }
 function rejectCredentialMaterial(value: unknown, path = 'body'): string[] {
 	if (!value || typeof value !== 'object') return [];
@@ -28,7 +38,7 @@ function rejectCredentialMaterial(value: unknown, path = 'body'): string[] {
 async function connections(store: any, teamId: string, declaration: HostedTopologyDeclaration) {
 	const selected: Record<string, Record<string, unknown>> = {};
 	for (const [provider, binding] of Object.entries(declaration.providerConnections)) {
-		const connection = await store.getTeamServiceConnection(teamId, binding.connectionRef);
+		const connection = await connectionByReference(store, teamId, provider, binding.connectionRef);
 		if (!connection || connection.providerId !== provider || connection.status !== 'active') throw new CapacityOperationError(409, 'hosted_provider_connection_unavailable', `Active ${provider} connection ${binding.connectionRef} is required.`);
 		selected[provider] = connection;
 	}
@@ -36,7 +46,7 @@ async function connections(store: any, teamId: string, declaration: HostedTopolo
 }
 
 async function stateBackend(store: any, teamId: string, declaration: HostedTopologyDeclaration) {
-	const connection = await store.getTeamServiceConnection(teamId, declaration.stateBackend.connectionRef);
+	const connection = await connectionByReference(store, teamId, 'cloudflare', declaration.stateBackend.connectionRef);
 	if (!connection || connection.providerId !== 'cloudflare' || connection.status !== 'active') throw new CapacityOperationError(409, 'hosted_state_connection_unavailable', 'An active team Cloudflare R2 connection is required for OpenTofu state.');
 	if (!connection.capabilities?.some((binding: any) => binding.capabilityType === 'object-storage' && binding.credentialProfileId === 'cloudflare-storage' && binding.status === 'configured')) throw new CapacityOperationError(409, 'hosted_state_capability_unavailable', 'The state connection must enable its isolated object-storage capability.');
 	const config = connection.nonSecretConfig as Record<string, unknown> ?? {}, bucket = String(config.stateBucket ?? '').trim(), region = String(config.stateRegion ?? 'auto').trim();
