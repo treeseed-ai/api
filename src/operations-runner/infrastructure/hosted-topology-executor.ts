@@ -11,8 +11,8 @@ import { withHostedClientVaultLeases } from './hosted-client-vault-resolver.ts';
 export interface HostedTopologyExecutionAdapter {
 	observe(input: { teamId: string; declaration: HostedTopologyDeclaration; stateBackend: HostedStateBackend;
 		connections: Record<string, Record<string, unknown>> }): Promise<HostedResourceObservation[]>;
-	apply(input: { teamId: string; plan: AuthorizedHostedTopologyPlan; approval?: unknown }): Promise<HostedResourceObservation[]>;
-	rollback(input: { teamId: string; execution: ReturnType<typeof hostedTopologyRollbackExecutionSchema.parse>; approval: unknown;
+	apply(input: { teamId: string; plan: AuthorizedHostedTopologyPlan }): Promise<HostedResourceObservation[]>;
+	rollback(input: { teamId: string; execution: ReturnType<typeof hostedTopologyRollbackExecutionSchema.parse>;
 		sourceReceipt: unknown; sourcePlan: unknown; targetPlan: unknown }): Promise<HostedResourceObservation[]>;
 }
 
@@ -69,12 +69,12 @@ export function createHostedTopologyExecutors(options: { controlPlaneStore?: any
 	const apply = { namespace: 'infrastructure', operation: 'hosted-topology-apply', async run(input: Record<string, unknown>, context: any) {
 		if (!store) throw new Error('Hosted topology execution requires the control-plane store.');
 		const teamId = String(input.teamId ?? ''), topologyPlan = hostedTopologyPlanSchema.parse(input.plan);
-		const authorized = authorizeHostedTopologyPlan(topologyPlan, input.approval as any), completedAt = new Date().toISOString();
+		const authorized = authorizeHostedTopologyPlan(topologyPlan), completedAt = new Date().toISOString();
 		await context.checkpoint({ phase: 'provider-apply', planDigest: topologyPlan.planDigest },
 			{ kind: 'infrastructure.topology.apply.started', data: { teamId, planDigest: topologyPlan.planDigest } });
 		const resources = await execute({ teamId, leaseIds: input.credentialLeaseIds, purpose: 'hosted-topology-apply',
 			binding: binding('plan', topologyPlan.planDigest, topologyPlan), context,
-			run: (adapter) => adapter.apply({ teamId, plan: authorized, approval: input.approval }) });
+			run: (adapter) => adapter.apply({ teamId, plan: authorized }) });
 		const previous = await latestReceipt(store, teamId, topologyPlan.topologyId);
 		const receipt = verifyHostedTopologyReadback({ plan: authorized,
 			previousResources: previous?.resources ?? missingPrevious(topologyPlan, completedAt), resources, completedAt });
@@ -87,14 +87,14 @@ export function createHostedTopologyExecutors(options: { controlPlaneStore?: any
 	const rollback = { namespace: 'infrastructure', operation: 'hosted-topology-rollback', async run(input: Record<string, unknown>, context: any) {
 		if (!store) throw new Error('Hosted topology rollback requires the control-plane store.');
 		const teamId = String(input.teamId ?? ''), execution = hostedTopologyRollbackExecutionSchema.parse(input.execution);
-		authorizeHostedTopologyRollbackExecution(execution, input.approval as any);
+		authorizeHostedTopologyRollbackExecution(execution);
 		const rollbackPlan = execution.rollback, source = await latestReceipt(store, teamId);
 		if (!source || source.receiptId !== rollbackPlan.sourceReceiptId) throw new Error('Hosted topology rollback source is stale.');
 		await context.checkpoint({ phase: 'provider-rollback', rollbackDigest: rollbackPlan.rollbackDigest },
 			{ kind: 'infrastructure.topology.rollback.started', data: { teamId, rollbackDigest: rollbackPlan.rollbackDigest } });
 		const resources = await execute({ teamId, leaseIds: input.credentialLeaseIds, purpose: 'hosted-topology-rollback',
 			binding: binding('rollback', execution.executionDigest, execution), context,
-			run: (adapter) => adapter.rollback({ teamId, execution, approval: input.approval, sourceReceipt: source,
+			run: (adapter) => adapter.rollback({ teamId, execution, sourceReceipt: source,
 				sourcePlan: input.sourcePlan, targetPlan: input.targetPlan }) });
 		const completedAt = new Date().toISOString(), receiptDigest = deploymentDigest({ sourceReceiptId: source.receiptId, resources, completedAt });
 		const receipt = hostedTopologyReceiptSchema.parse({ ...source, receiptId: `topology-receipt-${receiptDigest.slice(7, 23)}`,

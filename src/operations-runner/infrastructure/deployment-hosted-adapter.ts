@@ -35,8 +35,8 @@ export function createDeploymentHostedAdapter(options: { store: any; dataDir: st
 			try { const execution = await executor.plan(workspace, root, authority); await executor.apply(workspace, root, authority, execution); return executor.readback(workspace, root, authority); }
 			finally { await rm(root, { recursive: true, force: true }); }
 		},
-		async rollback(input: { teamId: string; execution: HostedTopologyRollbackExecution; approval: unknown; sourceReceipt: HostedTopologyReceipt; sourcePlan: unknown; targetPlan: unknown }): Promise<HostedResourceObservation[]> {
-			const workspace = renderHostedInfrastructureRollbackWorkspace({ execution: input.execution, approval: input.approval,
+		async rollback(input: { teamId: string; execution: HostedTopologyRollbackExecution; sourceReceipt: HostedTopologyReceipt; sourcePlan: unknown; targetPlan: unknown }): Promise<HostedResourceObservation[]> {
+			const workspace = renderHostedInfrastructureRollbackWorkspace({ execution: input.execution,
 				sourceReceipt: input.sourceReceipt, sourcePlan: input.sourcePlan, targetPlan: input.targetPlan }), root = await operationRoot();
 			const authority = await resolveHostedInfrastructureVaultAuthority(workspace, resolver);
 			const executor = options.executor ?? new HostedInfrastructureExecutor(undefined, options.fetchImpl);
