@@ -95,8 +95,8 @@ export class TreeDxCommitReplicationScheduler {
 			AND NOT (r.source_ref IN (?,?) AND EXISTS (SELECT 1 FROM treedx_commit_replications newer
 				WHERE newer.project_id=r.project_id AND newer.source_ref IN (?,?)
 				AND (newer.created_at>r.created_at OR (newer.created_at=r.created_at AND newer.id>r.id))))
-			AND (r.status IN ('pending','complete') OR NOT EXISTS (SELECT 1 FROM treedx_commit_replications pending WHERE pending.status='pending'))
-			ORDER BY CASE WHEN r.source_ref=? THEN 0 WHEN r.source_ref=? THEN 1 ELSE 2 END,r.created_at DESC LIMIT 10`,
+			ORDER BY CASE WHEN r.status IN ('pending','degraded','replicating') THEN 0 ELSE 1 END,
+				CASE WHEN r.source_ref=? THEN 0 WHEN r.source_ref=? THEN 1 ELSE 2 END,r.created_at DESC LIMIT 10`,
 			[now, this.canonicalRef, this.canonicalRemoteRef, verificationBefore, this.canonicalRef, this.canonicalRemoteRef,
 				this.canonicalRef, this.canonicalRemoteRef, this.canonicalRef, this.canonicalRemoteRef,
 				this.canonicalRef, this.canonicalRemoteRef]);

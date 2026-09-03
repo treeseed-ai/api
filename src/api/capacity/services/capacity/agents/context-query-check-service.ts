@@ -30,8 +30,9 @@ export async function executeCurrentContext(connection:Awaited<ReturnType<typeof
 	const refresh=await connection.client.refreshGraph({repoId:connection.repositoryId,ref:exactRef,paths:[projectLibraryPath(connection.contentPath,'**')],forceFull:true});
 	if(refresh.jobId) {
 		let completed=false;
-		for(let attempt=0;attempt<120;attempt+=1) {
-			const job=await connection.client.getGraphRefreshJob({repoId:connection.repositoryId,ref:exactRef,jobId:refresh.jobId});
+		for(let attempt=0;attempt<600;attempt+=1) {
+			const response=await connection.client.getGraphRefreshJob({repoId:connection.repositoryId,ref:exactRef,jobId:refresh.jobId});
+			const job=record(record(response).job??response);
 			if(job.status==='completed') { completed=true; break; }
 			if(job.status==='failed') throw new CapacityGovernanceError('context_query_graph_refresh_failed','TreeDX failed to refresh the exact context-query graph.',409,{errorCode:job.errorCode});
 			await new Promise((resolve)=>setTimeout(resolve,100));
@@ -77,17 +78,26 @@ export class ContextQueryCheckService {
 		return [...projects.values()];
 	}
 
-	private async executeQuerySources(teamId:string,projectId:string,query:DeclarativeContextQuery,request:Record<string,unknown>) {
+	private async executeQuerySources(teamId:string,projectId:string,exactProjectRef:string,exactProjectConnection:NonNullable<Awaited<ReturnType<typeof resolveKnowledgeGatewayConnection>>>,query:DeclarativeContextQuery,request:Record<string,unknown>) {
 		const selected=await this.queryProjects(teamId,projectId,query),results=[] as Array<{projectId:string;source:string;ref:string;result:any}>;
 		for(const source of selected) {
-			const connection=await resolveKnowledgeGatewayConnection(this.store,{projectId:source.projectId,write:true,authoringPaths:true});
+			const connection=source.projectId===projectId?exactProjectConnection
+				:await resolveKnowledgeGatewayConnection(this.store,{projectId:source.projectId,write:true,authoringPaths:true});
 			if(!connection)throw new CapacityGovernanceError('context_query_treedx_unavailable',`TreeDX content is unavailable for source project ${source.projectId}.`,409);
-			const result=await executeCurrentContext(connection,connection.baseRef,{...request,scopePaths:source.paths});
-			results.push({projectId:source.projectId,source:source.source,ref:connection.baseRef,result});
+			const requestedPaths=strings(request.scopePaths).map((path)=>path.replace(/^\/+/,''));
+			const sourceIsUnbounded=source.paths.length===1&&source.paths[0]==='**';
+			const scopePaths=sourceIsUnbounded&&requestedPaths.length?requestedPaths:source.paths;
+			// The project under test must use the immutable commit that supplied its
+			// definitions. A moving remote branch can lag publication and would make a
+			// valid query appear empty. Other projects remain pinned to their own
+			// authoritative connection refs.
+			const sourceRef=source.projectId===projectId?exactProjectRef:connection.baseRef;
+			const result=await executeCurrentContext(connection,sourceRef,{...request,scopePaths});
+			results.push({projectId:source.projectId,source:source.source,ref:sourceRef,result});
 		}
 		const unpack=(value:any)=>record(record(value).payload??value),nodes=results.flatMap((entry)=>Array.isArray(unpack(entry.result).nodes)?unpack(entry.result).nodes:[]),edges=results.flatMap((entry)=>Array.isArray(unpack(entry.result).edges)?unpack(entry.result).edges:[]);
 		return {nodes,edges,sources:results.map(({result,...source})=>{const value=unpack(result),sourceNodes=Array.isArray(value.nodes)?value.nodes.map(record):[];
-			return {...source,paths:[...new Set(sourceNodes.map((node)=>String(node.path??'').trim()).filter(Boolean))].sort()};}),memberResults:results.map((entry)=>entry.result)};
+			return {...source,paths:[...new Set(sourceNodes.map((entry)=>record(entry.node??entry)).map((node)=>String(node.path??'').trim()).filter(Boolean))].sort()};}),memberResults:results.map((entry)=>entry.result)};
 	}
 
 	async definitionCommit(projectId:string) {
@@ -104,9 +114,15 @@ export class ContextQueryCheckService {
 		const collections=[['query',COLLECTIONS.query,'agent_context_query'],['query-set',COLLECTIONS.set,'agent_context_query_set'],['test',COLLECTIONS.test,'agent_test'],['agent',COLLECTIONS.agent,'agent']] as const;
 		const listed=await connection.client.listRepositoryPaths({repoId:connection.repositoryId,ref,paths:collections.map(([,collection])=>projectLibraryPath(connection.contentPath,collection,'**')),kinds:['blob'],extensions:['.md','.mdx'],limit:500,allowProtected:true});
 		const paths=(listed.entries??[]).map((entry:unknown)=>String(record(entry).path??'').trim()).filter(Boolean);
-		const read=paths.length?await connection.client.readRepositoryFiles({repoId:connection.repositoryId,ref:String(listed.resolvedRef??ref),paths,encoding:'utf8',parseFrontmatter:false,allowProtected:true}):{files:[]};
-		const commit=String((read as Record<string,unknown>).resolvedRef??listed.resolvedRef??ref);
-		const entries=(read.files??[]).flatMap((file:unknown)=>{
+		const exactRef=String(listed.resolvedRef??ref),files:unknown[]=[];let resolvedRef=exactRef;
+		for(let offset=0;offset<paths.length;offset+=16){
+			const batch=paths.slice(offset,offset+16);let read;
+			try { read=await connection.client.readRepositoryFiles({repoId:connection.repositoryId,ref:exactRef,paths:batch,encoding:'utf8',parseFrontmatter:false,allowProtected:true}); }
+			catch(error){throw new CapacityGovernanceError('context_query_catalog_read_failed',`Context-query catalog read failed for ${batch.join(', ')}: ${error instanceof Error?error.message:'unknown error'}`,502);}
+			resolvedRef=String((read as Record<string,unknown>).resolvedRef??resolvedRef);files.push(...(read.files??[]));
+		}
+		const commit=resolvedRef;
+		const entries=files.flatMap((file:unknown)=>{
 			const row=record(file); const filePath=String(row.path??''); const source=String(row.content??'');
 			const contract=collections.find(([,collection])=>filePath.startsWith(`${collection}/`)||filePath.includes(`/${collection}/`)); if(!contract||!source) return [];
 			const validation=validateContentFrontmatter(contract[2],parseFrontmatterDocument(source).frontmatter);
@@ -141,7 +157,7 @@ export class ContextQueryCheckService {
 		return {connection,resolvedRef:String(read.resolvedRef??ref),frontmatter:parseFrontmatterDocument(String(file.content)).frontmatter};
 	}
 
-	async check(teamId:string,projectId:string,input:{testId:string;idempotencyKey:string;freshForSeconds?:number}) {
+	async check(teamId:string,projectId:string,input:{testId:string;testPath?:string;definitionRef?:string;idempotencyKey:string;freshForSeconds?:number}) {
 		const key=String(input.idempotencyKey??'').trim();
 		if(!key) throw new CapacityGovernanceError('idempotency_key_required','Context-query checks require an idempotency key.',400);
 		const replay=await this.store.first('SELECT * FROM agent_context_query_checks WHERE team_id = ? AND idempotency_key = ? LIMIT 1',[teamId,key]);
@@ -154,7 +170,9 @@ export class ContextQueryCheckService {
 		const testId=safeId(input.testId);
 		const initial=await resolveKnowledgeGatewayConnection(this.store,{projectId,write:false,authoringPaths:true});
 		if(!initial) throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
-		const testSource=await this.source(projectId,`refs/heads/${initial.authoringBranch.replace(/^refs\/heads\//u,'')}`,path(initial.contentPath,COLLECTIONS.test,testId));
+		const catalogPath=String(input.testPath??'').trim();
+		if(catalogPath&&!catalogPath.startsWith(`${projectLibraryPath(initial.contentPath,COLLECTIONS.test)}/`))throw new CapacityGovernanceError('context_query_test_path_invalid','Context-query test path is outside the registered collection.',400);
+		const testSource=await this.source(projectId,String(input.definitionRef??`refs/heads/${initial.authoringBranch.replace(/^refs\/heads\//u,'')}`),catalogPath||path(initial.contentPath,COLLECTIONS.test,testId));
 		const testValidation=validateContentFrontmatter('agent_test',testSource.frontmatter);
 		if(!testValidation.ok||!['context-query','context-query-set'].includes(String(testValidation.data?.kind))) throw new CapacityGovernanceError('context_query_test_invalid','Context-query test definition is invalid.',422,{diagnostics:testValidation.diagnostics});
 		const test=testValidation.data as ContextQueryTestDefinition&{kind:'context-query'|'context-query-set'};
@@ -169,7 +187,7 @@ export class ContextQueryCheckService {
 			const validation=validateContentFrontmatter('agent_context_query',querySource.frontmatter);
 			if(!validation.ok||!validation.data) throw new CapacityGovernanceError('context_query_definition_invalid','Context query definition is invalid.',422,{diagnostics:validation.diagnostics});
 			const query=validation.data as DeclarativeContextQuery;
-			report=await executeContextQueryTest({query,test,execute:(request)=>this.executeQuerySources(teamId,projectId,query,request)}) as Record<string,unknown>;
+			report=await executeContextQueryTest({query,test,execute:(request)=>this.executeQuerySources(teamId,projectId,exactRef,exactConnection,query,request)}) as Record<string,unknown>;
 			definition={kind:'query',id:test.queryRef!.id,revision:test.queryRef!.revision,commit:exactRef};
 		} else {
 			const setSource=await this.source(projectId,exactRef,path(initial.contentPath,COLLECTIONS.set,test.querySetRef!.id));
@@ -182,11 +200,14 @@ export class ContextQueryCheckService {
 				if(!validation.ok||!validation.data) throw new CapacityGovernanceError('context_query_definition_invalid','Query-set member is invalid.',422,{reference,diagnostics:validation.diagnostics});
 				queries.push(validation.data as DeclarativeContextQuery);
 			}
-			report=await executeContextQuerySetTest({querySet,queries,test,execute:(query,request)=>this.executeQuerySources(teamId,projectId,query,request)}) as Record<string,unknown>;
+			report=await executeContextQuerySetTest({querySet,queries,test,execute:(query,request)=>this.executeQuerySources(teamId,projectId,exactRef,exactConnection,query,request)}) as Record<string,unknown>;
 			definition={kind:'query-set',id:test.querySetRef!.id,revision:test.querySetRef!.revision,commit:exactRef};
 		}
 		const checkedAt=String(report.checkedAt??new Date().toISOString()); const fresh=Math.min(604_800,Math.max(300,Number(input.freshForSeconds??DEFAULT_FRESH_SECONDS)));
-		const expiresAt=new Date(Date.parse(checkedAt)+fresh*1000).toISOString(); const id=randomUUID(); const resultDigest=digest(report.result);
+		const expiresAt=new Date(Date.parse(checkedAt)+fresh*1000).toISOString(); const id=randomUUID();
+		// Identity/compile failures intentionally have no result payload. Their
+		// complete deterministic report is still valid failure evidence.
+		const resultDigest=digest(report.result ?? report);
 		await this.store.run(`INSERT INTO agent_context_query_checks (id,idempotency_key,team_id,project_id,test_id,test_ref,definition_kind,definition_id,definition_revision,definition_commit,status,checked_at,expires_at,latency_ms,stats_json,assertions_json,result_digest) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
 			id,key,teamId,projectId,testId,String(test.testRef),definition.kind,definition.id,definition.revision,definition.commit,String(report.status),checkedAt,expiresAt,Number(report.latencyMs??0),JSON.stringify(report.stats??{}),JSON.stringify(report.assertions??[]),resultDigest,
 		]);

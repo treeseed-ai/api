@@ -67,7 +67,7 @@ function authorizedScopes(requested: string[], permitted: string[] | undefined) 
 }
 
 export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimeProvider, authenticateBearer?: AuthenticateBearer,
-	presentationBaseUrl?: string) {
+	presentationBaseUrl?: string, allowAdminLoopback = false) {
 	const presentationOrigin = (presentationBaseUrl ?? '').replace(/\/+$/u, '');
 	const adminCallbackUrl = presentationOrigin ? `${presentationOrigin}/auth/callback/treeseed` : undefined;
 	app.get('/.well-known/oauth-protected-resource/mcp', (context) => context.json(protectedResourceMetadata(context.req.url)));
@@ -111,7 +111,7 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 		const method = context.req.query('code_challenge_method')?.trim() ?? '';
 		const { scopes, unsupported } = normalizeRequestedScopes(context.req.query('scope'));
 		const client = await resolveOAuthClient(clientId, {}, adminCallbackUrl).catch(() => null);
-		if (!client || !clientAllowsRedirect(client, redirectUri)) return oauthError(context, 400, 'invalid_request', 'A registered client and allowed redirect_uri are required.');
+		if (!client || !clientAllowsRedirect(client, redirectUri, { allowAdminLoopback })) return oauthError(context, 400, 'invalid_request', 'A registered client and allowed redirect_uri are required.');
 		if (method !== 'S256' || !/^[A-Za-z0-9_-]{43,128}$/u.test(challenge)) return oauthError(context, 400, 'invalid_request', 'PKCE S256 is required.');
 		if (unsupported.length > 0) return oauthError(context, 400, 'invalid_scope', `Unsupported scopes: ${unsupported.join(', ')}`);
 		return context.json({ schemaVersion: 'treeseed.oauth.authorization-presentation/v1', clientId,
@@ -135,7 +135,7 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 		const challenge = String(body.code_challenge ?? '').trim();
 		const method = String(body.code_challenge_method ?? '').trim();
 		const client = await resolveOAuthClient(clientId, {}, adminCallbackUrl).catch(() => null);
-		if (!client || !clientAllowsRedirect(client, redirectUri)) return oauthError(context, 400, 'invalid_request', 'A registered client and allowed redirect_uri are required.');
+		if (!client || !clientAllowsRedirect(client, redirectUri, { allowAdminLoopback })) return oauthError(context, 400, 'invalid_request', 'A registered client and allowed redirect_uri are required.');
 		if (String(body.response_type ?? '') !== 'code' || method !== 'S256' || !/^[A-Za-z0-9_-]{43,128}$/u.test(challenge)) {
 			return oauthError(context, 400, 'invalid_request', 'response_type=code and PKCE S256 are required.');
 		}
@@ -189,7 +189,7 @@ export function installOAuthProtocolRoutes(app: Hono, provider?: OAuthRuntimePro
 				const code = String(body.code ?? '').trim();
 				const redirectUri = String(body.redirect_uri ?? '').trim();
 				const codeVerifier = String(body.code_verifier ?? '').trim();
-				if (!code || !client || !clientAllowsRedirect(client, redirectUri) || !/^[A-Za-z0-9._~-]{43,128}$/u.test(codeVerifier)) {
+				if (!code || !client || !clientAllowsRedirect(client, redirectUri, { allowAdminLoopback }) || !/^[A-Za-z0-9._~-]{43,128}$/u.test(codeVerifier)) {
 					return oauthError(context, 400, 'invalid_request', 'code, registered redirect_uri, and PKCE code_verifier are required.');
 				}
 				return tokenResponse(context, await provider.exchangeAuthorizationCode({ clientId, code, redirectUri, codeVerifier }));

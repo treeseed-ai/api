@@ -139,7 +139,10 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 			try { sourceRef = await resolveExactSourceRef(connection, row); }
 			catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				const retryAt = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
+				// Publication can advance the external staging ref just before the
+				// managed TreeDX ref listing observes it. This is transient drift, not
+				// a reason to leave the canonical R2 mirror stale for a full day.
+				const retryAt = new Date(Date.now() + 15_000).toISOString();
 				await store.run("UPDATE treedx_commit_replications SET status='degraded',last_error=?,next_attempt_at=?,updated_at=? WHERE id=?",
 					[message, retryAt, new Date().toISOString(), row.id]);
 				throw error;

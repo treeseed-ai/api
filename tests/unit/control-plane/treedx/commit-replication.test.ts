@@ -64,6 +64,7 @@ describe('TreeDX commit replication outbox', () => {
 			async all(query: string, params?: unknown[]) {
 				if (query.includes('treedx_project_libraries')) return [];
 				expect(query).toContain("r.source_ref IN (?,?)");
+				expect(query).toContain("ORDER BY CASE WHEN r.status IN ('pending','degraded','replicating')");
 				expect(query).toContain('NOT EXISTS (SELECT 1 FROM treedx_commit_replications newer');
 				expect(params).toContain('2026-08-28T23:55:00.000Z');
 				return [{ id: 'canonical', operation_id: 'operation', operation_status: 'succeeded' }];

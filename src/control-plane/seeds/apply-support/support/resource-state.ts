@@ -51,7 +51,7 @@ export async function projectCurrentPayload(store, action, project) {
                 gitUrl: hubRepository.url,
                 defaultBranch: hubRepository.defaultBranch ?? undefined,
                 checkoutPath: configuredRepository.checkoutPath,
-                submodulePath: hubRepository.submodulePath ?? undefined,
+                submodulePath: hubRepository.submodulePath ?? null,
                 webUrl: configuredRepository.webUrl,
                 repositoryPolicy: configuredRepository.repositoryPolicy,
             }

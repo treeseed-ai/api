@@ -145,7 +145,9 @@ async function verifyContextQueryCatalog(input:{store:any;projectId:string;teamI
 	const missing=[...referenced.entries()].filter(([key])=>!tested.has(key)).map(([,reference])=>reference);
 	if(missing.length)throw new Error(`Agent context references have no isolated tests: ${missing.map((item:any)=>`${item.kind}:${item.id}@${item.revision}`).join(', ')}.`);
 	for(const test of relevantTests) {
-		const result=await checks.check(input.teamId,input.projectId,{testId:test.id,idempotencyKey:`library-reconcile:${input.projectId}:${input.ref}:${test.id}`});
+		let result;
+		try { result=await checks.check(input.teamId,input.projectId,{testId:test.id,testPath:test.path,definitionRef:input.ref,idempotencyKey:`library-reconcile:v6:${input.projectId}:${input.ref}:${test.id}`}); }
+		catch(error){throw new Error(`Context-query test ${test.id} could not run: ${error instanceof Error?error.message:'unknown error'}`);}
 		if(result.status!=='passing')throw new Error(`Context-query test ${test.id} did not pass for ${input.ref}.`);
 	}
 	if(referenced.size)await checks.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()] as any);
@@ -266,10 +268,20 @@ export async function ensureProjectKnowledgeBinding(input: {
 	});
 	const discoveredAgents=queryResult(await client.query.listPaths(repository.repoId,{ref:requestedRef,paths:['agents/**'],extensions:['.md','.mdx','.yaml','.yml'],kinds:['blob'],limit:500,allowProtected:true}));
 	const agentPaths=resultItems(discoveredAgents).map((entry)=>text(object(entry).path,entry)).filter(Boolean).sort();
-	const contextQueries=agentPaths.length?await verifyContextQueryCatalog({store:input.store,projectId:input.projectId,teamId:input.teamId,ref:text(listing.resolvedRef)}):{references:0,tests:0};
-	const agents = await reconcileProjectAgentClasses({ store: input.store, client, repositoryId: repository.repoId,
-		projectId: input.projectId, teamId: input.teamId, projectSlug: input.projectSlug, ref: requestedRef,
-		paths:agentPaths,discoveredRef:text(discoveredAgents.resolvedRef,listing.resolvedRef) });
+	let contextQueries;
+	try {
+		contextQueries=agentPaths.length?await verifyContextQueryCatalog({store:input.store,projectId:input.projectId,teamId:input.teamId,ref:text(listing.resolvedRef)}):{references:0,tests:0};
+	} catch (error) {
+		throw new Error(`context-query verification failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+	}
+	let agents;
+	try {
+		agents = await reconcileProjectAgentClasses({ store: input.store, client, repositoryId: repository.repoId,
+			projectId: input.projectId, teamId: input.teamId, projectSlug: input.projectSlug, ref: requestedRef,
+			paths:agentPaths,discoveredRef:text(discoveredAgents.resolvedRef,listing.resolvedRef) });
+	} catch (error) {
+		throw new Error(`agent reconciliation failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+	}
 	return { kind: 'projectKnowledgeBinding', projectId: input.projectId, repositoryId: repository.repoId,
 		resolvedRef: text(listing.resolvedRef), sourceRef: requestedRef, contextQueries, agents };
 }

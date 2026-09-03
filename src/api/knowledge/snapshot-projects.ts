@@ -17,8 +17,16 @@ async function documents(connection: any, resolvedRef: string, paths: string[]) 
 	return files;
 }
 
+export function requireKnowledgePageBookPath(path: string, pageRoot: string, page: { bookId: string; slug: string }) {
+	const extensionless = path.replace(/\.mdx?$/u, '');
+	const expected = `${pageRoot}${page.bookId}/${page.slug}`;
+	if (extensionless !== expected) {
+		throw new Error(`Knowledge page "${page.slug}" must be stored under knowledge/${page.bookId}/ at ${expected}.md.`);
+	}
+}
+
 export async function loadKnowledgeSnapshotProjects(store: any, input: {
-	teamId: string; projectIds?: Set<string>;
+	teamId: string; projectIds?: Set<string>; projectRefs?: ReadonlyMap<string, string>;
 }): Promise<KnowledgeSnapshotProject[]> {
 	// Publication is a team-level control-plane operation. Its source closure must
 	// not shrink because the requesting author's membership changes while the
@@ -27,11 +35,13 @@ export async function loadKnowledgeSnapshotProjects(store: any, input: {
 		.filter((project: any) => !input.projectIds || input.projectIds.has(project.id));
 	const snapshots: KnowledgeSnapshotProject[] = [];
 	for (const project of projects) {
-		const observedConnection = await resolveKnowledgeGatewayConnection(store, { projectId: project.id, write: false });
+		const requestedRef = input.projectRefs?.get(project.id);
+		const observedConnection = await resolveKnowledgeGatewayConnection(store, { projectId: project.id, write: false,
+			...(requestedRef ? { readRefs: [requestedRef] } : {}) });
 		if (!observedConnection) {
 			throw new Error(`TreeDX repository is unavailable for team project ${project.id}; the federated publication was not changed.`);
 		}
-		const listed = await listKnowledgeContentPaths(observedConnection);
+		const listed = await listKnowledgeContentPaths(observedConnection, requestedRef ?? observedConnection.baseRef);
 		const commitSha = listed.resolvedRef;
 		if (!commitSha) throw new Error(`TreeDX did not resolve an exact source commit for project ${project.id}.`);
 		const connection = await resolveKnowledgeGatewayConnection(store, {
@@ -49,10 +59,12 @@ export async function loadKnowledgeSnapshotProjects(store: any, input: {
 			documents(connection, commitSha, paths.filter((path: string) => path.startsWith(pageRoot))),
 		]);
 		const books = bookFiles.map((file) => parseBook({ path: String(file.path), raw: String(file.content ?? '') }));
-		const pages = pageFiles.map((file) => ({
-			definition: parseKnowledgePage({ path: String(file.path), raw: String(file.content ?? ''), sourcePackage: project.id }),
-			source: String(file.content ?? ''), sourcePath: String(file.path),
-		}));
+		const pages = pageFiles.map((file) => {
+			const sourcePath = String(file.path);
+			const definition = parseKnowledgePage({ path: sourcePath, raw: String(file.content ?? ''), sourcePackage: project.id });
+			requireKnowledgePageBookPath(sourcePath, pageRoot, definition);
+			return { definition, source: String(file.content ?? ''), sourcePath };
+		});
 		validateKnowledgeCatalog(books, pages.map((page) => page.definition));
 		snapshots.push({
 			teamId: input.teamId, projectId: project.id, repositoryId: connection.repositoryId, commitSha,

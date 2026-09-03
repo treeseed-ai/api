@@ -3,15 +3,17 @@ import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../kno
 import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
+import { requireKnowledgePageBookPath } from '../../knowledge/snapshot-projects.ts';
 import { serializeBookDraft, serializeKnowledgePageDraft } from '../../knowledge/runtime/authoring.ts';
-import { editorialSubmissionRequirements, requiredRevisionReviewerIds, verifiedEditorialContextTrace } from '../../knowledge/editorial-review.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { KnowledgeOperationError } from './knowledge-operation-error.ts';
 import { createKnowledgeAuthorization, type KnowledgePrincipal } from './knowledge-authorization.ts';
 import { allowedKnowledgePath } from './knowledge-path.ts';
 import { AGENT_OPERATIONAL_CONTENT_COLLECTIONS,validateContentFrontmatter } from '@treeseed/sdk/content-validation';
+import { compileDeclarativeContextQuery } from '@treeseed/sdk/graph/context-query-contracts';
 import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
+import { validateAgentDefinitionSource } from '../repositories/agents/agent-definition-source.ts';
 
 const operationalModels=new Map([...Object.entries(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map(([model,collection])=>[collection,model] as const),['agent-tests','agent_test']]);
 function operationalModel(path:string){const collection=path.split('/').at(-2)??path.split('/')[0]??'';return operationalModels.get(collection)??operationalModels.get(path.split('/')[0]??'')??null;}
@@ -81,6 +83,14 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				write: false, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const file = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path });
+			const model = operationalModel(path);
+			if (model) {
+				// Operational collections have their own current schemas. Return the
+				// exact source so an invalid historical definition can be migrated
+				// through the governed workspace instead of being compatibility-read
+				// as a knowledge page.
+				return { kind: 'operational-content', model, path, expectedSha: file.sha, content: file.content };
+			}
 			if (path.startsWith(projectLibraryPath(connection.contentPath, 'agents') + '/')) {
 				return { kind: 'agent-profile', path, expectedSha: file.sha, content: file.content };
 			}
@@ -106,11 +116,24 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				write: true, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const sourcePath = text(input.sourcePath);
+			if(input.delete===true) {
+				if(!sourcePath||!allowedKnowledgePath(access.workspace,sourcePath))throw new KnowledgeOperationError(422,'knowledge_path_invalid','Choose an existing knowledge file in this project workspace.');
+				const current=await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:sourcePath});
+				if(!text(input.expectedSha)||text(input.expectedSha)!==current.sha)throw new KnowledgeOperationError(409,'stale_workspace_file','The knowledge file changed. Reload before deleting it.');
+				const result=await connection.client.deleteFile({workspaceId:access.workspace.treeDxWorkspaceId,path:sourcePath});
+				const updated=await store.updateKnowledgeWorkspace(workspaceId,{version:access.workspace.version,status:'draft'});if(!updated.ok)throw new KnowledgeOperationError(409,'stale_workspace','The draft changed. Reload before deleting the file.');
+				await store.recordAuditEvent({eventType:'knowledge.content.deleted',actorType:principalType(access.principal.id),actorId:access.principal.id,targetType:'knowledge_content',targetId:sourcePath,data:{workspaceId,projectId:access.workspace.projectId,path:sourcePath}});
+				return {result,workspace:updated.workspace};
+			}
 			if(input.kind==='operational-content') {
 				const model=operationalModel(sourcePath);if(!model)throw new KnowledgeOperationError(422,'operational_content_path_invalid','Choose a registered operational-content collection.');
 				if(!allowedKnowledgePath(access.workspace,sourcePath))throw new KnowledgeOperationError(422,'knowledge_path_invalid','The operational content path is outside this workspace.');
 				const content=typeof input.content==='string'?input.content:'';if(!content.trim())throw new KnowledgeOperationError(422,'operational_content_required','Operational content is required.');
 				const validation=validateContentFrontmatter(model as never,parseFrontmatterDocument(content).frontmatter);if(!validation.ok)throw new KnowledgeOperationError(422,'operational_content_invalid',`The ${model} content is invalid: ${validation.diagnostics.map((entry)=>entry.message).join(' ')}`);
+				if(model==='agent_context_query') {
+					const compiled=compileDeclarativeContextQuery(validation.data as never);
+					if(!compiled.ok)throw new KnowledgeOperationError(422,'context_query_compile_invalid',compiled.errors.join(' '));
+				}
 				let before:null|string=null;if(input.create!==true){const current=await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:sourcePath});if(!text(input.expectedSha)||text(input.expectedSha)!==current.sha)throw new KnowledgeOperationError(409,'stale_workspace_file','The operational content changed. Reload before saving.');before=current.content;}
 				const result=await applyTextChangeset({client:connection.client,workspace:{workspaceId:access.workspace.treeDxWorkspaceId,baseCommitSha:access.workspace.baseCommitSha,baseRef:access.workspace.baseRef},changes:[{path:sourcePath,before,after:content}],idempotencyKey:`operational-content-${workspaceId}-${access.workspace.version}`});
 				const updated=await store.updateKnowledgeWorkspace(workspaceId,{version:access.workspace.version,status:'draft'});if(!updated.ok)throw new KnowledgeOperationError(409,'stale_workspace','The draft changed. Reload before saving.');
@@ -120,12 +143,18 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (input.kind === 'agent-profile') {
 				if (!sourcePath.startsWith(projectLibraryPath(connection.contentPath, 'agents') + '/')) throw new KnowledgeOperationError(422, 'agent_profile_path_invalid', 'Agent profiles must remain in the agents collection.');
 				if (!allowedKnowledgePath(access.workspace, sourcePath)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The agent profile path is outside this workspace.');
-				const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
-				if (!text(input.expectedSha) || text(input.expectedSha) !== current.sha) throw new KnowledgeOperationError(409, 'stale_workspace_file', 'The agent profile changed. Reload before saving.');
+				let before: string | null = null;
+				if (input.create !== true) {
+					const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
+					if (!text(input.expectedSha) || text(input.expectedSha) !== current.sha) throw new KnowledgeOperationError(409, 'stale_workspace_file', 'The agent profile changed. Reload before saving.');
+					before = current.content;
+				}
 				const content = typeof input.content === 'string' ? input.content : '';
 				if (!content.trim()) throw new KnowledgeOperationError(422, 'agent_profile_content_required', 'Agent profile content is required.');
+				const validation=validateAgentDefinitionSource(content);
+				if(!validation.ok)throw new KnowledgeOperationError(422,'agent_profile_invalid',`The agent profile is invalid: ${validation.diagnostics.map((entry)=>`${entry.path}: ${entry.message}`).join('; ')}`);
 				const result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
-					baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: [{ path: sourcePath, before: current.content, after: content }],
+					baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: [{ path: sourcePath, before, after: content }],
 					idempotencyKey: `agent-profile-${workspaceId}-${access.workspace.version}` });
 				const updated = await store.updateKnowledgeWorkspace(workspaceId, { version: access.workspace.version, status: 'draft' });
 				if (!updated.ok) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
@@ -137,9 +166,16 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (sourcePath) {
 				const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
 				before = current.content;
-				const currentDefinition = input.kind === 'book' ? parseBook({ path: sourcePath, raw: current.content })
-					: parseKnowledgePage({ path: sourcePath, raw: current.content });
-				status = currentDefinition.status === 'archived' ? 'archived' : 'published';
+				try {
+					const currentDefinition = input.kind === 'book' ? parseBook({ path: sourcePath, raw: current.content })
+						: parseKnowledgePage({ path: sourcePath, raw: current.content });
+					status = currentDefinition.status === 'archived' ? 'archived' : 'published';
+				} catch {
+					// Invalid historical documents may only be replaced by a complete draft
+					// that passes the current serializer below. No compatibility projection
+					// is retained in the read or publication paths.
+					status = 'published';
+				}
 			}
 			let content;
 			try { content = input.kind === 'book' ? bookDocument(input, status) : pageDocument(input, status); }
@@ -147,11 +183,14 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			const slug = text(input.slug);
 			const derivedPath = input.kind === 'book' ? projectLibraryPath(connection.contentPath, 'books', `${slug}.md`)
 				: projectLibraryPath(connection.contentPath, 'knowledge', text(input.bookId), `${slug}.md`);
-			const path = sourcePath || derivedPath;
+			const move = Boolean(sourcePath && sourcePath !== derivedPath && input.move === true);
+			const path = move ? derivedPath : sourcePath || derivedPath;
 			if (!allowedKnowledgePath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The knowledge path is outside this workspace.');
-			if (sourcePath && path !== derivedPath) throw new KnowledgeOperationError(422, 'knowledge_path_move_required', 'Changing a knowledge path requires an explicit move operation.');
+			if (sourcePath && sourcePath !== derivedPath && !move) throw new KnowledgeOperationError(422, 'knowledge_path_move_required', 'Changing a knowledge path requires an explicit move operation.');
 			const result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
-				baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: [{ path, before, after: content }],
+				baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: move
+					? [{ path: sourcePath, before, after: null }, { path, before: null, after: content }]
+					: [{ path, before, after: content }],
 				idempotencyKey: `knowledge-content-${workspaceId}-${access.workspace.version}` });
 			const updated = await store.updateKnowledgeWorkspace(workspaceId, { version: access.workspace.version, status: 'draft' });
 			if (!updated.ok) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
@@ -176,12 +215,21 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const diff = await connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId });
 			if (!diff.changedPaths.length) throw new KnowledgeOperationError(422, 'empty_knowledge_draft', 'The draft has no changes.');
-			const editorial = editorialSubmissionRequirements(diff.changedPaths, input.contextDigest);
-			if (editorial.error) throw new KnowledgeOperationError(422, 'editorial_context_required', editorial.error);
-			if (editorial.requiresEditorialReview && !await verifiedEditorialContextTrace(store, access.workspace.projectId, editorial.contextDigest)) {
-				throw new KnowledgeOperationError(409, 'editorial_context_trace_required', 'The editorial context digest is not backed by a successful Guide authoring trace for this project.');
-			}
 			const remoteStatus = await connection.client.status({ workspaceId: access.workspace.treeDxWorkspaceId });
+			const deletedPaths=new Set((remoteStatus.changes??[]).filter((change:any)=>change.status==='deleted').map((change:any)=>String(change.path)));
+			const pageRoot=`${projectLibraryPath(connection.contentPath,'knowledge')}/`;
+			for(const changedPath of diff.changedPaths.filter((path:string)=>path.startsWith(pageRoot))) {
+				if(deletedPaths.has(changedPath))continue;
+				let file;
+				try { file=await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:changedPath}); }
+				catch { continue; } // A move or deletion has no remaining document to validate.
+				try {
+					const page=parseKnowledgePage({path:changedPath,raw:file.content});
+					requireKnowledgePageBookPath(changedPath,pageRoot,page);
+				} catch(error) {
+					throw new KnowledgeOperationError(422,'knowledge_page_book_path_required',error instanceof Error?error.message:'Every knowledge document must be a valid page inside its declared book.');
+				}
+			}
 			const commit = remoteStatus.status === 'committed' && remoteStatus.commitSha
 				? { repoId: access.workspace.repositoryId, workspaceId: access.workspace.treeDxWorkspaceId,
 					branchName: remoteStatus.branchName ?? access.workspace.branchName, commitSha: remoteStatus.commitSha,
@@ -197,12 +245,27 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				actorType: 'user', actorId: access.principal.id });
 			const submitted = await store.submitKnowledgeWorkspace({ workspaceId, workspaceVersion: access.workspace.version,
 				submittedByUserId: access.principal.id, notes: text(input.notes) || null, commitSha: commit.commitSha,
-				changedPaths: diff.changedPaths, requiredReviewerIds: requiredRevisionReviewerIds(existingReview), ...editorial });
+				changedPaths: diff.changedPaths, requiredReviewerIds: {},
+				requiresEditorialReview: false, contextDigest: '' });
 			if (!submitted.ok || !submitted.review) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed while it was submitted. Reload before trying again.');
-			await store.recordAuditEvent({ id: `knowledge-review-submitted-${submitted.review.id}`, eventType: 'knowledge.review.submitted',
-				actorType: 'user', actorId: access.principal.id, targetType: 'knowledge_review', targetId: submitted.review.id,
-				data: { workspaceId, projectId: access.workspace.projectId, commitSha: commit.commitSha } });
-			return { review: submitted.review, commit, replayed: false };
+			const admittedChange = await store.decideKnowledgeReview(submitted.review.id, { decision: 'approve',
+				decidedByUserId: access.principal.id, notes: text(input.notes) || null, workspaceId,
+				workspaceVersion: submitted.workspace.version });
+			if (!admittedChange.ok || !admittedChange.review) throw new KnowledgeOperationError(409, 'stale_workspace', 'The admitted content change became stale.');
+			const publication = await store.createKnowledgePublication({ workspaceId, reviewId: admittedChange.review.id,
+				projectId: access.workspace.projectId, commitSha: commit.commitSha, publishedRef: connection.publicationRef });
+			const operation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'publish_review',
+				target: 'control_plane_operations_runner', idempotencyKey: `knowledge-publication:${publication.id}`,
+				input: { publicationId: publication.id, targetEnvironment: 'staging',
+					simulation: { productionAuthorityRequested: false, operatorPrincipalId: access.principal.id } },
+				requestedByType: principalType(access.principal.id), requestedById: access.principal.id });
+			await store.recordAuditEvent({ id: `knowledge-content-integration-requested-${admittedChange.review.id}`,
+				eventType: 'knowledge.content.integration_requested',
+				actorType: principalType(access.principal.id), actorId: access.principal.id, targetType: 'knowledge_change', targetId: submitted.review.id,
+				data: { workspaceId, projectId: access.workspace.projectId, commitSha: commit.commitSha,
+					changedPaths: diff.changedPaths, publicationId: publication.id, operationId: operation.id } });
+			return { change: admittedChange.review, review: admittedChange.review,
+				integration: { publication, operation, targetEnvironment: 'staging' }, commit, replayed: false };
 		},
 
 		async diff(principal: KnowledgePrincipal, workspaceId: string) {
@@ -232,6 +295,9 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 }
 
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+
+const principalType = (id: string) => id.startsWith('capacity-provider:') || id.startsWith('service-principal:')
+	? 'service' : 'user';
 const list = (value: unknown) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : []).map(String).map((item) => item.trim()).filter(Boolean);
 
 function canonicalPath(page: any) {

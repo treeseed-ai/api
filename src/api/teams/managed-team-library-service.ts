@@ -7,16 +7,67 @@ import { isManagedTeamLibraryRepositoryName,managedTeamLibraryRepositoryName } f
 const text=(...values:unknown[])=>values.find((value)=>typeof value==='string'&&value.trim())?.toString().trim()??'';
 const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
 
-const seedFiles:Record<string,string>={
+const teamBook=`---
+schemaVersion: treeseed.book/v2
+id: team-operations
+slug: team-operations
+title: Team Operations
+summary: Shared operating standards for communication, coordination, governance, delegation, and research.
+description: The canonical operating standards used by people and agents working across the TreeSeed team.
+status: published
+visibility: team
+order: 0
+topics: []
+audience: [team-members, team-agents]
+relatedBookIds: []
+packPolicy: allowed
+---
+`;
+function teamPage(input:{id:string;slug:string;title:string;summary:string;body:string;order:number;keywords:string[]}) {
+	return `---
+schemaVersion: treeseed.knowledge-page/v1
+id: ${input.id}
+bookId: team-operations
+slug: ${input.slug}
+title: ${input.title}
+summary: ${input.summary}
+status: published
+visibility: team
+order: ${input.order}
+contributors: []
+relatedBookIds: []
+relatedKnowledgeIds: []
+relatedNoteIds: []
+relatedQuestionIds: []
+relatedObjectiveIds: []
+relatedProposalIds: []
+relatedDecisionIds: []
+guaranteeIds: []
+audiences: { primary: [], secondary: [], excluded: [] }
+capabilityIds: []
+routePatterns: []
+resourceTypes: []
+actionIds: []
+keywords: [${input.keywords.join(', ')}]
+documentationUrls: []
+---
+
+${input.body}
+`;
+}
+
+export const managedTeamLibrarySeedFiles:Readonly<Record<string,string>>={
 	'README.md':'# Team Library\n\nSystem-managed, team-wide knowledge for communication, governance, research, management delegation, and cross-project coordination.\n',
 	'objectives/core.mdx':'---\nid: team-core\ntitle: Team Core Objective\nstatus: active\ngroup_ids: []\n---\n\nBuild a coherent engineering team whose projects share trustworthy knowledge, coordinate explicitly, and preserve project-scoped authority.\n',
-	'knowledge/communication-standards.mdx':'---\nid: team-communication-standards\ntitle: Team Communication Standards\nstatus: active\n---\n\nCommunicate decisions, uncertainty, evidence, owners, and next actions clearly. Use cross-project discussions for coordination without weakening project-scoped writes.\n',
-	'knowledge/governance.mdx':'---\nid: team-governance\ntitle: Team Governance\nstatus: active\n---\n\nQuestions request clarification. Proposals request governed change. Agents must not represent a proposal as approved without the corresponding governance action.\n',
-	'knowledge/research-and-citation.mdx':'---\nid: team-research-citation\ntitle: Research and Citation\nstatus: active\n---\n\nDistinguish evidence from inference, cite authoritative sources, report uncertainty, and preserve enough provenance for another contributor to verify the conclusion.\n',
-	'knowledge/management-delegation.mdx':'---\nid: team-management-delegation\ntitle: Management Delegation\nstatus: active\n---\n\nTranslate direction into explicit outcomes, constraints, owners, dependencies, verification, and escalation conditions. Never broaden authority implicitly.\n',
-	'knowledge/cross-project-coordination.mdx':'---\nid: team-cross-project-coordination\ntitle: Cross-project Coordination\nstatus: active\n---\n\nRead across authorized team projects to understand consequences. Keep every write and commit bound to the assignment owning project.\n',
-	'agent-context-queries/team-shared-foundations.mdx':'---\nid: team-shared-foundations\ntitle: Team Shared Foundations\ndescription: Retrieve team communication, governance, research, delegation, and cross-project coordination guidance.\nrevision: 1\nmaturity: validated\npurpose: research\nquery: communication governance research citation management delegation cross-project coordination\ntarget:\n  kind: content\n  paths: [knowledge/**]\nrelations: [related, references]\ndepth: 1\nresultLimit: 20\ncontextBudget:\n  maxItems: 20\n  maxCharacters: 24000\ntokenBudget: 6000\nformat: summary\nsources:\n  - scope: current-project\nrequirement: preferred\npriority: 80\nsummarization: deterministic\nfilters: {}\n---\n\nTeam-wide foundations used by project agent context queries.\n',
-	'agent-tests/team-shared-foundations.mdx':'---\nid: team-shared-foundations-test\nagent: system-team-library\nkind: context-query\nqueryRef:\n  id: team-shared-foundations\n  revision: 1\ntestRef: team-shared-foundations-test-v1\nexpectedIdentities: []\nexpectedRelations: []\nexpectedPaths: []\nexpectedSchemaVersions: []\nresultBounds:\n  min: 0\n  max: 20\nbudget:\n  maxContextItems: 20\n  maxTokens: 6000\nmaxLatencyMs: 10000\n---\n\nVerifies that the managed Team Library query compiles and executes within its declared bounds.\n',
+	'books/team-operations.md':teamBook,
+	'knowledge/team-operations/communication-standards.md':teamPage({id:'team-communication-standards',slug:'communication-standards',title:'Team Communication Standards',summary:'How the team communicates decisions, uncertainty, evidence, owners, and next actions.',order:10,keywords:['communication','decisions','evidence'],body:'Communicate decisions, uncertainty, evidence, owners, and next actions clearly. Use cross-project discussions for coordination without weakening project-scoped writes.'}),
+	'knowledge/team-operations/governance.md':teamPage({id:'team-governance',slug:'governance',title:'Team Governance',summary:'How questions, proposals, decisions, and releases remain distinct and governed.',order:20,keywords:['governance','proposals','decisions'],body:'Questions request clarification. Proposals request governed change. Approved or rejected proposals produce decisions. Releases package completed or preliminary work independently from those decisions.'}),
+	'knowledge/team-operations/research-and-citation.md':teamPage({id:'team-research-citation',slug:'research-and-citation',title:'Research and Citation',summary:'Standards for evidence, inference, citations, uncertainty, and reproducibility.',order:30,keywords:['research','citations','evidence'],body:'Distinguish evidence from inference, cite authoritative sources, report uncertainty, and preserve enough provenance for another contributor to verify the conclusion.'}),
+	'knowledge/team-operations/management-delegation.md':teamPage({id:'team-management-delegation',slug:'management-delegation',title:'Management Delegation',summary:'How direction becomes bounded, verifiable delegated work.',order:40,keywords:['management','delegation','authority'],body:'Translate direction into explicit outcomes, constraints, owners, dependencies, verification, and escalation conditions. Never broaden authority implicitly.'}),
+	'knowledge/team-operations/cross-project-coordination.md':teamPage({id:'team-cross-project-coordination',slug:'cross-project-coordination',title:'Cross-project Coordination',summary:'How agents coordinate across projects while preserving project-scoped write authority.',order:50,keywords:['coordination','projects','authority'],body:'Read across authorized team projects to understand consequences. Keep every write and commit bound to the assignment owning project.'}),
+	'knowledge/team-operations/knowledge-authoring.md':teamPage({id:'team-knowledge-authoring',slug:'knowledge-authoring',title:'Knowledge Authoring',summary:'How agents place durable knowledge in books without mixing it with operational records.',order:60,keywords:['knowledge','books','authoring'],body:'Every ordinary document in the knowledge directory is a page in a declared book. Create the book definition at `books/{book}.md` and place each page at `knowledge/{book}/{page}.md`, with matching `bookId` and page slug metadata. Do not write miscellaneous or catch-all entries directly under `knowledge/`. Questions, proposals, decisions, releases, agent definitions, context queries, tests, and other operational records remain in their dedicated collections rather than being disguised as book pages.'}),
+	'agent-context-queries/team-shared-foundations.mdx':'---\nid: team-shared-foundations\ntitle: Team Shared Foundations\ndescription: Retrieve team communication, governance, research, delegation, cross-project coordination, and knowledge-authoring guidance.\nrevision: 2\nmaturity: validated\npurpose: research\nquery: communication governance research citation management delegation cross-project coordination knowledge books authoring\ntarget:\n  kind: content\n  paths: [/knowledge/team-operations/**]\nrelations: [related, references]\ndepth: 1\nresultLimit: 20\ncontextBudget:\n  maxItems: 20\n  maxCharacters: 24000\ntokenBudget: 6000\nformat: summary\nsources:\n  - scope: current-project\nrequirement: preferred\npriority: 80\nsummarization: deterministic\nfilters: {}\n---\n\nTeam-wide foundations used by project agent context queries.\n',
+	'agent-tests/team-shared-foundations.mdx':'---\nid: team-shared-foundations-test\nagent: system-team-library\nkind: context-query\nqueryRef:\n  id: team-shared-foundations\n  revision: 2\ntestRef: team-shared-foundations-test-v2\nexpectedIdentities: []\nexpectedRelations: []\nexpectedPaths: []\nexpectedSchemaVersions: []\nresultBounds:\n  min: 0\n  max: 20\nbudget:\n  maxContextItems: 20\n  maxTokens: 6000\nmaxLatencyMs: 10000\n---\n\nVerifies that the managed Team Library query compiles and executes within its declared bounds.\n',
 };
 
 export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:NodeJS.ProcessEnv=process.env) {
@@ -38,7 +89,7 @@ export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:No
 	if(!owner)throw new Error('A GitHub library owner must be configured before the managed Team Library can be provisioned.');
 	const projectLibrary=record(record(project.metadata).library),repositoryName=text(projectLibrary.repositoryName,managedTeamLibraryRepositoryName(teamId));
 	if(!isManagedTeamLibraryRepositoryName(teamId,repositoryName))throw new Error('Managed Team Library repository identity does not match its owning team.');
-	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility:'private',lifecycle:'create-or-adopt',env,fetchImpl:store.config?.fetchImpl,seedFiles});
+	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility:'private',lifecycle:'create-or-adopt',env,fetchImpl:store.config?.fetchImpl,seedFiles:managedTeamLibrarySeedFiles});
 	const binding=await ensureProjectKnowledgeBinding({store,projectId:String(project.id),teamId,projectSlug:'team',libraryRoot:'.',libraryRef:'refs/remotes/origin/staging',libraryRepositoryUrl:`https://github.com/${owner}/${repositoryName}.git`,libraryDefaultBranch:'main',libraryCredentialId:provider.credentialId,expectedUpstreamHeads:provider.heads,env});
 	const now=new Date().toISOString();
 	await enqueueTreeDxCommitReplication(store,{teamId,projectId:String(project.id),commitSha:binding.resolvedRef,sourceRef:binding.sourceRef,createdAt:now});

@@ -17,8 +17,21 @@ export async function claimPlatformOperationMethod(this: ControlPlaneStore, inpu
 				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
 				 )
 				 ${capabilityWhere}
-				 ORDER BY CASE WHEN namespace='knowledge' THEN 0 WHEN namespace='feedback' THEN 1
-				               WHEN namespace='treedx' AND operation='reconcile_remote_head' THEN 2 ELSE 3 END,
+				 ORDER BY CASE WHEN namespace='knowledge' THEN 0
+				               WHEN namespace='treedx' AND operation='reconcile_remote_head' THEN 0
+				               WHEN namespace='feedback' THEN 1
+				               WHEN namespace='treedx' AND operation='replicate_commit' AND EXISTS (
+				                   SELECT 1 FROM treedx_commit_replications replication
+				                   WHERE replication.id=platform_operations.idempotency_key
+				                     AND replication.status IN ('pending','degraded','replicating')
+				                     AND replication.source_ref LIKE 'refs/remotes/origin/%'
+				               ) THEN 2
+				               WHEN namespace='treedx' AND operation='replicate_commit' AND EXISTS (
+				                   SELECT 1 FROM treedx_commit_replications replication
+				                   WHERE replication.id=platform_operations.idempotency_key
+				                     AND replication.status IN ('pending','degraded','replicating')
+				                     AND replication.source_ref LIKE 'refs/heads/%'
+				               ) THEN 3 ELSE 4 END,
 				          created_at ASC LIMIT ?`, [input.operationId, now, ...capabilities, limit])
         : await this.all(`SELECT * FROM platform_operations
 				 WHERE (
@@ -26,8 +39,21 @@ export async function claimPlatformOperationMethod(this: ControlPlaneStore, inpu
 				    OR (status IN ('leased', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at < ?)
 				 )
 				 ${capabilityWhere}
-				 ORDER BY CASE WHEN namespace='knowledge' THEN 0 WHEN namespace='feedback' THEN 1
-				               WHEN namespace='treedx' AND operation='reconcile_remote_head' THEN 2 ELSE 3 END,
+				 ORDER BY CASE WHEN namespace='knowledge' THEN 0
+				               WHEN namespace='treedx' AND operation='reconcile_remote_head' THEN 0
+				               WHEN namespace='feedback' THEN 1
+				               WHEN namespace='treedx' AND operation='replicate_commit' AND EXISTS (
+				                   SELECT 1 FROM treedx_commit_replications replication
+				                   WHERE replication.id=platform_operations.idempotency_key
+				                     AND replication.status IN ('pending','degraded','replicating')
+				                     AND replication.source_ref LIKE 'refs/remotes/origin/%'
+				               ) THEN 2
+				               WHEN namespace='treedx' AND operation='replicate_commit' AND EXISTS (
+				                   SELECT 1 FROM treedx_commit_replications replication
+				                   WHERE replication.id=platform_operations.idempotency_key
+				                     AND replication.status IN ('pending','degraded','replicating')
+				                     AND replication.source_ref LIKE 'refs/heads/%'
+				               ) THEN 3 ELSE 4 END,
 				          created_at ASC LIMIT ?`, [now, ...capabilities, limit]);
     const row = rows[0];
     if (!row)

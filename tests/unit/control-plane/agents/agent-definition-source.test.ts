@@ -64,4 +64,11 @@ describe('agent definition source validation', () => {
 		});
 		expect(source).toBe('---\noutputs:\n  messageTypes: []\n---\nBody.\n');
 	});
+
+	it('rejects the legacy agent-execution marker rather than migrating repository content', () => {
+		const legacy = validSource.replace(/    capabilityRequirements:[\s\S]*?        requirement: required\n/u, '    execution:\n      requiredCapabilities: [agent-execution]\n');
+		const source = repositoryDefinitionSource({ content: legacy });
+		expect(source).toContain('requiredCapabilities');
+		expect(validateAgentDefinitionSource(source).ok).toBe(false);
+	});
 });
