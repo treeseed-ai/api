@@ -271,7 +271,7 @@ export function createServiceVaultService(store: any) {
 			if (!connection) throw new ServiceOperationError(404, 'service_connection_not_found', 'Service connection not found.');
 			const profile = getServiceProviderDefinition(connection.providerId)?.credentialProfiles.find((item) => item.id === body.credentialProfileId);
 			if (!profile) throw new ServiceOperationError(400, 'credential_profile_not_found', 'Credential profile not found.');
-			const requiredFields = profile.fields.filter((field) => field.sensitive).map((field) => field.key);
+			const requiredFields = profile.fields.filter((field) => field.sensitive && field.required).map((field) => field.key);
 			if (!profile.capabilities.includes(String(body.capabilityType ?? '')))
 				throw new ServiceOperationError(400, 'credential_capability_mismatch', 'The credential profile does not grant the requested capability.');
 			const binding = await store.first(`SELECT id FROM team_service_capability_bindings WHERE team_id=? AND connection_id=?
@@ -283,8 +283,10 @@ export function createServiceVaultService(store: any) {
 			const available = savedProfile ? await store.all(`SELECT field_key FROM team_service_credential_envelopes
 				WHERE team_id=? AND connection_id=? AND credential_profile_id=? AND status='active'`,
 			[teamId, connection.id, savedProfile.id]) : [];
-			if (requiredFields.some((field) => !available.some((row: any) => row.field_key === field)))
+			const availableFields = new Set(available.map((row: any) => String(row.field_key)));
+			if (requiredFields.some((field) => !availableFields.has(field)))
 				throw new ServiceOperationError(409, 'credential_profile_incomplete', 'Every required credential field must be configured before creating a lease.');
+			const leaseFields = profile.fields.filter((field) => field.sensitive && availableFields.has(field.key)).map((field) => field.key);
 			const hostedBinding = body.hostedBinding;
 			if (String(body.purpose).startsWith('hosted-topology-') && !validateHostedSecretOperationBinding(hostedBinding))
 				throw new ServiceOperationError(400, 'hosted_lease_binding_invalid', 'Hosted credential leases require an exact topology binding.');
@@ -293,7 +295,7 @@ export function createServiceVaultService(store: any) {
 				credential_profile_id,actor_user_id,required_fields_json,status,expires_at,operation_correlation_id,hosted_binding_json,
 				authority_requests_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,'awaiting-runner',?,?,?,?,?,?)`,
 			[id, teamId, connection.id, body.capabilityType, body.purpose, JSON.stringify(body.resourceScope ?? {}), profile.id,
-				actor.id, JSON.stringify(requiredFields), expiresAt, correlationId, hostedBinding ? JSON.stringify(hostedBinding) : null,
+				actor.id, JSON.stringify(leaseFields), expiresAt, correlationId, hostedBinding ? JSON.stringify(hostedBinding) : null,
 				body.authorityRequests ? JSON.stringify(body.authorityRequests) : null, now.toISOString(), now.toISOString()]);
 			if (body.purpose === 'provider-connection-validation') {
 				await store.createPlatformOperation({ namespace: 'security', operation: 'service-credential-validation',
