@@ -12,7 +12,7 @@ function declaration(): HostedTopologyDeclaration { return hostedTopologyDeclara
 	platform: { repository: 'treeseed-ai/platform', commit: 'a'.repeat(40) },
 	stateBackend: { connectionRef: 'cloudflare-state' },
 	providerConnections: { cloudflare: { connectionRef: 'cloudflare-production' }, railway: { connectionRef: 'railway-production' } },
-	artifacts: { api: { digest: digest('a'), source: 'https://example.test/api.tgz' } },
+	artifacts: { api: { kind: 'oci-image', digest: digest('a'), identity: `treeseed/api@${digest('a')}` } },
 	resources: [
 		{ id: 'admin', provider: 'cloudflare', kind: 'admin-application', dependsOn: [], parameters: { name: { literal: 'treeseed-admin' } }, adoption: { mode: 'adopt-or-create', replacement: 'forbidden' } },
 		{ id: 'api', provider: 'railway', kind: 'control-plane-api', dependsOn: [], parameters: { artifact: { artifact: 'api' } }, adoption: { mode: 'adopt-or-create', replacement: 'forbidden' } },
