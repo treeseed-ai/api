@@ -45,7 +45,8 @@ async function connections(store: any, teamId: string, declaration: HostedTopolo
 async function stateBackend(store: any, teamId: string, declaration: HostedTopologyDeclaration) {
 	const connection = await connectionByReference(store, teamId, 'cloudflare', declaration.stateBackend.connectionRef);
 	if (!connection || connection.providerId !== 'cloudflare' || connection.status !== 'active') throw new CapacityOperationError(409, 'hosted_state_connection_unavailable', 'An active team Cloudflare R2 connection is required for OpenTofu state.');
-	if (!connection.capabilities?.some((binding: any) => binding.capabilityType === 'object-storage' && binding.credentialProfileId === 'cloudflare-storage' && binding.status === 'configured')) throw new CapacityOperationError(409, 'hosted_state_capability_unavailable', 'The state connection must enable its isolated object-storage capability.');
+	if (!connection.capabilities?.some((binding: any) => binding.capabilityType === 'object-storage' && binding.credentialProfileId === 's3-state-session' && binding.status === 'configured')) throw new CapacityOperationError(409, 'hosted_state_capability_unavailable', 'The state connection must enable its isolated S3 state-session capability.');
+	if (!connection.capabilities?.some((binding: any) => binding.capabilityType === 'state-encryption' && binding.credentialProfileId === 'opentofu-state-encryption' && binding.status === 'configured')) throw new CapacityOperationError(409, 'hosted_state_encryption_unavailable', 'The state connection must enable its independent OpenTofu state-encryption capability.');
 	const config = connection.nonSecretConfig as Record<string, unknown> ?? {}, bucket = String(config.stateBucket ?? '').trim(), region = String(config.stateRegion ?? 'auto').trim();
 	const endpoint = String(config.stateEndpoint ?? '').trim(), encryptionKeyRef = String(config.stateEncryptionKeyRef ?? '').trim();
 	if (!bucket || !endpoint || !encryptionKeyRef) throw new CapacityOperationError(409, 'hosted_state_configuration_incomplete', 'The state connection requires non-secret bucket, endpoint, and encryption-key references.');
@@ -73,10 +74,6 @@ async function latestReceipt(store: any, teamId: string, topologyId?: string) {
 	return row ? hostedTopologyReceiptSchema.parse(JSON.parse(row.payload_json)) : null;
 }
 
-function leaseProfile(request: HostedInfrastructureAuthorityRequest) {
-	return request.purpose === 'provider' ? request.credentialProfileId : 'cloudflare-storage';
-}
-
 async function operationCredentialLeases(store: any, serviceVault: any, principal: Principal, teamId: string,
 	purpose: string, hostedBinding: Record<string, unknown>, requests: HostedInfrastructureAuthorityRequest[]) {
 	const leases: any[] = [];
@@ -85,7 +82,7 @@ async function operationCredentialLeases(store: any, serviceVault: any, principa
 			const provider = request.purpose === 'provider' ? request.provider : 'cloudflare';
 			const connection = await connectionByReference(store, teamId, provider, request.connectionRef);
 			if (!connection) throw new CapacityOperationError(409, 'hosted_provider_connection_unavailable', `Connection ${request.connectionRef} is unavailable.`);
-			const profile = leaseProfile(request);
+			const profile = request.credentialProfileId;
 			const authority = await store.first(`SELECT * FROM provider_credential_authorities
 				WHERE team_id=? AND connection_id=? AND credential_profile_id=?`, [teamId, connection.id, profile]);
 			if (!authority) throw new CapacityOperationError(409, 'hosted_provider_authority_unavailable', `Credential authority ${profile} is not configured.`);
@@ -93,7 +90,7 @@ async function operationCredentialLeases(store: any, serviceVault: any, principa
 			if (authority.status !== 'interactive-only') throw new CapacityOperationError(409, 'hosted_provider_authority_unavailable',
 				`Client-encrypted authority ${profile} requires reauthorization.`);
 			leases.push(await serviceVault.createLease(principal, teamId, { connectionId: connection.id,
-				capabilityType: request.purpose === 'provider' ? request.capabilities[0] : 'object-storage', credentialProfileId: profile, purpose, hostedBinding,
+				capabilityType: request.capabilities[0], credentialProfileId: profile, purpose, hostedBinding,
 				authorityRequests: [{ ...request, connectionId: connection.id }] }));
 		}
 		return leases;

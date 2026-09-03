@@ -28,7 +28,10 @@ function healthy(value: HostedTopologyDeclaration) { return value.resources.map(
 function store() {
 	const operations: any[] = [], records: any[] = [];
 	const serviceConnections = [
-		{ id: 'connection-state-id', displayName: 'cloudflare-state', providerId: 'cloudflare', status: 'active', nonSecretConfig: { stateBucket: 'treeseed-state', stateRegion: 'auto', stateEndpoint: 'https://r2.example.test', stateEncryptionKeyRef: 'treeseed-cloud-state' }, capabilities: [{ capabilityType: 'object-storage', credentialProfileId: 'cloudflare-storage', status: 'configured' }] },
+		{ id: 'connection-state-id', displayName: 'cloudflare-state', providerId: 'cloudflare', status: 'active', nonSecretConfig: { stateBucket: 'treeseed-state', stateRegion: 'auto', stateEndpoint: 'https://r2.example.test', stateEncryptionKeyRef: 'treeseed-cloud-state' }, capabilities: [
+			{ capabilityType: 'object-storage', credentialProfileId: 's3-state-session', status: 'configured' },
+			{ capabilityType: 'state-encryption', credentialProfileId: 'opentofu-state-encryption', status: 'configured' },
+		] },
 		{ id: 'connection-cloudflare-id', displayName: 'cloudflare-production', providerId: 'cloudflare', status: 'active', nonSecretConfig: connections.cloudflare.nonSecretConfig },
 		{ id: 'connection-railway-id', displayName: 'railway-production', providerId: 'railway', status: 'active', nonSecretConfig: connections.railway.nonSecretConfig },
 	];
@@ -98,10 +101,10 @@ describe('hosted topology control-plane and runner', () => {
 		const accepted = await service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan, approval }, plan.planDigest);
 		expect(accepted.credentialLeases).toHaveLength(4);
 		expect(created.map((item) => item.credentialProfileId).sort()).toEqual([
-			'cloudflare-runtime', 'cloudflare-storage', 'cloudflare-storage', 'railway-workspace',
+			'cloudflare-runtime', 'opentofu-state-encryption', 'railway-workspace', 's3-state-session',
 		]);
-		expect(created.filter((item) => item.credentialProfileId === 'cloudflare-storage')
-			.every((item) => item.capabilityType === 'object-storage')).toBe(true);
+		expect(created.find((item) => item.credentialProfileId === 's3-state-session')).toMatchObject({ capabilityType: 'object-storage' });
+		expect(created.find((item) => item.credentialProfileId === 'opentofu-state-encryption')).toMatchObject({ capabilityType: 'state-encryption' });
 		expect(created.every((item) => item.hostedBinding.subjectDigest === plan.planDigest)).toBe(true);
 	});
 
