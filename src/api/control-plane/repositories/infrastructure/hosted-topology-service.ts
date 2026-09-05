@@ -74,34 +74,21 @@ async function latestReceipt(store: any, teamId: string, topologyId?: string) {
 	return row ? hostedTopologyReceiptSchema.parse(JSON.parse(row.payload_json)) : null;
 }
 
-async function operationCredentialLeases(store: any, serviceVault: any, principal: Principal, teamId: string,
-	purpose: string, hostedBinding: Record<string, unknown>, requests: HostedInfrastructureAuthorityRequest[]) {
-	const leases: any[] = [];
-	try {
-		for (const request of requests) {
-			const provider = request.purpose === 'provider' ? request.provider : 'cloudflare';
-			const connection = await connectionByReference(store, teamId, provider, request.connectionRef);
-			if (!connection) throw new CapacityOperationError(409, 'hosted_provider_connection_unavailable', `Connection ${request.connectionRef} is unavailable.`);
-			const profile = request.credentialProfileId;
-			const authority = await store.first(`SELECT * FROM provider_credential_authorities
-				WHERE team_id=? AND connection_id=? AND credential_profile_id=?`, [teamId, connection.id, profile]);
-			if (!authority) throw new CapacityOperationError(409, 'hosted_provider_authority_unavailable', `Credential authority ${profile} is not configured.`);
-			if (authority.scheme !== 'client-encrypted') continue;
-			if (authority.status !== 'interactive-only') throw new CapacityOperationError(409, 'hosted_provider_authority_unavailable',
-				`Client-encrypted authority ${profile} requires reauthorization.`);
-			leases.push(await serviceVault.createLease(principal, teamId, { connectionId: connection.id,
-				capabilityType: request.capabilities[0], credentialProfileId: profile, purpose, hostedBinding,
-				authorityRequests: [{ ...request, connectionId: connection.id }] }));
-		}
-		return leases;
-	} catch (error) {
-		for (const item of leases) await store.run(`UPDATE service_operation_leases SET status='cancelled',sealed_payload=NULL,updated_at=?
-			WHERE id=? AND status IN ('awaiting-runner','pending','ready')`, [new Date().toISOString(), item.id]).catch(() => undefined);
-		throw error;
-	}
+async function validateOperationCredentials(store: any, teamId: string, requests: HostedInfrastructureAuthorityRequest[]) {
+  for (const request of requests) {
+    const provider = request.purpose === 'provider' ? request.provider : 'cloudflare';
+    const connection = await connectionByReference(store,teamId,provider,request.connectionRef);
+    if (!connection || connection.status !== 'active' || connection.nonSecretConfig?.deploymentEnvironment !== request.environment)
+      throw new CapacityOperationError(409,'hosted_provider_connection_unavailable','The exact environment-scoped connection is required.');
+    const authority = await store.first('SELECT * FROM provider_credential_authorities WHERE team_id=? AND connection_id=? AND credential_profile_id=?',[teamId,connection.id,request.credentialProfileId]);
+    if (!authority || authority.scheme !== 'openbao' || authority.status !== 'ready')
+      throw new CapacityOperationError(409,'hosted_provider_authority_unavailable','Managed OpenBao credentials are required.');
+    const granted = JSON.parse(authority.capabilities_json ?? '[]');
+    if (request.capabilities.some(c => !granted.includes(c))) throw new CapacityOperationError(403,'hosted_capability_denied','Credential capability denied.');
+  }
 }
 
-export function createHostedTopologyService(store: any, serviceVault: any) {
+export function createHostedTopologyService(store: any) {
 	return {
 		async plan(principal: Principal, teamId: string, body: Record<string, unknown>) {
 			await authorize(store, principal, teamId, 'infrastructure:read:team');
@@ -110,15 +97,13 @@ export function createHostedTopologyService(store: any, serviceVault: any) {
 			if (declaration.teamId !== teamId) throw new CapacityOperationError(403, 'hosted_topology_team_mismatch', 'Topology custody must match the authorized team.');
 			const selected = await connections(store, teamId, declaration);
 			const backend = await stateBackend(store, teamId, declaration), connectionSnapshots = snapshots(declaration, selected);
-			const hostedBinding = { subjectType: 'declaration', subjectDigest: deploymentDigest(declaration),
-				deploymentId: declaration.deploymentId, stackId: declaration.stackId, environment: declaration.environment };
 			const requests = hostedInfrastructureDiscoveryRequests({ declaration, stateBackend: backend });
-			const leases = await operationCredentialLeases(store, serviceVault, principal, teamId, 'hosted-topology-plan', hostedBinding, requests);
+			await validateOperationCredentials(store, teamId, requests);
 			const operation = await store.createPlatformOperation({ namespace: 'infrastructure', operation: 'hosted-topology-plan',
 				target: 'control_plane_operations_runner', input: { teamId, declaration, stateBackend: backend,
-					connections: connectionSnapshots, credentialLeaseIds: leases.map(({ id }) => id) },
+					connections: connectionSnapshots },
 				requestedByType: 'user', requestedById: principal!.id });
-			return { operation, credentialLeases: leases };
+			return { operation };
 		},
 		async apply(principal: Principal, teamId: string, body: Record<string, unknown>, ifMatch?: string, idempotencyKey?: string) {
 			const actor = await authorize(store, principal, teamId, 'infrastructure:write:team');
@@ -127,12 +112,10 @@ export function createHostedTopologyService(store: any, serviceVault: any) {
 			if (plan.teamId !== teamId) throw new CapacityOperationError(403, 'hosted_topology_team_mismatch', 'Topology custody must match the authorized team.');
 			if (etag(ifMatch) !== plan.planDigest) throw new CapacityOperationError(412, 'hosted_topology_plan_precondition_failed', 'If-Match must bind the exact reviewed topology plan digest.');
 			const requests = renderHostedInfrastructureWorkspace({ plan: authorizeHostedTopologyPlan(plan) }).authorities;
-			const hostedBinding = { subjectType: 'plan', subjectDigest: plan.planDigest, deploymentId: plan.deploymentId,
-				stackId: plan.stackId, environment: plan.environment };
-			const leases = await operationCredentialLeases(store, serviceVault, principal, teamId, 'hosted-topology-apply', hostedBinding, requests);
+			await validateOperationCredentials(store, teamId, requests);
 			const operation = await store.createPlatformOperation({ namespace: 'infrastructure', operation: 'hosted-topology-apply', target: 'control_plane_operations_runner', idempotencyKey,
-				input: { teamId, plan, credentialLeaseIds: leases.map(({ id }) => id) }, requestedByType: 'user', requestedById: actor.id });
-			return { operation, credentialLeases: leases };
+				input: { teamId, plan }, requestedByType: 'user', requestedById: actor.id });
+			return { operation };
 		},
 		async status(principal: Principal, teamId: string) {
 			await authorize(store, principal, teamId, 'infrastructure:read:team');
@@ -150,13 +133,10 @@ export function createHostedTopologyService(store: any, serviceVault: any) {
 			const expected = planHostedTopologyRollbackExecution({ rollback, sourceReceipt: receipt, sourcePlan, targetPlan });
 			if (expected.executionDigest !== execution.executionDigest) throw new CapacityOperationError(409, 'hosted_topology_rollback_closure_mismatch', 'Rollback execution must bind the exact source receipt and source and target plans.');
 			const requests = renderHostedInfrastructureRollbackWorkspace({ execution, sourceReceipt: receipt, sourcePlan, targetPlan }).authorities;
-			const hostedBinding = { subjectType: 'rollback', subjectDigest: execution.executionDigest,
-				deploymentId: execution.deploymentId, stackId: execution.stackId, environment: execution.environment };
-			const leases = await operationCredentialLeases(store, serviceVault, principal, teamId, 'hosted-topology-rollback', hostedBinding, requests);
+			await validateOperationCredentials(store, teamId, requests);
 			const operation = await store.createPlatformOperation({ namespace: 'infrastructure', operation: 'hosted-topology-rollback', target: 'control_plane_operations_runner', idempotencyKey,
-				input: { teamId, execution, sourcePlan, targetPlan,
-					credentialLeaseIds: leases.map(({ id }) => id) }, requestedByType: 'user', requestedById: actor.id });
-			return { operation, credentialLeases: leases };
+				input: { teamId, execution, sourcePlan, targetPlan }, requestedByType: 'user', requestedById: actor.id });
+			return { operation };
 		},
 	};
 }

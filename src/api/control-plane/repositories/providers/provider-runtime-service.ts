@@ -8,7 +8,8 @@ import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { CapacityGovernanceRepository } from '../../../capacity/repositories/governance/policy/governance.ts';
 import { CapacitySecretCodec } from '../../../capacity/security.ts';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readOsCredentialFile } from '@treeseed/deployment/security/custody';
+const keyText=(file:string)=>{const key=readOsCredentialFile(file);try{return key.toString('utf8').trim();}finally{key.fill(0);}};
 import { AvailabilitySessionService } from '../../../capacity/services/accounts/availability-session-service.ts';
 import { CapacityRegistrationService } from '../../../capacity/services/support/registration-service.ts';
 import { createProviderEnvironmentService } from './provider-environment-service.ts';
@@ -81,24 +82,15 @@ export async function revealReusableRegistrationCode(registration: Pick<Capacity
 }
 
 export function createProviderRuntimeService(store: CapacityGovernanceDatabase, config: Record<string, unknown>, ownerStore: OwnerStore = store as OwnerStore) {
-	const environment = String(config.environment ?? process.env.TREESEED_ENVIRONMENT ?? 'local');
-	const secretSource = config.capacityGovernanceSecret ?? config.TREESEED_CAPACITY_GOVERNANCE_SECRET
-		?? process.env.TREESEED_CAPACITY_GOVERNANCE_SECRET
-		?? (['local', 'test'].includes(environment) ? 'treeseed-local-capacity-governance-secret' : config.authSecret ?? process.env.TREESEED_AUTH_SECRET);
-	if (!secretSource && !['local', 'test'].includes(environment)) throw new Error('TREESEED_CAPACITY_GOVERNANCE_SECRET is required outside local/test environments.');
-	const rawSecret = String(secretSource ?? 'treeseed-local-capacity-governance-secret');
-	if (rawSecret.trim().length < 24 && !['local', 'test'].includes(environment)) throw new Error('TREESEED_CAPACITY_GOVERNANCE_SECRET must contain at least 24 characters.');
-	const configuredSecret = rawSecret.trim().length >= 24 ? rawSecret : `treeseed-local:${rawSecret}:capacity-governance`;
 	const encryptionFile = String(config.capacityEncryptionKeyFile ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY_FILE ?? '');
-	const directEncryption = config.capacityEncryptionKey ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY;
-	if (directEncryption && !['local', 'test'].includes(environment)) throw new Error('Production capacity encryption keys must use service-vault file custody, not environment values.');
-	const encryptionSource = encryptionFile ? readFileSync(encryptionFile, 'utf8').trim() : directEncryption
-		?? (['local', 'test'].includes(environment) ? 'treeseed-local-capacity-encryption-key' : undefined);
-	if (!encryptionSource) throw new Error('TREESEED_CAPACITY_ENCRYPTION_KEY is required outside local/test environments.');
+	if (!encryptionFile) throw new Error('An OS-custodied capacity key file is required.');
+	const encryptionSource = keyText(encryptionFile);
+	if (encryptionSource.length < 24) throw new Error('Capacity encryption key is invalid.');
+	const configuredSecret = createHash('sha256').update('capacity-governance:').update(encryptionSource).digest('hex');
 	const audience = String(config.baseUrl ?? process.env.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/u, '');
 	const keyVersion = Math.max(1, Number(config.TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION ?? process.env.TREESEED_CAPACITY_ENCRYPTION_KEY_VERSION ?? 1));
 	const historical = String(config.TREESEED_CAPACITY_HISTORICAL_KEY_FILES ?? process.env.TREESEED_CAPACITY_HISTORICAL_KEY_FILES ?? '').split(',').map((entry) => entry.trim()).filter(Boolean).map((entry) => {
-		const match = /^(\d+):(.+)$/u.exec(entry); if (!match) throw new Error('Historical capacity keys must use VERSION:/absolute/path entries.'); return { version: Number(match[1]), secret: readFileSync(match[2]!, 'utf8').trim() };
+		const match = /^(\d+):(.+)$/u.exec(entry); if (!match) throw new Error('Historical capacity keys must use VERSION:/absolute/path entries.'); return { version: Number(match[1]), secret: keyText(match[2]!) };
 	});
 	const registration = new CapacityRegistrationService(new CapacityGovernanceRepository(store), new CapacitySecretCodec(configuredSecret, String(encryptionSource), keyVersion, historical), audience);
 	const availability = new AvailabilitySessionService(store);

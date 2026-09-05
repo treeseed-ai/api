@@ -20,14 +20,14 @@ describe('seed library provider reconciliation',()=>{
 				return null;
 			},
 		};
-		await expect(reconcileLibraryProvider({store,teamId:'team',projectId:'project',projectSlug:'market-api',owner:'treeseed-ai',name:'market-api-library',visibility:'private',lifecycle:'create-or-adopt',env:{TREESEED_GITHUB_TOKEN:'provider-secret'},fetchImpl})).resolves.toEqual({heads:{main:'1'.repeat(40),staging:'2'.repeat(40)},credentialId:'delivery-1'});
+		await expect(reconcileLibraryProvider({store,teamId:'team',projectId:'project',projectSlug:'market-api',owner:'treeseed-ai',name:'market-api-library',visibility:'private',lifecycle:'create-or-adopt',repositoryAuthority:{token:'provider-secret',authorityId:'authority-1',serviceConnectionId:'connection-1',capabilityBindingId:'capability-1'},env:{},fetchImpl})).resolves.toEqual({heads:{main:'1'.repeat(40),staging:'2'.repeat(40)},credentialId:'delivery-1'});
 		expect(requests.every((request)=>request.authorization==='Bearer provider-secret')).toBe(true);
 		expect(writes.join('\n')).not.toContain('provider-secret');
 		expect(writes.some((query)=>query.includes('project_remote_repository_bindings'))).toBe(true);
 	});
 
 	it('fails closed when a missing library cannot be created without control-plane credentials',async()=>{
-		await expect(reconcileLibraryProvider({store:{},teamId:'team',projectId:'project',projectSlug:'sdk',owner:'treeseed-ai',name:'missing-library',visibility:'public',lifecycle:'create-or-adopt',env:{},fetchImpl:async()=>new Response(null,{status:404})})).rejects.toThrow('TREESEED_GITHUB_TOKEN');
+		await expect(reconcileLibraryProvider({store:{},teamId:'team',projectId:'project',projectSlug:'sdk',owner:'treeseed-ai',name:'missing-library',visibility:'public',lifecycle:'create-or-adopt',env:{},fetchImpl:async()=>new Response(null,{status:404})})).rejects.toThrow('managed team GitHub authority');
 	});
 
 	it('uses anonymous TreeDX fetches for public libraries while retaining control-plane authority',async()=>{

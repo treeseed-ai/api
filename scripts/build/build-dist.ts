@@ -15,14 +15,12 @@ const EXECUTABLE_OUTPUTS = new Set([
 	'operations-runner/entrypoint.js',
 	'standards/verifiers/identity-team-live.js',
 	'scripts/support/migrate-db.js',
-	'scripts/support/backfill-encrypted-diagnostics.js',
 ]);
 const REQUIRED_OUTPUTS = [
 	'api/support/server.js',
 	'operations-runner/entrypoint.js',
 	'standards/verifiers/identity-team-live.js',
 	'scripts/support/migrate-db.js',
-	'scripts/support/backfill-encrypted-diagnostics.js',
 ];
 
 function walkFiles(root: string): string[] {
@@ -145,7 +143,6 @@ for (const filePath of walkFiles(srcRoot)) {
 }
 
 transpileScript(resolve(scriptsRoot, 'support', 'migrate-db.ts'));
-transpileScript(resolve(scriptsRoot, 'support', 'backfill-encrypted-diagnostics.ts'));
 
 emitDeclarations();
 assertRequiredOutputs();

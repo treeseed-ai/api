@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { componentReleaseSchema, deploymentDigest } from '@treeseed/sdk/deployment';
+import { parse, stringify } from 'yaml';
+import { managedOpenBaoServices, managedOpenBaoClient, MANAGED_OPENBAO_IMAGE } from '@treeseed/deployment/security/custody';
 
 const release = process.env.TREESEED_RELEASE, sourceCommit = process.env.TREESEED_SOURCE_COMMIT;
 const apiDigest = process.env.TREESEED_API_DIGEST, runnerDigest = process.env.TREESEED_RUNNER_DIGEST, databaseDigest = process.env.TREESEED_DATABASE_DIGEST;
@@ -11,14 +13,23 @@ if (!/^[a-f0-9]{40}$/u.test(sourceCommit) || ![apiDigest, runnerDigest, database
 const track = release.includes('-rc.') ? 'development' : 'stable', revision = Number(process.env.TREESEED_COMPONENT_REVISION ?? '1');
 if (!Number.isInteger(revision) || revision < 1) throw new Error('Component revision must be a positive integer.');
 const debianRelease = `${release.replace(/-rc\.(\d+)$/u, '~rc$1')}-${revision}`;
-const compose = readFileSync(resolve('deploy/compose.template.yml'), 'utf8').replaceAll('@API_IMAGE@', `treeseed/api@${apiDigest}`).replace('@RUNNER_IMAGE@', `treeseed/op-runner@${runnerDigest}`).replace('@DATABASE_IMAGE@', `treeseed/api-postgres@${databaseDigest}`);
+const definition = parse(readFileSync(resolve('deploy/compose.template.yml'), 'utf8').replaceAll('@API_IMAGE@', `treeseed/api@${apiDigest}`).replace('@RUNNER_IMAGE@', `treeseed/op-runner@${runnerDigest}`).replace('@DATABASE_IMAGE@', `treeseed/api-postgres@${databaseDigest}`));
+Object.assign(definition.services, managedOpenBaoServices(`treeseed/api@${apiDigest}`));
+for (const name of ['api','operations-runner']) {
+  const service = definition.services[name];
+  service.environment = {...service.environment,...managedOpenBaoClient.environment};
+  service.volumes = [...(service.volumes ?? []),managedOpenBaoClient.volume];
+  service.depends_on = {...service.depends_on,'openbao-initialize':{condition:'service_completed_successfully'}};
+}
+const compose = stringify(definition);
 if (/\bbuild\s*:/u.test(compose) || /@[A-Z_]+@/u.test(compose)) throw new Error('Production Compose bundle is not fully materialized.');
 const composeDigest = `sha256:${createHash('sha256').update(compose).digest('hex')}`;
 const runtime = {
 	schemaVersion: 'treeseed.package-runtime/v1' as const, componentId: 'api', version: debianRelease,
 	compose: { projectName: 'treeseed-api', files: [{ path: 'compose.yml', digest: composeDigest }] },
 	services: [
-		{ id: 'database', composeService: 'database', endpoints: [] }, { id: 'migration', composeService: 'migration', endpoints: [] }, { id: 'diagnostics-backfill', composeService: 'diagnostics-backfill', endpoints: [] },
+		{ id: 'openbao', composeService: 'openbao', endpoints: [] }, { id: 'openbao-initialize', composeService: 'openbao-initialize', endpoints: [] },
+		{ id: 'database', composeService: 'database', endpoints: [] }, { id: 'migration', composeService: 'migration', endpoints: [] },
 		{ id: 'api', composeService: 'api', endpoints: [{ id: 'http', protocol: 'http' as const, port: 3000, visibility: 'host' as const, defaultAlias: 'api.treeseed.localhost', aliasOverride: true, tls: 'edge' as const, authentication: 'application' as const, healthGate: { protocol: 'http' as const, path: '/v1/health/ready', timeoutSeconds: 120 } }] },
 		{ id: 'operations-runner', composeService: 'operations-runner', endpoints: [] },
 	],
@@ -36,7 +47,7 @@ const runtime = {
 		].map((name) => ({ name, required: false })),
 		secretFiles: [], files: [],
 	},
-	stateVolumes: [{ id: 'postgres', volume: '/var/lib/treeseed/components/api/postgres', backup: 'required' as const }, { id: 'operations-runner', volume: '/var/lib/treeseed/components/api/operations-runner', backup: 'required' as const }],
+	stateVolumes: ['postgres','operations-runner','openbao','openbao-custody','openbao-os'].map(id=>({id,volume:`/var/lib/treeseed/components/api/${id}`,backup:'required' as const})),
 	migrations: [{ id: 'control-plane-postgres', order: 0, backupRequired: true }], requiredCapabilities: ['docker-compose'], dependencies: [],
 };
 const tagUrl = (repository: string) => `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}`;
@@ -46,6 +57,7 @@ const bundle = componentReleaseSchema.parse({
 	stableBase: track === 'development' ? { releaseRange: '>=0.1.0 <0.2.0', compatibilityId: 'treeseed-linux-amd64-v1', catalogDigest: null } : null,
 	packages: [{ name: 'treeseed-component-api', version: debianRelease, architecture: 'all', origin: 'TreeSeed Deployment', order: 20 }],
 	images: [
+		{ role: 'openbao', repository: MANAGED_OPENBAO_IMAGE.repository, digest: MANAGED_OPENBAO_IMAGE.digest, platforms: ['linux/amd64', 'linux/arm64'], consumers: ['api'] },
 		{ role: 'api', repository: 'treeseed/api', digest: apiDigest, platforms: ['linux/amd64', 'linux/arm64'], consumers: ['api'] },
 		{ role: 'operations-runner', repository: 'treeseed/op-runner', digest: runnerDigest, platforms: ['linux/amd64', 'linux/arm64'], consumers: ['api'] },
 		{ role: 'postgres', repository: 'treeseed/api-postgres', digest: databaseDigest, platforms: ['linux/amd64', 'linux/arm64'], consumers: ['api'] },

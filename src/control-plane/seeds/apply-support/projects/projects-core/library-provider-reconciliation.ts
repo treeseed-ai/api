@@ -36,43 +36,6 @@ async function seedRepositoryFiles(input:{fetchImpl:typeof fetch;token:string;ow
 	}
 }
 
-async function ensureEnvironmentAuthority(input: { store: any; teamId: string; projectId: string; owner: string; name: string; repository: Record<string, any>; heads: Record<string,string> }) {
-	const now = new Date().toISOString();
-	const connectionId = identifier('service-connection', `${input.teamId}:github:seed-library`);
-	const profileId = 'github-repository-token';
-	const capabilityId = identifier('service-capability', `${connectionId}:repository-hosting`);
-	const authorityId = identifier('credential-authority', `${connectionId}:${profileId}`);
-	const bindingId = identifier('repository-binding', `${input.projectId}:${input.owner}/${input.name}`);
-	await input.store.run(`INSERT INTO team_service_connections
-		(id,team_id,provider_id,display_name,status,non_secret_config_json,version,created_at,updated_at)
-		VALUES (?,?,'github','Seed library GitHub authority','active','{}',1,?,?)
-		ON CONFLICT(team_id,provider_id,display_name) DO UPDATE SET status='active',updated_at=excluded.updated_at`, [connectionId,input.teamId,now,now]);
-	await input.store.run(`INSERT INTO team_service_credential_profiles
-		(id,team_id,connection_id,definition_id,custody_mode,status,created_at,updated_at)
-		VALUES (?,?,?,?, 'environment-reference','configured',?,?)
-		ON CONFLICT(connection_id,definition_id) DO UPDATE SET status='configured',updated_at=excluded.updated_at`, [identifier('credential-profile',`${connectionId}:${profileId}`),input.teamId,connectionId,profileId,now,now]);
-	await input.store.run(`INSERT INTO team_service_capability_bindings
-		(id,team_id,connection_id,capability_type,status,credential_profile_id,configuration_json,created_at,updated_at)
-		VALUES (?,?,?,'repository-hosting','configured',?,'{}',?,?)
-		ON CONFLICT(connection_id,capability_type) DO UPDATE SET status='configured',credential_profile_id=excluded.credential_profile_id,updated_at=excluded.updated_at`, [capabilityId,input.teamId,connectionId,profileId,now,now]);
-	await input.store.run(`INSERT INTO provider_credential_authorities
-		(id,team_id,connection_id,credential_profile_id,scheme,reference,capabilities_json,status,version,created_at,updated_at)
-		VALUES (?,?,?,?,'environment-reference','TREESEED_GITHUB_TOKEN','["repository-hosting"]','ready',1,?,?)
-		ON CONFLICT(connection_id,credential_profile_id) DO UPDATE SET reference='TREESEED_GITHUB_TOKEN',capabilities_json='["repository-hosting"]',status='ready',updated_at=excluded.updated_at`, [authorityId,input.teamId,connectionId,profileId,now,now]);
-	await input.store.run(`INSERT INTO project_remote_repository_bindings
-		(id,project_id,team_id,service_connection_id,capability_binding_id,provider_id,provider_repository_id,owner,name,clone_url,
-		default_ref,publication_ref,authority_id,expected_head,observed_head,grant_status,drift,version,created_at,updated_at)
-		VALUES (?,?,?,?,?,'github',?,?,?,?, 'refs/heads/main','refs/heads/staging',?,?,?,'ready','none',1,?,?)
-		ON CONFLICT(project_id) DO UPDATE SET service_connection_id=excluded.service_connection_id,capability_binding_id=excluded.capability_binding_id,
-		provider_id='github',provider_repository_id=excluded.provider_repository_id,owner=excluded.owner,name=excluded.name,clone_url=excluded.clone_url,
-		default_ref=excluded.default_ref,publication_ref=excluded.publication_ref,authority_id=excluded.authority_id,expected_head=excluded.expected_head,
-		observed_head=excluded.observed_head,grant_status='ready',drift='none',version=project_remote_repository_bindings.version+1,updated_at=excluded.updated_at`, [
-		bindingId,input.projectId,input.teamId,connectionId,capabilityId,String(input.repository.id),input.owner,input.name,
-		`https://github.com/${input.owner}/${input.name}.git`,authorityId,input.heads.staging,input.heads.staging,now,now,
-	]);
-	return { bindingId, authorityId };
-}
-
 async function ensureProvidedAuthority(input: { store: any; teamId: string; projectId: string; owner: string; name: string;
 	repository: Record<string, any>; heads: Record<string,string>; authority: RepositoryAuthority }) {
 	const now = new Date().toISOString();
@@ -100,7 +63,7 @@ export async function reconcileLibraryProvider(input: {
 	repositoryAuthority?: RepositoryAuthority;
 }) {
 	const fetchImpl = input.fetchImpl ?? fetch;
-	const token = input.repositoryAuthority?.token ?? (String(input.env.TREESEED_GITHUB_TOKEN ?? '').trim() || undefined);
+	const token = input.repositoryAuthority?.token;
 	let repository = await github({ fetchImpl, token, path: `/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.name)}` });
 	if (!repository && token && input.name.endsWith('-library')) {
 		const legacyName = `${input.name.slice(0, -'-library'.length)}-content`;
@@ -110,7 +73,7 @@ export async function reconcileLibraryProvider(input: {
 	}
 	if (!repository) {
 		if (input.lifecycle !== 'create-or-adopt') throw new Error(`Required GitHub library ${input.owner}/${input.name} does not exist.`);
-		if (!token) throw new Error(`TREESEED_GITHUB_TOKEN is required to create or access GitHub library ${input.owner}/${input.name}.`);
+		if (!token) throw new Error(`A managed team GitHub authority is required to create or access GitHub library ${input.owner}/${input.name}.`);
 		repository = await github({ fetchImpl, token, path: `/orgs/${encodeURIComponent(input.owner)}/repos`, method: 'POST',
 			body: { name: input.name, private: input.visibility === 'private', has_issues: true, auto_init: true } });
 	}
@@ -128,7 +91,7 @@ export async function reconcileLibraryProvider(input: {
 		staging = await repositoryHead({ fetchImpl, token, owner:input.owner,name:input.name,branch:'staging' });
 	}
 	if(input.seedFiles&&Object.keys(input.seedFiles).length) {
-		if(!token)throw new Error(`TREESEED_GITHUB_TOKEN is required to seed managed library ${input.owner}/${input.name}.`);
+		if(!token)throw new Error(`A managed team GitHub authority is required to seed managed library ${input.owner}/${input.name}.`);
 		await seedRepositoryFiles({fetchImpl,token,owner:input.owner,name:input.name,branch:'main',files:input.seedFiles});
 		await seedRepositoryFiles({fetchImpl,token,owner:input.owner,name:input.name,branch:'staging',files:input.seedFiles});
 		main=await repositoryHead({fetchImpl,token,owner:input.owner,name:input.name,branch:'main'});
@@ -136,9 +99,8 @@ export async function reconcileLibraryProvider(input: {
 	}
 	const heads = { main, staging };
 	if (!token) return { heads, credentialId: undefined };
-	const authority = input.repositoryAuthority
-		? await ensureProvidedAuthority({ ...input, repository, heads, authority: input.repositoryAuthority })
-		: await ensureEnvironmentAuthority({ ...input, repository, heads });
+	if (!input.repositoryAuthority) throw new Error('Managed repository authority is required.');
+	const authority = await ensureProvidedAuthority({ ...input, repository, heads, authority: input.repositoryAuthority });
 	if (input.visibility === 'public') return { heads, credentialId: undefined };
 	const refspecs = ['+refs/heads/main:refs/remotes/origin/main','+refs/heads/staging:refs/remotes/origin/staging'];
 	const delivery = await createRemoteGitCredentialDelivery({ store:input.store,

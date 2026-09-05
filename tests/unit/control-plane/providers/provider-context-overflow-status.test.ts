@@ -1,3 +1,4 @@
+import { keyFixture } from '../security/os-key-fixture.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createProviderRuntimeService } from '../../../../src/api/control-plane/repositories/providers/provider-runtime-service.ts';
 
@@ -10,7 +11,7 @@ describe('provider context-capacity status', () => {
 			first: vi.fn(async (query: string) => query.includes('COUNT(*)') ? { count: 1 } : null),
 			principalCanAccessTeam: vi.fn(async () => true), principalCanManageTeam: vi.fn(async () => true),
 		} as any;
-		const service = createProviderRuntimeService(store, { environment: 'test' });
+		const service = createProviderRuntimeService(store, { environment: 'test', capacityEncryptionKeyFile: keyFixture() });
 		service.show = vi.fn(async () => ({ id: 'provider-1' })) as any;
 		const status = await service.diagnose({ id: 'owner' }, 'team-1', 'provider-1');
 		expect(status.healthy).toBe(true);

@@ -71,7 +71,7 @@ describe('control-plane protocol contract', () => {
 		async recordAuditEvent() {},
 		...overrides,
 	});
-	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ store: operationStore(overrides), treeDxProxy: { async invoke() { throw new Error('Unexpected TreeDX proxy invocation.'); } }, capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
+	const apiDependencies = (overrides: Record<string, unknown> = {}) => ({ custodyReady: async()=>true, store: operationStore(overrides), treeDxProxy: { async invoke() { throw new Error('Unexpected TreeDX proxy invocation.'); } }, capacity: { async evaluateProjectDeletionBlockers() { return []; } }, async deliverTeamInvite() {}, async listUserEmailAddresses() { return []; },
 		async reconcileManagedTeamLibrary(teamId:string) { return {teamId,state:'known-good'}; },
 		accountEmails: { async add() { return { ok: true }; }, async verify() { return { ok: true }; }, async makePrimary() { return { ok: true }; }, async remove() { return { ok: true, items: [] }; } } });
 	const confirmationService = () => {
@@ -118,7 +118,7 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/health/deep');
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
+		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true, openbao: true } } });
 		const specification = await app.request('/openapi.json');
 		expect((await specification.json() as any).paths['/v1/health/deep'].get.operationId).toBe('health.deep');
 		const unavailableApp = new Hono();
@@ -138,7 +138,7 @@ describe('control-plane protocol contract', () => {
 		installControlPlaneProtocolRoutes(app, authenticate, oauthProvider, registry);
 		const response = await app.request('/v1/health/ready');
 		expect(response.status).toBe(200);
-		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true } } });
+		expect(await response.json()).toEqual({ data: { status: 'ok', checks: { database: true, openbao: true } } });
 		const specification = await app.request('/openapi.json');
 		expect((await specification.json() as any).paths['/v1/health/ready'].get.operationId).toBe('health.ready');
 	});

@@ -47,9 +47,14 @@ describe('managed API release publication', () => {
 		expect(compose).toContain(`treeseed/op-runner@${hash('c')}`);
 		expect(compose).toContain(`treeseed/api-postgres@${hash('d')}`);
 		expect(compose).toContain("fetch('http://127.0.0.1:3000/v1/health/ready')");
-		expect(compose).toContain('test: ["CMD-SHELL", "kill -0 1"]');
+		const definition = parse(compose);
+		expect(definition.services['operations-runner'].healthcheck.test).toEqual(['CMD-SHELL','kill -0 1']);
+		expect(definition.services.openbao).not.toHaveProperty('ports');
+		expect(definition.services.api.depends_on['openbao-initialize']).toEqual({condition:'service_completed_successfully'});
+		expect(definition.services.api.environment.TREESEED_OPENBAO_ADDRESS).toBe('https://openbao:8200');
+		expect(definition.services.api.volumes.find((v:any)=>v.target==='/run/openbao-client')).toMatchObject({read_only:true});
 		expect(compose).not.toContain('/healthz');
-		expect(bundle.images).toHaveLength(3);
+		expect(bundle.images).toHaveLength(4);
 		expect(bundle.track).toBe('development');
 		expect(bundle.stableBase.catalogDigest).toBeNull();
 		expect(bundle.release).toBe('0.8.0~rc8-1');

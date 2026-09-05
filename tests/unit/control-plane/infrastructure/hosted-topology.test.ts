@@ -28,7 +28,7 @@ function healthy(value: HostedTopologyDeclaration) { return value.resources.map(
 function store() {
 	const operations: any[] = [], records: any[] = [];
 	const serviceConnections = [
-		{ id: 'connection-state-id', displayName: 'cloudflare-state', providerId: 'cloudflare', status: 'active', nonSecretConfig: { stateBucket: 'treeseed-state', stateRegion: 'auto', stateEndpoint: 'https://r2.example.test', stateEncryptionKeyRef: 'treeseed-cloud-state' }, capabilities: [
+		{ id: 'connection-state-id', displayName: 'cloudflare-state', providerId: 'cloudflare', status: 'active', nonSecretConfig: { deploymentEnvironment: 'production', stateBucket: 'treeseed-state', stateRegion: 'auto', stateEndpoint: 'https://r2.example.test', stateEncryptionKeyRef: 'treeseed-cloud-state' }, capabilities: [
 			{ capabilityType: 'object-storage', credentialProfileId: 's3-state-session', status: 'configured' },
 			{ capabilityType: 'state-encryption', credentialProfileId: 'opentofu-state-encryption', status: 'configured' },
 		] },
@@ -42,7 +42,7 @@ function store() {
 		async listTeamServiceConnections() { return serviceConnections; },
 		async createPlatformOperation(input: any) { const operation = { id: `operation-${operations.length + 1}`, status: 'queued', ...input }; operations.push(operation); return operation; },
 		async first(sql: string) {
-			if (sql.includes('provider_credential_authorities')) return { scheme: 'external-vault' };
+			if (sql.includes('provider_credential_authorities')) return { scheme: 'openbao', status:'ready', capabilities_json:JSON.stringify(['frontend-hosting','backend-hosting','object-storage','state-encryption','dns-hosting','edge-routing']) };
 			if (sql.startsWith('SELECT id FROM runtime_records')) return null;
 			if (sql.includes('runtime_records')) return records.at(-1) ?? null;
 			return null;
@@ -54,14 +54,14 @@ function store() {
 	};
 }
 
-const unusedVault = { async createLease() { throw new Error('External authorities must not create interactive leases.'); } };
 
 describe('hosted topology control-plane and runner', () => {
 	it('plans read-only from team-scoped live observations and rejects unavailable connections', async () => {
 		const state = store(), value = declaration();
-		const service = createHostedTopologyService(state, unusedVault);
+		const service = createHostedTopologyService(state);
 		const planned = await service.plan({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { declaration: value });
-		expect(planned).toMatchObject({ operation: { operation: 'hosted-topology-plan' }, credentialLeases: [] });
+		expect(planned).toMatchObject({ operation: { operation: 'hosted-topology-plan' } });
+		expect(planned).not.toHaveProperty('credentialLeases');
 		state.getTeamServiceConnection = async () => null as any;
 		state.listTeamServiceConnections = async () => [
 			{ id: 'duplicate-1', displayName: 'cloudflare-production', providerId: 'cloudflare', status: 'active' },
@@ -74,35 +74,24 @@ describe('hosted topology control-plane and runner', () => {
 
 	it('queues only exact agent-authorized plans with concurrency and no plaintext credentials', async () => {
 		const state = store(), value = declaration();
-		const service = createHostedTopologyService(state, unusedVault);
+		const service = createHostedTopologyService(state);
 		const plan = planHostedTopology({ declaration: value, observations: missing(value), connections, stateBackend: backend() });
 		await expect(service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan }, 'wrong', 'id-1')).rejects.toMatchObject({ code: 'hosted_topology_plan_precondition_failed' });
 		const queued = await service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan }, `"${plan.planDigest}"`, 'id-1');
-		expect(queued).toMatchObject({ operation: { namespace: 'infrastructure', operation: 'hosted-topology-apply', idempotencyKey: 'id-1' }, credentialLeases: [] });
+		expect(queued).toMatchObject({ operation: { namespace: 'infrastructure', operation: 'hosted-topology-apply', idempotencyKey: 'id-1' } });
+		expect(queued).not.toHaveProperty('credentialLeases');
 		await expect(service.plan({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { declaration: value, apiToken: 'forbidden' })).rejects.toMatchObject({ code: 'plaintext_secret_rejected' });
 	});
 
-	it('creates exact interactive leases for provider, state backend, and state encryption authority', async () => {
-		const state = store(), value = declaration(), created: any[] = [];
-		const originalFirst = state.first;
-		state.first = async (sql: string) => sql.includes('provider_credential_authorities')
-			? { scheme: 'client-encrypted', status: 'interactive-only' } : originalFirst(sql);
-		const service = createHostedTopologyService(state, {
-			async createLease(_principal: unknown, _teamId: string, body: any) {
-				const item = { id: `lease-${created.length + 1}`, purpose: body.purpose, hostedBinding: body.hostedBinding };
-				created.push(body); return item;
-			},
-		});
-		const plan = planHostedTopology({ declaration: value, observations: missing(value), connections, stateBackend: backend() });
-		const accepted = await service.apply({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { plan }, plan.planDigest);
-		expect(accepted.credentialLeases).toHaveLength(4);
-		expect(created.map((item) => item.credentialProfileId).sort()).toEqual([
-			'cloudflare-runtime', 'opentofu-state-encryption', 'railway-workspace', 's3-state-session',
-		]);
-		expect(created.find((item) => item.credentialProfileId === 's3-state-session')).toMatchObject({ capabilityType: 'object-storage' });
-		expect(created.find((item) => item.credentialProfileId === 'opentofu-state-encryption')).toMatchObject({ capabilityType: 'state-encryption' });
-		expect(created.every((item) => item.hostedBinding.subjectDigest === plan.planDigest)).toBe(true);
-	});
+	it('rejects retired interactive authority instead of issuing browser leases', async () => {
+    const state=store(), value=declaration();
+    const originalFirst=state.first;
+    state.first=async sql=>sql.includes('provider_credential_authorities')?{scheme:'client-encrypted',status:'interactive-only'}:originalFirst(sql);
+    const plan=planHostedTopology({declaration:value,observations:missing(value),connections,stateBackend:backend()});
+    await expect(createHostedTopologyService(state).apply({id:'owner',roles:['platform_admin']},'team-1',{plan},plan.planDigest))
+      .rejects.toMatchObject({code:'hosted_provider_authority_unavailable'});
+    expect(state.operations).toHaveLength(0);
+  });
 
 	it('executes through an injected adapter, verifies read-back, and persists a redacted receipt', async () => {
 		const state = store(), value = declaration();
@@ -120,10 +109,10 @@ describe('hosted topology control-plane and runner', () => {
 		const targetDeclaration = hostedTopologyDeclarationSchema.parse({ ...value, resources: [] });
 		const targetPlan = planHostedTopology({ declaration: targetDeclaration, observations: [], connections, stateBackend: backend() });
 		const execution = planHostedTopologyRollbackExecution({ rollback, sourceReceipt: result.receipt, sourcePlan: plan, targetPlan });
-		const service = createHostedTopologyService(state, unusedVault);
+		const service = createHostedTopologyService(state);
 		await expect(service.rollback({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { execution, sourcePlan: plan, targetPlan }, 'wrong')).rejects.toMatchObject({ code: 'hosted_topology_rollback_precondition_failed' });
 		const queued = await service.rollback({ id: 'owner', roles: ['platform_admin'] }, 'team-1', { execution, sourcePlan: plan, targetPlan }, execution.executionDigest, 'rollback-1');
-		expect(queued).toMatchObject({ operation: { operation: 'hosted-topology-rollback', input: { execution: { executionDigest: execution.executionDigest } } }, credentialLeases: [] });
+		expect(queued).toMatchObject({ operation: { operation: 'hosted-topology-rollback', input: { execution: { executionDigest: execution.executionDigest } } } });
 		const rolledBack = await rollbackExecutor!.run({ teamId: 'team-1', execution, sourcePlan: plan, targetPlan }, { async checkpoint() {} }) as any;
 		expect(rolledBack).toMatchObject({ rolledBackFrom: result.receipt.receiptId, receipt: { resources: [{ state: 'missing' }, { state: 'missing' }] } });
 		expect(JSON.stringify(state.records)).not.toContain('approval');
