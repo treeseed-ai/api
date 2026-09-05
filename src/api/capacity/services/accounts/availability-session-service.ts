@@ -6,6 +6,7 @@ import { CapacityGovernanceError } from '../../database.ts';
 import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../../repositories/accounts/availability-session.ts';
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
 import { capabilityOfferDigest, capabilityOfferSchema, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
+import { createCapabilityOntologyService } from '../../../control-plane/repositories/capabilities/capability-ontology-service.ts';
 
 type JsonRecord = Record<string, unknown>;
 export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: string; capacityProviderId: string; }
@@ -53,7 +54,11 @@ function reconcileSeedGrantOperations(write: AvailabilitySessionWrite): Capacity
 
 export class AvailabilitySessionService {
 	private readonly repository: AvailabilitySessionRepository;
-	constructor(private readonly database: CapacityGovernanceDatabase) { this.repository = new AvailabilitySessionRepository(database); }
+	private readonly ontology: ReturnType<typeof createCapabilityOntologyService>;
+	constructor(private readonly database: CapacityGovernanceDatabase) {
+		this.repository = new AvailabilitySessionRepository(database);
+		this.ontology = createCapabilityOntologyService(database);
+	}
 
 	get(teamId: string, sessionId: string) { return this.repository.get(teamId, sessionId); }
 	listPage(teamId: string, filters: { providerId?: string | null; status?: ProviderAvailabilitySessionStatus | null; limit: number; cursor: CapacityPageCursor | null }) { return this.repository.listPage(teamId, filters); }
@@ -93,6 +98,7 @@ export class AvailabilitySessionService {
 	}
 
 	private async validateOfferReferences(principal: ProviderAvailabilityPrincipal, input: JsonRecord) {
+		await this.ontology.ensureInitialized();
 		for (const [index, route] of objects(input.offers).entries()) {
 			const parsed = capabilityOfferSchema.safeParse(route.offer);
 			if (!parsed.success) throw new CapacityGovernanceError('provider_capability_offer_invalid', `Capability offer ${index} is invalid.`, 400, { issues: parsed.error.issues });
