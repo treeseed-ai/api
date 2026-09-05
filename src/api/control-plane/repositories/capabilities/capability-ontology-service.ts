@@ -20,6 +20,7 @@ export function createCapabilityOntologyService(store: CapacityGovernanceDatabas
 		]);
 	})();
 	return {
+		ensureInitialized: ensureSeed,
 		async list(query: Record<string, unknown>) {
 			await ensureSeed(); const generation = await store.first(`SELECT * FROM capability_ontology_generations WHERE status='active' LIMIT 1`);
 			const clauses = [`generation = ?`], params: unknown[] = [generation!.generation];
