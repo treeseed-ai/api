@@ -24,25 +24,6 @@ services:
       database: { condition: service_healthy }
     networks: [private]
     security_opt: ["no-new-privileges:true"]
-  diagnostics-backfill:
-    image: "@API_IMAGE@"
-    command: ["npm", "run", "db:diagnostics-backfill"]
-    restart: "no"
-    env_file: /etc/treeseed/components/api/environment
-    environment:
-      TREESEED_ENVIRONMENT: production
-      TREESEED_REWRAP_ENVELOPES: "true"
-      TREESEED_CAPACITY_ENCRYPTION_KEY_FILE: /run/treeseed-keys/credentials
-      TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE: /run/treeseed-keys/diagnostics
-    depends_on:
-      migration: { condition: service_completed_successfully }
-    volumes:
-      - type: bind
-        source: /run/treeseed/component-credentials/api
-        target: /run/treeseed-keys
-        read_only: true
-    networks: [private]
-    security_opt: ["no-new-privileges:true"]
   api:
     image: "@API_IMAGE@"
     restart: unless-stopped
@@ -55,7 +36,7 @@ services:
       TREESEED_CAPACITY_ENCRYPTION_KEY_FILE: /run/treeseed-keys/credentials
       TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE: /run/treeseed-keys/diagnostics
     depends_on:
-      diagnostics-backfill: { condition: service_completed_successfully }
+      migration: { condition: service_completed_successfully }
     networks: [private, platform, treeseed-edge]
     expose: ["3000"]
     volumes:

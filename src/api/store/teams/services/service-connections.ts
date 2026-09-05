@@ -174,9 +174,9 @@ export async function upsertTeamServiceCapabilityMethod(
 	if (input.credentialProfileId) {
 		await this.run(
 			`INSERT INTO team_service_credential_profiles (id, team_id, connection_id, definition_id, custody_mode, status, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, 'client_encrypted_vault', 'pending', ?, ?)
+			 VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
 			 ON CONFLICT(connection_id, definition_id) DO UPDATE SET updated_at = excluded.updated_at`,
-			[randomUUID(), teamId, connectionId, input.credentialProfileId, now, now],
+			[randomUUID(), teamId, connectionId, input.credentialProfileId, input.credentialProfileId.endsWith('-app') ? 'app-installation' : 'openbao', now, now],
 		);
 	}
 	if (existing) {

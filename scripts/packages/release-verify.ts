@@ -92,11 +92,9 @@ async function assertSupportedExecutables() {
 	const server = await import(pathToFileURL(resolve(packageRoot, 'dist/api/support/server.js')).href);
 	const runner = await import(pathToFileURL(resolve(packageRoot, 'dist/operations-runner/entrypoint.js')).href);
 	const migration = await import(pathToFileURL(resolve(packageRoot, 'dist/scripts/support/migrate-db.js')).href);
-	const diagnosticBackfill = await import(pathToFileURL(resolve(packageRoot, 'dist/scripts/support/backfill-encrypted-diagnostics.js')).href);
 	if (typeof server.createApiServer !== 'function') throw new Error('API server executable is missing createApiServer.');
 	if (typeof runner.main !== 'function') throw new Error('Operations runner executable is missing main.');
 	if (typeof migration.main !== 'function') throw new Error('Database migration executable is missing main.');
-	if (typeof diagnosticBackfill.main !== 'function') throw new Error('Diagnostic encryption backfill executable is missing main.');
 }
 
 assertPublishedDependencies();

@@ -13,10 +13,9 @@ async function managedIds(store: any, teamId: string) {
 }
 
 export function createDeploymentHostedAdapter(options: { store: any; dataDir: string; fetchImpl?: typeof fetch; env?: NodeJS.ProcessEnv;
-	externalAuthorityResolver?: Parameters<typeof resolveHostedVaultMaterial>[0]['externalResolver'];
-	interactiveAuthorityResolver?: Parameters<typeof resolveHostedVaultMaterial>[0]['interactiveResolver']; executor?: HostedInfrastructureExecutor }) {
+	executor?: HostedInfrastructureExecutor }) {
 	const resolver = (request: HostedInfrastructureAuthorityRequest) => resolveHostedVaultMaterial({ store: options.store, request,
-		env: options.env, externalResolver: options.externalAuthorityResolver, interactiveResolver: options.interactiveAuthorityResolver });
+		env: options.env });
 	const operationRoot = async () => { await mkdir(options.dataDir, { recursive: true, mode: 0o700 }); return mkdtemp(join(options.dataDir, 'hosted-opentofu-')); };
 	return {
 		async observe(input: { teamId: string; declaration: HostedTopologyDeclaration; stateBackend: HostedStateBackend; connections: Record<string, any> }): Promise<HostedResourceObservation[]> {

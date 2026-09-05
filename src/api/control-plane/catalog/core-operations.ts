@@ -1,5 +1,6 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { ControlPlaneOperationError, type BoundOperation } from './operation-registry.ts';
+import { managedSecretHealth } from '../../../security/managed-secrets.ts';
 
 export const statusOperation: BoundOperation<typeof CONTROL_PLANE_OPERATIONS.status.show> = {
 	binding: CONTROL_PLANE_OPERATIONS.status.show,
@@ -9,6 +10,7 @@ export const statusOperation: BoundOperation<typeof CONTROL_PLANE_OPERATIONS.sta
 };
 
 export interface DeepHealthDependencies {
+  custodyReady?: () => Promise<boolean>;
 	store: {
 		ensureInitialized(): Promise<unknown>;
 		first(query: string): Promise<Record<string, unknown> | null | undefined>;
@@ -24,8 +26,11 @@ export function createDeepHealthOperation(dependencies: DeepHealthDependencies):
 				const probe = await dependencies.store.first('SELECT 1 AS ok');
 				const database = probe?.ok === 1 || probe?.ok === '1';
 				if (!database) throw new Error('Readiness probe failed.');
-				return { status: 'ok', checks: { database: true } };
-			} catch {
+				if(!await (dependencies.custodyReady ?? managedSecretHealth)())
+					throw new ControlPlaneOperationError(503,'control_plane_custody_unavailable','Core OpenBao custody is unavailable.');
+				return { status: 'ok', checks: { database: true, openbao: true } };
+			} catch (error) {
+				if(error instanceof ControlPlaneOperationError)throw error;
 				throw new ControlPlaneOperationError(503, 'control_plane_database_unavailable', 'The control-plane database is unavailable.');
 			}
 		},

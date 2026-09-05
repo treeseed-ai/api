@@ -40,7 +40,7 @@ export class CapacitySecretCodec {
 	readonly #hashKey: Buffer;
 	readonly #envelopes: EncryptedEnvelopeCodec;
 
-	constructor(secret: string, encryptionSecret = 'treeseed-test-only-capacity-encryption-key', keyVersion = 1, historical: Array<{ version: number; secret: string }> = []) {
+	constructor(secret: string, encryptionSecret: string, keyVersion = 1, historical: Array<{ version: number; secret: string }> = []) {
 		if (secret.trim().length < 24) throw new Error('Capacity governance secret must be at least 24 characters.');
 		if (encryptionSecret.trim().length < 24) throw new Error('Capacity encryption key must be at least 24 characters.');
 		this.#hashKey = createHash('sha256').update(`treeseed-capacity-hash:${secret}`).digest();

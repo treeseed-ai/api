@@ -178,7 +178,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 		const metadata = record(invocation.metadata_json); const capacity = record(assignment.capacity_envelope_json);
 		const traceEvents = traces.map((trace: Row) => ({ sequence: Number(trace.sequence), type: text(trace.event_type), occurredAt: timestamp(trace.occurred_at), summary: text(trace.summary), payload: record(trace.payload_json),
 			...(full && trace.protected_payload_envelope_json ? { protectedPayload: diagnosticEnvelopes?.decrypt(record(trace.protected_payload_envelope_json)) ?? { unavailable: 'diagnostics_encryption_key_unavailable' } }
-				: full && trace.protected_payload_json ? { protectedPayload: record(trace.protected_payload_json), legacyPlaintext: true } : {}) }));
+				: {}) }));
 		const started = traceEvents.find((event) => event.type === 'execution.started'); const startedPayload = record(started?.payload);
 		const terminal = [...traceEvents].reverse().find((event) => event.type === 'execution.completed'); const terminalPayload = record(terminal?.payload);
 		return { availability: traces.length ? 'available' : 'unavailable', reason: traces.length ? null : 'provider_trace_unavailable',

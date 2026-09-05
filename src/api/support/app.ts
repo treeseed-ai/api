@@ -21,7 +21,7 @@ import { createWorkflowConfigurationService } from '../control-plane/repositorie
 import { createGitHubConnectorService } from '../control-plane/repositories/github-connector-service.ts';
 import { createGitHubWebhookService } from '../control-plane/repositories/github-webhook-service.ts';
 import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
-import { createServiceVaultService } from '../control-plane/repositories/services/service-vault-service.ts';
+import { createServiceCredentials } from '../control-plane/repositories/services/service-credentials.ts';
 import { createHostedTopologyService } from '../control-plane/repositories/infrastructure/hosted-topology-service.ts';
 import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
 import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
@@ -223,11 +223,11 @@ export function createPlatformApiApp(options: any = {}) {
 	const discussions = createDiscussionService({ store, capacity, sessionEvents });
 	const communications = createCommunicationService(capacity, discussions, store, diagnosticEnvelopes);
 	const governance = createGovernanceService(store);
-	const services = { ...createServiceConnectionService(store), ...createServiceVaultService(store) };
+	const services = { ...createServiceConnectionService(store), ...createServiceCredentials(store) };
 	const inbox = createInboxService({ store, discussions, communications, governance });
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity, services,
-			hostedTopology: createHostedTopologyService(store, services),
+			hostedTopology: createHostedTopologyService(store),
 			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
 			capabilityOntology,
 			plans: createCapacityPlanService(capacity),

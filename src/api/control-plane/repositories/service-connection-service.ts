@@ -1,10 +1,8 @@
-import { randomUUID } from 'node:crypto';
-import { CREDENTIAL_AUTHORITY_SCHEMES, SERVICE_PROVIDER_CATALOG, containsForbiddenPlaintextSecretMaterial,
+import { SERVICE_PROVIDER_CATALOG, containsForbiddenPlaintextSecretMaterial,
 	getServiceProviderDefinition, serviceProviderSupportsCapability } from '@treeseed/sdk/secrets-capability';
 import { ServiceOperationError } from './service-operation-error.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[] } | undefined;
-const ENV_REFERENCE = /^TREESEED_[A-Z0-9]+(?:_[A-Z0-9]+)*$/u;
 
 function serializeAuthority(row: any) {
 	return row ? { id: row.id, teamId: row.team_id, connectionId: row.connection_id,
@@ -104,35 +102,6 @@ export function createServiceConnectionService(store: any) {
 			if (!await store.getTeamServiceConnection(teamId, connectionId)) throw new ServiceOperationError(404, 'service_connection_not_found', 'Service connection not found.');
 			const rows = await store.all('SELECT * FROM provider_credential_authorities WHERE team_id = ? AND connection_id = ? ORDER BY credential_profile_id', [teamId, connectionId]);
 			return { items: rows.map(serializeAuthority), cursor: null };
-		},
-		async putAuthority(principal: Principal, teamId: string, connectionId: string, profileId: string,
-			body: Record<string, unknown>, ifMatch?: string) {
-			const actor = await authorize(store, principal, teamId, 'services:manage:team'); rejectSecrets(body);
-			const connection = await store.getTeamServiceConnection(teamId, connectionId);
-			if (!connection) throw new ServiceOperationError(404, 'service_connection_not_found', 'Service connection not found.');
-			const provider = getServiceProviderDefinition(connection.providerId); const profile = provider?.credentialProfiles.find((item) => item.id === profileId);
-			if (!profile) throw new ServiceOperationError(404, 'credential_profile_not_found', 'Credential profile not found.');
-			if (!CREDENTIAL_AUTHORITY_SCHEMES.includes(body.scheme as any) || !profile.authoritySchemes?.includes(body.scheme as any)) throw new ServiceOperationError(400, 'credential_authority_scheme_mismatch', 'The credential profile does not support this authority scheme.');
-			if (body.scheme === 'app-installation') throw new ServiceOperationError(409, 'credential_authority_connector_required', 'GitHub App authority must use the managed Connector flow.');
-			const reference = String(body.reference ?? '').trim();
-			if (!reference || (body.scheme === 'environment-reference' && !ENV_REFERENCE.test(reference))) throw new ServiceOperationError(400, 'invalid_credential_authority_reference', 'A valid non-secret authority reference is required.');
-			const allowed = connection.capabilities.filter((binding: any) => binding.status === 'configured' && binding.credentialProfileId === profile.id)
-				.map((binding: any) => binding.capabilityType).filter((capability: string) => profile.capabilities.includes(capability as any));
-			if (!allowed.length) throw new ServiceOperationError(409, 'credential_authority_unused', 'Enable a capability for this credential profile first.');
-			const existing: any = await store.first('SELECT * FROM provider_credential_authorities WHERE connection_id = ? AND credential_profile_id = ?', [connectionId, profileId]);
-			if (!ifMatch || Number(ifMatch) !== Number(existing?.version ?? 0)) throw new ServiceOperationError(412, 'credential_authority_precondition_failed', 'The credential authority changed after it was inspected.');
-			const status = ['client-encrypted', 'api-token', 'oauth-token'].includes(String(body.scheme)) ? 'interactive-only' : 'ready';
-			const now = new Date().toISOString(); const id = existing?.id ?? randomUUID();
-			await store.run(`INSERT INTO provider_credential_authorities (id, team_id, connection_id, credential_profile_id, scheme,
-				reference, capabilities_json, status, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-				ON CONFLICT(connection_id, credential_profile_id) DO UPDATE SET scheme = excluded.scheme, reference = excluded.reference,
-				capabilities_json = excluded.capabilities_json, status = excluded.status, version = provider_credential_authorities.version + 1,
-				updated_at = excluded.updated_at`, [id, teamId, connectionId, profileId, body.scheme, reference, JSON.stringify(allowed), status, now, now]);
-			const saved = serializeAuthority(await store.first('SELECT * FROM provider_credential_authorities WHERE id = ?', [id]));
-			await store.recordAuditEvent({ eventType: 'provider.credential_authority.updated', actorType: 'user', actorId: actor.id,
-				targetType: 'provider_credential_authority', targetId: id,
-				data: { teamId, connectionId, profileId, scheme: body.scheme, capabilities: allowed } });
-			return saved;
 		},
 	};
 }

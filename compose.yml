@@ -14,6 +14,10 @@ services:
       - treeseed-api-postgres-volume:/var/lib/postgresql/data
 
   api:
+    networks: [default, api-private]
+    volumes:
+      - /run/treeseed/openbao/client:/run/openbao-client:ro
+      - /run/treeseed/component-credentials/api:/run/treeseed-keys:ro
     build:
       context: .
       target: api
@@ -21,6 +25,11 @@ services:
       treeseed-api-postgres:
         condition: service_healthy
     environment:
+      TREESEED_OPENBAO_ADDRESS: https://openbao:8200
+      TREESEED_OPENBAO_IDENTITY_FILE: /run/openbao-client/identity.json
+      NODE_EXTRA_CA_CERTS: /run/openbao-client/ca.pem
+      TREESEED_CAPACITY_ENCRYPTION_KEY_FILE: /run/treeseed-keys/credentials
+      TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE: /run/treeseed-keys/diagnostics
       NODE_ENV: development
       HOST: 0.0.0.0
       PORT: 3000
@@ -40,6 +49,7 @@ services:
       - "3000:3000"
 
   operations-runner:
+    networks: [default, api-private]
     build:
       context: .
       target: operations-runner
@@ -50,6 +60,11 @@ services:
       api:
         condition: service_started
     environment:
+      TREESEED_OPENBAO_ADDRESS: https://openbao:8200
+      TREESEED_OPENBAO_IDENTITY_FILE: /run/openbao-client/identity.json
+      NODE_EXTRA_CA_CERTS: /run/openbao-client/ca.pem
+      TREESEED_CAPACITY_ENCRYPTION_KEY_FILE: /run/treeseed-keys/credentials
+      TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE: /run/treeseed-keys/diagnostics
       NODE_ENV: development
       PORT: 0
       TREESEED_API_ENVIRONMENT: local
@@ -68,8 +83,15 @@ services:
       TREESEED_PLATFORM_RUNNER_DATA_DIR: ${TREESEED_PLATFORM_RUNNER_DATA_DIR:-/data}
       TREESEED_MANAGER_ID: ${TREESEED_MANAGER_ID:-local-manager-01}
     volumes:
+      - /run/treeseed/openbao/client:/run/openbao-client:ro
+      - /run/treeseed/component-credentials/api:/run/treeseed-keys:ro
       - treeseed-api-operations-runner-data:/data
 
 volumes:
   treeseed-api-postgres-volume:
   treeseed-api-operations-runner-data:
+
+networks:
+  api-private:
+    external: true
+    name: treeseed-api_private
