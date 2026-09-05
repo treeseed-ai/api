@@ -85,7 +85,7 @@ export async function ensureControlPlaneCredentialSchema(store) {
     await store.ensureInitialized();
     await backfillUserEmailAddresses(store);
 	await store.backfillManagedTeamLibraryProjects();
-	if(String(process.env.TREESEED_GITHUB_TOKEN??'').trim())await reconcileManagedTeamLibraries(store,process.env);
+	await reconcileManagedTeamLibraries(store,process.env);
 }
 export function sanitizedReturnTo(value) {
     const target = String(value ?? '/app/');

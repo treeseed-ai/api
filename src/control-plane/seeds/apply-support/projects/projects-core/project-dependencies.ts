@@ -1,6 +1,8 @@
 import { mergeSeedMetadata,projectSeedMetadata } from '../../index.js';
 import { ensureProjectKnowledgeBinding } from './project-knowledge-binding.js';
 import { reconcileLibraryProvider } from './library-provider-reconciliation.js';
+import { resolveGitHubRepositoryCreationAuthority } from '../../../../../security/provider-credential-authority.ts';
+import { reconcileManagedTeamLibrary } from '../../../../../api/teams/managed-team-library-service.ts';
 
 export async function ensureProjectSeedDependencies({ action, store, ids, manifestHash, appliedAt, env, localOnly, dependencyState, plan }) {
     if (action.kind !== 'project')
@@ -45,10 +47,16 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
 		}
     }
 	if (!action.payload.library) throw new Error(`Project ${action.key} is missing its required library repository.`);
+	const state = dependencyState ?? {};
+	state.teamLibraries ??= new Map();
+	if (!state.teamLibraries.has(teamId)) state.teamLibraries.set(teamId, reconcileManagedTeamLibrary(store, teamId, env ?? process.env));
+	await state.teamLibraries.get(teamId);
+	const repositoryAuthority = await resolveGitHubRepositoryCreationAuthority({ store, teamId,
+		owner: action.payload.library.owner, env: env ?? process.env, fetchImpl: store.config?.fetchImpl });
 	const provider = await reconcileLibraryProvider({ store, teamId, projectId, projectSlug:action.payload.slug,
 		owner:action.payload.library.owner,name:action.payload.library.name,
 		visibility:action.payload.library.repositoryPolicy?.visibility ?? 'private',
-		lifecycle:action.payload.library.repositoryPolicy?.lifecycle ?? 'adopt-only',env:env ?? process.env,fetchImpl:store.config?.fetchImpl });
+		lifecycle:action.payload.library.repositoryPolicy?.lifecycle ?? 'adopt-only',env:env ?? process.env,fetchImpl:store.config?.fetchImpl,repositoryAuthority });
 	repairs.push({ kind: 'libraryProvider', projectId, repository: `${action.payload.library.owner}/${action.payload.library.name}`, heads: provider.heads });
 	if (localOnly === true) {
 		try {

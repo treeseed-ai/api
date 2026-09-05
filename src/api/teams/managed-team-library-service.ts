@@ -3,6 +3,7 @@ import { reconcileLibraryProvider } from '../../control-plane/seeds/apply-suppor
 import { createR2PublicationClient } from '../providers/cloudflare/r2-publication-client.ts';
 import { enqueueTreeDxCommitReplication } from '../capacity/services/treedx/repositories/treedx-commit-replication.ts';
 import { isManagedTeamLibraryRepositoryName,managedTeamLibraryRepositoryName } from '../store/teams/contracts/managed-library/ensure-managed-team-library-project.ts';
+import { resolveGitHubRepositoryCreationAuthority } from '../../security/provider-credential-authority.ts';
 
 const text=(...values:unknown[])=>values.find((value)=>typeof value==='string'&&value.trim())?.toString().trim()??'';
 const record=(value:unknown):Record<string,unknown>=>value&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:{};
@@ -89,7 +90,8 @@ export async function reconcileManagedTeamLibrary(store:any,teamId:string,env:No
 	if(!owner)throw new Error('A GitHub library owner must be configured before the managed Team Library can be provisioned.');
 	const projectLibrary=record(record(project.metadata).library),repositoryName=text(projectLibrary.repositoryName,managedTeamLibraryRepositoryName(teamId));
 	if(!isManagedTeamLibraryRepositoryName(teamId,repositoryName))throw new Error('Managed Team Library repository identity does not match its owning team.');
-	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility:'private',lifecycle:'create-or-adopt',env,fetchImpl:store.config?.fetchImpl,seedFiles:managedTeamLibrarySeedFiles});
+	const repositoryAuthority=await resolveGitHubRepositoryCreationAuthority({store,teamId,owner,env,fetchImpl:store.config?.fetchImpl});
+	const provider=await reconcileLibraryProvider({store,teamId,projectId:String(project.id),projectSlug:'team',owner,name:repositoryName,visibility:'private',lifecycle:'create-or-adopt',env,fetchImpl:store.config?.fetchImpl,seedFiles:managedTeamLibrarySeedFiles,repositoryAuthority});
 	const binding=await ensureProjectKnowledgeBinding({store,projectId:String(project.id),teamId,projectSlug:'team',libraryRoot:'.',libraryRef:'refs/remotes/origin/staging',libraryRepositoryUrl:`https://github.com/${owner}/${repositoryName}.git`,libraryDefaultBranch:'main',libraryCredentialId:provider.credentialId,expectedUpstreamHeads:provider.heads,env});
 	const now=new Date().toISOString();
 	await enqueueTreeDxCommitReplication(store,{teamId,projectId:String(project.id),commitSha:binding.resolvedRef,sourceRef:binding.sourceRef,createdAt:now});

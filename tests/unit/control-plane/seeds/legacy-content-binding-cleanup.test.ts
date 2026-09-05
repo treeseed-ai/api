@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+vi.mock('../../../../src/api/teams/managed-team-library-service.ts', () => ({ reconcileManagedTeamLibrary: vi.fn(async () => ({ state: 'replicating' })) }));
+vi.mock('../../../../src/security/provider-credential-authority.ts', () => ({ resolveGitHubRepositoryCreationAuthority: vi.fn(async () => ({ token: 'synthetic-pat', authorityId: 'authority-1', serviceConnectionId: 'connection-1', capabilityBindingId: 'binding-1' })) }));
 import { ensureProjectSeedDependencies } from '../../../../src/control-plane/seeds/apply-support/projects/projects-core/project-dependencies.ts';
 
 describe('project library reconciliation', () => {
@@ -13,6 +15,7 @@ describe('project library reconciliation', () => {
 		};
 		const store = {
 			config: { fetchImpl },
+			async run() {},
 			async listHubRepositories() {
 				return [{ role: 'content' }, { role: 'primary' }];
 			},
