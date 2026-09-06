@@ -81,7 +81,8 @@ export function createServiceCredentials(store: any, session: SecretSession = ma
       return useCustody(scope, async custody => {
         const record = await custody.read(scope);
         if (!record || record.version !== body.expectedVersion) throw new ServiceOperationError(409,'credential_version_conflict','Credentials changed; inspect again.');
-        await validateManagedServiceCredentials(connection,profileId,record.values);
+        try { await validateManagedServiceCredentials(connection,profileId,record.values); }
+        catch { throw new ServiceOperationError(422,'service_credential_validation_failed','The provider could not validate this connection. Check the account details, credential type and required permissions.'); }
         return {ok:true};
       });
     },

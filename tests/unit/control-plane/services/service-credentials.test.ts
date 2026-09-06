@@ -47,4 +47,9 @@ describe('managed service credentials',()=>{
     const f=fixture(); f.custody.read.mockRejectedValue(new Error('private-provider-diagnostic'));
     await expect(f.service.credentialStatus(principal,...args)).rejects.toMatchObject({status:503,message:'Managed credential custody is unavailable.'});
   });
+  it('does not misreport provider validation failure as a custody outage',async()=>{
+    const f=fixture();
+    await f.service.putCredentials(principal,...args,{expectedVersion:0,values:{accessKeyId:'fixture-id',secretAccessKey:'fixture-secret'}});
+    await expect(f.service.validateCredentials(principal,...args,{expectedVersion:1})).rejects.toMatchObject({status:422,code:'service_credential_validation_failed'});
+  });
 });
