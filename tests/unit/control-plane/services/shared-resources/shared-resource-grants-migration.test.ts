@@ -1,8 +1,8 @@
 import {PGlite} from '@electric-sql/pglite';
 import {readFileSync} from 'node:fs';
 import {expect, it} from 'vitest';
-import {splitPostgresSqlStatements} from '../../../../src/api/persistence/postgres-sql-statements';
-import {reserveSharedResourceOperation} from '../../../../src/api/control-plane/repositories/services/shared-resource-reservations';
+import {splitPostgresSqlStatements} from '../../../../../src/api/persistence/postgres-sql-statements';
+import {reserveSharedResourceOperation} from '../../../../../src/api/control-plane/repositories/services/shared-resource-reservations';
 
 it('isolates grant kinds and revokes access for departing owners and recipients without hiding in-flight work', async () => {
   const db = new PGlite();
