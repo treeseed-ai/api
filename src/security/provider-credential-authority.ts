@@ -32,10 +32,10 @@ function connectorEnvironment(profileId: string) {
 	throw new Error('The GitHub App credential profile is not a managed Connector profile.');
 }
 
-function permissionScope(profileId: string) {
+export function permissionScope(profileId: string, configurationKind?: 'secrets'|'variables', configurationScope?: string) {
 	return profileId === 'github-repository-app'
 		? { contents: 'write', checks: 'read', administration: 'write' }
-		: { actions: 'write', contents: 'read', secrets: 'write', variables: 'write' };
+		: { actions: 'write', contents: 'read', ...(configurationKind ? {[configurationScope==='environment'?'environments':configurationKind]:'write'} : {}) };
 }
 
 async function mintInstallationToken(input: {
@@ -44,6 +44,8 @@ async function mintInstallationToken(input: {
 	installationId: string;
 	repository?: string;
 	profileId: string;
+	configurationKind?: 'secrets'|'variables';
+	configurationScope?: string;
 	fetchImpl: typeof fetch;
 }) {
 	const response = await input.fetchImpl(
@@ -54,7 +56,7 @@ async function mintInstallationToken(input: {
 				accept: 'application/vnd.github+json', authorization: `Bearer ${createGitHubAppJwt(input.appId, input.privateKey)}`,
 				'content-type': 'application/json', 'user-agent': 'treeseed-provider-authority', 'x-github-api-version': '2022-11-28',
 			},
-			body: JSON.stringify({ ...(input.repository ? { repositories: [input.repository] } : {}), permissions: permissionScope(input.profileId) }),
+			body: JSON.stringify({ ...(input.repository ? { repositories: [input.repository] } : {}), permissions: permissionScope(input.profileId,input.configurationKind,input.configurationScope) }),
 		},
 	);
 	if (!response.ok) throw new Error(`GitHub rejected the scoped installation token request (HTTP ${response.status}).`);
@@ -90,7 +92,9 @@ export async function resolveGitHubRepositoryCreationAuthority(input: {
 
 async function credentialForRow(row: any, input: {
 	store: any;
-	capability: 'repository-hosting' | 'workflow-execution' | 'workflow-configuration' | 'secret-enclave';
+	capability: 'repository-hosting' | 'workflow-execution';
+	configurationKind?: 'secrets'|'variables';
+	configurationScope?: string;
 	env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
 }) {
 	const capabilities = JSON.parse(row.capabilities_json ?? '[]');
@@ -111,7 +115,7 @@ async function credentialForRow(row: any, input: {
 		const installationId = String(connectorConfig.installationId ?? '');
 		if (!appId || !privateKey || !installationId) throw new Error('The managed GitHub Connector authority is incomplete.');
 		const minted = await mintInstallationToken({ appId, privateKey, installationId, repository: row.name,
-			profileId: row.credential_profile_id, fetchImpl: input.fetchImpl ?? fetch });
+			profileId: row.credential_profile_id, configurationKind:input.configurationKind, configurationScope:input.configurationScope, fetchImpl: input.fetchImpl ?? fetch });
 		return { ...minted, username: 'x-access-token', authorityScheme: row.scheme as string };
 	}
 	throw new Error(`Credential authority scheme ${row.scheme} is not unattended-ready.`);
@@ -137,7 +141,9 @@ export async function resolveGitHubCredentialAuthority(input: {
 	authorityId: string;
 	repositoryBindingId: string;
 	capabilityBindingId?: string | null;
-	capability: 'repository-hosting' | 'workflow-execution' | 'workflow-configuration' | 'secret-enclave';
+	capability: 'repository-hosting' | 'workflow-execution';
+	configurationKind?: 'secrets'|'variables';
+	configurationScope?: string;
 	env?: NodeJS.ProcessEnv;
 	fetchImpl?: typeof fetch;
 }) {
@@ -157,5 +163,5 @@ export async function resolveGitHubCredentialAuthority(input: {
 			[input.capabilityBindingId, row.team_id, row.connection_id, row.credential_profile_id, input.capability]);
 		if (!binding) throw new Error('The capability binding does not select this credential authority.');
 	} else if (row.authority_id !== row.id) throw new Error('The repository credential authority is unavailable.');
-	return credentialForRow(row, { store: input.store, capability: input.capability, env: input.env, fetchImpl: input.fetchImpl });
+	return credentialForRow(row, { store: input.store, capability: input.capability, configurationKind:input.configurationKind, configurationScope:input.configurationScope, env: input.env, fetchImpl: input.fetchImpl });
 }
