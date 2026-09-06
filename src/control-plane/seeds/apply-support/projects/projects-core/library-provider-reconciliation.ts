@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { githubDiagnostic } from './github-diagnostic.js';
 import { createRemoteGitCredentialDelivery } from '../../../../../security/remote-git-credential-delivery.ts';
 
 const sha = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -13,7 +14,7 @@ async function github(input: { fetchImpl: typeof fetch; token?: string; path: st
 		...(input.body ? { body: JSON.stringify(input.body) } : {}),
 	});
 	if (response.status === 404) return null;
-	if (!response.ok) throw new Error(`GitHub library reconciliation failed (HTTP ${response.status}).`);
+	if (!response.ok) throw new Error(githubDiagnostic(response, input.method ?? 'GET', input.path));
 	return response.status === 204 ? {} : response.json() as Promise<Record<string, any>>;
 }
 

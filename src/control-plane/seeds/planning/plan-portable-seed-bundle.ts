@@ -61,7 +61,8 @@ export async function planPortableSeedBundle(input: {
 			displayName: membership.principal.displayName, interactiveLogin: false,
 			roles: membership.roles, metadata: ownership(bundle, membership.key) },
 	});
-	for (const project of bundle.resources.projects) {
+	// Shared context is a declared project dependency, independent of YAML order.
+	for (const project of [...bundle.resources.projects].sort((a, b) => Number(b.slug === 'team') - Number(a.slug === 'team'))) {
 		const primary = project.primaryRepository ? repositories.get(project.primaryRepository) : undefined;
 		const library = repositories.get(project.libraryRepository);
 		actions.push({
