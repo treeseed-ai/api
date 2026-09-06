@@ -60,7 +60,7 @@ describe('managed API release publication', () => {
 		expect(bundle.release).toBe('0.8.0~rc8-1');
 		expect(bundle.revision).toBe(1);
 		expect(bundle.runtime.compose.files).toEqual([{ path: 'compose.yml', digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) }]);
-		expect(bundle.runtime.configuration.environment.map(({ name }) => name)).toEqual(expect.arrayContaining(['NODE_ENV', 'TREESEED_API_BASE_URL', 'TREESEED_LIBRARY_BRANCH', 'TREESEED_TREEDX_URL']));
+		expect(bundle.runtime.configuration.environment.map(({ name }) => name)).toEqual(expect.arrayContaining(['NODE_ENV', 'TREESEED_API_BASE_URL', 'TREESEED_LIBRARY_BRANCH', 'TREESEED_TREEDX_URL', 'TREESEED_TREEDX_NODE_ID']));
 		expect(bundle.runtime.configuration.secretEnvironment.map(({ name }) => name)).toEqual(expect.arrayContaining(['TREESEED_DATABASE_URL', 'TREESEED_GITHUB_TOKEN', 'TREESEED_R2_SECRET_ACCESS_KEY', 'TREESEED_TREEDX_DELEGATION_PRIVATE_KEY']));
 	});
 
