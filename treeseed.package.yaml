@@ -89,7 +89,6 @@ development:
         SESSION_SECRET: api-session-secret
         TREESEED_TREEDX_DELEGATION_PRIVATE_KEY: api-treedx-delegation-private-key
         TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION: treedx-credential-broker-assertion
-        TREESEED_GITHUB_TOKEN: github-repository-token
       shutdown: { graceSeconds: 30, activeWorkPolicy: drain }
       resources: {}
       logs: [.treeseed/development/api.log]
@@ -130,7 +129,6 @@ development:
         TREESEED_R2_SECRET_ACCESS_KEY: cloudflare-r2-secret-access-key
         TREESEED_TREEDX_DELEGATION_PRIVATE_KEY: api-treedx-delegation-private-key
         TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION: treedx-credential-broker-assertion
-        TREESEED_GITHUB_TOKEN: github-repository-token
       shutdown: { graceSeconds: 60, activeWorkPolicy: drain }
       resources: {}
       logs: [.treeseed/development/operations-runner.log]
