@@ -16,6 +16,20 @@ function fixture() {
 }
 const principal={id:'user-1'}, args=['team-1','connection-1','cloudflare-storage'] as const;
 describe('managed service credentials',()=>{
+  it('returns an unconfigured Hyperstack account so the token form can render without an environment',async()=>{
+    const f=fixture();
+    f.connection.providerId='hyperstack';
+    f.connection.capabilities=[{capabilityType:'ai-inference-hosting',credentialProfileId:'hyperstack-runtime',status:'configured'}];
+    const session=vi.fn(async(scope:any,run:any)=>{
+      expect(scope.environment).toBe('shared');
+      expect(scope.purpose).toBe('hyperstack-runtime');
+      return run(f.custody);
+    });
+    const service=createServiceCredentials(f.store,session);
+    expect(await service.credentialStatus(principal,'team-1','connection-1','hyperstack-runtime')).toMatchObject({configured:false,version:0});
+    expect(session).toHaveBeenCalledTimes(1);
+    expect(f.custody.write).not.toHaveBeenCalled();
+  });
   it('returns only metadata, including optional fields; rotates with CAS and supports tombstone then recreation',async()=>{
     const {service,store}=fixture();
     const values={apiToken:'synthetic-secret'};

@@ -3,9 +3,11 @@ import { withManagedOpenBao, type OpenBaoCustody } from '@treeseed/deployment/se
 
 export function serviceSecretScope(teamId: string, connection: any, profileId: string): SecretScope {
   if (connection.teamId !== teamId) throw new Error('Secret connection team mismatch.');
-  const profile = getServiceProviderDefinition(connection.providerId)?.credentialProfiles.find(p => p.id === profileId);
+  const provider = getServiceProviderDefinition(connection.providerId);
+  const profile = provider?.credentialProfiles.find(p => p.id === profileId);
   if (!profile?.authoritySchemes?.includes('openbao')) throw new Error('Credential profile does not use managed custody.');
-  const accountScoped = connection.providerId === 'github' || (connection.providerId === 'cloudflare' && ['cloudflare-runtime', 'cloudflare-dns', 'cloudflare-storage'].includes(profileId));
+  // Custody must follow the same contract as connection creation, not a provider allowlist.
+  const accountScoped = !provider!.connectionFields.some(field => field.key === 'deploymentEnvironment');
   const environment = accountScoped ? 'shared' : connection.nonSecretConfig?.deploymentEnvironment;
   if (!accountScoped && !['staging', 'production'].includes(environment)) throw new Error('Connection deployment environment is required.');
   const scope = { team: teamId, project: 'team', environment, purpose: profileId, name: connection.id };
