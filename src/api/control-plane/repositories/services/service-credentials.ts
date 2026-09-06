@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { CustodyError } from '@treeseed/deployment/security/custody';
 import { canonicalSecretPath, getServiceProviderDefinition } from '@treeseed/sdk/secrets-capability';
-import { managedSecretSession, serviceSecretScope, type SecretSession } from '../../../../security/managed-secrets.ts';
+import { managedSecretSession, serviceCredentialScope, type SecretSession } from '../../../../security/managed-secrets.ts';
 import { ServiceOperationError } from '../service-operation-error.ts';
 import { validateManagedServiceCredentials } from '@treeseed/deployment/security/services';
 
@@ -24,7 +24,7 @@ export function createServiceCredentials(store: any, session: SecretSession = ma
     const connection = await store.getTeamServiceConnection(teamId, connectionId);
     if (!connection || connection.status === 'disconnected') throw new ServiceOperationError(404, 'service_connection_not_found', 'Service connection not found.');
     let scope;
-    try { scope = serviceSecretScope(teamId, connection, profileId); }
+    try { scope = await serviceCredentialScope(store, teamId, connection, profileId); }
     catch { throw new ServiceOperationError(400, 'credential_scope_invalid', 'Select a managed credential profile and deployment environment.'); }
     const profile = getServiceProviderDefinition(connection.providerId)!.credentialProfiles.find(p => p.id === profileId)!;
     const capabilities = connection.capabilities.filter((b: any) => b.status === 'configured' && b.credentialProfileId === profileId)
@@ -81,8 +81,17 @@ export function createServiceCredentials(store: any, session: SecretSession = ma
       return useCustody(scope, async custody => {
         const record = await custody.read(scope);
         if (!record || record.version !== body.expectedVersion) throw new ServiceOperationError(409,'credential_version_conflict','Credentials changed; inspect again.');
-        try { await validateManagedServiceCredentials(connection,profileId,record.values); }
+        let resolution;
+        try { resolution = await validateManagedServiceCredentials(connection,profileId,record.values); }
         catch { throw new ServiceOperationError(422,'service_credential_validation_failed','The provider could not validate this connection. Check the account details, credential type and required permissions.'); }
+        if (resolution && connection.providerId === 'cloudflare' && profileId === 'cloudflare-dns') {
+          const saved = await store.first(`UPDATE team_service_connections SET non_secret_config_json=?, version=version+1,
+            updated_by_user_id=?, updated_at=? WHERE team_id=? AND id=? AND version=? RETURNING id`,
+            [JSON.stringify({...connection.nonSecretConfig, ...resolution}), principal!.id, new Date().toISOString(), teamId, connectionId, connection.version]);
+          if (!saved) throw new ServiceOperationError(409, 'service_connection_conflict', 'Connection details changed during domain verification. Reload and verify again.');
+          await store.recordAuditEvent({eventType:'service.domain.verified',actorType:'user',actorId:principal!.id,
+            targetType:'service_connection',targetId:connectionId,data:{teamId,profileId,domain:resolution.domain}});
+        }
         return {ok:true};
       });
     },

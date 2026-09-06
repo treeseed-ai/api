@@ -5,11 +5,23 @@ export function serviceSecretScope(teamId: string, connection: any, profileId: s
   if (connection.teamId !== teamId) throw new Error('Secret connection team mismatch.');
   const profile = getServiceProviderDefinition(connection.providerId)?.credentialProfiles.find(p => p.id === profileId);
   if (!profile?.authoritySchemes?.includes('openbao')) throw new Error('Credential profile does not use managed custody.');
-  const environment = connection.providerId === 'github' ? 'shared' : connection.nonSecretConfig?.deploymentEnvironment;
-  if (connection.providerId !== 'github' && !['staging', 'production'].includes(environment)) throw new Error('Connection deployment environment is required.');
+  const accountScoped = connection.providerId === 'github' || (connection.providerId === 'cloudflare' && ['cloudflare-dns', 'cloudflare-storage'].includes(profileId));
+  const environment = accountScoped ? 'shared' : connection.nonSecretConfig?.deploymentEnvironment;
+  if (!accountScoped && !['staging', 'production'].includes(environment)) throw new Error('Connection deployment environment is required.');
   const scope = { team: teamId, project: 'team', environment, purpose: profileId, name: connection.id };
   canonicalSecretPath(scope);
   return scope;
+}
+
+/** Persisted custody references locate existing records independently of editable form settings. */
+export async function serviceCredentialScope(store: any, teamId: string, connection: any, profileId: string): Promise<SecretScope> {
+  const scope = serviceSecretScope(teamId, connection, profileId);
+  const row = await store.first('SELECT reference FROM provider_credential_authorities WHERE team_id=? AND connection_id=? AND credential_profile_id=? AND scheme=\'openbao\'', [teamId, connection.id, profileId]);
+  if (!row) return scope;
+  const candidates = scope.environment === 'shared' ? ['shared', 'staging', 'production'] : [scope.environment];
+  const match = candidates.map(environment => ({...scope, environment})).find(candidate => canonicalSecretPath(candidate) === row.reference);
+  if (!match) throw new Error('Managed credential scope mismatch.');
+  return match;
 }
 
 export type SecretSession = <T>(scope: SecretScope, run: (custody: OpenBaoCustody) => Promise<T>) => Promise<T>;
@@ -35,7 +47,7 @@ export async function readServiceCredentials(store: any, teamId: string, connect
   session: SecretSession = managedSecretSession()) {
   const connection = await store.getTeamServiceConnection(teamId, connectionId);
   if (!connection || connection.status !== 'active') throw new Error('Active service connection required.');
-  const scope = serviceSecretScope(teamId, connection, profileId);
+  const scope = await serviceCredentialScope(store, teamId, connection, profileId);
   return session(scope, async custody => {
     const record = await custody.read(scope);
     if (!record) throw new Error('Managed credentials are not configured.');
