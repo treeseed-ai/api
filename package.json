@@ -87,6 +87,7 @@
     "zod-to-json-schema": "3.25.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "^24.6.0",
     "@types/tar-stream": "3.1.4",

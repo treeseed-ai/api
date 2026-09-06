@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname,join,resolve } from 'node:path';
 import pg,{ type Pool,type PoolClient,type QueryResultRow } from 'pg';
 import { splitPostgresSqlStatements } from '../persistence/postgres-sql-statements.ts';
+import { verifyLiveMigrations } from './verify-live-migrations.ts';
 
 const { Pool: PgPool } = pg;
 const loggedPostgresPools = new WeakSet<Pool>();
@@ -324,7 +325,9 @@ export class ControlPlanePostgresDatabase {
 
 	async migrate(): Promise<void> {
 		if (!this.migrationPromise) {
-			this.migrationPromise = this.applyDrizzleMigrations();
+			this.migrationPromise = process.env.TREESEED_DEVELOPMENT_MODE === 'live'
+				? verifyLiveMigrations(this.pool, this.migrationRoot ?? resolveControlPlaneMigrationRoot())
+				: this.applyDrizzleMigrations();
 		}
 		return this.migrationPromise;
 	}

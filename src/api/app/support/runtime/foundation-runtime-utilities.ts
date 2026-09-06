@@ -83,6 +83,7 @@ export function requestClientIp(c) {
 }
 export async function ensureControlPlaneCredentialSchema(store) {
     await store.ensureInitialized();
+    if (process.env.TREESEED_DEVELOPMENT_MODE === 'live') return;
     await backfillUserEmailAddresses(store);
 	await store.backfillManagedTeamLibraryProjects();
 	await reconcileManagedTeamLibraries(store,process.env);

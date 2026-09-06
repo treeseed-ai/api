@@ -2,6 +2,9 @@ import { createControlPlanePostgresDatabase } from '../../src/api/support/contro
 import { pathToFileURL } from 'node:url';
 
 export async function main() {
+	if (process.env.TREESEED_DEVELOPMENT_MODE === 'live') {
+		throw new Error('live_migration_apply_forbidden: run the reviewed migration outside the live service session.');
+	}
 	const databaseUrl = process.env.TREESEED_DATABASE_URL;
 	if (!databaseUrl?.trim()) {
 		throw new Error('TREESEED_DATABASE_URL is required to apply TreeSeed PostgreSQL migrations.');
