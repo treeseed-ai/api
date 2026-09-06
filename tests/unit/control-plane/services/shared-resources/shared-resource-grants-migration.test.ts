@@ -3,12 +3,21 @@ import {readFileSync} from 'node:fs';
 import {expect, it} from 'vitest';
 import {splitPostgresSqlStatements} from '../../../../../src/api/persistence/postgres-sql-statements';
 import {reserveSharedResourceOperation} from '../../../../../src/api/control-plane/repositories/services/shared-resource-reservations';
+import {revokeOwnedSharedGrant} from '../../../../../src/api/control-plane/repositories/services/shared-resource-management';
 
 it('isolates grant kinds and revokes access for departing owners and recipients without hiding in-flight work', async () => {
   const db = new PGlite();
   try {
-    await db.exec(`CREATE TABLE teams(id text PRIMARY KEY); CREATE TABLE users(id text PRIMARY KEY);
-      INSERT INTO teams VALUES ('owner'),('one'),('two'),('outsider');
+    await db.exec(`CREATE TABLE teams(id text PRIMARY KEY,status text DEFAULT 'active');
+      CREATE TABLE users(id text PRIMARY KEY,status text DEFAULT 'active');
+      INSERT INTO teams(id) VALUES ('owner'),('one'),('two'),('outsider');
+      INSERT INTO users(id) VALUES ('manager');
+      CREATE TABLE team_memberships(id text PRIMARY KEY,team_id text,user_id text,status text);
+      CREATE TABLE team_role_bindings(id text PRIMARY KEY,team_membership_id text,role_id text);
+      CREATE TABLE roles(id text PRIMARY KEY,key text);
+      INSERT INTO roles VALUES ('admin-role','service_admin');
+      INSERT INTO team_memberships VALUES ('member','owner','manager','active');
+      INSERT INTO team_role_bindings VALUES ('role-binding','member','admin-role');
       CREATE TABLE team_service_connections(id text PRIMARY KEY,team_id text NOT NULL REFERENCES teams(id));
       INSERT INTO team_service_connections VALUES ('connection','owner');`);
     for (const migration of ['0013_organizations','0014_vault_registry','0015_shared_resource_grants'])
@@ -54,7 +63,29 @@ it('isolates grant kinds and revokes access for departing owners and recipients 
     await expect(allocate('v1',['read','write'])).rejects.toThrow('vault_allocation_grant_mismatch');
     await allocate('v1',['read']);
     await db.exec(`INSERT INTO shared_resource_operation_reservations(id,grant_id,grant_version,operation_key,status)
-      VALUES ('operation','g1',1,'request-1','active'); DELETE FROM organization_teams WHERE team_id='one';`);
+      VALUES ('operation','g1',1,'request-1','active');`);
+    const revoke = (version=1,team='owner',user='manager') => revokeOwnedSharedGrant(database,user,team,'g1',version);
+    await expect(revoke(1,'owner','')).rejects.toThrow('authentication_required');
+    await expect(revoke(1,'one')).rejects.toThrow('service_management_denied');
+    await db.exec(`INSERT INTO team_memberships VALUES ('recipient-member','one','manager','active');
+      INSERT INTO team_role_bindings VALUES ('recipient-binding','recipient-member','admin-role');`);
+    await expect(revoke(1,'one')).rejects.toThrow('shared_grant_unavailable');
+    await expect(revoke(2)).rejects.toThrow('version_conflict');
+    await expect(revoke(0)).rejects.toThrow('invalid_version');
+    await db.exec("UPDATE teams SET status='archived' WHERE id='owner'");
+    await expect(revoke()).rejects.toThrow('service_management_denied');
+    await db.exec("UPDATE teams SET status='active' WHERE id='owner'");
+    await db.exec("UPDATE users SET status='disabled' WHERE id='manager'");
+    await expect(revoke()).rejects.toThrow('service_management_denied');
+    await db.exec("UPDATE users SET status='active'; UPDATE team_memberships SET status='inactive'");
+    await expect(revoke()).rejects.toThrow('service_management_denied');
+    await db.exec("UPDATE team_memberships SET status='active'; UPDATE roles SET key='viewer'");
+    await expect(revoke()).rejects.toThrow('service_management_denied');
+    await db.exec("UPDATE roles SET key='service_admin'");
+    expect(await revoke()).toEqual({id:'g1',status:'revoked',version:2,changed:true});
+    expect(await revoke(2)).toEqual({id:'g1',status:'revoked',version:2,changed:false});
+    await expect(revoke()).rejects.toThrow('version_conflict');
+    await db.exec("DELETE FROM organization_teams WHERE team_id='one'");
     expect((await db.query('SELECT id,status,version FROM shared_resource_grants ORDER BY id')).rows).toEqual([
       {id:'g1',status:'revoked',version:2},{id:'g2',status:'active',version:1},{id:'v1',status:'revoked',version:2}]);
     expect((await db.query("SELECT status FROM shared_resource_operation_reservations WHERE id='operation'")).rows).toEqual([{status:'active'}]);
