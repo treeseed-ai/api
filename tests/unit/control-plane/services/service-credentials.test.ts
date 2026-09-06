@@ -11,7 +11,7 @@ function fixture() {
     tombstone:vi.fn(async()=>{values=null;})};
   const session = vi.fn(async (scope:any,run:any)=>{expect(canonicalSecretPath(scope)).toBe('teams/team-1/projects/team/environments/staging/purposes/s3-state-session/secrets/connection-1');return run(custody);});
   const store = {principalCanAccessTeam:vi.fn(async()=>true),principalCanManageServices:vi.fn(async()=>true),
-    getTeamServiceConnection:vi.fn(async()=>connection),run:vi.fn(),recordAuditEvent:vi.fn()};
+    getTeamServiceConnection:vi.fn(async()=>connection),first:vi.fn(async()=>null),run:vi.fn(),recordAuditEvent:vi.fn()};
   return {connection,custody,session,store,service:createServiceCredentials(store,session)};
 }
 const principal={id:'user-1'}, args=['team-1','connection-1','s3-state-session'] as const;

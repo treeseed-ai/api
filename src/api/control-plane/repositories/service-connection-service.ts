@@ -1,6 +1,7 @@
 import { SERVICE_PROVIDER_CATALOG, containsForbiddenPlaintextSecretMaterial,
 	getServiceProviderDefinition, serviceProviderSupportsCapability } from '@treeseed/sdk/secrets-capability';
 import { ServiceOperationError } from './service-operation-error.ts';
+import { cloudflareConnectionConfig } from './services/connection-config.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[] } | undefined;
 
@@ -58,8 +59,10 @@ export function createServiceConnectionService(store: any) {
 			if (!provider) throw new ServiceOperationError(400, 'unsupported_service_provider', 'Choose a supported service provider.');
 			const displayName = String(body.displayName ?? '').trim();
 			if (!displayName) throw new ServiceOperationError(400, 'missing_display_name', 'A connection name is required.');
+			const selected = capabilities(provider, body.capabilities);
+			const config = provider.id === 'cloudflare' ? cloudflareConnectionConfig(body.nonSecretConfig as any ?? {}, selected) : body.nonSecretConfig ?? {};
 			try { return await store.createTeamServiceConnection(teamId, { providerId: provider.id, displayName,
-				nonSecretConfig: body.nonSecretConfig ?? {}, capabilities: capabilities(provider, body.capabilities), actorUserId: actor.id }); }
+				nonSecretConfig: config, capabilities: selected, actorUserId: actor.id }); }
 			catch (error) { if (error instanceof ServiceOperationError) throw error;
 				throw new ServiceOperationError(400, 'service_connection_failed', error instanceof Error ? error.message : 'Service connection failed.'); }
 		},
@@ -71,6 +74,8 @@ export function createServiceConnectionService(store: any) {
 			const provider = getServiceProviderDefinition(existing.providerId);
 			if (!provider) throw new ServiceOperationError(409, 'service_provider_unavailable', 'The service provider is no longer available.');
 			const normalized = body.capabilities === undefined ? undefined : capabilities(provider, body.capabilities);
+			if (provider.id === 'cloudflare') body = {...body, nonSecretConfig: cloudflareConnectionConfig(
+				body.nonSecretConfig as any ?? existing.nonSecretConfig, normalized ?? existing.capabilities, existing.nonSecretConfig)};
 			if (normalized) {
 				const dependencies: any[] = await store.all(`SELECT b.capability_type, b.credential_profile_id FROM team_service_capability_bindings b
 					WHERE b.connection_id = ? AND (EXISTS (SELECT 1 FROM project_remote_repository_bindings r WHERE r.capability_binding_id = b.id)
