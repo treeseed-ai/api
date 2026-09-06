@@ -1,9 +1,9 @@
 import {expect,it} from 'vitest';
 import {cloudflareConnectionConfig} from '../../../../src/api/control-plane/repositories/services/connection-config.ts';
 const cap=(capabilityType:string)=>({capabilityType,status:'configured'});
-it('requires environment only for publishing, and domain only for DNS',()=>{
+it('uses account-level configuration and requires domain only for DNS',()=>{
   expect(cloudflareConnectionConfig({deploymentEnvironment:'staging',domain:'unused',zoneId:'untrusted'},[cap('object-storage')])).toEqual({});
-  expect(()=>cloudflareConnectionConfig({},[cap('frontend-hosting')])).toThrow('environment');
+  expect(cloudflareConnectionConfig({deploymentEnvironment:'production'},[cap('frontend-hosting')])).toEqual({});
   expect(()=>cloudflareConnectionConfig({},[cap('dns-management')])).toThrow('domain');
   expect(cloudflareConnectionConfig({domain:'Example.COM'},[cap('dns-management')])).toEqual({domain:'example.com'});
 });

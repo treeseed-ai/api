@@ -4,10 +4,8 @@ import { ServiceOperationError } from '../service-operation-error.ts';
 export function cloudflareConnectionConfig(config: Record<string, unknown>, capabilities: any[], existing?: any) {
   const next = {...config};
   const enabled = (type: string) => capabilities.some(c => c.capabilityType === type && c.status !== 'disabled');
-  if (enabled('frontend-hosting')) {
-    if (!['staging', 'production'].includes(String(next.deploymentEnvironment)))
-      throw new ServiceOperationError(400, 'deployment_environment_required', 'Choose a deployment environment for app publishing.');
-  } else delete next.deploymentEnvironment;
+  // Staging/production belong to the deployment, not the Cloudflare account.
+  delete next.deploymentEnvironment;
   // Resolved IDs are provider-verified data, never accepted from the caller.
   delete next.zoneId;
   if (enabled('dns-management')) {

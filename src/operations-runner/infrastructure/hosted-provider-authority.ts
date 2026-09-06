@@ -13,7 +13,7 @@ export async function resolveHostedVaultMaterial(input: {store: any; request: Ho
   if (!row) throw new Error('Ready managed OpenBao authority is required.');
   const connection = await input.store.getTeamServiceConnection(r.teamId,row.connection_id);
   if (!connection || connection.providerId !== (r.purpose === 'provider' ? r.provider : 'cloudflare')
-    || (r.credentialProfileId !== 'cloudflare-dns' && connection.nonSecretConfig?.deploymentEnvironment !== r.environment)) throw new Error('Hosted credential environment mismatch.');
+    || (!['cloudflare-runtime', 'cloudflare-dns', 'cloudflare-storage'].includes(r.credentialProfileId) && connection.nonSecretConfig?.deploymentEnvironment !== r.environment)) throw new Error('Hosted credential environment mismatch.');
   const grants = JSON.parse(row.capabilities_json);
   if (r.capabilities.some(c => !grants.includes(c) || !connection.capabilities.some((b: any) =>
     b.capabilityType === c && b.credentialProfileId === r.credentialProfileId && b.status === 'configured')))

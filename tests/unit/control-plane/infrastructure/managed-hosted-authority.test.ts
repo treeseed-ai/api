@@ -34,3 +34,16 @@ it('rejects ungranted capabilities, wrong paths, stale metadata, and state-key r
   const stale=fixture();stale.record.version=4;await expect(stale.run()).rejects.toThrow('stale');
   const state=fixture('state-encryption');state.request.secretRef='other';await expect(state.run()).rejects.toThrow('reference mismatch');
 });
+it.each(['staging','production'])('uses the same Cloudflare account credential for an authorized %s operation',async environment=>{
+  const f=fixture();
+  f.connection.providerId='cloudflare';
+  f.connection.nonSecretConfig.deploymentEnvironment='';
+  f.connection.capabilities=[{capabilityType:'frontend-hosting',credentialProfileId:'cloudflare-runtime',status:'configured'}];
+  Object.assign(f.request,{provider:'cloudflare',credentialProfileId:'cloudflare-runtime',capabilities:['frontend-hosting'],environment});
+  const scope=serviceSecretScope('team-1',f.connection,'cloudflare-runtime');
+  f.row.reference=canonicalSecretPath(scope);f.row.capabilities_json='["frontend-hosting"]';
+  const session=vi.fn(async(s:any,run:any)=>{expect(s.environment).toBe('shared');return run({read:async()=>f.record});});
+  const material=await resolveHostedVaultMaterial({request:f.request,store:f.store,session});
+  expect(material.environment).toBe(environment);
+  expect(material.deploymentId).toBe(f.request.deploymentId);
+});
