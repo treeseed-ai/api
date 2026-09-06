@@ -297,17 +297,25 @@ export class ControlPlanePostgresDatabase {
 	}
 
 	async batch(statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
+		return this.transaction(async client => {
+			const results = [];
+			for (const statement of statements) {
+				const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
+				results.push({ success: true as const, results: result.rows ?? [], meta: { changes: result.rowCount ?? 0 } });
+			}
+			return results;
+		});
+	}
+
+	/** One connection and transaction for authority checks, locks, and writes. */
+	async transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> {
 		await this.migrate();
 		const client = await this.pool.connect();
 		try {
 			await client.query('BEGIN');
-			const results = [];
-			for (const statement of statements) {
-				const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
-				results.push({ success: true, results: result.rows ?? [], meta: {} });
-			}
+			const result = await run(client);
 			await client.query('COMMIT');
-			return results;
+			return result;
 		} catch (error) {
 			await client.query('ROLLBACK');
 			throw error;
