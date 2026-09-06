@@ -12,13 +12,26 @@ function request() {
 	return { action: { kind: 'project', key: 'project:test', payload: { teamKey: 'team:test', slug: 'test', library }, existing: null },
 		store: { listHubRepositories: vi.fn(async () => []), upsertHubRepository: vi.fn() },
 		ids: { projects: new Map([['project:test', 'project-1']]), teams: new Map([['team:test', 'team-1']]) },
-		manifestHash: 'a'.repeat(64), appliedAt: '2026-09-05T00:00:00.000Z', env: {}, localOnly: true, dependencyState: {}, plan: {} };
+		manifestHash: 'a'.repeat(64), appliedAt: '2026-09-05T00:00:00.000Z', env: {}, localOnly: true, dependencyState: {},
+		plan: { actions: [{ kind: 'project', payload: { teamKey: 'team:test', slug: 'team', kind: 'content', library } }] } };
 }
 beforeEach(() => {
 	vi.resetAllMocks(); mocks.team.mockResolvedValue({ state: 'replicating' }); mocks.authority.mockResolvedValue(authority);
 	mocks.provider.mockResolvedValue({ heads: { staging: 'a'.repeat(40) }, credentialId: 'delivery-1' }); mocks.binding.mockResolvedValue({ kind: 'projectKnowledgeBinding' });
 });
 describe('managed seed authority and shared context ordering', () => {
+	it('refuses to invent a Team Library missing from the blueprint', async () => {
+		const input = request(); input.plan.actions = [];
+		await expect(ensureProjectSeedDependencies(input)).rejects.toThrow('Seed must declare');
+		expect(mocks.team).not.toHaveBeenCalled();
+	});
+	it('reconciles a declared Team Library only once without generic project seeding', async () => {
+		const input = request(); input.action.payload.slug = 'team';
+		await ensureProjectSeedDependencies(input);
+		expect(mocks.team).toHaveBeenCalledTimes(1);
+		expect(mocks.provider).not.toHaveBeenCalled();
+		expect(mocks.binding).not.toHaveBeenCalled();
+	});
 	it('provisions shared context once and passes managed PAT authority before project verification', async () => {
 		const input = request(); await ensureProjectSeedDependencies(input); await ensureProjectSeedDependencies(input);
 		expect(mocks.team).toHaveBeenCalledTimes(1);

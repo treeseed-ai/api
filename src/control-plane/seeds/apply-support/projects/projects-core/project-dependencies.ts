@@ -49,8 +49,11 @@ export async function ensureProjectSeedDependencies({ action, store, ids, manife
 	if (!action.payload.library) throw new Error(`Project ${action.key} is missing its required library repository.`);
 	const state = dependencyState ?? {};
 	state.teamLibraries ??= new Map();
+	if (!plan?.actions?.some((entry) => entry.kind === 'project' && entry.payload.teamKey === action.payload.teamKey && entry.payload.slug === 'team' && entry.payload.kind === 'content' && entry.payload.library))
+		throw new Error(`Seed must declare the content-only team project and its library repository for ${action.payload.teamKey}; generated repository provisioning is not allowed during seed apply.`);
 	if (!state.teamLibraries.has(teamId)) state.teamLibraries.set(teamId, reconcileManagedTeamLibrary(store, teamId, env ?? process.env));
 	await state.teamLibraries.get(teamId);
+	if (action.payload.slug === 'team') return [...repairs, { kind: 'managedTeamLibrary', projectId }];
 	const repositoryAuthority = await resolveGitHubRepositoryCreationAuthority({ store, teamId,
 		owner: action.payload.library.owner, env: env ?? process.env, fetchImpl: store.config?.fetchImpl });
 	const provider = await reconcileLibraryProvider({ store, teamId, projectId, projectSlug:action.payload.slug,

@@ -29,7 +29,7 @@ describe('project library reconciliation', () => {
 			store,
 			ids: { projects: new Map([['project:fixture/knowledge', 'project-1']]), teams: new Map([['team:fixture', 'team-1']]) },
 			manifestHash: 'sha256:fixture', appliedAt: '2026-08-23T00:00:00.000Z', env: {}, localOnly: false,
-			dependencyState: {}, plan: { actions: [] },
+			dependencyState: {}, plan: { actions: [{ kind: 'project', payload: { teamKey: 'team:fixture', slug: 'team', kind: 'content', library: { name: 'team-library' } } }] },
 		});
 		expect(upserts).toHaveLength(1);
 		expect(upserts[0]).toMatchObject({ role: 'library', name: 'knowledge-library', url: 'https://github.com/fixture/knowledge-library.git' });
