@@ -3,6 +3,7 @@ import { R2S3PublicationClient } from '../../api/providers/cloudflare/r2-s3-publ
 import { githubRepositoryHead } from '../../providers/github/repository-client.ts';
 import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
 import { createRemoteGitCredentialDelivery } from '../../security/remote-git-credential-delivery.ts';
+import { treeDxBrokerIdentity } from '../../security/treedx-broker-identity.ts';
 import { isR2ReplicationReceipt, mirrorTreeDxCommit, resolveCanonicalTreeDxRef, TREE_DX_MIRROR_SCHEMA, TREE_DX_MIRROR_SKIPPED_SCHEMA } from './r2-file-mirror.ts';
 import { markManagedTeamLibraryMirrorKnownGood } from '../../api/teams/managed-team-library-service.ts';
 
@@ -46,12 +47,7 @@ async function replicateGitHub(options: any, row: any, connection: any, operatio
 	if (!binding || binding.grant_status !== 'ready') throw new Error('A ready GitHub repository binding is required for commit replication.');
 	const credential = await resolveGitHubCredentialAuthority({ store, authorityId: binding.authority_id,
 		repositoryBindingId: binding.id, capability: 'repository-hosting', fetchImpl: options.fetchImpl });
-	const provenNode: any = await store.first(`SELECT d.node_id FROM remote_credential_deliveries d
-		JOIN remote_git_operation_grants g ON g.id=d.grant_id
-		WHERE g.repository_binding_id=? AND d.status='consumed' ORDER BY d.consumed_at DESC LIMIT 1`, [binding.id]);
-	const localNode = (options.config?.environment ?? process.env.TREESEED_ENVIRONMENT) === 'local' ? 'node_local' : '';
-	const nodeId = String(provenNode?.node_id || setting(options, 'TREESEED_TREEDX_CREDENTIAL_BROKER_NODE_ID') || localNode).trim();
-	if (!nodeId) throw new Error('No previously verified TreeDX credential-broker node identity is available.');
+	const nodeId = treeDxBrokerIdentity(connection);
 	const current = await githubRepositoryHead(options.fetchImpl ?? fetch, credential.token, binding.owner, binding.name, row.github_ref);
 	if (current && current !== row.commit_sha) throw new Error(`Immutable GitHub backup ref ${row.github_ref} points to a different commit.`);
 	let push: any = null;
