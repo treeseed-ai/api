@@ -23,6 +23,7 @@ import { createGitHubWebhookService } from '../control-plane/repositories/github
 import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
 import { createServiceCredentials } from '../control-plane/repositories/services/service-credentials.ts';
 import { createHostedTopologyService } from '../control-plane/repositories/infrastructure/hosted-topology-service.ts';
+import {createAiInstanceService} from '../control-plane/repositories/infrastructure/ai-instance-service.ts';
 import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
 import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
 import { createAgentGovernanceService } from '../control-plane/repositories/capacity/agent-governance-service.ts';
@@ -228,6 +229,7 @@ export function createPlatformApiApp(options: any = {}) {
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity, services,
 			hostedTopology: createHostedTopologyService(store),
+			aiInstances: createAiInstanceService(store),
 			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
 			capabilityOntology,
 			plans: createCapacityPlanService(capacity),

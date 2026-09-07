@@ -6,6 +6,11 @@ import { bindCurrentLibraryView } from '../../../../src/api/control-plane/reposi
 const service = () => ({ library: vi.fn(), bindLibrary: vi.fn(), serviceContract: vi.fn(), listWorkspaces: vi.fn(), invoke: vi.fn() }) as any;
 
 describe('TreeDX proxy operation catalog', () => {
+	it('reports missing library bindings instead of failing output serialization',async()=>{
+		const treeDxProxy=service();treeDxProxy.library.mockResolvedValue(null);
+		const operation=createTreeDxOperations({treeDxProxy}).find(entry=>entry.binding===CONTROL_PLANE_OPERATIONS.treedx.library)!;
+		await expect(operation.handler({path:{projectId:'project'},query:{},body:undefined},{interface:'rest',requestId:'r',principal:{id:'u'}})).rejects.toMatchObject({status:404,code:'library_binding_unavailable'});
+	});
 	it('binds the complete retained proxy surface to SDK contracts', () => {
 		const expected = CONTROL_PLANE_OPERATION_LIST.filter((operation) => operation.descriptor.operationId.startsWith('treedx.'))
 			.map((operation) => operation.descriptor.operationId).sort();
