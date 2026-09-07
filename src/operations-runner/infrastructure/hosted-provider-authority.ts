@@ -1,6 +1,6 @@
 import type { HostedInfrastructureAuthorityRequest, HostedInfrastructureVaultMaterial } from '@treeseed/deployment/infrastructure/opentofu';
 import { canonicalSecretPath } from '@treeseed/sdk/secrets-capability';
-import { managedSecretSession, serviceSecretScope, type SecretSession } from '../../security/managed-secrets.ts';
+import { managedSecretSession, serviceCredentialScope, type SecretSession } from '../../security/managed-secrets.ts';
 
 export async function resolveHostedVaultMaterial(input: {store: any; request: HostedInfrastructureAuthorityRequest;
   env?: NodeJS.ProcessEnv; session?: SecretSession}): Promise<HostedInfrastructureVaultMaterial> {
@@ -13,12 +13,12 @@ export async function resolveHostedVaultMaterial(input: {store: any; request: Ho
   if (!row) throw new Error('Ready managed OpenBao authority is required.');
   const connection = await input.store.getTeamServiceConnection(r.teamId,row.connection_id);
   if (!connection || connection.providerId !== (r.purpose === 'provider' ? r.provider : 'cloudflare')
-    || connection.nonSecretConfig?.deploymentEnvironment !== r.environment) throw new Error('Hosted credential environment mismatch.');
+    || (!['cloudflare-runtime', 'cloudflare-dns', 'cloudflare-storage'].includes(r.credentialProfileId) && connection.nonSecretConfig?.deploymentEnvironment !== r.environment)) throw new Error('Hosted credential environment mismatch.');
   const grants = JSON.parse(row.capabilities_json);
   if (r.capabilities.some(c => !grants.includes(c) || !connection.capabilities.some((b: any) =>
     b.capabilityType === c && b.credentialProfileId === r.credentialProfileId && b.status === 'configured')))
     throw new Error('Hosted credential capability denied.');
-  const scope = serviceSecretScope(r.teamId,connection,r.credentialProfileId);
+  const scope = await serviceCredentialScope(input.store,r.teamId,connection,r.credentialProfileId);
   if (row.reference !== canonicalSecretPath(scope)) throw new Error('Hosted credential scope mismatch.');
   if (r.purpose === 'state-encryption' && connection.nonSecretConfig.stateEncryptionKeyRef !== r.secretRef)
     throw new Error('State encryption reference mismatch.');

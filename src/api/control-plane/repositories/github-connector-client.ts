@@ -55,5 +55,5 @@ export async function verifyGitHubUserInstallation(input: { token: string; insta
 }
 
 export function connectorCapabilities(kind: GitHubConnectorKind) {
-	return kind === 'repository' ? ['repository-hosting'] : ['workflow-execution', 'workflow-configuration', 'secret-enclave'];
+	return kind === 'repository' ? ['repository-hosting'] : ['workflow-execution'];
 }

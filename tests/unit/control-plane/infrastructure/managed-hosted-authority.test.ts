@@ -11,17 +11,19 @@ function fixture(purpose:'provider'|'state-backend'|'state-encryption'='provider
   const connection={id:'connection-1',teamId:'team-1',providerId:purpose==='provider'?'railway':'cloudflare',status:'active',
     nonSecretConfig:{deploymentEnvironment:'staging',stateEncryptionKeyRef:'state-key'},
     capabilities:[{capabilityType:capability,credentialProfileId:profile,status:'configured'}]};
-  const scope=serviceSecretScope('team-1',connection,profile),row={id:'authority',connection_id:connection.id,version:3,reference:canonicalSecretPath(scope),capabilities_json:JSON.stringify([capability])};
+  const scope=purpose==='provider'?serviceSecretScope('team-1',connection,profile):{team:'team-1',project:'team',environment:'staging',purpose:profile,name:connection.id},row={id:'authority',connection_id:connection.id,version:3,reference:canonicalSecretPath(scope),capabilities_json:JSON.stringify([capability])};
   const record={version:3,values:purpose==='provider'?{apiToken:'synthetic-token'}:purpose==='state-backend'?{accessKeyId:'id',secretAccessKey:'synthetic-secret',sessionToken:'session'}:{stateEncryptionKey:'b'.repeat(64)}};
   const session=vi.fn(async(s:any,run:any)=>{expect(s).toEqual(scope);return run({read:async()=>record});});
   const store={first:vi.fn(async()=>row),getTeamServiceConnection:vi.fn(async()=>connection)};
   return {request,connection,row,record,session,store,run:()=>resolveHostedVaultMaterial({request,session,store})};
 }
-it.each(['provider','state-backend','state-encryption'] as const)('resolves %s through the exact managed scope',async purpose=>{
+it.each(['provider'] as const)('resolves %s through the exact managed scope',async purpose=>{
   const f=fixture(purpose),material=await f.run();
   expect(material).toMatchObject({scheme:'openbao',authorityVersion:3,teamId:'team-1',purpose});
   expect(f.store.first.mock.calls[0]![0]).toContain("a.scheme='openbao'");
-  if(purpose==='state-encryption')expect(material.values).toEqual({key:'b'.repeat(64)});
+});
+it.each(['state-backend','state-encryption'] as const)('rejects retired connection-owned %s profiles before accessing secrets',async purpose=>{
+  const f=fixture(purpose);await expect(f.run()).rejects.toThrow('Credential profile does not use managed custody.');expect(f.session).not.toHaveBeenCalled();
 });
 it('rejects cross-team and environment confusion before opening a secret session',async()=>{
   const f=fixture();f.connection.teamId='team-2';await expect(f.run()).rejects.toThrow();
@@ -32,5 +34,18 @@ it('rejects ungranted capabilities, wrong paths, stale metadata, and state-key r
   const f=fixture();f.row.capabilities_json='[]';await expect(f.run()).rejects.toThrow('capability denied');
   f.row.capabilities_json='["backend-hosting"]';f.row.reference='teams/other';await expect(f.run()).rejects.toThrow('scope mismatch');
   const stale=fixture();stale.record.version=4;await expect(stale.run()).rejects.toThrow('stale');
-  const state=fixture('state-encryption');state.request.secretRef='other';await expect(state.run()).rejects.toThrow('reference mismatch');
+  const state=fixture('state-encryption');state.request.secretRef='other';await expect(state.run()).rejects.toThrow('Credential profile does not use managed custody.');
+});
+it.each(['staging','production'])('uses the same Cloudflare account credential for an authorized %s operation',async environment=>{
+  const f=fixture();
+  f.connection.providerId='cloudflare';
+  f.connection.nonSecretConfig.deploymentEnvironment='';
+  f.connection.capabilities=[{capabilityType:'frontend-hosting',credentialProfileId:'cloudflare-runtime',status:'configured'}];
+  Object.assign(f.request,{provider:'cloudflare',credentialProfileId:'cloudflare-runtime',capabilities:['frontend-hosting'],environment});
+  const scope=serviceSecretScope('team-1',f.connection,'cloudflare-runtime');
+  f.row.reference=canonicalSecretPath(scope);f.row.capabilities_json='["frontend-hosting"]';
+  const session=vi.fn(async(s:any,run:any)=>{expect(s.environment).toBe('shared');return run({read:async()=>f.record});});
+  const material=await resolveHostedVaultMaterial({request:f.request,store:f.store,session});
+  expect(material.environment).toBe(environment);
+  expect(material.deploymentId).toBe(f.request.deploymentId);
 });
