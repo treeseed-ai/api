@@ -11,7 +11,7 @@ vi.mock('../../../../src/api/knowledge/runtime/catalog.ts', async original => ({
 	parseBook: () => ({ id: 'guide', slug: 'guide' }),
 	parseKnowledgePage: () => ({ id: 'help', bookId: 'guide', slug: 'help' }),
 }));
-const commit = 'a'.repeat(40), ref = 'refs/heads/staging';
+const commit = 'a'.repeat(40), ref = 'refs/remotes/origin/staging';
 const client = {
 	readRepositoryFiles: vi.fn(async ({ paths }: any) => ({ resolvedRef: commit, files: paths.map((path: string) => ({ path, content: 'document', frontmatter: {} })) })),
 	queryGraph: vi.fn(async (): Promise<any> => ({ resolvedRef: commit, nodes: [] })),
@@ -26,7 +26,7 @@ beforeEach(() => {
 	client.queryGraph.mockResolvedValue({ resolvedRef: commit, nodes: [] });
 	client.searchGraphSections.mockResolvedValue({ resolvedRef: commit, results: [] });
 });
-it('keeps live graph queries on their indexed ref while pinning content to its commit', async () => {
+it('preserves a fetched-only graph ref rather than inventing a local branch', async () => {
 	const catalog = await loadFederatedKnowledgeCatalog(context, { get: () => null });
 	expect(catalog.pages[0].source).toMatchObject({ graphRef: ref, commitSha: commit });
 	await relatedFederatedKnowledge(context, catalog, catalog.pages[0]);

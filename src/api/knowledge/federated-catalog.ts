@@ -1,6 +1,6 @@
 import { type BookDefinition, type KnowledgePageDefinition } from '@treeseed/sdk/knowledge';
 import { parseBook, parseKnowledgePage } from './runtime/catalog.ts';
-import { canonicalTreeDxBranchRef, projectLibraryPath, resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
+import { projectLibraryPath, resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
 import { createKnowledgePublicationStorage } from './publication-storage.ts';
 import { loadPublishedTeamCatalog } from './published-catalog.ts';
 import { listKnowledgeContentPaths } from './read-model/repository-paths.ts';
@@ -78,9 +78,7 @@ async function loadLiveProjectCatalog(context: any, project: any) {
 	]);
 	const source = { teamId: project.teamId, teamSlug: team?.slug ?? team?.name ?? project.teamId,
 		projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef,
-		graphRef: /^[a-f0-9]{40}$/iu.test(observedConnection.baseRef)
-			|| (observedConnection.baseRef.startsWith('refs/') && !observedConnection.baseRef.startsWith('refs/remotes/origin/'))
-			? observedConnection.baseRef : canonicalTreeDxBranchRef(observedConnection.baseRef) };
+		graphRef: observedConnection.baseRef };
 	const books = bookDocuments.flatMap((document): FederatedBook[] => {
 		const raw = String(document.content ?? '');
 		if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
