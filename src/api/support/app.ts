@@ -41,6 +41,7 @@ import { createProviderWorkflowService } from '../control-plane/repositories/pro
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
 import { TreeAiProxyService } from '../control-plane/treeai/proxy-service.ts';
 import { createRegisteredAiNodes } from '../control-plane/treeai/registered-nodes.ts';
+import { createAiStorageBroker, installAiStorageBrokerRoute } from '../control-plane/treeai/storage-broker.ts';
 import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
 import { installRemoteCredentialBrokerRoute } from '../control-plane/treedx/remote-credential-broker.ts';
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
@@ -218,6 +219,7 @@ export function createPlatformApiApp(options: any = {}) {
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
 	installRemoteCredentialBrokerRoute(app, { store, env: process.env, fetchImpl: options.fetchImpl ?? fetch });
+	installAiStorageBrokerRoute(app, createAiStorageBroker(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }));
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
