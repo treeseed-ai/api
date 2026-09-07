@@ -72,6 +72,12 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		treeDx.baseUrl, treeDx.registryUrl) || 'http://127.0.0.1:4000';
 	const runtimeEnvironment = { ...process.env, ...store.config };
 	const baseUrl = resolveTreeDxServiceUrl(configuredBaseUrl, runtimeEnvironment);
+	// A library instance is a database binding, not the identity authenticated by
+	// the remote credential broker. Bind deliveries to the configured service.
+	const nodeId = text(process.env.TREESEED_TREEDX_NODE_ID, store.config.TREESEED_TREEDX_NODE_ID, treeDx.nodeId);
+	if (!nodeId && (input.publishRefs?.length || input.replicationRefs?.length || input.maintenanceRefs?.length)) {
+		throw new Error('TreeDX remote operations require a configured broker node identity.');
+	}
 	const repositoryId = text(library.repositoryId, treeDx.repositoryId);
 	if (!repositoryId) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
@@ -123,7 +129,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 		baseRef: text(library.contentRepositoryRef, library.contentRepositoryDefaultBranch, 'main'),
 		contentPath,
 		allowedPaths,
-		nodeId: text(library.instanceId, treeDx.instanceId),
+		nodeId,
 		authoringBranch,
 		publicationRef: canonicalAuthoringRef,
 	};
