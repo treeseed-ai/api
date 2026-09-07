@@ -77,7 +77,8 @@ async function loadLiveProjectCatalog(context: any, project: any) {
 		repositoryDocuments(connection, paths.resolvedRef, paths.paths.filter((path) => path.startsWith(pageRoot))),
 	]);
 	const source = { teamId: project.teamId, teamSlug: team?.slug ?? team?.name ?? project.teamId,
-		projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef };
+		projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef,
+		graphRef: observedConnection.baseRef };
 	const books = bookDocuments.flatMap((document): FederatedBook[] => {
 		const raw = String(document.content ?? '');
 		if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
@@ -174,7 +175,9 @@ export async function relatedFederatedKnowledge(context: any, catalog: any, page
 		projectId: page.source.projectId, write: false, readRefs: [graphRef],
 	});
 	if (!connection) throw new Error(`TreeDX repository is unavailable for project ${page.source.projectId}.`);
-	const result = await connection.client.getRelated({ repoId: connection.repositoryId, ref: graphRef, nodeId: page.id,
+	if (!page.source.path) throw new Error('The knowledge page has no canonical library path.');
+	const result = await connection.client.queryGraph({ repoId: connection.repositoryId, ref: graphRef,
+		seeds: [{ id: 'page', kind: 'path', value: page.source.path }],
 		options: { direction: 'both', depth: 1, maxNodes: 40 } });
 	if (String(result.resolvedRef ?? '') !== page.source.commitSha) {
 		throw new Error('The knowledge source changed while relationships were loading.');

@@ -178,8 +178,10 @@ export function createKnowledgePublicationExecutor(options: any) {
 					? await publicationStorage.readRevision(workspace.teamId, previous.previousRevision) : null;
 			} else {
 				const teamProjects = await store.listTeamProjects(workspace.teamId);
+				// A review authorizes this project's snapshot, including the first
+				// publication. The builder retains other previously published sources.
 				const snapshots = await loadSnapshots(store, { teamId: workspace.teamId,
-					...(previous ? { projectIds: new Set([workspace.projectId]) } : {}),
+					projectIds: new Set([workspace.projectId]),
 					projectRefs: new Map([[workspace.projectId, publication.commit_sha]]) });
 				const graphRevisions: Record<string, string> = {};
 				const refs: Record<string, string> = {};
