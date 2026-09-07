@@ -10,12 +10,13 @@ import { createClient,createControlPlaneStore,loadConfig,loadHealthConfig,packag
 
 export async function runLoop() {
     const healthState = { ready: false, status: 'booting', error: null };
-    startHealthServer(loadHealthConfig(), healthState);
+    const healthServer = startHealthServer(loadHealthConfig(), healthState);
     const version = await packageVersion();
     const options = parseRunnerOptions();
     let stopping = false;
-    process.once('SIGINT', () => { stopping = true; });
-    process.once('SIGTERM', () => { stopping = true; });
+    const stop = () => { stopping = true; healthState.ready = false; healthState.status = 'draining'; };
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
     let client = null;
     let config = null;
     let controlPlaneStore = null;
@@ -79,7 +80,7 @@ export async function runLoop() {
         }
         await new Promise((resolveSleep) => setTimeout(resolveSleep, options.pollIntervalMs));
     }
-    if (client && config) {
+    try { if (client && config) {
         await client.heartbeat({
             runnerId: config.runnerId,
             environment: config.environment,
@@ -89,5 +90,9 @@ export async function runLoop() {
         }).catch(() => { });
         await client.close?.();
         await controlPlaneStore?.db?.close?.();
+    } } finally {
+        process.removeListener('SIGINT', stop);
+        process.removeListener('SIGTERM', stop);
+        healthServer?.close();
     }
 }
