@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { requireTreeDxOperation, treeDxOperationScope, treeDxPathParameters, treeDxQuery } from '../../../../src/api/control-plane/treedx/upstream-operation.ts';
 
 describe('authoritative TreeDX upstream operations', () => {
+	it('delegates the complete graph refresh capability closure', () => {
+		const operation = requireTreeDxOperation('refreshRepositoryGraph');
+		expect(operation.requiredCapabilities).toEqual(['files:read', 'git:read', 'graph:refresh']);
+		expect(treeDxOperationScope(operation, { body: { ref: 'a'.repeat(40), paths: ['knowledge/**'] } }, ['repo-1']))
+			.toMatchObject({ repoIds: ['repo-1'], capabilities: ['files:read', 'git:read', 'graph:refresh'] });
+	});
+
 	it('derives path and least-privilege capability scope from the official package', () => {
 		const operation = requireTreeDxOperation('writeWorkspaceFile');
 		expect(operation.requiredCapabilities).toContain('files:write');
