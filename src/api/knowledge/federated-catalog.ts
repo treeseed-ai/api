@@ -1,6 +1,6 @@
 import { type BookDefinition, type KnowledgePageDefinition } from '@treeseed/sdk/knowledge';
 import { parseBook, parseKnowledgePage } from './runtime/catalog.ts';
-import { projectLibraryPath, resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
+import { canonicalTreeDxBranchRef, projectLibraryPath, resolveKnowledgeGatewayConnection } from './gateway-treedx-connection.ts';
 import { createKnowledgePublicationStorage } from './publication-storage.ts';
 import { loadPublishedTeamCatalog } from './published-catalog.ts';
 import { listKnowledgeContentPaths } from './read-model/repository-paths.ts';
@@ -78,7 +78,9 @@ async function loadLiveProjectCatalog(context: any, project: any) {
 	]);
 	const source = { teamId: project.teamId, teamSlug: team?.slug ?? team?.name ?? project.teamId,
 		projectId: project.id, repositoryId: connection.repositoryId, commitSha: paths.resolvedRef,
-		graphRef: observedConnection.baseRef };
+		graphRef: /^[a-f0-9]{40}$/iu.test(observedConnection.baseRef)
+			|| (observedConnection.baseRef.startsWith('refs/') && !observedConnection.baseRef.startsWith('refs/remotes/origin/'))
+			? observedConnection.baseRef : canonicalTreeDxBranchRef(observedConnection.baseRef) };
 	const books = bookDocuments.flatMap((document): FederatedBook[] => {
 		const raw = String(document.content ?? '');
 		if (raw && !document.frontmatter) throw new Error(`TreeDX did not parse frontmatter for ${String(document.path)}.`);
@@ -157,7 +159,8 @@ export async function searchFederatedKnowledgeCatalog(context: any, catalog: any
 		});
 		const confirmed = await contentPaths(connection, graphRef);
 		if (confirmed.resolvedRef !== sourceCommit) throw new Error('The knowledge source changed while search was running.');
-		for (const result of results) {
+		if (!Array.isArray(results.results)) throw new Error('TreeDX returned an invalid knowledge search result.');
+		for (const result of results.results) {
 			const node = result.node;
 			const page = pages.find((candidate) => candidate.id === node.id || candidate.id === node.entityId
 				|| candidate.source.path === node.path || candidate.source.path === node.data?.path);
@@ -182,9 +185,11 @@ export async function relatedFederatedKnowledge(context: any, catalog: any, page
 	if (String(result.resolvedRef ?? '') !== page.source.commitSha) {
 		throw new Error('The knowledge source changed while relationships were loading.');
 	}
-	const graph = record(result.graph ?? result);
-	const identifiers = new Set((Array.isArray(graph.nodes) ? graph.nodes : []).flatMap((node: any) =>
-		[String(node.id ?? ''), String(node.entityId ?? ''), String(node.path ?? ''), String(node.data?.path ?? '')]).filter(Boolean));
+	if (!Array.isArray(result.nodes)) throw new Error('TreeDX returned an invalid knowledge graph result.');
+	const identifiers = new Set(result.nodes.flatMap((entry: any) => {
+		const node = record(entry.node);
+		return [String(node.id ?? ''), String(node.entityId ?? ''), String(node.path ?? ''), String(node.data?.path ?? '')];
+	}).filter(Boolean));
 	return (catalog.pages as FederatedKnowledgePage[]).filter((candidate) => candidate.id !== page.id
 		&& (identifiers.has(candidate.id) || Boolean(candidate.source.path && identifiers.has(candidate.source.path))));
 }

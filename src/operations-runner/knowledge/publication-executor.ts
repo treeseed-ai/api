@@ -123,7 +123,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 				throw new Error('Knowledge publication editorial context trace is missing or stale.');
 			}
 			const connection = await resolveConnection(store, { projectId: workspace.projectId,
-				write: false, publishRefs: [workspace.branchName, publication.published_ref,
+				write: false, publishRefs: [workspace.branchName, publication.published_ref, publication.commit_sha,
 					`refs/treedx/commits/${publication.commit_sha}`] });
 			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
 			if (publication.published_ref !== connection.publicationRef) {
@@ -164,10 +164,10 @@ export function createKnowledgePublicationExecutor(options: any) {
 			}
 			if (push?.rejectedRefs?.length) throw new Error('The publication ref changed after review. Rebase and review the knowledge again.');
 			const graph = publicationAlreadyApplied ? undefined : await completedGraphRefresh(connection.client,
-				{ repoId: connection.repositoryId, ref: publication.published_ref, paths: workspace.allowedPaths,
+				{ repoId: connection.repositoryId, ref: publication.commit_sha, paths: workspace.allowedPaths,
 					changedPaths: Array.isArray(review.changedPaths) ? review.changedPaths : [] });
 			const search = publicationAlreadyApplied ? undefined : treeDxResult(await connection.client.refreshSearchIndex({ repoId: connection.repositoryId,
-				ref: publication.published_ref, paths: workspace.allowedPaths }), 'index');
+				ref: publication.commit_sha, paths: workspace.allowedPaths }), 'index');
 			if (!publicationAlreadyApplied) requireIndexedSourceClosure({ projectId: workspace.projectId,
 				commitSha: publication.commit_sha, graph, search });
 			const previous = recoveredManifest;

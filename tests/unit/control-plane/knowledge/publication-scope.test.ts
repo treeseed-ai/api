@@ -28,5 +28,7 @@ describe('reviewed publication source scope', () => {
 				.rejects.toThrow('snapshot-boundary');
 			expect(load).toHaveBeenCalledWith(store, { teamId: 'team', projectIds: new Set(['admin']),
 				projectRefs: new Map([['admin', commit]]) });
+			expect(client.refreshGraph).toHaveBeenCalledWith(expect.objectContaining({ ref: commit }));
+			expect(client.refreshSearchIndex).toHaveBeenCalledWith(expect.objectContaining({ ref: commit }));
 		});
 });
