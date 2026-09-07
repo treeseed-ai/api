@@ -1,9 +1,10 @@
 import {aiInstanceDraftSchema} from '@treeseed/sdk/deployment';
 import {CapacityOperationError} from '../capacity/capacity-operation-error.ts';
 import type {createRegisteredAiNodes} from '../../treeai/registered-nodes.ts';
+import {createAiStorageBindings} from '../../treeai/storage-binding.ts';
 const fail=(status:number,code:string,message:string)=>{throw new CapacityOperationError(status,code,message);};
 const view=(row:any)=>({id:row.id,teamId:row.team_id,configuration:JSON.parse(row.configuration_json),version:Number(row.version),status:'draft',createdAt:row.created_at,updatedAt:row.updated_at,activation:{ready:false,blockers:['Hyperstack deployment qualification and exact release/storage grants are required.']}});
-export function createAiInstanceService(store:any,nodes?:ReturnType<typeof createRegisteredAiNodes>){
+export function createAiInstanceService(store:any,nodes?:ReturnType<typeof createRegisteredAiNodes>,storage=createAiStorageBindings(store)){
  const authorize=async(principal:any,teamId:string,write=false)=>{
   if(!principal)fail(401,'authentication_required','Sign in first.');
   const admin=principal.roles?.includes('platform_admin')||principal.permissions?.includes('*:*:*');
@@ -24,6 +25,9 @@ export function createAiInstanceService(store:any,nodes?:ReturnType<typeof creat
   return connection;
  };
  return {
+  storageShow:storage.show,
+  storagePut:storage.put,
+  storageRemove:storage.remove,
   async register(principal:any,teamId:string,id:string,input:any,ifMatch?:string){if(!nodes)fail(503,'ai_registration_unavailable','Managed AI registration is unavailable.');return nodes!.register(principal,teamId,id,input,ifMatch);},
   async list(principal:any,teamId:string,query:any){await authorize(principal,teamId);const limit=Math.min(100,Math.max(1,Number(query.limit)||50));const rows=await store.all('SELECT * FROM team_ai_instances WHERE team_id=? AND id>? ORDER BY id LIMIT ?',[teamId,query.cursor??'',limit+1]);return {items:await Promise.all(rows.slice(0,limit).map(present)),cursor:rows.length>limit?rows[limit-1].id:null};},
   async show(principal:any,teamId:string,id:string){await authorize(principal,teamId);const current=await row(teamId,id);if(!current)fail(404,'ai_instance_not_found','AI instance not found.');return present(current);},
