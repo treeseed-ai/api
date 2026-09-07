@@ -6,6 +6,7 @@ import { recordPublicationCompletedAudit, recordPublicationEntryAudits } from '.
 import { publishRemoteRepository } from './remote-publication.ts';
 import { editorialReviewGate, verifiedEditorialContextTrace } from '../../api/knowledge/editorial-review.ts';
 import { recordTreeDxAuthoringState } from '../../api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
+import { treeDxBrokerIdentity } from '../../security/treedx-broker-identity.ts';
 
 export function localPublicationRemote(value: unknown) {
 	if (typeof value !== 'string' || !value.trim()) return false;
@@ -24,12 +25,6 @@ export function knowledgePublicationTransport(repository: { storageKind?: unknow
 	if (binding?.grant_status === 'ready' && !localPublicationRemote(binding.clone_url)) return 'external';
 	if (isManagedLocalPublication(repository, environment)) return 'managed-local';
 	return localPublicationRemote(repository.remoteUrl) ? 'local-remote' : 'external';
-}
-
-export function treeDxPrimaryNodeId(value: unknown) {
-	if (!value || typeof value !== 'object') return '';
-	const result = value as Record<string, any>;
-	return String(result.primaryNodeId ?? result.placement?.primaryNodeId ?? '');
 }
 
 export function knowledgeRunnerEnvironment(options: any) {
@@ -145,8 +140,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 			const external = transport === 'external';
 			const managedLocal = transport === 'managed-local';
 			const publicationConnection = external ? { ...connection,
-				nodeId: treeDxPrimaryNodeId(await connection.client.getPlacement(connection.repositoryId)) } : connection;
-			if (external && !publicationConnection.nodeId) throw new Error('TreeDX did not resolve the repository primary node for credential delivery.');
+				nodeId: treeDxBrokerIdentity(connection) } : connection;
 			const recoveredManifest = await publicationStorage.readCurrent(workspace.teamId);
 			const publicationAlreadyApplied = containsPublicationCommit(recoveredManifest, publication, workspace);
 			await context.checkpoint({ phase: 'knowledge.publication.pushing', publicationId: publication.id },
