@@ -7,6 +7,7 @@ export function createAiInstanceOperations({aiInstances:service}:AiInstanceDepen
  const ops=CONTROL_PLANE_OPERATIONS.aiInstances;
  const wrap=async(call:()=>Promise<any>)=>{try{return await call();}catch(error){if(error instanceof CapacityOperationError)throw new ControlPlaneOperationError(error.status,error.code,error.message);throw error;}};
  return [
+ {binding:ops.register,handler:(input,ctx)=>wrap(()=>service.register(ctx.principal,input.path.teamId,input.path.instanceId,input.body,ctx.ifMatch))},
  {binding:ops.list,handler:(input,ctx)=>wrap(()=>service.list(ctx.principal,input.path.teamId,input.query))},
  {binding:ops.show,handler:(input,ctx)=>wrap(()=>service.show(ctx.principal,input.path.teamId,input.path.instanceId))},
  {binding:ops.put,handler:(input,ctx)=>wrap(()=>service.put(ctx.principal,input.path.teamId,input.path.instanceId,input.body,ctx.ifMatch))},

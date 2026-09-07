@@ -19,6 +19,15 @@ const input = {
 };
 
 describe('TreeDX delegation authority', () => {
+	it('uses the API signing identity for separately bounded 60-second AI operations', () => {
+		const authority = new TreeDxDelegationAuthority(environment());
+		const token = authority.mintAi({ actorId: 'user-1', teamId: 'team-1', nodeId: 'node-1', service: 'inference', scopes: ['inference:read'] }, 1_000);
+		const [header, payload, signature] = token.split('.');
+		const claims = JSON.parse(Buffer.from(payload!, 'base64url').toString('utf8'));
+		expect(claims).toMatchObject({ iss: 'https://api.test/ai', aud: 'treeai:node-1:inference', teamId: 'team-1', nodeId: 'node-1', sub: 'user-1', iat: 1_000, exp: 1_060, scopes: ['inference:read'] });
+		expect(verify('RSA-SHA256', Buffer.from(`${header}.${payload}`), createPublicKey({ key: authority.currentJwk, format: 'jwk' }), Buffer.from(signature!, 'base64url'))).toBe(true);
+		expect(claims).not.toHaveProperty('treedx_repo_ids');
+	});
 	it('issues an audience-bound RS256 delegation for no more than 120 seconds', () => {
 		const authority = new TreeDxDelegationAuthority(environment());
 		const issued = authority.mint(input, 1_000);
