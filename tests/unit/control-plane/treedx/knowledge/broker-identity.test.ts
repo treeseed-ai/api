@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { treeDxBrokerIdentity } from '../../../../src/security/treedx-broker-identity.ts';
+import { treeDxBrokerIdentity } from '../../../../../src/security/treedx-broker-identity.ts';
 
 describe('TreeDX broker identity', () => {
 	it('uses the authenticated service identity, not placement or database binding metadata', () => {
