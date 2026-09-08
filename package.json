@@ -1,6 +1,6 @@
 {
   "name": "@treeseed/api",
-  "version": "0.8.0-rc.91",
+  "version": "0.8.0-rc.92",
   "description": "TreeSeed control-plane API and operations runner.",
   "license": "AGPL-3.0-only",
   "repository": {
@@ -69,7 +69,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@octokit/auth-app": "^8.2.0",
     "@react-email/render": "^2.0.8",
-    "@treeseed/deployment": "https://github.com/treeseed-ai/deployment/releases/download/0.1.0-rc.265/treeseed-deployment-runtime-0.1.0-rc.265.tgz",
+    "@treeseed/deployment": "https://github.com/treeseed-ai/deployment/releases/download/0.1.0-rc.270/treeseed-deployment-runtime-0.1.0-rc.270.tgz",
     "@treeseed/sdk": "0.13.0-rc.97",
     "@treeseed/treedx": "0.3.0-rc.17",
     "drizzle-orm": "^0.45.2",
