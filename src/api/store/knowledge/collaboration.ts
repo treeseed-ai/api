@@ -124,7 +124,6 @@ export async function decideKnowledgeReviewMethod(this: ControlPlaneStore, id: s
 		INNER JOIN knowledge_authoring_workspaces workspaces ON workspaces.id = reviews.workspace_id
 		WHERE reviews.id = ? AND reviews.status = 'open' AND workspaces.id = ?
 			AND workspaces.status = 'submitted' AND workspaces.version = ?
-			AND (? <> 'approve' OR reviews.editorial_gate_satisfied = 1)
 		FOR UPDATE OF reviews, workspaces
 	), updated_review AS (
 		UPDATE knowledge_reviews SET status = ?, decided_by_user_id = ?, notes = ?, updated_at = ?
@@ -136,7 +135,7 @@ export async function decideKnowledgeReviewMethod(this: ControlPlaneStore, id: s
 			AND EXISTS (SELECT 1 FROM updated_review) RETURNING id
 	)
 	SELECT id FROM updated_review WHERE EXISTS (SELECT 1 FROM updated_workspace)`,
-		[id, input.workspaceId, input.workspaceVersion, input.decision, status, input.decidedByUserId, input.notes,
+		[id, input.workspaceId, input.workspaceVersion, status, input.decidedByUserId, input.notes,
 			timestamp, status, timestamp, input.revisionWorkspace?.workspaceId ?? null]);
 	return updated?.id ? { ok: true, review: await this.getKnowledgeReview(id), workspace: await this.getKnowledgeWorkspace(input.workspaceId) }
 		: { ok: false, code: 'stale_or_missing' };

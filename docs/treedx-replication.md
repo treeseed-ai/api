@@ -1,5 +1,14 @@
 # TreeDX publication and replication
 
+Staging library changes require authorization and exact-revision validation, not
+human or independent-author approval. New submissions are admitted automatically;
+an authorized publisher can publish an existing submitted revision directly.
+Historical editorial-review metadata does not block staging admission. The API
+checks the committed workspace and atomically admits its observed version. The
+runner retains immutable source, expected-head, graph, storage, and audit checks.
+Direct main publication is prohibited: production promotion belongs to the
+protected main pull-request boundary.
+
 GitHub branch writes belong to governed knowledge publication. Publication uses
 the repository binding's configured publication ref, checks the expected remote
 head, and verifies the exact reviewed commit after pushing. Replication must not

@@ -4,7 +4,6 @@ import { loadKnowledgeSnapshotProjects } from '../../api/knowledge/snapshot-proj
 import { createKnowledgePublicationStorage } from '../../api/knowledge/publication-storage.ts';
 import { recordPublicationCompletedAudit, recordPublicationEntryAudits } from './publication-audit.ts';
 import { publishRemoteRepository } from './remote-publication.ts';
-import { editorialReviewGate, verifiedEditorialContextTrace } from '../../api/knowledge/editorial-review.ts';
 import { recordTreeDxAuthoringState } from '../../api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { treeDxBrokerIdentity } from '../../security/treedx-broker-identity.ts';
 
@@ -117,15 +116,14 @@ export function createKnowledgePublicationExecutor(options: any) {
 			}
 			if (!workspace || workspace.status !== 'approved' || !review || review.status !== 'approved'
 				|| review.commitSha !== publication.commit_sha) throw new Error('Knowledge publication approval state is invalid.');
-			if (!editorialReviewGate(review).ok) throw new Error('Knowledge publication editorial review state is invalid.');
-			if (review.requiresEditorialReview
-				&& !(await verifiedEditorialContextTrace(store, workspace.projectId, review.contextDigest))) {
-				throw new Error('Knowledge publication editorial context trace is missing or stale.');
+			if (input?.targetEnvironment === 'production' || /^(?:refs\/heads\/)?main$/.test(publication.published_ref)) {
+				throw new Error('Production library promotion requires the protected main pull-request boundary.');
 			}
 			const connection = await resolveConnection(store, { projectId: workspace.projectId,
 				write: false, publishRefs: [workspace.branchName, publication.published_ref, publication.commit_sha,
 					`refs/treedx/commits/${publication.commit_sha}`] });
 			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
+			if (/^(?:refs\/heads\/)?main$/.test(connection.publicationRef)) throw new Error('Direct main publication is prohibited.');
 			if (publication.published_ref !== connection.publicationRef) {
 				await store.run('UPDATE knowledge_publications SET published_ref = ? WHERE id = ? AND status = ?',
 					[connection.publicationRef, publication.id, 'queued']);

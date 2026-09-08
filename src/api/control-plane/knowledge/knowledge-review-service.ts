@@ -1,7 +1,7 @@
 import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { currentReviewIds, reviewWorkspaceAvailable } from '../../knowledge/review-revision.ts';
 import { createRevisionWorkspace, discardRevisionWorkspace } from '../../knowledge/review-revision.ts';
-import { editorialReviewGate } from '../../knowledge/editorial-review.ts';
+import { admitStagingPublication } from './staging-admission.ts';
 import { simulationEvidence } from '../../store/governance/policy/support/simulation-evidence.ts';
 import { createKnowledgeAuthorization, type KnowledgePrincipal } from './knowledge-authorization.ts';
 import { KnowledgeOperationError } from './knowledge-operation-error.ts';
@@ -24,9 +24,9 @@ export function createKnowledgeReviewService(store: any) {
 				const available = Boolean(workspace && current && reviewWorkspaceAvailable(review.status, workspace.status));
 				return { ...review, comments: await store.listKnowledgeReviewComments(review.id),
 					presence: await store.listKnowledgeWorkspacePresence(review.workspaceId), isCurrentRevision: current,
-					workspaceAvailable: available, canDecide: Boolean(available && review.status === 'open' && workspace.actorUserId !== access.principal.id),
-					canApproveEditorial: Boolean(available && review.status === 'open' && workspace.actorUserId !== access.principal.id && canPublish),
-					canPublish: Boolean(available && review.status === 'approved' && canPublish) };
+					workspaceAvailable: available, canDecide: Boolean(available && review.status === 'open' && (workspace.actorUserId !== access.principal.id || canPublish)),
+					canApproveEditorial: false,
+					canPublish: Boolean(available && ['open', 'approved'].includes(review.status) && canPublish) };
 			})) };
 		},
 
@@ -69,9 +69,6 @@ export function createKnowledgeReviewService(store: any) {
 			if (decision === 'request-changes' && !text(input.notes)) throw new KnowledgeOperationError(422, 'review_notes_required', 'Explain the requested changes.');
 			let decisionPrincipalId = access.principal.id;
 			if (decision === 'approve') {
-				if (review.requiresEditorialReview) decisionPrincipalId = (await authorization.project(principal, workspace.projectId, 'knowledge:publish')).principal.id;
-				const gate = editorialReviewGate(review);
-				if (!gate.ok) throw new KnowledgeOperationError(409, gate.code, 'Required editorial reviews have not approved this exact revision.');
 				const open = await store.first("SELECT COUNT(*) AS count FROM knowledge_review_comments WHERE review_id = ? AND status = 'open'", [reviewId]);
 				if (Number(open?.count ?? 0) > 0) throw new KnowledgeOperationError(409, 'knowledge_review_comments_open', 'Resolve every review comment before approval.');
 			}
@@ -112,13 +109,9 @@ export function createKnowledgeReviewService(store: any) {
 			}
 			const simulation = await simulationPolicy(store, workspace, input);
 			if (simulation.production) throw new KnowledgeOperationError(409, 'hosted_deployment_suspended', 'Production knowledge publication remains disabled while hosted deployment is suspended.');
-			if (review.status !== 'approved' || workspace.status !== 'approved' || !review.commitSha) {
-				throw new KnowledgeOperationError(409, 'knowledge_review_not_publishable', 'Only an approved, unchanged knowledge review can be published.');
-			}
-			const gate = editorialReviewGate(review);
-			if (!gate.ok) throw new KnowledgeOperationError(409, gate.code, 'The editorial review gate is incomplete.');
-			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: workspace.projectId, write: false });
+			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: workspace.projectId, write: false, workspaceRefs: [workspace.branchName] });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
+			await admitStagingPublication(store, connection, review, workspace, access.principal.id, input.version);
 			const publication = await store.createKnowledgePublication({ workspaceId: workspace.id, reviewId,
 				projectId: workspace.projectId, commitSha: review.commitSha, publishedRef: connection.publicationRef });
 			const operation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'publish_review',
