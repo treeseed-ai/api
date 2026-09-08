@@ -53,7 +53,7 @@ services:
     build:
       context: .
       target: operations-runner
-    command: ["npm", "run", "start:runner"]
+    command: ["node", "./dist/operations-runner/entrypoint.js", "run"]
     depends_on:
       treeseed-api-postgres:
         condition: service_healthy

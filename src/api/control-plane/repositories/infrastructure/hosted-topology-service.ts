@@ -78,7 +78,7 @@ async function validateOperationCredentials(store: any, teamId: string, requests
   for (const request of requests) {
     const provider = request.purpose === 'provider' ? request.provider : 'cloudflare';
     const connection = await connectionByReference(store,teamId,provider,request.connectionRef);
-    if (!connection || connection.status !== 'active' || connection.nonSecretConfig?.deploymentEnvironment !== request.environment)
+    if (!connection || connection.status !== 'active' || (!['cloudflare-runtime', 'cloudflare-dns', 'cloudflare-storage'].includes(request.credentialProfileId) && connection.nonSecretConfig?.deploymentEnvironment !== request.environment))
       throw new CapacityOperationError(409,'hosted_provider_connection_unavailable','The exact environment-scoped connection is required.');
     const authority = await store.first('SELECT * FROM provider_credential_authorities WHERE team_id=? AND connection_id=? AND credential_profile_id=?',[teamId,connection.id,request.credentialProfileId]);
     if (!authority || authority.scheme !== 'openbao' || authority.status !== 'ready')

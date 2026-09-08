@@ -1,5 +1,6 @@
 import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { CapacityGovernanceError } from '../../../../../api/capacity/database.ts';
 import { treeDxDelegationAuthority } from '../../../../../api/control-plane/treedx/delegation-authority.ts';
 import { parseFrontmatterDocument } from '../../../../../api/content/frontmatter.ts';
 import { repositoryDefinitionSource, validateAgentDefinitionSource } from '../../../../../api/control-plane/repositories/agents/agent-definition-source.ts';
@@ -137,16 +138,25 @@ async function reconcileProjectAgentClasses(input: {
 	return { count: definitions.length, classes: groups.size, immutableRef };
 }
 
-async function verifyContextQueryCatalog(input:{store:any;projectId:string;teamId:string;ref:string}) {
+export async function verifyContextQueryCatalog(input:{store:any;projectId:string;teamId:string;ref:string}) {
 	const checks=new ContextQueryCheckService(input.store),catalog=await checks.catalog(input.projectId,input.ref);
 	const referenced=new Map(catalog.agentReferences.map((entry:any)=>[`${entry.kind}:${entry.id}@${entry.revision}`,{kind:entry.kind,id:entry.id,revision:entry.revision}]));
 	const relevantTests=catalog.tests.filter((test:any)=>referenced.has(`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
 	const tested=new Set(relevantTests.map((test:any)=>`${test.definitionKind}:${test.definitionId}@${test.definitionRevision}`));
 	const missing=[...referenced.entries()].filter(([key])=>!tested.has(key)).map(([,reference])=>reference);
 	if(missing.length)throw new Error(`Agent context references have no isolated tests: ${missing.map((item:any)=>`${item.kind}:${item.id}@${item.revision}`).join(', ')}.`);
+	if(referenced.size) {
+		try {
+			await checks.requirePassing(input.teamId,input.projectId,input.ref,[...referenced.values()] as any);
+			return {references:referenced.size,tests:relevantTests.length};
+		} catch(error) {
+			if(!(error instanceof CapacityGovernanceError) || error.code!=='agent_context_query_not_ready') throw error;
+		}
+	}
+	const attempt=randomUUID();
 	for(const test of relevantTests) {
 		let result;
-		try { result=await checks.check(input.teamId,input.projectId,{testId:test.id,testPath:test.path,definitionRef:input.ref,idempotencyKey:`library-reconcile:v6:${input.projectId}:${input.ref}:${test.id}`}); }
+		try { result=await checks.check(input.teamId,input.projectId,{testId:test.id,testPath:test.path,definitionRef:input.ref,idempotencyKey:`library-reconcile:${attempt}:${input.projectId}:${input.ref}:${test.id}`}); }
 		catch(error){throw new Error(`Context-query test ${test.id} could not run: ${error instanceof Error?error.message:'unknown error'}`);}
 		if(result.status!=='passing')throw new Error(`Context-query test ${test.id} did not pass for ${input.ref}.`);
 	}

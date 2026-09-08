@@ -95,7 +95,7 @@ describe('TreeDX protected branch reconciliation', () => {
 					resolvedRef: newHead, segmentCount: 4 } })) } },
 			refreshGraph: vi.fn(async () => ({ graph: { status: 'completed', resolvedRef: newHead, graphVersion: 'graph-1' } })),
 			refreshSearchIndex: vi.fn(async () => ({ index: { status: 'completed' } })),
-			getPlacement: vi.fn(async () => ({ primaryNodeId: 'node' })),
+			getPlacement: vi.fn(async () => ({ primaryNodeId: 'storage-placement-not-broker' })),
 		};
 		resolveConnection.mockResolvedValue({ client, repositoryId: 'repository', nodeId: 'node' });
 		const library = { contentPath: '.', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
@@ -113,6 +113,8 @@ describe('TreeDX protected branch reconciliation', () => {
 		const result = await executor.run({ teamId: 'team', projectId: 'project', publicationRef, remoteHead: newHead },
 			{ operation: { id: 'operation' }, checkpoint: async (...values: any[]) => checkpoints.push(values) });
 		expect(client.fetchRemote).toHaveBeenCalledWith(expect.objectContaining({ refspecs: [`+${publicationRef}:${remoteRef}`] }));
+		expect(createDelivery).toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'node' }));
+		expect(client.getPlacement).not.toHaveBeenCalled();
 		expect(client.refreshGraph).toHaveBeenCalledWith(expect.objectContaining({ ref: remoteRef, forceFull: true }));
 		expect(client.refreshSearchIndex).toHaveBeenCalledWith(expect.objectContaining({ ref: remoteRef, incremental: false }));
 		expect(upserts[0]).toMatchObject({ contentRepositoryRef: remoteRef,

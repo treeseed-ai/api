@@ -58,6 +58,7 @@ export class TreeDxInfrastructureClient {
 	refreshGraph(input: Input) { const { repoId, ...body } = input; return this.upstream.graph.refresh(String(repoId), body) as Promise<any>; }
 	getGraphRefreshJob(input: Input) { return this.upstream.graph.refreshJob(String(input.repoId), String(input.jobId)) as Promise<any>; }
 	getRelated(input: Input) { const { repoId, ...body } = input; return this.upstream.graph.related(String(repoId), body) as Promise<any>; }
+	queryGraph(input: Input) { const { repoId, ...body } = input; return this.upstream.graph.query(String(repoId), body) as Promise<any>; }
 	searchGraphSections(input: Input) { const { repoId, ...body } = input; return this.upstream.graph.searchSections(String(repoId), body) as Promise<any>; }
 	buildContext(input: Input) { const { repoId, ...body } = input; return this.upstream.context.build(String(repoId), body) as Promise<any>; }
 	refreshSearchIndex(input: Input) { const { repoId, ...body } = input; return this.upstream.searchIndex.refresh(String(repoId), body) as Promise<any>; }

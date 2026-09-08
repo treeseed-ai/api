@@ -15,10 +15,10 @@ describe('TreeAI SDK-driven proxy', () => {
 			expect((init?.headers as Headers).get('authorization')).toBe('Bearer private-token');
 			return new Response(JSON.stringify({ mode: 'awake' }), { headers: { 'content-type': 'application/json' } });
 		});
-		const service = new TreeAiProxyService({ resolve: () => ({ tokenEnvironment: 'TREESEED_TREEAI_TOKEN', token: 'private-token', endpoints: {
-			inference: 'https://inference.test', training: 'https://training.test', lab: 'https://lab.test', qualification: 'https://manager.test',
+		const service = new TreeAiProxyService({ resolve: () => ({ token: 'private-token', endpoints: {
+			inference: 'https://inference.test', training: 'https://training.test', lab: 'https://lab.test',
 		} }) }, fetchImpl);
-		await expect(service.invoke('node-1', 'qualification.get.mode', {}, { interface: 'rest', requestId: 'request-1' })).resolves.toEqual({ mode: 'awake' });
-		expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('https://manager.test/v1/mode');
+		await expect(service.invoke('node-1', 'lab.get.status', {}, { interface: 'rest', requestId: 'request-1' })).resolves.toEqual({ mode: 'awake' });
+		expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('https://lab.test/v1/status');
 	});
 });

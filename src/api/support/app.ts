@@ -23,6 +23,7 @@ import { createGitHubWebhookService } from '../control-plane/repositories/github
 import { createServiceConnectionService } from '../control-plane/repositories/service-connection-service.ts';
 import { createServiceCredentials } from '../control-plane/repositories/services/service-credentials.ts';
 import { createHostedTopologyService } from '../control-plane/repositories/infrastructure/hosted-topology-service.ts';
+import {createAiInstanceService} from '../control-plane/repositories/infrastructure/ai-instance-service.ts';
 import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
 import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
 import { createAgentGovernanceService } from '../control-plane/repositories/capacity/agent-governance-service.ts';
@@ -38,7 +39,9 @@ import { createProviderAssignmentService } from '../control-plane/repositories/p
 import { createProviderSignalService } from '../control-plane/repositories/providers/provider-signal-service.ts';
 import { createProviderWorkflowService } from '../control-plane/repositories/providers/provider-workflow-service.ts';
 import { createTreeDxProxyOperationService } from '../control-plane/repositories/treedx/proxy-operation-service.ts';
-import { environmentTreeAiNodeResolver, TreeAiProxyService } from '../control-plane/treeai/proxy-service.ts';
+import { TreeAiProxyService } from '../control-plane/treeai/proxy-service.ts';
+import { createRegisteredAiNodes } from '../control-plane/treeai/registered-nodes.ts';
+import { createAiStorageBroker, installAiStorageBrokerRoute } from '../control-plane/treeai/storage-broker.ts';
 import { treeDxDelegationAuthority } from '../control-plane/treedx/delegation-authority.ts';
 import { installRemoteCredentialBrokerRoute } from '../control-plane/treedx/remote-credential-broker.ts';
 import { createRealtimeOperationService } from '../control-plane/realtime/realtime-operation-service.ts';
@@ -210,11 +213,13 @@ export function createPlatformApiApp(options: any = {}) {
 	const providerSignals = createProviderSignalService(capacity);
 	const providerWorkflows = createProviderWorkflowService(capacity);
 	const treeDxProxy = createTreeDxProxyOperationService(capacity, runtime);
-	const treeAiProxy = new TreeAiProxyService(environmentTreeAiNodeResolver(process.env), options.fetchImpl ?? fetch);
+	const registeredAiNodes = createRegisteredAiNodes(store, delegationAuthority, process.env, options.fetchImpl ?? fetch);
+	const treeAiProxy = new TreeAiProxyService(registeredAiNodes, options.fetchImpl ?? fetch);
 	const providerAccess = createCapacityProviderAccessMiddleware(providers.authenticator);
 	app.use('/v1/provider/*', providerAccess);
 	app.use('/v1/dx/*', providerAccess);
 	installRemoteCredentialBrokerRoute(app, { store, env: process.env, fetchImpl: options.fetchImpl ?? fetch });
+	installAiStorageBrokerRoute(app, createAiStorageBroker(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }));
 	const invitationContext = { locals: { runtime: { env: { ...process.env,
 		TREESEED_SITE_URL: String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)) } } },
 		url: new URL(String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config))) };
@@ -228,6 +233,7 @@ export function createPlatformApiApp(options: any = {}) {
 	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
 		createApiControlPlaneOperations({ store, capacity, services,
 			hostedTopology: createHostedTopologyService(store),
+			aiInstances: createAiInstanceService(store, registeredAiNodes),
 			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
 			capabilityOntology,
 			plans: createCapacityPlanService(capacity),

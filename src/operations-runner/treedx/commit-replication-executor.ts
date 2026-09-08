@@ -1,33 +1,11 @@
 import { resolveKnowledgeGatewayConnection } from '../../api/knowledge/gateway-treedx-connection.ts';
-import { R2S3PublicationClient } from '../../api/providers/cloudflare/r2-s3-publication-client.ts';
+import { withLibraryStorage } from '../../security/library-storage.ts';
 import { githubRepositoryHead } from '../../providers/github/repository-client.ts';
 import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
 import { createRemoteGitCredentialDelivery } from '../../security/remote-git-credential-delivery.ts';
+import { treeDxBrokerIdentity } from '../../security/treedx-broker-identity.ts';
 import { isR2ReplicationReceipt, mirrorTreeDxCommit, resolveCanonicalTreeDxRef, TREE_DX_MIRROR_SCHEMA, TREE_DX_MIRROR_SKIPPED_SCHEMA } from './r2-file-mirror.ts';
 import { markManagedTeamLibraryMirrorKnownGood } from '../../api/teams/managed-team-library-service.ts';
-
-function setting(options: any, name: string) {
-	return String(options.config?.[name] ?? process.env[name] ?? '').trim();
-}
-
-async function verifyPrivateBucket(options: any, bucket: string) {
-	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
-	const apiToken = setting(options, 'TREESEED_CLOUDFLARE_API_TOKEN');
-	if (!accountId || !apiToken) throw new Error('Cloudflare management authority is required to verify that the R2 library mirror bucket is private.');
-	const root = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/r2/buckets/${encodeURIComponent(bucket)}/domains`;
-	const request = async (path: string) => {
-		const response = await (options.fetchImpl ?? fetch)(`${root}/${path}`, { headers: { authorization: `Bearer ${apiToken}` } });
-		if (!response.ok) throw new Error(`Cloudflare could not verify R2 bucket privacy (HTTP ${response.status}).`);
-		const payload = await response.json() as any;
-		if (payload.success === false) throw new Error('Cloudflare rejected the R2 bucket privacy check.');
-		return payload.result;
-	};
-	const [managed, custom] = await Promise.all([request('managed'), request('custom')]);
-	if (managed?.enabled || (custom?.domains ?? []).some((domain: any) => domain?.enabled)) {
-		throw new Error('The configured R2 library mirror bucket has public domain access enabled.');
-	}
-	return { verifiedPrivate: true, managedDomainEnabled: false, enabledCustomDomainCount: 0 };
-}
 
 async function resolveExactSourceRef(connection: any, row: any) {
 	const response: any = await connection.client.upstream.repositories.refs(connection.repositoryId);
@@ -46,12 +24,7 @@ async function replicateGitHub(options: any, row: any, connection: any, operatio
 	if (!binding || binding.grant_status !== 'ready') throw new Error('A ready GitHub repository binding is required for commit replication.');
 	const credential = await resolveGitHubCredentialAuthority({ store, authorityId: binding.authority_id,
 		repositoryBindingId: binding.id, capability: 'repository-hosting', fetchImpl: options.fetchImpl });
-	const provenNode: any = await store.first(`SELECT d.node_id FROM remote_credential_deliveries d
-		JOIN remote_git_operation_grants g ON g.id=d.grant_id
-		WHERE g.repository_binding_id=? AND d.status='consumed' ORDER BY d.consumed_at DESC LIMIT 1`, [binding.id]);
-	const localNode = (options.config?.environment ?? process.env.TREESEED_ENVIRONMENT) === 'local' ? 'node_local' : '';
-	const nodeId = String(provenNode?.node_id || setting(options, 'TREESEED_TREEDX_CREDENTIAL_BROKER_NODE_ID') || localNode).trim();
-	if (!nodeId) throw new Error('No previously verified TreeDX credential-broker node identity is available.');
+	const nodeId = treeDxBrokerIdentity(connection);
 	const current = await githubRepositoryHead(options.fetchImpl ?? fetch, credential.token, binding.owner, binding.name, row.github_ref);
 	if (current && current !== row.commit_sha) throw new Error(`Immutable GitHub backup ref ${row.github_ref} points to a different commit.`);
 	let push: any = null;
@@ -70,18 +43,9 @@ async function replicateGitHub(options: any, row: any, connection: any, operatio
 }
 
 async function replicateR2(options: any, row: any, connection: any, sourceRef: string) {
-	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
-	const bucket = setting(options, 'TREESEED_CONTENT_BUCKET_NAME');
-	const accessKeyId = setting(options, 'TREESEED_R2_ACCESS_KEY_ID');
-	const secretAccessKey = setting(options, 'TREESEED_R2_SECRET_ACCESS_KEY');
-	if (!accountId || !bucket || !accessKeyId || !secretAccessKey) {
-		throw new Error('R2 library mirroring requires the Cloudflare account, private team bucket, and scoped S3 credentials.');
-	}
-	const privacy = await verifyPrivateBucket(options, bucket);
-	const client = new R2S3PublicationClient({ accountId, bucket, accessKeyId, secretAccessKey }, options.fetchImpl ?? fetch);
 	const project: any = await options.controlPlaneStore.first('SELECT id,team_id,slug FROM projects WHERE id = ? LIMIT 1', [row.project_id]);
 	if (!project || project.team_id !== row.team_id) throw new Error('R2 mirror project scope does not belong to the replication team.');
-	const branch = setting(options, 'TREESEED_LIBRARY_BRANCH') || (setting(options, 'TREESEED_ENVIRONMENT') === 'production' ? 'main' : 'staging');
+	return withLibraryStorage(options.controlPlaneStore, { ...process.env, ...options.config }, async ({ client, bucket, branch, privacy }) => {
 	const library: any = await options.controlPlaneStore.first(`SELECT content_repository_ref,topology_json FROM treedx_project_libraries
 		WHERE team_id=? AND project_id=?`, [row.team_id, row.project_id]);
 	const refsResponse: any = await connection.client.upstream.repositories.refs(connection.repositoryId);
@@ -101,17 +65,15 @@ async function replicateR2(options: any, row: any, connection: any, sourceRef: s
 	await options.controlPlaneStore.run(`UPDATE hub_content_sources SET r2_bucket_name=?,r2_manifest_key=?,latest_content_version=?,updated_at=?
 		WHERE team_id=? AND hub_id=?`, [bucket, mirror.manifestKey, row.commit_sha, now, row.team_id, row.project_id]);
 	return { provider: 'cloudflare-r2', bucket, privacy, ...mirror };
+	}, { fetchImpl: options.fetchImpl });
 }
 
-async function retainedR2MirrorExists(options: any, receipt: any) {
+async function retainedR2MirrorExists(options: any, receipt: any, row: any) {
 	if (receipt?.schemaVersion !== TREE_DX_MIRROR_SCHEMA || typeof receipt?.manifestKey !== 'string') return false;
-	const accountId = setting(options, 'TREESEED_CLOUDFLARE_ACCOUNT_ID');
-	const bucket = setting(options, 'TREESEED_CONTENT_BUCKET_NAME');
-	const accessKeyId = setting(options, 'TREESEED_R2_ACCESS_KEY_ID');
-	const secretAccessKey = setting(options, 'TREESEED_R2_SECRET_ACCESS_KEY');
-	if (!accountId || !bucket || !accessKeyId || !secretAccessKey) return false;
-	const client = new R2S3PublicationClient({ accountId, bucket, accessKeyId, secretAccessKey }, options.fetchImpl ?? fetch);
-	return client.exists(receipt.manifestKey);
+	const key = `_treeseed/mirrors/teams/${encodeURIComponent(row.team_id)}/projects/${encodeURIComponent(row.project_id)}/manifest.json`;
+	if (receipt.manifestKey !== key) return false;
+	return withLibraryStorage(options.controlPlaneStore, { ...process.env, ...options.config }, async ({ client, bucket }) =>
+		receipt.bucket === bucket && await client.exists(key), { fetchImpl: options.fetchImpl });
 }
 
 export function createTreeDxCommitReplicationExecutor(options: any) {
@@ -124,7 +86,7 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 			if (!row) throw new Error('TreeDX commit replication record was not found.');
 			const priorR2 = typeof row.r2_receipt_json === 'string' ? JSON.parse(row.r2_receipt_json) : row.r2_receipt_json;
 			const retainedR2Available = row.status === 'complete' && priorR2?.schemaVersion === TREE_DX_MIRROR_SCHEMA
-				&& isR2ReplicationReceipt(priorR2, row.commit_sha) && await retainedR2MirrorExists(options, priorR2);
+				&& isR2ReplicationReceipt(priorR2, row.commit_sha) && await retainedR2MirrorExists(options, priorR2, row);
 			if (retainedR2Available) {
 				await store.run('UPDATE treedx_commit_replications SET updated_at=? WHERE id=?', [new Date().toISOString(), row.id]);
 				return { replicationId: row.id, status: 'complete', replayed: true };
@@ -174,8 +136,7 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 				}
 			}
 			if (failures.length) {
-				const configurationBlocked = failures.some((failure) => failure.includes('requires the Cloudflare account')
-					|| failure.includes('management authority is required'));
+				const configurationBlocked = failures.some((failure) => failure.includes('Site library storage'));
 				const retryDelay = configurationBlocked ? 3_600_000
 					: Math.min(3_600_000, 15_000 * 2 ** Math.min(Number(row.attempts ?? 0), 8));
 				const retryAt = new Date(Date.now() + retryDelay).toISOString();

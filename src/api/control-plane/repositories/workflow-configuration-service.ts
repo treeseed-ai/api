@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { githubActionsRequest, repositoryPath } from '../../../providers/github/actions-client.ts';
 import { resolveGitHubCredentialAuthority } from '../../../security/provider-credential-authority.ts';
 import { WorkflowOperationError } from './workflow-operation-error.ts';
+import { workflowConfigurationNames, requireWorkflowConfigurationName } from '../../../security/workflow-configuration-policy.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[] } | undefined;
 type Kind = 'secrets' | 'variables';
@@ -45,25 +46,29 @@ function targetPath(repository: any, kind: Kind, scope: string, environment?: st
 }
 
 async function configurationContext(store: any, input: { projectId: string; query: Record<string, unknown>;
-	capability: 'secret-enclave' | 'workflow-configuration' }) {
+	kind: Kind; name?: string }) {
 	const repositoryBindingId = text(input.query.repositoryBindingId); const workflowBindingId = text(input.query.workflowBindingId);
 	const scope = text(input.query.scope) || 'repository'; const environment = text(input.query.environment) || null;
 	const repository = await store.first('SELECT * FROM project_remote_repository_bindings WHERE id = ? AND project_id = ?', [repositoryBindingId, input.projectId]);
 	const binding = repository && await store.first(`SELECT * FROM team_service_capability_bindings WHERE id = ? AND team_id = ?
 		AND connection_id = ? AND capability_type = ? AND status = 'configured'`,
-		[workflowBindingId, repository.team_id, repository.service_connection_id, input.capability]);
+		[workflowBindingId, repository.team_id, repository.service_connection_id, 'workflow-execution']);
 	const authority = binding && await store.first(`SELECT * FROM provider_credential_authorities WHERE connection_id = ?
 		AND credential_profile_id = ? AND status = 'ready'`, [binding.connection_id, binding.credential_profile_id]);
 	if (!repository || repository.provider_id !== 'github' || !binding || !authority) throw new WorkflowOperationError(409, 'workflow_configuration_binding_unavailable', 'The workflow configuration binding is not ready.');
 	const policy = parse(binding.configuration_json);
+	const target = {repositoryBindingId:repository.id,kind:input.kind,scope,environment};
+	const allowedNames = workflowConfigurationNames(policy,target);
+	if (!allowedNames.length) throw new WorkflowOperationError(403,'workflow_configuration_not_declared','This workflow has no declared configuration for the selected scope.');
+	if (input.name) requireWorkflowConfigurationName(policy,target,input.name);
 	if (scope === 'organization' && policy.organizationScopeEnabled !== true) throw new WorkflowOperationError(403, 'workflow_organization_scope_denied', 'Organization workflow configuration requires an explicitly elevated binding.');
 	if (scope === 'environment') {
 		const allowed = Array.isArray(policy.allowedEnvironments) ? policy.allowedEnvironments.map(String) : [];
 		if (!environment || !allowed.includes(environment)) throw new WorkflowOperationError(403, 'workflow_environment_scope_denied', 'The environment is outside this workflow configuration binding.');
 	}
 	const credential = await resolveGitHubCredentialAuthority({ store, authorityId: authority.id,
-		repositoryBindingId: repository.id, capabilityBindingId: binding.id, capability: input.capability });
-	return { repository, binding, credential, scope, environment };
+		repositoryBindingId: repository.id, capabilityBindingId: binding.id, capability: 'workflow-execution', configurationKind:input.kind, configurationScope:scope });
+	return { repository, binding, credential, scope, environment, allowedNames };
 }
 
 async function queueConfiguration(store: any, input: { context: any; projectId: string; actorId: string; kind: 'secret' | 'variable';
@@ -108,7 +113,7 @@ export function createWorkflowConfigurationService(store: any) {
 	return {
 		async publicKey(principal: Principal, projectId: string, query: Record<string, unknown>) {
 			await authorize(store, principal, projectId, 'services:credentials:use');
-			const provider = await configurationContext(store, { projectId, query, capability: 'secret-enclave' });
+			const provider = await configurationContext(store, { projectId, query, kind:'secrets' });
 			const payload: any = await githubActionsRequest(fetch, provider.credential.token,
 				`${targetPath(provider.repository, 'secrets', provider.scope, provider.environment)}/public-key`);
 			return { keyId: payload.key_id, publicKey: payload.key };
@@ -116,10 +121,10 @@ export function createWorkflowConfigurationService(store: any) {
 		async list(principal: Principal, projectId: string, kind: Kind, query: Record<string, unknown>) {
 			await authorize(store, principal, projectId, 'projects:read:team');
 			const provider = await configurationContext(store, { projectId, query,
-				capability: kind === 'secrets' ? 'secret-enclave' : 'workflow-configuration' });
+				kind });
 			const payload: any = await githubActionsRequest(fetch, provider.credential.token,
 				targetPath(provider.repository, kind, provider.scope, provider.environment));
-			const values = (kind === 'secrets' ? payload.secrets ?? [] : payload.variables ?? []).slice(0, 100);
+			const values = (kind === 'secrets' ? payload.secrets ?? [] : payload.variables ?? []).filter((item:any)=>provider.allowedNames.includes(item.name)).slice(0, 100);
 			const records = await store.all(`SELECT name, updated_at FROM workflow_configuration_records WHERE repository_binding_id = ?
 				AND workflow_binding_id = ? AND kind = ? AND scope = ? AND environment IS NOT DISTINCT FROM ?`,
 				[provider.repository.id, provider.binding.id, kind === 'secrets' ? 'secret' : 'variable', provider.scope, provider.environment]);
@@ -134,7 +139,7 @@ export function createWorkflowConfigurationService(store: any) {
 			const name = text(nameValue).toUpperCase(); if (!namePattern.test(name)) throw new WorkflowOperationError(422, 'workflow_configuration_name_invalid', 'Configuration names use uppercase letters, numbers, and underscores.');
 			const payload = kind === 'secrets' ? text(body.encryptedValue) : String(body.value ?? '');
 			if (!payload || payload.length > 65_536 || (kind === 'secrets' && !/^[A-Za-z0-9+/=]+$/u.test(payload))) throw new WorkflowOperationError(422, 'workflow_configuration_value_invalid', `A valid ${kind === 'secrets' ? 'GitHub-encrypted value' : 'variable value'} is required.`);
-			const provider = await configurationContext(store, { projectId, query, capability: kind === 'secrets' ? 'secret-enclave' : 'workflow-configuration' });
+			const provider = await configurationContext(store, { projectId, query, kind, name });
 			if (kind === 'variables') await requireVersion(store, provider, kind, name, ifMatch);
 			return queueConfiguration(store, { context: provider, projectId, actorId: actor.id, kind: kind === 'secrets' ? 'secret' : 'variable',
 				scope: provider.scope, environment: provider.environment, name, action: 'upsert', payload,
@@ -144,7 +149,7 @@ export function createWorkflowConfigurationService(store: any) {
 			idempotencyKey?: string, ifMatch?: string) {
 			const actor = await authorize(store, principal, projectId, kind === 'secrets' ? 'services:credentials:manage' : 'services:capabilities:manage');
 			const name = text(nameValue).toUpperCase(); if (!namePattern.test(name)) throw new WorkflowOperationError(422, 'workflow_configuration_name_invalid', 'Configuration names use uppercase letters, numbers, and underscores.');
-			const provider = await configurationContext(store, { projectId, query, capability: kind === 'secrets' ? 'secret-enclave' : 'workflow-configuration' });
+			const provider = await configurationContext(store, { projectId, query, kind, name });
 			if (kind === 'variables') await requireVersion(store, provider, kind, name, ifMatch);
 			return queueConfiguration(store, { context: provider, projectId, actorId: actor.id, kind: kind === 'secrets' ? 'secret' : 'variable',
 				scope: provider.scope, environment: provider.environment, name, action: 'delete', idempotencyKey: text(idempotencyKey) });

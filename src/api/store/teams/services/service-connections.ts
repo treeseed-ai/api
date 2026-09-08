@@ -167,7 +167,7 @@ export async function upsertTeamServiceCapabilityMethod(
 ) {
 	await this.ensureInitialized();
 	const existing = await this.first(
-		`SELECT id FROM team_service_capability_bindings WHERE connection_id = ? AND capability_type = ?`,
+		`SELECT id, configuration_json FROM team_service_capability_bindings WHERE connection_id = ? AND capability_type = ?`,
 		[connectionId, input.capabilityType],
 	);
 	const now = new Date().toISOString();
@@ -182,7 +182,7 @@ export async function upsertTeamServiceCapabilityMethod(
 	if (existing) {
 		await this.run(
 			`UPDATE team_service_capability_bindings SET status = ?, credential_profile_id = ?, configuration_json = ?, updated_at = ? WHERE id = ?`,
-			[input.status ?? 'configured', input.credentialProfileId ?? null, JSON.stringify(input.configuration ?? {}), now, existing.id],
+			[input.status ?? 'configured', input.credentialProfileId ?? null, input.configuration === undefined ? existing.configuration_json ?? '{}' : JSON.stringify(input.configuration), now, existing.id],
 		);
 		return capability(await this.first(`SELECT * FROM team_service_capability_bindings WHERE id = ?`, [existing.id]));
 	}

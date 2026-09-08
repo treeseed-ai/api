@@ -9,6 +9,7 @@ const HOST = /^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/u;
 type Store = {
 	first(query: string, parameters?: unknown[]): Promise<any>;
 	run(query: string, parameters?: unknown[]): Promise<unknown>;
+	appendPlatformOperationEvent?(operationId: string, kind: string, data: unknown): Promise<unknown>;
 };
 
 type Credential = { token: string; username?: string; expiresAt?: string | null; authorityScheme?: string };
@@ -68,8 +69,18 @@ export function installRemoteCredentialBrokerRoute(app: Hono<any>, options: {
 			if (!row || row.status !== 'ready' || row.grant_status !== 'delivered' || Date.parse(row.expires_at) <= Date.now()) {
 				return context.json({ ok: false, error: 'Credential delivery is unavailable.' }, 404);
 			}
-			if (row.node_id !== nodeId || row.treedx_node_id !== nodeId || row.operation_kind !== body.operation
-				|| row.allowed_host !== body.allowedHost || row.refspec_digest !== body.refspecDigest) {
+			const mismatches = [
+				[row.node_id !== nodeId || row.treedx_node_id !== nodeId, 'node'],
+				[row.operation_kind !== body.operation, 'operation'],
+				[row.allowed_host !== body.allowedHost, 'host'],
+				[row.refspec_digest !== body.refspecDigest, 'refspec'],
+			].filter(([mismatch]) => mismatch).map(([, field]) => field);
+			if (mismatches.length) {
+				// Report only fixed field names on the existing authorized operation.
+				// Never store supplied values, assertions, key material or credentials.
+				if (row.operation_id) await options.store.appendPlatformOperationEvent?.(
+					row.operation_id, 'credential-context-rejected', { mismatches },
+				).catch(() => {});
 				return context.json({ ok: false, error: 'Credential delivery context does not match.' }, 403);
 			}
 			const resolveCredential = options.resolveCredential ?? resolveGitHubCredentialAuthority;

@@ -3,6 +3,7 @@ import { resolveKnowledgeGatewayConnection } from '../../api/knowledge/gateway-t
 import { githubRepositoryHead } from '../../providers/github/repository-client.ts';
 import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
 import { createRemoteGitCredentialDelivery } from '../../security/remote-git-credential-delivery.ts';
+import { treeDxBrokerIdentity } from '../../security/treedx-broker-identity.ts';
 
 function refs(value: unknown): any[] {
 	const rows = value && typeof value === 'object' && !Array.isArray(value) ? (value as any).refs : value;
@@ -57,9 +58,7 @@ export function createTreeDxRemoteHeadReconciliationExecutor(options: any) {
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId, write: false,
 				maintenanceRefs: [publicationRef, remoteRef, remoteHead] });
 			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
-			const placement: any = await connection.client.getPlacement(connection.repositoryId);
-			const nodeId = String(placement?.primaryNodeId ?? placement?.placement?.primaryNodeId ?? connection.nodeId ?? '');
-			if (!nodeId) throw new Error('TreeDX did not resolve the repository primary node for credential delivery.');
+			const nodeId = treeDxBrokerIdentity(connection);
 			const delivery = await createRemoteGitCredentialDelivery({ store, operationId: context.operation.id,
 				actorId: 'treedx-remote-head-reconciler', teamId, projectId, repositoryBindingId: binding.id,
 				credentialAuthorityId: binding.authority_id, nodeId, sourceRef: publicationRef,
