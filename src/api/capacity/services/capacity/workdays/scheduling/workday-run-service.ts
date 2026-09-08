@@ -48,7 +48,7 @@ export function compileCapacityWorkdayRunRecord(teamId: string, input: JsonRecor
 	const now = options.now ?? new Date().toISOString(); const id = options.id ?? text(input.id, randomUUID());
 	const status = parseCapacityWorkdayRunStatus(input.status ?? (input.startedAt ? 'running' : 'queued'));
 	const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters); engineeringWorkflowPromotionConfigs(parameters);
-	const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode);
+	const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode??(input.executionKind==='conversation'?'production':undefined));
 	parameters.executionMode=executionMode;
 	parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
 	const durationSeconds = Math.max(0, Number(parameters.durationSeconds ?? input.durationSeconds ?? 0));

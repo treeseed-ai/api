@@ -7,6 +7,7 @@ import { loadDiscussions } from '../../../discussions/content.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
+import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
 
 type Row = Record<string, unknown>;
 type ProviderSnapshot = Row & { maxConcurrentRunners?: number; lanes?: unknown[] };
@@ -186,7 +187,8 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			selection: { model: text(terminalPayload.model) || null, capabilities: Array.isArray(terminalPayload.capabilities) ? terminalPayload.capabilities.map(String) : [], parameters: record(terminalPayload.parameters ?? capacity) },
 			identityManifest: record(startedPayload.identityManifest ?? metadata.identityManifest), contextManifest: Array.isArray(startedPayload.contextManifest)
 				? startedPayload.contextManifest.map(record) : Array.isArray(metadata.contextManifest) ? metadata.contextManifest.map(record) : [],
-			usage: Array.isArray(terminalPayload.usage) ? terminalPayload.usage.map(record) : [], timing: record(terminalPayload.timing), resources: record(terminalPayload.resources), traceEvents,
+			usage: Array.isArray(terminalPayload.usage) ? terminalPayload.usage.map(record) : [], timing: record(terminalPayload.timing), resources: { ...record(terminalPayload.resources),
+				...(!text(assignment.id) ? { scheduling: await communicationSchedulingDiagnostics(store, text(invocation.team_id), text(invocation.execution_id)) } : {}) }, traceEvents,
 			...(full ? { fullPayload: { events: traceEvents } } : {}) };
 	}
 
