@@ -1,7 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import {readdirSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {verifyLiveMigrations} from '../../../../src/api/support/verify-live-migrations.ts';
+import {verifyLiveMigrations} from '../../../../../src/api/support/verify-live-migrations.ts';
 
 const root=resolve('drizzle/control-plane');
 const files=readdirSync(root).filter(file=>file.endsWith('.sql'));

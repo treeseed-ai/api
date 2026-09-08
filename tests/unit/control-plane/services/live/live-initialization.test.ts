@@ -1,5 +1,5 @@
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {ensureInitializedMethod} from '../../../../src/api/store/support/contracts/ensure-initialized.ts';
+import {ensureInitializedMethod} from '../../../../../src/api/store/support/contracts/ensure-initialized.ts';
 
 afterEach(()=>vi.unstubAllEnvs());
 describe('live initialization',()=>{

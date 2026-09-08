@@ -1,5 +1,5 @@
 import {afterEach, expect, it, vi} from 'vitest';
-import {main} from '../../../../scripts/support/migrate-db.ts';
+import {main} from '../../../../../scripts/support/migrate-db.ts';
 
 afterEach(() => vi.unstubAllEnvs());
 it('never reports an applied migration from a live verification-only session', async () => {
