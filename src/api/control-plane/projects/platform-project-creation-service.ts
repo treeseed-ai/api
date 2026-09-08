@@ -5,6 +5,7 @@ import { applyPlatformProjectCreate, planPlatformProjectCreate, projectCreatePla
 import { ensureProjectKnowledgeBinding } from '../../../control-plane/seeds/apply-support/projects/projects-core/project-knowledge-binding.ts';
 import { reconcileLibraryProvider } from '../../../control-plane/seeds/apply-support/projects/projects-core/library-provider-reconciliation.ts';
 import { resolveGitHubRepositoryCreationAuthority } from '../../../security/provider-credential-authority.ts';
+import { initializeTemplate } from './initialize-template.ts';
 
 type Row = Record<string, any>;
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
@@ -20,7 +21,13 @@ async function github(fetchImpl: typeof fetch, token: string | undefined, path: 
 		'x-github-api-version': '2022-11-28', ...(init.headers ?? {}),
 	} });
 	if (response.status === 404) return null;
-	if (!response.ok) throw Object.assign(new Error(`GitHub project reconciliation failed (HTTP ${response.status}).`), { status: response.status });
+	if (!response.ok) {
+		const body = await response.json().catch(() => ({})) as { message?: string };
+		const empty = response.status === 409 && (!init.method || init.method === 'GET')
+			&& path.endsWith('/git/ref/heads/main') && body.message === 'Git Repository is empty.';
+		throw Object.assign(new Error(`GitHub project reconciliation failed (${init.method ?? 'GET'} ${path}, HTTP ${response.status}).`),
+			{ status: response.status, code: empty ? 'github_repository_empty' : 'github_reconciliation_failed' });
+	}
 	return response.status === 204 ? {} : response.json() as Promise<Row>;
 }
 
@@ -118,19 +125,9 @@ export function createPlatformProjectCreationService(store: any, options: { env?
 			const artifact = Buffer.from(await response.arrayBuffer()); if (sha256(artifact) !== target.template.digest) throw new Error('Template artifact digest does not match the accepted release.');
 			const files = await templateFiles(artifact, target.slug); const base = `/repos/${encodeURIComponent(target.repository.owner)}/${encodeURIComponent(target.repository.name)}`;
 			const credential = (await repositoryAuthority(target)).token;
-			const treeEntries = []; for (const [path, content] of [...files].sort(([left], [right]) => left.localeCompare(right))) {
-				const blob = await github(fetchImpl, credential, `${base}/git/blobs`, { method: 'POST', body: JSON.stringify({ content: content.toString('base64'), encoding: 'base64' }) });
-				treeEntries.push({ path, mode: '100644', type: 'blob', sha: blob?.sha });
-			}
-			const tree = await github(fetchImpl, credential, `${base}/git/trees`, { method: 'POST', body: JSON.stringify({ tree: treeEntries }) });
-			const main = await github(fetchImpl, credential, `${base}/git/ref/heads/main`);
-			if (main) { const commit = await github(fetchImpl, credential, `${base}/git/commits/${main.object?.sha}`); if (commit?.tree?.sha !== tree?.sha) throw new Error('The adopted repository contains source that does not match the accepted template.'); }
-			else { const commit = await github(fetchImpl, credential, `${base}/git/commits`, { method: 'POST', body: JSON.stringify({ message: `Initialize ${target.slug} from ${tag}`, tree: tree?.sha, parents: [] }) });
-				await github(fetchImpl, credential, `${base}/git/refs`, { method: 'POST', body: JSON.stringify({ ref: 'refs/heads/main', sha: commit?.sha }) }); }
-			const acceptedMain = await github(fetchImpl, credential, `${base}/git/ref/heads/main`); const staging = await github(fetchImpl, credential, `${base}/git/ref/heads/staging`);
-			if (staging && staging.object?.sha !== acceptedMain?.object?.sha) throw new Error('The adopted staging branch does not match the accepted template commit.');
-			if (!staging) await github(fetchImpl, credential, `${base}/git/refs`, { method: 'POST', body: JSON.stringify({ ref: 'refs/heads/staging', sha: acceptedMain?.object?.sha }) });
-			await store.updateProject(current.id, { metadata: { ...record(current.metadata), platformCreation: { ...metadata(current.metadata), templateDigest: target.template.digest, templateVersion: target.template.version, templateCommit: acceptedMain?.object?.sha } } });
+			const templateCommit = await initializeTemplate({ base, files, templateDigest: target.template.digest,
+				message: `Initialize ${target.slug} from ${tag}`, github: (path, init) => github(fetchImpl, credential, path, init) });
+			await store.updateProject(current.id, { metadata: { ...record(current.metadata), platformCreation: { ...metadata(current.metadata), templateDigest: target.template.digest, templateVersion: target.template.version, templateCommit } } });
 		},
 		async reconcileLibrary(target) {
 			const current = await project(target); if (!current) throw new Error('Project authority is missing before TreeDX binding.'); const name = libraryName(target);
