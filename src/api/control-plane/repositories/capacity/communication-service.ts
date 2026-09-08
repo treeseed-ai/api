@@ -8,6 +8,7 @@ import { resolveTeamCommunicationTargets } from '../../../capacity/services/capa
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
 import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
+import { communicationFailure } from './communication/failure.ts';
 
 type Row = Record<string, unknown>;
 type ProviderSnapshot = Row & { maxConcurrentRunners?: number; lanes?: unknown[] };
@@ -254,7 +255,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 				chatProfile: text(record(record(row.metadata_json).revisions).chatProfile, text(row.agent_revision)),
 			}, invocationId: text(row.id) || null, requirement: text(record(record(row.metadata_json).communication).requirement, 'required'),
 			parentInvocationId: text(row.handoff_parent_id) || null, depth: Number(row.handoff_depth ?? 0), status: targetStatus(row), requestedAt: timestamp(row.requested_at), updatedAt: timestamp(row.updated_at), completedAt: timestamp(row.completed_at) || null,
-			failure: (() => { const state = record(row.blocking_state_json); const code = text(state.code); return code ? { code, message: text(state.message, text(state.reason)) || null } : null; })(),
+			failure: communicationFailure(record(row.blocking_state_json)),
 			capacity: { assignmentId: text(assignment.id) || null, providerId: text(assignment.capacity_provider_id) || null, executionProviderId: text(assignment.execution_provider_id) || null,
 				laneId: text(assignment.lane_id) || null, lanePurpose: text(assignment.lane_purpose) || null, status: text(assignment.status) || null, assignedAt: timestamp(assignment.assigned_at) || null,
 				claimedAt: timestamp(assignment.claimed_at) || null, completedAt: timestamp(assignment.completed_at) || null, returnedAt: timestamp(assignment.returned_at) || null, failedAt: timestamp(assignment.failed_at) || null },

@@ -1,6 +1,7 @@
 import { getSiteAuthConfig } from '../../../../auth/config.ts';
 import { backfillUserEmailAddresses,normalizeBaseUrl,parseBooleanEnvValue,redactedRequestTarget } from '../index.ts';
-import { reconcileManagedTeamLibraries } from '../../../teams/managed-team-library-service.ts';
+import { reconcileManagedTeamLibraries, reconcileManagedTeamLibrary } from '../../../teams/managed-team-library-service.ts';
+import { recoverManagedLibraryStartup } from '../../../teams/managed-library-recovery.ts';
 export async function accountDeletionBlockers(store, principal) {
     const teams = await store.listTeamsForPrincipal(principal);
     const blockers = teams
@@ -85,7 +86,8 @@ export async function ensureControlPlaneCredentialSchema(store) {
     await store.ensureInitialized();
     await backfillUserEmailAddresses(store);
 	await store.backfillManagedTeamLibraryProjects();
-	await reconcileManagedTeamLibraries(store,process.env);
+	const libraries = await reconcileManagedTeamLibraries(store,process.env);
+	recoverManagedLibraryStartup(libraries, teamId => reconcileManagedTeamLibrary(store,teamId,process.env));
 }
 export function sanitizedReturnTo(value) {
     const target = String(value ?? '/app/');
