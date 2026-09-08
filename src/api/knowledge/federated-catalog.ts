@@ -108,7 +108,7 @@ export async function loadFederatedKnowledgeCatalog(context: any, c: any, projec
 	const localLiveSource = ['local', 'test'].includes(String(context.options?.environment
 		?? process.env.TREESEED_ENVIRONMENT ?? 'local'));
 	const storage = createKnowledgePublicationStorage({ adapter: context.options?.knowledgePublicationStorage,
-		environment: context.options?.environment });
+		environment: context.options?.environment, store: context.store });
 	const liveProjects: any[] = [];
 	for (const [teamId, teamProjects] of byTeam) {
 		const team = await context.store.getTeam(teamId);

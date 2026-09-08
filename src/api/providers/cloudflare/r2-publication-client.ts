@@ -9,7 +9,7 @@ export interface R2ApiTokenPublicationConfig {
 }
 
 export type R2PublicationConfig = R2ApiTokenPublicationConfig | (R2S3PublicationConfig & { authMode?: 's3' });
-export type R2PublicationClient = Pick<R2S3PublicationClient, 'get' | 'exists' | 'put' | 'delete' | 'list'>;
+export type R2PublicationClient = Pick<R2S3PublicationClient, 'get' | 'getBytes' | 'exists' | 'put' | 'putBytes' | 'delete' | 'list'>;
 
 class R2ApiTokenPublicationClient {
 	private resolved: Promise<R2S3PublicationClient> | null = null;
@@ -24,8 +24,8 @@ class R2ApiTokenPublicationClient {
 				'https://api.cloudflare.com/client/v4/user/tokens/verify',
 			];
 			for (const url of urls) {
-				const response = await this.fetchImpl(url, { headers: { authorization: `Bearer ${this.config.apiToken}` } });
-				if (!response.ok) continue;
+				const response = await this.fetchImpl(url, { headers: { authorization: `Bearer ${this.config.apiToken}` }, redirect: 'error', signal: AbortSignal.timeout(10_000) });
+				if (!response.ok) { await response.body?.cancel(); continue; }
 				const envelope = await response.json() as { success?: boolean; result?: { id?: string; status?: string } };
 				const accessKeyId = envelope.result?.id?.trim();
 				if (envelope.success !== false && envelope.result?.status === 'active' && accessKeyId) {
@@ -43,8 +43,10 @@ class R2ApiTokenPublicationClient {
 	}
 
 	async get(key: string) { return (await this.resolveClient()).get(key); }
+	async getBytes(key: string) { return (await this.resolveClient()).getBytes(key); }
+	async putBytes(...args: Parameters<R2S3PublicationClient['putBytes']>) { return (await this.resolveClient()).putBytes(...args); }
 	async exists(key: string) { return (await this.resolveClient()).exists(key); }
-	async put(key: string, body: string, options: { contentType: string; ifMatch?: string; ifNoneMatch?: '*' }) { return (await this.resolveClient()).put(key, body, options); }
+	async put(...args: Parameters<R2S3PublicationClient['put']>) { return (await this.resolveClient()).put(...args); }
 	async delete(key: string) { return (await this.resolveClient()).delete(key); }
 	async list(prefix: string) { return (await this.resolveClient()).list(prefix); }
 }

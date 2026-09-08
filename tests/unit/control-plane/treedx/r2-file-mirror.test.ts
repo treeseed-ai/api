@@ -67,13 +67,17 @@ describe('TreeDX R2 file mirror', () => {
 		const client = new MemoryR2(), first = 'a'.repeat(40), second = 'b'.repeat(40);
 		const common = { client: client as any, teamId: 'team', projectId: 'project', projectSlug: 'sdk', repositoryId: 'repo_sdk' };
 		client.objects.set('teams/team/projects/project/library/commits/legacy/archive.tar.zst', new Uint8Array([1]));
+		client.objects.set('teams/team/projects/project/ai/v1/model.bin', new Uint8Array([2]));
+		client.objects.set('teams/other/projects/project/private.bin', new Uint8Array([3]));
 		await mirrorTreeDxCommit({ ...common, connection: connection({ 'keep.mdx': { body: 'one', type: 'text/mdx' },
 			'delete.mdx': { body: 'old', type: 'text/mdx' } }), commitSha: first, sourceRef: 'refs/heads/staging' });
 		const secondReceipt = await mirrorTreeDxCommit({ ...common, connection: connection({ 'keep.mdx': { body: 'two', type: 'text/mdx' } }),
 			commitSha: second, sourceRef: 'refs/heads/staging' });
 		expect(client.objects.has('teams/team/projects/project/delete.mdx')).toBe(false);
 		expect(client.deleted).toContain('teams/team/projects/project/delete.mdx');
-		expect(client.deleted).toContain('teams/team/projects/project/library/commits/legacy/archive.tar.zst');
+		expect(client.deleted).not.toContain('teams/team/projects/project/library/commits/legacy/archive.tar.zst');
+		expect(client.objects.has('teams/team/projects/project/ai/v1/model.bin')).toBe(true);
+		expect(client.objects.has('teams/other/projects/project/private.bin')).toBe(true);
 		expect(client.objects.has('teams/team/projects/project/keep.mdx')).toBe(true);
 		expect(secondReceipt).toMatchObject({ uploadedFiles: 1, deletedFiles: 1, unchangedFiles: 0 });
 	});
