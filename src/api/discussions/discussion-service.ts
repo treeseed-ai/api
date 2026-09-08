@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { admitDiscussionInvocations, resolveDiscussionInvocationAgents } from '../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { changeDiscussionStatus, commitDiscussionMessage, loadDiscussions, validateDiscussionContextRefs } from './content.ts';
+import { discussionHistorySnapshot } from './history-snapshot.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -185,11 +186,13 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 						...authored.mentions, ...(Array.isArray(body.recipients) ? body.recipients.map(String) : []),
 					])] });
 				if (!agents.length) return { ...authored, invocations: [], replayed: false };
+				const prior = await loadDiscussions({ store, projectId, discussionId: authored.discussion.id, collection: 'messages', limit: 100 });
+				const historySnapshot = discussionHistorySnapshot(prior.messages, authored.discussion.id, authored.message.path);
 				const invocations = await admitDiscussionInvocations(invocationStore, { teamId, projectId,
 					projectSlug: text(project.slug, project.id), discussionId: authored.discussion.id, messageId: authored.message.id,
 					messagePath: authored.message.path, messageCommit: authored.commitSha, contextRefs, agentSlugs: agents,
 					idempotencyKey, parentWorkdayId, parentAssignmentId, durationSeconds: Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900))),
-					communication: record(body.communication), addressRequirements: record(body.addressRequirements),
+					communication: { ...record(body.communication), historySnapshot }, addressRequirements: record(body.addressRequirements),
 					requestedById: principal.id });
 				return { ...authored, invocations, replayed: false };
 			} catch (error) { failure(error, 409, 'discussion_invocation_failed'); }
