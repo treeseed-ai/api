@@ -9,6 +9,15 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: migration-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 12
     permissions:
       actions: read
       contents: read
@@ -83,6 +92,10 @@ jobs:
           test -f node_modules/@treeseed/sdk/package.json
           test -d node_modules/@treeseed/sdk/dist
       - run: npm run verify:direct
+      - name: Verify real PostgreSQL backup-writer migration closure
+        env:
+          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
+        run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/services/live/replication-migration-postgres.test.ts
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
       - uses: actions/upload-artifact@v4
