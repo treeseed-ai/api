@@ -3,7 +3,7 @@ import { enqueueTreeDxCommitReplication } from '../../../../src/api/capacity/ser
 import { TreeDxCommitReplicationScheduler } from '../../../../src/operations-runner/treedx/commit-replication-scheduler.ts';
 
 describe('TreeDX commit replication outbox', () => {
-	it('records deterministic immutable destinations before queueing work', async () => {
+	it('queues exact TreeDX commits for R2 without a GitHub branch destination', async () => {
 		const runs: Array<{ query: string; params?: unknown[] }> = [];
 		const operations: any[] = [];
 		const store: any = {
@@ -19,7 +19,8 @@ describe('TreeDX commit replication outbox', () => {
 			teamId: 'team', projectId: 'sdk', commitSha, createdAt: '2026-08-29T00:00:00.000Z',
 		});
 		expect(result.sourceRef).toBe(`refs/treedx/commits/${commitSha}`);
-		expect(result.githubRef).toBe(`refs/heads/treedx-backups/${commitSha}`);
+		expect(result).not.toHaveProperty('githubRef');
+		expect(runs[0]?.query).not.toContain('github_');
 		expect(result.r2ObjectKey).toBe('_treeseed/mirrors/teams/team/projects/sdk/manifest.json');
 		expect(runs[0]?.query).toContain('INSERT INTO treedx_commit_replications');
 		expect(operations[0]).toMatchObject({ namespace: 'treedx', operation: 'replicate_commit',

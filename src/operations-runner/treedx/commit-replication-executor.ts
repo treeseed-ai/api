@@ -1,9 +1,5 @@
 import { resolveKnowledgeGatewayConnection } from '../../api/knowledge/gateway-treedx-connection.ts';
 import { withLibraryStorage } from '../../security/library-storage.ts';
-import { githubRepositoryHead } from '../../providers/github/repository-client.ts';
-import { resolveGitHubCredentialAuthority } from '../../security/provider-credential-authority.ts';
-import { createRemoteGitCredentialDelivery } from '../../security/remote-git-credential-delivery.ts';
-import { treeDxBrokerIdentity } from '../../security/treedx-broker-identity.ts';
 import { isR2ReplicationReceipt, mirrorTreeDxCommit, resolveCanonicalTreeDxRef, TREE_DX_MIRROR_SCHEMA, TREE_DX_MIRROR_SKIPPED_SCHEMA } from './r2-file-mirror.ts';
 import { markManagedTeamLibraryMirrorKnownGood } from '../../api/teams/managed-team-library-service.ts';
 
@@ -16,30 +12,6 @@ async function resolveExactSourceRef(connection: any, row: any) {
 		if (String(ref?.target ?? ref?.sha ?? '') === row.commit_sha) return name;
 	}
 	throw new Error('TreeDX no longer has an authorized ref pointing to the exact commit.');
-}
-
-async function replicateGitHub(options: any, row: any, connection: any, operationId: string, sourceRef: string) {
-	const store = options.controlPlaneStore;
-	const binding: any = await store.first('SELECT * FROM project_remote_repository_bindings WHERE project_id = ?', [row.project_id]);
-	if (!binding || binding.grant_status !== 'ready') throw new Error('A ready GitHub repository binding is required for commit replication.');
-	const credential = await resolveGitHubCredentialAuthority({ store, authorityId: binding.authority_id,
-		repositoryBindingId: binding.id, capability: 'repository-hosting', fetchImpl: options.fetchImpl });
-	const nodeId = treeDxBrokerIdentity(connection);
-	const current = await githubRepositoryHead(options.fetchImpl ?? fetch, credential.token, binding.owner, binding.name, row.github_ref);
-	if (current && current !== row.commit_sha) throw new Error(`Immutable GitHub backup ref ${row.github_ref} points to a different commit.`);
-	let push: any = null;
-	if (!current) {
-		const delivery = await createRemoteGitCredentialDelivery({ store, operationId, actorId: 'treedx-commit-replicator',
-			teamId: row.team_id, projectId: row.project_id, repositoryBindingId: binding.id,
-			credentialAuthorityId: binding.authority_id, nodeId, sourceRef,
-			destinationRef: row.github_ref, reviewedCommit: row.commit_sha, expectedRemoteHead: null, purpose: 'push' });
-		push = await connection.client.push({ repoId: row.repository_id, remoteName: 'origin', remoteUrl: binding.clone_url,
-			credentialId: delivery.deliveryId, refspecs: [`${sourceRef}:${row.github_ref}`], expectedRemoteHead: '' });
-	}
-	const observed = await githubRepositoryHead(options.fetchImpl ?? fetch, credential.token, binding.owner, binding.name, row.github_ref);
-	if (observed !== row.commit_sha) throw new Error('GitHub did not retain the exact TreeDX commit after push.');
-	return { provider: 'github', repository: `${binding.owner}/${binding.name}`, ref: row.github_ref,
-		commitSha: observed, verifiedAt: new Date().toISOString(), push: push ? { updatedRefs: push.updatedRefs ?? [] } : null };
 }
 
 async function replicateR2(options: any, row: any, connection: any, sourceRef: string) {
@@ -95,7 +67,7 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 			await store.run(`UPDATE treedx_commit_replications SET status='replicating', attempts=attempts+1,
 				last_error=NULL, updated_at=? WHERE id=?`, [now, row.id]);
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: row.project_id,
-				write: false, replicationRefs: [row.source_ref, `refs/treedx/commits/${row.commit_sha}`, row.commit_sha, row.github_ref] });
+				write: false, replicationRefs: [row.source_ref, `refs/treedx/commits/${row.commit_sha}`, row.commit_sha] });
 			if (!connection) throw new Error('The project TreeDX repository is unavailable.');
 			let sourceRef: string;
 			try { sourceRef = await resolveExactSourceRef(connection, row); }
@@ -109,20 +81,8 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 					[message, retryAt, new Date().toISOString(), row.id]);
 				throw error;
 			}
-			let githubReceipt = row.github_receipt_json ?? {};
 			let r2Receipt = row.r2_receipt_json ?? {};
 			const failures: string[] = [];
-			if (row.github_status !== 'verified') {
-				await store.run("UPDATE treedx_commit_replications SET github_status='replicating',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
-				try {
-					githubReceipt = await replicateGitHub(options, row, connection, context.operation.id, sourceRef);
-					await store.run("UPDATE treedx_commit_replications SET github_status='verified',github_receipt_json=?,updated_at=? WHERE id=?",
-						[JSON.stringify(githubReceipt), new Date().toISOString(), row.id]);
-				} catch (error) {
-					failures.push(`GitHub: ${error instanceof Error ? error.message : String(error)}`);
-					await store.run("UPDATE treedx_commit_replications SET github_status='failed',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
-				}
-			}
 			if (!retainedR2Available || row.r2_status !== 'verified' || priorR2?.schemaVersion !== TREE_DX_MIRROR_SCHEMA
 				|| !isR2ReplicationReceipt(priorR2, row.commit_sha)) {
 				await store.run("UPDATE treedx_commit_replications SET r2_status='replicating',updated_at=? WHERE id=?", [new Date().toISOString(), row.id]);
@@ -151,7 +111,7 @@ export function createTreeDxCommitReplicationExecutor(options: any) {
 				commitSha:row.commit_sha,r2Receipt});
 			await context.checkpoint({ phase: 'treedx.commit.replicated', replicationId: row.id, commitSha: row.commit_sha },
 				{ kind: 'treedx.commit.replicated', data: { projectId: row.project_id, commitSha: row.commit_sha } });
-			return { replicationId: row.id, status: 'complete', commitSha: row.commit_sha, github: githubReceipt, r2: r2Receipt };
+			return { replicationId: row.id, status: 'complete', commitSha: row.commit_sha, r2: r2Receipt };
 		},
 	};
 }

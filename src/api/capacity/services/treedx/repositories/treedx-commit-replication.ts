@@ -18,11 +18,10 @@ export async function enqueueTreeDxCommitReplication(database: CapacityGovernanc
 	if (!repositoryId) throw new Error(`Project ${input.projectId} has no TreeDX repository to replicate.`);
 	const id = replicationId(input.projectId, input.commitSha);
 	const sourceRef = input.sourceRef ?? `refs/treedx/commits/${input.commitSha}`;
-	const githubRef = `refs/heads/treedx-backups/${input.commitSha}`;
 	const r2ObjectKey = `_treeseed/mirrors/teams/${input.teamId}/projects/${input.projectId}/manifest.json`;
 	await database.run(`INSERT INTO treedx_commit_replications
-		(id,team_id,project_id,repository_id,commit_sha,source_ref,github_ref,r2_object_key,status,github_status,r2_status,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,?,?, 'pending','pending','pending',?,?) ON CONFLICT(project_id,commit_sha) DO UPDATE SET
+		(id,team_id,project_id,repository_id,commit_sha,source_ref,r2_object_key,status,r2_status,created_at,updated_at)
+		VALUES (?,?,?,?,?,?,?, 'pending','pending',?,?) ON CONFLICT(project_id,commit_sha) DO UPDATE SET
 			source_ref=CASE WHEN excluded.source_ref LIKE 'refs/heads/%' OR excluded.source_ref LIKE 'refs/remotes/origin/%'
 				THEN excluded.source_ref ELSE treedx_commit_replications.source_ref END,
 			status=CASE WHEN CAST(treedx_commit_replications.r2_receipt_json AS TEXT) LIKE '%treeseed.treedx-r2-file-mirror-skipped/v1%'
@@ -32,7 +31,7 @@ export async function enqueueTreeDxCommitReplication(database: CapacityGovernanc
 				AND (excluded.source_ref LIKE 'refs/heads/%' OR excluded.source_ref LIKE 'refs/remotes/origin/%')
 				THEN 'pending' ELSE treedx_commit_replications.r2_status END,
 			updated_at=excluded.updated_at`, [
-		id, input.teamId, input.projectId, repositoryId, input.commitSha, sourceRef, githubRef, r2ObjectKey,
+		id, input.teamId, input.projectId, repositoryId, input.commitSha, sourceRef, r2ObjectKey,
 		input.createdAt, input.createdAt,
 	]);
 	const operationStore = database as CapacityGovernanceDatabase & { createPlatformOperation?: (value: unknown) => Promise<unknown> };
@@ -43,5 +42,5 @@ export async function enqueueTreeDxCommitReplication(database: CapacityGovernanc
 			requestedById: 'treedx-commit-projector',
 		});
 	}
-	return { id, sourceRef, githubRef, r2ObjectKey };
+	return { id, sourceRef, r2ObjectKey };
 }
