@@ -4,6 +4,7 @@ import { dirname,join,resolve } from 'node:path';
 import pg,{ type Pool,type PoolClient,type QueryResultRow } from 'pg';
 import { splitPostgresSqlStatements } from '../persistence/postgres-sql-statements.ts';
 import { verifyLiveMigrations } from './verify-live-migrations.ts';
+import { migrationColumnTarget } from './migration-column-target.ts';
 
 const { Pool: PgPool } = pg;
 const loggedPostgresPools = new WeakSet<Pool>();
@@ -386,8 +387,8 @@ export class ControlPlanePostgresDatabase {
 					if (addConstraint && await constraintExists(client, addConstraint[1], addConstraint[2])) continue;
 					const addColumn=inspected.match(/^\s*ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+ADD\s+COLUMN\s+["`]?([a-zA-Z0-9_]+)["`]?/iu);
 					if(addColumn&&await columnExists(client,addColumn[1],addColumn[2]))continue;
-					const existingColumnMutation=inspected.match(/^\s*ALTER\s+TABLE\s+["`]?([a-zA-Z0-9_]+)["`]?\s+(?:ALTER|DROP)\s+COLUMN\s+["`]?([a-zA-Z0-9_]+)["`]?/iu);
-					if(existingColumnMutation&&!await columnExists(client,existingColumnMutation[1],existingColumnMutation[2]))continue;
+					const existingColumnMutation=migrationColumnTarget(inspected);
+					if(existingColumnMutation&&!await columnExists(client,existingColumnMutation.table,existingColumnMutation.column))continue;
 					const createIndex = String(statement).match(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(?!IF\s+NOT\s+EXISTS\b)/iu);
 					const statementToApply = createIndex
 						? String(statement).replace(/^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+/iu, (_match, unique = '') => `CREATE ${unique}INDEX IF NOT EXISTS `)
