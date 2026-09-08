@@ -53,6 +53,7 @@ services:
     security_opt: ["no-new-privileges:true"]
   operations-runner:
     image: "@RUNNER_IMAGE@"
+    command: ["node", "./dist/operations-runner/entrypoint.js", "run"]
     restart: unless-stopped
     env_file: /etc/treeseed/components/api/environment
     environment:

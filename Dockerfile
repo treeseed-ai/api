@@ -23,6 +23,6 @@ FROM runtime AS api
 CMD ["npm", "run", "start:api"]
 
 FROM runtime AS operations-runner
-CMD ["npm", "run", "start:runner"]
+CMD ["node", "./dist/operations-runner/entrypoint.js", "run"]
 
 FROM postgres:16-bookworm AS database
