@@ -120,7 +120,9 @@ export async function loadDiscussions(input: {
 	const items = [...filesByPath.values()].map((file: unknown) => {
 		const row = file as Row; const path = text(row.path); const source = text(row.content);
 		assertDiscussionContent(path, source); const parsed = parseFrontmatterDocument(source);
-		return { id: path.split('/').at(-1)?.replace(/\.mdx?$/u, ''), path, frontmatter: parsed.frontmatter, body: parsed.body.trim() };
+		return { id: path.split('/').at(-1)?.replace(/\.mdx?$/u, ''), path,
+			immutableRef: latestUnpublishedByPath.get(path) ?? text((read as Row).resolvedRef, listed.resolvedRef),
+			frontmatter: parsed.frontmatter, body: parsed.body.trim() };
 	}).filter((item: Row) => !query || JSON.stringify(item).toLowerCase().includes(query));
 	const after = text(input.after);
 	const afterFiltered = items.filter((item: Row) => {
