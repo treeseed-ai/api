@@ -96,7 +96,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 				store.getKnowledgeWorkspace(publication.workspace_id), store.getKnowledgeReview(publication.review_id),
 			]);
 			const publicationStorage = createKnowledgePublicationStorage({ adapter: options.knowledgePublicationStorage,
-				environment });
+				environment, store });
 			if (publication.status === 'completed') {
 				if (!workspace || !review) throw new Error('Completed publication workflow records are missing.');
 				const current = await publicationStorage.readCurrent(workspace.teamId);

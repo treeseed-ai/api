@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { R2S3PublicationClient } from '../../api/providers/cloudflare/r2-s3-publication-client.ts';
+import type { R2PublicationClient } from '../../api/providers/cloudflare/r2-publication-client.ts';
 
 const sha256 = (value: Uint8Array | string) => createHash('sha256').update(value).digest('hex');
 export const TREE_DX_MIRROR_SCHEMA = 'treeseed.treedx-r2-file-mirror/v2';
@@ -69,16 +69,18 @@ async function mapConcurrent<T, R>(values: T[], concurrency: number, run: (value
 	})); return results;
 }
 
-async function previousManifest(client: R2S3PublicationClient, key: string) {
+async function previousManifest(client: R2PublicationClient, key: string) {
 	const object = await client.get(key); if (!object) return null;
 	try { const value = JSON.parse(object.body); return value?.schemaVersion === TREE_DX_MIRROR_SCHEMA ? value : null; } catch { return null; }
 }
 
-export async function mirrorTreeDxCommit(input: { client: R2S3PublicationClient; connection: any; teamId: string;
+export async function mirrorTreeDxCommit(input: { client: R2PublicationClient; connection: any; teamId: string;
 	projectId: string; projectSlug: string; repositoryId: string; commitSha: string; sourceRef: string }) {
 	const root = projectRoot(input.teamId, input.projectId), indexKey = manifestKey(input.teamId, input.projectId);
 	const prior = await previousManifest(input.client, indexKey);
-	const priorByPath = new Map<string, MirrorEntry>((Array.isArray(prior?.files) ? prior.files : []).map((entry: MirrorEntry) => [entry.path, entry]));
+	const owned = (Array.isArray(prior?.files) ? prior.files : []).filter((entry: MirrorEntry) =>
+		entry.objectKey === `${root}/${safePath(entry.path)}`);
+	const priorByPath = new Map<string, MirrorEntry>(owned.map((entry: MirrorEntry) => [entry.path, entry]));
 	const listed = await listBlobEntries(input.connection, input.sourceRef); let uploadedFiles = 0, unchangedFiles = 0;
 	const entries = await mapConcurrent(listed, 8, async (listedEntry): Promise<MirrorEntry> => {
 		const priorEntry = priorByPath.get(listedEntry.path);
@@ -101,7 +103,8 @@ export async function mirrorTreeDxCommit(input: { client: R2S3PublicationClient;
 			contentType: blob.contentType, treeDxObjectId: blob.objectId, treeDxContentHash: blob.contentHash };
 	});
 	const expectedKeys = new Set(entries.map((entry) => entry.objectKey));
-	const staleKeys = (await input.client.list(`${root}/`)).filter((key) => !expectedKeys.has(key));
+	// Never sweep the project prefix: AI artifacts and other services also own objects there.
+	const staleKeys = [...new Set<string>(owned.map((entry: MirrorEntry) => entry.objectKey))].filter(key => !expectedKeys.has(key));
 	await mapConcurrent(staleKeys, 8, (key) => input.client.delete(key));
 	const generatedAt = new Date().toISOString();
 	const manifest = { schemaVersion: TREE_DX_MIRROR_SCHEMA, team: { id: input.teamId }, project: { id: input.projectId, slug: input.projectSlug },
