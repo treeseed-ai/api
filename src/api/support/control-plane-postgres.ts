@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname,join,resolve } from 'node:path';
 import pg,{ type Pool,type PoolClient,type QueryResultRow } from 'pg';
 import { splitPostgresSqlStatements } from '../persistence/postgres-sql-statements.ts';
+import { verifyLiveMigrations } from './verify-live-migrations.ts';
 
 const { Pool: PgPool } = pg;
 const loggedPostgresPools = new WeakSet<Pool>();
@@ -296,17 +297,25 @@ export class ControlPlanePostgresDatabase {
 	}
 
 	async batch(statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
+		return this.transaction(async client => {
+			const results = [];
+			for (const statement of statements) {
+				const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
+				results.push({ success: true as const, results: result.rows ?? [], meta: { changes: result.rowCount ?? 0 } });
+			}
+			return results;
+		});
+	}
+
+	/** One connection and transaction for authority checks, locks, and writes. */
+	async transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> {
 		await this.migrate();
 		const client = await this.pool.connect();
 		try {
 			await client.query('BEGIN');
-			const results = [];
-			for (const statement of statements) {
-				const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
-				results.push({ success: true, results: result.rows ?? [], meta: {} });
-			}
+			const result = await run(client);
 			await client.query('COMMIT');
-			return results;
+			return result;
 		} catch (error) {
 			await client.query('ROLLBACK');
 			throw error;
@@ -324,7 +333,9 @@ export class ControlPlanePostgresDatabase {
 
 	async migrate(): Promise<void> {
 		if (!this.migrationPromise) {
-			this.migrationPromise = this.applyDrizzleMigrations();
+			this.migrationPromise = process.env.TREESEED_DEVELOPMENT_MODE === 'live'
+				? verifyLiveMigrations(this.pool, this.migrationRoot ?? resolveControlPlaneMigrationRoot())
+				: this.applyDrizzleMigrations();
 		}
 		return this.migrationPromise;
 	}
