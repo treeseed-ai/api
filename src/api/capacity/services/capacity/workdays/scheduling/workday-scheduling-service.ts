@@ -29,7 +29,7 @@ export interface WorkdayScheduleStore extends CapacityGovernanceDatabase {
 	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
 	getCapacityAllocationSet(teamId: string, allocationSetId: string): Promise<CapacityAllocationSetV2 | null>;
 	getActiveCapacityAllocationSet(teamId: string): Promise<CapacityAllocationSetV2 | null>;
-	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown; contentRepositoryRef?: unknown } | null>;
+	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown; contentRepositoryRef?: unknown; metadata?: unknown } | null>;
 	createWorkdayCapacityEnvelope(input: CreateWorkdayCapacityEnvelopeInput, idempotencyKey?: string): Promise<DurableWorkdayCapacityEnvelope | null>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<DurableCapacityWorkdayRun | null>;
@@ -89,6 +89,13 @@ async function recordRequiredEvent(
 	}
 }
 
+export function acceptedLibraryRevision(library: { metadata?: unknown; contentRepositoryRef?: unknown }, projectId: string): string {
+	const immutableRef = text(record(library.metadata).resolvedRef, library.contentRepositoryRef);
+	if (!/^[a-f0-9]{40}$/u.test(immutableRef)) throw new CapacityGovernanceError('capacity_workday_library_revision_unresolved',
+		'Project library must be reconciled to an exact commit before scheduling.', 409, { projectId });
+	return immutableRef;
+}
+
 async function resolveCapacityWorkdayPreflight(
 	store: WorkdayScheduleStore,
 	run: DurableCapacityWorkdayRun,
@@ -146,7 +153,8 @@ async function resolveCapacityWorkdayPreflight(
 			);
 		}
 		const contentRoot = text(library?.contentPath).replace(/^\/+|\/+$/gu, '');
-		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef: text(library?.contentRepositoryRef, repositoryId) });
+		const immutableRef = acceptedLibraryRevision(library ?? {}, project.id);
+		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef });
 		const planningGraph=await resolveWorkdayPlanningGraphSnapshot(store, project.id, parameters.agentSelection);
 		const contextRefs=[...new Map(planningGraph.agents.flatMap((agent)=>[
 			...agent.contextQueryRefs.map((reference)=>({kind:'query' as const,...reference})),

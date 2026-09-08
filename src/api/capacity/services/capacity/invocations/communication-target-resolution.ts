@@ -27,6 +27,7 @@ function text(value: unknown, fallback = '') { return typeof value === 'string' 
 function projectAgents(agentClasses: unknown[]) {
 	return agentClasses.flatMap((candidate) => {
 		const value = record(candidate);
+		if (value.status && value.status !== 'active') return [];
 		const handlers = record(value.handlerRefs ?? value.handler_refs_json);
 		return Array.isArray(handlers.agents) ? handlers.agents.map(record) : [];
 	}).filter((agent) => {
