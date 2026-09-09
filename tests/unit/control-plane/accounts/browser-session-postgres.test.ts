@@ -4,7 +4,8 @@ import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { EncryptedEnvelopeCodec, StaticEnvelopeKeyProvider } from '@treeseed/sdk/security';
 import { AUTH_SCHEMA_SQL } from '../../../../src/api/auth/postgres-store.ts';
-import { BrowserSessionStore } from '../../../../src/api/auth/browser-session-store.ts';
+import { BrowserSessionStore } from '../../../../src/api/auth/browser/session-store.ts';
+import { BrowserLoginStore } from '../../../../src/api/auth/browser/login-store.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe.skipIf(!url)('encrypted browser sessions in real PostgreSQL', () => {
@@ -21,6 +22,7 @@ describe.skipIf(!url)('encrypted browser sessions in real PostgreSQL', () => {
       await pool.query("INSERT INTO users(id,status,created_at,updated_at) VALUES ('preserved','active','now','now')");
       await pool.query("INSERT INTO user_identities(id,user_id,provider,provider_subject,created_at,updated_at) VALUES ('mapping','preserved','https://id.example.test','subject','now','now')");
       await pool.query(readFileSync('drizzle/control-plane/0019_identity_browser_sessions.sql', 'utf8'));
+      await pool.query(readFileSync('drizzle/control-plane/0021_identity_login_transactions.sql', 'utf8'));
       const database = { transaction: async <T>(run: (client: pg.PoolClient) => Promise<T>) => {
         const client = await pool!.connect();
         try { await client.query('BEGIN'); const result = await run(client); await client.query('COMMIT'); return result; }
@@ -28,6 +30,22 @@ describe.skipIf(!url)('encrypted browser sessions in real PostgreSQL', () => {
         finally { client.release(); }
       } };
       const codec = new EncryptedEnvelopeCodec(new StaticEnvelopeKeyProvider('systemd-credential', { id: 'browser-session', version: 1, key: randomBytes(32) }));
+      const login = new BrowserLoginStore(database, codec, 'admin'), otherLogin = new BrowserLoginStore(database, codec, 'market');
+      const handle = () => randomBytes(32).toString('base64url');
+      const binding = handle(), transaction = { state: handle(), nonce: handle(), verifier: handle(), expiresAt: Date.now() + 60000,
+        issuer: 'https://id.example.test', clientId: 'admin', redirectUri: 'https://admin.example.test/callback', resource: 'https://api.example.test', scopes: ['treeseed:read'] };
+      await expect(otherLogin.put(binding, transaction)).rejects.toThrow();
+      await login.put(binding, transaction);
+      const loginRows = JSON.stringify((await pool.query('SELECT * FROM identity_login_transactions')).rows);
+      for (const value of [binding, transaction.state, transaction.nonce, transaction.verifier]) expect(loginRows).not.toContain(value);
+      expect(await otherLogin.consume(binding, transaction.state)).toBeNull();
+      expect(await login.consume(handle(), transaction.state)).toBeNull();
+      const consumed = await Promise.all([1, 2].map(() => login.consume(binding, transaction.state)));
+      expect(consumed.filter(Boolean)).toEqual([transaction]);
+      await login.put(binding, transaction);
+      await pool.query("UPDATE identity_login_transactions SET expires_at=expires_at+interval '1 minute'");
+      await expect(login.consume(binding, transaction.state)).rejects.toThrow();
+      expect(await login.consume(binding, transaction.state)).toBeNull();
       const app = new BrowserSessionStore(database, codec, 'admin');
       const other = new BrowserSessionStore(database, codec, 'market');
       const input = { issuer: 'https://id.example.test', subject: 'subject', userId: 'preserved', expiresAt: new Date(Date.now() + 60000),
@@ -44,6 +62,12 @@ describe.skipIf(!url)('encrypted browser sessions in real PostgreSQL', () => {
         return { result: true, tokens: { ...tokens, refreshToken: `synthetic-refresh-${seen.length}` } };
       })));
       expect(seen).toEqual(['synthetic-refresh-0', 'synthetic-refresh-1']);
+      const logout = await app.create(input);
+      expect(await app.use(logout.handle, async (_tokens, identity) => {
+        expect(identity).toEqual({ issuer: input.issuer, subject: input.subject, userId: input.userId });
+        return { result: 'removed-under-lock', remove: true };
+      })).toBe('removed-under-lock');
+      expect(await app.use(logout.handle, async () => { throw new Error('Logged out session must not refresh'); })).toBeNull();
       await pool.query("UPDATE identity_browser_sessions SET expires_at=expires_at+interval '1 minute'");
       await expect(app.use(session.handle, async () => ({ result: true }))).rejects.toThrow('sign in again');
       await app.remove(session.handle);

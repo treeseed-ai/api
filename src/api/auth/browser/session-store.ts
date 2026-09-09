@@ -23,7 +23,7 @@ const handleHash = (value: string) => {
  */
 export class BrowserSessionStore {
   constructor(private readonly database: SessionDatabase, private readonly codec: EncryptedEnvelopeCodec,
-    private readonly clientId: string) {
+    readonly clientId: string) {
     if (!clientId || clientId.length > 256) throw new Error('Registered BFF client required');
   }
 
@@ -50,7 +50,7 @@ export class BrowserSessionStore {
    * Identity client's bounded network request; no tokens reach browser output.
    * A timeout/ambiguous exchange requires sign-in again, not a parallel retry.
    */
-  async use<T>(handle: string, run: (tokens: BrowserSessionTokens) => Promise<{ result: T; tokens?: BrowserSessionTokens }>): Promise<T | null> {
+  async use<T>(handle: string, run: (tokens: BrowserSessionTokens, identity: { issuer: string; subject: string; userId: string }) => Promise<{ result: T; tokens?: BrowserSessionTokens; remove?: boolean }>): Promise<T | null> {
     const hash = handleHash(handle);
     let exchangeStarted = false;
     try { return await this.database.transaction(async client => {
@@ -69,8 +69,11 @@ export class BrowserSessionStore {
       }
       const tokens = tokensSchema.parse(JSON.parse(this.codec.decrypt(envelope).toString('utf8')));
       exchangeStarted = true;
-      const next = await run(tokens);
-      if (next.tokens) {
+      const next = await run(tokens, { issuer: binding.issuer, subject: binding.subject, userId: binding.userId });
+      if (next.remove && next.tokens) throw new Error('Cannot replace a removed browser session');
+      if (next.remove) {
+        await client.query('DELETE FROM identity_browser_sessions WHERE session_hash=$1 AND client_id=$2', [hash, this.clientId]);
+      } else if (next.tokens) {
         if (next.tokens.resource !== tokens.resource) throw new Error('Browser session resource cannot change');
         const version = Number(row.version) + 1;
         const encrypted = this.codec.encrypt(JSON.stringify(tokensSchema.parse(next.tokens)), this.aad(binding, version));
