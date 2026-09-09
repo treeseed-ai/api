@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import { planIdentityWorkloads, type IdentityWorkloadRegistration } from './identity-workload-plan.ts';
+import { planIdentityWorkloads, type IdentityWorkloadRegistration } from './workload-plan.ts';
 
 interface Database { transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> }
 /** Privileged migration only, not a public registration endpoint. The caller

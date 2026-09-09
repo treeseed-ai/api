@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { AUTH_SCHEMA_SQL } from '../../../../../src/api/auth/postgres-store.ts';
-import { planIdentityWorkloads } from '../../../../../src/api/auth/identity-workload-plan.ts';
-import { applyIdentityWorkloads } from '../../../../../src/api/auth/identity-workload-transaction.ts';
+import { planIdentityWorkloads } from '../../../../../src/api/auth/identity/workload-plan.ts';
+import { applyIdentityWorkloads } from '../../../../../src/api/auth/identity/workload-transaction.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe.skipIf(!url)('transactional workload registration in disposable PostgreSQL', () => {

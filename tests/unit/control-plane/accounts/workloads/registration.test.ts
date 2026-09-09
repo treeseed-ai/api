@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planIdentityWorkloads } from '../../../../../src/api/auth/identity-workload-plan.ts';
+import { planIdentityWorkloads } from '../../../../../src/api/auth/identity/workload-plan.ts';
 
 const value = { id: 'preserved-service', issuer: 'https://identity.example.test/realms/local', subject: 'verified-subject',
   clientId: 'admin-bff', displayName: 'Admin', permissions: ['auth:read:self'], scopes: ['treeseed:read'] };
