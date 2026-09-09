@@ -12,7 +12,7 @@ function fixture() {
 		principalCanAccessTeam: vi.fn(async () => true), getTeamAccessSummary: vi.fn(async () => ({ permissions: ['knowledge:publish', 'knowledge:review'] })),
 		listKnowledgeReviews: vi.fn(async () => [review]), listKnowledgeReviewComments: vi.fn(async () => []), listKnowledgeWorkspacePresence: vi.fn(async () => []),
 	};
-	const connection = { client: { diff: vi.fn(async () => ({ changedPaths: review.changedPaths })), status: vi.fn(async () => ({ commitSha: review.commitSha, changes: [] as unknown[] })) } };
+	const connection = { client: { diff: vi.fn(async () => ({ changedPaths: review.changedPaths })), status: vi.fn(async () => ({ status: 'committed', commitSha: review.commitSha, changes: [] as unknown[] })) } };
 	return { review, workspace, store, connection };
 }
 
@@ -27,13 +27,20 @@ describe('staging library admission', () => {
 		await admitStagingPublication(f.store, f.connection, f.review, f.workspace, 'author', 11);
 		expect(f.store.decideKnowledgeReview).toHaveBeenCalledWith('review', expect.objectContaining({ decidedByUserId: 'author', workspaceVersion: 11 }));
 	});
-	it.each(['version', 'commit', 'paths', 'dirty', 'rejected'])('rejects changed or unavailable revision: %s', async (kind) => {
+	it.each(['version', 'commit', 'paths', 'dirty', 'ready', 'expired', 'rejected'])('rejects changed or unavailable revision: %s', async (kind) => {
 		const f = fixture();
-		if (kind === 'commit') f.connection.client.status.mockResolvedValue({ commitSha: 'moved', changes: [] });
+		if (kind === 'commit') f.connection.client.status.mockResolvedValue({ status: 'committed', commitSha: 'moved', changes: [] });
 		if (kind === 'paths') f.connection.client.diff.mockResolvedValue({ changedPaths: ['books/other.md'] });
-		if (kind === 'dirty') f.connection.client.status.mockResolvedValue({ commitSha: 'exact-commit', changes: [{}] });
+		if (kind === 'dirty') f.connection.client.status.mockResolvedValue({ status: 'committed', commitSha: 'exact-commit', changes: [{ path: 'books/unreviewed.md' }] });
+		if (kind === 'ready' || kind === 'expired') f.connection.client.status.mockResolvedValue({ status: kind, commitSha: 'exact-commit', changes: [] });
 		if (kind === 'rejected') f.review.status = 'changes-requested';
 		await expect(admitStagingPublication(f.store, f.connection, f.review, f.workspace, 'author', kind === 'version' ? 10 : 11)).rejects.toBeDefined();
+		expect(f.store.decideKnowledgeReview).not.toHaveBeenCalled();
+	});
+	it('admits exact retained overlays from an immutable committed TreeDX workspace', async () => {
+		const f = fixture(); f.review.status = f.workspace.status = 'approved';
+		f.connection.client.status.mockResolvedValue({ status: 'committed', commitSha: 'exact-commit', changes: [{ path: 'books/guide.md', status: 'added' }] });
+		await admitStagingPublication(f.store, f.connection, f.review, f.workspace, 'author', 11);
 		expect(f.store.decideKnowledgeReview).not.toHaveBeenCalled();
 	});
 	it('does not decide an already admitted revision twice', async () => {

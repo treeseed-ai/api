@@ -13,8 +13,12 @@ export async function admitStagingPublication(store: any, connection: any, revie
 		connection.client.status({ workspaceId: workspace.treeDxWorkspaceId }),
 	]);
 	const paths = (value: unknown) => Array.isArray(value) ? [...value].map(String).sort().join('\n') : '';
+	// TreeDX retains committed overlays for diff/read-back. They are not a Git
+	// dirty worktree: committed workspaces reject writes and release the lease.
+	const retained = status.changes;
 	if (!paths(review.changedPaths) || paths(review.changedPaths) !== paths(diff.changedPaths)
-		|| status.commitSha !== review.commitSha || (status.changes ?? []).length > 0) {
+		|| status.status !== 'committed' || status.commitSha !== review.commitSha
+		|| !Array.isArray(retained) || retained.length > 0 && paths(retained.map((item: any) => item?.path)) !== paths(review.changedPaths)) {
 		throw new KnowledgeOperationError(409, 'knowledge_review_diff_changed', 'The workspace no longer matches its submitted commit.');
 	}
 	if (review.status === 'approved') return;
