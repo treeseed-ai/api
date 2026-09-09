@@ -57,6 +57,7 @@ export class BrowserSessionStore {
       await client.query("SET LOCAL lock_timeout='5s'; SET LOCAL idle_in_transaction_session_timeout='15s'");
       const found = await client.query(`SELECT s.* FROM identity_browser_sessions s JOIN users u ON u.id=s.user_id
         WHERE s.session_hash=$1 AND s.client_id=$2 AND s.expires_at>CURRENT_TIMESTAMP AND u.status='active'
+        AND EXISTS (SELECT 1 FROM user_identities i WHERE i.user_id=u.id AND i.provider=s.issuer AND i.provider_subject=s.subject)
         FOR UPDATE OF s`, [hash, this.clientId]);
       const row = found.rows[0]; if (!row) return null;
       const binding = { clientId: this.clientId, issuer: String(row.issuer), subject: String(row.subject), userId: String(row.user_id), hash, expiresAt: new Date(row.expires_at).toISOString() };
