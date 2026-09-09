@@ -53,6 +53,10 @@ describe.skipIf(!url)('encrypted browser sessions in real PostgreSQL', () => {
       const disabled = await app.create(input);
       await pool.query("UPDATE users SET status='disabled'");
       expect(await app.use(disabled.handle, async () => ({ result: true }))).toBeNull();
+      await pool.query("UPDATE users SET status='active'");
+      const unlinked = await app.create(input);
+      await pool.query("DELETE FROM user_identities WHERE id='mapping'");
+      expect(await app.use(unlinked.handle, async () => { throw new Error('Unlinked identity must never receive tokens'); })).toBeNull();
     } finally {
       await pool?.end();
       if (created) await admin.query(`DROP DATABASE "${name}"`);
