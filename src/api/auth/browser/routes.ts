@@ -2,6 +2,7 @@ import type { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { BROWSER_SESSION_BRIDGE_PATH, browserSessionRequests as schemas, browserSessionResponses } from '@treeseed/sdk/identity';
 import type { BrowserCaller, createBrowserIdentityService } from './service.ts';
+import { BrowserSessionInvalidError } from './session-store.ts';
 
 type Service = Awaited<ReturnType<typeof createBrowserIdentityService>>;
 
@@ -42,6 +43,9 @@ export function installIdentityBrowserRoutes(app: Hono, options: {
       else result = await service!.logout(caller, schemas.logout.parse(body).handle);
       if (result === null) return c.json({ error: 'browser_session_unavailable' }, 401);
       return c.json({ data: browserSessionResponses[operation as keyof typeof browserSessionResponses].parse(result) });
-    } catch { return c.json({ error: 'browser_session_operation_failed' }, 400); }
+    } catch (error) {
+      if (error instanceof BrowserSessionInvalidError) return c.json({ error: 'browser_session_unavailable' }, 401);
+      return c.json({ error: 'browser_session_operation_failed' }, 400);
+    }
   });
 }

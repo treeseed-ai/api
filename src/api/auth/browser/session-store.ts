@@ -10,6 +10,9 @@ const tokensSchema = z.object({
 }).strict();
 export type BrowserSessionTokens = z.infer<typeof tokensSchema>;
 interface SessionDatabase { transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> }
+export class BrowserSessionInvalidError extends Error {
+  constructor() { super('Browser session unavailable; sign in again'); this.name = 'BrowserSessionInvalidError'; }
+}
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const handleHash = (value: string) => {
   if (!/^[A-Za-z0-9_-]{43}$/u.test(value)) throw new Error('Invalid browser session handle');
@@ -52,7 +55,7 @@ export class BrowserSessionStore {
    */
   async use<T>(handle: string, run: (tokens: BrowserSessionTokens, identity: { issuer: string; subject: string; userId: string }) => Promise<{ result: T; tokens?: BrowserSessionTokens; remove?: boolean }>): Promise<T | null> {
     const hash = handleHash(handle);
-    let exchangeStarted = false;
+    let recordFound = false;
     try { return await this.database.transaction(async client => {
       await client.query("SET LOCAL lock_timeout='5s'; SET LOCAL idle_in_transaction_session_timeout='15s'");
       const found = await client.query(`SELECT s.* FROM identity_browser_sessions s JOIN users u ON u.id=s.user_id
@@ -60,6 +63,7 @@ export class BrowserSessionStore {
         AND EXISTS (SELECT 1 FROM user_identities i WHERE i.user_id=u.id AND i.provider=s.issuer AND i.provider_subject=s.subject)
         FOR UPDATE OF s`, [hash, this.clientId]);
       const row = found.rows[0]; if (!row) return null;
+      recordFound = true;
       const binding = { clientId: this.clientId, issuer: String(row.issuer), subject: String(row.subject), userId: String(row.user_id), hash, expiresAt: new Date(row.expires_at).toISOString() };
       const envelope = encryptedEnvelopeSchema.parse(row.envelope);
       const aad = this.aad(binding, Number(row.version));
@@ -68,7 +72,6 @@ export class BrowserSessionStore {
         if (Object.keys(envelope.aad).length !== Object.keys(aad).length || Object.entries(aad).some(([key, value]) => (envelope.aad as Record<string, unknown>)[key] !== value)) throw new Error('Browser session envelope binding mismatch');
       }
       const tokens = tokensSchema.parse(JSON.parse(this.codec.decrypt(envelope).toString('utf8')));
-      exchangeStarted = true;
       const next = await run(tokens, { issuer: binding.issuer, subject: binding.subject, userId: binding.userId });
       if (next.remove && next.tokens) throw new Error('Cannot replace a removed browser session');
       if (next.remove) {
@@ -82,8 +85,11 @@ export class BrowserSessionStore {
       }
       return next.result;
     }); } catch {
-      if (exchangeStarted) await this.remove(handle);
-      throw new Error('Browser session unavailable; sign in again');
+      if (recordFound) {
+        await this.remove(handle);
+        throw new BrowserSessionInvalidError();
+      }
+      throw new Error('Browser session storage is unavailable');
     }
   }
 

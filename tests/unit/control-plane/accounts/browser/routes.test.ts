@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import { installIdentityBrowserRoutes } from '../../../../../src/api/auth/browser/routes.ts';
 import type { BrowserCaller, createBrowserIdentityService } from '../../../../../src/api/auth/browser/service.ts';
+import { BrowserSessionInvalidError } from '../../../../../src/api/auth/browser/session-store.ts';
 
 describe('server-only Identity browser bridge', () => {
   function setup() {
@@ -49,5 +50,11 @@ describe('server-only Identity browser bridge', () => {
     expect((await f.request({ handle: 'h'.repeat(43) })).status).toBe(403);
     expect((await f.request({ handle: 'x'.repeat(17000) })).status).toBe(413);
     expect(f.service.credentials).not.toHaveBeenCalled();
+  });
+  it('returns the canonical signed-out result after an invalid session is removed', async () => {
+    const f = setup(); f.service.credentials.mockRejectedValue(new BrowserSessionInvalidError());
+    const response = await f.request({ handle: 'h'.repeat(43) });
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'browser_session_unavailable' });
   });
 });
