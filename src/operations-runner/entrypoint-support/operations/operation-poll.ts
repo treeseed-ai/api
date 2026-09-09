@@ -22,10 +22,8 @@ export async function runOnceWithClient(config, client, version, options: any = 
         leaseSeconds: 300,
     });
     console.log(JSON.stringify(result));
-    if (!result.ok) {
-        process.exitCode = 1;
-        return result;
-    }
+    // An operation failure is not a process failure. The continuous runner must
+    // still be able to drain cleanly after recording a failed operation.
     return result;
 }
 
@@ -37,6 +35,8 @@ export async function runOnce(options: any = {}) {
     try {
 		const operationRunnerId = options.operationRunnerId ?? `${config.runnerId}:process:${process.pid}:${randomUUID()}`;
 		const result = await runOnceWithClient(config, client, version, { ...options, controlPlaneStore, operationRunnerId });
+        // Only the one-shot command communicates its result through exit status.
+        if (!result.ok) process.exitCode = 1;
         if (controlPlaneStore) {
             const maintenance = new CapacityWorkdayMaintenanceScheduler(controlPlaneStore, config.capacityWorkdayMaintenanceIntervalMs);
             await maintenance.runIfDue();
