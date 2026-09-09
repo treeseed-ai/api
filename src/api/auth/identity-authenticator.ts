@@ -1,28 +1,50 @@
 import { createAccessTokenVerifier, IdentityAuthenticationError, type AccessTokenVerifierOptions } from '@treeseed/identity';
-import type { PostgresAuthStore, PrincipalRecord } from './postgres-store.ts';
+import { z } from 'zod';
+import type { ApiCredential, ApiPrincipal } from '../types.ts';
+import type { PostgresAuthStore } from './postgres-store.ts';
 
 type IdentityStore = Pick<PostgresAuthStore, 'first' | 'principalForUser'>;
 
-/** Replacement auth adapter. Not installed into live middleware until coordinated migration. */
+const workloadSchema = z.object({ id: z.string().min(1), client_id: z.string().min(1), display_name: z.string(),
+  status: z.literal('active'), permissions: z.array(z.string().min(1)), scopes: z.array(z.string().min(1)) });
+type Workload = z.infer<typeof workloadSchema>;
+
+/** One human/workload identity boundary. Not installed into live middleware
+ * until coordinated migration. The API, never the issuer's roles, owns grants. */
 export function createIdentityAuthenticator(options: Pick<AccessTokenVerifierOptions, 'issuer' | 'audience' | 'verificationKey'> & { store: IdentityStore }) {
   const { store } = options;
-  // This path deliberately never calls syncUser: email, username and token roles grant nothing.
-  const verify = createAccessTokenVerifier({ ...options, profile: 'keycloak', resolvePrincipal: async identity => {
-    const mapping = await store.first<{ user_id: string }>(
-      `SELECT identities.user_id FROM user_identities identities
-       JOIN users ON users.id = identities.user_id
-       WHERE identities.provider = ? AND identities.provider_subject = ? AND users.status = 'active'`,
-      [identity.issuer, identity.subject]);
-    return mapping ? { principalId: mapping.user_id, kind: 'human' } : null;
-  } });
-  return async (token: string): Promise<PrincipalRecord> => {
+  return async (token: string): Promise<{ userId?: string; principal: ApiPrincipal; credential: ApiCredential }> => {
+    // Registration state belongs to this request only, never a shared mutable
+    // resolver/cache. An inactive human mapping still prevents workload reuse.
+    let workload: Workload | undefined;
+    const verify = createAccessTokenVerifier({ ...options, profile: 'keycloak', resolvePrincipal: async identity => {
+      const [human, service] = await Promise.all([
+        store.first<{ user_id: string; status: string }>(
+          `SELECT identities.user_id, users.status FROM user_identities identities
+           JOIN users ON users.id = identities.user_id
+           WHERE identities.provider = ? AND identities.provider_subject = ?`, [identity.issuer, identity.subject]),
+        store.first<Workload>('SELECT id, client_id, display_name, status, permissions, scopes FROM identity_workloads WHERE issuer = ? AND subject = ?', [identity.issuer, identity.subject]),
+      ]);
+      if (human && service) throw new IdentityAuthenticationError();
+      if (human?.status === 'active') return { principalId: human.user_id, kind: 'human' };
+      if (!service) return null;
+      workload = workloadSchema.parse(service);
+      return { principalId: workload.id, kind: 'service', clientId: workload.client_id };
+    } });
     const authenticated = await verify(token);
+    if (authenticated.kind === 'service' && workload) {
+      return { principal: { id: workload.id, displayName: workload.display_name, roles: [],
+        permissions: [...workload.permissions], scopes: workload.scopes.filter(scope => authenticated.scopes.includes(scope)),
+        metadata: { serviceId: workload.id, identity: authenticated.identity, clientId: workload.client_id } },
+        credential: { type: 'service_token', id: workload.id, label: workload.display_name } };
+    }
     // Recheck active status before loading database-owned authorization.
     const active = await store.first<{ id: string }>(`SELECT id FROM users WHERE id = ? AND status = 'active'`, [authenticated.principalId]);
     if (!active) throw new IdentityAuthenticationError();
     const principal = await store.principalForUser(authenticated.principalId);
     // OAuth scope restricts, never expands, locally authorized scopes.
     return { ...principal, principal: { ...principal.principal,
-      scopes: principal.principal.scopes.filter(scope => authenticated.scopes.includes(scope)) } };
+      scopes: principal.principal.scopes.filter(scope => authenticated.scopes.includes(scope)) },
+      credential: { type: 'access_token', id: authenticated.principalId } };
   };
 }

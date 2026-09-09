@@ -6,7 +6,7 @@ describe('external identity mapping', () => {
   async function setup({ mapped = true, active = true } = {}) {
     const keys = await generateKeyPair('RS256');
     const principal = { userId: 'preserved-user', principal: { id: 'preserved-user', roles: ['reader'], permissions: ['project:read'], scopes: ['read', 'write'], metadata: {} } };
-    const first = vi.fn(async (sql: string, _params: unknown[]) => sql.includes('user_identities') ? mapped ? { user_id: principal.userId } : null : active ? { id: principal.userId } : null);
+    const first = vi.fn(async (sql: string, _params: unknown[]) => sql.includes('identity_workloads') ? null : sql.includes('user_identities') ? mapped ? { user_id: principal.userId, status: 'active' } : null : active ? { id: principal.userId } : null);
     const principalForUser = vi.fn(async () => principal);
     const authenticate = createIdentityAuthenticator({ issuer: 'https://identity.example.test', audience: 'https://api.example.test', verificationKey: keys.publicKey, store: { first, principalForUser } as any });
     const token = (issuer = 'https://identity.example.test', audience = 'https://api.example.test') => new SignJWT({ typ: 'Bearer', scope: 'read admin', email: 'owner@example.test', roles: ['owner'] })
@@ -23,7 +23,7 @@ describe('external identity mapping', () => {
   });
   it('never falls back to matching email for an unmapped identity', async () => {
     const f = await setup({ mapped: false }); await expect(f.authenticate(await f.token())).rejects.toMatchObject({ code: 'identity_authentication_failed' });
-    expect(f.first).toHaveBeenCalledTimes(1); expect(f.principalForUser).not.toHaveBeenCalled();
+    expect(f.first).toHaveBeenCalledTimes(2); expect(f.principalForUser).not.toHaveBeenCalled();
     expect(f.first.mock.calls[0][0]).not.toMatch(/email|username/);
   });
   it('denies a disabled local user before authorization lookup', async () => {
