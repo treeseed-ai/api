@@ -1,9 +1,7 @@
 import { createAccessTokenVerifier, IdentityAuthenticationError, type AccessTokenVerifierOptions } from '@treeseed/identity';
 import { z } from 'zod';
 import type { ApiCredential, ApiPrincipal } from '../types.ts';
-import type { PostgresAuthStore } from './postgres-store.ts';
-
-type IdentityStore = Pick<PostgresAuthStore, 'first' | 'principalForUser'>;
+import type { IdentityPrincipalStore } from './identity/principal-store.ts';
 
 const workloadSchema = z.object({ id: z.string().min(1), client_id: z.string().min(1), display_name: z.string(),
   status: z.literal('active'), permissions: z.array(z.string().min(1)), scopes: z.array(z.string().min(1)) });
@@ -11,7 +9,7 @@ type Workload = z.infer<typeof workloadSchema>;
 
 /** One human/workload identity boundary. Not installed into live middleware
  * until coordinated migration. The API, never the issuer's roles, owns grants. */
-export function createIdentityAuthenticator(options: Pick<AccessTokenVerifierOptions, 'issuer' | 'audience' | 'verificationKey'> & { store: IdentityStore }) {
+export function createIdentityAuthenticator(options: Pick<AccessTokenVerifierOptions, 'issuer' | 'audience' | 'verificationKey'> & { store: IdentityPrincipalStore }) {
   const { store } = options;
   return async (token: string): Promise<{ userId?: string; principal: ApiPrincipal; credential: ApiCredential }> => {
     // Registration state belongs to this request only, never a shared mutable

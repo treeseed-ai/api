@@ -1,4 +1,4 @@
-import { generateKeyPair } from 'jose';
+import { exportPKCS8, generateKeyPair, importPKCS8 } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
 import { EncryptedEnvelopeCodec, StaticEnvelopeKeyProvider } from '@treeseed/sdk/security';
 import { randomBytes } from 'node:crypto';
@@ -22,6 +22,17 @@ async function setup() {
   };
 }
 describe('API Identity runtime composition', () => {
+  it('rejects separately imported copies of one private key before discovery', async () => {
+    const options = await setup();
+    const shared = (await generateKeyPair('RS256', { extractable: true })).privateKey;
+    options.applications[0].privateKey = shared as CryptoKey;
+    const copy = await importPKCS8(await exportPKCS8(shared), 'RS256');
+    expect(copy).not.toBe(shared);
+    options.applications.push({ ...options.applications[0], clientId: 'market-browser', workloadPrincipalId: 'market-bff',
+      redirectUri: 'https://market.test/auth/callback', privateKey: copy as CryptoKey });
+    await expect(createApiIdentityRuntime(options)).rejects.toThrow('Independent usable application signing keys required');
+    expect(options.transport).not.toHaveBeenCalled(); expect(options.database.transaction).not.toHaveBeenCalled();
+  });
   it('composes opaque stores and publishes exact resource metadata without enrolling users', async () => {
     const options = await setup(), runtime = await createApiIdentityRuntime(options);
     expect([...runtime.services.keys()]).toEqual(['admin-bff']);
