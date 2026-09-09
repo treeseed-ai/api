@@ -99,7 +99,7 @@ jobs:
       - name: Verify transactional identity mapping in PostgreSQL
         env:
           TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
-        run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/identity-mapping-postgres.test.ts tests/unit/control-plane/accounts/browser-session-postgres.test.ts tests/unit/control-plane/accounts/restricted-runtime-postgres.test.ts tests/unit/control-plane/accounts/identity/principal-store-postgres.test.ts
+        run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/identity-mapping-postgres.test.ts tests/unit/control-plane/accounts/browser-session-postgres.test.ts tests/unit/control-plane/accounts/restricted-runtime-postgres.test.ts tests/unit/control-plane/accounts/identity/principal-store-postgres.test.ts tests/unit/control-plane/accounts/workloads
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
       - uses: actions/upload-artifact@v4
