@@ -1,5 +1,6 @@
 import { createAccessTokenVerifier, IdentityAuthenticationError, type AccessTokenVerifierOptions } from '@treeseed/identity';
 import { z } from 'zod';
+import { decodeJwt } from 'jose';
 import type { ApiCredential, ApiPrincipal } from '../types.ts';
 import type { IdentityPrincipalStore } from './identity/principal-store.ts';
 
@@ -11,7 +12,8 @@ type Workload = z.infer<typeof workloadSchema>;
  * until coordinated migration. The API, never the issuer's roles, owns grants. */
 export function createIdentityAuthenticator(options: Pick<AccessTokenVerifierOptions, 'issuer' | 'audience' | 'verificationKey'> & { store: IdentityPrincipalStore }) {
   const { store } = options;
-  return async (token: string): Promise<{ userId?: string; principal: ApiPrincipal; credential: ApiCredential }> => {
+  return async (token: string): Promise<{ userId?: string; principal: ApiPrincipal;
+    credential: ApiCredential & { oauthClientId: string; expiresAt: number } }> => {
     // Registration state belongs to this request only, never a shared mutable
     // resolver/cache. An inactive human mapping still prevents workload reuse.
     let workload: Workload | undefined;
@@ -30,11 +32,17 @@ export function createIdentityAuthenticator(options: Pick<AccessTokenVerifierOpt
       return { principalId: workload.id, kind: 'service', clientId: workload.client_id };
     } });
     const authenticated = await verify(token);
+    // Read only after signature/issuer/audience validation. Keep transport
+    // authority separate from local user metadata and credential identifiers.
+    const claims = decodeJwt(token);
+    if (typeof claims.azp !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(claims.azp)
+      || !Number.isSafeInteger(claims.exp) || claims.exp! <= Math.floor(Date.now() / 1000)) throw new IdentityAuthenticationError();
+    const transport = { oauthClientId: claims.azp, expiresAt: claims.exp! };
     if (authenticated.kind === 'service' && workload) {
       return { principal: { id: workload.id, displayName: workload.display_name, roles: [],
         permissions: [...workload.permissions], scopes: workload.scopes.filter(scope => authenticated.scopes.includes(scope)),
         metadata: { serviceId: workload.id, identity: authenticated.identity, clientId: workload.client_id } },
-        credential: { type: 'service_token', id: workload.id, label: workload.display_name } };
+        credential: { type: 'service_token', id: workload.id, label: workload.display_name, ...transport } };
     }
     // Recheck active status before loading database-owned authorization.
     const active = await store.first<{ id: string }>(`SELECT id FROM users WHERE id = ? AND status = 'active'`, [authenticated.principalId]);
@@ -43,6 +51,6 @@ export function createIdentityAuthenticator(options: Pick<AccessTokenVerifierOpt
     // OAuth scope restricts, never expands, locally authorized scopes.
     return { ...principal, principal: { ...principal.principal,
       scopes: principal.principal.scopes.filter(scope => authenticated.scopes.includes(scope)) },
-      credential: { type: 'access_token', id: authenticated.principalId } };
+      credential: { type: 'access_token', id: authenticated.principalId, ...transport } };
   };
 }

@@ -9,7 +9,7 @@ describe('external identity mapping', () => {
     const first = vi.fn(async (sql: string, _params: unknown[]) => sql.includes('identity_workloads') ? null : sql.includes('user_identities') ? mapped ? { user_id: principal.userId, status: 'active' } : null : active ? { id: principal.userId } : null);
     const principalForUser = vi.fn(async () => principal);
     const authenticate = createIdentityAuthenticator({ issuer: 'https://identity.example.test', audience: 'https://api.example.test', verificationKey: keys.publicKey, store: { first, principalForUser } as any });
-    const token = (issuer = 'https://identity.example.test', audience = 'https://api.example.test') => new SignJWT({ typ: 'Bearer', scope: 'read admin', email: 'owner@example.test', roles: ['owner'] })
+    const token = (issuer = 'https://identity.example.test', audience = 'https://api.example.test') => new SignJWT({ typ: 'Bearer', azp: 'admin', scope: 'read admin', email: 'owner@example.test', roles: ['owner'] })
       .setProtectedHeader({ alg: 'RS256' }).setIssuer(issuer).setAudience(audience).setSubject('exact-subject').setIssuedAt().setExpirationTime('1m').sign(keys.privateKey);
     return { authenticate, token, first, principalForUser };
   }
@@ -18,6 +18,8 @@ describe('external identity mapping', () => {
     expect(result.userId).toBe('preserved-user');
     expect(result.principal.roles).toEqual(['reader']);
     expect(result.principal.scopes).toEqual(['read']);
+    expect(result.credential.oauthClientId).toBe('admin');
+    expect(result.credential.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(f.first.mock.calls[0][1]).toEqual(['https://identity.example.test', 'exact-subject']);
     expect(f.principalForUser).toHaveBeenCalledWith('preserved-user');
   });
