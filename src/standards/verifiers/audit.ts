@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { resolveApiDatabaseUrl } from '../../api/configuration/runtime-config.ts';
 
 const REQUIRED_USER_EVENTS = [
 	'auth.user.registered', 'auth.email.verified', 'auth.session_issued', 'auth.session.revoked',
@@ -10,7 +11,7 @@ const REQUIRED_TEAM_EVENTS = [
 ];
 
 export async function verifyAuditEvidence(userId: string, teamId: string) {
-	const connectionString = process.env.TREESEED_DATABASE_URL;
+	const connectionString = resolveApiDatabaseUrl();
 	if (!connectionString) throw new Error('API verifier requires its component-owned database connection.');
 	const pool = new pg.Pool({ connectionString, max: 1 });
 	try {

@@ -39,8 +39,6 @@ jobs:
           - { image: "treeseed/api", target: api, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
           - { image: "treeseed/op-runner", target: operations-runner, arch: amd64, platform: "linux/amd64", runner: ubuntu-24.04 }
           - { image: "treeseed/op-runner", target: operations-runner, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
-          - { image: "treeseed/api-postgres", target: database, arch: amd64, platform: "linux/amd64", runner: ubuntu-24.04 }
-          - { image: "treeseed/api-postgres", target: database, arch: arm64, platform: "linux/arm64", runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -86,14 +84,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for pair in api=treeseed/api runner=treeseed/op-runner database=treeseed/api-postgres; do
+          for pair in api=treeseed/api runner=treeseed/op-runner; do
             key="${pair%%=*}"; image="${pair#*=}"; candidate="candidate-${GITHUB_SHA}"
             docker buildx imagetools create -t "${image}:${candidate}" "${image}:${candidate}-amd64" "${image}:${candidate}-arm64"
             digest="$(docker buildx imagetools inspect "${image}:${candidate}" --format '{{json .Manifest}}' | jq -r '.digest')"
             [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; export "TREESEED_${key^^}_DIGEST=$digest"
           done
           export TREESEED_RELEASE="$(node -p "require('./package.json').version")" TREESEED_SOURCE_COMMIT="$GITHUB_SHA"
-          export TREESEED_RUNNER_DIGEST TREESEED_DATABASE_DIGEST TREESEED_API_DIGEST
+          export TREESEED_RUNNER_DIGEST TREESEED_API_DIGEST
           node --import tsx scripts/release/create-component-release.ts
           npm run release:custody -- seal release-assets/release-evidence-v1.json release-assets
           npm run release:custody -- verify release-assets/release-evidence-v1.json

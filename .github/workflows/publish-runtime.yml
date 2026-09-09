@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for pair in api=treeseed/api runner=treeseed/op-runner database=treeseed/api-postgres; do
+          for pair in api=treeseed/api runner=treeseed/op-runner; do
             name="${pair%%=*}"; image="${pair#*=}"; ref="${image}:${{ inputs.application_tag }}"
             raw="$(docker buildx imagetools inspect --raw "${ref}")"
             grep -q '"vnd.docker.reference.type"[[:space:]]*:[[:space:]]*"attestation-manifest"' <<<"${raw}"
@@ -62,7 +62,6 @@ jobs:
           TREESEED_SOURCE_COMMIT: ${{ github.sha }}
           TREESEED_API_DIGEST: ${{ steps.images.outputs.api }}
           TREESEED_RUNNER_DIGEST: ${{ steps.images.outputs.runner }}
-          TREESEED_DATABASE_DIGEST: ${{ steps.images.outputs.database }}
         run: node --import tsx scripts/release/create-component-release.ts
       - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:

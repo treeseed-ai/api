@@ -11,7 +11,7 @@ if (process.argv[2] === 'seal') {
 	const output = resolve(root, process.argv[4] ?? 'release-assets');
 	const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { name: string; version: string };
 	const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-	const imageEntries = [['api', 'treeseed/api', process.env.TREESEED_API_DIGEST], ['runner', 'treeseed/op-runner', process.env.TREESEED_RUNNER_DIGEST], ['database', 'treeseed/api-postgres', process.env.TREESEED_DATABASE_DIGEST]] as const;
+	const imageEntries = [['api', 'treeseed/api', process.env.TREESEED_API_DIGEST], ['runner', 'treeseed/op-runner', process.env.TREESEED_RUNNER_DIGEST]] as const;
 	if (imageEntries.some(([, , digest]) => !/^sha256:[a-f0-9]{64}$/u.test(digest ?? ''))) throw new Error('Every exact OCI manifest digest is required.');
 	const artifacts: Array<{ id: string; kind: 'oci-image' | 'archive' | 'sbom' | 'component-manifest' | 'compose'; identity: string; digest: `sha256:${string}`; mediaType: string; size?: number }> = imageEntries.map(([id, image, digest]) => ({ id: `${id}-image`, kind: 'oci-image', identity: `${image}@${digest}`, digest: digest! as `sha256:${string}`, mediaType: 'application/vnd.oci.image.index.v1+json' }));
 	for (const name of readdirSync(output).filter((name) => name !== basename(evidencePath)).sort()) {

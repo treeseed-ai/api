@@ -10,7 +10,7 @@ export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
         LOCAL_DEV_MODE: env.LOCAL_DEV_MODE ?? 'local',
     };
     const apiDatabaseUrl = resolveApiDatabaseUrl(localEnv, localEnv.TREESEED_API_BASE_URL ?? 'http://127.0.0.1:3000');
-    if (apiDatabaseUrl && !localEnv.TREESEED_DATABASE_URL) {
+    if (apiDatabaseUrl && !localEnv.TREESEED_DATABASE_URL && !localEnv.TREESEED_DATABASE_URL_FILE) {
         localEnv.TREESEED_DATABASE_URL = apiDatabaseUrl;
     }
     return localEnv;
@@ -18,7 +18,7 @@ export function resolveLocalSeedEnv(_projectRoot, env = process.env) {
 
 export async function createLocalSeedStore(projectRoot, env = process.env) {
     const localEnv = resolveLocalSeedEnv(projectRoot, env);
-    const apiDatabaseUrl = localEnv.TREESEED_DATABASE_URL?.trim();
+    const apiDatabaseUrl = resolveApiDatabaseUrl(localEnv);
     if (!apiDatabaseUrl) {
         throw new Error('TREESEED_DATABASE_URL could not be resolved for local Treeseed seed apply.');
     }
