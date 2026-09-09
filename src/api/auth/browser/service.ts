@@ -1,10 +1,9 @@
 import { createBrowserOidcClient, type BrowserOidcOptions } from '@treeseed/identity';
+import { BROWSER_SESSION_PERMISSION, BROWSER_SESSION_SCOPE } from '@treeseed/sdk/identity';
 import type { ApiCredential, ApiPrincipal } from '../../types.ts';
 import { BrowserSessionStore, type BrowserSessionTokens } from './session-store.ts';
 
 export interface BrowserCaller { principal: ApiPrincipal; credential: ApiCredential }
-export const BROWSER_SESSION_PERMISSION = 'identity:sessions:manage';
-export const BROWSER_SESSION_SCOPE = 'treeseed:identity:sessions';
 
 /** Internal application bridge. HTTP handlers derive the caller from verified
  * workload authentication and select a preconfigured service, never a body ID.
@@ -34,8 +33,9 @@ export async function createBrowserIdentityService(options: {
     async finish(caller: BrowserCaller, browserBinding: string, callback: URL) {
       authorize(caller);
       const result = await client.finish(browserBinding, callback);
-      return options.sessions.create({ ...result.identity, userId: result.principal.principalId,
+      const session = await options.sessions.create({ ...result.identity, userId: result.principal.principalId,
         expiresAt: new Date(Date.now() + 8 * 3600_000), tokens: stored(result.tokens) });
+      return { handle: session.handle, expiresAt: session.expiresAt.toISOString() };
     },
     /** Server-only result. The BFF may use this one API token for its own
      * server requests; it must never serialize it into a browser response. */

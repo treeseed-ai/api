@@ -1,14 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
-import { z } from 'zod';
 import { encryptedEnvelopeSchema, type EncryptedEnvelopeCodec } from '@treeseed/sdk/security';
+import { browserLoginTransactionSchema as transactionSchema, browserSessionRequests } from '@treeseed/sdk/identity';
 import type { LoginTransaction, LoginTransactionStore } from '@treeseed/identity';
 
 interface Database { transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> }
-const identifier = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
-const transactionSchema = z.object({ state: identifier, nonce: identifier, verifier: identifier,
-  expiresAt: z.number().int().positive(), issuer: z.string().url(), clientId: z.string().min(1), redirectUri: z.string().url(),
-  resource: z.string().url(), scopes: z.array(z.string()) }).strict();
+const identifier = browserSessionRequests.begin.shape.browserBinding;
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** API-backed one-shot PKCE state; never persist the verifier or browser handle
