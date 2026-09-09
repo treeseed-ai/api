@@ -84,8 +84,6 @@ development:
       statePolicy: shared-compatible
       migrationPolicy: explicit-review
       secretRefs:
-        POSTGRES_PASSWORD: api-postgres-password
-        TREESEED_DATABASE_URL: api-database-url
         SESSION_SECRET: api-session-secret
         TREESEED_TREEDX_DELEGATION_PRIVATE_KEY: api-treedx-delegation-private-key
         TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION: treedx-credential-broker-assertion
@@ -120,7 +118,6 @@ development:
       statePolicy: shared-compatible
       migrationPolicy: explicit-review
       secretRefs:
-        TREESEED_DATABASE_URL: api-database-url
         TREESEED_TREEDX_DELEGATION_PRIVATE_KEY: api-treedx-delegation-private-key
         TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION: treedx-credential-broker-assertion
       shutdown: { graceSeconds: 60, activeWorkPolicy: drain }
