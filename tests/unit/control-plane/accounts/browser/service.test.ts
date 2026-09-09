@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserOidcOptions } from '@treeseed/identity';
-import { createBrowserIdentityService, BROWSER_SESSION_PERMISSION, BROWSER_SESSION_SCOPE, type BrowserCaller } from '../../../../../src/api/auth/browser/service.ts';
+import { createBrowserIdentityService, type BrowserCaller } from '../../../../../src/api/auth/browser/service.ts';
+import { BROWSER_SESSION_PERMISSION, BROWSER_SESSION_SCOPE } from '@treeseed/sdk/identity';
 import type { BrowserSessionStore, BrowserSessionTokens } from '../../../../../src/api/auth/browser/session-store.ts';
 
 const mocked = vi.hoisted(() => ({ create: vi.fn() }));

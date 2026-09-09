@@ -1,16 +1,9 @@
 import type { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { z } from 'zod';
+import { BROWSER_SESSION_BRIDGE_PATH, browserSessionRequests as schemas, browserSessionResponses } from '@treeseed/sdk/identity';
 import type { BrowserCaller, createBrowserIdentityService } from './service.ts';
 
 type Service = Awaited<ReturnType<typeof createBrowserIdentityService>>;
-const opaque = z.string().regex(/^[A-Za-z0-9_-]{43}$/u);
-const schemas = {
-  begin: z.object({ browserBinding: opaque }).strict(),
-  finish: z.object({ browserBinding: opaque, callback: z.string().url().max(8192) }).strict(),
-  credentials: z.object({ handle: opaque }).strict(),
-  logout: z.object({ handle: opaque }).strict(),
-};
 
 /** Server-to-server only, never a browser-cookie auth surface. App selection
  * comes exclusively from the verified workload principal and configured map.
@@ -19,7 +12,7 @@ export function installIdentityBrowserRoutes(app: Hono, options: {
   authenticate(token: string): Promise<BrowserCaller | null>;
   services: ReadonlyMap<string, Service>;
 }) {
-  const prefix = '/internal/identity/browser/v1';
+  const prefix = BROWSER_SESSION_BRIDGE_PATH;
   app.use(`${prefix}/*`, async (c, next) => {
     c.header('cache-control', 'no-store'); c.header('pragma', 'no-cache');
     // No browser origin/cookie authentication or CORS exchange on this bridge.
@@ -48,7 +41,7 @@ export function installIdentityBrowserRoutes(app: Hono, options: {
       } else if (operation === 'credentials') result = await service!.credentials(caller, schemas.credentials.parse(body).handle);
       else result = await service!.logout(caller, schemas.logout.parse(body).handle);
       if (result === null) return c.json({ error: 'browser_session_unavailable' }, 401);
-      return c.json({ data: result });
+      return c.json({ data: browserSessionResponses[operation as keyof typeof browserSessionResponses].parse(result) });
     } catch { return c.json({ error: 'browser_session_operation_failed' }, 400); }
   });
 }
