@@ -11,7 +11,7 @@ import type { ConfirmationService } from '../confirmation/confirmation-service.t
 
 export interface AuthenticatedPrincipal {
 	principal: { id: string; displayName?: string; scopes?: string[]; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> };
-	credential: { id: string };
+	credential: { id: string; oauthClientId?: string; expiresAt?: number };
 }
 
 /** Resource operations only. Authentication issuers and browser bridges are
@@ -39,10 +39,10 @@ export function installControlPlaneResourceRoutes(
 				const scopes = authenticated.principal.scopes?.filter((scope) => scope.startsWith('treeseed:')) ?? [];
 				return {
 					token,
-					clientId: authenticated.credential.id,
+					clientId: authenticated.credential.oauthClientId ?? authenticated.credential.id,
 					// Roles authorize resources; they must never expand the token's delegated scopes.
 					scopes,
-					expiresAt: Math.floor(Date.now() / 1000) + 60,
+					expiresAt: authenticated.credential.expiresAt ?? Math.floor(Date.now() / 1000) + 60,
 					extra: { principalId: authenticated.principal.id, principal: authenticated.principal },
 				};
 			},
