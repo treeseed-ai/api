@@ -10,7 +10,7 @@ export async function main() {
 		throw new Error('TREESEED_DATABASE_URL is required to apply TreeSeed PostgreSQL migrations.');
 	}
 
-	const database = createControlPlanePostgresDatabase(databaseUrl);
+	const database = createControlPlanePostgresDatabase(databaseUrl, { migrationMode: 'apply' });
 	try {
 		await database.migrate();
 		console.log('Applied TreeSeed PostgreSQL migrations.');
