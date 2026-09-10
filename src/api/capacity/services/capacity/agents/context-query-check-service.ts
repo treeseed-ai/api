@@ -230,11 +230,24 @@ export class ContextQueryCheckService {
 			)
 			ORDER BY current.expires_at ASC LIMIT ?`,[now.toISOString(),Math.min(100,Math.max(1,limit))]);
 		const outcomes:{considered:number;passing:number;failing:number;failures:Array<{testId:string;error:string}>}={considered:rows.length,passing:0,failing:0,failures:[]};
+		const catalogs=new Map<string,Promise<Awaited<ReturnType<ContextQueryCheckService['catalog']>>>>();
 		for(const row of rows) {
 			const testId=String(row.test_id);
 			try {
-				const checked=await this.check(String(row.team_id),String(row.project_id),{
-					testId,idempotencyKey:`scheduled-context-query-check:${String(row.id)}`,
+				const projectId=String(row.project_id);
+				let pending=catalogs.get(projectId);
+				if(!pending) {
+					pending=(async()=>{
+						const commit=await this.definitionCommit(projectId);
+						if(!commit)throw new CapacityGovernanceError('context_query_treedx_unavailable','Project TreeDX content is unavailable.',409);
+						return this.catalog(projectId,commit);
+					})();
+					catalogs.set(projectId,pending);
+				}
+				const catalog=await pending,tests=catalog.tests.filter(test=>test.id===testId);
+				if(tests.length!==1)throw new CapacityGovernanceError('context_query_test_not_unique','Context-query renewal requires one registered test path.',409);
+				const checked=await this.check(String(row.team_id),projectId,{
+					testId,testPath:tests[0]!.path,definitionRef:catalog.commit,idempotencyKey:`scheduled-context-query-check:${String(row.id)}`,
 				});
 				if(checked.status==='passing') outcomes.passing+=1; else outcomes.failing+=1;
 			} catch(error) {
