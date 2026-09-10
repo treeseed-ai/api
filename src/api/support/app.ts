@@ -1,6 +1,9 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { PostgresAuthProvider } from '../auth/postgres-provider.ts';
+import { installApiIdentityRoutes } from '../auth/browser/api-routes.ts';
+import { identityResourceCatalog } from '../auth/browser/resource-catalog.ts';
+import type { createApiIdentityRuntime } from '../auth/browser/runtime.ts';
 import { createCapacityControlPlane } from '../capacity/control-plane.ts';
 import { createApiControlPlaneOperations } from '../control-plane/catalog/index.ts';
 import { installControlPlaneProtocolRoutes } from '../control-plane/http/protocol-routes.ts';
@@ -114,7 +117,10 @@ export function createPlatformApiApp(options: any = {}) {
 		serviceSecret: config.webServiceSecret,
 		fetchImpl: options.fetchImpl ?? fetch,
 	}, db);
-	const authProvider = authProviderFor(options, config, db);
+	const identityRuntime = options.identityRuntime as Awaited<ReturnType<typeof createApiIdentityRuntime>> | undefined;
+	const authProvider = identityRuntime
+		? { id: 'identity', authenticateBearerToken: identityRuntime.authenticate }
+		: authProviderFor(options, config, db);
 	const delegationAuthority = options.treeDxDelegationAuthority ?? treeDxDelegationAuthority();
 	const capacity = createCapacityControlPlane(store);
 	const sessionEvents = options.sessionEvents ?? new SessionEventService(store, db.pool);
@@ -158,6 +164,7 @@ export function createPlatformApiApp(options: any = {}) {
 	});
 
 	app.use('*', async (context, next) => {
+		if (identityRuntime) return next();
 		const serviceId = context.req.header('x-treeseed-service-id');
 		const serviceSecret = context.req.header('x-treeseed-service-secret');
 		if (serviceId && serviceSecret && typeof authProvider.authenticateServiceCredential === 'function') {
@@ -171,7 +178,10 @@ export function createPlatformApiApp(options: any = {}) {
 	app.use('*', async (context, next) => {
 		const token = bearerToken(context.req.raw);
 		if (token) {
-			if (sameSecret(token, config.projectApiKey)) {
+			if (identityRuntime) {
+				try { setAuthentication(context, await identityRuntime.authenticate(token)); }
+				catch { /* Resource routes return the standard redacted denial. */ }
+			} else if (sameSecret(token, config.projectApiKey)) {
 				setAuthentication(context, { principal: projectPrincipal(config), credential: { type: 'project_api_key', id: config.projectId, label: config.projectApiLabel } }, 'project');
 			} else if (typeof authProvider.authenticateBearerToken === 'function') {
 				const authenticated = await authProvider.authenticateBearerToken(token);
@@ -182,6 +192,7 @@ export function createPlatformApiApp(options: any = {}) {
 	});
 
 	app.use('*', async (context, next) => {
+		if (identityRuntime) return next();
 		const assertion = context.req.header('x-treeseed-user-assertion');
 		if (assertion && context.get('actorType') === 'service' && typeof authProvider.verifyTrustedUserAssertion === 'function') {
 			const claims = authProvider.verifyTrustedUserAssertion(assertion);
@@ -196,6 +207,7 @@ export function createPlatformApiApp(options: any = {}) {
 	if (shouldLogApiRequests(config, options)) installApiRequestLogger(app);
 	store.setArtifactBucket(resolveAgentArtifactBucket(runtime));
 	app.use('/v1/*', async (context, next) => {
+		if (identityRuntime) return next();
 		const token = bearerToken(context.req.raw);
 		if (!context.get('principal') && token) {
 			const match = await store.authenticateTeamApiKey(token);
@@ -230,8 +242,7 @@ export function createPlatformApiApp(options: any = {}) {
 	const governance = createGovernanceService(store);
 	const services = { ...createServiceConnectionService(store), ...createServiceCredentials(store) };
 	const inbox = createInboxService({ store, discussions, communications, governance });
-	installControlPlaneProtocolRoutes(app, (token) => authProvider.authenticateBearerToken(token), authProvider,
-		createApiControlPlaneOperations({ store, capacity, services,
+	const operations = createApiControlPlaneOperations({ store, capacity, services,
 			hostedTopology: createHostedTopologyService(store),
 			aiInstances: createAiInstanceService(store, registeredAiNodes),
 			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
@@ -272,10 +283,16 @@ export function createPlatformApiApp(options: any = {}) {
 			repositories: createProjectRepositoryService(store),
 			workflows: createWorkflowService(store),
 			workflowConfiguration: createWorkflowConfigurationService(store),
-		}), confirmations, async (principal) => {
+		});
+	const mcpBusForPrincipal = async (principal: { id: string }) => {
 			const teams = await store.listTeamsForPrincipal(principal);
 			return new SessionEventMcpBus(sessionEvents, teams.map((team) => String(team.id)).filter(Boolean));
-		}, config.baseUrl, String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)));
+	};
+	if (identityRuntime) installApiIdentityRoutes(app, identityRuntime, {
+		registry: identityResourceCatalog(operations), confirmations, mcpBusForPrincipal,
+	});
+	else installControlPlaneProtocolRoutes(app, token => authProvider.authenticateBearerToken(token), authProvider,
+		operations, confirmations, mcpBusForPrincipal, config.baseUrl, String(config.siteUrl ?? resolveAuthApprovalBaseUrl(config)));
 	for (const extension of options.extensions ?? []) extension.mount?.(app, runtime);
 	options.extendApp?.(app, runtime);
 	app.notFound((context) => context.json({ ok: false, error: 'Not found.', requestId: context.get('requestId') }, 404));
