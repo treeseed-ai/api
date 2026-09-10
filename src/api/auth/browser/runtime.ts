@@ -5,6 +5,7 @@ import { createIdentityAuthenticator } from '../identity-authenticator.ts';
 import { BrowserLoginStore } from './login-store.ts';
 import { BrowserSessionStore } from './session-store.ts';
 import { createBrowserIdentityService } from './service.ts';
+import { enrollBrowserIdentity } from '../identity/browser-enrollment.ts';
 
 type Store = Parameters<typeof createIdentityAuthenticator>[0]['store'];
 export interface BrowserApplicationRegistration {
@@ -17,11 +18,13 @@ export interface BrowserApplicationRegistration {
 
 /** API-owned composition of Identity verification and encrypted session stores.
  * Deployment supplies approved transport and protected keys; database mappings
- * must already exist. This factory never creates or adopts user identities.
+ * remain authoritative. Explicit registration enables verified callback-only
+ * enrollment; ordinary token authentication remains read-only.
  * The live server switches to it only with the coordinated auth migration.
  */
 export async function createApiIdentityRuntime(options: {
   issuer: string; resource: string; scopes: string[];
+  registration?: { enabled: boolean };
   applications: readonly BrowserApplicationRegistration[];
   database: ConstructorParameters<typeof BrowserSessionStore>[0];
   codec: EncryptedEnvelopeCodec;
@@ -79,6 +82,9 @@ export async function createApiIdentityRuntime(options: {
       oidc: { issuer, clientId: application.clientId, redirectUri: application.redirectUri,
         privateKey: application.privateKey, resource: metadata.resource, scopes: [...application.scopes],
         profile: 'keycloak', verificationKey, resolvePrincipal, transport: options.transport,
+        ...(options.registration?.enabled === true ? { enrollPrincipal: async profile => {
+          await enrollBrowserIdentity(options.database, issuer, profile);
+        } } : {}),
         store: new BrowserLoginStore(options.database, options.codec, application.clientId) },
     }));
   }
