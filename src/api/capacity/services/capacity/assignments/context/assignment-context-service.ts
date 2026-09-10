@@ -1,4 +1,5 @@
 import { CapacityGovernanceError } from '../../../../database.ts';
+import { selectAssignmentSourceRepository } from './source-repository.ts';
 
 interface AssignmentContextStore {
 	getProject(projectId: string): Promise<Record<string, unknown> | null>;
@@ -32,9 +33,9 @@ export async function compileAssignmentProjectContext(store: AssignmentContextSt
 	const contentPath = text(object(resolvedArchitecture).contentPath);
 	const configuredAgentSpecs = object(metadata.agentSpecs);
 	const configuredRepository = object(metadata.repository);
-	const repository = repositories.find((entry) => ['software', 'primary', 'package'].includes(String(entry.role))) ?? repositories[0] ?? {};
+	const source = selectAssignmentSourceRepository(repositories);
+	const repository = repositories.find(entry => entry.id === source.id)!;
 	const slug = text(project.slug) ?? projectId;
-	const teamSlug = text(team?.slug) ?? teamId;
 	return {
 		id: projectId,
 		slug,
@@ -45,13 +46,14 @@ export async function compileAssignmentProjectContext(store: AssignmentContextSt
 			testsRoot: text(configuredAgentSpecs.testsRoot) ?? (contentPath ? `${contentPath}/agent-tests` : null),
 		},
 		repository: {
-			provider: text(repository.provider, configuredRepository.provider) ?? 'github',
+			id: source.id,
+			provider: source.provider,
 			role: text(repository.role, configuredRepository.role),
-			owner: text(repository.owner, configuredRepository.owner, metadata.repositoryOwner) ?? teamSlug,
-			name: text(repository.name, configuredRepository.name, metadata.repositoryName) ?? slug,
-			defaultBranch: text(repository.defaultBranch, configuredRepository.defaultBranch, metadata.defaultBranch) ?? 'staging',
+			owner: source.owner,
+			name: source.name,
+			defaultBranch: source.ref,
 			currentBranch: text(repository.currentBranch, configuredRepository.currentBranch),
-			cloneUrl: text(repository.url, configuredRepository.cloneUrl, metadata.cloneUrl, metadata.repositoryUrl) ?? `git@github.com:${teamSlug}/${slug}.git`,
+			cloneUrl: source.cloneUrl,
 			checkoutPath: text(configuredRepository.checkoutPath, metadata.checkoutPath),
 			submodulePath: text(repository.submodulePath, configuredRepository.submodulePath, metadata.submodulePath),
 			webUrl: text(object(repository.metadata).webUrl, configuredRepository.webUrl),
