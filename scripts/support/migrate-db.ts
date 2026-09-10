@@ -1,6 +1,7 @@
 import { createControlPlanePostgresDatabase } from '../../src/api/support/control-plane-postgres.js';
 import { pathToFileURL } from 'node:url';
 import { resolveApiDatabaseUrl } from '../../src/api/configuration/runtime-config.ts';
+import { migrateManagedApiIdentity } from '../../src/api/configuration/identity-migration.ts';
 
 export async function main() {
 	if (process.env.TREESEED_DEVELOPMENT_MODE === 'live') {
@@ -14,6 +15,9 @@ export async function main() {
 	const database = createControlPlanePostgresDatabase(databaseUrl, { migrationMode: 'apply' });
 	try {
 		await database.migrate();
+		if (process.env.TREESEED_IDENTITY_MIGRATION === '1') {
+			console.log(JSON.stringify({ identity: await migrateManagedApiIdentity(database) }));
+		}
 		console.log('Applied TreeSeed PostgreSQL migrations.');
 	} finally {
 		await database.close();
