@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectAssignmentSourceRepository } from '../../../../src/api/capacity/services/capacity/assignments/context/source-repository.ts';
+import { selectAssignmentSourceRepository } from '../../../../../src/api/capacity/services/capacity/assignments/context/source-repository.ts';
 const source = { id: 'source', role: 'software', provider: 'github', owner: 'fixture', name: 'project', defaultBranch: 'staging' };
 describe('assignment source identity', () => {
 	it('selects software independently from the knowledge library', () => {
