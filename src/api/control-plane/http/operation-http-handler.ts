@@ -149,6 +149,8 @@ export function createOperationHttpHandler(
 			}
 			const failure = error instanceof ControlPlaneOperationError ? error
 				: isZodValidationError(error) ? new ControlPlaneOperationError(400, 'operation_input_invalid', 'The operation input is invalid.')
+					: error && typeof error === 'object' && 'code' in error && error.code === '53300'
+						? new ControlPlaneOperationError(503, 'database_capacity_unavailable', 'The control-plane database connection budget is exhausted. Check API and operations-runner pool usage.')
 					: new ControlPlaneOperationError(500, 'operation_failed', 'The operation failed.');
 			if (failure.status >= 500) console.error(JSON.stringify({ level: 'error', event: 'operation.failed', operationId: descriptor.operationId,
 				requestId, status: failure.status, code: failure.code, message: failure.message }));
