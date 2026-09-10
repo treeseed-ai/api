@@ -5,6 +5,7 @@ import pg,{ type Pool,type PoolClient,type QueryResultRow } from 'pg';
 import { splitPostgresSqlStatements } from '../persistence/postgres-sql-statements.ts';
 import { verifyDatabaseMigrations } from './verify-database-migrations.ts';
 import { migrationColumnTarget } from './migration-column-target.ts';
+import { API_POSTGRES_POOL_OPTIONS } from './postgres-pool-budget.ts';
 
 const { Pool: PgPool } = pg;
 const loggedPostgresPools = new WeakSet<Pool>();
@@ -279,7 +280,7 @@ export class ControlPlanePostgresDatabase {
 		if (typeof databaseUrl !== 'string' || !databaseUrl.trim()) {
 			throw new Error('Postgres database URL is required.');
 		}
-		this.pool = new PgPool({ connectionString: databaseUrl.trim() });
+		this.pool = new PgPool({ connectionString: databaseUrl.trim(), ...API_POSTGRES_POOL_OPTIONS });
 		attachPostgresPoolErrorLogger(this.pool);
 		this.migrationRoot = options.migrationRoot ?? null;
 		this.migrationPromise = null;

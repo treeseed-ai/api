@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { componentReleaseSchema, deploymentDigest } from '@treeseed/sdk/deployment';
 import { parse, stringify } from 'yaml';
 import { managedOpenBaoServices, managedOpenBaoClient, MANAGED_OPENBAO_IMAGE } from '@treeseed/deployment/security/custody';
+import { API_POSTGRES_RUNTIME_CONNECTION_LIMIT } from '../../src/api/support/postgres-pool-budget.ts';
 
 const release = process.env.TREESEED_RELEASE, sourceCommit = process.env.TREESEED_SOURCE_COMMIT;
 const apiDigest = process.env.TREESEED_API_DIGEST, runnerDigest = process.env.TREESEED_RUNNER_DIGEST;
@@ -49,7 +50,7 @@ const runtime = {
 		secretFiles: [], files: [],
 	},
 	stateVolumes: ['postgres','operations-runner','openbao','openbao-custody','openbao-os'].map(id=>({id,volume:`/var/lib/treeseed/components/api/${id}`,backup:'required' as const})),
-	postgresRequirements: [{ id: 'api', supportedMajors: [17], extensions: [], runtimeConnectionLimit: 20 }],
+	postgresRequirements: [{ id: 'api', supportedMajors: [17], extensions: [], runtimeConnectionLimit: API_POSTGRES_RUNTIME_CONNECTION_LIMIT }],
 	postgresLifecycle: [{ requirementId: 'api', credentialOwner: { uid: 0, gid: 0 }, migration: { composeService: 'migration', completion: 'exit-zero', timeoutSeconds: 600 }, runtimeServices: ['api'] }],
 	migrations: [{ id: 'control-plane-postgres', order: 0, backupRequired: true }], requiredCapabilities: ['docker-compose'],
 	dependencies: [{ id: 'identity', capability: 'identity', locality: 'local' as const, optional: false }],
