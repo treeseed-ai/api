@@ -4,6 +4,7 @@ import { importPKCS8 } from 'jose';
 import { z } from 'zod/v3';
 import { identityEndpointSchema } from '@treeseed/sdk/identity';
 import { migrateLiveIdentity } from '../auth/identity/live-migration.ts';
+import { identityMigrationFailureReason } from './identity-migration-diagnostic.ts';
 
 const root = '/run/treeseed/identity/api-migration';
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u);
@@ -40,6 +41,6 @@ export async function migrateManagedApiIdentity(database: Parameters<typeof migr
       credentials: { token: async input => (await credentials.credentials(input)).accessToken } });
     phase = 'account-mapping';
     return await migrateLiveIdentity(database, { ...config, importAccount: account => importer.importAccount(account) });
-  } catch { throw new Error(`Managed Identity account migration failed (${phase}); API writers must remain stopped`); }
+  } catch (error) { throw new Error(`Managed Identity account migration failed (${phase}/${identityMigrationFailureReason(error)}); API writers must remain stopped`); }
   finally { descriptor?.fill(0); key?.fill(0); }
 }
