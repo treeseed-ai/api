@@ -51,13 +51,6 @@ export function discussionInvocationProvenance(invocation: Record<string, unknow
 	let metadata = record(invocation.metadata_json);
 	if (typeof invocation.metadata_json === 'string') try { metadata = record(JSON.parse(invocation.metadata_json)); } catch { metadata = {}; }
 	return {
-		async sourceCandidate(auth: unknown, assignmentId: string) {
-			const actor = principal(auth, ['provider:assignments:write']);
-			await ownedAssignment(store, assignmentId, actor);
-			// Never trust caller-supplied objectClosure/ancestry booleans. Publication remains closed
-			// until the independent verifier and durable artifact ledger are bound to this operation.
-			throw new CapacityGovernanceError('source_candidate_verifier_unavailable', 'Source candidates require independent object verification and durable artifact custody before acceptance.', 503);
-		},
 		metadata,
 		discussionId: String(metadata.discussionId ?? '').trim(),
 		sourceMessageId: String(metadata.sourceMessageId ?? '').trim(),
@@ -104,6 +97,13 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		async sourceWorkspace(auth: unknown, assignmentId: string, body: unknown) {
 			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'The source authorization service requires a configured control-plane identity.', 503);
 			return createSourceWorkspaceService(store, contentStore, sourceOptions)(auth, assignmentId, body);
+		},
+		async sourceCandidate(auth: unknown, assignmentId: string) {
+			const actor = principal(auth, ['provider:assignments:write']);
+			await ownedAssignment(store, assignmentId, actor);
+			// Never trust caller-supplied objectClosure/ancestry booleans. Publication remains closed
+			// until the independent verifier and durable artifact ledger are bound to this operation.
+			throw new CapacityGovernanceError('source_candidate_verifier_unavailable', 'Source candidates require independent object verification and durable artifact custody before acceptance.', 503);
 		},
 		async next(auth: unknown, body: Record<string, unknown>, signal?: AbortSignal) {
 			const actor = principal(auth, ['provider:assignments:read']);

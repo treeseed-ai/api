@@ -1,6 +1,7 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { createProviderAssignmentOperations } from '../../../../src/api/control-plane/catalog/providers/assignments.ts';
+import { createProviderAssignmentService } from '../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
 
 function dependencies() {
 	return {
@@ -12,6 +13,14 @@ function dependencies() {
 }
 
 describe('provider assignment operation catalog', () => {
+	it('keeps candidate acceptance closed in the real service until durable verification exists', async () => {
+		const store = { first: vi.fn(async () => ({ id: 'assignment-1' })) };
+		const service = createProviderAssignmentService(store as never);
+		await expect(service.sourceCandidate({}, 'assignment-1')).rejects.toMatchObject({ code: 'provider_access_token_required' });
+		const auth = { principal: { teamId: 'team-1', membershipId: 'membership-1', capacityProviderId: 'provider-1', scopes: ['provider:assignments:write'] } };
+		await expect(service.sourceCandidate(auth, 'assignment-1')).rejects.toMatchObject({ code: 'source_candidate_verifier_unavailable' });
+		expect(store.first).toHaveBeenCalledTimes(1);
+	});
 	it('binds runtime and source operations to exact SDK objects', () => {
 		const operations = createProviderAssignmentOperations(dependencies());
 		expect(operations.map((operation) => operation.binding)).toEqual([
