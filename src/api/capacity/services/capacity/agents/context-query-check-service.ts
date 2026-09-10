@@ -246,17 +246,30 @@ export class ContextQueryCheckService {
 
 	async requirePassing(teamId:string,projectId:string,currentCommit:string,references:Array<{kind:'query'|'query-set';id:string;revision:number}>,now=new Date()) {
 		const rows=await this.store.all('SELECT * FROM agent_context_query_checks WHERE team_id = ? AND project_id = ? ORDER BY checked_at DESC LIMIT 200',[teamId,projectId]);
-		const byTest=new Map<string,ReturnType<typeof rowCheck>&{readiness:ReturnType<typeof contextQueryReadiness>}>();
+		const byTest=new Map<string,ReturnType<typeof rowCheck>>();
 		for(const row of rows) {
-			const check=rowCheck(row); if(!byTest.has(check.testId)) byTest.set(check.testId,{...check,readiness:contextQueryReadiness({check,definition:{...check.definition,commit:currentCommit},now})});
+			const check=rowCheck(row); if(!byTest.has(check.testId)) byTest.set(check.testId,check);
 		}
 		const catalog=await this.catalog(projectId,currentCommit);
 		const blocked=references.flatMap((reference)=>{
 			const tests=catalog.tests.filter((test)=>test.definitionKind===reference.kind&&test.definitionId===reference.id&&test.definitionRevision===reference.revision);
-			const failed=tests.filter((test)=>byTest.get(test.id)?.readiness.selectable!==true);
-			return tests.length>0&&failed.length===0?[]:[{...reference,readiness:{status:'unchecked',selectable:false,reason:tests.length?'required_tests_failed':'no_tests'},requiredTestIds:tests.map((test)=>test.id),failedTestIds:failed.map((test)=>test.id)}];
+			// Compare evidence to the requested definition, not to its own revision.
+			const failed=tests.flatMap((test)=>{
+				const check=byTest.get(test.id)??null;
+				const readiness=contextQueryReadiness({check,definition:{...reference,commit:currentCommit},now});
+				return readiness.selectable?[]:[{testId:test.id,reason:readiness.reason}];
+			});
+			return tests.length>0&&failed.length===0?[]:[{...reference,readiness:{status:'unchecked',selectable:false,reason:tests.length?'required_tests_failed':'no_tests'},requiredTestIds:tests.map((test)=>test.id),failedTestIds:failed.map((test)=>test.testId),failedChecks:failed}];
 		});
-		if(blocked.length) throw new CapacityGovernanceError('agent_context_query_not_ready','Every agent context query must have a fresh passing isolated check before workday admission.',409,{projectId,currentCommit,blocked});
-		return references.flatMap((reference)=>catalog.tests.filter((test)=>test.definitionKind===reference.kind&&test.definitionId===reference.id&&test.definitionRevision===reference.revision).map((test)=>byTest.get(test.id)!));
+		if(blocked.length) {
+			// Invocation receipts retain the message even where structured details are
+			// unavailable. Include bounded identifiers/reasons, never context content.
+			const diagnostics=blocked.flatMap((entry)=>entry.failedChecks.length?entry.failedChecks.map((check)=>`${check.testId}: ${check.reason}`):[`${entry.id}: no_tests`]).slice(0,12).join('; ');
+			throw new CapacityGovernanceError('agent_context_query_not_ready',`Every agent context query must have a fresh passing isolated check before workday admission. ${diagnostics}`,409,{projectId,currentCommit,blocked});
+		}
+		return references.flatMap((reference)=>catalog.tests.filter((test)=>test.definitionKind===reference.kind&&test.definitionId===reference.id&&test.definitionRevision===reference.revision).map((test)=>{
+			const check=byTest.get(test.id)!;
+			return {...check,readiness:contextQueryReadiness({check,definition:{...reference,commit:currentCommit},now})};
+		}));
 	}
 }
