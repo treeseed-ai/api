@@ -45,6 +45,7 @@ export async function createConfiguredApiIdentityRuntime(input: unknown, options
     }
     const codec = new EncryptedEnvelopeCodec(new StaticEnvelopeKeyProvider('deployment-bootstrap', sessionKeys[0]!, sessionKeys.slice(1)));
     return await createApiIdentityRuntime({ issuer: config.issuer, resource: config.resource, scopes: config.scopes,
+      registration: config.registration,
       applications, database: options.database, codec, store: createIdentityPrincipalStore(options.database), transport: options.transport });
   } catch {
     for (const item of sessionKeys) item.key.fill(0);
