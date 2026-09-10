@@ -41,4 +41,29 @@ describe('targeted Discussion reads', () => {
 		expect(result.messages).toHaveLength(1);
 		expect(result.messages[0]?.body).toBe('Hello');
 	});
+
+	it('reads journal-backed messages from their commit without probing an absent branch path', async () => {
+		const path = 'discussion-messages/discussion-1/message-2.mdx';
+		const commitSha = 'a'.repeat(40);
+		const original = mocks.readRepositoryFiles.getMockImplementation()!;
+		mocks.readRepositoryFiles.mockImplementation(async (request) => {
+			if (request.ref === 'refs/heads/staging' && request.paths.includes(path)) {
+				throw Object.assign(new Error('Message is not on staging yet'), { code: 'not_found' });
+			}
+			return original(request);
+		});
+		const result = await loadDiscussions({
+			store: { all: vi.fn(async () => [{ result_status: 'authoring_unpublished',
+				metadata_json: JSON.stringify({ commitSha, changedPaths: [path] }) }]) },
+			projectId: 'project-1', discussionId: 'discussion-1',
+			exactPaths: ['discussion-messages/discussion-1/message-1.mdx', path], collection: 'messages',
+		});
+		expect(mocks.listRepositoryPaths).not.toHaveBeenCalled();
+		expect(mocks.readRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({
+			ref: 'refs/heads/staging', paths: ['discussion-messages/discussion-1/message-1.mdx'],
+		}));
+		expect(mocks.readRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({ ref: commitSha, paths: [path] }));
+		expect(result.messages).toHaveLength(2);
+		expect(result.messages.find((message) => message.path === path)?.immutableRef).toBe(commitSha);
+	});
 });

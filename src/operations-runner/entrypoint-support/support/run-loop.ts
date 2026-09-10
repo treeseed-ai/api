@@ -33,8 +33,8 @@ export async function runLoop() {
 				operationRunnerId = `${config.runnerId}:process:${process.pid}:${randomUUID()}`;
             }
             if (!client) {
-                client = await createClient(config);
                 controlPlaneStore = createControlPlaneStore(config);
+                client = await createClient(config, controlPlaneStore);
                 capacityWorkdayMaintenance = controlPlaneStore
                     ? new CapacityWorkdayMaintenanceScheduler(controlPlaneStore, config.capacityWorkdayMaintenanceIntervalMs)
                     : null;
