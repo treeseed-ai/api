@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { expect, it } from 'vitest';
-import { createControlPlanePostgresDatabase } from '../../../../src/api/support/control-plane-postgres.ts';
+import { createControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
 import { API_POSTGRES_POOL_MAX, API_POSTGRES_POOL_OPTIONS, API_POSTGRES_PROCESS_SLOTS,
-	API_POSTGRES_RESERVED_CONNECTIONS, API_POSTGRES_RUNTIME_CONNECTION_LIMIT } from '../../../../src/api/support/postgres-pool-budget.ts';
+	API_POSTGRES_RESERVED_CONNECTIONS, API_POSTGRES_RUNTIME_CONNECTION_LIMIT } from '../../../../../src/api/support/postgres-pool-budget.ts';
 
 it('bounds every owned application pool and leaves allocation headroom during development overlap', async () => {
 	const database = createControlPlanePostgresDatabase('postgres://unused@127.0.0.1/unused');
