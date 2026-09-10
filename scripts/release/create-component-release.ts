@@ -51,7 +51,8 @@ const runtime = {
 	stateVolumes: ['postgres','operations-runner','openbao','openbao-custody','openbao-os'].map(id=>({id,volume:`/var/lib/treeseed/components/api/${id}`,backup:'required' as const})),
 	postgresRequirements: [{ id: 'api', supportedMajors: [17], extensions: [], runtimeConnectionLimit: 20 }],
 	postgresLifecycle: [{ requirementId: 'api', credentialOwner: { uid: 0, gid: 0 }, migration: { composeService: 'migration', completion: 'exit-zero', timeoutSeconds: 600 }, runtimeServices: ['api'] }],
-	migrations: [{ id: 'control-plane-postgres', order: 0, backupRequired: true }], requiredCapabilities: ['docker-compose'], dependencies: [],
+	migrations: [{ id: 'control-plane-postgres', order: 0, backupRequired: true }], requiredCapabilities: ['docker-compose'],
+	dependencies: [{ id: 'identity', capability: 'identity', locality: 'local' as const, optional: false }],
 };
 const tagUrl = (repository: string) => `https://hub.docker.com/r/${repository}/tags?name=${encodeURIComponent(release)}`;
 const bundle = componentReleaseSchema.parse({
