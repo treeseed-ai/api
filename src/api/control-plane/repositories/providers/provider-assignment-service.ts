@@ -15,6 +15,7 @@ import { loadDiscussions } from '../../../discussions/content.ts';
 import { suspendAssignmentForDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-suspension-service.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
+import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
@@ -83,7 +84,7 @@ async function ownedAssignment(store: ProviderAssignmentStore, assignmentId: str
 	return assignment;
 }
 
-export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue, diagnosticEnvelopes?: DiagnosticEnvelopeService) {
+export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue, diagnosticEnvelopes?: DiagnosticEnvelopeService, sourceOptions?: { controlPlaneId: string }) {
 	const store = storeValue;
 	const principal = (auth: unknown, scopes: string[]) => providerPrincipal(auth, scopes);
 	const lifecycle = async (auth: unknown, assignmentId: string, body: Record<string, unknown>, scope: string,
@@ -93,6 +94,17 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		return result;
 	};
 	return {
+		async sourceWorkspace(auth: unknown, assignmentId: string, body: unknown) {
+			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'The source authorization service requires a configured control-plane identity.', 503);
+			return createSourceWorkspaceService(store, contentStore, sourceOptions)(auth, assignmentId, body);
+		},
+		async sourceCandidate(auth: unknown, assignmentId: string) {
+			const actor = principal(auth, ['provider:assignments:write']);
+			await ownedAssignment(store, assignmentId, actor);
+			// Never trust caller-supplied objectClosure/ancestry booleans. Publication remains closed
+			// until the independent verifier and durable artifact ledger are bound to this operation.
+			throw new CapacityGovernanceError('source_candidate_verifier_unavailable', 'Source candidates require independent object verification and durable artifact custody before acceptance.', 503);
+		},
 		async next(auth: unknown, body: Record<string, unknown>, signal?: AbortSignal) {
 			const actor = principal(auth, ['provider:assignments:read']);
 			await reconcileBlockedDiscussionInvocations(store, actor.teamId);
