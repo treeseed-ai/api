@@ -10,7 +10,7 @@ function strings(value: unknown, context: { owner: string; ownerId: string; colu
 	return decodeDurableJsonArray<unknown>(value, context).map(String).filter(Boolean);
 }
 
-function providers(row: Row, grants: Row[], mode: string): CapacitySupplyCandidate[] {
+function providers(row: Row, grants: Row[], mode: string, lanePurpose: string, requiredCapabilities: string[]): CapacitySupplyCandidate[] {
 	return decodeDurableJsonArray<Row>(row.execution_providers_json, {
 		owner: 'provider availability session', ownerId: String(row.id), column: 'execution_providers_json',
 	}).flatMap((provider) => grants.filter((grant) => {
@@ -23,10 +23,17 @@ function providers(row: Row, grants: Row[], mode: string): CapacitySupplyCandida
 	}).map((grant) => {
 		const granted = new Set(strings(grant.capabilities_json, { owner: 'capacity grant', ownerId: String(grant.id), column: 'capabilities_json' }));
 		const advertised = Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [];
+		const matchingLane = Array.isArray(provider.lanes) && provider.lanes.some((value: unknown) => {
+			if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+			const lane = value as Row;
+			const capabilities = Array.isArray(lane.capabilities) ? lane.capabilities.map(String) : [];
+			return typeof lane.id === 'string' && Boolean(lane.id.trim()) && lane.purpose === lanePurpose && Math.max(1, Number(lane.maxConcurrentRunners ?? 1)) > 0
+				&& requiredCapabilities.every(capability => !capabilities.length || capabilities.includes(capability));
+		});
 		return ({
 		capacityProviderId: String(row.capacity_provider_id), membershipId: String(row.membership_id),
 		providerSessionId: String(row.id), grantId: String(grant.id), executionProviderId: String(provider.id ?? ''),
-		status: capacitySupplyCandidateStatus(provider.status),
+		status: matchingLane ? capacitySupplyCandidateStatus(provider.status) : 'unavailable',
 		capabilities: advertised.filter((capability) => granted.has(capability)),
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle','normal','busy','throttled','exhausted'].includes(String(provider.pressure)) ? provider.pressure as CapacitySupplyCandidate['pressure'] : 'normal',
@@ -68,7 +75,8 @@ export async function selectWorkdayDemandSupply(database: CapacityGovernanceData
 		const value = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Row : {};
 		return `${String(value.capacityProviderId ?? '')}:${String(value.executionProviderId ?? '')}`;
 	}));
-	const portfolio = sessions.flatMap((session) => providers(session, grants, String(demand.mode)))
+	const lanePurpose = metadata.lanePurpose === 'platform' ? 'platform' : metadata.executionKind === 'conversation' ? 'communication' : 'workday';
+	const portfolio = sessions.flatMap((session) => providers(session, grants, String(demand.mode), lanePurpose, requiredCapabilities))
 		.filter((candidate) => !failoverCount || !attemptedSupply.has(`${candidate.capacityProviderId}:${candidate.executionProviderId}`));
 	const candidates = failoverAllowed ? portfolio : portfolio.filter((candidate) => candidate.capacityProviderId === primaryProviderId);
 	const selection = selectCapacitySupply({ candidates, requiredCapabilities, policy });
