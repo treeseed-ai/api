@@ -357,7 +357,9 @@ export async function assignmentInput(
     workspace: {
       repositoryId,
       workspaceId,
-      allowedPaths: workspaceAllowedPaths,
+      // Repository reads have their own handle scope. A writable workspace must
+      // not include read-only anchors: TreeDX intersects its paths on every use.
+      allowedPaths: allowedWritePaths,
       baseRef: contentBaseRef,
     },
   };
