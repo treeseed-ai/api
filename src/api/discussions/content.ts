@@ -78,7 +78,11 @@ export async function loadDiscussions(input: {
 	const selectedDiscussionPaths = selected ? (path: string) => path === projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)
 		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-messages', selected)}/`)
 		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-events', selected)}/`) : () => true;
+	// Journal overlays provide immutable content, not additional selection authority.
+	// An exact read must never be paginated out by unrelated topic history.
+	const exactSelection = new Set(exactPaths);
 	const eligiblePaths = [...new Set([...branchPaths, ...journalPaths])]
+		.filter((path) => exactSelection.size === 0 || exactSelection.has(path))
 		.filter(selectedDiscussionPaths)
 		.filter((path) => !collectionMarker || path.includes(collectionMarker));
 	const pathMatches = query ? eligiblePaths.filter((path) => path.toLowerCase().includes(query)) : [];
@@ -92,7 +96,6 @@ export async function loadDiscussions(input: {
 	// Keep the authorized branch identity on the read request. The resolved commit is
 	// authoritative evidence, but an unpublished authoring commit is intentionally
 	// not known when the short-lived gateway token is minted.
-	const read = paths.length ? await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: discussionRef, paths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }) : { files: [] };
 	const latestUnpublishedByPath = new Map<string,string>();
 	for (const state of readableAuthoring) {
 		const commitSha=text(state.commitSha); const changedPaths=Array.isArray(state.changedPaths)?state.changedPaths.map(String):[];
@@ -106,6 +109,11 @@ export async function loadDiscussions(input: {
 			if (isSelectedDiscussion) latestUnpublishedByPath.set(path,commitSha);
 		}
 	}
+	// Journal-backed messages may not exist on the branch yet. Resolve their
+	// authorized immutable commits before reading, rather than failing a whole
+	// send receipt with a branch-level 404 before its journal overlay is read.
+	const branchReadPaths = paths.filter((path) => !latestUnpublishedByPath.has(path));
+	const read = branchReadPaths.length ? await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: discussionRef, paths: branchReadPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }) : { files: [] };
 	const immutableRefs = [...new Set(latestUnpublishedByPath.values())];
 	const immutableConnection = immutableRefs.length ? await resolveKnowledgeGatewayConnection(input.store, {
 		projectId: input.projectId, write: false, communicationPaths: true, readRefs: immutableRefs,

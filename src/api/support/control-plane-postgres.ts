@@ -3,8 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname,join,resolve } from 'node:path';
 import pg,{ type Pool,type PoolClient,type QueryResultRow } from 'pg';
 import { splitPostgresSqlStatements } from '../persistence/postgres-sql-statements.ts';
-import { verifyLiveMigrations } from './verify-live-migrations.ts';
+import { verifyDatabaseMigrations } from './verify-database-migrations.ts';
 import { migrationColumnTarget } from './migration-column-target.ts';
+import { API_POSTGRES_POOL_OPTIONS } from './postgres-pool-budget.ts';
 
 const { Pool: PgPool } = pg;
 const loggedPostgresPools = new WeakSet<Pool>();
@@ -273,23 +274,26 @@ export class ControlPlanePostgresDatabase {
 	pool: Pool;
 	private migrationRoot: string | null;
 	private migrationPromise: Promise<void> | null;
+	private migrationMode: 'validate' | 'apply';
 
-	constructor(databaseUrl: string, options: { migrationRoot?: string | null } = {}) {
+	constructor(databaseUrl: string, options: { migrationRoot?: string | null; migrationMode?: 'validate' | 'apply' } = {}) {
 		if (typeof databaseUrl !== 'string' || !databaseUrl.trim()) {
 			throw new Error('Postgres database URL is required.');
 		}
-		this.pool = new PgPool({ connectionString: databaseUrl.trim() });
+		this.pool = new PgPool({ connectionString: databaseUrl.trim(), ...API_POSTGRES_POOL_OPTIONS });
 		attachPostgresPoolErrorLogger(this.pool);
 		this.migrationRoot = options.migrationRoot ?? null;
 		this.migrationPromise = null;
+		this.migrationMode = options.migrationMode ?? 'validate';
 	}
 
-	static fromPool(pool: Pool, options: { migrationRoot?: string | null } = {}): ControlPlanePostgresDatabase {
+	static fromPool(pool: Pool, options: { migrationRoot?: string | null; migrationMode?: 'validate' | 'apply' } = {}): ControlPlanePostgresDatabase {
 		const database = Object.create(ControlPlanePostgresDatabase.prototype) as ControlPlanePostgresDatabase;
 		database.pool = pool;
 		attachPostgresPoolErrorLogger(database.pool);
 		database.migrationRoot = options.migrationRoot ?? null;
 		database.migrationPromise = null;
+		database.migrationMode = options.migrationMode ?? 'validate';
 		return database;
 	}
 
@@ -334,9 +338,12 @@ export class ControlPlanePostgresDatabase {
 
 	async migrate(): Promise<void> {
 		if (!this.migrationPromise) {
-			this.migrationPromise = process.env.TREESEED_DEVELOPMENT_MODE === 'live'
-				? verifyLiveMigrations(this.pool, this.migrationRoot ?? resolveControlPlaneMigrationRoot())
-				: this.applyDrizzleMigrations();
+			if (this.migrationMode === 'apply' && process.env.TREESEED_DEVELOPMENT_MODE === 'live') {
+				throw new Error('live_migration_apply_forbidden');
+			}
+			this.migrationPromise = this.migrationMode === 'apply'
+				? this.applyDrizzleMigrations()
+				: verifyDatabaseMigrations(this.pool, this.migrationRoot ?? resolveControlPlaneMigrationRoot());
 		}
 		return this.migrationPromise;
 	}
@@ -416,6 +423,6 @@ export class ControlPlanePostgresDatabase {
 	}
 }
 
-export function createControlPlanePostgresDatabase(databaseUrl: string, options: { migrationRoot?: string | null } = {}): ControlPlanePostgresDatabase {
+export function createControlPlanePostgresDatabase(databaseUrl: string, options: { migrationRoot?: string | null; migrationMode?: 'validate' | 'apply' } = {}): ControlPlanePostgresDatabase {
 	return new ControlPlanePostgresDatabase(databaseUrl, options);
 }

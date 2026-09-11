@@ -15,6 +15,11 @@ import { loadDiscussions } from '../../../discussions/content.ts';
 import { suspendAssignmentForDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-suspension-service.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
+import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
+import { createSourceCandidateService } from './source/candidate-service.ts';
+import { createSourceChunkService } from './source/source-chunk-service.ts';
+import { withLibraryStorage } from '../../../../security/library-storage.ts';
+import { assertDurableSourceCloseout } from './source/candidate-closeout.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
@@ -83,7 +88,7 @@ async function ownedAssignment(store: ProviderAssignmentStore, assignmentId: str
 	return assignment;
 }
 
-export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue, diagnosticEnvelopes?: DiagnosticEnvelopeService) {
+export function createProviderAssignmentService(storeValue: ProviderAssignmentStore, sessionEvents?: SessionEvents, contentStore: any = storeValue, diagnosticEnvelopes?: DiagnosticEnvelopeService, sourceOptions?: { controlPlaneId: string }) {
 	const store = storeValue;
 	const principal = (auth: unknown, scopes: string[]) => providerPrincipal(auth, scopes);
 	const lifecycle = async (auth: unknown, assignmentId: string, body: Record<string, unknown>, scope: string,
@@ -93,6 +98,20 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		return result;
 	};
 	return {
+		async sourceWorkspace(auth: unknown, assignmentId: string, body: unknown) {
+			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'The source authorization service requires a configured control-plane identity.', 503);
+			return createSourceWorkspaceService(store, contentStore, sourceOptions)(auth, assignmentId, body);
+		},
+		async sourceCandidate(auth: unknown, assignmentId: string, body: unknown) {
+			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'Source publication requires a configured control-plane identity.', 503);
+			return createSourceCandidateService(store, contentStore, { ...sourceOptions,
+				withStorage: run => withLibraryStorage(contentStore, process.env, ({ client }) => run(client)) })(auth, assignmentId, body);
+		},
+		async sourceChunk(auth: unknown, assignmentId: string, body: unknown) {
+			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'Source reads require a configured control-plane identity.', 503);
+			return createSourceChunkService(store, contentStore, { ...sourceOptions,
+				withStorage: run => withLibraryStorage(contentStore, process.env, ({ client }) => run(client)) })(auth, assignmentId, body);
+		},
 		async next(auth: unknown, body: Record<string, unknown>, signal?: AbortSignal) {
 			const actor = principal(auth, ['provider:assignments:read']);
 			await reconcileBlockedDiscussionInvocations(store, actor.teamId);
@@ -254,7 +273,10 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			return { assignmentId, sequence, acceptedAt, replayed: Boolean(existing) };
 		},
 		returnAssignment: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'returnProviderAssignment'),
-		complete: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment'),
+		async complete(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
+			await assertDurableSourceCloseout(store, principal(auth, ['provider:assignments:write']), assignmentId);
+			return lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment');
+		},
 		async fail(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
 			const scopes = ['provider:assignments:write']; if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:write');
 			const result = await store.failProviderAssignment(principal(auth, scopes), assignmentId, body);

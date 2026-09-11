@@ -22,6 +22,9 @@ export function createProviderAssignmentOperations(dependencies: ProviderAssignm
 	const { providerAssignments: assignments, providerSignals: signals, providerWorkflows: workflows } = dependencies;
 	const operations = CONTROL_PLANE_OPERATIONS.providers;
 	return [
+		{ binding: operations.sourceCandidate, handler: (input, context) => result(() => assignments.sourceCandidate(context.providerAuth, input.path.assignmentId, input.body)) },
+		{ binding: operations.sourceChunk, handler: (input, context) => result(() => assignments.sourceChunk(context.providerAuth, input.path.assignmentId, input.body)) },
+		{ binding: operations.sourceWorkspace, handler: (input, context) => result(() => assignments.sourceWorkspace(context.providerAuth, input.path.assignmentId, input.body)) },
 		{ binding: operations.nextAssignment, handler: (input, context) => result(() => assignments.next(context.providerAuth, input.body as Record<string, unknown>, context.signal)) },
 		{ binding: operations.assignment, handler: (input, context) => result(() => assignments.show(context.providerAuth, input.path.assignmentId)) },
 		{ binding: operations.assignmentExplanation, handler: (input, context) => result(() => assignments.explain(context.providerAuth, input.path.assignmentId)) },

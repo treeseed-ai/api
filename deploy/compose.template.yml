@@ -1,28 +1,26 @@
 name: treeseed-api
 services:
-  database:
-    image: "@DATABASE_IMAGE@"
-    restart: unless-stopped
-    env_file: /etc/treeseed/components/api/environment
-    volumes:
-      - type: bind
-        source: ${TREESEED_COMPONENT_DATA_ROOT:-/var/lib/treeseed/components}/api/postgres
-        target: /var/lib/postgresql/data
-    networks: [private]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-treeseed} -d $${POSTGRES_DB:-treeseed_api}"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-    security_opt: ["no-new-privileges:true"]
   migration:
     image: "@API_IMAGE@"
     command: ["npm", "run", "db:migrate"]
     restart: "no"
     env_file: /etc/treeseed/components/api/environment
-    depends_on:
-      database: { condition: service_healthy }
-    networks: [private]
+    environment:
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/api/url
+      TREESEED_IDENTITY_MIGRATION: "1"
+      NODE_EXTRA_CA_CERTS: /run/treeseed/identity/api-migration/ca.pem
+    extra_hosts:
+      - "${TREESEED_IDENTITY_HOSTNAME:?Managed Identity hostname required}:host-gateway"
+    volumes:
+      - type: bind
+        source: /run/treeseed/postgres-clients/api/api/migration
+        target: /run/treeseed/postgres/api
+        read_only: true
+      - type: bind
+        source: /run/treeseed/identity-clients/api-migration
+        target: /run/treeseed/identity/api-migration
+        read_only: true
+    networks: [private, database, treeseed-edge]
     security_opt: ["no-new-privileges:true"]
   api:
     image: "@API_IMAGE@"
@@ -35,11 +33,20 @@ services:
       TREESEED_API_PROVIDER_AUTH: control-plane-postgres
       TREESEED_CAPACITY_ENCRYPTION_KEY_FILE: /run/treeseed-keys/credentials
       TREESEED_DIAGNOSTICS_ENCRYPTION_KEY_FILE: /run/treeseed-keys/diagnostics
-    depends_on:
-      migration: { condition: service_completed_successfully }
-    networks: [private, platform, treeseed-edge]
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/api/url
+    extra_hosts:
+      - "${TREESEED_IDENTITY_HOSTNAME:?Managed Identity hostname required}:host-gateway"
+    networks: [private, database, platform, treeseed-edge]
     expose: ["3000"]
     volumes:
+      - type: bind
+        source: /run/treeseed/identity-clients/api
+        target: /run/treeseed/identity/api
+        read_only: true
+      - type: bind
+        source: /run/treeseed/postgres-clients/api/api/runtime
+        target: /run/treeseed/postgres/api
+        read_only: true
       - type: bind
         source: /run/treeseed/component-credentials/api
         target: /run/treeseed-keys
@@ -76,6 +83,9 @@ services:
     security_opt: ["no-new-privileges:true"]
 networks:
   private: { internal: true }
+  database:
+    name: treeseed-postgres-private
+    external: true
   platform:
     name: treeseed-platform
     external: true

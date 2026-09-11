@@ -22,7 +22,7 @@ describe.skipIf(!url)('real PostgreSQL replication migration closure', () => {
 		try {
 			await admin.query(`CREATE DATABASE "${name}"`); created = true;
 			connection.pathname = `/${name}`;
-			database = createControlPlanePostgresDatabase(connection.href, { migrationRoot: root });
+			database = createControlPlanePostgresDatabase(connection.href, { migrationRoot: root, migrationMode: 'apply' });
 			await database.pool.query(`CREATE TABLE teams(id text PRIMARY KEY); CREATE TABLE projects(id text PRIMARY KEY);
 				CREATE TABLE treedx_project_libraries(project_id text, repository_id text);
 				INSERT INTO teams VALUES ('team'); INSERT INTO projects VALUES ('project');

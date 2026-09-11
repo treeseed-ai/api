@@ -39,6 +39,16 @@ function preferredContentSource(agent: CapacityWorkdayAgent, sources: TreeDxPlan
 	return null;
 }
 
+export function bindPlanningContentIntent(intent: CapacityWorkdayResolvedIntent, source: TreeDxPlanningDemandSource): CapacityWorkdayResolvedIntent {
+	const model = text(source.payload.model);
+	if (intent.subjectId || intent.subjectModel !== model) return intent;
+	const contentPath = text(source.payload.contentPath) ?? '';
+	const relatedArtifact = { contentPath, model: model ?? '', artifactKind: model === 'proposal' ? 'planning_proposal' : model ?? '',
+		subjectId: source.sourceId.replace(/^[^:]+:/u, ''), producedByAgent: '', commitSha: text(source.payload.commitSha), digest: text(source.payload.digest) };
+	return { ...intent, subjectId: relatedArtifact.subjectId, subjectPath: contentPath, relatedArtifact,
+		relatedArtifacts: [...(intent.relatedArtifacts ?? []), relatedArtifact] };
+}
+
 function researchRole(agent: CapacityWorkdayAgent) {
 	const identity = `${agent.slug}:${agent.activityType}:${agent.handler}`.toLowerCase();
 	if (identity.includes('technical-writer') || identity.includes('technical_writer')) return 'technical-writer';
@@ -234,7 +244,7 @@ export async function resolvePlanningDemandSource(
 		const content = preferredContentSource(agent, await listTreeDxPlanningDemandSources(database, run, project));
 		if (content) return {
 			sourceType: content.sourceType, sourceId: content.sourceId, decisionId: null, priority: content.priority,
-			payload: { intent, ...content.payload, subjectPath: content.payload.contentPath },
+			payload: { ...content.payload, intent: bindPlanningContentIntent(intent, content), subjectPath: content.payload.contentPath },
 		};
 	}
 	return {

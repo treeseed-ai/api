@@ -28,10 +28,7 @@ services:
       TREESEED_LOCAL_TREEDX_HOSTS: treedx-api,treedx,host.docker.internal
       TREESEED_TREEDX_JWT_ISSUER:
       TREESEED_TREEDX_JWT_AUDIENCE:
-      POSTGRES_USER:
-      POSTGRES_DB:
-      POSTGRES_PASSWORD:
-      TREESEED_DATABASE_URL:
+      TREESEED_DATABASE_URL_FILE: /run/treeseed/postgres/api/url
       SESSION_SECRET:
       TREESEED_TREEDX_DELEGATION_PRIVATE_KEY:
       TREESEED_TREEDX_CREDENTIAL_BROKER_ASSERTION:
@@ -41,6 +38,7 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
+      - /run/treeseed/postgres-clients/api/api/runtime:/run/treeseed/postgres/api:ro
       - /run/treeseed/openbao/client:/run/openbao-client:ro
       - /run/treeseed/component-credentials/api:/run/treeseed-keys:ro
       - ${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:${TREESEED_DEVELOPMENT_WORKSPACE_ROOT:?TreeSeed development workspace root is required}:ro
@@ -49,6 +47,7 @@ services:
     tmpfs:
       - /tmp
     networks:
+      - database
       - api-private
       - edge
       - platform
@@ -81,7 +80,6 @@ services:
       TREESEED_LOCAL_TREEDX_HOSTS: treedx-api,treedx,host.docker.internal
       TREESEED_TREEDX_JWT_ISSUER:
       TREESEED_TREEDX_JWT_AUDIENCE:
-      TREESEED_DATABASE_URL:
       TREESEED_CLOUDFLARE_ACCOUNT_ID:
       TREESEED_CLOUDFLARE_API_TOKEN:
       TREESEED_CONTENT_BUCKET_NAME:
@@ -111,6 +109,9 @@ services:
     stop_grace_period: 60s
 
 networks:
+  database:
+    external: true
+    name: treeseed-postgres-private
   api-private:
     external: true
     name: treeseed-api_private

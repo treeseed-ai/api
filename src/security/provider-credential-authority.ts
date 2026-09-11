@@ -46,6 +46,7 @@ async function mintInstallationToken(input: {
 	profileId: string;
 	configurationKind?: 'secrets'|'variables';
 	configurationScope?: string;
+	readOnly?: boolean;
 	fetchImpl: typeof fetch;
 }) {
 	const response = await input.fetchImpl(
@@ -56,7 +57,7 @@ async function mintInstallationToken(input: {
 				accept: 'application/vnd.github+json', authorization: `Bearer ${createGitHubAppJwt(input.appId, input.privateKey)}`,
 				'content-type': 'application/json', 'user-agent': 'treeseed-provider-authority', 'x-github-api-version': '2022-11-28',
 			},
-			body: JSON.stringify({ ...(input.repository ? { repositories: [input.repository] } : {}), permissions: permissionScope(input.profileId,input.configurationKind,input.configurationScope) }),
+			body: JSON.stringify({ ...(input.repository ? { repositories: [input.repository] } : {}), permissions: input.readOnly ? { contents: 'read' } : permissionScope(input.profileId,input.configurationKind,input.configurationScope) }),
 		},
 	);
 	if (!response.ok) throw new Error(`GitHub rejected the scoped installation token request (HTTP ${response.status}).`);
@@ -95,6 +96,7 @@ async function credentialForRow(row: any, input: {
 	capability: 'repository-hosting' | 'workflow-execution';
 	configurationKind?: 'secrets'|'variables';
 	configurationScope?: string;
+	readOnly?: boolean;
 	env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
 }) {
 	const capabilities = JSON.parse(row.capabilities_json ?? '[]');
@@ -115,10 +117,34 @@ async function credentialForRow(row: any, input: {
 		const installationId = String(connectorConfig.installationId ?? '');
 		if (!appId || !privateKey || !installationId) throw new Error('The managed GitHub Connector authority is incomplete.');
 		const minted = await mintInstallationToken({ appId, privateKey, installationId, repository: row.name,
-			profileId: row.credential_profile_id, configurationKind:input.configurationKind, configurationScope:input.configurationScope, fetchImpl: input.fetchImpl ?? fetch });
+			profileId: row.credential_profile_id, configurationKind:input.configurationKind, configurationScope:input.configurationScope, readOnly: input.readOnly, fetchImpl: input.fetchImpl ?? fetch });
 		return { ...minted, username: 'x-access-token', authorityScheme: row.scheme as string };
 	}
 	throw new Error(`Credential authority scheme ${row.scheme} is not unattended-ready.`);
+}
+
+/** Assignment source acquisition only. No creation privilege, no fallback after a pinned binding fails. */
+export async function resolveGitHubSourceAuthority(input: {
+	store: any; teamId: string; owner: string; repository: string; bindingId?: string; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
+}) {
+	if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/u.test(input.owner) || !/^[A-Za-z0-9_.-]+$/u.test(input.repository)
+		|| ['.', '..'].includes(input.repository)) throw new Error('Source repository identity is invalid.');
+	const rows: any[] = await input.store.all(`SELECT a.*, c.non_secret_config_json, b.id AS source_binding_id
+		FROM provider_credential_authorities a
+		JOIN team_service_connections c ON c.id=a.connection_id AND c.team_id=? AND c.provider_id='github' AND c.status='active'
+		JOIN team_service_capability_bindings b ON b.connection_id=c.id AND b.team_id=c.team_id
+			AND b.credential_profile_id=a.credential_profile_id AND b.capability_type='repository-hosting' AND b.status='configured'
+		WHERE a.team_id=c.team_id AND a.status='ready'${input.bindingId ? ' AND b.id=?' : ''}`,
+		[input.teamId, ...(input.bindingId ? [input.bindingId] : [])]);
+	const matches = rows.filter(row => {
+		const config = json(row.non_secret_config_json);
+		const connector = json(json(config.githubConnectors).repository);
+		return String(connector.accountLogin ?? config.organization ?? '').trim().toLowerCase() === input.owner.toLowerCase();
+	});
+	if (matches.length !== 1) throw new Error(input.bindingId ? 'The pinned source credential binding is unavailable.' : 'Source access requires one unambiguous team repository connection.');
+	const row = matches[0];
+	return { ...await credentialForRow({ ...row, name: input.repository }, { store: input.store, capability: 'repository-hosting',
+		readOnly: true, env: input.env, fetchImpl: input.fetchImpl }), bindingId: String(row.source_binding_id) };
 }
 
 export async function resolveGitHubRepositoryCandidateAuthority(input: {

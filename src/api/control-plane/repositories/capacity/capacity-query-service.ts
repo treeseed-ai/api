@@ -32,7 +32,7 @@ export function createCapacityQueryService(store: any) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			const [sessions, lanes, active] = await Promise.all([
 				store.listProviderAvailabilitySessionsPage(teamId, { status: 'open', limit: 100 }),
-				store.all(`SELECT lanes.*, providers.display_name AS provider_name FROM capacity_provider_lanes lanes INNER JOIN capacity_providers providers ON providers.id = lanes.capacity_provider_id WHERE lanes.team_id = ? ORDER BY lanes.priority DESC, lanes.purpose`, [teamId]),
+				store.all(`SELECT lanes.*, providers.display_name AS provider_name FROM capacity_provider_lanes lanes INNER JOIN capacity_providers providers ON providers.id = lanes.capacity_provider_id WHERE EXISTS (SELECT 1 FROM capacity_provider_team_memberships membership WHERE membership.capacity_provider_id = lanes.capacity_provider_id AND membership.team_id = ? AND membership.status = 'approved') ORDER BY lanes.priority DESC, lanes.purpose`, [teamId]),
 				store.first(`SELECT COUNT(*) AS count FROM capacity_provider_assignments WHERE team_id = ? AND status IN ('pending','leased','returned')`, [teamId]),
 			]);
 			return { teamId, model: 'shared-provider-battery', lanePurposes: ['communication', 'platform', 'workday'],
@@ -60,7 +60,7 @@ export function createCapacityQueryService(store: any) {
 		},
 		async lanes(principal: CapacityPrincipal, teamId: string) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
-			return { items: await store.all(`SELECT * FROM capacity_provider_lanes WHERE team_id = ? ORDER BY priority DESC, purpose, id`, [teamId]) };
+			return { items: await store.all(`SELECT lanes.* FROM capacity_provider_lanes lanes WHERE EXISTS (SELECT 1 FROM capacity_provider_team_memberships membership WHERE membership.capacity_provider_id = lanes.capacity_provider_id AND membership.team_id = ? AND membership.status = 'approved') ORDER BY lanes.priority DESC, lanes.purpose, lanes.id`, [teamId]) };
 		},
 		async grants(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');

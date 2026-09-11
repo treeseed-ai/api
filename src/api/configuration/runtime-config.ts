@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { readDatabaseUrlFile } from './database-file.ts';
 
 const LOCAL_AUTH_TTL_SECONDS = 365 * 24 * 60 * 60;
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -39,6 +40,9 @@ export function resolveLocalApiDatabaseUrl(env: NodeJS.ProcessEnv = process.env)
 
 export function resolveApiDatabaseUrl(env: NodeJS.ProcessEnv = process.env, baseUrl?: string) {
 	const explicit = first(env, 'TREESEED_DATABASE_URL');
+	const file = first(env, 'TREESEED_DATABASE_URL_FILE');
+	if (file && explicit) throw new Error('Choose one database input: managed file or explicit connection URL');
+	if (file) return readDatabaseUrlFile(file);
 	if (explicit) return explicit;
 	const environment = first(env, 'TREESEED_API_ENVIRONMENT', 'TREESEED_ENVIRONMENT');
 	return env.LOCAL_DEV_MODE !== undefined || environment === 'local' || (baseUrl ? loopback(baseUrl) : false)

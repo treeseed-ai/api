@@ -1,5 +1,6 @@
 import { type AgentPlanningGraph } from '@treeseed/sdk/agent-capacity';
 import { compileCooperativePlanningWaves } from '../../../../policy/workdays/cooperative-planning.ts';
+import { boundedPlanningParticipants } from '../../../../policy/workdays/planning-budget.ts';
 import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
@@ -56,7 +57,7 @@ export function compileCooperativePlanningSession(input: {
 	assignmentTimeboxSeconds?: number;
 }) {
 	const graph: AgentPlanningGraph = { nodes: [], edges: [], externalRoots: [], diagnostics: [], ok: true };
-	const participants: Array<{ agentId: string; nodeId: string; projectAgentClassId: string; timeboxSeconds: number }> = [];
+	let participants: Array<{ agentId: string; nodeId: string; projectAgentClassId: string; timeboxSeconds: number }> = [];
 	for (const [projectId, snapshot] of input.snapshots) {
 		const qualify = (nodeId: string) => `${projectId}:${nodeId}`;
 		graph.nodes.push(...snapshot.graph.nodes.map((node) => ({ ...node, id: qualify(node.id) })));
@@ -69,6 +70,7 @@ export function compileCooperativePlanningSession(input: {
 			timeboxSeconds: Math.min(integer(agent.execution.timeboxSeconds ?? agent.execution.maxRuntimeSeconds, 900), integer(input.assignmentTimeboxSeconds, 900)),
 		});
 	}
+	participants = boundedPlanningParticipants(participants, input.allocatedSeconds);
 	const compiled = compileCooperativePlanningWaves({ graph, participants, rounds: input.rounds, maxConcurrentAssignments: input.maxConcurrentAssignments, allocatedSeconds: input.allocatedSeconds });
 	if (participants.length > 0 && compiled.waves.length === 0) throw new CapacityGovernanceError(
 		'capacity_planning_session_wave_empty',
@@ -79,7 +81,7 @@ export function compileCooperativePlanningSession(input: {
 			graphNodeIds: graph.nodes.map((entry) => entry.id).sort(),
 		},
 	);
-	if (!compiled.fits) throw new CapacityGovernanceError('capacity_planning_session_time_insufficient', 'The cooperative planning profiles do not fit within the allocated agent time.', 409, { requiredSeconds: compiled.requiredSeconds, allocatedSeconds: input.allocatedSeconds });
+	if (!compiled.fits) throw new CapacityGovernanceError('capacity_planning_session_time_insufficient', `The cooperative planning profiles require ${compiled.requiredSeconds} seconds but only ${input.allocatedSeconds} seconds are allocated.`, 409, { requiredSeconds: compiled.requiredSeconds, allocatedSeconds: input.allocatedSeconds });
 	return { graph, participants, compiled };
 }
 
@@ -92,6 +94,8 @@ export async function currentCooperativePlanningWave(database: CapacityGovernanc
 		WHERE session.workday_run_id = ? AND (session.status = 'running' OR (session.status = 'completed' AND pending_wave.id IS NOT NULL))
 		ORDER BY CASE WHEN session.status = 'running' THEN 0 ELSE 1 END LIMIT 1`, [runId]);
 	if (!session) return null;
+	const budgets = await database.all('SELECT node_id,metadata_json FROM workday_planning_participants WHERE session_id = ?', [session.id]);
+	const timeboxes = Object.fromEntries(budgets.map(row => [String(row.node_id), Number(parsed(row.metadata_json).timeboxSeconds)]));
 	if (session.status === 'completed') await database.run(`UPDATE workday_planning_sessions SET status = 'running',completed_at = NULL,updated_at = ?
 		WHERE id = ? AND status = 'completed' AND EXISTS (SELECT 1 FROM workday_planning_waves WHERE session_id = ? AND status IN ('running','scheduled'))`, [now, session.id, session.id]);
 	let wave = await database.first(`SELECT * FROM workday_planning_waves WHERE session_id = ? AND status IN ('running','scheduled') ORDER BY round ASC,wave ASC LIMIT 1`, [session.id]);
@@ -118,13 +122,13 @@ export async function currentCooperativePlanningWave(database: CapacityGovernanc
 			await database.run(`UPDATE workday_planning_waves SET status = 'completed',completed_at = ?,updated_at = ? WHERE id = ? AND status = 'running'`, [now, now, wave.id]);
 			wave = await database.first(`SELECT * FROM workday_planning_waves WHERE session_id = ? AND status = 'scheduled' ORDER BY round ASC,wave ASC LIMIT 1`, [session.id]);
 			if (!wave) { await database.run(`UPDATE workday_planning_sessions SET status = 'completed',completed_at = ?,updated_at = ? WHERE id = ?`, [now, now, session.id]); return null; }
-		} else return { id: String(wave.id), round: Number(wave.round), nodeIds: waveNodes(session, wave), snapshotRef: String(wave.snapshot_ref), snapshot: parsed(wave.snapshot_json) };
+		} else return { id: String(wave.id), round: Number(wave.round), nodeIds: waveNodes(session, wave), timeboxes, snapshotRef: String(wave.snapshot_ref), snapshot: parsed(wave.snapshot_json) };
 	}
 	const roundSnapshot = await database.first(`SELECT snapshot_ref,snapshot_json FROM workday_planning_waves WHERE session_id = ? AND round = ? AND snapshot_ref <> 'unresolved' ORDER BY wave ASC LIMIT 1`, [session.id, wave.round]);
 	const snapshot = roundSnapshot?.snapshot_ref ? { ref: String(roundSnapshot.snapshot_ref), content: parsed(roundSnapshot.snapshot_json) } : await planningSnapshot(database, runId, Number(wave.round));
 	await database.run(`UPDATE workday_planning_waves SET status = 'running',snapshot_ref = ?,snapshot_json = ?,started_at = ?,updated_at = ? WHERE id = ? AND status = 'scheduled'`, [snapshot.ref, JSON.stringify(snapshot.content), now, now, wave.id]);
 	await database.run(`UPDATE workday_planning_sessions SET current_round = ?,updated_at = ? WHERE id = ?`, [wave.round, now, session.id]);
-	return { id: String(wave.id), round: Number(wave.round), nodeIds: waveNodes(session, wave), snapshotRef: snapshot.ref, snapshot: snapshot.content };
+	return { id: String(wave.id), round: Number(wave.round), nodeIds: waveNodes(session, wave), timeboxes, snapshotRef: snapshot.ref, snapshot: snapshot.content };
 }
 
 function waveNodes(session: Row, wave: Row) {

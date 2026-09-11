@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import { RepositoryWorkdayProfileService, REPOSITORY_WORKDAY_PROFILE_PATH } from '../../capacity/services/capacity/workdays/policy/repository-workday-profile-service.ts';
 import { reconciledWorkflowRunStatus } from '../../../providers/github/actions-client.ts';
 import { githubConnectorConfig, githubConnectorRequiredPermissions, isGitHubConnectorKind } from '../../../security/github-connector-config.ts';
-import { resolveGitHubCredentialAuthority } from '../../../security/provider-credential-authority.ts';
+import { resolveGitHubCredentialAuthority, resolveGitHubSourceAuthority } from '../../../security/provider-credential-authority.ts';
 import { verifyGitHubInstallation } from './github-connector-client.ts';
 import { WorkflowOperationError } from './workflow-operation-error.ts';
 
@@ -103,21 +103,40 @@ export async function reconcileRepositoryPush(store: any, payload: any) {
 	return { repository: fullName, observedCommit: commit, status: 'awaiting-required-check' };
 }
 
-export async function reconcileRepositoryCheckRun(store: any, payload: any) {
+export async function reconcileRepositoryCheckRun(store: any, payload: any, scope?: { teamId: string; projectId: string; expectedCommit: string }) {
 	const fullName = String(payload.repository?.full_name ?? '').toLowerCase(); const [owner, name, ...rest] = fullName.split('/');
 	const checkRunId = String(payload.check_run?.id ?? '');
 	if (!owner || !name || rest.length || !/^\d+$/u.test(checkRunId)) throw new Error('GitHub check-run webhook omitted exact repository or check identity.');
-	const binding: any = await store.first('SELECT * FROM project_remote_repository_bindings WHERE LOWER(owner)=? AND LOWER(name)=? LIMIT 1', [owner, name]);
-	if (!binding) return null;
-	if (String(payload.repository?.id ?? '') !== String(binding.provider_repository_id ?? '')) throw new Error('GitHub check-run repository identity does not match the authorized binding.');
-	const credential = await resolveGitHubCredentialAuthority({ store, authorityId: binding.authority_id, repositoryBindingId: binding.id, capability: 'repository-hosting' });
+	const sources: any[] = await store.all(`SELECT r.*,p.team_id AS owning_team_id FROM hub_repositories r JOIN projects p ON p.id=r.hub_id
+		WHERE r.provider='github' AND r.role IN ('software','primary','package') AND LOWER(r.owner)=? AND LOWER(r.name)=?
+		${scope ? 'AND p.team_id=? AND p.id=?' : ''}`, [owner, name, ...(scope ? [scope.teamId, scope.projectId] : [])]);
+	if (!sources.length) return null;
+	if (!scope && sources.length > 1) {
+		const results = [];
+		for (const source of sources) results.push(await reconcileRepositoryCheckRun(store, payload, { teamId: source.owning_team_id, projectId: source.hub_id, expectedCommit: String(payload.check_run?.head_sha ?? '') }));
+		return results.flat();
+	}
+	if (sources.length !== 1) throw new Error('Workday profile source repository is ambiguous.');
+	const source = sources[0];
+	const binding = { ...source, team_id: source.owning_team_id, project_id: source.hub_id, publication_ref: String(source.current_branch || source.default_branch).replace(/^refs\/heads\//u, '') };
+	const credential = await resolveGitHubSourceAuthority({ store, teamId: binding.team_id, owner, repository: name });
 	const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${credential.token}`, 'user-agent': 'treeseed-provider-webhook', 'x-github-api-version': '2022-11-28' };
 	const checkResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/check-runs/${encodeURIComponent(checkRunId)}`, { headers });
 	if (!checkResponse.ok) throw new Error(`GitHub required-check read-back failed (HTTP ${checkResponse.status}).`);
 	const check: any = await checkResponse.json(); const commit = String(check.head_sha ?? '').toLowerCase();
+	if (scope?.expectedCommit && commit !== scope.expectedCommit) return { repository: fullName, observedCommit: commit, status: 'stale-required-check' };
 	if (String(check.name ?? '') !== 'verify' || String(check.status ?? '') !== 'completed' || String(check.conclusion ?? '') !== 'success'
-		|| String(check.check_suite?.head_branch ?? '') !== String(binding.publication_ref ?? '') || String(check.app?.slug ?? '') !== 'github-actions'
+		|| String(check.app?.slug ?? '') !== 'github-actions'
 		|| !/^[a-f0-9]{40}$/u.test(commit) || /^0{40}$/u.test(commit)) return null;
+	// A check-run embeds only the suite ID, not its branch or repository identity.
+	const suiteId = String(check.check_suite?.id ?? '');
+	if (!/^\d+$/u.test(suiteId)) return null;
+	const suiteResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/check-suites/${suiteId}`, { headers });
+	if (!suiteResponse.ok) throw new Error(`GitHub check-suite read-back failed (HTTP ${suiteResponse.status}).`);
+	const suite: any = await suiteResponse.json();
+	if (suite.head_branch !== binding.publication_ref || suite.head_sha !== commit || suite.app?.slug !== 'github-actions'
+		|| String(suite.repository?.full_name ?? '').toLowerCase() !== fullName
+		|| (payload.repository?.id !== undefined && String(payload.repository.id) !== String(suite.repository?.id))) return null;
 	const ref = `refs/heads/${String(binding.publication_ref ?? '')}`;
 	const refResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/ref/heads/${String(binding.publication_ref ?? '').split('/').map(encodeURIComponent).join('/')}`, { headers });
 	if (!refResponse.ok) throw new Error(`GitHub publication-ref read-back failed (HTTP ${refResponse.status}).`);
@@ -126,8 +145,14 @@ export async function reconcileRepositoryCheckRun(store: any, payload: any) {
 	const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${REPOSITORY_WORKDAY_PROFILE_PATH.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(commit)}`, { headers: { ...headers, accept: 'application/vnd.github.raw+json' } });
 	if (response.status === 404) return { repository: fullName, observedCommit: commit, status: 'no-profile' };
 	if (!response.ok) throw new Error(`GitHub repository profile read-back failed (HTTP ${response.status}).`);
-	return new RepositoryWorkdayProfileService(store).reconcile({ repository: fullName, ref, commit,
-		path: REPOSITORY_WORKDAY_PROFILE_PATH, content: await response.text() });
+	const content = await response.text();
+	if (Buffer.byteLength(content) > 1_048_576) throw new Error('Repository workday profile exceeds the content limit.');
+	const finalRefResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/ref/heads/${String(binding.publication_ref ?? '').split('/').map(encodeURIComponent).join('/')}`, { headers });
+	if (!finalRefResponse.ok) throw new Error(`GitHub publication-ref read-back failed (HTTP ${finalRefResponse.status}).`);
+	const finalRef: any = await finalRefResponse.json();
+	if (String(finalRef.object?.sha ?? '').toLowerCase() !== commit) return { repository: fullName, observedCommit: commit, status: 'stale-required-check' };
+	return new RepositoryWorkdayProfileService(store).reconcile({ teamId: binding.team_id, projectId: binding.project_id, repository: fullName, ref, commit,
+		path: REPOSITORY_WORKDAY_PROFILE_PATH, content });
 }
 
 export function createGitHubWebhookService(store: any) {

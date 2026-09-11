@@ -30,8 +30,8 @@ export async function runOnceWithClient(config, client, version, options: any = 
 export async function runOnce(options: any = {}) {
     const config = await loadConfig();
     const version = await packageVersion();
-    const client = await createClient(config);
     const controlPlaneStore = options.controlPlaneStore ?? createControlPlaneStore(config);
+    const client = await createClient(config, controlPlaneStore);
     try {
 		const operationRunnerId = options.operationRunnerId ?? `${config.runnerId}:process:${process.pid}:${randomUUID()}`;
 		const result = await runOnceWithClient(config, client, version, { ...options, controlPlaneStore, operationRunnerId });
@@ -54,6 +54,6 @@ export async function runOnce(options: any = {}) {
     finally {
         if ('close' in client && typeof client.close === 'function')
             await client.close();
-        await controlPlaneStore?.db?.close?.();
+        if (!options.controlPlaneStore) await controlPlaneStore?.db?.close?.();
     }
 }

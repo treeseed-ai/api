@@ -1,6 +1,7 @@
 import { CONTROL_PLANE_OPERATIONS } from '@treeseed/sdk/operator-contracts';
 import { CapacityOperationError } from '../../repositories/capacity/capacity-operation-error.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
+import { DiscussionServiceError } from '../../../discussions/discussion-service.ts';
 import { ControlPlaneOperationError, type BoundOperation, type OperationInvocationContext } from '../operation-registry.ts';
 
 type Principal = OperationInvocationContext['principal'];
@@ -25,7 +26,7 @@ export interface CommunicationOperationDependencies {
 
 function result<T>(call: () => T | Promise<T>) {
 	return Promise.resolve().then(call).catch((error) => {
-		if (error instanceof CapacityOperationError || error instanceof CapacityGovernanceError) throw new ControlPlaneOperationError(error.status, error.code, error.message);
+		if (error instanceof CapacityOperationError || error instanceof CapacityGovernanceError || error instanceof DiscussionServiceError) throw new ControlPlaneOperationError(error.status, error.code, error.message);
 		throw error;
 	});
 }

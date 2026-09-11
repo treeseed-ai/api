@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createGovernanceService, GovernanceServiceError } from '../../../src/api/control-plane/governance/governance-service.ts';
+import { commitProposalVersionContent } from '../../../src/api/control-plane/governance/proposal-version-content.ts';
+
+vi.mock('../../../src/api/control-plane/governance/proposal-version-content.ts', () => ({ commitProposalVersionContent: vi.fn() }));
 
 function fixture(proposalProjectId = 'project-1') {
 	const store = {
@@ -16,6 +19,25 @@ function fixture(proposalProjectId = 'project-1') {
 }
 
 describe('governance service mutation boundaries', () => {
+	it('authors a draft when replay repair requires immutable provenance', async () => {
+		const { store, service, principal } = fixture();
+		store.updateGovernanceProposalDraft.mockRejectedValueOnce(Object.assign(new Error('Authoring required.'), { code: 'governance_proposal_repair_material_change' }));
+		const receipt = { path: 'proposals/test.md', commitSha: 'a'.repeat(40) };
+		const update = { expectedProposalVersion: 3, contentProvenance: receipt };
+		vi.mocked(commitProposalVersionContent).mockResolvedValueOnce({ receipt, update } as unknown as Awaited<ReturnType<typeof commitProposalVersionContent>>);
+		const result = await service.updateProposal(principal, 'project-1', 'proposal-1', { changeReason: 'Publish draft.' }, '3');
+		expect(result).toMatchObject({ idempotentReplay: false, authoringReceipt: receipt });
+		expect(store.updateGovernanceProposalDraft).toHaveBeenLastCalledWith(principal, 'proposal-1', update);
+	});
+
+	it('does not bind a new version when authoring fails', async () => {
+		const { store, service, principal } = fixture();
+		store.updateGovernanceProposalDraft.mockRejectedValueOnce(Object.assign(new Error('Authoring required.'), { code: 'governance_proposal_repair_material_change' }));
+		vi.mocked(commitProposalVersionContent).mockRejectedValueOnce(Object.assign(new Error('Reconcile the missing proposal type.'), { status: 422, code: 'proposal_type_contract_missing' }));
+		await expect(service.updateProposal(principal, 'project-1', 'proposal-1', { changeReason: 'Publish draft.' }, '3')).rejects.toMatchObject({ status: 422, code: 'proposal_type_contract_missing' });
+		expect(store.updateGovernanceProposalDraft).toHaveBeenCalledOnce();
+	});
+
 	it('binds If-Match to the exact proposal version before updating', async () => {
 		const { store, service, principal } = fixture();
 		const result = await service.updateProposal(principal, 'project-1', 'proposal-1',

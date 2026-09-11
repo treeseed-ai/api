@@ -3518,7 +3518,6 @@ SET data_json = '{"feedbackId":"' || CASE WHEN data_json::jsonb->>'id' IS NULL O
 WHERE event_type = 'feedback.submitted' AND data_json IS NOT NULL;
 
 DELETE FROM "team_inbox_items" WHERE kind = 'feedback' OR id LIKE 'feedback:%';
-+
 CREATE TABLE IF NOT EXISTS "user_service_vault_keys" (
   "id" text PRIMARY KEY NOT NULL,
   "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE cascade,
