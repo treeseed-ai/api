@@ -16,7 +16,8 @@ function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/gu
 function repositorySource(value: unknown) {
 	const response = object(value);
 	const file = object(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
-	return text(file.content);
+	if (typeof file.content !== 'string') throw Object.assign(new Error('TreeDX did not return the existing proposal source bytes.'), { status: 502, code: 'proposal_source_content_missing' });
+	return file.content;
 }
 
 export async function commitProposalVersionContent(input: { store: any; proposal: Row; principal: Row; update: Row }) {
@@ -55,9 +56,9 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		relatedObjectives: nextMetadata.relatedObjectives, evidenceRefs: nextMetadata.evidenceRefs, plan: nextMetadata.plan }); }
 	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 	try {
-		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: branchName, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch(() => null);
+		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: branchName, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch((error) => { if (Number(object(error).status) === 404) return null; throw error; });
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
-		const before = repositorySource(existing) || null;
+		const before = existing === null ? null : repositorySource(existing);
 		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before, after: source }] });
 		const expectedDigest = createHash('sha256').update(source).digest('hex');
 		const written = (Array.isArray(changeset.files) ? changeset.files : []).find((file: unknown) => text(object(file).path) === path);
