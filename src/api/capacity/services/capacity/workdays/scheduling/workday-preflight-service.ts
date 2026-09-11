@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
 	validateWorkdayIntent,
+	normalizeWorkdayAgentSelection,
 	validateWorkdayPreflight,
 	validateWorkdayPreflightFreshness,
 	type WorkdayIntent,
@@ -29,7 +30,7 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','operatorConstraints']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','operatorConstraints','agentSelection']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
@@ -41,6 +42,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(input.endsAt!==undefined?{endsAt:text(input.endsAt)}:{}),
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
+		...(input.agentSelection!==undefined?{agentSelection:input.agentSelection as WorkdayIntent['agentSelection']}:{}),
 		...(Object.keys(constraints).length?{operatorConstraints:{
 			...(Array.isArray(constraints.providerIds)?{providerIds:constraints.providerIds.map(text).filter(Boolean)}:{}),
 			...(constraints.maxConcurrency!==undefined?{maxConcurrency:Number(constraints.maxConcurrency)}:{}),
@@ -50,6 +52,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	const diagnostics=validateWorkdayIntent(intent);
 	if(projects!=='all'&&!projects.length) diagnostics.push({code:'projects_required',path:'projects',message:'Select at least one project or all.'});
 	if(diagnostics.length) diagnosticsError('workday_intent_invalid','Workday intent is invalid.',diagnostics);
+	if(intent.agentSelection!==undefined) intent.agentSelection=normalizeWorkdayAgentSelection(intent.agentSelection);
 	return intent;
 }
 
@@ -91,9 +94,11 @@ export class WorkdayPreflightService {
 		const cooperativePlanningPercent=Math.min(20,100-reservePercent);
 		const runInput:JsonRecord={
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
+			executionMode:'production',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
 			parameters:{ profileId:intent.profileId,allocationSetId:String(allocation.id),projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
+				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
 				objectiveRefs:intent.objectiveFilters??[],planningOnly:false,planningSession:{rounds:3,assignmentTimeboxSeconds:900},timePolicy:{cooperativePlanningPercent,governedExecutionPercent:100-reservePercent-cooperativePlanningPercent,reservePercent} },
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
@@ -157,14 +162,14 @@ export class WorkdayPreflightService {
 		const stored=JSON.parse(String(row.response_json)) as StoredPreflight;
 		if(stored.receipt.preflightDigest!==request.preflightDigest) throw new CapacityGovernanceError('workday_preflight_digest_mismatch','Workday start must bind the exact preflight digest.',409);
 		const {preflightDigest,...preflightPayload}=stored.receipt;
-		if(digest(preflightPayload)!==preflightDigest) throw new CapacityGovernanceError('workday_preflight_integrity_invalid','Stored workday preflight evidence does not match its digest; generate a fresh plan.',409);
+		if(digest(preflightPayload)!==preflightDigest||digest(stored.intent)!==stored.receipt.intentDigest) throw new CapacityGovernanceError('workday_preflight_integrity_invalid','Stored workday preflight evidence does not match its digest; generate a fresh plan.',409);
 		const diagnostics=validateWorkdayPreflight(stored.receipt);
 		if(diagnostics.length) throw new CapacityGovernanceError('workday_preflight_stale','Workday preflight is expired or invalid; generate a fresh plan.',409,{diagnostics});
 		const current=await this.compile(teamId,stored.intent,requestedById,stored.receipt.id);
 		const freshness=validateWorkdayPreflightFreshness(stored.receipt,current.receipt);
 		if(freshness.length) throw new CapacityGovernanceError('workday_preflight_stale','Workday authority or capacity changed after preflight; generate a fresh plan.',409,{diagnostics:freshness});
-		const existing=await this.store.first(`SELECT * FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1`,[teamId,String(stored.runInput.id)]);
-		const run=existing??await this.store.createCapacityWorkdayRun(teamId,stored.runInput);
+		const existing=await this.store.first(`SELECT * FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1`,[teamId,String(current.runInput.id)]);
+		const run=existing??await this.store.createCapacityWorkdayRun(teamId,current.runInput);
 		if(!run) throw new CapacityGovernanceError('workday_start_failed','The API did not create the governed workday.',500);
 		const receipt:WorkdayStartReceipt={schemaVersion:'treeseed.workday-start-receipt/v1',workdayId:String(run.id),preflightId:request.preflightId,preflightDigest:request.preflightDigest,
 			acceptedCapacityPlanIds:stored.receipt.selectedDemands.flatMap((demand)=>demand.actingAuthority?[demand.actingAuthority.capacityPlanId]:[]),assignmentIds:[],reservationIds:[],

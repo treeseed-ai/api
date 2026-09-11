@@ -81,7 +81,13 @@ function digest(agents: CapacityWorkdayAgent[], graph: AgentPlanningGraph, contr
 }
 
 export function compileWorkdayPlanningGraphSnapshot(agentClasses: unknown[], selection: unknown): WorkdayPlanningGraphSnapshot {
-	const agents = capacityWorkdayAgentsFromClasses(agentClasses, normalizeWorkdayAgentSelection(selection));
+	const normalized = normalizeWorkdayAgentSelection(selection);
+	const eligible = capacityWorkdayAgentsFromClasses(agentClasses, normalizeWorkdayAgentSelection(undefined));
+	const fields = { classIds: 'projectAgentClassId', classSlugs: 'projectAgentClassSlug', agentSlugs: 'slug', activityTypes: 'activityType' } as const;
+	const unknown = Object.entries(fields).flatMap(([selector, field]) => normalized[selector as keyof typeof fields]
+		.filter(value => !eligible.some(agent => agent[field] === value)).map(value => ({ selector, value })));
+	if (unknown.length) throw new CapacityGovernanceError('capacity_workday_agent_selection_unknown', 'Workday selectors must identify eligible project planning profiles exactly.', 409, { unknown });
+	const agents = capacityWorkdayAgentsFromClasses(agentClasses, normalized);
 	if (!agents.length) throw new CapacityGovernanceError('capacity_workday_agent_selection_empty', 'Workday selection resolved no eligible planning profiles.', 409);
 	const contracts = signalContracts(agentClasses);
 	const proposalTypes = proposalTypeContracts(agentClasses);
