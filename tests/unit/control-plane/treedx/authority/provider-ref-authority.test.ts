@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { providerRefAuthority } from '../../../../src/api/control-plane/repositories/treedx/provider-ref-authority.ts';
+import { providerRefAuthority } from '../../../../../src/api/control-plane/repositories/treedx/provider-ref-authority.ts';
 
 const base = 'a'.repeat(40), produced = 'b'.repeat(40);
 const handle = { projectId: 'project', metadata: { baseCommitSha: base, baseRef: base, branchName: 'refs/heads/assignment-one', readRepositories: [{ projectId: 'team', baseRef: 'c'.repeat(40) }] } };
