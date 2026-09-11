@@ -8,7 +8,7 @@ import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../.
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { assignmentArtifactManifest } from '../context/assignment-deliverable-service.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
-import { resolveProposalFeedbackSubject } from './feedback/subject.ts';
+import { resolveProposalFeedbackSubject, reviewedProposalVersion } from './feedback/subject.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -231,6 +231,7 @@ async function registerProposalArtifacts(
 		if (!commitSha) throw new CapacityGovernanceError('assignment_proposal_feedback_scope_invalid', 'Proposal feedback requires immutable TreeDX content.', 409, { assignmentId: assignment.id });
 		const proposal = await resolveProposalFeedbackSubject(store, assignment, text(reference.subjectId));
 		const proposalId = String(proposal.id);
+		const proposalVersion = reviewedProposalVersion(assignment, proposal);
 		const response = await client.readRepositoryFiles({ ref: commitSha, paths: [reference.contentPath], encoding: 'utf8', parseFrontmatter: true });
 		const file = repositoryFile(response);
 		const frontmatter = record(file.frontmatter);
@@ -244,7 +245,7 @@ async function registerProposalArtifacts(
 			id: eventId, eventType: 'proposal.discussion', actorType: 'agent', actorId: assignment.agentId,
 			teamId: assignment.teamId, projectId: assignment.projectId, proposalId,
 			message: text(frontmatter.summary,frontmatter.description,body.slice(0,500)),
-			evidence: { kind, contentPath: reference.contentPath, commitSha,
+			evidence: { kind, proposalVersion, contentPath: reference.contentPath, commitSha,
 				digest: createHash('sha256').update(text(file.content) || JSON.stringify({ frontmatter,body })).digest('hex'),
 				assignmentId: assignment.id, workdayId: assignment.workDayId, modeRunId: manifest.modeRunId },
 		});

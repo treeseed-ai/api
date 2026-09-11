@@ -21,7 +21,7 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 	const discussions = events.map((row) => ({ ...row, evidence: record(row.evidence_json) })).filter((row) => row.event_type === 'proposal.discussion');
 	const blockers = discussions.filter((row) => ['question', 'concern'].includes(text(row.evidence.kind)) && !resolved.has(text(row.id)));
 	const reviews = discussions.filter((row) => ['support', 'concern'].includes(text(row.evidence.kind)) && text(row.actor_id) !== text(proposal.createdById)
-		&& (!exactParticipation || Number(row.evidence.proposalVersion) === proposalVersion));
+		&& Number(row.evidence.proposalVersion) === proposalVersion);
 	const modeRuns = proposal.projectId ? await this.all(`SELECT outputs_json FROM agent_mode_runs WHERE project_id = ? AND mode = 'planning' AND status = 'succeeded' ORDER BY created_at DESC LIMIT 500`, [proposal.projectId]) : [];
 	const signals = await this.all(`SELECT contract_id,agent_id,workday_run_id,payload_json,metadata_json FROM agent_signals WHERE subject_kind = 'proposal' AND subject_id IN (?,?) ORDER BY created_at ASC LIMIT 500`, [proposalId, text(proposal.contentProposalSlug)]);
 	const versionMatches = (value: Row) => !exactParticipation || Number(value.proposalVersion) === proposalVersion

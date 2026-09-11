@@ -4,6 +4,24 @@ import type { AssignmentPlanningOutputStore } from '../assignment-planning-outpu
 type Scope = { id: string; teamId: string; projectId: string };
 type Store = Pick<AssignmentPlanningOutputStore, 'getGovernanceProposal' | 'all'>;
 
+function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+
+/** Feedback must refer to the proposal revision actually placed in the assignment context. */
+export function reviewedProposalVersion(assignment: Scope & { decisionInput?: unknown }, proposal: Record<string, unknown>) {
+	const intent = record(record(record(assignment.decisionInput).input).intent);
+	const artifacts = [intent.relatedArtifact, ...(Array.isArray(intent.relatedArtifacts) ? intent.relatedArtifacts : [])].map(record);
+	const provenance = record(record(proposal.metadata).contentProvenance);
+	const version = Number(proposal.activeVersion);
+	if (!Number.isSafeInteger(version) || version < 1 || typeof provenance.commitSha !== 'string'
+		|| !/^[a-f0-9]{40}$/u.test(provenance.commitSha) || !artifacts.some(artifact => artifact.model === 'proposal'
+			&& artifact.contentPath === provenance.contentPath && typeof artifact.commitSha === 'string' && /^[a-f0-9]{40}$/u.test(artifact.commitSha)
+			&& (artifact.commitSha === provenance.commitSha || (typeof provenance.digest === 'string' && /^[a-f0-9]{64}$/u.test(provenance.digest) && artifact.digest === provenance.digest)))) {
+		throw new CapacityGovernanceError('assignment_proposal_feedback_revision_stale',
+			'Proposal feedback was not produced from the current immutable proposal revision.', 409, { assignmentId: assignment.id });
+	}
+	return version;
+}
+
 /** Resolve custody of an existing proposal; human and agent IDs are equally authoritative. */
 export async function resolveProposalFeedbackSubject(store: Store, assignment: Scope, subject: string) {
 	const invalid = () => new CapacityGovernanceError('assignment_proposal_feedback_scope_invalid',
