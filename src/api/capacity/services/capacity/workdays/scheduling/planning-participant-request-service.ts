@@ -1,5 +1,6 @@
 import { type AgentPlanningGraph } from '@treeseed/sdk/agent-capacity';
 import { expandSignalDependencyClosure } from '../../../../policy/workdays/cooperative-planning.ts';
+import { boundedPlanningParticipants } from '../../../../policy/workdays/planning-budget.ts';
 import { createHash } from 'node:crypto';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
@@ -32,14 +33,17 @@ export async function validatePlanningParticipantRequest(input: { database: Capa
 	if (Date.parse(String(session.deadline)) <= Date.now()) throw new CapacityGovernanceError('planning_participant_deadline_elapsed','The planning session deadline has elapsed.',409);
 	const scheduled = new Set((await input.database.all(`SELECT node_id FROM workday_planning_participants WHERE session_id = ?`,[session.id])).map((row) => text(row.node_id)));
 	const missingNodeIds = closure.filter((nodeId) => !scheduled.has(nodeId));
-	const missing = missingNodeIds.map((qualified) => {
+	let missing = missingNodeIds.map((qualified) => {
 		const nodeId = qualified.slice(projectId.length + 1); const agent = input.snapshot.agents.find((entry) => entry.nodeId === nodeId);
 		if (!agent) throw new CapacityGovernanceError('planning_participant_node_invalid','A requested dependency has no frozen agent profile.',409,{ nodeId });
 		return { agentId:agent.slug,nodeId:qualified,projectAgentClassId:agent.projectAgentClassId,timeboxSeconds:boundedTimebox(record(agent.execution).timeboxSeconds ?? record(agent.execution).maxRuntimeSeconds) };
 	});
 	const nextWave = missing.length ? await input.database.first(`SELECT round FROM workday_planning_waves WHERE session_id = ? AND status = 'scheduled' AND round > ? ORDER BY round,wave LIMIT 1`,[session.id,session.current_round]) : null;
 	if (missing.length && !nextWave) throw new CapacityGovernanceError('planning_participant_round_unavailable','No unstarted planning round remains for the requested dependency closure.',409,{ missingNodeIds });
-	const metadata = parsed(session.metadata_json); const addedSeconds = missing.reduce((sum,entry) => sum + entry.timeboxSeconds,0); const projectedSeconds = Number(metadata.requiredSeconds ?? session.reserved_seconds ?? 0) + addedSeconds;
+	const metadata = parsed(session.metadata_json);
+	const reserved = Number(metadata.requiredSeconds ?? session.reserved_seconds ?? 0);
+	missing = boundedPlanningParticipants(missing, Math.max(0, Number(session.allocated_seconds) - reserved));
+	const addedSeconds = missing.reduce((sum,entry) => sum + entry.timeboxSeconds,0); const projectedSeconds = reserved + addedSeconds;
 	if (projectedSeconds > Number(session.allocated_seconds)) throw new CapacityGovernanceError('planning_participant_time_insufficient','The requested participant closure does not fit in remaining cooperative-planning time.',409,{ requiredSeconds:projectedSeconds,allocatedSeconds:Number(session.allocated_seconds),missingNodeIds });
 	return { sessionId:String(session.id),targetKind,targetId,rationale,closure,missing,targetRound:nextWave ? Number(nextWave.round) : null,projectedSeconds };
 }

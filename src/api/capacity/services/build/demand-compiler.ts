@@ -1,5 +1,6 @@
 import { COMMUNICATION_PRIORITY,type AgentArtifactManifest } from '@treeseed/sdk/agent-capacity';
 import { evaluatePlanningGraphNodeInstances } from '../../policy/workdays/planning-graph.ts';
+import { planningInstanceTimebox } from '../../policy/workdays/planning-budget.ts';
 import { validateAgentArtifactManifest } from '../../artifact-manifest.ts';
 import { evaluateMinimumAssignmentDuration } from '../../policy/timing/assignment-duration.ts';
 import { createHash } from 'node:crypto';
@@ -250,7 +251,7 @@ async function compilePlanningDemands(
 	project: WorkdayProject,
 	workdayId: string,
 	now: string,
-	wave: { id: string; round: number; nodeIds: string[]; snapshotRef?: string; snapshot?: Record<string, unknown> } | null,
+	wave: { id: string; round: number; nodeIds: string[]; timeboxes: Record<string, number>; snapshotRef?: string; snapshot?: Record<string, unknown> } | null,
 ) {
 	const supply = await resolveProviderSynthesisContext(store, principal, { environment: run.environment, now });
 	const snapshot = decodeWorkdayPlanningGraphSnapshot(record(run.parameters.planningGraphByProjectId)[project.id], project.id);
@@ -301,7 +302,9 @@ async function compilePlanningDemands(
 			sourceId: source.sourceId,
 		})) continue;
 		const idempotencyKey = `workday:${run.id}:${project.id}:${wave ? `wave:${wave.id}` : `cycle:${cycle.cycleNumber}`}:node:${entry.agentId}`;
-		const sessionTimebox = Number(record(run.parameters.planningSession).assignmentTimeboxSeconds);
+		const sessionTimebox = wave ? planningInstanceTimebox(wave.timeboxes[`${project.id}:${graphNodeId}`]!,
+			[...instances.values()].filter(item => item.graphNodeId === graphNodeId).length)
+			: Number(record(run.parameters.planningSession).assignmentTimeboxSeconds);
 		const estimate = await estimateRequestedAgentSeconds(store, agent, source.payload);
 		const capabilityDemand = await compileCapabilityDemand(store, agent);
 		const requiredCapabilities = capabilityDemand.resolved.map((entry) => entry.id);
