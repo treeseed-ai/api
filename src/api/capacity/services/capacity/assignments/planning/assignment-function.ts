@@ -32,7 +32,7 @@ import { recordAssignmentDenial } from './support/assignment-denial.ts';
 import type { AssignmentFunctionStore } from './support/assignment-function-store.ts';
 export { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
 export { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
-async function assignmentInput(
+export async function assignmentInput(
 	store: AssignmentFunctionStore,
   demand: Awaited<ReturnType<CapacityWorkdayDemandRepository["claimNext"]>>,
   principal: ProviderLeasePrincipal,
@@ -327,7 +327,8 @@ async function assignmentInput(
 	  contextQueryChecks: Array.isArray(payload.contextQueryChecks) ? payload.contextQueryChecks : [],
 	  contextQueryLayers: record(payload.contextQueryLayers),
 	  communication: record(demand.metadata.communication),
-	  identityManifest: executionKind === 'conversation' ? {
+	  // Every real guest verifies the same immutable identity, not only chat guests.
+	  identityManifest: {
 		  schemaVersion: 'treeseed.agent-identity-manifest/v1',
 		  agentHandle: `@${projectSlug}/${text(demand.agentId)}`,
 		  teamId: demand.teamId, projectId: demand.projectId, projectSlug,
@@ -338,7 +339,7 @@ async function assignmentInput(
 		  teamLibrary: { projectId:text(teamLibraryProject.id),projectSlug:'team',repositoryId:teamLibraryRepositoryId,immutableRef:teamLibraryRef,
 			readme:{path:'README.md',expectedRevision:teamLibraryRef},coreObjective:{path:'objectives/core',expectedRevision:teamLibraryRef} },
 		  instructionTemplates: instructionTemplateReadPaths.map((path) => ({ path, expectedRevision: contentBaseRef })),
-	  } : {},
+	  },
 	  contextManifest: allowedReadPaths.map((path) => ({ path, immutableRef: contentBaseRef, access: 'read' })),
 		agentClassSlug: text(demand.metadata.agentClassSlug),
       contentRoot,
@@ -356,7 +357,9 @@ async function assignmentInput(
     workspace: {
       repositoryId,
       workspaceId,
-      allowedPaths: workspaceAllowedPaths,
+      // Repository reads have their own handle scope. A writable workspace must
+      // not include read-only anchors: TreeDX intersects its paths on every use.
+      allowedPaths: allowedWritePaths,
       baseRef: contentBaseRef,
     },
   };

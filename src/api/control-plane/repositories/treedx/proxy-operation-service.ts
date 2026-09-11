@@ -13,6 +13,7 @@ import { providerPrincipal, type ProviderPrincipal } from '../providers/provider
 import type { OperationInvocationContext } from '../../catalog/operation-registry.ts';
 import { TreeDxUpstreamAdmission, TreeDxUpstreamAdmissionError } from '../../treedx/upstream-admission.ts';
 import { createOfficialTreeDxClient, invokeOfficialTreeDxOperation, requireTreeDxOperation, treeDxOperationScope } from '../../treedx/upstream-operation.ts';
+import { providerRefAuthority } from './provider-ref-authority.ts';
 
 interface Store extends TreeDxProxyStore {
 	getProjectTreeDxLibrary(projectId: string): Promise<Record<string, unknown> | null>;
@@ -264,8 +265,21 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			const scope = treeDxOperationScope(operation, input, repositoryId(library) ? [repositoryId(library)!] : []);
 			const permission: Permission = descriptor.kind === 'read' ? 'projects:read:team' : 'projects:manage:team';
 			const access = await authorize(store, projectId, permission, scope, operation.method, operation.path, input.query, context, input.path);
-			const upstreamInput = descriptor.kind === 'read' && access.actorType === 'capacity_provider'
-				? bindCurrentLibraryView(operation, input, library) : input;
+			let upstreamInput = input;
+			let providerRefs: string[] | undefined;
+			if (access.actorType === 'capacity_provider') {
+				const requestedRef = operation.method === 'GET' ? input.query.ref : record(input.body).ref;
+				const journal = requestedRef && !input.path.workspaceId ? await store.all(
+					`SELECT metadata_json FROM treedx_project_proxy_audit WHERE project_id = ? AND assignment_id = ? AND actor_type = 'capacity_provider' AND result_status = 'authoring_unpublished' ORDER BY created_at DESC LIMIT 100`,
+					[projectId, access.assignment?.id]) : [];
+				const producedCommits = journal.flatMap(row => {
+					let data: Record<string, unknown>; try { data = record(typeof row.metadata_json === 'string' ? JSON.parse(row.metadata_json) : row.metadata_json); } catch { return []; }
+					return data.repositoryId === access.handle?.repositoryId && typeof data.commitSha === 'string' ? [data.commitSha] : [];
+				});
+				const authority = providerRefAuthority({ handle: access.handle ?? {}, projectId, workspace: Boolean(input.path.workspaceId), requestedRef, producedCommits });
+				providerRefs = authority.refs;
+				if (descriptor.kind === 'read' && !input.path.workspaceId) upstreamInput = bindCurrentLibraryView(operation, input, { contentRepositoryRef: authority.ref });
+			}
 			if (input.path.workspaceId) await verifyTreeDxWorkspace({ runtime, projectId, library, workspaceId: String(input.path.workspaceId) });
 			const baseUrl = resolveTreeDxProxyBaseUrl(runtime, library);
 			// TreeDX grants upstream authority to the control-plane service identity. The
@@ -274,7 +288,7 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			const crossProjectGrant=access.actorType==='capacity_provider'&&String(access.handle?.projectId)!==projectId
 				?(Array.isArray(record(access.handle?.metadata).readRepositories)?(record(access.handle?.metadata).readRepositories as unknown[]).map(record):[]).find((grant)=>String(grant.projectId)===projectId):null;
 			const compactScope = access.actorType === 'capacity_provider' ? { ...scope,
-				refs: [currentLibraryView(library)],
+				refs: providerRefs!,
 				paths: crossProjectGrant&&Array.isArray(crossProjectGrant.allowedPaths)?crossProjectGrant.allowedPaths.map(String):treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null).length
 					? treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null) : ['**'] } : scope;
 			const token = resolveTreeDxProxyToken(runtime, baseUrl, projectId, compactScope, { connectionId: connectionId(library, baseUrl) });
