@@ -78,7 +78,11 @@ export async function loadDiscussions(input: {
 	const selectedDiscussionPaths = selected ? (path: string) => path === projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)
 		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-messages', selected)}/`)
 		|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-events', selected)}/`) : () => true;
+	// Journal overlays provide immutable content, not additional selection authority.
+	// An exact read must never be paginated out by unrelated topic history.
+	const exactSelection = new Set(exactPaths);
 	const eligiblePaths = [...new Set([...branchPaths, ...journalPaths])]
+		.filter((path) => exactSelection.size === 0 || exactSelection.has(path))
 		.filter(selectedDiscussionPaths)
 		.filter((path) => !collectionMarker || path.includes(collectionMarker));
 	const pathMatches = query ? eligiblePaths.filter((path) => path.toLowerCase().includes(query)) : [];
