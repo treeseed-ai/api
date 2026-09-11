@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readProjectProposalTypes } from '../../../../src/control-plane/seeds/apply-support/projects/projects-core/project-proposal-types.ts';
+import { readProjectProposalTypes } from '../../../../../src/control-plane/seeds/apply-support/projects/projects-core/project-proposal-types.ts';
 
 const ref = 'a'.repeat(40);
 const path = '.treeseed/governance/proposal-types/implementation.yaml';
