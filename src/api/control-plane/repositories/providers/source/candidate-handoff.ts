@@ -9,6 +9,7 @@ export async function assignmentPredecessorCandidate(database: CapacityGovernanc
   const parent = await database.first('SELECT * FROM capacity_provider_assignments WHERE id=? AND team_id=? AND project_id=? LIMIT 1',
     [parentId, assignment.team_id, assignment.project_id]);
   if (!parent) throw new CapacityGovernanceError('source_parent_assignment_unavailable', 'Source handoff parent is not in the same project and team.', 409);
+  // Terminal transition already incremented the counter; this is the completed attempt.
   const candidates = await database.all(`SELECT id,attestation_json FROM provider_source_candidates
     WHERE assignment_id=? AND team_id=? AND project_id=? AND attempt=? AND state='accepted' LIMIT 1`, [parentId, assignment.team_id, assignment.project_id, parent.attempt_count]);
   const candidate = candidates[0];

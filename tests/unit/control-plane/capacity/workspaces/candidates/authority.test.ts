@@ -8,7 +8,7 @@ beforeEach(() => { vi.clearAllMocks(); mocks.credential.mockImplementation(async
 function fixture() {
   const f = candidateFixture(), actor = { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: ['provider:assignments:write'] };
   const row = { id: 'assignment', team_id: 'team', project_id: 'project', capacity_provider_id: 'provider', membership_id: 'membership', runner_id: 'runner',
-    lease_token: 'test-lease', status: 'running', lease_state: 'leased', lease_expires_at: '2026-09-10T01:00:00.000Z', attempt_count: 1,
+    lease_token: 'test-lease', status: 'running', lease_state: 'leased', lease_expires_at: '2026-09-10T01:00:00.000Z', attempt_count: 0,
     execution_kind: 'workday', mode: 'acting', allowed_outputs_json: JSON.stringify({ artifactKinds: ['source-candidate'] }),
     workspace_context_json: JSON.stringify({ sourceWorkspace: { schemaVersion: 'treeseed.assignment-source-pin/v1', exactCommit: 'a'.repeat(40), credentialBindingId: 'binding',
       repository: { id: 'repo', provider: 'github', owner: 'example', name: 'project', ref: 'staging', cloneUrl: 'https://github.com/example/project.git' } } }) };
@@ -25,7 +25,7 @@ describe('candidate Identity and Vault authority', () => {
   it.each(['team', 'attempt', 'analysis', 'permission', 'lease', 'source'] as const)('denies %s mismatch before opening custody', async invalid => {
     const f = fixture();
     if (invalid === 'team') f.row.team_id = 'other';
-    if (invalid === 'attempt') f.row.attempt_count = 2;
+    if (invalid === 'attempt') f.row.attempt_count = 1;
     if (invalid === 'analysis') f.row.execution_kind = 'conversation';
     if (invalid === 'permission') f.row.allowed_outputs_json = '{}';
     if (invalid === 'lease') f.row.lease_expires_at = '2026-09-09T00:00:00.000Z';

@@ -31,7 +31,7 @@ export async function authorizeSourceCandidate(database: CapacityGovernanceDatab
   const scope = assignmentSourceMode(row), attestation = request.candidate.attestation;
   const context = object(row.workspace_context_json), pin = readAssignmentSourcePin(context);
   if (scope.mode !== 'work' || scope.publication !== 'candidate-only' || !pin
-    || attestation.providerId !== actor.capacityProviderId || attestation.assignmentId !== assignmentId || attestation.attempt !== Number(row.attempt_count)
+    || attestation.providerId !== actor.capacityProviderId || attestation.assignmentId !== assignmentId || attestation.attempt !== Number(row.attempt_count) + 1
     || attestation.source.controlPlaneId !== controlPlaneId || attestation.source.teamId !== actor.teamId
     || attestation.source.projectId !== String(row.project_id) || attestation.source.repositoryId !== pin.repository.id || attestation.source.commit !== pin.exactCommit
     || attestation.parentCandidateId !== (pin.candidateId ?? null)

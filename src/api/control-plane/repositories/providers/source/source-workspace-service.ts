@@ -29,8 +29,17 @@ export function assertSourceAssignmentLease(row: RecordValue | null, principal: 
     || row.membership_id !== principal.membershipId || row.runner_id !== runnerId || !equalSecret(row.lease_token, leaseToken)
     || !['leased', 'running'].includes(String(row.status)) || row.lease_state !== 'leased'
     || !Number.isFinite(Date.parse(String(row.lease_expires_at))) || Date.parse(String(row.lease_expires_at)) <= now.getTime()
-    || !Number.isInteger(Number(row.attempt_count)) || Number(row.attempt_count) < 1) {
-    throw new CapacityGovernanceError('assignment_source_lease_invalid', 'Source access requires this provider runner’s current assignment lease.', 403);
+    || !Number.isSafeInteger(row.attempt_count) || Number(row.attempt_count) < 0 || Number(row.attempt_count) >= Number.MAX_SAFE_INTEGER) {
+    const checks = {
+      assignment: row?.id === assignmentId, team: row?.team_id === principal.teamId,
+      provider: row?.capacity_provider_id === principal.capacityProviderId, membership: row?.membership_id === principal.membershipId,
+      runner: row?.runner_id === runnerId, token: equalSecret(row?.lease_token, leaseToken),
+      state: ['leased', 'running'].includes(String(row?.status)) && row?.lease_state === 'leased',
+      expiry: Number.isFinite(Date.parse(String(row?.lease_expires_at))) && Date.parse(String(row?.lease_expires_at)) > now.getTime(),
+      attempt: Number.isSafeInteger(row?.attempt_count) && Number(row?.attempt_count) >= 0 && Number(row?.attempt_count) < Number.MAX_SAFE_INTEGER,
+    };
+    const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
+    throw new CapacityGovernanceError('assignment_source_lease_invalid', `Source access requires this provider runner’s current assignment lease (failed checks: ${failed.join(', ')}).`, 403);
   }
   return row;
 }
@@ -90,7 +99,7 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     const expiry = Math.min(Date.parse(String(row.lease_expires_at)), credentialExpiry, issued.getTime() + 300_000);
     if (!Number.isFinite(expiry) || expiry <= issued.getTime()) throw new CapacityGovernanceError('assignment_source_credential_expired', 'Source credential expired during authorization.', 409);
     const authorization: SourceWorkspaceAuthorization = { schemaVersion: 'treeseed.source-workspace-authorization/v1', id: randomUUID(),
-      providerId: actor.capacityProviderId, assignmentId, attempt: Number(row.attempt_count),
+      providerId: actor.capacityProviderId, assignmentId, attempt: Number(row.attempt_count) + 1,
       source: { controlPlaneId: options.controlPlaneId, teamId: actor.teamId, projectId, repositoryId: pin.repository.id, commit: pin.exactCommit, formatVersion: 1, profile: 'source-only' },
       ...assignmentSourceMode(row), credentialBindingId: pin.credentialBindingId, issuedAt: issued.toISOString(), expiresAt: new Date(expiry).toISOString() };
     const sealed = sealSourceCredential({ authorization, recipientPublicKey: request.recipientPublicKey, credential }, issued);

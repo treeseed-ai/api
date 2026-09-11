@@ -8,7 +8,7 @@ vi.mock('../../../../../src/api/capacity/services/accounts/lease-authority-servi
 const now = new Date('2026-09-10T23:00:00.000Z'), commit = 'a'.repeat(40);
 const principal = { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: ['provider:assignments:read'] };
 const row = { id: 'assignment', team_id: 'team', project_id: 'project', capacity_provider_id: 'provider', membership_id: 'membership', runner_id: 'runner',
-  lease_token: 'synthetic-lease', status: 'leased', lease_state: 'leased', lease_expires_at: '2026-09-10T23:05:00.000Z', attempt_count: 1, state_version: 7,
+  lease_token: 'synthetic-lease', status: 'leased', lease_state: 'leased', lease_expires_at: '2026-09-10T23:05:00.000Z', attempt_count: 0, state_version: 7,
   execution_kind: 'conversation', mode: 'planning', allowed_outputs_json: '{}', workspace_context_json: '{}' };
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,10 +45,15 @@ describe('provider source workspace authorization', () => {
   });
 
   it.each([{ team_id: 'other' }, { capacity_provider_id: 'other' }, { membership_id: 'other' }, { runner_id: 'other' }, { lease_token: 'other' },
-    { lease_expires_at: '2026-09-10T22:59:59Z' }, { lease_expires_at: 'invalid' }, { status: 'completed' }, { lease_state: 'released' }, { attempt_count: 0 }])('denies invalid provider/lease identity before Vault lookup', async override => {
+    { lease_expires_at: '2026-09-10T22:59:59Z' }, { lease_expires_at: 'invalid' }, { status: 'completed' }, { lease_state: 'released' }, { attempt_count: -1 }, { attempt_count: null }, { attempt_count: 0.5 }])('denies invalid provider/lease identity before Vault lookup', async override => {
     const f = fixture(override);
     await expect(f.service({ principal }, 'assignment', f.request)).rejects.toMatchObject({ code: 'assignment_source_lease_invalid' });
     expect(mocks.credential).not.toHaveBeenCalled(); expect(f.fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 1, 2])('maps lifecycle counter %i to a distinct current sandbox attempt', async attempt_count => {
+    const f = fixture({ attempt_count });
+    expect((await f.service({ principal }, 'assignment', f.request)).authorization.attempt).toBe(attempt_count + 1);
   });
 
   it('denies revoked capacity authority and wrong-project ownership', async () => {

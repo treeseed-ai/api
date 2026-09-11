@@ -32,6 +32,9 @@ describe('source candidate durable acceptance', () => {
     expect(f.row()?.state).toBe('accepted');
     expect(await f.service(f.auth, 'assignment', f.commit)).toEqual(receipt);
     expect(f.database.run.mock.calls.filter(([sql]) => sql.startsWith('UPDATE'))).toHaveLength(1);
+    const update = f.database.run.mock.calls.find(([sql]) => sql.startsWith('UPDATE'))!;
+    expect(update[0]).toContain('assignment.attempt_count+1=?');
+    expect(update[1].at(-2)).toBe(1);
     expect([...f.texts.values()]).toEqual([canonicalJson(f.candidate)]);
     expect(mocks.authorize).toHaveBeenCalledTimes(5);
   });

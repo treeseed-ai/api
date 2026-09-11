@@ -20,8 +20,13 @@ describe('durable source continuity', () => {
   it('blocks source-producing closeout until accepted custody exists', async () => {
     const actor = { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: [] };
     let accepted = false;
-    const db = { first: async (sql: string) => sql.includes('provider_source_candidates') ? accepted ? { id: 'candidate' } : null
-      : { mode: 'acting', execution_kind: 'workday', allowed_outputs_json: { artifactKinds: ['source-candidate'] }, attempt_count: 1, project_id: 'project' } };
+    const db = { first: async (sql: string, parameters: unknown[]) => {
+      if (sql.includes('provider_source_candidates')) {
+        expect(parameters[1]).toBe(1);
+        return accepted ? { id: 'candidate' } : null;
+      }
+      return { mode: 'acting', execution_kind: 'workday', allowed_outputs_json: { artifactKinds: ['source-candidate'] }, attempt_count: 0, project_id: 'project' };
+    } };
     await expect(assertDurableSourceCloseout(db as never, actor, 'assignment')).rejects.toThrow('Persist and verify');
     accepted = true; await expect(assertDurableSourceCloseout(db as never, actor, 'assignment')).resolves.toBeUndefined();
   });
