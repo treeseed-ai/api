@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { assignmentInput } from '../../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
+import { assignmentInput } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-function.ts';
 
-vi.mock('../../../../src/api/capacity/policy/supply-selection.ts', () => ({
+vi.mock('../../../../../src/api/capacity/policy/supply-selection.ts', () => ({
   capacitySupplyCandidateStatus: () => 'available',
   selectCapacitySupply: () => ({ selected: { executionProviderId: 'provider' }, rejected: [] }),
 }));
-vi.mock('../../../../src/api/capacity/services/capacity/assignments/planning/admission/battery-admission.ts', () => ({ assertBatteryAdmission: async () => undefined }));
-vi.mock('../../../../src/api/capacity/services/capacity/assignments/planning/context/cross-project-read-repositories.ts', () => ({ resolveCrossProjectReadRepositories: async () => [] }));
+vi.mock('../../../../../src/api/capacity/services/capacity/assignments/planning/admission/battery-admission.ts', () => ({ assertBatteryAdmission: async () => undefined }));
+vi.mock('../../../../../src/api/capacity/services/capacity/assignments/planning/context/cross-project-read-repositories.ts', () => ({ resolveCrossProjectReadRepositories: async () => [] }));
 
 describe('immutable identity on compiled assignments', () => {
   it.each(['conversation', 'workday'] as const)('binds %s identity to the actual project and team library revisions', async executionKind => {
