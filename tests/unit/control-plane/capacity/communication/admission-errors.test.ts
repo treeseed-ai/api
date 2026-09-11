@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCommunicationOperations, type CommunicationOperationDependencies } from '../../../../../src/api/control-plane/catalog/capacity/communications.ts';
 import { CapacityGovernanceError } from '../../../../../src/api/capacity/database.ts';
 import { ControlPlaneOperationError } from '../../../../../src/api/control-plane/catalog/operation-registry.ts';
+import { DiscussionServiceError } from '../../../../../src/api/discussions/discussion-service.ts';
 
 describe('communication admission diagnostics', () => {
 	const input = { path: { teamId: 'team', channel: 'acceptance' }, query: {}, body: { message: '@sdk/architect Hello' } };
@@ -22,6 +23,12 @@ describe('communication admission diagnostics', () => {
 	it('keeps unexpected errors internal rather than trusting arbitrary error-shaped objects', async () => {
 		const error = Object.assign(new Error('internal detail'), { status: 404, code: 'not_public' });
 		await expect(operation(vi.fn().mockRejectedValue(error)).handler(input, context)).rejects.toBe(error);
+	});
+	it('preserves trusted discussion read-back diagnostics', async () => {
+		const error = new DiscussionServiceError(503, 'discussion_readback_failed', 'TreeDX did not authoritatively return the committed Discussion message.');
+		await expect(operation(vi.fn().mockRejectedValue(error)).handler(input, context)).rejects.toMatchObject({
+			status: 503, code: error.code, message: error.message,
+		});
 	});
 	it('preserves durable blocked receipts and idempotency instead of converting them into failures', async () => {
 		const receipt = { sendId: 'send-1', status: 'blocked', targets: [{ invocationId: 'invocation-1', blockingState: { code: 'capacity_unavailable' } }] };

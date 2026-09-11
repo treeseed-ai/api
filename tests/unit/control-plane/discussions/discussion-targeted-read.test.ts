@@ -66,4 +66,20 @@ describe('targeted Discussion reads', () => {
 		expect(result.messages).toHaveLength(2);
 		expect(result.messages.find((message) => message.path === path)?.immutableRef).toBe(commitSha);
 	});
+
+	it.each(['path', 'identity'])('keeps an exact %s read isolated from more than a page of journal history', async (selection) => {
+		const path = 'discussion-messages/discussion-1/requested.mdx';
+		const commitSha = 'b'.repeat(40);
+		const journal = [path, ...Array.from({ length: 75 }, (_, index) => `discussion-messages/discussion-1/other-${index}.mdx`)]
+			.map((changedPath, index) => ({ result_status: 'authoring_integrated',
+				metadata_json: JSON.stringify({ commitSha: index === 0 ? commitSha : index.toString(16).padStart(40, '0'), changedPaths: [changedPath] }) }));
+		const result = await loadDiscussions({ store: { all: vi.fn(async () => journal) }, projectId: 'project-1',
+			discussionId: 'discussion-1', collection: 'messages', limit: 1,
+			...(selection === 'path' ? { exactPaths: [path] } : { exactMessageIds: ['requested'] }) });
+		expect(result.messages.map((message) => message.path)).toEqual([path]);
+		expect(result.messages[0]?.immutableRef).toBe(commitSha);
+		expect(mocks.listRepositoryPaths).not.toHaveBeenCalled();
+		expect(mocks.readRepositoryFiles).toHaveBeenCalledTimes(1);
+		expect(mocks.readRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({ ref: commitSha, paths: [path] }));
+	});
 });
