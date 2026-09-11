@@ -40,9 +40,14 @@ export async function startAssignmentExecutionWindow(database:CapacityGovernance
 	const key=text(input.idempotencyKey); const planRef=record(input.planRef); const expected=Number(input.expectedStateVersion);
 	if(!key||!text(planRef.id)||!text(planRef.path)) throw new CapacityGovernanceError('assignment_execution_start_evidence_required','Execution start requires an idempotency key and exact assignment-plan id/path.',400);
 	const existing=record(record(assignment.metadata).executionWindow);
-	if(text(existing.idempotencyKey)===key) return assignment;
+	if(assignment.status!=='leased'||assignment.leaseState!=='leased'||assignment.leaseToken!==input.leaseToken
+		|| (assignment.leaseExpiresAt && Date.parse(assignment.leaseExpiresAt)<=Date.parse(now))) throw new CapacityGovernanceError('assignment_execution_lease_invalid','Execution start requires the current active lease.',409);
+	if(text(existing.idempotencyKey)===key) {
+		if (text(record(existing.planRef).id)!==text(planRef.id)||text(record(existing.planRef).path)!==text(planRef.path)) throw new CapacityGovernanceError('assignment_execution_replay_mismatch','Execution replay cannot change its assignment plan.',409);
+		if (Date.parse(text(existing.executionDeadlineAt))<=Date.parse(now)) throw new CapacityGovernanceError('assignment_execution_window_exhausted','The original productive execution window is exhausted.',409);
+		return assignment;
+	}
 	if(text(existing.startedAt)) throw new CapacityGovernanceError('assignment_execution_already_started','Productive execution already started from a different transition.',409,{ executionWindow:existing });
-	if(assignment.status!=='leased'||assignment.leaseState!=='leased'||assignment.leaseToken!==input.leaseToken) throw new CapacityGovernanceError('assignment_execution_lease_invalid','Execution start requires the current active lease.',409);
 	if(!Number.isInteger(expected)||expected!==assignment.stateVersion) throw new CapacityGovernanceError('assignment_execution_state_stale','Execution start requires the exact assignment state version.',409,{ expectedStateVersion:expected,stateVersion:assignment.stateVersion });
 	const compiled=compileAssignmentExecutionWindow(assignment,now,planRef); const metadata={ ...compiled.metadata,executionWindow:{ ...record(compiled.metadata.executionWindow),idempotencyKey:key } };
 	await database.run(`UPDATE capacity_provider_assignments SET capacity_envelope_json=?,metadata_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND state_version=? AND status='leased' AND lease_state='leased' AND lease_token=?`,[
@@ -76,9 +81,10 @@ export async function startAssignmentCloseoutWindow(database:CapacityGovernanceD
 	if(assignment.capacityProviderId!==principal.capacityProviderId||assignment.membershipId!==principal.membershipId) throw new CapacityGovernanceError('provider_assignment_forbidden','Provider cannot start closeout for this assignment.',403);
 	const key=text(input.idempotencyKey); const expected=Number(input.expectedStateVersion); const existing=record(record(assignment.metadata).closeoutWindow);
 	if(!key) throw new CapacityGovernanceError('assignment_closeout_start_evidence_required','Closeout start requires an idempotency key.',400);
+	if(assignment.status!=='leased'||assignment.leaseState!=='leased'||assignment.leaseToken!==input.leaseToken
+		|| (assignment.leaseExpiresAt && Date.parse(assignment.leaseExpiresAt)<=Date.parse(now))) throw new CapacityGovernanceError('assignment_closeout_lease_invalid','Closeout start requires the current active lease.',409);
 	if(text(existing.idempotencyKey)===key) return assignment;
 	if(text(existing.startedAt)) throw new CapacityGovernanceError('assignment_closeout_already_started','Closeout already started from a different transition.',409,{ closeoutWindow:existing });
-	if(assignment.status!=='leased'||assignment.leaseState!=='leased'||assignment.leaseToken!==input.leaseToken) throw new CapacityGovernanceError('assignment_closeout_lease_invalid','Closeout start requires the current active lease.',409);
 	if(!Number.isInteger(expected)||expected!==assignment.stateVersion) throw new CapacityGovernanceError('assignment_closeout_state_stale','Closeout start requires the exact assignment state version.',409,{ expectedStateVersion:expected,stateVersion:assignment.stateVersion });
 	const compiled=compileAssignmentCloseoutWindow(assignment,now); const metadata={ ...compiled.metadata,closeoutWindow:{ ...record(compiled.metadata.closeoutWindow),idempotencyKey:key } };
 	await database.run(`UPDATE capacity_provider_assignments SET capacity_envelope_json=?,metadata_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND state_version=? AND status='leased' AND lease_state='leased' AND lease_token=?`,[

@@ -196,13 +196,9 @@ export async function resolveCapacityWorkdayAssignmentIntent(
     artifacts.find((artifact) => artifact.model === "proposal") ??
     artifacts.find((artifact) => artifact.artifactKind === "planning_proposal");
   if (!proposal) {
-    return {
-      ...intent,
-      objective: `${intent.objective} No generated proposal exists yet, so create an objective-scoped planning note that states what proposal context is needed next.`,
-      artifactKind: "planning_note",
-      subjectModel: "objective",
-      subjectId: objectiveRef.replace(/^objective:/u, "") || "core",
-    };
+    // Existing library proposals are selected by the subsequent source resolver.
+    // An empty current workday artifact list does not establish their absence.
+    return { ...intent, upstreamEvidence: graphInputs };
   }
   const proposalId = proposal.contentPath.replace(
     /^.*\/([^/]+)\.(md|mdx)$/u,
