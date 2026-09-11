@@ -8,6 +8,7 @@ import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../.
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { assignmentArtifactManifest } from '../context/assignment-deliverable-service.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
+import { resolveProposalFeedbackSubject } from './feedback/subject.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -227,9 +228,9 @@ async function registerProposalArtifacts(
 	}
 	for (const reference of feedbackReferences) {
 		const commitSha = text(reference.commitSha,manifest.commit?.sha);
-		const subjectSlug = slug(text(reference.subjectId));
-		const proposalId = `proposal:${assignment.projectId}:${subjectSlug}`;
-		if (!commitSha || !subjectSlug || !await store.getGovernanceProposal(proposalId)) throw new CapacityGovernanceError('assignment_proposal_feedback_scope_invalid', 'Proposal feedback requires an existing proposal and immutable TreeDX content.', 409, { assignmentId: assignment.id, proposalId });
+		if (!commitSha) throw new CapacityGovernanceError('assignment_proposal_feedback_scope_invalid', 'Proposal feedback requires immutable TreeDX content.', 409, { assignmentId: assignment.id });
+		const proposal = await resolveProposalFeedbackSubject(store, assignment, text(reference.subjectId));
+		const proposalId = String(proposal.id);
 		const response = await client.readRepositoryFiles({ ref: commitSha, paths: [reference.contentPath], encoding: 'utf8', parseFrontmatter: true });
 		const file = repositoryFile(response);
 		const frontmatter = record(file.frontmatter);
