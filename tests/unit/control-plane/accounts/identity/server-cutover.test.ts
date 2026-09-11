@@ -8,7 +8,7 @@ import { createApiServer } from '../../../../../src/api/support/server.ts';
 
 it('refuses to create a listener or legacy app when managed Identity bootstrap is unavailable', async () => {
   mocks.load.mockRejectedValue(new Error('Managed API Identity bootstrap is unavailable'));
-  await expect(createApiServer()).rejects.toThrow('Managed API Identity bootstrap is unavailable');
+  await expect(createApiServer()).rejects.toMatchObject({ code: 'IDENTITY_FAILED', cause: expect.objectContaining({ message: 'Managed API Identity bootstrap is unavailable' }) });
   expect(mocks.app).not.toHaveBeenCalled();
   expect(mocks.close).toHaveBeenCalledOnce();
 });
