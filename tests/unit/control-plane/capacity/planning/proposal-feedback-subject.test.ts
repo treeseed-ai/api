@@ -66,4 +66,10 @@ describe('human proposal review freshness', () => {
 		const readiness = await governanceProposalReadinessMethod.call(store as unknown as ControlPlaneStore, 'human-proposal');
 		expect(readiness?.independentReviewCount).toBe(proposalVersion === 4 ? 1 : 0);
 	});
+	it.each([undefined, 3, 4])('counts only current structured review signal version %s', async proposalVersion => {
+		const store = { getGovernanceProposal: async () => ({ id: 'human-proposal', projectId: 'project-1', activeVersion: 4, createdById: 'author', metadata: {} }),
+			all: async (query: string) => query.includes('FROM agent_signals') ? [{ contract_id: 'proposal-reviewed', agent_id: 'independent-reviewer', payload_json: { proposalVersion } }] : [] };
+		const readiness = await governanceProposalReadinessMethod.call(store as unknown as ControlPlaneStore, 'human-proposal');
+		expect(readiness?.independentReviewCount).toBe(proposalVersion === 4 ? 1 : 0);
+	});
 });

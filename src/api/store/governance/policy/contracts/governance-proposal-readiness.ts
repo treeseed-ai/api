@@ -27,7 +27,7 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 	const versionMatches = (value: Row) => !exactParticipation || Number(value.proposalVersion) === proposalVersion
 		&& text(value.participationSnapshotDigest) === text(participationSnapshot.digest);
 	const estimateSignals = signals.filter((row) => row.contract_id === 'proposal-estimated').map((row) => ({ ...record(row.payload_json), participant: text(record(row.payload_json).participant) || text(row.agent_id) })).filter(versionMatches);
-	const reviewSignals = signals.filter((row) => row.contract_id === 'proposal-reviewed' && text(row.agent_id) !== text(proposal.createdById)).map((row) => ({ ...record(row.payload_json), agentId: text(row.agent_id), producerClass: text(record(row.metadata_json).producerClass) })).filter(versionMatches);
+	const reviewSignals = signals.filter((row) => row.contract_id === 'proposal-reviewed' && text(row.agent_id) !== text(proposal.createdById)).map((row) => ({ ...record(row.payload_json), agentId: text(row.agent_id), producerClass: text(record(row.metadata_json).producerClass) })).filter((signal) => Number(signal.proposalVersion) === proposalVersion && versionMatches(signal));
 	const readySignals = signals.filter((row) => row.contract_id === 'proposal-ready').map((row) => ({ ...record(row.payload_json), participant: text(record(row.payload_json).participant) || text(row.agent_id) })).filter(versionMatches);
 	const estimates = [...modeRuns.map((row) => structuredEstimate(row.outputs_json)), ...estimateSignals].filter((estimate) => (text(estimate.proposalId) === proposalId || text(estimate.proposalId) === text(proposal.contentProposalSlug)) && versionMatches(estimate));
 	let proposalTypes: unknown = proposal.proposalTypes;
