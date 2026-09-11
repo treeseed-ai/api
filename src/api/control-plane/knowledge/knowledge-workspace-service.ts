@@ -14,6 +14,7 @@ import { AGENT_OPERATIONAL_CONTENT_COLLECTIONS,validateContentFrontmatter } from
 import { compileDeclarativeContextQuery } from '@treeseed/sdk/graph/context-query-contracts';
 import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
 import { validateAgentDefinitionSource } from '../repositories/agents/agent-definition-source.ts';
+import { validateProposalTypeSource } from './proposal-type-source.ts';
 
 const operationalModels=new Map([...Object.entries(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map(([model,collection])=>[collection,model] as const),['agent-tests','agent_test']]);
 function operationalModel(path:string){const collection=path.split('/').at(-2)??path.split('/')[0]??'';return operationalModels.get(collection)??operationalModels.get(path.split('/')[0]??'')??null;}
@@ -116,6 +117,25 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				write: true, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const sourcePath = text(input.sourcePath);
+			if (input.kind === 'proposal-type') {
+				await authorization.project(principal, access.workspace.projectId, 'projects:manage:team');
+				const content = validateProposalTypeSource(sourcePath, input.content);
+				if (!allowedKnowledgePath(access.workspace, sourcePath)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The proposal type path is outside this workspace.');
+				let before: string | null = null;
+				if (input.create !== true) {
+					const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
+					if (!text(input.expectedSha) || text(input.expectedSha) !== current.sha) throw new KnowledgeOperationError(409, 'stale_workspace_file', 'The proposal type changed. Reload before saving.');
+					before = current.content;
+				}
+				const result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
+					baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: [{ path: sourcePath, before, after: content }],
+					idempotencyKey: `proposal-type-${workspaceId}-${access.workspace.version}` });
+				const updated = await store.updateKnowledgeWorkspace(workspaceId, { version: access.workspace.version, status: 'draft' });
+				if (!updated.ok) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
+				await store.recordAuditEvent({ eventType: 'knowledge.proposal_type.updated', actorType: 'user', actorId: access.principal.id,
+					targetType: 'proposal_type', targetId: sourcePath, data: { workspaceId, projectId: access.workspace.projectId, path: sourcePath } });
+				return { result, workspace: updated.workspace };
+			}
 			if(input.delete===true) {
 				if(!sourcePath||!allowedKnowledgePath(access.workspace,sourcePath))throw new KnowledgeOperationError(422,'knowledge_path_invalid','Choose an existing knowledge file in this project workspace.');
 				const current=await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:sourcePath});
