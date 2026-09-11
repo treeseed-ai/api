@@ -9,6 +9,6 @@ export async function assertDurableSourceCloseout(database: CapacityGovernanceDa
   if (!row) throw new CapacityGovernanceError('source_closeout_assignment_missing', 'Assignment is outside this provider authority.', 403);
   if (assignmentSourceMode(row).publication !== 'candidate-only') return;
   const candidate = await database.first(`SELECT id FROM provider_source_candidates WHERE assignment_id=? AND attempt=? AND team_id=? AND project_id=? AND provider_id=? AND state='accepted' LIMIT 1`,
-    [assignmentId, row.attempt_count, actor.teamId, row.project_id, actor.capacityProviderId]);
+    [assignmentId, Number(row.attempt_count) + 1, actor.teamId, row.project_id, actor.capacityProviderId]);
   if (!candidate) throw new CapacityGovernanceError('source_candidate_required', 'Persist and verify the source candidate before completing this work assignment.', 409);
 }

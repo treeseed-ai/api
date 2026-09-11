@@ -54,7 +54,7 @@ export function createSourceCandidateService(database: CapacityGovernanceDatabas
     await database.run(`UPDATE provider_source_candidates SET state='accepted',receipt_json=?::jsonb,accepted_at=?
       WHERE id=? AND state='uploading' AND EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
       WHERE assignment.id=? AND assignment.team_id=? AND assignment.capacity_provider_id=? AND assignment.membership_id=?
-      AND assignment.runner_id=? AND assignment.lease_token=? AND assignment.attempt_count=?
+      AND assignment.runner_id=? AND assignment.lease_token=? AND assignment.attempt_count+1=?
       AND assignment.status IN ('leased','running') AND assignment.lease_state='leased' AND assignment.lease_expires_at>?)`,
       [canonicalJson(receipt), receipt.persistedAt, id, assignmentId, actor.teamId, actor.capacityProviderId, actor.membershipId,
         request.runnerId, request.leaseToken, attestation.attempt, now().toISOString()]);
