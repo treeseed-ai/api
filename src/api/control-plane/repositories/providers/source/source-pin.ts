@@ -7,6 +7,7 @@ export interface AssignmentSourcePin {
   repository: SourceRepository;
   exactCommit: string;
   credentialBindingId: string;
+  candidateId?: string;
 }
 interface PinStore {
   first(sql: string, parameters: unknown[]): Promise<Record<string, unknown> | null>;
@@ -48,7 +49,9 @@ export function readAssignmentSourcePin(context: Record<string, unknown>): Assig
     throw new CapacityGovernanceError('assignment_source_pin_invalid', 'The assignment source pin is invalid; refusing to replace it.', 409);
   }
   const repository = selectAssignmentSourceRepository([{ ...pin.repository, role: 'software', currentBranch: pin.repository.ref }]);
-  return { schemaVersion: pin.schemaVersion, repository, exactCommit: pin.exactCommit!, credentialBindingId: pin.credentialBindingId };
+  if (pin.candidateId !== undefined && !/^source-candidate-[a-f0-9]{64}$/u.test(pin.candidateId)) throw new CapacityGovernanceError('assignment_source_candidate_invalid', 'Assignment candidate identity is invalid.', 409);
+  return { schemaVersion: pin.schemaVersion, repository, exactCommit: pin.exactCommit!, credentialBindingId: pin.credentialBindingId,
+    ...(pin.candidateId ? { candidateId: pin.candidateId } : {}) };
 }
 
 /** CAS preserves the first exact revision across concurrent requests and moving protected refs. */

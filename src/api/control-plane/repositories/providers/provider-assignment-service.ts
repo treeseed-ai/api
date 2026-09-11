@@ -16,6 +16,10 @@ import { suspendAssignmentForDiscussionResponse } from '../../../capacity/servic
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
 import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
+import { createSourceCandidateService } from './source/candidate-service.ts';
+import { createSourceChunkService } from './source/source-chunk-service.ts';
+import { withLibraryStorage } from '../../../../security/library-storage.ts';
+import { assertDurableSourceCloseout } from './source/candidate-closeout.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
@@ -98,12 +102,15 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'The source authorization service requires a configured control-plane identity.', 503);
 			return createSourceWorkspaceService(store, contentStore, sourceOptions)(auth, assignmentId, body);
 		},
-		async sourceCandidate(auth: unknown, assignmentId: string) {
-			const actor = principal(auth, ['provider:assignments:write']);
-			await ownedAssignment(store, assignmentId, actor);
-			// Never trust caller-supplied objectClosure/ancestry booleans. Publication remains closed
-			// until the independent verifier and durable artifact ledger are bound to this operation.
-			throw new CapacityGovernanceError('source_candidate_verifier_unavailable', 'Source candidates require independent object verification and durable artifact custody before acceptance.', 503);
+		async sourceCandidate(auth: unknown, assignmentId: string, body: unknown) {
+			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'Source publication requires a configured control-plane identity.', 503);
+			return createSourceCandidateService(store, contentStore, { ...sourceOptions,
+				withStorage: run => withLibraryStorage(contentStore, process.env, ({ client }) => run(client)) })(auth, assignmentId, body);
+		},
+		async sourceChunk(auth: unknown, assignmentId: string, body: unknown) {
+			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'Source reads require a configured control-plane identity.', 503);
+			return createSourceChunkService(store, contentStore, { ...sourceOptions,
+				withStorage: run => withLibraryStorage(contentStore, process.env, ({ client }) => run(client)) })(auth, assignmentId, body);
 		},
 		async next(auth: unknown, body: Record<string, unknown>, signal?: AbortSignal) {
 			const actor = principal(auth, ['provider:assignments:read']);
@@ -266,7 +273,10 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			return { assignmentId, sequence, acceptedAt, replayed: Boolean(existing) };
 		},
 		returnAssignment: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'returnProviderAssignment'),
-		complete: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment'),
+		async complete(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
+			await assertDurableSourceCloseout(store, principal(auth, ['provider:assignments:write']), assignmentId);
+			return lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment');
+		},
 		async fail(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
 			const scopes = ['provider:assignments:write']; if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:write');
 			const result = await store.failProviderAssignment(principal(auth, scopes), assignmentId, body);
