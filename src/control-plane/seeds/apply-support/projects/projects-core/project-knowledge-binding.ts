@@ -6,6 +6,7 @@ import { parseFrontmatterDocument } from '../../../../../api/content/frontmatter
 import { repositoryDefinitionSource, validateAgentDefinitionSource } from '../../../../../api/control-plane/repositories/agents/agent-definition-source.ts';
 import { resolveTreeDxServiceUrl } from '../../../../../api/control-plane/treedx/connection-url.ts';
 import { ContextQueryCheckService } from '../../../../../api/capacity/services/capacity/agents/context-query-check-service.ts';
+import { readProjectProposalTypes } from './project-proposal-types.ts';
 
 function text(...values: unknown[]): string {
 	for (const value of values) if (typeof value === 'string' && value.trim()) return value.trim();
@@ -108,6 +109,7 @@ async function reconcileProjectAgentClasses(input: {
 		groups.set(key, [...(groups.get(key) ?? []), definition]);
 	}
 	const now = new Date().toISOString();
+	const proposalTypeContracts = await readProjectProposalTypes(input.client, input.repositoryId, immutableRef);
 	for (const [classSlug, members] of groups) {
 		const existing = await input.store.first('SELECT id, created_at FROM project_agent_classes WHERE project_id = ? AND slug = ? LIMIT 1', [input.projectId, classSlug]);
 		const classId = text(existing?.id, `${input.projectId}:${classSlug}`);
@@ -132,7 +134,7 @@ async function reconcileProjectAgentClasses(input: {
 			metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`, [
 			classId,input.teamId,input.projectId,classSlug,text(members[0]?.definition.projectAgentClassName, classSlug),
 			JSON.stringify(allowedModes.length ? allowedModes : ['planning']),JSON.stringify([]),JSON.stringify({}),JSON.stringify({}),
-			JSON.stringify({ agents }),JSON.stringify({}),JSON.stringify(metadata),text(existing?.created_at, now),now,
+			JSON.stringify({ agents, proposalTypeContracts }),JSON.stringify({}),JSON.stringify(metadata),text(existing?.created_at, now),now,
 		]);
 	}
 	return { count: definitions.length, classes: groups.size, immutableRef };
