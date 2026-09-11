@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listTreeDxPlanningDemandSources } from '../../../../../src/api/capacity/services/capacity/workdays/content/workday-content-demand-source.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
 import { bindPlanningContentIntent } from '../../../../../src/api/capacity/services/support/planning-demand-source.ts';
+import { resolveCapacityWorkdayAssignmentIntent } from '../../../../../src/api/capacity/services/capacity/workdays/assignments/workday-assignment-context-service.ts';
 
 const mocks = vi.hoisted(() => ({ resolve: vi.fn(), search: vi.fn(), read: vi.fn(), validate: vi.fn() }));
 vi.mock('../../../../../src/api/capacity/services/capacity/workdays/treedx/workday-treedx-connection.ts', () => ({ resolveWorkdayTreeDxConnection: mocks.resolve }));
@@ -21,6 +22,14 @@ beforeEach(() => {
 describe('selected planning subject', () => {
 	const intent = { objective: 'Review the proposal', artifactKind: 'proposal_feedback_note', subjectModel: 'proposal', subjectId: null, includeWorkdayArtifacts: true };
 	const source = { sourceType: 'proposal' as const, sourceId: 'proposal:task', priority: 70, payload: { model: 'proposal', contentPath: 'proposals/task.md', commitSha: commit, digest: 'b'.repeat(64) } };
+	it('keeps proposal review intent through an empty workday history before selecting the existing library proposal', async () => {
+		const resolved = await resolveCapacityWorkdayAssignmentIntent({ all: async () => [] } as never,
+			{ ...run, teamId: 'team', parameters: {} } as never, { id: 'project-1' } as never,
+			{ slug: 'reviewer', activityType: 'reviewing', planningIntent: intent, outputContract: { modelMutations: ['proposal_feedback:create'] } } as never);
+		expect(resolved).toMatchObject({ artifactKind: 'proposal_feedback_note', subjectModel: 'proposal', subjectId: null });
+		expect(bindPlanningContentIntent(resolved, source)).toMatchObject({ subjectId: 'task', artifactKind: 'proposal_feedback_note' });
+		expect(resolved.objective).not.toContain('No generated proposal');
+	});
 	it('binds the selected existing proposal instead of falling back to an objective', () => {
 		expect(bindPlanningContentIntent(intent, source)).toMatchObject({ subjectId: 'task', subjectPath: 'proposals/task.md', relatedArtifact: { model: 'proposal', commitSha: commit, digest: 'b'.repeat(64) } });
 	});
