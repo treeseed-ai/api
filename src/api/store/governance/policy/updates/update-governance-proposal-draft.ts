@@ -44,7 +44,15 @@ export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStor
     const timestamp = isoNow();
 	const createdByType = optionalStringValue(input.createdByType,'user');
 	const createdById = optionalStringValue(input.createdById,principal?.id ?? null);
-	if (!materialChange && JSON.stringify(proposalTypes) === JSON.stringify(existing.proposalTypes ?? [existing.proposalType])) { await ensureVersionEvidence(this,{proposal:existing,version:existing.activeVersion,hash:existing.activeContentHash,metadata,proposalTypes,changeReason,createdById,createdByType,priorState:existing.status,nextState:existing.status,priorHash:existing.activeContentHash});return existing; }
+	if (!materialChange && JSON.stringify(proposalTypes) === JSON.stringify(existing.proposalTypes ?? [existing.proposalType])) {
+		const provenance = metadata.contentProvenance;
+		if (!provenance || !['contentPath','commitSha','digest'].every((key) => typeof provenance[key] === 'string' && provenance[key].trim())) {
+			throw Object.assign(new Error('The proposal has not been authored in TreeDX; publish its content before replaying publication.'), {
+				status: 409, code: input.repairExistingVersion === true ? 'governance_proposal_repair_material_change' : 'governance_proposal_provenance_required',
+			});
+		}
+		await ensureVersionEvidence(this,{proposal:existing,version:existing.activeVersion,hash:existing.activeContentHash,metadata,proposalTypes,changeReason,createdById,createdByType,priorState:existing.status,nextState:existing.status,priorHash:existing.activeContentHash});return existing;
+	}
 	if(input.repairExistingVersion===true){const error:Error&Record<string,any>=new Error('The requested proposal update is a material revision and requires TreeDX authoring.');error.status=409;error.code='governance_proposal_repair_material_change';throw error;}
 	const nextVersion = existing.activeVersion + 1;
 	const nextStatus = existing.status === 'voting' && materialChange ? 'open' : existing.status;

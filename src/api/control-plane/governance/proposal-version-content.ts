@@ -33,7 +33,13 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const contractPaths = types.map((id) => `.treeseed/governance/proposal-types/${id}.yaml`);
 	let contractRead: Row;
 	try { contractRead = object(await connection.client.readRepositoryFiles({ repoId: connection.repositoryId, ref: branchName, paths: contractPaths, encoding: 'utf8', parseFrontmatter: false, allowProtected: true })); }
-	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
+	catch (error) {
+		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
+		if (Number(object(error).status) === 404) throw Object.assign(new Error(`Proposal type contracts could not be read from the project library at ${workspace.baseCommitSha}. Reconcile these contracts before publishing: ${contractPaths.join(', ')}.`), {
+			status: 422, code: 'proposal_type_contract_missing', paths: contractPaths, commitSha: workspace.baseCommitSha,
+		});
+		throw error;
+	}
 	if (text(contractRead.resolvedRef) !== workspace.baseCommitSha) {
 		await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined);
 		throw Object.assign(new Error('The proposal contract branch changed while authoring began. Retry against the current branch.'), { status: 409, code: 'proposal_contract_base_stale', expectedBase: workspace.baseCommitSha, currentBase: text(contractRead.resolvedRef) });
