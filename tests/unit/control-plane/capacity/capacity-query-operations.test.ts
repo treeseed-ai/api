@@ -5,6 +5,19 @@ import { createCapacityQueryService } from '../../../../src/api/control-plane/re
 
 const principal = { id: 'user-1' };
 describe('capacity query catalog operations', () => {
+	it('scopes provider-owned lanes through approved team memberships', async () => {
+		const store = { principalCanAccessTeam: vi.fn(async () => true), getTeamAccessSummary: vi.fn(async () => ({ permissions: ['projects:read:team'] })),
+			listProviderAvailabilitySessionsPage: vi.fn(async () => []), first: vi.fn(async () => ({ count: 0 })), all: vi.fn(async () => []) };
+		const service = createCapacityQueryService(store);
+		await service.explain(principal, 'team-1');
+		await service.lanes(principal, 'team-1');
+		for (const [query, params] of store.all.mock.calls as unknown as [string, unknown[]][]) {
+			expect(query).toContain('membership.team_id = ?');
+			expect(query).toContain("membership.status = 'approved'");
+			expect(query).not.toContain('lanes.team_id');
+			expect(params).toEqual(['team-1']);
+		}
+	});
 	it('binds the complete battery inspection surface', () => {
 		const capacityQueries = Object.fromEntries(['availability', 'explain', 'usage', 'ledger', 'audit', 'lanes', 'grants', 'grant'].map((name) => [name, vi.fn()])) as any;
 		expect(createCapacityQueryOperations({ capacityQueries }).map((operation) => operation.binding)).toEqual([

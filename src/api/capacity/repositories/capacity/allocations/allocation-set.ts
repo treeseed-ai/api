@@ -10,6 +10,9 @@ import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../../durable
 
 type Row = Record<string, unknown>;
 
+// Repository profiles are explicitly selected workday inputs, never implicit team defaults.
+export const teamDefaultAllocationPredicate = "NOT jsonb_exists(metadata_json::jsonb, 'repositoryProfile')";
+
 const STATUSES = new Set<CapacityAllocationSetV2['status']>([
 	'draft', 'validated', 'active', 'superseded', 'archived',
 ]);
@@ -103,7 +106,7 @@ export class CapacityAllocationSetRepository {
 		await this.database.ensureInitialized();
 		return serializeCapacityAllocationSetRow(await this.database.first(
 			`SELECT * FROM capacity_allocation_sets
-			 WHERE team_id = ? AND status = 'active' AND effective_from <= ? AND (effective_until IS NULL OR effective_until > ?)
+			 WHERE team_id = ? AND status = 'active' AND ${teamDefaultAllocationPredicate} AND effective_from <= ? AND (effective_until IS NULL OR effective_until > ?)
 			 ORDER BY effective_from DESC, version DESC, created_at DESC LIMIT 1`, [teamId, at, at],
 		));
 	}
@@ -144,8 +147,8 @@ export class CapacityAllocationSetRepository {
 				params: [allocationSetId, now, expectedActiveAllocationSetId, teamId],
 			}
 			: candidate.effectiveUntil
-				? { query: `UPDATE capacity_allocation_sets SET status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE team_id = ? AND status = 'active' AND id <> ? AND effective_from < ? AND (effective_until IS NULL OR ? < effective_until)`, params: [allocationSetId, now, teamId, allocationSetId, candidate.effectiveUntil, candidate.effectiveFrom] }
-				: { query: `UPDATE capacity_allocation_sets SET status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE team_id = ? AND status = 'active' AND id <> ? AND (effective_until IS NULL OR ? < effective_until)`, params: [allocationSetId, now, teamId, allocationSetId, candidate.effectiveFrom] };
+				? { query: `UPDATE capacity_allocation_sets SET status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE team_id = ? AND status = 'active' AND ${teamDefaultAllocationPredicate} AND id <> ? AND effective_from < ? AND (effective_until IS NULL OR ? < effective_until)`, params: [allocationSetId, now, teamId, allocationSetId, candidate.effectiveUntil, candidate.effectiveFrom] }
+				: { query: `UPDATE capacity_allocation_sets SET status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE team_id = ? AND status = 'active' AND ${teamDefaultAllocationPredicate} AND id <> ? AND (effective_until IS NULL OR ? < effective_until)`, params: [allocationSetId, now, teamId, allocationSetId, candidate.effectiveFrom] };
 		const activationGuard = expectedActiveAllocationSetId
 			? ` AND EXISTS (SELECT 1 FROM capacity_allocation_sets WHERE id = ? AND team_id = ? AND status = 'superseded' AND superseded_by_id = ?)`
 			: '';
