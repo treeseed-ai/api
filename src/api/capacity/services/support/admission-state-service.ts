@@ -3,7 +3,7 @@ import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
 import { resolveCapacityAllocationPath } from '../../domain/allocation-path.ts';
 import { decodeDurableJsonArray,decodeDurableJsonObject } from '../../durable-json.ts';
-import { serializeCapacityAllocationSetRow } from '../../repositories/capacity/allocations/allocation-set.ts';
+import { serializeCapacityAllocationSetRow, teamDefaultAllocationPredicate } from '../../repositories/capacity/allocations/allocation-set.ts';
 import { serializeCapacityGrantRow } from '../../repositories/capacity/allocations/grant.ts';
 
 export interface CapacityAdmissionStateRequest {
@@ -73,7 +73,7 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 			? database.first(`SELECT * FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? LIMIT 1`, [request.providerSessionId, request.membershipId, request.teamId])
 			: database.first(`SELECT * FROM capacity_provider_availability_sessions WHERE membership_id = ? AND team_id = ? AND status = 'open' ORDER BY refreshed_at DESC, updated_at DESC LIMIT 1`, [request.membershipId, request.teamId]),
 		database.first(`SELECT * FROM capacity_grants WHERE id = ? AND membership_id = ? AND team_id = ? AND project_id = ? AND environment = ? AND status = 'active' LIMIT 1`, [grantId, request.membershipId, request.teamId, request.projectId, request.environment]),
-		allocationSetId ? database.first(`SELECT * FROM capacity_allocation_sets WHERE id = ? AND team_id = ? LIMIT 1`, [allocationSetId, request.teamId]) : database.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND status = 'active' AND effective_from <= ? AND (effective_until IS NULL OR effective_until > ?) ORDER BY effective_from DESC, version DESC LIMIT 1`, [request.teamId, now, now]),
+		allocationSetId ? database.first(`SELECT * FROM capacity_allocation_sets WHERE id = ? AND team_id = ? LIMIT 1`, [allocationSetId, request.teamId]) : database.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND status = 'active' AND ${teamDefaultAllocationPredicate} AND effective_from <= ? AND (effective_until IS NULL OR effective_until > ?) ORDER BY effective_from DESC, version DESC LIMIT 1`, [request.teamId, now, now]),
 	]);
 	const serializedGrant = grantRow ? serializeCapacityGrantRow(grantRow) : null;
 	const selectedGrant = serializedGrant;
