@@ -1,12 +1,11 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { serializeFrontmatterDocument } from '../../content/frontmatter.ts';
+import { serializeProposalDocument } from '../../governance/proposal-document.ts';
 import { validateProposalTypeContract } from '@treeseed/sdk/agent-capacity';
 import { parse as parseYaml } from 'yaml';
 import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
-import { assertGovernanceContent } from '../../governance/content-validation.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 
 type Row = Record<string, unknown>;
@@ -48,17 +47,23 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const invalid = contractPaths.filter((contractPath,index) => { try { const validation = validateProposalTypeContract(parseYaml(contracts.get(contractPath) ?? '')); return !validation.ok || validation.value?.id !== types[index]; } catch { return true; } });
 	if (invalid.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('One or more proposal types are missing or invalid at the authoring commit.'), { status: 422, code: 'proposal_type_contract_invalid', paths: invalid }); }
 	const nextMetadata = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types, relatedObjectives: input.update.relatedObjectives ?? metadata.relatedObjectives ?? [], evidenceRefs: input.update.evidenceRefs ?? metadata.evidenceRefs ?? [], plan: input.update.plan ?? metadata.plan ?? {} };
-	const source = serializeFrontmatterDocument({ id: text(input.proposal.id), title, description: summary, summary, date: text(input.proposal.createdAt, input.proposal.created_at, new Date().toISOString()), status: 'in progress', draft: false,
-		proposalType: types[0], proposalTypes: types, motivation: text(input.update.motivation,nextMetadata.motivation,summary),
+	let source: string;
+	try { source = serializeProposalDocument({ id: text(input.proposal.id), title, summary, body,
+		date: text(input.proposal.createdAt, input.proposal.created_at, new Date().toISOString()), proposalTypes: types,
+		motivation: text(input.update.motivation,nextMetadata.motivation,summary),
 		primaryContributor: text(input.update.primaryContributor,nextMetadata.primaryContributor,input.principal.contentContributorRef,input.principal.id),
-		relatedObjectives: nextMetadata.relatedObjectives, evidenceRefs: nextMetadata.evidenceRefs, plan: nextMetadata.plan }, `${body}\n`);
-	try { assertGovernanceContent('proposal',source); }
+		relatedObjectives: nextMetadata.relatedObjectives, evidenceRefs: nextMetadata.evidenceRefs, plan: nextMetadata.plan }); }
 	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 	try {
 		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: branchName, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch(() => null);
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
 		const before = repositorySource(existing) || null;
 		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before, after: source }] });
+		const expectedDigest = createHash('sha256').update(source).digest('hex');
+		const written = (Array.isArray(changeset.files) ? changeset.files : []).find((file: unknown) => text(object(file).path) === path);
+		if (text(object(written).afterSha256) !== expectedDigest) throw Object.assign(new Error('TreeDX changeset bytes do not match the proposal source. No proposal version was committed; repair changeset custody before retrying.'), {
+			status: 409, code: 'proposal_changeset_digest_mismatch',
+		});
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `governance: proposal ${text(input.proposal.id)} version ${version} — ${text(input.update.changeReason)}`, author: { name: text(input.principal.name, input.principal.id, 'Team member'), email: text(input.principal.email, 'governance@users.treeseed.local') } });
 		await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,actorType:'user',actorId:text(input.principal.id) });
 		await projectTreeDxCommitSignals(input.store, { projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: text(input.update.changeReason), actorType: 'user', actorId: text(input.principal.id) });
