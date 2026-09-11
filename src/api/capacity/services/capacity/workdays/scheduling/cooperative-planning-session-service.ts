@@ -79,7 +79,7 @@ export function compileCooperativePlanningSession(input: {
 			graphNodeIds: graph.nodes.map((entry) => entry.id).sort(),
 		},
 	);
-	if (!compiled.fits) throw new CapacityGovernanceError('capacity_planning_session_time_insufficient', 'The cooperative planning profiles do not fit within the allocated agent time.', 409, { requiredSeconds: compiled.requiredSeconds, allocatedSeconds: input.allocatedSeconds });
+	if (!compiled.fits) throw new CapacityGovernanceError('capacity_planning_session_time_insufficient', `The cooperative planning profiles require ${compiled.requiredSeconds} seconds but only ${input.allocatedSeconds} seconds are allocated.`, 409, { requiredSeconds: compiled.requiredSeconds, allocatedSeconds: input.allocatedSeconds });
 	return { graph, participants, compiled };
 }
 

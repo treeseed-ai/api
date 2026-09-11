@@ -20,6 +20,8 @@ type IndexedGeneration = {generation:RepositoryProfileGenerationReceipt;allocati
 export const REPOSITORY_WORKDAY_PROFILE_PATH='.treeseed/workdays/allocation-profile.json';
 
 export interface RepositoryWorkdayProfileObservation {
+	teamId:string;
+	projectId:string;
 	repository:string;
 	ref:string;
 	commit:string;
@@ -59,9 +61,12 @@ export class RepositoryWorkdayProfileService {
 		if(!/^refs\/heads\/[A-Za-z0-9._/-]+$/u.test(observation.ref)) throw new CapacityGovernanceError('repository_workday_profile_ref_invalid','An exact accepted branch ref is required.',400);
 		if(!/^[a-f0-9]{40}$/u.test(observation.commit)) throw new CapacityGovernanceError('repository_workday_profile_commit_invalid','An exact 40-character source commit is required.',400);
 		if(observation.path!==REPOSITORY_WORKDAY_PROFILE_PATH) throw new CapacityGovernanceError('repository_workday_profile_path_invalid','Repository workday profiles must use the canonical path.',400);
-		const binding=await this.database.first<Row>(`SELECT * FROM project_remote_repository_bindings WHERE LOWER(owner)=? AND LOWER(name)=? LIMIT 1`,[repository.owner,repository.name]);
-		if(!binding) throw new CapacityGovernanceError('repository_workday_profile_binding_missing','Repository is not bound to a TreeSeed project.',409,{repository:observation.repository});
-		const acceptedRef=`refs/heads/${text(binding.publication_ref)}`;
+		const sources=await this.database.all<Row>(`SELECT r.*,p.team_id AS owning_team_id FROM hub_repositories r JOIN projects p ON p.id=r.hub_id
+			WHERE r.provider='github' AND r.role IN ('software','primary','package') AND p.team_id=? AND p.id=? AND LOWER(r.owner)=? AND LOWER(r.name)=?`,
+			[observation.teamId,observation.projectId,repository.owner,repository.name]);
+		if(sources.length!==1) throw new CapacityGovernanceError('repository_workday_profile_binding_missing','Exactly one software repository must be bound to this team project.',409,{repository:observation.repository});
+		const source=sources[0]!; const binding={...source,team_id:source.owning_team_id,project_id:source.hub_id};
+		const acceptedRef=`refs/heads/${text(source.current_branch||source.default_branch).replace(/^refs\/heads\//u,'')}`;
 		if(observation.ref!==acceptedRef) throw new CapacityGovernanceError('repository_workday_profile_ref_not_accepted','Only the repository publication ref can create an accepted profile generation.',409,{acceptedRef});
 		const candidate=bundleFrom(observation.content);
 		const allProjects=await this.database.all<Row>(`SELECT id,slug FROM projects WHERE team_id=? ORDER BY slug,id`,[binding.team_id]);
