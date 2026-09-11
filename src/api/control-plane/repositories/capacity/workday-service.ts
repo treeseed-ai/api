@@ -2,6 +2,7 @@ import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/
 import { WorkdayPreflightService, parsePublicWorkdayIntent } from '../../../capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
+import { createWorkdayProfileService } from './workdays/profile-service.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -19,6 +20,7 @@ function translate(error: unknown): never {
 
 export function createWorkdayService(store: any) {
 	return {
+		...createWorkdayProfileService(store),
 		async list(principal: CapacityPrincipal, teamId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			try { return await store.listCapacityWorkdayRunsPage(teamId, { status: query.status ?? null,
