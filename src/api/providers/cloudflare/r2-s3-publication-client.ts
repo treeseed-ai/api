@@ -1,4 +1,5 @@
 import { createHash, createHmac } from 'node:crypto';
+import { boundedResponseBytes } from './bounded-response.ts';
 
 export interface R2S3PublicationConfig {
 	accountId: string;
@@ -69,18 +70,18 @@ export class R2S3PublicationClient {
 		throw new Error(`R2 ${method} transport retry limit reached for ${key || '(bucket)'}.`);
 	}
 
-	async get(key: string) {
+	async get(key: string, maximumBytes?: number) {
 		const response = await this.request('GET', key, '', { 'accept-encoding': 'identity' });
 		if (response.status === 404) return null;
 		if (!response.ok) throw new Error(`R2 read failed for ${key} (HTTP ${response.status}).`);
-		return { body: await response.text(), etag: response.headers.get('etag') ?? null };
+		return { body: maximumBytes === undefined ? await response.text() : new TextDecoder().decode(await boundedResponseBytes(response, maximumBytes)), etag: response.headers.get('etag') ?? null };
 	}
 
-	async getBytes(key: string) {
+	async getBytes(key: string, maximumBytes?: number) {
 		const response = await this.request('GET', key, '', { 'accept-encoding': 'identity' });
 		if (response.status === 404) return null;
 		if (!response.ok) throw new Error(`R2 read failed for ${key} (HTTP ${response.status}).`);
-		return { body: new Uint8Array(await response.arrayBuffer()), etag: response.headers.get('etag') ?? null,
+		return { body: maximumBytes === undefined ? new Uint8Array(await response.arrayBuffer()) : await boundedResponseBytes(response, maximumBytes), etag: response.headers.get('etag') ?? null,
 			sha256: response.headers.get('x-amz-meta-sha256') ?? null };
 	}
 
@@ -98,7 +99,7 @@ export class R2S3PublicationClient {
 		if (options.ifNoneMatch) headers['if-none-match'] = options.ifNoneMatch;
 		const response = await this.request('PUT', key, body, headers);
 		if (response.status === 412) {
-			const readback = await this.get(key);
+			const readback = await this.get(key, Buffer.byteLength(body));
 			if (readback?.body === body) return;
 			throw new Error(`R2 conditional write conflict for ${key}.`);
 		}
@@ -114,7 +115,7 @@ export class R2S3PublicationClient {
 		if (options.ifNoneMatch) headers['if-none-match'] = options.ifNoneMatch;
 		const response = await this.request('PUT', key, body, headers);
 		if (response.status === 412) {
-			const readback = await this.getBytes(key);
+			const readback = await this.getBytes(key, body.byteLength);
 			if (readback && sha256(readback.body) === digest) return { sha256: digest, byteLength: body.byteLength };
 			throw new Error(`R2 conditional write conflict for ${key}.`);
 		}

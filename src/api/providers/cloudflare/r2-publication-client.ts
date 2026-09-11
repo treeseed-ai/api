@@ -42,8 +42,8 @@ class R2ApiTokenPublicationClient {
 		return this.resolved;
 	}
 
-	async get(key: string) { return (await this.resolveClient()).get(key); }
-	async getBytes(key: string) { return (await this.resolveClient()).getBytes(key); }
+	async get(...args: Parameters<R2S3PublicationClient['get']>) { return (await this.resolveClient()).get(...args); }
+	async getBytes(...args: Parameters<R2S3PublicationClient['getBytes']>) { return (await this.resolveClient()).getBytes(...args); }
 	async putBytes(...args: Parameters<R2S3PublicationClient['putBytes']>) { return (await this.resolveClient()).putBytes(...args); }
 	async exists(key: string) { return (await this.resolveClient()).exists(key); }
 	async put(...args: Parameters<R2S3PublicationClient['put']>) { return (await this.resolveClient()).put(...args); }

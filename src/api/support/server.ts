@@ -10,6 +10,7 @@ import { createControlPlanePostgresDatabase } from './control-plane-postgres.js'
 import { ensureControlPlaneCredentialSchema } from '../app/support/runtime/foundation-runtime-utilities.ts';
 import { ControlPlaneStore } from '../persistence/store.js';
 import { loadManagedApiIdentityRuntime } from '../configuration/identity-runtime.ts';
+import { apiStartupDiagnostic, apiStartupStage } from './startup-diagnostics.ts';
 
 function hasRequestBody(method) {
 	return method !== 'GET' && method !== 'HEAD';
@@ -55,20 +56,20 @@ export type ApiServerInstance = {
 };
 
 export async function createApiServer(options: any = {}): Promise<ApiServerInstance> {
-	const config = {
+	const config = await apiStartupStage('CONFIG', () => ({
 		...resolveApiConfig(),
 		...(options.config ?? {}),
-	};
-	const ownedDatabase = options.db
+	}));
+	const ownedDatabase = await apiStartupStage('DATABASE', () => options.db
 		? null
-		: createControlPlanePostgresDatabase(config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL);
+		: createControlPlanePostgresDatabase(config.apiDatabaseUrl ?? process.env.TREESEED_DATABASE_URL));
 	const db = options.db ?? ownedDatabase;
-	await db.migrate();
+	await apiStartupStage('MIGRATIONS', () => db.migrate());
 	// The deployed server has exactly one authentication implementation. Missing
 	// or invalid protected Identity configuration is a startup failure, never a
 	// reason to resume the retired local password/token issuer.
 	let identityRuntime: Awaited<ReturnType<typeof loadManagedApiIdentityRuntime>>;
-	try { identityRuntime = await loadManagedApiIdentityRuntime(db, options.fetchImpl ?? fetch); }
+	try { identityRuntime = await apiStartupStage('IDENTITY', () => loadManagedApiIdentityRuntime(db, options.fetchImpl ?? fetch)); }
 	catch (error) { if (ownedDatabase) await ownedDatabase.close(); throw error; }
 	const store = options.store ?? new ControlPlaneStore({
 		...config,
@@ -77,13 +78,13 @@ export async function createApiServer(options: any = {}): Promise<ApiServerInsta
 		serviceSecret: config.webServiceSecret,
 		fetchImpl: options.fetchImpl ?? fetch,
 	}, db);
-	const app = createPlatformApiApp({
+	const app = await apiStartupStage('APPLICATION', () => createPlatformApiApp({
 		...options,
 		config,
 		db,
 		store,
 		identityRuntime,
-	});
+	}));
 	const server = createServer((req, res) => {
 		void honoNodeHandler(app, req, res).catch((error) => {
 			if (req.aborted || res.destroyed) return;
@@ -97,7 +98,7 @@ export async function createApiServer(options: any = {}): Promise<ApiServerInsta
 		server.listen(config.port, config.host, () => resolvePromise());
 	});
 	try {
-		await ensureControlPlaneCredentialSchema(store);
+		await apiStartupStage('CREDENTIAL_SCHEMA', () => ensureControlPlaneCredentialSchema(store));
 	} catch (error) {
 		await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
 		throw error;
@@ -121,6 +122,10 @@ const currentFile = fileURLToPath(import.meta.url);
 const entryFile = process.argv[1] ?? '';
 
 if (entryFile === currentFile) {
-	const instance = await createApiServer();
-	process.stdout.write(`Treeseed API listening on ${instance.url}\n`);
+	try {
+		const instance = await createApiServer();
+		process.stdout.write(`Treeseed API listening on ${instance.url}\n`);
+	} catch (error) {
+		process.stderr.write(`${JSON.stringify(apiStartupDiagnostic(error))}\n`, () => process.exit(1));
+	}
 }

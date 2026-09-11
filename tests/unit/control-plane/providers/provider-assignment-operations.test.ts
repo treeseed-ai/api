@@ -5,7 +5,7 @@ import { createProviderAssignmentService } from '../../../../src/api/control-pla
 
 function dependencies() {
 	return {
-		providerAssignments: { sourceCandidate: vi.fn(), sourceWorkspace: vi.fn(), next: vi.fn(), show: vi.fn(), explain: vi.fn(), renew: vi.fn(), startExecution: vi.fn(), startCloseout: vi.fn(),
+		providerAssignments: { sourceCandidate: vi.fn(), sourceChunk: vi.fn(), sourceWorkspace: vi.fn(), next: vi.fn(), show: vi.fn(), explain: vi.fn(), renew: vi.fn(), startExecution: vi.fn(), startCloseout: vi.fn(),
 			preflight: vi.fn(), respondToDiscussion: vi.fn(), acknowledgeCommunication: vi.fn(), traceCommunication: vi.fn(), returnAssignment: vi.fn(), complete: vi.fn(), fail: vi.fn(), reportUsage: vi.fn(), settle: vi.fn(), createModeRun: vi.fn(), createEvent: vi.fn() },
 		providerSignals: vi.fn(),
 		providerWorkflows: { dispatch: vi.fn(), show: vi.fn() },
@@ -13,18 +13,18 @@ function dependencies() {
 }
 
 describe('provider assignment operation catalog', () => {
-	it('keeps candidate acceptance closed in the real service until durable verification exists', async () => {
+	it('requires provider authentication and signed bounded candidate input before storage', async () => {
 		const store = { first: vi.fn(async () => ({ id: 'assignment-1' })) };
-		const service = createProviderAssignmentService(store as never);
-		await expect(service.sourceCandidate({}, 'assignment-1')).rejects.toMatchObject({ code: 'provider_access_token_required' });
+		const service = createProviderAssignmentService(store as never, undefined, store, undefined, { controlPlaneId: 'control' });
+		await expect(service.sourceCandidate({}, 'assignment-1', {})).rejects.toMatchObject({ code: 'provider_access_token_required' });
 		const auth = { principal: { teamId: 'team-1', membershipId: 'membership-1', capacityProviderId: 'provider-1', scopes: ['provider:assignments:write'] } };
-		await expect(service.sourceCandidate(auth, 'assignment-1')).rejects.toMatchObject({ code: 'source_candidate_verifier_unavailable' });
-		expect(store.first).toHaveBeenCalledTimes(1);
+		await expect(service.sourceCandidate(auth, 'assignment-1', { verification: { objectClosure: true, ancestry: true } })).rejects.toMatchObject({ code: 'source_candidate_request_invalid' });
+		expect(store.first).not.toHaveBeenCalled();
 	});
 	it('binds runtime and source operations to exact SDK objects', () => {
 		const operations = createProviderAssignmentOperations(dependencies());
 		expect(operations.map((operation) => operation.binding)).toEqual([
-			CONTROL_PLANE_OPERATIONS.providers.sourceCandidate, CONTROL_PLANE_OPERATIONS.providers.sourceWorkspace,
+			CONTROL_PLANE_OPERATIONS.providers.sourceCandidate, CONTROL_PLANE_OPERATIONS.providers.sourceChunk, CONTROL_PLANE_OPERATIONS.providers.sourceWorkspace,
 			CONTROL_PLANE_OPERATIONS.providers.nextAssignment, CONTROL_PLANE_OPERATIONS.providers.assignment,
 			CONTROL_PLANE_OPERATIONS.providers.assignmentExplanation, CONTROL_PLANE_OPERATIONS.providers.renewAssignment,
 			CONTROL_PLANE_OPERATIONS.providers.startExecution, CONTROL_PLANE_OPERATIONS.providers.startCloseout,
