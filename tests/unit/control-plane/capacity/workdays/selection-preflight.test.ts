@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parsePublicWorkdayIntent, WorkdayPreflightService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 
+const authority = vi.hoisted(() => ({
+	credential: vi.fn(async () => ({ token: 'vault-token', bindingId: 'repository-binding' })),
+	commit: vi.fn(async () => '1744993090310d665ea30475cb8395030ed83d5d'),
+}));
+vi.mock('../../../../../src/security/provider-credential-authority.ts', () => ({ resolveGitHubSourceAuthority: authority.credential }));
+vi.mock('../../../../../src/api/control-plane/repositories/providers/source/source-pin.ts', () => ({ resolveAuthorizedSourceCommit: authority.commit }));
+
 const input = () => ({ profileId: 'profile', projects: ['sdk'], startsAt: new Date().toISOString(), durationSeconds: 600, agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] } });
 function fixture() {
 	let stored: any; let replay: any;
@@ -34,6 +41,28 @@ describe('public workday selection custody', () => {
 		expect(parsePublicWorkdayIntent('team', unselected).agentSelection).toBeUndefined();
 		for (const invalid of [{}, null, { agentSlugs: [] }, { agentSlugs: [''] }, { activityTypes: ['acting'] }]) expect(() => parsePublicWorkdayIntent('team', { ...input(), agentSelection: invalid })).toThrow(/invalid/u);
 		expect(parsePublicWorkdayIntent('team', { ...input(), agentSelection: { ...agentSelection, agentSlugs: [' reviewer ', 'reviewer'] } }).agentSelection?.agentSlugs).toEqual(['reviewer']);
+	});
+	it('normalizes explicit accepted-decision selection and rejects malformed selection', () => {
+		expect(parsePublicWorkdayIntent('team', { ...input(), decisionIds: [' decision-b ', 'decision-a', 'decision-b'] }).decisionIds).toEqual(['decision-a', 'decision-b']);
+		expect(() => parsePublicWorkdayIntent('team', { ...input(), decisionIds: [] })).toThrow(/invalid/u);
+	});
+	it('derives immutable acting workflow authority instead of accepting it from the caller', async () => {
+		const f = fixture();
+		f.store.first.mockImplementation(async (sql: string) => sql.includes('capacity_allocation_sets') ? { id: 'allocation', version: 1 }
+			: sql.includes('governance_decisions') ? { id: 'decision', team_id: 'team', project_id: 'project-sdk', project_slug: 'sdk', proposal_id: 'proposal', status: 'accepted', superseded_at: null, metadata_json: JSON.stringify({ relatedObjectives: ['objectives/core'] }) }
+			: null);
+		f.store.all.mockImplementation(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ capacity_provider_id: 'provider' }]
+			: sql.includes('project_agent_classes') ? ['testing', 'engineering', 'review', 'technical-writing', 'release'].map((slug) => ({ id: slug, slug })) : []);
+		Object.assign(f.store, {
+			listStructuredAgentEstimatesForDecision: vi.fn(async () => [{ id: 'estimate', projectId: 'project-sdk', proposalId: 'proposal', expectedSeconds: 180 }]),
+			listHubRepositories: vi.fn(async () => [{ id: 'source', role: 'primary', provider: 'github', owner: 'treeseed-ai', name: 'sdk', currentBranch: 'staging' }]),
+		});
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), decisionIds: ['decision'] }), 'actor');
+		expect(f.stored().runInput.parameters.engineeringWorkflows).toEqual([expect.objectContaining({
+			projectId: 'project-sdk', decisionId: 'decision', objectiveId: 'objectives/core', exactBaseRef: '1744993090310d665ea30475cb8395030ed83d5d',
+			roles: { tester: 'testing', engineer: 'engineering', reviewer: 'review', technicalWriter: 'technical-writing', releaser: 'release' },
+		})]);
+		expect(authority.credential).toHaveBeenCalledWith(expect.objectContaining({ teamId: 'team', owner: 'treeseed-ai', repository: 'sdk' }));
 	});
 	it('freezes selection, starts the exact plan, and replays without creating more work', async () => {
 		const f = fixture(); const intent = parsePublicWorkdayIntent('team', input());

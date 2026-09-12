@@ -9,15 +9,22 @@ import {
 	type WorkdayPreflightReceipt,
 	type WorkdayStartReceipt,
 	type WorkdayStartRequest,
+	type EngineeringWorkflowPromotionConfigV1,
+	type StructuredAgentEstimate,
 } from '@treeseed/sdk/operator-contracts';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { canonicalJson,sha256 } from '../../../../security.ts';
+import { resolveGitHubSourceAuthority } from '../../../../../../security/provider-credential-authority.ts';
+import { selectAssignmentSourceRepository } from '../../assignments/context/source-repository.ts';
+import { resolveAuthorizedSourceCommit } from '../../../../../control-plane/repositories/providers/source/source-pin.ts';
 
 type JsonRecord = Record<string,unknown>;
 
 interface WorkdayIntentStore extends CapacityGovernanceDatabase {
 	preflightCapacityWorkdayRunRequest(teamId:string,input:JsonRecord): Promise<JsonRecord>;
 	createCapacityWorkdayRun(teamId:string,input:JsonRecord):Promise<JsonRecord|null>;
+	listStructuredAgentEstimatesForDecision(decisionId:string,filters?:{status?:string}):Promise<StructuredAgentEstimate[]>;
+	listHubRepositories(projectId:string):Promise<JsonRecord[]>;
 }
 
 interface StoredPreflight { receipt:WorkdayPreflightReceipt; intent:WorkdayIntent; runInput:JsonRecord }
@@ -30,7 +37,7 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','operatorConstraints','agentSelection']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','decisionIds','operatorConstraints','agentSelection']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
@@ -43,6 +50,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(input.endsAt!==undefined?{endsAt:text(input.endsAt)}:{}),
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
+		...(Array.isArray(input.decisionIds)?{decisionIds:[...new Set(input.decisionIds.map(text).filter(Boolean))].sort()}:input.decisionIds!==undefined?{decisionIds:input.decisionIds as string[]}:{}),
 		...(input.agentSelection!==undefined?{agentSelection:input.agentSelection as WorkdayIntent['agentSelection']}:{}),
 		...(Object.keys(constraints).length?{operatorConstraints:{
 			...(Array.isArray(constraints.providerIds)?{providerIds:constraints.providerIds.map(text).filter(Boolean)}:{}),
@@ -59,6 +67,40 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 
 export class WorkdayPreflightService {
 	constructor(private readonly store:WorkdayIntentStore) {}
+
+	private async engineeringWorkflows(teamId:string,intent:WorkdayIntent):Promise<EngineeringWorkflowPromotionConfigV1[]> {
+		const workflows:EngineeringWorkflowPromotionConfigV1[]=[];
+		for(const decisionId of intent.decisionIds??[]) {
+			const decision=await this.store.first(`SELECT d.id,d.team_id,d.project_id,d.proposal_id,d.status,d.superseded_at,p.slug AS project_slug,g.metadata_json
+				FROM governance_decisions d JOIN projects p ON p.id=d.project_id
+				LEFT JOIN governance_proposals g ON g.id=d.proposal_id WHERE d.id=? LIMIT 1`,[decisionId]);
+			if(!decision||text(decision.team_id)!==teamId) throw new CapacityGovernanceError('workday_decision_not_found','The selected decision is unavailable to this team.',404,{decisionId});
+			if(text(decision.status)!=='accepted'||decision.superseded_at) throw new CapacityGovernanceError('workday_decision_not_current','Acting requires a current accepted decision.',409,{decisionId,status:decision.status});
+			const projectId=text(decision.project_id), projectSlug=text(decision.project_slug);
+			if(intent.projects!=='all'&&!intent.projects.includes(projectId)&&!intent.projects.includes(projectSlug)) throw new CapacityGovernanceError('workday_decision_project_out_of_scope','The selected decision is outside the requested project scope.',409,{decisionId,projectId});
+			const estimates=(await this.store.listStructuredAgentEstimatesForDecision(decisionId,{status:'accepted'})).filter((entry)=>entry.projectId===projectId&&text(entry.proposalId)===text(decision.proposal_id));
+			if(!estimates.length) throw new CapacityGovernanceError('workday_decision_estimate_required','Acting requires an accepted estimate linked to the selected decision proposal.',409,{decisionId,projectId});
+			const metadata=jsonRecord(decision.metadata_json), objectives=Array.isArray(metadata.relatedObjectives)?metadata.relatedObjectives.map(text).filter(Boolean):[];
+			const objectiveId=objectives[0];
+			if(!objectiveId) throw new CapacityGovernanceError('workday_decision_objective_required','Acting requires the selected decision to identify an objective.',409,{decisionId,projectId});
+			const required=['testing','engineering','review','technical-writing','release'];
+			const classes=await this.store.all(`SELECT slug FROM project_agent_classes WHERE project_id=? AND team_id=? AND status='active' AND slug IN (${required.map(()=>'?').join(',')}) ORDER BY slug`,[projectId,teamId,...required]);
+			const available=new Set(classes.map((entry)=>text(entry.slug)));
+			const missing=required.filter((slug)=>!available.has(slug));
+			if(missing.length) throw new CapacityGovernanceError('workday_decision_agent_classes_required','Acting requires the complete engineering agent-class set.',409,{decisionId,projectId,missing});
+			const source=selectAssignmentSourceRepository(await this.store.listHubRepositories(projectId));
+			const credential=await resolveGitHubSourceAuthority({store:this.store,teamId,owner:source.owner,repository:source.name});
+			const exactBaseRef=await resolveAuthorizedSourceCommit(source,credential.token);
+			const stageSeconds=Math.max(60,Math.min(900,Math.ceil(Math.max(...estimates.map((entry)=>entry.expectedSeconds))/6)));
+			workflows.push({schemaVersion:1,id:`decision-${sha256(canonicalJson({decisionId,exactBaseRef})).slice(0,32)}`,projectId,decisionId,objectiveId,exactBaseRef,
+				roles:{tester:'testing',engineer:'engineering',reviewer:'review',technicalWriter:'technical-writing',releaser:'release'},
+				includeResearch:false,includeArchitecture:false,requireLinkedProposal:true,requireRevisionCycle:false,
+				seconds:{test:stageSeconds,implementation:stageSeconds,verification:stageSeconds,review:stageSeconds,documentation:stageSeconds,release:stageSeconds},
+				metadata:{sourceRepositoryId:source.id,estimateIds:estimates.map((entry)=>entry.id).sort()},
+			});
+		}
+		return workflows;
+	}
 
 	private async providerId(teamId:string,intent:WorkdayIntent):Promise<string> {
 		const constrained=intent.operatorConstraints?.providerIds??[];
@@ -93,6 +135,7 @@ export class WorkdayPreflightService {
 		const reservePercent=Number(intent.operatorConstraints?.reservePercent??10);
 		if(!Number.isFinite(reservePercent)||reservePercent<0||reservePercent>100) diagnosticsError('workday_intent_invalid','Workday reserve must be between zero and one hundred percent.',[{code:'reserve_invalid',path:'operatorConstraints.reservePercent'}]);
 		const cooperativePlanningPercent=Math.min(20,100-reservePercent);
+		const engineeringWorkflows=await this.engineeringWorkflows(teamId,intent);
 		const runInput:JsonRecord={
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
 			executionMode:'production',executionKind:'workday',triggerKind:'manual',
@@ -100,6 +143,7 @@ export class WorkdayPreflightService {
 			parameters:{ profileId:intent.profileId,allocationSetId:String(allocation.id),projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
+				...(engineeringWorkflows.length?{engineeringWorkflows}:{}),
 				objectiveRefs:intent.objectiveFilters??[],planningOnly:false,planningSession:{rounds:3,assignmentTimeboxSeconds:900},timePolicy:{cooperativePlanningPercent,governedExecutionPercent:100-reservePercent-cooperativePlanningPercent,reservePercent} },
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
@@ -128,7 +172,7 @@ export class WorkdayPreflightService {
 		const indexedProfile=record(jsonRecord(allocation.metadata_json).repositoryProfile);
 		const profileGeneration=integer(indexedProfile.generation??allocation.state_version??allocation.version,1);
 		const state:WorkdayPreflightObservation={
-			profileGeneration, profileDigest:text(indexedProfile.profileDigest)||digest(allocation), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[]}),
+			profileGeneration, profileDigest:text(indexedProfile.profileDigest)||digest(allocation), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],engineeringWorkflows}),
 			providerCapacityDigest:digest({providerId,membershipTeam:teamId,availableSeconds:projection.availableSeconds??null}),
 			authorizationDigest:digest({teamId,requestedById,profileId:intent.profileId}),
 			reservationDigest:digest(await this.store.all(`SELECT id,state,requested_seconds,reserved_seconds,active_seconds,elapsed_seconds,released_seconds,overrun_seconds FROM capacity_reservations WHERE team_id = ? AND state IN ('reserved','consuming','overran_pending_approval','continuation_required') ORDER BY id`,[teamId])),
