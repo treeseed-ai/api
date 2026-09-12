@@ -185,15 +185,24 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			const workspaceId = String(handle.workspaceId ?? '').trim();
 			const baseCommitSha = String(handle.baseCommitSha ?? handle.baseRef ?? '').trim();
 			const baseRef = String(handle.baseRef ?? handle.baseCommitSha ?? '').trim();
+			const allowedPaths = Array.isArray(handle.allowedPaths) ? handle.allowedPaths.map(String) : [];
 			if (!workspaceId || !baseCommitSha || !baseRef) throw new CapacityGovernanceError('provider_discussion_workspace_required',
 				'Discussion response requires the exact assignment authoring workspace.', 409);
-			const authored = await commitDiscussionMessage({ store: contentStore, projectId: assignment.projectId, teamId: assignment.teamId,
-				principal: { id: assignment.agentId ?? 'project-agent', displayName: assignment.agentId ?? 'Project agent', email: `${assignment.agentId ?? 'agent'}@agents.treeseed.local` },
-				body: markdown, intent: 'discuss', discussionId, messageId, createDiscussion: false, replyTo: sourceMessageId,
-				sourceMessageRefs: assignment.sourceMessageRefs, authorType: 'agent', authorAgentId: assignment.agentId,
-				recipients: localTargets.map((target) => target.agentSlug),
-				assignmentId: assignment.id, authoringRef, authoringWorkspace: { workspaceId, baseCommitSha, baseRef },
-			});
+			let authored;
+			try {
+				authored = await commitDiscussionMessage({ store: contentStore, projectId: assignment.projectId, teamId: assignment.teamId,
+					principal: { id: assignment.agentId ?? 'project-agent', displayName: assignment.agentId ?? 'Project agent', email: `${assignment.agentId ?? 'agent'}@agents.treeseed.local` },
+					body: markdown, intent: 'discuss', discussionId, messageId, createDiscussion: false, replyTo: sourceMessageId,
+					sourceMessageRefs: assignment.sourceMessageRefs, authorType: 'agent', authorAgentId: assignment.agentId,
+					recipients: localTargets.map((target) => target.agentSlug),
+					assignmentId: assignment.id, authoringRef, authoringWorkspace: { workspaceId, baseCommitSha, baseRef, allowedPaths },
+				});
+			} catch (error) {
+				const failure = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+				const diagnostic = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+				throw new CapacityGovernanceError('provider_discussion_authoring_failed',
+					`TreeDX Discussion authoring failed (${String(failure.code ?? failure.name ?? 'unknown')}): ${diagnostic}`, 502);
+			}
 			if (localTargets.length) {
 				await admitDiscussionInvocations(store, { teamId: assignment.teamId, projectId: assignment.projectId,
 					projectSlug, discussionId, messageId: authored.message.id, messagePath: authored.message.path, messageCommit: authored.commitSha,

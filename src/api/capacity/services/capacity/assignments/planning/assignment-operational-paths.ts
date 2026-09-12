@@ -33,16 +33,17 @@ export function assignmentBootstrapReadPaths(contentRoot: string, agentContentPa
 
 export function assignmentContextQueryReadPaths(contentRoot: string, contextQueryRefs: unknown, contextQueryChecks: unknown) {
 	const root = normalizedRoot(contentRoot);
+	const prefix = root ? `${root}/` : '';
 	const references = Array.isArray(contextQueryRefs) ? contextQueryRefs : [];
 	const checks = Array.isArray(contextQueryChecks) ? contextQueryChecks : [];
 	const definitionPaths = references.flatMap((value) => {
 		if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
 		const reference = value as Record<string, unknown>;
 		if (typeof reference.id !== 'string' || !reference.id.trim()) return [];
-		if (reference.kind === 'query') return [`${root}/agent-context-queries/${reference.id.trim()}.mdx`];
+		if (reference.kind === 'query') return [`${prefix}agent-context-queries/${reference.id.trim()}.mdx`];
 		if (reference.kind === 'query-set') return [
-			`${root}/agent-context-query-sets/${reference.id.trim()}.mdx`,
-			`${root}/agent-context-queries/**`,
+			`${prefix}agent-context-query-sets/${reference.id.trim()}.mdx`,
+			`${prefix}agent-context-queries/**`,
 		];
 		return [];
 	});
@@ -59,10 +60,11 @@ export function assignmentContextQueryReadPaths(contentRoot: string, contextQuer
 
 export function assignmentInstructionTemplateReadPaths(contentRoot: string, instructionTemplateRefs: unknown) {
 	const root = normalizedRoot(contentRoot);
+	const prefix = root ? `${root}/` : '';
 	return mergeAssignmentPathScopes((Array.isArray(instructionTemplateRefs) ? instructionTemplateRefs : []).flatMap((value) => {
 		if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
 		const id = typeof (value as Record<string,unknown>).id === 'string' ? String((value as Record<string,unknown>).id).trim() : '';
-		return id ? [`${root}/agent-instruction-templates/${id}.mdx`,`${root}/agent-instruction-templates/${id}.md`] : [];
+		return id ? [`${prefix}agent-instruction-templates/${id}.mdx`,`${prefix}agent-instruction-templates/${id}.md`] : [];
 	}));
 }
 
@@ -73,6 +75,15 @@ export function mergeAssignmentPathScopes(...scopes: string[][]) {
 export function assignmentDiscussionMessageReadPaths(refs: unknown[]) {
 	return mergeAssignmentPathScopes(refs.map(String).map((path) => path.replace(/\\/gu, '/').replace(/^\.\//u, ''))
 		.filter((path) => path.startsWith('discussion-messages/') || path.includes('/discussion-messages/')));
+}
+
+export function assignmentDiscussionWritePaths(contentRoot: string) {
+	const root = normalizedRoot(contentRoot);
+	const prefix = root ? `${root}/` : '';
+	return ['discussion-messages', 'discussion-events'].flatMap((collection) => [
+		`${prefix}${collection}`,
+		`${prefix}${collection}/**`,
+	]);
 }
 
 export function assignmentTreeDxProxyHandle(input: {

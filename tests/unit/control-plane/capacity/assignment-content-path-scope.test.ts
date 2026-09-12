@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAssignmentContentPathScope } from '../../../../src/api/capacity/services/capacity/assignments/planning/assignment-content-path-scope.ts';
-import { assignmentDiscussionMessageReadPaths, assignmentOperationalContentPaths } from '../../../../src/api/capacity/services/capacity/assignments/planning/assignment-operational-paths.ts';
+import { assignmentContextQueryReadPaths, assignmentDiscussionMessageReadPaths, assignmentDiscussionWritePaths, assignmentInstructionTemplateReadPaths, assignmentOperationalContentPaths } from '../../../../src/api/capacity/services/capacity/assignments/planning/assignment-operational-paths.ts';
 
 describe('assignment content path scope', () => {
 	it('accepts top-level library collections when the content root is dot', () => {
@@ -25,6 +25,9 @@ describe('assignment content path scope', () => {
 			'assignment-statuses/assignment_1-status-*',
 			'assignment-summaries/assignment_1.mdx',
 		]);
+		expect(assignmentDiscussionWritePaths('.')).toEqual([
+			'discussion-messages', 'discussion-messages/**', 'discussion-events', 'discussion-events/**',
+		]);
 	});
 
 	it('scopes conversation source reads to root or nested discussion messages', () => {
@@ -38,6 +41,15 @@ describe('assignment content path scope', () => {
 			'discussion-messages/topic/message.mdx',
 			'discussion-messages/topic/second.mdx',
 			'src/content/discussion-messages/topic/legacy.mdx',
+		]);
+	});
+
+	it('keeps query and instruction paths repository-relative for a root library', () => {
+		expect(assignmentContextQueryReadPaths('.', [{ kind: 'query-set', id: 'core' }], [])).toEqual([
+			'agent-context-query-sets/core.mdx', 'agent-context-queries/**',
+		]);
+		expect(assignmentInstructionTemplateReadPaths('.', [{ id: 'analysis' }])).toEqual([
+			'agent-instruction-templates/analysis.mdx', 'agent-instruction-templates/analysis.md',
 		]);
 	});
 });
