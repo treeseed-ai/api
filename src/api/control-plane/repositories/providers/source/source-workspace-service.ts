@@ -46,10 +46,12 @@ export function assertSourceAssignmentLease(row: RecordValue | null, principal: 
 
 /** Analysis and work are both writable scratch. Only an explicit governed output grants candidate publication. */
 export function assignmentSourceMode(row: RecordValue) {
-  const work = row.execution_kind !== 'conversation' && row.mode === 'acting';
   const outputs = record(row.allowed_outputs_json ?? {});
-  return { mode: work ? 'work' as const : 'analysis' as const,
-    publication: work && Array.isArray(outputs.artifactKinds) && outputs.artifactKinds.includes('source-candidate') ? 'candidate-only' as const : 'denied' as const };
+  const publishesSourceCandidate = row.execution_kind !== 'conversation'
+    && Array.isArray(outputs.artifactKinds)
+    && outputs.artifactKinds.includes('source-candidate');
+  return { mode: publishesSourceCandidate ? 'work' as const : 'analysis' as const,
+    publication: publishesSourceCandidate ? 'candidate-only' as const : 'denied' as const };
 }
 
 export function createSourceWorkspaceService(database: CapacityGovernanceDatabase, contentStore: SourceStore, options: {
