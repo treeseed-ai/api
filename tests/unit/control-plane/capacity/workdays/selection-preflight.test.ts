@@ -19,6 +19,16 @@ function fixture() {
 }
 
 describe('public workday selection custody', () => {
+	it('freezes the admission time when an explicit start is omitted', () => {
+		vi.useFakeTimers();
+		try {
+			vi.setSystemTime(new Date('2026-09-12T01:30:00.000Z'));
+			const { startsAt: _startsAt, ...withoutStart } = input();
+			expect(parsePublicWorkdayIntent('team', withoutStart).startsAt).toBe('2026-09-12T01:30:00.000Z');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 	it('validates before normalization and preserves omitted selection', () => {
 		const { agentSelection, ...unselected } = input();
 		expect(parsePublicWorkdayIntent('team', unselected).agentSelection).toBeUndefined();
