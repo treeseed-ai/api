@@ -22,6 +22,15 @@ function normalizedContentPath(value: unknown): string {
 	return path;
 }
 
+export function normalizedWorkspaceScopePaths(values: unknown): string[] {
+	if (!Array.isArray(values)) return [];
+	const paths = values.map((value) => text(value).replace(/\\/gu, '/').replace(/^\.\//u, '')).filter(Boolean);
+	if (paths.some((path) => path.startsWith('/') || path.split('/').includes('..'))) {
+		throw new Error('The TreeDX workspace scope contains an unsafe path.');
+	}
+	return [...new Set(paths)];
+}
+
 export function projectLibraryPath(root: string, ...parts: string[]): string {
 	const normalizedRoot = normalizedContentPath(root);
 	const normalizedParts = parts.flatMap((part) => part.split('/'))
@@ -58,6 +67,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	replicationRefs?: string[];
 	readRefs?: string[];
 	workspaceRefs?: string[];
+	workspacePaths?: string[];
 	relationPaths?: boolean;
 	communicationPaths?: boolean;
 	authoringPaths?: boolean;
@@ -81,7 +91,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	const repositoryId = text(library.repositoryId, treeDx.repositoryId);
 	if (!repositoryId) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
-	const allowedPaths = input.replicationRefs?.length ? ['**'] : [projectLibraryPath(contentPath, 'books/**'), projectLibraryPath(contentPath, 'knowledge/**'), projectLibraryPath(contentPath, 'assets/**'),
+	const allowedPaths = input.replicationRefs?.length ? ['**'] : [...new Set([projectLibraryPath(contentPath, 'books/**'), projectLibraryPath(contentPath, 'knowledge/**'), projectLibraryPath(contentPath, 'assets/**'),
 		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
 			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
 		...(input.communicationPaths ? ['discussions', 'discussion-messages', 'discussion-events']
@@ -90,7 +100,7 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			projectLibraryPath(contentPath, 'agents/**'),projectLibraryPath(contentPath, 'agent-tests/**'),projectLibraryPath(contentPath, 'groups/**'),projectLibraryPath(contentPath, 'group-edges/**'),
 			...Object.values(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map((collection) => projectLibraryPath(contentPath, collection, '**')),
 			'.treeseed/agents/**','.treeseed/governance/proposal-types/**','.treeseed/seeds/**','seeds/**','scenes/**',
-		] : [])];
+		] : []), ...normalizedWorkspaceScopePaths(input.workspacePaths)])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const canonicalAuthoringRef = canonicalTreeDxBranchRef(authoringBranch);
 	const integrationRefs = (input.publishRefs ?? []).flatMap((ref) => {

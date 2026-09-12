@@ -16,6 +16,21 @@ function text(value: unknown, fallback = '') { return typeof value === 'string' 
 function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
 function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 72) || 'discussion'; }
 function normalizedDocument(value: unknown) { return typeof value === 'string' ? value.replaceAll('\r\n', '\n').trimEnd() : ''; }
+class DiscussionAuthoringError extends Error {
+	readonly code: string;
+	readonly cause: unknown;
+
+	constructor(stage: 'changeset' | 'commit', cause: unknown) {
+		const upstream = cause && typeof cause === 'object' ? cause as Record<string, unknown> : {};
+		super(`TreeDX Discussion ${stage} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+		this.name = 'DiscussionAuthoringError';
+		this.code = `discussion_authoring_${stage}_${text(upstream.code, 'failed')}`;
+		this.cause = cause;
+	}
+}
+export function discussionAuthoringWorkspaceRefs(authoringRef: string, workspace: { baseCommitSha?: string; baseRef?: string } | null | undefined) {
+	return [...new Set([authoringRef, text(workspace?.baseCommitSha), text(workspace?.baseRef)].filter(Boolean))];
+}
 export function discussionEventPathIdentity(value: string) {
 	const readable = value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 40) || 'event';
 	const digest = createHash('sha256').update(value).digest('hex').slice(0, 24);
@@ -164,7 +179,7 @@ export async function commitDiscussionMessage(input: {
 	handoffId?: string | null; parentWorkdayId?: string | null; resultingOperationId?: string | null;
 	assignmentId?: string | null;
 	authoringRef?: string | null;
-	authoringWorkspace?: { workspaceId: string; baseCommitSha: string; baseRef: string } | null;
+	authoringWorkspace?: { workspaceId: string; baseCommitSha: string; baseRef: string; allowedPaths?: string[] } | null;
 }) {
 	const authoringRef = text(input.authoringRef);
 	if (input.authorType === 'agent' && input.assignmentId && !/^refs\/heads\/assignment_[A-Za-z0-9_-]+$/u.test(authoringRef)) {
@@ -172,8 +187,9 @@ export async function commitDiscussionMessage(input: {
 			status: 409, code: 'discussion_assignment_ref_required', details: { assignmentId: input.assignmentId },
 		});
 	}
+	const workspaceRefs = discussionAuthoringWorkspaceRefs(authoringRef, input.authoringWorkspace);
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId: input.projectId, write: true, communicationPaths: true,
-		...(authoringRef ? { workspaceRefs: [authoringRef] } : {}) });
+		...(workspaceRefs.length ? { workspaceRefs } : {}), ...(input.authoringWorkspace?.allowedPaths?.length ? { workspacePaths: input.authoringWorkspace.allowedPaths } : {}) });
 	if (!connection) throw new Error('The project TreeDX repository is unavailable for Discussion authoring.');
 	const now = new Date().toISOString();
 	const discussionId = text(input.discussionId, randomUUID());
@@ -212,8 +228,9 @@ export async function commitDiscussionMessage(input: {
 			...(input.createDiscussion === true || !input.discussionId ? [{ path: discussionPath, before: null, after: discussion }] : []),
 			{ path: messagePath, before: null, after: message },
 			{ path: eventPath, before: null, after: event },
-		] });
-		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${topic}`, author: { name: authorName, email: text(input.principal.email, 'discussion@users.treeseed.local') } });
+		] }).catch((error: unknown) => { throw new DiscussionAuthoringError('changeset', error); });
+		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${topic}`, author: { name: authorName, email: text(input.principal.email, 'discussion@users.treeseed.local') } })
+			.catch((error: unknown) => { throw new DiscussionAuthoringError('commit', error); });
 		const actorType = input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user';
 		if (actorType === 'agent') {
 			await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId:input.projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,assignmentId:input.assignmentId ?? null,actorType,actorId:authorId });

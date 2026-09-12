@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
 	readRepositoryFiles: vi.fn(),
 }));
 
-vi.mock('../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
+vi.mock('../../../../src/api/knowledge/gateway-treedx-connection.ts', async (importOriginal) => ({
+	...await importOriginal<typeof import('../../../../src/api/knowledge/gateway-treedx-connection.ts')>(),
 	projectLibraryPath: (...parts: string[]) => parts.filter(Boolean).join('/'),
 	resolveKnowledgeGatewayConnection: vi.fn(async () => ({
 		repositoryId: 'repo-1', contentPath: '', authoringBranch: 'staging',
@@ -16,7 +17,8 @@ vi.mock('../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
 	})),
 }));
 
-import { loadDiscussions } from '../../../../src/api/discussions/content.ts';
+import { discussionAuthoringWorkspaceRefs, loadDiscussions } from '../../../../src/api/discussions/content.ts';
+import { normalizedWorkspaceScopePaths } from '../../../../src/api/knowledge/gateway-treedx-connection.ts';
 
 describe('targeted Discussion reads', () => {
 	beforeEach(() => {
@@ -81,5 +83,27 @@ describe('targeted Discussion reads', () => {
 		expect(mocks.listRepositoryPaths).not.toHaveBeenCalled();
 		expect(mocks.readRepositoryFiles).toHaveBeenCalledTimes(1);
 		expect(mocks.readRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({ ref: commitSha, paths: [path] }));
+	});
+});
+
+describe('Discussion assignment authoring authority', () => {
+	it('retains the assignment branch and immutable workspace base refs', () => {
+		expect(discussionAuthoringWorkspaceRefs('refs/heads/assignment_1', {
+			baseCommitSha: 'a'.repeat(40),
+			baseRef: 'refs/heads/staging',
+		})).toEqual(['refs/heads/assignment_1', 'a'.repeat(40), 'refs/heads/staging']);
+	});
+
+	it('deduplicates equivalent immutable workspace refs', () => {
+		expect(discussionAuthoringWorkspaceRefs('refs/heads/assignment_1', {
+			baseCommitSha: 'a'.repeat(40),
+			baseRef: 'a'.repeat(40),
+		})).toEqual(['refs/heads/assignment_1', 'a'.repeat(40)]);
+	});
+
+	it('retains normalized persisted workspace paths without allowing escapes', () => {
+		expect(normalizedWorkspaceScopePaths(['./README.md', 'discussion-messages/**', './README.md']))
+			.toEqual(['README.md', 'discussion-messages/**']);
+		expect(() => normalizedWorkspaceScopePaths(['../outside'])).toThrow('unsafe path');
 	});
 });

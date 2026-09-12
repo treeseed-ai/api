@@ -17,7 +17,7 @@ import { compileAssignmentTimeBudget } from './assignment-time-budget.ts';
 import { selectAssignmentLane } from './assignment-lane-selection.ts';
 import { assertBatteryAdmission } from './admission/battery-admission.ts';
 import { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './planning-assignment-contract.ts';
-import { assignmentBootstrapReadPaths,assignmentContextQueryReadPaths,assignmentDiscussionMessageReadPaths,assignmentInstructionTemplateReadPaths,assignmentOperationalContentPaths,assignmentTreeDxProxyHandle,mergeAssignmentPathScopes } from './assignment-operational-paths.ts';
+import { assignmentBootstrapReadPaths,assignmentContextQueryReadPaths,assignmentDiscussionMessageReadPaths,assignmentDiscussionWritePaths,assignmentInstructionTemplateReadPaths,assignmentOperationalContentPaths,assignmentTreeDxProxyHandle,mergeAssignmentPathScopes } from './assignment-operational-paths.ts';
 export { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './planning-assignment-contract.ts';
 export { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
 import { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
@@ -161,7 +161,7 @@ export async function assignmentInput(
   const discussionMessageReadPaths = executionKind === 'conversation' ? assignmentDiscussionMessageReadPaths(sourceMessageRefs) : [];
   const chatWritePaths=['discussion-messages','discussion-events','notes','questions','proposals'].flatMap((collection)=>[`${contentRoot}/${collection}`,`${contentRoot}/${collection}/**`]);
   const taskWritePaths = activityType==='chat'
-	? resolveAssignmentContentPathScope(payload,'write',contentRoot,chatWritePaths)
+	? mergeAssignmentPathScopes(resolveAssignmentContentPathScope(payload,'write',contentRoot,chatWritePaths), assignmentDiscussionWritePaths(contentRoot))
 	: planning
     ? resolveAssignmentContentPathScope(payload, 'write', contentRoot, [contentRoot, `${contentRoot}/**`])
     : ["**"];
