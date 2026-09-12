@@ -36,9 +36,10 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
 	const projects=input.projects==='all'?'all':Array.isArray(input.projects)?input.projects.map(text).filter(Boolean):[];
 	const constraints=record(input.operatorConstraints);
+	const startsAt=text(input.startsAt)||new Date().toISOString();
 	const intent:WorkdayIntent={
 		schemaVersion:'treeseed.workday-intent/v1', teamId, profileId:text(input.profileId), projects,
-		startsAt:text(input.startsAt),
+		startsAt,
 		...(input.endsAt!==undefined?{endsAt:text(input.endsAt)}:{}),
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
