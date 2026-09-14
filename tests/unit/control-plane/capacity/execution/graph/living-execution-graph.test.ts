@@ -3,7 +3,7 @@ import type { AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import {
 	projectTeamExecutionGraph,
 	type ExecutableProposalSource,
-} from '../../../../../src/api/capacity/policy/execution-graph-projector.ts';
+} from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
 
 const permissions = {
 	content: { read: ['proposal', 'decision', 'knowledge'] as const, write: [] },

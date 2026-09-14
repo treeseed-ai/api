@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compileWorkday, validateExecutionGraph } from '@treeseed/sdk/agent-capacity';
-import { projectActiveWorkdays } from '../../../../../src/api/capacity/policy/workday-execution-projector.ts';
+import { projectActiveWorkdays } from '../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts';
 
 const permissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
 const definition = (agentClass: string, dependsOn: string[] = []) => ({

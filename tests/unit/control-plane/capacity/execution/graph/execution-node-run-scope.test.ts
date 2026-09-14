@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { executionNodeRunScope } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { executionNodeRunScope } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 
 describe('living execution run scope', () => {
 	it('keeps communication nodes on their exact hidden conversation run', () => {

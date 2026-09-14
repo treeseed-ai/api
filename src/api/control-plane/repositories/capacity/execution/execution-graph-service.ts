@@ -8,9 +8,9 @@ import {
 	type ExecutionNode,
 	type GraphRevision,
 } from '@treeseed/sdk/agent-capacity';
-import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution-graph-projector.ts';
-import { projectActiveWorkdays } from '../../../../capacity/policy/workday-execution-projector.ts';
-import { projectCommunicationInvocations } from '../../../../capacity/policy/communication-execution-projector.ts';
+import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution/execution-graph-projector.ts';
+import { projectActiveWorkdays } from '../../../../capacity/policy/execution/workday-execution-projector.ts';
+import { projectCommunicationInvocations } from '../../../../capacity/policy/execution/communication-execution-projector.ts';
 import { loadTeamExecutableProposalSources } from '../../../../capacity/services/capacity/execution/executable-proposal-source.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from '../capacity-authorization.ts';
 import { CapacityOperationError } from '../capacity-operation-error.ts';

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const exactProposal = vi.hoisted(() => vi.fn());
-vi.mock('../../../../../src/api/governance/executable-proposal.ts', () => ({ readExactProposal: exactProposal }));
+vi.mock('../../../../../../src/api/governance/executable-proposal.ts', () => ({ readExactProposal: exactProposal }));
 
-import { loadTeamExecutableProposalSources } from '../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
+import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 
 describe('executable proposal source selection', () => {
 	it('keeps pre-cutover accepted decisions as history without reading them as demand', async () => {

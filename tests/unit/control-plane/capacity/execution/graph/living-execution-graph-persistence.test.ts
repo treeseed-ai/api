@@ -5,7 +5,7 @@ import {
 	createExecutionGraphService,
 	persistExecutionGraph,
 	recoverIncompleteReviewCycles,
-} from '../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+} from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 const sourceRef = {
 	store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1,

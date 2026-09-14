@@ -1,7 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import { splitPostgresSqlStatements } from '../../../../../src/api/persistence/postgres-sql-statements.ts';
+import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
 
 it('stores normalized team graphs with one append-only revision stream', async () => {
 	const db = new PGlite();

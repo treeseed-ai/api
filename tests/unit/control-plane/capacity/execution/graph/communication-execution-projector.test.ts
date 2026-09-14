@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { projectCommunicationInvocations } from '../../../../../src/api/capacity/policy/communication-execution-projector.ts';
+import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 
 const definition = {
 	schemaVersion: 'treeseed.agent/v1' as const, id: 'sdk/architect', name: 'SDK Architect', agentClass: 'architect',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StructuredAgentEstimate } from '@treeseed/sdk/agent-capacity';
-import { compileDecisionAssignmentGraphFromEstimates } from '../../../../../src/api/capacity/policy/decision-work.ts';
+import { compileDecisionAssignmentGraphFromEstimates } from '../../../../../../src/api/capacity/policy/decision-work.ts';
 
 function estimate(overrides: Partial<StructuredAgentEstimate> & Pick<StructuredAgentEstimate, 'id' | 'agentClass' | 'workUnitId' | 'expectedOutputs'>): StructuredAgentEstimate {
 	const value: StructuredAgentEstimate = {

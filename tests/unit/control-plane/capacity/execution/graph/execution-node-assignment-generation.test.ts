@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { executionNodeAssignmentGeneration } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
+import { executionNodeAssignmentGeneration } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
 
 describe('living execution-node assignment generations', () => {
 	it('starts at zero for a node revision with no prior assignments', async () => {
