@@ -16,6 +16,7 @@ export interface GovernanceProposalReadinessInput {
 	independentReviewCount?: number; estimateCount?: number; unresolvedBlockerCount?: number;
 	requiredParticipantIds?: string[]; estimatedParticipantIds?: string[]; requiredReviewerClasses?: string[];
 	reviewedReviewerClasses?: string[]; requiresEstimate?: boolean; proposalVersion?: number;
+	executionPlanReady?: boolean; requiresExecutionPlan?: boolean;
 	participationSnapshot?: GovernanceProposalParticipationSnapshot | null; completedParticipantIds?: string[]; independentReviewerIds?: string[];
 }
 
@@ -23,6 +24,7 @@ export interface GovernanceProposalReadiness {
 	contentReady: boolean; votingReady: boolean; missingContent: string[]; missingVoting: string[];
 	independentReviewCount: number; estimateCount: number; unresolvedBlockerCount: number;
 	missingParticipantEstimates: string[]; missingReviewerClasses: string[]; participationVersionReady: boolean; authorIndependent: boolean;
+	executionPlanReady?: boolean;
 }
 
 function strings(value: unknown): string[] {
@@ -65,9 +67,11 @@ export function evaluateGovernanceProposalReadiness(input: GovernanceProposalRea
 	const reviewedClasses = new Set(strings(input.reviewedReviewerClasses)); const missingReviewerClasses = strings(input.requiredReviewerClasses).filter((id) => !reviewedClasses.has(id));
 	const missingVoting = [...missingContent]; if (independentReviewCount < 1) missingVoting.push('independent review');
 	if (input.requiresEstimate === true && estimateCount < 1) missingVoting.push('structured estimate');
+	if (input.requiresExecutionPlan === true && input.executionPlanReady !== true) missingVoting.push('exact accepted execution plan');
 	if (unresolvedBlockerCount > 0) missingVoting.push('resolved blocking questions and concerns');
 	if (missingParticipantEstimates.length) missingVoting.push('estimate or not-applicable rationale from every participant');
 	if (missingReviewerClasses.length) missingVoting.push('required proposal-type reviews'); if (!participationVersionReady) missingVoting.push('participation for the exact proposal version');
 	if (!authorIndependent) missingVoting.push('author-independent group review');
-	return { contentReady: missingContent.length === 0, votingReady: missingVoting.length === 0, missingContent, missingVoting, independentReviewCount, estimateCount, unresolvedBlockerCount, missingParticipantEstimates, missingReviewerClasses, participationVersionReady, authorIndependent };
+	return { contentReady: missingContent.length === 0, votingReady: missingVoting.length === 0, missingContent, missingVoting, independentReviewCount, estimateCount, unresolvedBlockerCount, missingParticipantEstimates, missingReviewerClasses, participationVersionReady, authorIndependent,
+		executionPlanReady: input.executionPlanReady === true };
 }

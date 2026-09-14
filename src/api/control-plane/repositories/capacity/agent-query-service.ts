@@ -1,6 +1,7 @@
 import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
 import { authorizeCapacityProject, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
+import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -13,10 +14,13 @@ async function acceptedAgents(store: any, projectId: string) {
 	const page = await store.listProjectAgentClassesPage(projectId, { limit: 200, cursor: null });
 	return (Array.isArray(page?.items) ? page.items : []).flatMap((agentClass: any) => {
 		const agents = record(agentClass.handlerRefs).agents;
-		return Array.isArray(agents) ? agents.map(record).filter((agent) => agent.enabled !== false).map((agent) => ({
-			agentSlug: String(agent.slug ?? agent.agentId ?? ''), name: String(agent.name ?? agent.title ?? agent.slug ?? agent.agentId ?? ''),
+		return Array.isArray(agents) ? agents.flatMap((value) => {
+			const parsed = validateAgentDefinitionModel(value);
+			return parsed.ok && parsed.data ? [parsed.data] : [];
+		}).map((agent) => ({
+			agentSlug: agent.id.split('/').at(-1) ?? agent.id, name: agent.name,
 			projectAgentClassId: agentClass.id, allocationClass: agentClass.slug, definitionRevision: String(record(agentClass.metadata).immutableRef ?? agentClass.updatedAt ?? ''),
-			activities: record(agent.activities), chatEnabled: record(record(agent.activities).chat).enabled !== false && Boolean(record(record(agent.activities).chat).handler),
+			definition: agent, activities: agent.activityProfiles, chatEnabled: Boolean(agent.activityProfiles.chat),
 			status: agentClass.status === 'active' ? 'ready' : agentClass.status,
 		})) : [];
 	}).filter((agent: any) => agent.agentSlug);
@@ -35,6 +39,24 @@ export function createAgentQueryService(store: any) {
 			const agent = (await acceptedAgents(store, projectId)).find((item: any) => item.agentSlug === slug);
 			if (!agent) throw new CapacityOperationError(404, 'project_agent_not_found', 'Project agent not found.');
 			return { projectId, agent };
+		},
+		async handlers(principal: CapacityPrincipal, projectId: string) {
+			await authorizeCapacityProject(store, principal, projectId, 'projects:read:team');
+			const agents = await acceptedAgents(store, projectId);
+			const handlers = [...new Map(agents.flatMap((agent: any) => Object.values(agent.definition.activityProfiles as AgentDefinition['activityProfiles']))
+				.map((profile: any) => [profile.handler, { id: profile.handler,
+					origin: String(profile.handler).includes('/') ? 'project-runtime' : 'agent-package' }])).values()];
+			return { projectId, handlers };
+		},
+		async handler(principal: CapacityPrincipal, projectId: string, handlerId: string) {
+			const result = await this.handlers(principal, projectId);
+			const handler = result.handlers.find((candidate: any) => candidate.id === handlerId);
+			if (!handler) throw new CapacityOperationError(404, 'agent_handler_not_found', 'Agent handler not found in the selected project runtime.');
+			return { projectId, handler };
+		},
+		async validateProfile(principal: CapacityPrincipal, projectId: string, slug: string) {
+			const result = await this.show(principal, projectId, slug);
+			return { projectId, agentSlug: slug, valid: true, definition: result.agent.definition };
 		},
 		async classes(principal: CapacityPrincipal, projectId: string, query: Record<string, unknown>) {
 			await authorizeCapacityProject(store, principal, projectId, 'projects:read:team');

@@ -9,17 +9,13 @@ import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
 import { modeRunActivityEvent } from '../../../capacity/services/capacity/workdays/content/mode-run-activity-event.ts';
 import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
-import { assignmentActivityType, assignmentRecord as record, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
+import { assignmentActivityType, assignmentRecord as record, assignmentWorkdayRunId, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
 import { commitDiscussionMessage } from '../../../discussions/content.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { suspendAssignmentForDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-suspension-service.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
 import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
-import { createSourceCandidateService } from './source/candidate-service.ts';
-import { createSourceChunkService } from './source/source-chunk-service.ts';
-import { withLibraryStorage } from '../../../../security/library-storage.ts';
-import { assertDurableSourceCloseout } from './source/candidate-closeout.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
@@ -101,16 +97,6 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		async sourceWorkspace(auth: unknown, assignmentId: string, body: unknown) {
 			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'The source authorization service requires a configured control-plane identity.', 503);
 			return createSourceWorkspaceService(store, contentStore, sourceOptions)(auth, assignmentId, body);
-		},
-		async sourceCandidate(auth: unknown, assignmentId: string, body: unknown) {
-			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'Source publication requires a configured control-plane identity.', 503);
-			return createSourceCandidateService(store, contentStore, { ...sourceOptions,
-				withStorage: run => withLibraryStorage(contentStore, process.env, ({ client }) => run(client)) })(auth, assignmentId, body);
-		},
-		async sourceChunk(auth: unknown, assignmentId: string, body: unknown) {
-			if (!sourceOptions?.controlPlaneId) throw new CapacityGovernanceError('source_control_plane_unconfigured', 'Source reads require a configured control-plane identity.', 503);
-			return createSourceChunkService(store, contentStore, { ...sourceOptions,
-				withStorage: run => withLibraryStorage(contentStore, process.env, ({ client }) => run(client)) })(auth, assignmentId, body);
 		},
 		async next(auth: unknown, body: Record<string, unknown>, signal?: AbortSignal) {
 			const actor = principal(auth, ['provider:assignments:read']);
@@ -282,10 +268,7 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			return { assignmentId, sequence, acceptedAt, replayed: Boolean(existing) };
 		},
 		returnAssignment: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'returnProviderAssignment'),
-		async complete(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
-			await assertDurableSourceCloseout(store, principal(auth, ['provider:assignments:write']), assignmentId);
-			return lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment');
-		},
+		complete: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment'),
 		async fail(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
 			const scopes = ['provider:assignments:write']; if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:write');
 			const result = await store.failProviderAssignment(principal(auth, scopes), assignmentId, body);
@@ -312,15 +295,15 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'update');
 			const modeRun = await store.createAgentModeRun({ ...body, teamId: actor.teamId, providerAssignmentId: assignment.id });
 			if (!modeRun) throw new CapacityGovernanceError('provider_assignment_not_found', 'Unknown assignment.', 404);
-			const runId = record(assignment.metadata).workdayRunId;
-			if (typeof runId === 'string' && runId && store.createCapacityWorkdayEvent) await store.createCapacityWorkdayEvent(actor.teamId, runId, modeRunActivityEvent({ assignment, modeRun }));
+			const runId = assignmentWorkdayRunId(assignment);
+			if (runId && store.createCapacityWorkdayEvent) await store.createCapacityWorkdayEvent(actor.teamId, runId, modeRunActivityEvent({ assignment, modeRun }));
 			return modeRun;
 		},
 		async createEvent(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
 			const actor = principal(auth, ['provider:assignments:write']);
 			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'report runtime events for');
-			const runId = record(assignment.metadata).workdayRunId;
-			if (typeof runId !== 'string' || !runId || !store.createCapacityWorkdayEvent) throw new CapacityGovernanceError('provider_runtime_event_workday_required', 'Provider runtime events require a durable workday assignment.', 409);
+			const runId = assignmentWorkdayRunId(assignment);
+			if (!runId || !store.createCapacityWorkdayEvent) throw new CapacityGovernanceError('provider_runtime_event_workday_required', 'Provider runtime events require a durable workday assignment.', 409);
 			return store.createCapacityWorkdayEvent(actor.teamId, runId, providerEventInput(assignment, body));
 		},
 	};

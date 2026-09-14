@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { resolveTeamCommunicationTargets } from '../../../../../src/api/capacity/services/capacity/invocations/communication-target-resolution.ts';
 
-const chatClass = (slug: string) => ({ handlerRefs: { agents: [{ slug, activities: { chat: { enabled: true, handler: 'writer' } } }] } });
+const agent = (slug: string, profiles: Record<string, unknown>) => ({ schemaVersion: 'treeseed.agent/v1', id: `sdk/${slug}`,
+	name: slug, agentClass: slug, purpose: `Act as the ${slug} for this project.`, responsibilities: ['Answer authorized work.'],
+	capabilities: ['discussion'], context: { include: ['assignment-subject'] }, activityProfiles: profiles });
+const chat = { handler: 'writer', permissions: { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] },
+	prompt: { system: 'Research and answer the exact addressed discussion message.' } };
+const chatClass = (slug: string) => ({ handlerRefs: { agents: [agent(slug, { chat })] } });
 
 describe('team communication target resolution', () => {
 	it.each([
 		[],
 		[{ ...chatClass('architect'), status: 'disabled' }],
-		[{ handlerRefs: { agents: [{ slug: 'architect', enabled: false, activities: { chat: { handler: 'writer', enabled: true } } }] } }],
-		[{ handlerRefs: { agents: [{ slug: 'architect', activities: { chat: { handler: 'writer', enabled: false } } }] } }],
-		[{ handlerRefs: { agents: [{ slug: 'architect', activities: { acting: { handler: 'actor' } } }] } }],
+		[{ handlerRefs: { agents: [{ ...agent('architect', { chat }), schemaVersion: 'retired' }] } }],
+		[{ handlerRefs: { agents: [agent('architect', {})] } }],
+		[{ handlerRefs: { agents: [agent('architect', { acting: { ...chat, handler: 'actor' } })] } }],
 	])('rejects missing or disabled chat authority without assigning work (%j)', async (...items) => {
 		const store = {
 			async listTeamProjects() { return [{ id: 'sdk-id', slug: 'sdk' }]; },
@@ -35,7 +40,7 @@ describe('team communication target resolution', () => {
 	it('reads active agent classes directly from the control-plane store', async () => {
 		const store = {
 			async listTeamProjects() { return [{ id: 'project-sdk', slug: 'sdk', status: 'active' }]; },
-			async all() { return [{ handler_refs_json: JSON.stringify({ agents: [{ slug: 'architect', activities: { chat: { enabled: true, handler: 'writer' } } }] }) }]; },
+			async all() { return [{ handler_refs_json: JSON.stringify({ agents: [agent('architect', { chat })] }) }]; },
 		};
 		await expect(resolveTeamCommunicationTargets(store, 'team-a', [{ projectSlug: null, agentSlug: 'architect', requirement: 'required', address: '@architect' }]))
 			.resolves.toEqual([{ projectId: 'project-sdk', projectSlug: 'sdk', agentSlug: 'architect', requirement: 'required' }]);

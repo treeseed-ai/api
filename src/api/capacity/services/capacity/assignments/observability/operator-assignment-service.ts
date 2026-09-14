@@ -71,6 +71,10 @@ export class OperatorAssignmentService {
 		await this.database.batch([
 			{ query: `UPDATE capacity_workday_demands SET status = 'cancelled', completed_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'admitted'`, params: [now, now, assignmentId] },
 			{ query: `UPDATE capacity_workday_participation_entries SET status = 'blocked', reason_code = 'operator_cancelled', covered_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'assigned'`, params: [now, now, assignmentId] },
+			...(assignment.executionNodeId ? [{ query: `UPDATE execution_nodes SET status='cancelled',updated_at=?
+				WHERE team_id=? AND id=? AND node_revision=?
+				AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=?)`,
+				params: [now, teamId, assignment.executionNodeId, assignment.executionNodeRevision, assignmentId, teamId] }] : []),
 		]);
 		const cancelled = await this.assignments.get(teamId, assignmentId);
 		const expectedStatus = failedCleanup ? 'failed' : 'cancelled';
@@ -83,9 +87,8 @@ export class OperatorAssignmentService {
 		const operationKey = idempotencyKey(input.idempotencyKey);
 		const assignment = await this.assignments.get(teamId, assignmentId);
 		if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment does not exist.', 404, { assignmentId });
-		if (assignment.status === 'returned' && assignment.leaseState === 'released') return { assignment, demand: null, alreadyLeasable: true };
-		if (!['failed', 'expired', 'cancelled'].includes(assignment.status) || assignment.leaseState === 'leased') throw new CapacityGovernanceError(
-			'capacity_assignment_requeue_unsafe', 'Only a released failed, expired, or cancelled assignment can be requeued.', 409,
+		if (!['returned', 'failed', 'expired', 'cancelled'].includes(assignment.status) || assignment.leaseState === 'leased') throw new CapacityGovernanceError(
+			'capacity_assignment_requeue_unsafe', 'Only a released returned, failed, expired, or cancelled assignment can be requeued.', 409,
 			{ assignmentId, status: assignment.status, leaseState: assignment.leaseState },
 		);
 		if (assignment.reservationId) {
@@ -96,6 +99,16 @@ export class OperatorAssignmentService {
 				409,
 				{ assignmentId, reservationId: assignment.reservationId, reservationState: reservation?.state ?? null },
 			);
+		}
+		if (assignment.executionNodeId) {
+			const now = new Date().toISOString();
+			await this.database.run(`UPDATE execution_nodes SET status='ready',node_revision=node_revision+1,updated_at=?
+				WHERE team_id=? AND id=? AND node_revision=?
+				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active WHERE active.team_id=?
+					AND active.execution_node_id=? AND active.execution_node_revision=? AND active.status IN ('pending','leased','running'))`,
+				[now, teamId, assignment.executionNodeId, assignment.executionNodeRevision,
+					teamId, assignment.executionNodeId, assignment.executionNodeRevision]);
+			return { assignment, demand: null, alreadyLeasable: false };
 		}
 		const original = serializeCapacityWorkdayDemandRow(await this.database.first(
 			`SELECT * FROM capacity_workday_demands WHERE team_id = ? AND assignment_id = ? LIMIT 1`, [teamId, assignmentId],

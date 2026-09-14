@@ -3,14 +3,19 @@ import { createGovernanceService, GovernanceServiceError } from '../../../src/ap
 import { commitProposalVersionContent } from '../../../src/api/control-plane/governance/proposal-version-content.ts';
 
 vi.mock('../../../src/api/control-plane/governance/proposal-version-content.ts', () => ({ commitProposalVersionContent: vi.fn() }));
+vi.mock('../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts', () => ({ reconcileExecutionGraph: vi.fn(async () => ({ replayed: false })) }));
 
 function fixture(proposalProjectId = 'project-1') {
 	const store = {
 		getProjectDetails: vi.fn(async () => ({ project: { id: 'project-1', teamId: 'team-1' } })),
 		principalCanAccessTeam: vi.fn(async () => true),
 		getTeamAccessSummary: vi.fn(async () => ({ permissions: ['projects:read:team', 'projects:manage:team'] })),
-		getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', projectId: proposalProjectId, activeVersion: 3, metadata: {} })),
+		getGovernanceProposal: vi.fn(async () => ({ id: 'proposal-1', teamId: 'team-1', projectId: proposalProjectId, activeVersion: 3,
+			activeContentHash: 'digest-3', metadata: { contentProvenance: { contentPath: 'proposals/test.mdx', commitSha: 'a'.repeat(40), digest: 'digest-3' } } })),
 		updateGovernanceProposalDraft: vi.fn(async () => ({ id: 'proposal-1', activeVersion: 3 })),
+		listGovernanceEvents: vi.fn(async () => [{ id: 'feedback-1', eventType: 'proposal.discussion', evidence: { kind: 'concern' } }]),
+		recordGovernanceEvent: vi.fn(async (input) => ({ ...input, createdAt: '2026-09-13T00:00:00.000Z' })),
+		governanceProposalReadiness: vi.fn(async () => ({ readyForVoting: true })),
 		getApprovalRequest: vi.fn(async () => ({ id: 'approval-1', projectId: 'project-1', updatedAt: '2026-08-22T12:00:00.000Z' })),
 		listApprovalRequestsForProject: vi.fn(async () => []),
 		decideApprovalRequest: vi.fn(async (_id, input) => ({ id: 'approval-1', state: input.state, decision: input.decision })),
@@ -19,9 +24,8 @@ function fixture(proposalProjectId = 'project-1') {
 }
 
 describe('governance service mutation boundaries', () => {
-	it('authors a draft when replay repair requires immutable provenance', async () => {
+	it('authors and then binds one exact proposal version', async () => {
 		const { store, service, principal } = fixture();
-		store.updateGovernanceProposalDraft.mockRejectedValueOnce(Object.assign(new Error('Authoring required.'), { code: 'governance_proposal_repair_material_change' }));
 		const receipt = { path: 'proposals/test.md', commitSha: 'a'.repeat(40) };
 		const update = { expectedProposalVersion: 3, contentProvenance: receipt };
 		vi.mocked(commitProposalVersionContent).mockResolvedValueOnce({ receipt, update } as unknown as Awaited<ReturnType<typeof commitProposalVersionContent>>);
@@ -32,19 +36,21 @@ describe('governance service mutation boundaries', () => {
 
 	it('does not bind a new version when authoring fails', async () => {
 		const { store, service, principal } = fixture();
-		store.updateGovernanceProposalDraft.mockRejectedValueOnce(Object.assign(new Error('Authoring required.'), { code: 'governance_proposal_repair_material_change' }));
 		vi.mocked(commitProposalVersionContent).mockRejectedValueOnce(Object.assign(new Error('Reconcile the missing proposal type.'), { status: 422, code: 'proposal_type_contract_missing' }));
 		await expect(service.updateProposal(principal, 'project-1', 'proposal-1', { changeReason: 'Publish draft.' }, '3')).rejects.toMatchObject({ status: 422, code: 'proposal_type_contract_missing' });
-		expect(store.updateGovernanceProposalDraft).toHaveBeenCalledOnce();
+		expect(store.updateGovernanceProposalDraft).not.toHaveBeenCalled();
 	});
 
 	it('binds If-Match to the exact proposal version before updating', async () => {
 		const { store, service, principal } = fixture();
+		const receipt = { path: 'proposals/test.md', commitSha: 'a'.repeat(40) };
+		const update = { title: 'Same content', expectedProposalVersion: 3, contentProvenance: receipt };
+		vi.mocked(commitProposalVersionContent).mockResolvedValueOnce({ receipt, update } as unknown as Awaited<ReturnType<typeof commitProposalVersionContent>>);
 		const result = await service.updateProposal(principal, 'project-1', 'proposal-1',
 			{ title: 'Same content', expectedProposalVersion: 3 }, '3');
-		expect(result).toMatchObject({ idempotentReplay: true });
+		expect(result).toMatchObject({ idempotentReplay: false });
 		expect(store.updateGovernanceProposalDraft).toHaveBeenCalledWith(principal, 'proposal-1',
-			expect.objectContaining({ expectedProposalVersion: 3, repairExistingVersion: true }));
+			expect.objectContaining({ expectedProposalVersion: 3 }));
 	});
 
 	it('rejects contradictory concurrency evidence without mutating', async () => {
@@ -54,6 +60,17 @@ describe('governance service mutation boundaries', () => {
 				status: 412, code: 'proposal_precondition_mismatch',
 			});
 		expect(store.updateGovernanceProposalDraft).not.toHaveBeenCalled();
+	});
+
+	it('resolves exact blocking feedback against the current immutable proposal revision', async () => {
+		const { store, service, principal } = fixture();
+		const result = await service.resolveProposalFeedback(principal, 'project-1', 'proposal-1', 'feedback-1',
+			{ message: 'Revision 3 adds the deterministic gate.', expectedProposalVersion: 3 }, '3');
+		expect(result).toMatchObject({ proposalId: 'proposal-1', feedbackId: 'feedback-1', idempotentReplay: false });
+		expect(store.recordGovernanceEvent).toHaveBeenCalledWith(expect.objectContaining({
+			proposalVersion: 3, evidence: expect.objectContaining({ kind: 'response', feedbackStatus: 'resolved',
+				resolvesEventId: 'feedback-1', contentPath: 'proposals/test.mdx', commitSha: 'a'.repeat(40), digest: 'digest-3' }),
+		}));
 	});
 
 	it('checks project ownership before any proposal mutation', async () => {

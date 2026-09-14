@@ -9,6 +9,7 @@ import {
 	type RepositoryProfileReconciliationReceipt,
 	type WorkdayAllocationProfile,
 } from '@treeseed/sdk/operator-contracts';
+import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { CapacityOperationReceiptRepository } from '../../../../repositories/operations/operation-receipt.ts';
@@ -48,7 +49,8 @@ function repositoryIdentity(value:string):{owner:string;name:string} {
 }
 function configuredAgents(row:Row):Array<{slug:string}> {
 	const agents=safeJson(row.handler_refs_json).agents;
-	return Array.isArray(agents)?agents.map(record).map((agent)=>({slug:text(agent.slug||agent.agentId)})).filter((agent)=>agent.slug):[];
+	return Array.isArray(agents)?agents.flatMap((agent)=>{const validation=validateAgentDefinitionModel(agent);
+		return validation.ok&&validation.data?[{slug:validation.data.id.split('/').at(-1)!}]:[];}):[];
 }
 
 export class RepositoryWorkdayProfileService {

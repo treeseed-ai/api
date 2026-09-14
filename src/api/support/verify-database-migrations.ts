@@ -10,5 +10,7 @@ export async function verifyDatabaseMigrations(pool: {query: (sql: string) => Pr
   const names = new Set(applied.rows.map(row => row.name));
   const pending = files.filter(file => !names.has(file));
   const unexpected = [...names].filter(name => !files.includes(name));
-  if (pending.length || unexpected.length) throw new Error('database_migration_inventory_mismatch');
+  if (pending.length || unexpected.length) {
+    throw new Error(`database_migration_inventory_mismatch_pending_${pending.length}_unexpected_${unexpected.length}`);
+  }
 }

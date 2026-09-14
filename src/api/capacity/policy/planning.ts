@@ -116,13 +116,16 @@ export function buildAgentCapacityPlanDraft(input: {
 				? decisionInput.estimateId.trim()
 			: typeof entry.metadata?.estimateId === 'string' && entry.metadata.estimateId.trim()
 					? entry.metadata.estimateId.trim() : null;
+		const contributingEstimateIds = Array.isArray(entry.metadata?.contributingEstimateIds)
+			? [...new Set(entry.metadata.contributingEstimateIds.map(String).map((id) => id.trim()).filter(Boolean))].sort()
+			: estimateId ? [estimateId] : [];
 		const workGraphNodeId = typeof decisionInput.workGraphNodeId === 'string' && decisionInput.workGraphNodeId.trim()
 			? decisionInput.workGraphNodeId.trim()
 			: null;
 		if (mode === 'acting' && !workGraphNodeId) {
 			throw new Error(`Acting decision execution input ${entry.id} requires workGraphNodeId provenance.`);
 		}
-		if (mode === 'acting' && !estimateId) throw new Error(`Acting decision execution input ${entry.id} requires accepted estimate provenance.`);
+		if (mode === 'acting' && contributingEstimateIds.length === 0) throw new Error(`Acting decision execution input ${entry.id} requires accepted estimate provenance.`);
 		const capacityEnvelope = {
 			...decisionInput.capacity,
 			teamId: input.teamId,
@@ -163,9 +166,10 @@ export function buildAgentCapacityPlanDraft(input: {
 				...decisionInput,
 				estimateId,
 				capacity: capacityEnvelope,
-				metadata: {
-					...(decisionInput.metadata ?? {}),
-					capacityPlanId: input.id,
+			metadata: {
+				...(decisionInput.metadata ?? {}),
+				contributingEstimateIds,
+				capacityPlanId: input.id,
 					decisionExecutionInputId: entry.id,
 				},
 			},

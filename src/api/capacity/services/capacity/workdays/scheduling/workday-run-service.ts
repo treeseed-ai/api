@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { CapacityWorkdayRunWriteRepository } from '../../../../repositories/capacity/workdays/workday-run-write.ts';
 import { CapacityWorkdayRunRepository,parseCapacityWorkdayRunStatus } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import { engineeringWorkflowPromotionConfigs } from '../../../operations/engineering-workflow-promotion-service.ts';
 import { assertCapacityWorkdayParametersSafe,assertRunningCapacityWorkdayBounded } from '../lifecycle/workday-lifecycle-service.ts';
 import { recordCapacityWorkdayScheduleFailure,type WorkdayScheduleStore } from './workday-scheduling-service.ts';
 
@@ -47,7 +46,7 @@ export function workdayTerminalizationPreserveUntil(status: CapacityWorkdayRunSt
 export function compileCapacityWorkdayRunRecord(teamId: string, input: JsonRecord, options: { now?: string; id?: string } = {}): CapacityWorkdayRunRecord {
 	const now = options.now ?? new Date().toISOString(); const id = options.id ?? text(input.id, randomUUID());
 	const status = parseCapacityWorkdayRunStatus(input.status ?? (input.startedAt ? 'running' : 'queued'));
-	const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters); engineeringWorkflowPromotionConfigs(parameters);
+	const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters);
 	const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode??(input.executionKind==='conversation'?'production':undefined));
 	parameters.executionMode=executionMode;
 	parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
@@ -100,7 +99,7 @@ export class CapacityWorkdayRunService {
 		const existing = await this.runs.get(teamId, runId); if (!existing) return null;
 		const now = new Date().toISOString(); const status = parseCapacityWorkdayRunStatus(input.status ?? existing.status);
 		if (status !== existing.status && !TRANSITIONS[existing.status].includes(status)) throw new CapacityGovernanceError('capacity_workday_run_transition_invalid', `Cannot transition workday run from ${existing.status} to ${status}.`, 409, { runId, from: existing.status, to: status });
-		const parameters = object(input.parameters ?? existing.parameters); assertCapacityWorkdayParametersSafe(parameters); engineeringWorkflowPromotionConfigs(parameters);
+		const parameters = object(input.parameters ?? existing.parameters); assertCapacityWorkdayParametersSafe(parameters);
 		const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode??existing.executionMode);
 		if(existing.executionMode&&executionMode!==existing.executionMode) throw new CapacityGovernanceError('capacity_workday_execution_mode_immutable','Workday executionMode cannot change after creation.',409,{runId,existing:existing.executionMode,requested:executionMode});
 		parameters.executionMode=executionMode;

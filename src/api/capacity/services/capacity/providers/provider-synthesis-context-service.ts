@@ -40,6 +40,7 @@ export interface ProviderSynthesisContext {
 
 export interface ProviderSynthesisExecutionProvider {
 	id: string;
+	runtimeBuild: string;
 	status: string;
 	capabilities: string[];
 	offers: CapabilityOffer[];
@@ -94,6 +95,7 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		owner: 'provider availability session', ownerId: text(row.id), column: 'execution_providers_json',
 	}).map((provider) => ({
 		id: String(provider.id ?? '').trim(),
+		runtimeBuild: String(provider.runtimeBuild ?? '').trim(),
 		status: capacitySupplyCandidateStatus(provider.status),
 		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
 		offers: Array.isArray(provider.offers) ? provider.offers as CapabilityOffer[] : [],
@@ -112,7 +114,7 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 				capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String).filter(Boolean) : [],
 				...(lane.minimumAssignmentDuration ? { minimumAssignmentDuration: lane.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}) }] : [];
 		}) : [],
-	})).filter((provider) => provider.id);
+	})).filter((provider) => provider.id && /^sha256:[a-f0-9]{64}$/u.test(provider.runtimeBuild));
 }
 
 export async function resolveProviderSynthesisContext(

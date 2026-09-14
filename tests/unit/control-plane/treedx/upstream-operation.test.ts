@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { requireTreeDxOperation, treeDxOperationScope, treeDxPathParameters, treeDxQuery } from '../../../../src/api/control-plane/treedx/upstream-operation.ts';
+import { requireTreeDxOperation, treeDxBoundedScopedPaths, treeDxOperationScope, treeDxPathParameters, treeDxQuery, treeDxScopedPathAllows } from '../../../../src/api/control-plane/treedx/upstream-operation.ts';
 
 describe('authoritative TreeDX upstream operations', () => {
 	it('delegates the complete graph refresh capability closure', () => {
@@ -27,5 +27,9 @@ describe('authoritative TreeDX upstream operations', () => {
 		expect(treeDxOperationScope(operation, { body: { paths: ['objectives/core'] } }, ['repo-1']).paths)
 			.toEqual(['objectives/core', 'objectives/core.mdx', 'objectives/core.md', 'objectives/core.markdown',
 				'objectives/core.json', 'objectives/core.yaml', 'objectives/core.yml', 'objectives/core.toml']);
+		expect(treeDxScopedPathAllows('objectives/core', 'objectives/core.mdx')).toBe(true);
+		expect(treeDxScopedPathAllows('objectives/core', 'objectives/core.exe')).toBe(false);
+		expect(treeDxBoundedScopedPaths(['objectives/core'], ['objectives/core', 'objectives/core.mdx', 'objectives/core.exe']))
+			.toEqual(['objectives/core', 'objectives/core.mdx']);
 	});
 });

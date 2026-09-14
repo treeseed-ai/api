@@ -9,6 +9,12 @@ it('preserves startup phase without exposing SQL, configuration or credentials',
   expect(diagnostic.code).toBe('MIGRATIONS_FAILED');
   expect(JSON.stringify(diagnostic)).not.toMatch(/password|postgresql|private SQL/);
 });
+it('reports only safe migration inventory counts', async () => {
+  let failure: unknown;
+  try { await apiStartupStage('MIGRATIONS', () => { throw new Error('database_migration_inventory_mismatch_pending_2_unexpected_1'); }); }
+  catch (error) { failure = error; }
+  expect(apiStartupDiagnostic(failure).code).toBe('MIG_PENDING_2_UNEXPECTED_1');
+});
 it('handles non-errors and rejects uncontrolled diagnostic fields', () => {
   const error = Object.assign(new Error('private'), { code: 'bad code secret', constraint: 'unsafe statement;password' });
   expect(apiStartupDiagnostic(error)).toMatchObject({ code: 'STARTUP_FAILED' });

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveProposalFeedbackSubject, reviewedProposalVersion } from '../../../../../src/api/capacity/services/capacity/assignments/planning/feedback/subject.ts';
+import { assignmentActivityInput } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-planning-output-service.ts';
 import { governanceProposalReadinessMethod } from '../../../../../src/api/store/governance/policy/contracts/governance-proposal-readiness.ts';
 import type { ControlPlaneStore } from '../../../../../src/api/persistence/store.ts';
+import type { DurableProviderAssignment } from '../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 
 const assignment = { id: 'assignment-1', teamId: 'team-1', projectId: 'project-1' };
 function fixture(id = '48d5429f-4882-4e89-824e-1866e70e7adb') {
@@ -10,6 +12,26 @@ function fixture(id = '48d5429f-4882-4e89-824e-1866e70e7adb') {
 		all: vi.fn(async () => [{ id }]) };
 	return { proposal, store };
 }
+
+describe('planning assignment envelope custody', () => {
+	it('binds living-graph output to the inner immutable activity input', () => {
+		const durable = {
+			decisionInput: { input: { decisionInput: { input: {
+				executionNodeId: 'node-1',
+				proposalRef: { id: 'proposal-1', revision: 3, digest: 'd'.repeat(64) },
+			} } } },
+		} as unknown as DurableProviderAssignment;
+		expect(assignmentActivityInput(durable)).toMatchObject({
+			executionNodeId: 'node-1',
+			proposalRef: { id: 'proposal-1', revision: 3, digest: 'd'.repeat(64) },
+		});
+	});
+
+	it('keeps direct planning inputs intact', () => {
+		const durable = { decisionInput: { input: { planningInputRequestId: 'request-1' } } } as unknown as DurableProviderAssignment;
+		expect(assignmentActivityInput(durable)).toEqual({ planningInputRequestId: 'request-1' });
+	});
+});
 
 describe('planning feedback subject custody', () => {
 	it.each(['48d5429f-4882-4e89-824e-1866e70e7adb', 'proposal:project-1:document-workspace'])('preserves exact existing ID %s', async id => {
@@ -62,14 +84,27 @@ describe('feedback revision custody', () => {
 describe('human proposal review freshness', () => {
 	it.each([undefined, 3, 4])('counts only current review version %s even without an agent participation snapshot', async proposalVersion => {
 		const store = { getGovernanceProposal: async () => ({ id: 'human-proposal', projectId: 'project-1', activeVersion: 4, createdById: 'author', metadata: {} }),
+			first: async () => null,
 			all: async (query: string) => query.includes('FROM governance_events') ? [{ id: 'review-1', actor_id: 'independent-reviewer', event_type: 'proposal.discussion', evidence_json: { kind: 'support', proposalVersion } }] : [] };
 		const readiness = await governanceProposalReadinessMethod.call(store as unknown as ControlPlaneStore, 'human-proposal');
 		expect(readiness?.independentReviewCount).toBe(proposalVersion === 4 ? 1 : 0);
 	});
-	it.each([undefined, 3, 4])('counts only current structured review signal version %s', async proposalVersion => {
+	it('does not treat retired proposal signals as review authority', async () => {
 		const store = { getGovernanceProposal: async () => ({ id: 'human-proposal', projectId: 'project-1', activeVersion: 4, createdById: 'author', metadata: {} }),
-			all: async (query: string) => query.includes('FROM agent_signals') ? [{ contract_id: 'proposal-reviewed', agent_id: 'independent-reviewer', payload_json: { proposalVersion } }] : [] };
+			first: async () => null,
+			all: async () => [] };
 		const readiness = await governanceProposalReadinessMethod.call(store as unknown as ControlPlaneStore, 'human-proposal');
-		expect(readiness?.independentReviewCount).toBe(proposalVersion === 4 ? 1 : 0);
+		expect(readiness?.independentReviewCount).toBe(0);
+	});
+	it('accepts only an accepted graph plan bound to the current proposal revision and digest', async () => {
+		const digest = 'd'.repeat(64);
+		const store = {
+			getGovernanceProposal: async () => ({ id: 'human-proposal', teamId: 'team-1', projectId: 'project-1', activeVersion: 4,
+				activeContentHash: digest, createdById: 'author', metadata: {} }),
+			all: async () => [],
+			first: async () => ({ node_json: { proposalRef: { revision: 4, digest } } }),
+		};
+		const readiness = await governanceProposalReadinessMethod.call(store as unknown as ControlPlaneStore, 'human-proposal');
+		expect(readiness?.missingVoting).not.toContain('exact accepted execution plan');
 	});
 });

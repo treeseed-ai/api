@@ -19,4 +19,23 @@ describe('provider context-capacity status', () => {
 		expect(status.blockers).toContain('context_overflow:codex-chat');
 		expect(status.nextActions).toContain('Publish an updated context-capacity offer and pass conformance before re-enabling it.');
 	});
+
+	it('surfaces the latest durable assignment synthesis failure', async () => {
+		const store = {
+			all: vi.fn(async (query: string) => query.includes('execution_capability_offers')
+				? [] : query.includes('availability_sessions') ? [{ status: 'open', expires_at: '2099-01-01T00:00:00.000Z' }] : []),
+			first: vi.fn(async (query: string) => query.includes('COUNT(*)') ? { count: 1 }
+				: query.includes("provider-assignment.synthesis-failed") ? {
+					action: 'provider-assignment.synthesis-failed',
+					metadata_json: JSON.stringify({ status: 'failed', code: 'execution_node_invalid', message: 'Invalid node.' }),
+					created_at: '2026-09-14T12:00:00.000Z',
+				} : null),
+			principalCanAccessTeam: vi.fn(async () => true), principalCanManageTeam: vi.fn(async () => true),
+		} as any;
+		const service = createProviderRuntimeService(store, { environment: 'test', capacityEncryptionKeyFile: keyFixture() });
+		service.show = vi.fn(async () => ({ id: 'provider-1' })) as any;
+		const status = await service.diagnose({ id: 'owner' }, 'team-1', 'provider-1');
+		expect(status.synthesisFailure).toEqual(expect.objectContaining({ code: 'execution_node_invalid', observedAt: '2026-09-14T12:00:00.000Z' }));
+		expect(status.blockers).toContain('execution_node_invalid');
+	});
 });

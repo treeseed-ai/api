@@ -9,6 +9,7 @@ export interface GovernanceOperationDependencies {
 		decideApproval(principal: OperationInvocationContext['principal'], projectId: string, approvalId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 		createProposal(principal: OperationInvocationContext['principal'], projectId: string, body: Record<string, unknown>): Promise<Record<string, any>>;
 		updateProposal(principal: OperationInvocationContext['principal'], projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
+		resolveProposalFeedback(principal: OperationInvocationContext['principal'], projectId: string, proposalId: string, feedbackId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 		openProposal(principal: OperationInvocationContext['principal'], projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 		startVoting(principal: OperationInvocationContext['principal'], projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string): Promise<Record<string, any>>;
 		vote(principal: OperationInvocationContext['principal'], projectId: string, proposalId: string, body: Record<string, unknown>): Promise<Record<string, any>>;
@@ -45,6 +46,9 @@ export function createGovernanceOperations(dependencies: GovernanceOperationDepe
 			handler: (input, context) => result(() => governance.createProposal(context.principal, input.path.projectId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.governance.updateProposal,
 			handler: (input, context) => result(() => governance.updateProposal(context.principal, input.path.projectId, input.path.proposalId, input.body as Record<string, unknown>, context.ifMatch)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.governance.resolveProposalFeedback,
+			handler: (input, context) => result(() => governance.resolveProposalFeedback(context.principal, input.path.projectId, input.path.proposalId,
+				input.path.feedbackId, input.body as Record<string, unknown>, context.ifMatch)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.governance.openProposal,
 			handler: (input, context) => result(() => governance.openProposal(context.principal, input.path.projectId, input.path.proposalId, input.body as Record<string, unknown>, context.ifMatch)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.governance.startVoting,

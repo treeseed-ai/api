@@ -442,7 +442,7 @@ describe('control-plane protocol contract', () => {
 			const expectedTemplates = createMcpCatalog(registry).resources.filter((resource) => resource.uriTemplate.includes('{'));
 			expect(templates.resourceTemplates).toHaveLength(expectedTemplates.length);
 			expect(templates.resourceTemplates.map((resource) => resource.uriTemplate)).toEqual(expect.arrayContaining([
-				'treeseed://projects/{projectId}', 'treeseed://plans/{capacityPlanId}', 'treeseed://operations/{operationId}',
+			'treeseed://projects/{projectId}', 'treeseed://operations/{operationId}',
 			]));
 			const statusResource = await client.readResource({ uri: 'treeseed://status' });
 			expect(statusResource.contents[0]).toMatchObject({ uri: 'treeseed://status', mimeType: 'application/json' });

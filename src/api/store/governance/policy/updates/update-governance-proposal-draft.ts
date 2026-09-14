@@ -1,11 +1,9 @@
-import { createHash,randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { decisionDependencyReferencesAreComplete,normalizeDecisionDependencyReferences } from '../../../../governance/decision-authority.ts';
-import { normalizeGovernanceProposalPlan } from '../../../../governance/proposal-readiness.ts';
 import { governanceContentHash,isoNow,ControlPlaneStore,optionalStringValue } from "../../../../persistence/store.ts";
+function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 async function ensureVersionEvidence(store: ControlPlaneStore,input: { proposal:any;version:number;hash:string;metadata:Record<string,any>;proposalTypes:string[];changeReason:string;createdById:string|null;createdByType:string;priorState:string;nextState:string;priorHash:string }) {
-	const timestamp=isoNow();const proposalId=String(input.proposal.id);
-	if(input.proposal.projectId){const signalId=`signal:proposal-version:${createHash('sha256').update(`${proposalId}:${input.version}:${input.hash}`).digest('hex')}`;const provenance=input.metadata.contentProvenance&&typeof input.metadata.contentProvenance==='object'?input.metadata.contentProvenance:{};const commitSha=optionalStringValue(provenance.commitSha);const contentPath=optionalStringValue(provenance.contentPath);
-		await store.run(`INSERT INTO agent_signals (id,contract_id,subject_kind,subject_id,team_id,project_id,workday_run_id,assignment_id,agent_id,activity_type,capacity_provider_id,causation_id,correlation_id,origin,commit_sha,immutable_ref,digest,changed_paths_json,change_summary,evidence_ref,payload_json,metadata_json,created_at) VALUES (?,'proposal-version-published','proposal',?,?,?,?,NULL,NULL,NULL,NULL,?,?,'deterministic-handler',?,?,?, ?,?,?,?, '{}',?) ON CONFLICT(id) DO NOTHING`,[signalId,proposalId,input.proposal.teamId,input.proposal.projectId,optionalStringValue(input.metadata.workdayRunId),`proposal:${proposalId}:version:${input.version}`,`proposal:${proposalId}`,commitSha,commitSha,input.hash,JSON.stringify(contentPath?[contentPath]:[]),input.changeReason,`governance-proposal-version:${proposalId}:${input.version}`,JSON.stringify({proposalId,version:input.version,proposalTypes:input.proposalTypes,objectives:input.metadata.relatedObjectives??[],authorId:input.createdById}),timestamp]);}
+	const proposalId=String(input.proposal.id);
 	const eventType=input.priorState==='voting'?'proposal.version_reset_voting':'proposal.version_published';
 	const event=await store.first(`SELECT id FROM governance_events WHERE proposal_id = ? AND proposal_version = ? AND event_type = ? LIMIT 1`,[proposalId,input.version,eventType]);
 	if(!event)await store.recordGovernanceEvent({eventType,actorType:input.createdByType,actorId:input.createdById,teamId:input.proposal.teamId,projectId:input.proposal.projectId,proposalId,proposalVersion:input.version,priorState:input.priorState,nextState:input.nextState,evidence:{priorHash:input.priorHash,nextHash:input.hash}});
@@ -38,8 +36,10 @@ export async function updateGovernanceProposalDraftMethod(this: ControlPlaneStor
 	if (!decisionDependencyReferencesAreComplete(rawDecisionDependencies)) { const error: Error & Record<string, any> = new Error('Every decision dependency requires projectId and decisionId.'); error.status = 400; error.code = 'governance_decision_dependency_invalid'; throw error; }
 	metadata.decisionDependencies = normalizeDecisionDependencyReferences(rawDecisionDependencies);
     if (input.contentProvenance !== undefined) metadata.contentProvenance = input.contentProvenance;
-    if (input.plan !== undefined) metadata.plan = normalizeGovernanceProposalPlan(input.plan);
-    const nextHash = governanceContentHash({ title, summary, body, proposalType, ...metadata });
+	delete metadata.plan;
+	delete metadata.executionPlan;
+    const nextHash = optionalStringValue(record(metadata.contentProvenance).digest)
+		?? governanceContentHash({ title, summary, body, proposalType, ...metadata });
     const materialChange = nextHash !== existing.activeContentHash;
     const timestamp = isoNow();
 	const createdByType = optionalStringValue(input.createdByType,'user');

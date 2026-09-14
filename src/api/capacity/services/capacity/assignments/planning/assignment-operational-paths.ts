@@ -89,16 +89,17 @@ export function assignmentDiscussionWritePaths(contentRoot: string) {
 export function assignmentTreeDxProxyHandle(input: {
 	assignmentId: string; teamId: string; projectId: string; executionMode: 'simulation' | 'production';
 	repositoryId: string; workspaceId: string; allowedPaths: string[]; allowedReadPaths: string[];
-	allowedWritePaths: string[]; expiresAt: string; demandId: string; workdayRunId: string;
+	allowedWritePaths: string[]; baseRef: string; expiresAt: string; demandId: string; workdayRunId: string;
 }) {
 	return {
 		id: `tdx_${input.assignmentId}`, teamId: input.teamId, projectId: input.projectId, assignmentId: input.assignmentId,
-		executionMode: input.executionMode, repositoryId: input.repositoryId, workspaceId: input.workspaceId, status: 'provisioning',
+		executionMode: input.executionMode, repositoryId: input.repositoryId, repositoryProjectId: input.projectId,
+		workspaceId: input.workspaceId, baseRef: input.baseRef, status: 'provisioning',
 		scopes: ['project:read', 'project:write', 'workspace:read', 'workspace:write', 'files:read', 'files:search', 'graph:query', 'files:write', 'git:commit'],
 		allowedOperations: ['files:read', 'files:search', 'graph:query', 'files:write', 'git:commit', 'workspace:write'],
 		allowedPaths: input.allowedPaths, allowedReadPaths: input.allowedReadPaths, allowedWritePaths: input.allowedWritePaths,
 		expiresAt: input.expiresAt,
-		metadata: { source: 'workday-demand', demandId: input.demandId, workdayRunId: input.workdayRunId,
+		metadata: { source: 'workday-demand', demandId: input.demandId, workdayRunId: input.workdayRunId, repositoryProjectId: input.projectId,
 			executionMode: input.executionMode, upstreamMutationPolicy: input.executionMode === 'production' ? 'checkpoint-only' : 'denied' },
 	};
 }

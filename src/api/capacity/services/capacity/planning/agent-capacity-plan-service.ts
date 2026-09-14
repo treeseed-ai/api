@@ -106,10 +106,16 @@ export class AgentCapacityPlanService {
 			const estimateId = typeof entry.input.estimateId === 'string' && entry.input.estimateId.trim()
 				? entry.input.estimateId.trim()
 				: typeof entry.metadata?.estimateId === 'string' ? entry.metadata.estimateId.trim() : '';
-			const estimate = estimateId ? await this.store.first(`SELECT id FROM structured_agent_estimates
-				WHERE id = ? AND team_id = ? AND project_id = ? AND decision_id = ? AND status = 'accepted' LIMIT 1`,
-				[estimateId, project.teamId, project.id, decisionId]) : null;
-			if (!estimate) throw new CapacityGovernanceError('agent_capacity_plan_accepted_estimate_required', 'Every acting execution input requires an accepted estimate for the same decision and project.', 409, { decisionId, projectId: project.id, decisionExecutionInputId: entry.id, estimateId: estimateId || null });
+			const contributingEstimateIds = Array.isArray(entry.metadata?.contributingEstimateIds)
+				? [...new Set(entry.metadata.contributingEstimateIds.map(String).map((id) => id.trim()).filter(Boolean))].sort()
+				: estimateId ? [estimateId] : [];
+			if (contributingEstimateIds.length === 0) throw new CapacityGovernanceError('agent_capacity_plan_accepted_estimate_required', 'Every acting execution input requires accepted estimate provenance for the same decision and project.', 409, { decisionId, projectId: project.id, decisionExecutionInputId: entry.id });
+			for (const contributingEstimateId of contributingEstimateIds) {
+				const estimate = await this.store.first(`SELECT id FROM structured_agent_estimates
+					WHERE id = ? AND team_id = ? AND project_id = ? AND decision_id = ? AND status = 'accepted' LIMIT 1`,
+					[contributingEstimateId, project.teamId, project.id, decisionId]);
+				if (!estimate) throw new CapacityGovernanceError('agent_capacity_plan_accepted_estimate_required', 'Every contributing estimate must remain accepted for the same decision and project.', 409, { decisionId, projectId: project.id, decisionExecutionInputId: entry.id, estimateId: contributingEstimateId });
+			}
 		}
 		const now = new Date().toISOString();
 		const scopeHash = input.scopeHash ?? this.store.scopeHash({

@@ -92,12 +92,12 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	if (!repositoryId) return null;
 	const contentPath = normalizedContentPath(library.contentPath);
 	const allowedPaths = input.replicationRefs?.length ? ['**'] : [...new Set([projectLibraryPath(contentPath, 'books/**'), projectLibraryPath(contentPath, 'knowledge/**'), projectLibraryPath(contentPath, 'assets/**'),
-		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'agents', 'people', 'groups', 'group-edges']
+		...(input.relationPaths ? ['notes', 'questions', 'objectives', 'proposals', 'decisions', 'execution-plans', 'agents', 'people', 'groups', 'group-edges']
 			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
 		...(input.communicationPaths ? ['discussions', 'discussion-messages', 'discussion-events']
 			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
 		...(input.authoringPaths ? [
-			projectLibraryPath(contentPath, 'agents/**'),projectLibraryPath(contentPath, 'agent-tests/**'),projectLibraryPath(contentPath, 'groups/**'),projectLibraryPath(contentPath, 'group-edges/**'),
+			projectLibraryPath(contentPath, 'agents/**'),projectLibraryPath(contentPath, 'agent-tests/**'),projectLibraryPath(contentPath, 'groups/**'),projectLibraryPath(contentPath, 'group-edges/**'),projectLibraryPath(contentPath, 'execution-plans/**'),
 			...Object.values(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map((collection) => projectLibraryPath(contentPath, collection, '**')),
 			'.treeseed/agents/**','.treeseed/governance/proposal-types/**','.treeseed/seeds/**','seeds/**','scenes/**',
 		] : []), ...normalizedWorkspaceScopePaths(input.workspacePaths)])];

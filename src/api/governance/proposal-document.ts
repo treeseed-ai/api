@@ -2,15 +2,18 @@ import { serializeFrontmatterDocument } from '../content/frontmatter.ts';
 import { assertGovernanceContent } from './content-validation.ts';
 
 export function serializeProposalDocument(input: {
-	id: string; title: string; summary: string; body: string; date: string;
-	proposalTypes: string[]; motivation: string; primaryContributor: string;
-	relatedObjectives: unknown; evidenceRefs: unknown; plan: unknown;
+	id: string; projectId: string; title: string; request: string; summary?: string;
+	status: 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn';
+	objectiveRefs?: unknown; evidenceRefs?: unknown; discussionRef?: unknown; executionPlan?: unknown;
 }) {
-	const source = serializeFrontmatterDocument({ id: input.id, title: input.title, description: input.summary,
-		summary: input.summary, date: input.date, status: 'in progress', draft: false,
-		proposal_type: input.proposalTypes[0], proposal_types: input.proposalTypes,
-		motivation: input.motivation, primary_contributor: input.primaryContributor,
-		related_objectives: input.relatedObjectives, evidence_refs: input.evidenceRefs, plan: input.plan }, `${input.body}\n`);
+	const source = serializeFrontmatterDocument({
+		schemaVersion: 'treeseed.proposal/v1', id: input.id, projectId: input.projectId,
+		title: input.title, request: input.request, ...(input.summary ? { summary: input.summary } : {}), status: input.status,
+		...(input.objectiveRefs ? { objectiveRefs: input.objectiveRefs } : {}),
+		...(input.evidenceRefs ? { evidenceRefs: input.evidenceRefs } : {}),
+		...(input.discussionRef ? { discussionRef: input.discussionRef } : {}),
+		...(input.executionPlan ? { executionPlan: input.executionPlan } : {}),
+	}, '');
 	assertGovernanceContent('proposal', source);
 	return source;
 }

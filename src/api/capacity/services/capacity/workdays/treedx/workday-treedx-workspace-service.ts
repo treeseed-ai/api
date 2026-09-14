@@ -5,6 +5,7 @@ import type { TreeDxInfrastructureClient } from '../../../../../control-plane/tr
 
 interface CreateWorkdayTreeDxWorkspaceInput {
 	client: TreeDxInfrastructureClient;
+	workspaceId?: string;
 	repositoryId: string;
 	assignmentId: string;
 	baseRef: string;
@@ -17,6 +18,7 @@ interface CreateWorkdayTreeDxWorkspaceInput {
 type ConfiguredWorkspaceStore = WorkdayTreeDxConnectionStore;
 
 export interface ConfiguredWorkspaceInput {
+	workspaceId?: string;
 	repositoryId?: string;
 	assignmentId: string;
 	baseRef?: string;
@@ -28,6 +30,20 @@ export interface ConfiguredWorkspaceInput {
 
 function record(value: unknown): Record<string, unknown> {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function safeTreeDxError(error: unknown): Record<string, unknown> {
+	if (!(error instanceof Error)) return { message: String(error) };
+	const source = record(error);
+	const result: Record<string, unknown> = { message: error.message };
+	if (typeof source.code === 'string') result.code = source.code;
+	if (typeof source.status === 'number') result.status = source.status;
+	const upstream = record(source.details);
+	const blocked = /token|secret|password|credential|authorization/i;
+	const details = Object.fromEntries(Object.entries(upstream).filter(([key, value]) =>
+		!blocked.test(key) && ['string', 'number', 'boolean'].includes(typeof value)));
+	if (Object.keys(details).length > 0) result.details = details;
+	return result;
 }
 
 function requireText(value: string, owner: string): string {
@@ -45,7 +61,7 @@ export function workdayTreeDxWorkspaceId(assignmentId: string) {
 }
 
 export async function createWorkdayTreeDxWorkspace(input: CreateWorkdayTreeDxWorkspaceInput) {
-	const workspaceId = workdayTreeDxWorkspaceId(input.assignmentId);
+	const workspaceId = input.workspaceId?.trim() || workdayTreeDxWorkspaceId(input.assignmentId);
 	const repositoryId = requireText(input.repositoryId, 'repositoryId');
 	if (!Number.isFinite(input.ttlSeconds) || input.ttlSeconds <= 0) {
 		throw new CapacityGovernanceError(
@@ -61,7 +77,7 @@ export async function createWorkdayTreeDxWorkspace(input: CreateWorkdayTreeDxWor
 			mode: input.mode, allowedPaths: input.allowedPaths, ttlSeconds: input.ttlSeconds });
 	} catch (error) {
 		throw new CapacityGovernanceError('capacity_workday_workspace_create_failed', 'TreeDX workspace creation failed.', 502, {
-			details: 'The TreeDX workspace operation failed.',
+			upstream: safeTreeDxError(error),
 		});
 	}
 	const envelope = record(decoded);
@@ -90,6 +106,7 @@ export async function createConfiguredWorkdayTreeDxWorkspace(
 	if (!connection) throw new CapacityGovernanceError('capacity_workday_workspace_auth_unavailable', 'TreeDX connected authentication and a repository binding are required for local and hosted workdays.', 503);
 	return createWorkdayTreeDxWorkspace({
 		client: connection.client,
+		workspaceId: input.workspaceId,
 		repositoryId: connection.repositoryId,
 		assignmentId: input.assignmentId,
 		baseRef: input.baseRef ?? 'refs/heads/main',

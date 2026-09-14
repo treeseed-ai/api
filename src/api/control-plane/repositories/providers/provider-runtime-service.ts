@@ -37,6 +37,17 @@ function etag(value: unknown) {
 	return `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
+function jsonObject(value: unknown): Record<string, unknown> {
+	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+	if (typeof value === 'string') {
+		try {
+			const parsed = JSON.parse(value);
+			return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+		} catch { return {}; }
+	}
+	return {};
+}
+
 export function registrationCodeStatus(metadata: { teamId: string; generation: number; keyPrefix: string; createdAt: string; rotatedAt: string | null }) {
 	return { schemaVersion: 'treeseed.provider-registration-code-status/v1' as const, teamId: metadata.teamId,
 		generation: metadata.generation, codePrefix: metadata.keyPrefix, rotatedAt: metadata.rotatedAt ?? metadata.createdAt };
@@ -156,9 +167,19 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 		},
 		async diagnose(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const status = await this.status(principal, teamId, providerId);
+			const synthesisEvent = await store.first(`SELECT action, metadata_json, created_at FROM capacity_audit_events
+				WHERE team_id = ? AND capacity_provider_id = ? AND action IN ('provider-assignment.synthesis-failed', 'provider-assignment.synthesis-completed')
+				ORDER BY created_at DESC, id DESC LIMIT 1`, [teamId, providerId]);
+			const synthesisFailure = synthesisEvent?.action === 'provider-assignment.synthesis-failed' ? {
+				...jsonObject(synthesisEvent.metadata_json),
+				observedAt: String(synthesisEvent.created_at ?? ''),
+			} : null;
 			const offerBlockers = status.unavailableOffers.map((offer) => `${offer.status}:${offer.offer_id}`);
-			return { ...status, blockers: [...(status.healthy ? [] : ['provider_availability_unhealthy']), ...offerBlockers],
+			return { ...status, synthesisFailure,
+				blockers: [...(status.healthy ? [] : ['provider_availability_unhealthy']), ...offerBlockers,
+					...(synthesisFailure ? [String(synthesisFailure.code ?? 'provider_assignment_synthesis_failed')] : [])],
 				nextActions: [...(status.healthy ? [] : ['Start or reconcile the local provider manager.']),
+					...(synthesisFailure ? ['Inspect the latest provider assignment synthesis failure and repair the rejected execution node or assignment input.'] : []),
 					...(status.unavailableOffers.some((offer) => offer.status === 'context_overflow')
 						? ['Publish an updated context-capacity offer and pass conformance before re-enabling it.'] : [])] };
 		},

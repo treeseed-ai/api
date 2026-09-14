@@ -3,6 +3,9 @@ import { createHash } from 'node:crypto';
 export type AssignmentJsonRecord = Record<string, unknown>;
 
 export function assignmentRecord(value: unknown): AssignmentJsonRecord {
+	if (typeof value === 'string') {
+		try { return assignmentRecord(JSON.parse(value)); } catch { return {}; }
+	}
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as AssignmentJsonRecord : {};
 }
 

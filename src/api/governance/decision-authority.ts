@@ -1,7 +1,8 @@
 type Row = Record<string, unknown>;
 export interface DecisionDependencyReference { projectId: string; decisionId: string }
 export interface DecisionDependencySnapshot extends DecisionDependencyReference { teamId: string; proposalId: string; proposalVersion: number; proposalContentHash: string }
-export interface DecisionAuthoritySnapshot extends DecisionDependencySnapshot { decisionDependencies: DecisionDependencySnapshot[] }
+export interface DecisionProposalSnapshot { id: string; revision: number; digest: string; repository: string; commit: string; path: string }
+export interface DecisionAuthoritySnapshot extends DecisionDependencySnapshot { decisionDependencies: DecisionDependencySnapshot[]; proposalRef: DecisionProposalSnapshot }
 export interface DecisionAuthorityValidation { valid: boolean; code: string | null; message: string | null; current: DecisionAuthoritySnapshot | null }
 export interface DecisionAuthorityDatabase {
 	first<T extends Row = Row>(query: string, params?: unknown[]): Promise<T | null>;
@@ -36,10 +37,13 @@ async function decisionRow(database: DecisionAuthorityDatabase, decisionId: stri
 }
 
 function snapshot(row: Row, dependencies: DecisionDependencySnapshot[]): DecisionAuthoritySnapshot {
+	const proposalRef = object(object(row.decision_record_json).proposalRef);
 	return {
 		teamId: text(row.team_id), projectId: text(row.project_id), decisionId: text(row.id),
 		proposalId: text(row.proposal_id), proposalVersion: number(row.proposal_version),
 		proposalContentHash: text(row.proposal_content_hash), decisionDependencies: dependencies,
+		proposalRef: { id: text(proposalRef.id), revision: number(proposalRef.revision), digest: text(proposalRef.digest),
+			repository: text(proposalRef.repository), commit: text(proposalRef.commit), path: text(proposalRef.path) },
 	};
 }
 
@@ -51,6 +55,15 @@ function rowProblem(row: Row | null, expected?: { teamId?: string; projectId?: s
 	if (text(row.proposal_status) !== 'accepted') return { code: 'governance_proposal_not_accepted', message: 'The source proposal is no longer accepted.' };
 	if (number(row.active_version) !== number(row.proposal_version) || text(row.active_content_hash) !== text(row.proposal_content_hash)) {
 		return { code: 'governance_decision_proposal_stale', message: 'The accepted decision no longer matches the current source proposal revision.' };
+	}
+	const proposalRef = object(object(row.decision_record_json).proposalRef);
+	if (!text(proposalRef.id) || !number(proposalRef.revision) || !text(proposalRef.digest)
+		|| !text(proposalRef.repository) || !/^[a-f0-9]{40}$/u.test(text(proposalRef.commit)) || !text(proposalRef.path)) {
+		return { code: 'governance_decision_proposal_ref_invalid', message: 'The accepted decision does not bind an exact executable proposal revision.' };
+	}
+	if (text(proposalRef.id) !== text(row.proposal_id) || number(proposalRef.revision) !== number(row.proposal_version)
+		|| text(proposalRef.digest) !== `sha256:${text(row.proposal_content_hash).replace(/^sha256:/u, '')}`) {
+		return { code: 'governance_decision_proposal_ref_stale', message: 'The accepted decision proposal reference does not match its current governance revision.' };
 	}
 	return null;
 }
@@ -95,7 +108,8 @@ export async function validateDecisionAuthority(
 		const expectedSnapshot = (recorded as unknown[]).map(object).find((entry) => text(entry.decisionId) === reference.decisionId && text(entry.projectId) === reference.projectId);
 		const { decisionDependencies: _nested, ...currentSnapshot } = dependency.current;
 		if (!expectedSnapshot || text(expectedSnapshot.teamId) !== currentSnapshot.teamId || text(expectedSnapshot.proposalId) !== currentSnapshot.proposalId
-			|| number(expectedSnapshot.proposalVersion) !== currentSnapshot.proposalVersion || text(expectedSnapshot.proposalContentHash) !== currentSnapshot.proposalContentHash) {
+			|| number(expectedSnapshot.proposalVersion) !== currentSnapshot.proposalVersion || text(expectedSnapshot.proposalContentHash) !== currentSnapshot.proposalContentHash
+			|| JSON.stringify(object(expectedSnapshot.proposalRef)) !== JSON.stringify(currentSnapshot.proposalRef)) {
 			return { valid: false, code: 'governance_decision_dependency_stale', message: `Dependency ${reference.decisionId} no longer matches its accepted snapshot.`, current: null };
 		}
 		dependencies.push(currentSnapshot);

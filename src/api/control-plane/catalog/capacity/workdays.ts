@@ -12,6 +12,7 @@ export interface WorkdayOperationDependencies { workdays: {
 	preflight(principal: Principal, teamId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
 	start(principal: Principal, teamId: string, body: Record<string, unknown>, idempotencyKey?: string): Promise<Record<string, unknown>>;
 	show(principal: Principal, teamId: string, runId: string): Promise<Record<string, unknown>>;
+	stop(principal: Principal, teamId: string, runId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
 	events(principal: Principal, teamId: string, runId: string, query: Record<string, unknown>): Promise<Record<string, unknown>>;
 	schedules(principal: Principal, teamId: string): Promise<Record<string, unknown>>;
 	createSchedule(principal: Principal, teamId: string, body: Record<string, unknown>): Promise<Record<string, unknown>>;
@@ -32,6 +33,7 @@ export function createWorkdayOperations({ workdays }: WorkdayOperationDependenci
 		{ binding: CONTROL_PLANE_OPERATIONS.workdays.preflight, handler: (input, context) => result(() => workdays.preflight(context.principal, input.path.teamId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.workdays.start, handler: (input, context) => result(() => workdays.start(context.principal, input.path.teamId, input.body as Record<string, unknown>, context.idempotencyKey)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.workdays.show, handler: (input, context) => result(() => workdays.show(context.principal, input.path.teamId, input.path.runId)) },
+		{ binding: CONTROL_PLANE_OPERATIONS.workdays.stop, handler: (input, context) => result(() => workdays.stop(context.principal, input.path.teamId, input.path.runId, input.body as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.workdays.events, handler: (input, context) => result(() => workdays.events(context.principal, input.path.teamId, input.path.runId, input.query as Record<string, unknown>)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.workdays.schedules, handler: (input, context) => result(() => workdays.schedules(context.principal, input.path.teamId)) },
 		{ binding: CONTROL_PLANE_OPERATIONS.workdays.createSchedule, handler: (input, context) => result(() => workdays.createSchedule(context.principal, input.path.teamId, input.body as Record<string, unknown>)) },

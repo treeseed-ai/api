@@ -15,6 +15,9 @@ export interface ActingDemandSource {
 
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown): string | null { return typeof value === 'string' && value.trim() ? value.trim() : null; }
+export function actingArtifactKinds(requirements: Record<string, unknown>[]) {
+	return ['source-candidate', ...requirements.map((requirement) => text(requirement.outputType)).filter((value): value is string => Boolean(value))];
+}
 
 async function readyGraphNode(input: {
 	database: CapacityGovernanceDatabase;
@@ -54,6 +57,7 @@ async function readyGraphNode(input: {
 	const outputRequirements = Array.isArray(node.outputRequirements) ? node.outputRequirements.map(record) : [];
 	return {
 		graphId: String(row.id), nodeId: workGraphNodeId,
+		stage: text(record(node.metadata).stage),
 		outputRequirements,
 		...authority,
 	};
@@ -134,6 +138,7 @@ export async function listActingDemandSources(
 				...record(decisionInput.input),
 				workGraphId: graphNode.graphId,
 				workGraphNodeId: graphNode.nodeId,
+				...(graphNode.stage ? { workGraphStage: graphNode.stage } : {}),
 				...(text(graphNode.outputRequirements.find((requirement) => requirement.required !== false)?.outputType
 					?? graphNode.outputRequirements[0]?.outputType) ? {
 					artifactKind: text(graphNode.outputRequirements.find((requirement) => requirement.required !== false)?.outputType
@@ -157,7 +162,7 @@ export async function listActingDemandSources(
 					executionReadiness: row.execution_readiness, planningInputsStatus: row.planning_inputs_status,
 					allowedOutputs: {
 						types: ['content_artifact_refs'],
-						artifactKinds: graphNode.outputRequirements.map((requirement) => text(requirement.outputType)).filter(Boolean),
+						artifactKinds: actingArtifactKinds(graphNode.outputRequirements),
 					},
 					decisionExecutionInputId: unit.decisionExecutionInputId ?? null, estimateId, ...graphNode,
 					...(operationHandoff ? { operationHandoffId: operationHandoff.id, operationHandoffDiscussionId: operationHandoff.discussionId, operationHandoffSourceMessageRefs: operationHandoff.sourceMessageRefs } : {}),

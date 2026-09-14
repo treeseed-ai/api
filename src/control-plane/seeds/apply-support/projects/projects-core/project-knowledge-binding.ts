@@ -2,7 +2,6 @@ import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
 import { createHash, randomUUID } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../../api/capacity/database.ts';
 import { treeDxDelegationAuthority } from '../../../../../api/control-plane/treedx/delegation-authority.ts';
-import { parseFrontmatterDocument } from '../../../../../api/content/frontmatter.ts';
 import { repositoryDefinitionSource, validateAgentDefinitionSource } from '../../../../../api/control-plane/repositories/agents/agent-definition-source.ts';
 import { resolveTreeDxServiceUrl } from '../../../../../api/control-plane/treedx/connection-url.ts';
 import { ContextQueryCheckService } from '../../../../../api/capacity/services/capacity/agents/context-query-check-service.ts';
@@ -76,10 +75,6 @@ async function waitForGraphRefresh(client: TreeDxClient, repositoryId: string, r
 	throw new Error('TreeDX graph refresh did not complete before the seed reconciliation deadline.');
 }
 
-function strings(value: unknown): string[] {
-	return Array.isArray(value) ? [...new Set(value.map(String).map((item) => item.trim()).filter(Boolean))] : [];
-}
-
 async function reconcileProjectAgentClasses(input: {
 	store: any; client: TreeDxClient; repositoryId: string; projectId: string; teamId: string; projectSlug: string; ref: string;
 	paths?:string[];discoveredRef?:string;
@@ -100,11 +95,11 @@ async function reconcileProjectAgentClasses(input: {
 		const row = object(file); const path = text(row.path); const source = repositoryDefinitionSource(row);
 		const validation = validateAgentDefinitionSource(source);
 		if (!validation.ok) throw new Error(`Agent definition ${path || '(unknown)'} is invalid: ${validation.diagnostics.map((item) => `${item.path}: ${item.message}`).join('; ')}`);
-		return { path, source, definition: parseFrontmatterDocument(source).frontmatter };
+		return { path, source, definition: validation.data! };
 	});
 	const groups = new Map<string, typeof definitions>();
 	for (const definition of definitions) {
-		const key = text(definition.definition.projectAgentClassSlug, definition.definition.projectAgentClassId, definition.definition.agentClass);
+		const key = text(definition.definition.agentClass);
 		if (!key) throw new Error(`Agent definition ${definition.path} does not select a project agent class.`);
 		groups.set(key, [...(groups.get(key) ?? []), definition]);
 	}
@@ -113,17 +108,9 @@ async function reconcileProjectAgentClasses(input: {
 	for (const [classSlug, members] of groups) {
 		const existing = await input.store.first('SELECT id, created_at FROM project_agent_classes WHERE project_id = ? AND slug = ? LIMIT 1', [input.projectId, classSlug]);
 		const classId = text(existing?.id, `${input.projectId}:${classSlug}`);
-		const agents = members.map(({ path, definition }) => {
-			const profiles = object(definition.activityProfiles);
-			return { agentId: text(definition.id), slug: text(definition.slug), name: text(definition.name, definition.title),
-				title: text(definition.title, definition.name), enabled: definition.enabled !== false,
-				identity: object(definition.identity), summary: text(definition.summary, definition.description),
-				groupIds: strings(definition.groupIds), contentPath: path,
-				contextQueryRefs: definition.contextQueryRefs ?? [], contextQuerySetRefs: definition.contextQuerySetRefs ?? [],
-				instructionTemplateRefs: definition.instructionTemplateRefs ?? [], activities: profiles };
-		});
+		const agents = members.map(({ definition }) => definition);
 		const profiles = members.flatMap(({ definition }) => Object.entries(object(definition.activityProfiles)));
-		const allowedModes = [...new Set(profiles.flatMap(([activity, value]) => object(value).enabled === false ? [] : [activity === 'acting' ? 'acting' : 'planning']))];
+		const allowedModes = [...new Set(profiles.map(([activity]) => activity === 'acting' ? 'acting' : 'planning'))];
 		const metadata = { source: 'project-library', immutableRef, libraryRef: input.ref,
 			definitionPaths: members.map(({ path }) => path), definitionDigest: createHash('sha256').update(members.map(({ source }) => source).join('\n')).digest('hex') };
 		await input.store.run(`INSERT INTO project_agent_classes
@@ -132,11 +119,16 @@ async function reconcileProjectAgentClasses(input: {
 			ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,status='active',allowed_modes_json=excluded.allowed_modes_json,
 			required_capabilities_json=excluded.required_capabilities_json,handler_refs_json=excluded.handler_refs_json,
 			metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`, [
-			classId,input.teamId,input.projectId,classSlug,text(members[0]?.definition.projectAgentClassName, classSlug),
+			classId,input.teamId,input.projectId,classSlug,text(members[0]?.definition.name, classSlug),
 			JSON.stringify(allowedModes.length ? allowedModes : ['planning']),JSON.stringify([]),JSON.stringify({}),JSON.stringify({}),
 			JSON.stringify({ agents, proposalTypeContracts }),JSON.stringify({}),JSON.stringify(metadata),text(existing?.created_at, now),now,
 		]);
 	}
+	const activeSlugs = [...groups.keys()];
+	await input.store.run(`UPDATE project_agent_classes SET status='archived',updated_at=?
+		WHERE project_id=? AND status='active' AND metadata_json LIKE '%"source":"project-library"%'
+		${activeSlugs.length ? `AND slug NOT IN (${activeSlugs.map(() => '?').join(',')})` : ''}`,
+		[now,input.projectId,...activeSlugs]);
 	return { count: definitions.length, classes: groups.size, immutableRef };
 }
 

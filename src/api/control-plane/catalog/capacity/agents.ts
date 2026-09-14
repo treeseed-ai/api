@@ -6,6 +6,9 @@ type Principal = OperationInvocationContext['principal'];
 export interface AgentOperationDependencies { agents: {
 	list(principal: Principal, projectId: string): Promise<Record<string, unknown>>;
 	show(principal: Principal, projectId: string, slug: string): Promise<Record<string, unknown>>;
+	handlers(principal: Principal, projectId: string): Promise<Record<string, unknown>>;
+	handler(principal: Principal, projectId: string, handlerId: string): Promise<Record<string, unknown>>;
+	validateProfile(principal: Principal, projectId: string, slug: string): Promise<Record<string, unknown>>;
 	classes(principal: Principal, projectId: string, query: Record<string, unknown>): Promise<Record<string, unknown>>;
 	classShow(principal: Principal, projectId: string, classId: string): Promise<Record<string, unknown>>;
 	artifacts(principal: Principal, projectId: string): Promise<Record<string, unknown>>;
@@ -18,6 +21,9 @@ function result<T>(call: () => T | Promise<T>) { return Promise.resolve().then(c
 export function createAgentOperations({ agents }: AgentOperationDependencies): BoundOperation[] { return [
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.list, handler: (input, context) => result(() => agents.list(context.principal, input.path.projectId)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.show, handler: (input, context) => result(() => agents.show(context.principal, input.path.projectId, input.path.agentSlug)) },
+	{ binding: CONTROL_PLANE_OPERATIONS.agents.handlers, handler: (input, context) => result(() => agents.handlers(context.principal, input.path.projectId)) },
+	{ binding: CONTROL_PLANE_OPERATIONS.agents.handler, handler: (input, context) => result(() => agents.handler(context.principal, input.path.projectId, input.path.handlerId)) },
+	{ binding: CONTROL_PLANE_OPERATIONS.agents.validateProfile, handler: (input, context) => result(() => agents.validateProfile(context.principal, input.path.projectId, input.path.agentSlug)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.classes, handler: (input, context) => result(() => agents.classes(context.principal, input.path.projectId, input.query as Record<string, unknown>)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.classShow, handler: (input, context) => result(() => agents.classShow(context.principal, input.path.projectId, input.path.classId)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.artifacts, handler: (input, context) => result(() => agents.artifacts(context.principal, input.path.projectId)) },

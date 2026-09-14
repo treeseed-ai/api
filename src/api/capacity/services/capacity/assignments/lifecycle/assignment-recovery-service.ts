@@ -34,6 +34,11 @@ interface RecoveryScope {
 	limit?: number;
 }
 
+export function recoverableLeaseSql(alias = ''): string {
+	const column = (name: string) => `${alias ? `${alias}.` : ''}${name}`;
+	return `(${column('lease_expires_at')} IS NOT NULL AND ${column('lease_expires_at')} <= ? OR (${column('provider_session_id')} IS NOT NULL AND EXISTS (SELECT 1 FROM capacity_provider_availability_sessions recovery_session WHERE recovery_session.id = ${column('provider_session_id')} AND recovery_session.status IN ('closed','expired'))))`;
+}
+
 export interface RecoveryEvidence {
 	reservation: Record<string, unknown> | null;
 	settlement: Record<string, unknown> | null;
@@ -115,15 +120,15 @@ export function decideAssignmentRecovery(assignment: DurableProviderAssignment, 
 	return { assignmentId: assignment.id, disposition: 'safe-retry', status: 'failed', reasonCode: 'expired_lease_requeued' };
 }
 
-function transitionOperations(assignment: DurableProviderAssignment, result: AssignmentRecoveryResult, observed: RecoveryEvidence, now: string): CapacityDatabaseOperation[] {
+function transitionOperations(assignment: DurableProviderAssignment, result: AssignmentRecoveryResult, observed: RecoveryEvidence, now: string, recoveryTrigger: 'lease-expired' | 'provider-session-closed'): CapacityDatabaseOperation[] {
 	const leaseState = result.status === 'expired' ? 'expired' : 'released';
-	const metadata = { ...record(assignment.metadata), leaseRecovery: { disposition: result.disposition, reasonCode: result.reasonCode, expiredAt: assignment.leaseExpiresAt, recoveredAt: now, priorRunnerId: assignment.runnerId ?? null, priorStateVersion: assignment.stateVersion } };
+	const metadata = { ...record(assignment.metadata), leaseRecovery: { disposition: result.disposition, reasonCode: result.reasonCode, recoveryTrigger, expiredAt: assignment.leaseExpiresAt, recoveredAt: now, priorRunnerId: assignment.runnerId ?? null, priorStateVersion: assignment.stateVersion } };
 	const auditId = `audit:lease-recovery:${createHash('sha256').update(`${assignment.id}:${assignment.stateVersion}`).digest('base64url')}`;
 	const idempotencyKey = `lease-recovery:${assignment.id}:${assignment.stateVersion}`;
 	const terminalAuthority = terminalAssignmentAuthority(assignment, now);
 	const operations: CapacityDatabaseOperation[] = [
-		{ query: `UPDATE agent_mode_runs SET status = 'failed', failed_at = COALESCE(failed_at, ?), fallback_reason = COALESCE(fallback_reason, ?), updated_at = ? WHERE provider_assignment_id = ? AND status IN ('queued','running') AND ${logicalModeRunSql()} AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id = ? AND state_version = ? AND status = 'leased' AND lease_state = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?)`, params: [now, result.reasonCode, now, assignment.id, assignment.id, assignment.stateVersion, now] },
-		{ query: `UPDATE capacity_provider_assignments SET status = ?, lease_state = ?, lease_token = NULL, lease_expires_at = NULL, lease_renewed_at = NULL, runner_id = NULL, attempt_count = attempt_count + 1, state_version = state_version + 1, returned_at = CASE WHEN ? = 'returned' THEN ? ELSE returned_at END, failed_at = CASE WHEN ? IN ('failed','expired') THEN COALESCE(failed_at, ?) ELSE failed_at END, completed_at = CASE WHEN ? = 'completed' THEN COALESCE(completed_at, ?) ELSE completed_at END, lifecycle_code = ?, lifecycle_reason = ?, metadata_json = ?, treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status = 'leased' AND lease_state = 'leased' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`, params: [result.status, leaseState, result.status, now, result.status, now, result.status, now, result.reasonCode, `Expired lease recovery classified the assignment as ${result.disposition}.`, JSON.stringify(metadata), JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignment.id, assignment.teamId, assignment.stateVersion, now] },
+		{ query: `UPDATE agent_mode_runs SET status = 'failed', failed_at = COALESCE(failed_at, ?), fallback_reason = COALESCE(fallback_reason, ?), updated_at = ? WHERE provider_assignment_id = ? AND status IN ('queued','running') AND ${logicalModeRunSql()} AND EXISTS (SELECT 1 FROM capacity_provider_assignments recovery_assignment WHERE recovery_assignment.id = ? AND recovery_assignment.state_version = ? AND recovery_assignment.status = 'leased' AND recovery_assignment.lease_state = 'leased' AND ${recoverableLeaseSql('recovery_assignment')})`, params: [now, result.reasonCode, now, assignment.id, assignment.id, assignment.stateVersion, now] },
+		{ query: `UPDATE capacity_provider_assignments SET status = ?, lease_state = ?, lease_token = NULL, lease_expires_at = NULL, lease_renewed_at = NULL, runner_id = NULL, attempt_count = attempt_count + 1, state_version = state_version + 1, returned_at = CASE WHEN ? = 'returned' THEN ? ELSE returned_at END, failed_at = CASE WHEN ? IN ('failed','expired') THEN COALESCE(failed_at, ?) ELSE failed_at END, completed_at = CASE WHEN ? = 'completed' THEN COALESCE(completed_at, ?) ELSE completed_at END, lifecycle_code = ?, lifecycle_reason = ?, metadata_json = ?, treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status = 'leased' AND lease_state = 'leased' AND ${recoverableLeaseSql()}`, params: [result.status, leaseState, result.status, now, result.status, now, result.status, now, result.reasonCode, `Lease recovery classified the assignment as ${result.disposition} after ${recoveryTrigger}.`, JSON.stringify(metadata), JSON.stringify(terminalAuthority.proxyHandle), JSON.stringify(terminalAuthority.workspaceContext), now, assignment.id, assignment.teamId, assignment.stateVersion, now] },
 		{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ? AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id = ? AND team_id = ? AND state_version = ? AND status = ?)`, params: [now, now, assignment.id, assignment.teamId, assignment.id, assignment.teamId, assignment.stateVersion + 1, result.status] },
 		{ query: `INSERT INTO capacity_audit_events (id, team_id, capacity_provider_id, membership_id, actor_type, actor_id, action, resource_type, resource_id, request_id, idempotency_key, metadata_json, created_at) SELECT ?, ?, ?, ?, 'service', 'capacity-assignment-recovery', ?, 'capacity-provider-assignment', ?, NULL, ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id = ? AND team_id = ? AND state_version = ? AND status = ? AND lifecycle_code = ?) ON CONFLICT DO NOTHING`, params: [auditId, assignment.teamId, assignment.capacityProviderId, assignment.membershipId, `capacity-assignment.recovery.${result.disposition}`, assignment.id, idempotencyKey, JSON.stringify({ reasonCode: result.reasonCode, priorLeaseExpiresAt: assignment.leaseExpiresAt, recoveredStateVersion: assignment.stateVersion + 1 }), now, assignment.id, assignment.teamId, assignment.stateVersion + 1, result.status, result.reasonCode] },
 	];
@@ -156,13 +161,15 @@ function transitionOperations(assignment: DurableProviderAssignment, result: Ass
 async function recoverOne(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment, now: string) {
 	const observed = await evidence(database, assignment);
 	const result = decideAssignmentRecovery(assignment, observed);
+	const leaseExpiry = assignment.leaseExpiresAt ? Date.parse(assignment.leaseExpiresAt) : Number.NaN;
+	const recoveryTrigger = Number.isFinite(leaseExpiry) && leaseExpiry <= Date.parse(now) ? 'lease-expired' : 'provider-session-closed';
 	if (result.disposition === 'terminal-failure' && assignment.reservationId && !observed.settlement) {
 		await settleCapacityReservationExactlyOnce(database, { settlementKey: `expired-lease:${assignment.id}:${assignment.stateVersion}`, teamId: assignment.teamId, membershipId: assignment.membershipId, reservationId: assignment.reservationId, assignmentId: assignment.id, assignmentAttempt: assignment.attemptCount, activeSeconds: 0, elapsedSeconds: 0, source: 'expired_lease_recovery', existingSettlementPolicy: 'replay', metadata: { recoveryReasonCode: result.reasonCode } });
 	}
 	if (result.disposition === 'safe-retry' && assignment.reservationId && !observed.settlement) {
 		await settleCapacityReservationExactlyOnce(database, { settlementKey: `failover:${assignment.id}:${assignment.stateVersion}`, teamId: assignment.teamId, membershipId: assignment.membershipId, reservationId: assignment.reservationId, assignmentId: assignment.id, assignmentAttempt: assignment.attemptCount, activeSeconds: 0, elapsedSeconds: 0, source: 'expired_lease_recovery', existingSettlementPolicy: 'replay', metadata: { recoveryReasonCode: result.reasonCode, requeued: true } });
 	}
-	await database.batch(transitionOperations(assignment, result, observed, now));
+	await database.batch(transitionOperations(assignment, result, observed, now, recoveryTrigger));
 	const recovered = await new ProviderAssignmentRepository(database).get(assignment.teamId, assignment.id);
 	if (!recovered || recovered.stateVersion !== assignment.stateVersion + 1 || recovered.status !== result.status) return null;
 	if (assignment.operationHandoffId) await recoverOperationHandoff(database,assignment.operationHandoffId,assignment.id,{retry:result.disposition==='safe-retry',completed:result.status==='completed'},now);
@@ -173,7 +180,7 @@ export async function recoverExpiredProviderAssignments(database: CapacityGovern
 	await database.ensureInitialized();
 	const now = scope.now ?? new Date().toISOString();
 	const limit = Math.max(1, Math.min(Math.floor(Number(scope.limit ?? 100)), 200));
-	const clauses = [`status = 'leased'`, `lease_state = 'leased'`, `lease_expires_at IS NOT NULL`, `lease_expires_at <= ?`];
+	const clauses = [`status = 'leased'`, `lease_state = 'leased'`, recoverableLeaseSql()];
 	const params: unknown[] = [now];
 	if (scope.teamId) { clauses.push('team_id = ?'); params.push(scope.teamId); }
 	if (scope.providerId) { clauses.push('capacity_provider_id = ?'); params.push(scope.providerId); }

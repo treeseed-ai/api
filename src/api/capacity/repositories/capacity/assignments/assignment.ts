@@ -1,5 +1,5 @@
 import type { ProviderAssignment } from '@treeseed/sdk/agent-capacity';
-import { validateProviderAssignment } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema, validateProviderAssignment } from '@treeseed/sdk/agent-capacity';
 import {
 encodeCapacityPageCursor,
 normalizeCapacityPageLimit,
@@ -42,6 +42,18 @@ function json(value: unknown, fallback: JsonRecord, field: string, assignmentId:
 
 function text(value: unknown): string {
 	return value == null ? '' : String(value);
+}
+
+function typedJson<T>(value: unknown, field: string, assignmentId: string, schema: { safeParse(value: unknown): { success: boolean; data?: T } }): T | null {
+	if (value == null || value === '') return null;
+	let decoded = value;
+	if (typeof value === 'string') {
+		try { decoded = JSON.parse(value); }
+		catch { throw new CapacityGovernanceError('provider_assignment_json_invalid', `Assignment ${assignmentId} has invalid ${field}.`, 500, { assignmentId, field }); }
+	}
+	const parsed = schema.safeParse(decoded);
+	if (!parsed.success) throw new CapacityGovernanceError('provider_assignment_contract_invalid', `Assignment ${assignmentId} has invalid ${field}.`, 500, { assignmentId, field });
+	return parsed.data ?? null;
 }
 
 export function serializeProviderAssignmentRow(row: Row | null): DurableProviderAssignment | null {
@@ -104,6 +116,11 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 		synthesisKey: row.synthesis_key == null ? null : text(row.synthesis_key),
 		decisionId: row.decision_id == null ? null : text(row.decision_id),
 		proposalId: row.proposal_id == null ? null : text(row.proposal_id),
+		graphRevision: row.graph_revision == null ? null : Number(row.graph_revision),
+		executionNodeId: row.execution_node_id == null ? null : text(row.execution_node_id),
+		executionNodeRevision: row.execution_node_revision == null ? null : Number(row.execution_node_revision),
+		assignmentAttempt: typedJson(row.assignment_attempt_json, 'assignment_attempt_json', id, assignmentAttemptSchema),
+		assignmentResult: typedJson(row.assignment_result_json, 'assignment_result_json', id, assignmentResultSchema),
 		fallbackOutputId: row.fallback_output_id == null ? null : text(row.fallback_output_id),
 		treedxProxyHandle: json(row.treedx_proxy_handle_json, {}, 'treedx_proxy_handle_json', id),
 		capabilityHandles: json(workspaceContext.capabilityHandles, {}, 'capability_handles', id),

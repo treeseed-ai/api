@@ -1,5 +1,9 @@
-export interface CapacityWorkdayMaintenanceStore {
-	all(sql: string, params?: unknown[]): Promise<Array<Record<string, unknown>>>;
+import { createHash } from 'node:crypto';
+import type { CapacityGovernanceDatabase } from '../../../../database.ts';
+import { CapacityGovernanceError } from '../../../../database.ts';
+import { CapacityWorkdayEventService } from '../content/workday-event-service.ts';
+
+export interface CapacityWorkdayMaintenanceStore extends CapacityGovernanceDatabase {
 	tickCapacityWorkdayRun(teamId: string, runId: string, now?: string, idempotencyKey?: string): Promise<unknown>;
 	maintainCapacityWorkdayRuns(teamId?: string | null, now?: string): Promise<{ expired: number; recoveredTerminalRuns?: number }>;
 	maintainCapacityRuntimeRetention(now?: string): Promise<{
@@ -45,7 +49,17 @@ async function retickRunningWorkdays(store: CapacityWorkdayMaintenanceStore, now
 		try {
 			await store.tickCapacityWorkdayRun(teamId,runId,now,`maintenance-recovery:${runId}:${now}`);
 			reticked += 1;
-		} catch { failures += 1; }
+		} catch (error) {
+			failures += 1;
+			const code = error instanceof CapacityGovernanceError ? error.code : 'capacity_workday_tick_failed';
+			const message = error instanceof Error ? error.message : String(error);
+			const id = `workday_tick_failed_${createHash('sha256').update(`${runId}:${now}:${code}`).digest('base64url').slice(0, 32)}`;
+			await new CapacityWorkdayEventService(store).create(teamId, runId, {
+				id, eventType: 'workday.tick.failed', status: 'failed', title: 'Workday graph promotion failed', message,
+				context: { code, ...(error instanceof CapacityGovernanceError ? { details: error.details } : {}) },
+				metadata: { source: 'capacity-workday-maintenance', redactionStatus: 'sanitized' }, createdAt: now,
+			}).catch((eventError: unknown) => console.error(JSON.stringify({ ok: false, event: 'workday.tick.failure.unrecorded', runId, code, message, eventError: eventError instanceof Error ? eventError.message : String(eventError) })));
+		}
 	}
 	return { considered:rows.length,reticked,failures };
 }

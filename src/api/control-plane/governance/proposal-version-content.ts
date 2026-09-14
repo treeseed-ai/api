@@ -20,8 +20,8 @@ function repositorySource(value: unknown) {
 	return file.content;
 }
 
-export async function commitProposalVersionContent(input: { store: any; proposal: Row; principal: Row; update: Row }) {
-	const projectId = text(input.proposal.projectId, input.proposal.project_id); const metadata = object(input.proposal.metadata); const provenance = object(metadata.contentProvenance); const version = Number(input.proposal.activeVersion ?? input.proposal.active_version) + 1;
+export async function commitProposalVersionContent(input: { store: any; proposal: Row; principal: Row; update: Row; initial?: boolean }) {
+	const projectId = text(input.proposal.projectId, input.proposal.project_id); const metadata = object(input.proposal.metadata); const provenance = object(metadata.contentProvenance); const version = input.initial === true ? 1 : Number(input.proposal.activeVersion ?? input.proposal.active_version) + 1;
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId, write: true, relationPaths: true, authoringPaths: true });
 	if (!connection) throw Object.assign(new Error('The project TreeDX repository is unavailable for proposal authoring.'), { status: 503, code: 'proposal_treedx_unavailable' });
 	const title = text(input.update.title, input.proposal.title); const summary = text(input.update.summary, input.proposal.summary); const body = text(input.update.body, input.proposal.body); const types = list(input.update.proposalTypes).length ? list(input.update.proposalTypes) : list(input.proposal.proposalTypes ?? input.proposal.proposal_types_json);
@@ -47,13 +47,19 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const contracts = new Map((Array.isArray(contractRead.files) ? contractRead.files : []).map((file: unknown) => [text(object(file).path), text(object(file).content)]));
 	const invalid = contractPaths.filter((contractPath,index) => { try { const validation = validateProposalTypeContract(parseYaml(contracts.get(contractPath) ?? '')); return !validation.ok || validation.value?.id !== types[index]; } catch { return true; } });
 	if (invalid.length) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw Object.assign(new Error('One or more proposal types are missing or invalid at the authoring commit.'), { status: 422, code: 'proposal_type_contract_invalid', paths: invalid }); }
-	const nextMetadata = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types, relatedObjectives: input.update.relatedObjectives ?? metadata.relatedObjectives ?? [], evidenceRefs: input.update.evidenceRefs ?? metadata.evidenceRefs ?? [], plan: input.update.plan ?? metadata.plan ?? {} };
+	const nextMetadata = { ...metadata, ...(object(input.update.metadata)), proposalTypes: types };
+	delete nextMetadata.plan;
+	delete nextMetadata.executionPlan;
 	let source: string;
-	try { source = serializeProposalDocument({ id: text(input.proposal.id), title, summary, body,
-		date: text(input.proposal.createdAt, input.proposal.created_at, new Date().toISOString()), proposalTypes: types,
-		motivation: text(input.update.motivation,nextMetadata.motivation,summary),
-		primaryContributor: text(input.update.primaryContributor,nextMetadata.primaryContributor,input.principal.contentContributorRef,input.principal.id),
-		relatedObjectives: nextMetadata.relatedObjectives, evidenceRefs: nextMetadata.evidenceRefs, plan: nextMetadata.plan }); }
+	const currentStatus = text(input.proposal.status);
+	const status = text(input.update.status) || (input.initial === true ? 'draft'
+		: currentStatus === 'voting' ? 'ready' : currentStatus === 'accepted' ? 'decided' : currentStatus === 'open' ? 'discussing' : 'draft');
+	try { source = serializeProposalDocument({
+		id: text(input.proposal.id), projectId, title, request: body, ...(summary ? { summary } : {}),
+		status: status as 'draft' | 'discussing' | 'ready' | 'decided' | 'withdrawn',
+		objectiveRefs: input.update.objectiveRefs, evidenceRefs: input.update.evidenceRefs,
+		discussionRef: input.update.discussionRef, executionPlan: input.update.executionPlan,
+	}); }
 	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 	try {
 		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: branchName, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch((error) => { if (Number(object(error).status) === 404) return null; throw error; });

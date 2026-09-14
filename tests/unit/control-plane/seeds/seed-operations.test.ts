@@ -106,14 +106,15 @@ describe('seed catalog operations', () => {
 			{ key: 'team:treeseed', existing: { id: 'team-1' } },
 			{ key: 'project:treeseed/sdk', existing: { id: 'project-1' } },
 		], runtime: { capacityProviders: [{ key: 'capacity-provider:treeseed/local', team: 'team:treeseed', approval: 'trusted-local-owner',
-			requiredLanePurposes: ['communication', 'workday'], projects: ['project:treeseed/sdk'], environments: ['local'] }] } };
+			requiredLanePurposes: ['communication', 'workday'], projects: ['project:treeseed/sdk'], environments: ['local'], allowedModes: ['planning', 'acting'] }] } };
 
 		await reconcileSeedProviderPrerequisites(store as any, {}, plan, true, { id: 'owner-1' });
 
 		expect(store.all).toHaveBeenCalledWith(expect.stringContaining('execution_provider.capacity_provider_id = lane.capacity_provider_id'), ['provider-1']);
-		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('capabilities_json = ?'), [
+		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('allowed_modes_json = ?'), [
 			JSON.stringify(['execution-1']), JSON.stringify(['communication', 'workday']),
-			JSON.stringify(['treeseed.coordination.conversation', 'treeseed.engineering.code-change']), expect.any(String), 'grant-1', 'membership-1',
+			JSON.stringify(['treeseed.coordination.conversation', 'treeseed.engineering.code-change']), JSON.stringify(['planning', 'acting']),
+			expect.any(String), 'grant-1', 'membership-1',
 		]);
 	});
 

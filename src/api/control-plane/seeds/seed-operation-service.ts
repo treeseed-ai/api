@@ -104,8 +104,9 @@ export async function reconcileSeedProviderPrerequisites(store: Store, config: {
 					const existing = await store.first(`SELECT * FROM capacity_grants WHERE membership_id = ? AND project_id = ? AND environment = ? AND status IN ('planned','active','paused') LIMIT 1`, [membership.id, project.id, environment]);
 					if (existing) {
 						if (!mutate) { projectReceipts.push({ projectKey, environment, status: existing.status, grantId: existing.id }); continue; }
-						await store.run(`UPDATE capacity_grants SET execution_provider_ids_json = ?, lane_ids_json = ?, capabilities_json = ?, updated_at = ? WHERE id = ? AND membership_id = ?`,
-							[JSON.stringify(executionProviderIds), JSON.stringify(lanes.map((entry) => String(entry.id))), JSON.stringify(capabilities), new Date().toISOString(), existing.id, membership.id]);
+						await store.run(`UPDATE capacity_grants SET execution_provider_ids_json = ?, lane_ids_json = ?, capabilities_json = ?, allowed_modes_json = ?, updated_at = ? WHERE id = ? AND membership_id = ?`,
+							[JSON.stringify(executionProviderIds), JSON.stringify(lanes.map((entry) => String(entry.id))), JSON.stringify(capabilities),
+								JSON.stringify(prerequisite.allowedModes), new Date().toISOString(), existing.id, membership.id]);
 						const active = existing.status === 'active' ? { ...existing, status: 'active' } : await grants.transition(team.id, String(existing.id), 'active', `seed:${plan.seed}:${prerequisite.key}:${project.id}:${environment}:activate`);
 						projectReceipts.push({ projectKey, environment, status: active.status, grantId: existing.id }); continue;
 					}

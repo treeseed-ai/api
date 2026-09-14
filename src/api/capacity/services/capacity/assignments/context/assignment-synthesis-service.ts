@@ -3,11 +3,10 @@ import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
-import { compileProviderWorkdayDemand } from '../../../build/demand-compiler.ts';
 import { resolveProviderSynthesisContext } from '../../providers/provider-synthesis-context-service.ts';
 import type { WorkdayProject } from '../../workdays/policy/workday-project-policy.ts';
 import type { ConfiguredWorkspaceInput } from '../../workdays/treedx/workday-treedx-workspace-service.ts';
-import { assignNextCompiledDemand } from '../planning/assignment-function.ts';
+import { assignNextReadyExecutionNode } from '../planning/execution/living-execution-assignment.ts';
 
 export interface ProviderSynthesisRequest extends Record<string, unknown> {
 	sessionId?: string | null;
@@ -29,25 +28,21 @@ interface ProviderAssignmentFunctionStore extends CapacityGovernanceDatabase {
 }
 
 /**
- * The only production assignment-synthesis entrypoint. Source records are first
- * compiled into durable workday demand; one assignment function then claims a
- * demand and invokes the canonical reservation/admission transaction.
+ * The only production assignment-synthesis entrypoint. Ready living nodes are
+ * claimed directly; no materialized demand or second graph may supply work.
  */
 export async function synthesizeProviderAssignments(
 	store: ProviderAssignmentFunctionStore,
 	principal: ProviderLeasePrincipal,
 	input: ProviderSynthesisRequest = {},
-): Promise<DurableProviderAssignment[]> {
+): Promise<{ assignments: DurableProviderAssignment[]; diagnostics: Record<string, unknown> }> {
 	await store.ensureInitialized();
 	const now = new Date().toISOString();
 	const context = await resolveProviderSynthesisContext(store, principal, { ...input, now });
-	await compileProviderWorkdayDemand(store, principal, now);
-	const assignment = await assignNextCompiledDemand(
-		store,
-		principal,
-		String(input.sessionId ?? input.providerSessionId ?? context.session.id),
-		context.executionProviders,
-		now,
-	);
-	return assignment ? [assignment] : [];
+	const providerSessionId = String(input.sessionId ?? input.providerSessionId ?? context.session.id);
+	const assignment = await assignNextReadyExecutionNode(store, principal, providerSessionId, context.executionProviders, now);
+	return {
+		assignments: assignment ? [assignment] : [],
+		diagnostics: { source: 'living-execution-graph', assigned: Boolean(assignment) },
+	};
 }
