@@ -201,7 +201,10 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 	for (const row of rows) {
 		const node = decodeExecutionNode(row);
 		const decisionIds = (node.authorityRefs ?? []).filter((reference) => reference.model === 'decision').map((reference) => reference.id);
-		if (selectedDecisionIds.size && !decisionIds.some((id) => selectedDecisionIds.has(id))) continue;
+		// A workday's decision selection constrains only nodes whose authority is a
+		// decision. Cooperative planning and lifecycle reporting are authorized by
+		// the workday itself and must remain eligible in that same run.
+		if (selectedDecisionIds.size && decisionIds.length && !decisionIds.some((id) => selectedDecisionIds.has(id))) continue;
 		const selected = await effectiveProfile(store, node);
 		const sourceRepositories = node.requestedPermissions?.tools.includes('source.read')
 			? [selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)).id]

@@ -27,6 +27,10 @@ const definition = {
 	purpose: 'Implement accepted source changes.', responsibilities: ['Return one verified result.'],
 	capabilities: ['code-change'], context: { include: ['project'] },
 	activityProfiles: {
+		planning: {
+			handler: 'writer', permissions,
+			prompt: { system: 'Research exact sources and return a governed planning contribution.' },
+		},
 		acting: {
 			handler: 'actor', permissions,
 			prompt: { system: 'Implement the accepted work and verify the resulting source.' },
@@ -77,6 +81,22 @@ describe('direct ready-node admission input', () => {
 			.mockResolvedValueOnce([]) };
 		const candidates = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
 		expect(candidates.map((candidate) => candidate.node.id)).toEqual(['selected']);
+	});
+
+	it('keeps workday-authorized cooperative planning eligible when acting is decision-selected', async () => {
+		const planning = {
+			...nodeRow('planning:run:1:project/agent:planning'),
+			workday_id: 'run', work_item_id: null, kind: 'planning', pair_role: null,
+			source_ref_json: { store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` },
+			authority_refs_json: [{ store: 'postgresql', model: 'workday', id: 'run', revision: 1, digest: `sha256:${'f'.repeat(64)}` }],
+			agent_class: 'engineer', workspace: 'treedx',
+		};
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([planning])
+			.mockResolvedValueOnce([{ id: 'class-engineer', handler_refs_json: { agents: [definition] } }])
+			.mockResolvedValueOnce([]) };
+		const candidates = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidates.map((candidate) => candidate.node.id)).toEqual([planning.id]);
+		expect(candidates[0]?.effectiveProfile.activity).toBe('planning');
 	});
 
 	it('fails closed when the exact activity profile is unavailable', async () => {
