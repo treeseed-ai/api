@@ -19,6 +19,7 @@ export function createProviderRegistrationAndAvailabilityOperations({ providers 
 		{ binding: operations.show, handler: (input, context) => result(() => providers.show(context.principal, input.path.teamId, input.path.providerId)) },
 		{ binding: operations.status, handler: (input, context) => result(() => providers.status(context.principal, input.path.teamId, input.path.providerId)) },
 		{ binding: operations.diagnose, handler: (input, context) => result(() => providers.diagnose(context.principal, input.path.teamId, input.path.providerId)) },
+		{ binding: operations.offers, handler: (input, context) => result(() => providers.offers(context.principal, input.path.teamId, input.path.providerId)) },
 		{ binding: operations.connect, handler: (_input, context) => result(() => providers.connect(context.principal, _input.path.teamId, context.idempotencyKey)) },
 		{ binding: operations.registrationCode.status, handler: (input, context) => result(() => providers.registrationCodeStatus(context.principal, input.path.teamId)) },
 		{ binding: operations.registrationCode.reveal, handler: (input, context) => result(() => providers.revealRegistrationCode(context.principal, input.path.teamId)) },

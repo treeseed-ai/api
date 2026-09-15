@@ -183,6 +183,14 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 					...(status.unavailableOffers.some((offer) => offer.status === 'context_overflow')
 						? ['Publish an updated context-capacity offer and pass conformance before re-enabling it.'] : [])] };
 		},
+		async offers(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
+			await this.show(principal, teamId, providerId);
+			const rows = await store.all(`SELECT execution_provider_id, offer_id, offer_digest, offer_json, status, last_seen_at
+				FROM execution_capability_offers WHERE capacity_provider_id = ? ORDER BY execution_provider_id ASC, offer_id ASC`, [providerId]);
+			return { schemaVersion: 'treeseed.provider-offer-inventory/v1', providerId, revision: 1,
+				offers: rows.map((row) => ({ executionProviderId: row.execution_provider_id, offerId: row.offer_id,
+					offerDigest: row.offer_digest, offer: jsonObject(row.offer_json), status: row.status, observedAt: row.last_seen_at })) };
+		},
 		async connect(principal: UserPrincipal | null | undefined, teamId: string, _idempotencyKey: string) {
 			const actor = await requireManage(principal, teamId);
 			return revealReusableRegistrationCode(registration, teamId, actor.id);
