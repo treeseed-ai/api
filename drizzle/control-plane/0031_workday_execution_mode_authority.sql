@@ -16,4 +16,4 @@ ALTER TABLE "capacity_workday_runs"
 
 UPDATE "capacity_workday_runs"
 SET "parameters_json" = ("parameters_json"::jsonb - 'executionMode')::text
-WHERE "parameters_json"::jsonb ? 'executionMode';
+WHERE jsonb_exists("parameters_json"::jsonb, 'executionMode');
