@@ -31,8 +31,9 @@ const provider = {
 		maxConcurrentRunners: 1, reservedConcurrentWorkers: 0, borrowWhenIdle: true, lendWhenIdle: true, queueLimit: 10 }],
 	offers: [{ offerId: 'codex-offer', capabilities: [{ id: 'code-change' }] }],
 };
-const run = { id: 'workday', parameters: { appliedPlan: {
+const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedPlan: {
 	schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+	executionMode: 'simulation',
 	policySnapshot: { durationSeconds: 3600, maximumConcurrency: 1, planningSecondsPerAgent: 60,
 		communicationConcurrency: 1, projectWeights: { project: 1 }, agentClassWeights: { engineer: 1 } },
 	state: 'active', startsAt: '2026-09-13T12:00:00.000Z', endsAt: '2026-09-13T13:00:00.000Z',

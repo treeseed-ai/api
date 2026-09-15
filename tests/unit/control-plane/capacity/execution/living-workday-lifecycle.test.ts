@@ -5,6 +5,7 @@ const now = '2026-09-13T16:00:00.000Z';
 const policy = { durationSeconds: 60, maximumConcurrency: 2, planningSecondsPerAgent: 10,
 	communicationConcurrency: 1, projectWeights: { project: 1 }, agentClassWeights: { architect: 1 } };
 const plan = { schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+	executionMode: 'simulation',
 	policySnapshot: policy, state: 'active', startsAt: '2026-09-13T15:00:00.000Z', endsAt: '2026-09-13T15:01:00.000Z',
 	planningRounds: [{ round: 1, state: 'active', assignmentIds: ['planning:workday:1:project/architect'] },
 		{ round: 2, state: 'pending', assignmentIds: ['planning:workday:2:project/architect'] }],

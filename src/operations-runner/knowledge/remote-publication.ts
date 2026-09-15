@@ -15,6 +15,10 @@ async function requireTreeDxRef(client: any, repositoryId: string, ref: string, 
 	if (head !== expectedHead) throw new Error(`TreeDX ref ${ref} did not resolve the reviewed publication commit.`);
 }
 
+export function treeDxPromotionExpectedHead(localPublicationHead: string | null, reviewedBaseCommit: string) {
+	return localPublicationHead ?? reviewedBaseCommit;
+}
+
 function missingSourceRef(error: unknown) {
 	return error instanceof Error && /ref or object not found/iu.test(error.message);
 }
@@ -75,13 +79,14 @@ export async function publishRemoteRepository(input: {
 	await requireTreeDxRef(input.connection.client, input.connection.repositoryId, integrationRef, input.reviewedCommit);
 	const localPublicationHead = await observeTreeDxRef(input.connection.client, input.connection.repositoryId,
 		fullHead(input.publicationRef));
-	if (localPublicationHead && localPublicationHead !== input.reviewedCommit && localPublicationHead !== input.baseCommit) {
-		throw new Error('The TreeDX publication ref changed after review. Rebase and review the knowledge again.');
+	let promotion;
+	if (localPublicationHead === input.reviewedCommit) {
+		promotion = { status: 'already_current', beforeHead: input.reviewedCommit, afterHead: input.reviewedCommit };
+	} else {
+		promotion = await input.connection.client.promoteRef({ repoId: input.connection.repositoryId,
+			sourceRef: integrationRef, destinationRef: fullHead(input.publicationRef),
+			expectedDestinationHead: treeDxPromotionExpectedHead(localPublicationHead, input.baseCommit) });
 	}
-	const promotion = localPublicationHead === input.reviewedCommit
-		? { status: 'already_current', beforeHead: input.reviewedCommit, afterHead: input.reviewedCommit }
-		: await input.connection.client.promoteRef({ repoId: input.connection.repositoryId,
-			sourceRef: integrationRef, destinationRef: fullHead(input.publicationRef), expectedDestinationHead: input.baseCommit });
 	if (promotion.afterHead !== input.reviewedCommit) throw new Error('TreeDX publication ref did not match the remote reviewed commit.');
 	await requireTreeDxRef(input.connection.client, input.connection.repositoryId, fullHead(input.publicationRef), input.reviewedCommit);
 	await input.connection.client.retireRef({ repoId: input.connection.repositoryId, ref: integrationRef,

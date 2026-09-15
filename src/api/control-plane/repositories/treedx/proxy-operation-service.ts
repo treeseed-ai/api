@@ -254,10 +254,10 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 		},
 		async listWorkspaces(projectId: string, query: Record<string, unknown>, context: OperationInvocationContext) {
 			await authorize(store, projectId, 'projects:read:team', treeDxTokenScope({ capabilities: ['workspace:read'] }), 'GET', 'treedx.workspaces.list', query, context);
-			const rows = await store.all(`SELECT upstream_request_id, metadata_json, created_at FROM treedx_project_proxy_audit
+			const rows = await store.all(`SELECT id, metadata_json, created_at FROM treedx_project_proxy_audit
 				WHERE project_id = ? AND path LIKE '%/workspaces' AND result_status = 'success' ORDER BY created_at DESC LIMIT 100`, [projectId]);
 			return { items: rows.map((row) => { let metadata: unknown = {}; try { metadata = JSON.parse(row.metadata_json ?? '{}'); } catch { metadata = {}; }
-				return { upstreamRequestId: row.upstream_request_id, createdAt: row.created_at, metadata: record(metadata) }; }) };
+				return { requestId: row.id, createdAt: row.created_at, metadata: record(metadata) }; }) };
 		},
 		async invoke(descriptor: ControlPlaneOperationDescriptor, input: { path: Record<string, unknown>; query: Record<string, unknown>; body: unknown }, context: OperationInvocationContext) {
 			if (descriptor.upstream?.service !== 'treedx') throw new CapacityGovernanceError('treedx_mapping_missing', 'The TreeDX proxy operation has no authoritative upstream mapping.', 500);

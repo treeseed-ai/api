@@ -10,15 +10,15 @@ describe('capacity workday project library root', () => {
 		})).toBe('.');
 	});
 
-	it('preserves an explicitly configured architecture content path', () => {
-		expect(capacityWorkdayContentRoot({
-			id: 'project-legacy',
+	it('rejects a primary-repository content path without a TreeDX library binding', () => {
+		expect(() => capacityWorkdayContentRoot({
+			id: 'project-primary-content',
 			architecture: { contentPath: 'src/content' },
-		})).toBe('src/content');
+		})).toThrowError(/has no TreeDX library binding/u);
 	});
 
 	it('fails closed when neither a library nor content path is configured', () => {
 		expect(() => capacityWorkdayContentRoot({ id: 'project-missing', slug: 'missing' }))
-			.toThrowError(/has no configured content path/u);
+			.toThrowError(/has no TreeDX library binding/u);
 	});
 });

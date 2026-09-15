@@ -19,6 +19,7 @@ describe('workday living-graph projection', () => {
 		const profiles = { 'sdk:architect': definition('architect'), 'sdk:engineer': definition('engineer', ['architect']),
 			'sdk:reporter': definition('reporter') };
 		const appliedPlan = compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation',
 			policy: { durationSeconds: 3600, maximumConcurrency: 2, planningSecondsPerAgent: 60,
 				communicationConcurrency: 1, projectWeights: { sdk: 1 }, agentClassWeights: { architect: 1, engineer: 1, reporter: 1 } },
 			agentIds: ['sdk/sdk/architect:planning', 'sdk/sdk/engineer:planning', 'sdk/sdk/reporter:planning'], startsAt: '2026-09-13T12:00:00.000Z' });
@@ -47,6 +48,7 @@ describe('workday living-graph projection', () => {
 		architect.activityProfiles.estimating = { handler: 'estimate', permissions, prompt: { system: 'Estimate exact work.' } };
 		const participantId = 'sdk/sdk/architect:estimating';
 		const appliedPlan = compileWorkday({ id: 'estimating-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation',
 			policy: { durationSeconds: 600, maximumConcurrency: 1, planningSecondsPerAgent: 60,
 				communicationConcurrency: 1, projectWeights: {}, agentClassWeights: {} },
 			agentIds: [participantId], startsAt: '2026-09-14T12:00:00.000Z' });
@@ -64,6 +66,7 @@ describe('workday living-graph projection', () => {
 		const reviewer = definition('reviewer') as ReturnType<typeof definition> & { activityProfiles: Record<string, unknown> };
 		reviewer.activityProfiles.reviewing = { handler: 'writer', permissions, prompt: { system: 'Review exact governed work.' } };
 		const appliedPlan = compileWorkday({ id: 'review-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation',
 			policy: { durationSeconds: 600, maximumConcurrency: 1, planningSecondsPerAgent: 60,
 				communicationConcurrency: 1, projectWeights: {}, agentClassWeights: {} },
 			agentIds: [], startsAt: '2026-09-14T12:00:00.000Z' });

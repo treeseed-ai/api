@@ -46,6 +46,14 @@ export function canonicalTreeDxBranchRef(value: unknown): string {
 	return `refs/heads/${branch}`;
 }
 
+export function projectKnowledgeAuthoringPaths(contentPath: string): string[] {
+	return [
+		'objectives/**', 'agents/**', 'agent-tests/**', 'groups/**', 'group-edges/**', 'execution-plans/**',
+		...Object.values(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map((collection) => `${collection}/**`),
+		'.treeseed/agents/**', '.treeseed/governance/proposal-types/**', '.treeseed/seeds/**', 'seeds/**', 'scenes/**',
+	].map((path) => projectLibraryPath(contentPath, path));
+}
+
 export interface KnowledgeGatewayConnection {
 	client: TreeDxInfrastructureClient;
 	baseUrl: string;
@@ -57,6 +65,10 @@ export interface KnowledgeGatewayConnection {
 	nodeId: string;
 	authoringBranch: string;
 	publicationRef: string;
+}
+
+export function projectKnowledgeAuthoringBaseRef(connection: Pick<KnowledgeGatewayConnection, 'publicationRef'>) {
+	return connection.publicationRef;
 }
 
 export async function resolveKnowledgeGatewayConnection(store: any, input: {
@@ -96,11 +108,8 @@ export async function resolveKnowledgeGatewayConnection(store: any, input: {
 			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
 		...(input.communicationPaths ? ['discussions', 'discussion-messages', 'discussion-events']
 			.map((collection) => projectLibraryPath(contentPath, collection, '**')) : []),
-		...(input.authoringPaths ? [
-			projectLibraryPath(contentPath, 'agents/**'),projectLibraryPath(contentPath, 'agent-tests/**'),projectLibraryPath(contentPath, 'groups/**'),projectLibraryPath(contentPath, 'group-edges/**'),projectLibraryPath(contentPath, 'execution-plans/**'),
-			...Object.values(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map((collection) => projectLibraryPath(contentPath, collection, '**')),
-			'.treeseed/agents/**','.treeseed/governance/proposal-types/**','.treeseed/seeds/**','seeds/**','scenes/**',
-		] : []), ...normalizedWorkspaceScopePaths(input.workspacePaths)])];
+		...(input.authoringPaths ? projectKnowledgeAuthoringPaths(contentPath) : []),
+		...normalizedWorkspaceScopePaths(input.workspacePaths)])];
 	const authoringBranch = text(contentRepository.authoringBranch, topology.authoringBranch, 'staging');
 	const canonicalAuthoringRef = canonicalTreeDxBranchRef(authoringBranch);
 	const integrationRefs = (input.publishRefs ?? []).flatMap((ref) => {

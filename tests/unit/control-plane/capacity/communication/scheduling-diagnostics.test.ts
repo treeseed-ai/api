@@ -7,7 +7,7 @@ vi.mock('../../../../../src/api/capacity/repositories/capacity/workdays/workday-
 function fixture() {
 	const store = {
 		first: vi.fn(async (sql: string) => sql.includes('capacity_workday_runs')
-			? { status: 'running', parameters_json: JSON.stringify({ executionMode: 'production', prompt: 'PRIVATE' }) }
+			? { status: 'running', execution_mode: 'production', parameters_json: JSON.stringify({ prompt: 'PRIVATE' }) }
 			: { id: 'session', status: 'running' }),
 		all: vi.fn(async (sql: string) => {
 			if (sql.includes('capacity_audit_events')) return [{ created_at: 'now', metadata_json: JSON.stringify({ reasons: ['capacity_team_library_not_ready'], message: 'PRIVATE', details: { token: 'PRIVATE' } }) }];
