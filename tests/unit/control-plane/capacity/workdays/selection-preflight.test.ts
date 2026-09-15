@@ -93,6 +93,19 @@ describe('public workday selection custody', () => {
 		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');
 		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['node-review', 'node-acting']);
 	});
+	it('applies decision selection only to acting work and retains proposal review', async () => {
+		const f = fixture();
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 600,
+			projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'reviewer', classSlug: 'reviewer', activityTypes: ['reviewing'] }] }],
+			executionNodeDemands: [
+				{ graph_revision: 5, ...executionNodeRow({ id: 'proposal-review', kind: 'reviewing', agentClass: 'reviewer', digest: 'proposal', expectedSeconds: 120 }), pair_role: null },
+				{ graph_revision: 5, ...executionNodeRow({ id: 'selected-acting', kind: 'acting', agentClass: 'engineer', digest: 'selected', expectedSeconds: 120, decisionRevision: 1 }) },
+				{ graph_revision: 5, ...executionNodeRow({ id: 'unselected-acting', kind: 'acting', agentClass: 'engineer', digest: 'unselected', expectedSeconds: 120, decisionRevision: 1 }), authority_refs_json: JSON.stringify([{ store: 'treedx', model: 'decision', id: 'other-decision', revision: 1, digest: `sha256:${'e'.repeat(64)}` }]) },
+			],
+		});
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), decisionIds: ['decision'] }), 'actor');
+		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['proposal-review', 'selected-acting']);
+	});
 	it('rejects an altered stored selector instead of compiling broader authority', async () => {
 		const f = fixture(); const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');
 		delete f.stored().intent.agentSelection;
