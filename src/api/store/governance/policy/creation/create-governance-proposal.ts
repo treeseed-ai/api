@@ -20,7 +20,10 @@ export async function createGovernanceProposalMethod(this: ControlPlaneStore, pr
     const provider = governanceVotingProvider(policy?.providerId);
     const timestamp = isoNow();
     const id = input.id ?? randomUUID();
-    const proposalTypes = [...new Set((Array.isArray(input.proposalTypes) ? input.proposalTypes : [input.proposalType ?? input.decisionType]).map(String).map((value) => value.trim()).filter(Boolean))];
+    const proposalTypes = [...new Set((Array.isArray(input.proposalTypes) ? input.proposalTypes : [input.proposalType ?? input.decisionType])
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean))];
     const proposalType = proposalTypes[0] ?? 'implementation';
     const normalizedTypes = proposalTypes.length ? proposalTypes : [proposalType];
     const rawDecisionDependencies = input.decisionDependencies ?? input.metadata?.decisionDependencies ?? [];

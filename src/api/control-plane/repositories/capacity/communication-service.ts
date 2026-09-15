@@ -298,7 +298,11 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			for (const projectId of [...new Set(targets.map((target) => target.projectId))]) {
 				const projectTargets = targets.filter((target) => target.projectId === projectId);
 				const streamId = `stream-${stableId(text(topic.id), projectId)}`;
-				const discussionId = `discussion-${stableId(teamId, `${text(topic.id)}:${projectId}`)}`;
+				// The channel is the durable discussion identity in each project library.
+				// Project-local repositories provide the namespace, so hashing the same
+				// operator-visible identity into a second opaque identifier only creates
+				// competing references between governance and communication.
+				const discussionId = slug;
 				await store.run(`INSERT INTO communication_discussion_streams (id,topic_id,team_id,project_id,discussion_id,created_at,updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 					ON CONFLICT (topic_id,project_id) DO NOTHING`, [streamId, topic.id, teamId, projectId, discussionId, now, now]);
 				const stream = await store.first('SELECT * FROM communication_discussion_streams WHERE topic_id=? AND project_id=? LIMIT 1', [topic.id, projectId]);
@@ -328,6 +332,10 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			const diagnostics = query.diagnostics === 'full' ? 'full' : 'metadata';
 			if (diagnostics === 'full') await authorizeCapacityTeam(store, principal, teamId, 'agents:diagnostics:team');
+			// Polling a send is the non-interactive equivalent of following its topic.
+			// Keep blocked mentions moving when earlier responses release constrained
+			// communication capacity; requiring a separate timeline read strands sends.
+			await reconcileBlockedDiscussionInvocations(store, teamId);
 			return sendReceipt(teamId, sendId, false, diagnostics);
 		},
 		async topics(principal: CapacityPrincipal, teamId: string, query: Row) {
