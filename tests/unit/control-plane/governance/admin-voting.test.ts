@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adminApprovalProvider } from '../../../src/api/governance/voting.ts';
+import { adminApprovalProvider } from '../../../../src/api/governance/voting.ts';
 
 const voter = {
 	userId: 'admin-1',
