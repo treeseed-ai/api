@@ -13,7 +13,7 @@ type WorkdayProject,
 import { resolveWorkdayAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { workdayParticipants } from '../../../../policy/workday-participants.ts';
+import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
 
 type JsonRecord = Record<string, unknown>;
 

@@ -9,7 +9,11 @@ function store(overrides: Record<string, unknown> = {}) {
 	return {
 		async getProjectDetails() { return { project: { id: 'project-a', teamId: 'team-a' } }; },
 		async listTeamProjects() { return [{ id: 'project-a', slug: 'sdk', status: 'active' }]; },
-		async listProjectAgentClassesPage() { return { items: [{ handlerRefs: { agents: [{ slug: 'architect', activities: { chat: { enabled: true, handler: 'writer' } } }] } }] }; },
+		async listProjectAgentClassesPage() { return { items: [{ handlerRefs: { agents: [{
+			schemaVersion: 'treeseed.agent/v1', id: 'sdk/architect', name: 'SDK Architect', agentClass: 'architect', purpose: 'Review SDK architecture.',
+			responsibilities: ['Review architecture.'], capabilities: ['architecture-analysis'], context: { include: ['project-objectives'] },
+			activityProfiles: { chat: { handler: 'writer', permissions: { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] }, prompt: { system: 'Answer with evidence.' } } },
+		}] } }] }; },
 		async principalCanAccessTeam() { return true; },
 		async getTeamAccessSummary() { return { permissions: ['projects:read:team', 'projects:manage:team'] }; },
 		...overrides,

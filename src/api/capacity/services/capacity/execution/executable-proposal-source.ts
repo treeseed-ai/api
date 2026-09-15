@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { CapacityOperationError } from '../../../../control-plane/repositories/capacity/capacity-operation-error.ts';
 import { readExactProposal } from '../../../../governance/executable-proposal.ts';
-import type { ExecutableProposalSource } from '../../../policy/execution-graph-projector.ts';
+import type { ExecutableProposalSource } from '../../../policy/execution/execution-graph-projector.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {

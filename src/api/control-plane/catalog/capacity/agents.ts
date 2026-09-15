@@ -13,12 +13,16 @@ export interface AgentOperationDependencies { agents: {
 	classShow(principal: Principal, projectId: string, classId: string): Promise<Record<string, unknown>>;
 	artifacts(principal: Principal, projectId: string): Promise<Record<string, unknown>>;
 	artifact(principal: Principal, projectId: string, artifactId: string): Promise<Record<string, unknown>>;
+	planTeamClone(principal: Principal, teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
+	applyTeamClone(principal: Principal, teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
 }; }
 function result<T>(call: () => T | Promise<T>) { return Promise.resolve().then(call).catch((error) => {
 	if (error instanceof CapacityOperationError) throw new ControlPlaneOperationError(error.status, error.code, error.message);
 	throw error;
 }); }
 export function createAgentOperations({ agents }: AgentOperationDependencies): BoundOperation[] { return [
+	{ binding: CONTROL_PLANE_OPERATIONS.agents.teamClone.plan, handler: (input, context) => result(() => agents.planTeamClone(context.principal, input.path.teamId, input.body)) },
+	{ binding: CONTROL_PLANE_OPERATIONS.agents.teamClone.apply, handler: (input, context) => result(() => agents.applyTeamClone(context.principal, input.path.teamId, input.body)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.list, handler: (input, context) => result(() => agents.list(context.principal, input.path.projectId)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.show, handler: (input, context) => result(() => agents.show(context.principal, input.path.projectId, input.path.agentSlug)) },
 	{ binding: CONTROL_PLANE_OPERATIONS.agents.handlers, handler: (input, context) => result(() => agents.handlers(context.principal, input.path.projectId)) },

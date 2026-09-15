@@ -2,6 +2,7 @@ import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/
 import { authorizeCapacityProject, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
+import { AgentTeamCloneService } from '../../../capacity/services/capacity/agents/team-clone/agent-team-clone-service.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -27,7 +28,10 @@ async function acceptedAgents(store: any, projectId: string) {
 }
 
 export function createAgentQueryService(store: any) {
+	const teamClone = new AgentTeamCloneService(store);
 	return {
+		planTeamClone(principal: CapacityPrincipal, teamId: string, input: any) { return teamClone.plan(principal, teamId, input); },
+		applyTeamClone(principal: CapacityPrincipal, teamId: string, input: any) { return teamClone.apply(principal, teamId, input); },
 		async list(principal: CapacityPrincipal, projectId: string) {
 			await authorizeCapacityProject(store, principal, projectId, 'projects:read:team');
 			const [definitions, runtime] = await Promise.all([acceptedAgents(store, projectId), store.getProjectAgentsSummary(projectId, principal)]);

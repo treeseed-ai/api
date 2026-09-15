@@ -12,6 +12,7 @@ import { communicationFailure } from './communication/failure.ts';
 
 type Row = Record<string, unknown>;
 type ProviderSnapshot = Row & { maxConcurrentRunners?: number; lanes?: unknown[] };
+const COMMUNICATION_EXECUTION_SECONDS = 180;
 
 function readiness(session: Row) {
 	let providers: ProviderSnapshot[] = [];
@@ -304,7 +305,7 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 				if (!stream) throw new CapacityOperationError(503, 'communication_topic_stream_unavailable', 'Discussion topic project stream could not be established.');
 				const communication = { channel: slug, topicId: topic.id, streamId: stream.id, sendId };
 				created.push(await discussions.create(principal, { teamId, projectId, discussionId: text(stream.discussion_id), createDiscussion: true,
-					body: body.message, topic: slug, recipients: projectTargets.map((target) => target.agentSlug), durationSeconds: 60, communication,
+					body: body.message, topic: slug, recipients: projectTargets.map((target) => target.agentSlug), durationSeconds: COMMUNICATION_EXECUTION_SECONDS, communication,
 					addressRequirements: Object.fromEntries(projectTargets.map((target) => [target.agentSlug, target.requirement])) }, `${idempotencyKey}:${projectId}`));
 			}
 			for (const target of targets) {
