@@ -67,6 +67,10 @@ export interface KnowledgeGatewayConnection {
 	publicationRef: string;
 }
 
+export function projectKnowledgeAuthoringBaseRef(connection: Pick<KnowledgeGatewayConnection, 'publicationRef'>) {
+	return connection.publicationRef;
+}
+
 export async function resolveKnowledgeGatewayConnection(store: any, input: {
 	projectId: string;
 	write: boolean;

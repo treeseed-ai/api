@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createKnowledgeWorkspaceService } from '../../../../../src/api/control-plane/knowledge/knowledge-workspace-service.ts';
+import { additionalPublicationParentRefs, createKnowledgeWorkspaceService } from '../../../../../src/api/control-plane/knowledge/knowledge-workspace-service.ts';
 import {
 	projectKnowledgeAuthoringPaths,
+	projectKnowledgeAuthoringBaseRef,
 	resolveKnowledgeGatewayConnection,
 } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 
@@ -39,6 +40,30 @@ describe('objective TreeDX workspace authority', () => {
 	it('includes objectives in the governed authoring scope', () => {
 		expect(projectKnowledgeAuthoringPaths('.')).toContain('objectives/**');
 		expect(projectKnowledgeAuthoringPaths('teams/example')).toContain('teams/example/objectives/**');
+	});
+
+	it('bases authoring on the TreeDX publication ref instead of its external mirror', () => {
+		expect(projectKnowledgeAuthoringBaseRef({ publicationRef: 'refs/heads/staging' })).toBe('refs/heads/staging');
+	});
+
+	it('retains a divergent external mirror as a reviewed merge parent', async () => {
+		const client = { listRepositoryRefs: vi.fn(async () => [
+			{ name: 'refs/remotes/origin/staging', target: 'remote-commit' },
+		]) };
+		await expect(additionalPublicationParentRefs({
+			baseRef: 'refs/remotes/origin/staging', publicationRef: 'refs/heads/staging',
+			repositoryId: 'repo', client,
+		}, { baseCommitSha: 'local-commit' })).resolves.toEqual(['refs/remotes/origin/staging']);
+	});
+
+	it('does not add a merge parent when the mirror and publication base agree', async () => {
+		const client = { listRepositoryRefs: vi.fn(async () => [
+			{ name: 'refs/remotes/origin/staging', target: 'same-commit' },
+		]) };
+		await expect(additionalPublicationParentRefs({
+			baseRef: 'refs/remotes/origin/staging', publicationRef: 'refs/heads/staging',
+			repositoryId: 'repo', client,
+		}, { baseCommitSha: 'same-commit' })).resolves.toEqual([]);
 	});
 
 	it('validates and writes an objective through the existing workspace result contract', async () => {
