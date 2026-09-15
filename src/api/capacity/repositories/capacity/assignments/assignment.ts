@@ -61,6 +61,10 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 	const id = text(row.id);
 	const workspaceContext = json(row.workspace_context_json, {}, 'workspace_context_json', id);
 	const metadata = json(row.metadata_json, {}, 'metadata_json', id);
+	const workdayExecutionMode = row.workday_execution_mode == null ? null : text(row.workday_execution_mode);
+	if (workdayExecutionMode && workdayExecutionMode !== 'simulation' && workdayExecutionMode !== 'production') {
+		throw new CapacityGovernanceError('provider_assignment_workday_mode_invalid', `Assignment ${id} has an invalid authoritative workday mode.`, 500, { assignmentId: id });
+	}
 	const assignment = {
 		id,
 		membershipId: text(row.membership_id),
@@ -89,7 +93,7 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 		workDayId: row.work_day_id == null ? null : text(row.work_day_id),
 		taskId: row.task_id == null ? null : text(row.task_id),
 		mode: text(row.mode),
-		executionMode: metadata.executionMode === 'production' ? 'production' : 'simulation',
+		...(workdayExecutionMode ? { executionMode: workdayExecutionMode } : {}),
 		status: text(row.status),
 		leaseState: text(row.lease_state),
 		leaseExpiresAt: row.lease_expires_at == null ? null : text(row.lease_expires_at),
@@ -146,34 +150,38 @@ export class ProviderAssignmentRepository {
 	async get(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null> {
 		await this.database.ensureInitialized();
 		return serializeProviderAssignmentRow(await this.database.first(
-			`SELECT * FROM capacity_provider_assignments WHERE id = ? AND team_id = ? LIMIT 1`,
+			`SELECT assignment.*,run.execution_mode AS workday_execution_mode
+			 FROM capacity_provider_assignments assignment
+			 LEFT JOIN capacity_workday_runs run ON run.id=assignment.work_day_id AND run.team_id=assignment.team_id
+			 WHERE assignment.id = ? AND assignment.team_id = ? LIMIT 1`,
 			[assignmentId, teamId],
 		));
 	}
 
 	async list(teamId: string, filters: ProviderAssignmentFilters = {}): Promise<CapacityPage<DurableProviderAssignment>> {
 		await this.database.ensureInitialized();
-		const clauses = ['team_id = ?'];
+		const clauses = ['assignment.team_id = ?'];
 		const values: unknown[] = [teamId];
 		for (const [value, column] of [
-			[filters.projectId, 'project_id'],
-			[filters.providerId, 'capacity_provider_id'],
-			[filters.status, 'status'],
-			[filters.assignmentId, 'id'],
-			[filters.workdayId, 'work_day_id'],
-			[filters.executionProviderId, 'execution_provider_id'],
+			[filters.projectId, 'assignment.project_id'],
+			[filters.providerId, 'assignment.capacity_provider_id'],
+			[filters.status, 'assignment.status'],
+			[filters.assignmentId, 'assignment.id'],
+			[filters.workdayId, 'assignment.work_day_id'],
+			[filters.executionProviderId, 'assignment.execution_provider_id'],
 		] as const) {
 			if (value) { clauses.push(`${column} = ?`); values.push(value); }
 		}
 		if (filters.cursor) {
-			clauses.push('(created_at < ? OR (created_at = ? AND id < ?))');
+			clauses.push('(assignment.created_at < ? OR (assignment.created_at = ? AND assignment.id < ?))');
 			values.push(filters.cursor.createdAt, filters.cursor.createdAt, filters.cursor.id);
 		}
 		const limit = normalizeCapacityPageLimit(filters.limit);
 		const rows = await this.database.all(
-			`SELECT * FROM capacity_provider_assignments
+			`SELECT assignment.*,run.execution_mode AS workday_execution_mode FROM capacity_provider_assignments assignment
+			 LEFT JOIN capacity_workday_runs run ON run.id=assignment.work_day_id AND run.team_id=assignment.team_id
 			 WHERE ${clauses.join(' AND ')}
-			 ORDER BY created_at DESC, id DESC LIMIT ?`,
+			 ORDER BY assignment.created_at DESC, assignment.id DESC LIMIT ?`,
 			[...values, limit + 1],
 		);
 		const selected = rows.slice(0, limit);

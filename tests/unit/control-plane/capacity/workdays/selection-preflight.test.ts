@@ -71,7 +71,7 @@ describe('public workday selection custody', () => {
 		const f = fixture(); const intent = parsePublicWorkdayIntent('team', input());
 		const receipt = await f.service.preflight('team', intent, 'actor');
 		expect(f.stored().runInput.parameters.agentSelection).toEqual(intent.agentSelection);
-		expect(f.stored().runInput).toMatchObject({ executionMode: 'production', executionKind: 'workday', triggerKind: 'manual' });
+		expect(f.stored().runInput).toMatchObject({ executionMode: 'simulation', executionKind: 'workday', triggerKind: 'manual' });
 		expect(receipt.selectedDemands.map(d => d.sourceId)).toEqual(['node-review']);
 		const request = { preflightId: receipt.id, preflightDigest: receipt.preflightDigest, idempotencyKey: 'start' };
 		const started = await f.service.start('team', request, 'actor');

@@ -6,7 +6,7 @@ export interface AssignmentSourcePin {
   schemaVersion: 'treeseed.assignment-source-pin/v1';
   repository: SourceRepository;
   exactCommit: string;
-  credentialBindingId: string;
+  credentialBindingId: string | null;
 }
 interface PinStore {
   first(sql: string, parameters: unknown[]): Promise<Record<string, unknown> | null>;
@@ -14,12 +14,12 @@ interface PinStore {
 }
 
 /** GitHub authorization is rechecked even for a cached pin. Never follow a credential-bearing redirect. */
-export async function resolveAuthorizedSourceCommit(repository: SourceRepository, token: string, fetchImpl: typeof fetch = fetch) {
+export async function resolveAuthorizedSourceCommit(repository: SourceRepository, token?: string, fetchImpl: typeof fetch = fetch) {
   // Revalidate the tuple rather than trusting a stored transport URL.
   const validated = selectAssignmentSourceRepository([{ ...repository, role: 'software', currentBranch: repository.ref }]);
   const response = await fetchImpl(`https://api.github.com/repos/${encodeURIComponent(validated.owner)}/${encodeURIComponent(validated.name)}/commits/${encodeURIComponent(validated.ref)}`, {
     method: 'GET', redirect: 'error', signal: AbortSignal.timeout(15_000),
-    headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github.sha', 'x-github-api-version': '2022-11-28', 'user-agent': 'treeseed-source-custody' },
+    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), accept: 'application/vnd.github.sha', 'x-github-api-version': '2022-11-28', 'user-agent': 'treeseed-source-custody' },
   });
   if (!response.ok) throw new CapacityGovernanceError('assignment_source_access_denied', 'The selected connection cannot read the assigned repository revision.', 403);
   // A SHA response is tiny. Bound consumption instead of buffering arbitrary provider error/output bodies.
@@ -44,7 +44,8 @@ export function readAssignmentSourcePin(context: Record<string, unknown>): Assig
   if (context.sourceWorkspace === undefined) return null;
   const pin = context.sourceWorkspace as Partial<AssignmentSourcePin> | null;
   if (!pin || pin.schemaVersion !== 'treeseed.assignment-source-pin/v1' || !pin.repository
-    || !/^[a-f0-9]{40}$/u.test(String(pin.exactCommit)) || typeof pin.credentialBindingId !== 'string' || !pin.credentialBindingId) {
+    || !/^[a-f0-9]{40}$/u.test(String(pin.exactCommit))
+    || !(pin.credentialBindingId === null || typeof pin.credentialBindingId === 'string' && pin.credentialBindingId)) {
     throw new CapacityGovernanceError('assignment_source_pin_invalid', 'The assignment source pin is invalid; refusing to replace it.', 409);
   }
   const repository = selectAssignmentSourceRepository([{ ...pin.repository, role: 'software', currentBranch: pin.repository.ref }]);

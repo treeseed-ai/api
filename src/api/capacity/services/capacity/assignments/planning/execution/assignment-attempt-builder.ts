@@ -135,7 +135,12 @@ export function buildAssignmentAttempt(input: {
 	const communication = candidate.node.kind === 'communication';
 	const selected = selectProvider(candidate.node.requiredCapabilities ?? [], input.providers, communication ? 'communication' : 'workday');
 	const assignmentId = id('assignment', [candidate.node.teamId,candidate.node.id,candidate.node.nodeRevision,input.attempt]);
-	appliedWorkdaySchema.parse(input.run.parameters.appliedPlan);
+	const appliedPlan = appliedWorkdaySchema.parse(input.run.parameters.appliedPlan);
+	if (appliedPlan.executionMode !== input.run.executionMode) throw new CapacityGovernanceError(
+		'assignment_workday_execution_mode_mismatch',
+		'Assignment admission found contradictory execution mode authority.', 409,
+		{ run: input.run.executionMode, appliedPlan: appliedPlan.executionMode },
+	);
 	const deadline = compileAssignmentTimeBudget({ now: input.now,
 		requestedSeconds: candidate.node.estimate.expectedSeconds, configuredBudget: {} }).authorityExpiresAt;
 	const exactGrant = grant(candidate);

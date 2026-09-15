@@ -8,7 +8,7 @@ export async function communicationSchedulingDiagnostics(store: any, teamId: str
 
 async function schedulingDiagnostics(store: any, teamId: string, executionId: string) {
 	if (!executionId) return null;
-	const run = await store.first('SELECT id,status,parameters_json FROM capacity_workday_runs WHERE id=? AND team_id=?', [executionId, teamId]);
+	const run = await store.first('SELECT id,status,execution_mode,parameters_json FROM capacity_workday_runs WHERE id=? AND team_id=?', [executionId, teamId]);
 	if (!run) return null;
 	const session = await store.first('SELECT id,status,metadata_json FROM workday_planning_sessions WHERE workday_run_id=? AND team_id=?', [executionId, teamId]);
 	const waves = session ? await store.all('SELECT id,status,round,wave FROM workday_planning_waves WHERE session_id=? ORDER BY round,wave LIMIT 20', [session.id]) : [];
@@ -23,8 +23,7 @@ async function schedulingDiagnostics(store: any, teamId: string, executionId: st
 		return { demandId: demand.id, denials: reasons, selected: selection.selected ? { providerId: selection.selected.capacityProviderId, membershipId: selection.selected.membershipId, providerSessionId: selection.selected.providerSessionId, executionProviderId: selection.selected.executionProviderId } : null,
 			eligibleCount: selection.eligible.length, rejected: selection.rejected.map((item) => ({ executionProviderId: item.candidate.executionProviderId, reasons: item.reasons })) };
 	}));
-	let parameters: any = {}; try { parameters = typeof run.parameters_json === 'string' ? JSON.parse(run.parameters_json) : run.parameters_json ?? {}; } catch { /* diagnostics must tolerate malformed metadata */ }
-	return { executionId, status: run.status, executionMode: parameters.executionMode ?? null, sessionStatus: session?.status ?? null, supply,
+	return { executionId, status: run.status, executionMode: run.execution_mode ?? null, sessionStatus: session?.status ?? null, supply,
 		waves: waves.map((wave: any) => ({ id: wave.id, status: wave.status, round: Number(wave.round), wave: Number(wave.wave) })),
 		demands: demands.map((row: any) => ({ status: row.status, count: Number(row.count) })),
 		envelopes: envelopes.map((row: any) => ({ status: row.status, count: Number(row.count) })) };

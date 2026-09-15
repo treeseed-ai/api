@@ -1,5 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { sourceWorkspaceRequestSchema, sourceWorkspaceResponseSchema, type SourceWorkspaceAuthorization } from '@treeseed/sdk/capacity-provider/sandbox';
+import { assignmentSourceBranch, simulationSourceBranch, sourceWorkspaceRequestSchema, sourceWorkspaceResponseSchema, type SourceWorkspaceAuthorization } from '@treeseed/sdk/capacity-provider/sandbox';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { sealSourceCredential } from '@treeseed/deployment/security/source';
 import { resolveGitHubSourceAuthority } from '../../../../../security/provider-credential-authority.ts';
@@ -47,16 +47,40 @@ export function assertSourceAssignmentLease(row: RecordValue | null, principal: 
 /** Analysis and work are both writable scratch. Git work publishes only to its assignment branch. */
 export function assignmentSourceMode(row: RecordValue) {
 	const attempt = assignmentAttemptSchema.safeParse(record(row.assignment_attempt_json ?? {}));
-	if (attempt.success) return { mode: attempt.data.workspace.mode === 'git' ? 'work' as const : 'analysis' as const,
-		publication: attempt.data.workspace.mode === 'git' ? 'assignment-branch' as const : 'denied' as const };
-	return { mode: 'analysis' as const, publication: 'denied' as const };
+	const executionMode = row.workday_execution_mode;
+	if (executionMode !== 'simulation' && executionMode !== 'production') throw new CapacityGovernanceError(
+		'assignment_workday_execution_mode_invalid', 'Assignment source authority requires its workday execution mode.', 409);
+	if (!attempt.success) return { mode: 'analysis' as const,
+		acquisition: executionMode === 'production' ? 'upstream-authorized' as const : 'upstream-public' as const,
+		publication: 'denied' as const };
+	if (attempt.data.workspace.mode === 'git') {
+		const campaignId = String(record(row.workday_parameters_json).acceptanceCampaignId || 'local');
+		const frozenUpstreamBase = attempt.data.contextRefs.some(reference => reference.store === 'git'
+			&& reference.commit === attempt.data.workspace.baseCommit);
+		const acquisition = executionMode === 'production' ? 'upstream-authorized' as const
+			: frozenUpstreamBase ? 'upstream-public' as const : 'simulation-local' as const;
+		const publicationRef = executionMode === 'simulation'
+			? simulationSourceBranch(campaignId, String(row.work_day_id), String(row.id))
+			: assignmentSourceBranch(String(row.id));
+		return { mode: 'work' as const, acquisition,
+			publication: executionMode === 'simulation' ? 'simulation-branch' as const : 'assignment-branch' as const,
+			publicationRef };
+	}
+	return { mode: 'analysis' as const,
+		acquisition: executionMode === 'production' ? 'upstream-authorized' as const : 'upstream-public' as const,
+		publication: 'denied' as const };
 }
 
 export function createSourceWorkspaceService(database: CapacityGovernanceDatabase, contentStore: SourceStore, options: {
   controlPlaneId: string; fetchImpl?: typeof fetch; now?: () => Date;
 }) {
   const now = options.now ?? (() => new Date());
-  const load = (id: string, actor: ProviderPrincipal) => database.first('SELECT * FROM capacity_provider_assignments WHERE id=? AND team_id=? AND capacity_provider_id=? AND membership_id=? LIMIT 1', [id, actor.teamId, actor.capacityProviderId, actor.membershipId]);
+  const load = (id: string, actor: ProviderPrincipal) => database.first(`SELECT assignment.*,
+    run.execution_mode AS workday_execution_mode, run.parameters_json AS workday_parameters_json
+    FROM capacity_provider_assignments assignment
+    JOIN capacity_workday_runs run ON run.id=assignment.work_day_id AND run.team_id=assignment.team_id
+    WHERE assignment.id=? AND assignment.team_id=? AND assignment.capacity_provider_id=? AND assignment.membership_id=? LIMIT 1`,
+    [id, actor.teamId, actor.capacityProviderId, actor.membershipId]);
   return async (auth: unknown, assignmentId: string, body: unknown) => {
     const actor = providerPrincipal(auth, ['provider:assignments:read']);
     const parsed = sourceWorkspaceRequestSchema.safeParse(body);
@@ -84,39 +108,43 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
 		&& attempt.data.workspace.repository !== configured.id && attempt.data.workspace.repository !== configuredRepository) {
 		throw new CapacityGovernanceError('assignment_source_repository_changed', 'Assignment workspace does not match the project software repository.', 409);
 	}
-    const context = record(row.workspace_context_json);
+	const context = record(row.workspace_context_json);
+	const sourceMode = assignmentSourceMode(row);
+	const credentialRequired = sourceMode.acquisition === 'upstream-authorized';
     let pin = readAssignmentSourcePin(context);
     if (pin && (pin.repository.id !== configured.id || pin.repository.cloneUrl !== configured.cloneUrl)) throw new CapacityGovernanceError('assignment_source_repository_changed', 'The project source repository changed after this assignment was pinned.', 409);
     const credentialFor = (bindingId?: string) => resolveGitHubSourceAuthority({ store: contentStore, teamId: actor.teamId,
       owner: configured.owner, repository: configured.name, ...(bindingId ? { bindingId } : {}), ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
-    let credential = await credentialFor(pin?.credentialBindingId);
+	let credential = credentialRequired ? await credentialFor(pin?.credentialBindingId ?? undefined) : null;
     if (!pin) {
 			const exactCommit = attempt.success
 		? (attempt.data.workspace.mode === 'git' ? attempt.data.workspace.baseCommit : exactAssignmentSource?.commit
-			?? await resolveAuthorizedSourceCommit(configured, credential.token, options.fetchImpl))
-		: await resolveAuthorizedSourceCommit(configured, credential.token, options.fetchImpl);
+			?? await resolveAuthorizedSourceCommit(configured, credential?.token, options.fetchImpl))
+		: await resolveAuthorizedSourceCommit(configured, credential?.token, options.fetchImpl);
       pin = await persistAssignmentSourcePin(database, { assignmentId, teamId: actor.teamId, providerId: actor.capacityProviderId, membershipId: actor.membershipId,
         runnerId: request.runnerId, leaseToken: request.leaseToken, stateVersion: Number(row.state_version), context,
-        pin: { schemaVersion: 'treeseed.assignment-source-pin/v1', repository: configured, exactCommit, credentialBindingId: credential.bindingId,
+        pin: { schemaVersion: 'treeseed.assignment-source-pin/v1', repository: configured, exactCommit, credentialBindingId: credential?.bindingId ?? null,
         }, now: now().toISOString() });
     }
     // Re-resolve the winning binding: a concurrent pin or revocation must never reuse a losing credential.
-    credential = await credentialFor(pin.credentialBindingId);
+	credential = credentialRequired ? await credentialFor(pin.credentialBindingId ?? undefined) : null;
     if (pin.repository.id !== configured.id || pin.repository.cloneUrl !== configured.cloneUrl) throw new CapacityGovernanceError('assignment_source_repository_changed', 'Concurrent source pin selected a different repository.', 409);
-    await resolveAuthorizedSourceCommit({ ...pin.repository, ref: pin.exactCommit }, credential.token, options.fetchImpl);
+	if (sourceMode.acquisition !== 'simulation-local') {
+		await resolveAuthorizedSourceCommit({ ...pin.repository, ref: pin.exactCommit }, credential?.token, options.fetchImpl);
+	}
     await checkAuthority();
     const issued = now();
     row = assertSourceAssignmentLease(await load(assignmentId, actor), actor, assignmentId, request.runnerId, request.leaseToken, issued);
     const accepted = readAssignmentSourcePin(record(row.workspace_context_json));
     if (JSON.stringify(accepted) !== JSON.stringify(pin)) throw new CapacityGovernanceError('assignment_source_pin_changed', 'Assignment source identity changed during authorization.', 409);
-    const credentialExpiry = credential.expiresAt ? Date.parse(credential.expiresAt) : issued.getTime() + 300_000;
+	const credentialExpiry = credential?.expiresAt ? Date.parse(credential.expiresAt) : issued.getTime() + 300_000;
     const expiry = Math.min(Date.parse(String(row.lease_expires_at)), credentialExpiry, issued.getTime() + 300_000);
     if (!Number.isFinite(expiry) || expiry <= issued.getTime()) throw new CapacityGovernanceError('assignment_source_credential_expired', 'Source credential expired during authorization.', 409);
     const authorization: SourceWorkspaceAuthorization = { schemaVersion: 'treeseed.source-workspace-authorization/v1', id: randomUUID(),
       providerId: actor.capacityProviderId, assignmentId, attempt: Number(row.attempt_count) + 1,
       source: { controlPlaneId: options.controlPlaneId, teamId: actor.teamId, projectId, repositoryId: pin.repository.id, commit: pin.exactCommit, formatVersion: 1, profile: 'source-only' },
-      ...assignmentSourceMode(row), credentialBindingId: pin.credentialBindingId, issuedAt: issued.toISOString(), expiresAt: new Date(expiry).toISOString() };
-    const sealed = sealSourceCredential({ authorization, recipientPublicKey: request.recipientPublicKey, credential }, issued);
+		...sourceMode, ...(pin.credentialBindingId ? { credentialBindingId: pin.credentialBindingId } : {}), issuedAt: issued.toISOString(), expiresAt: new Date(expiry).toISOString() };
+	const sealed = credential ? sealSourceCredential({ authorization, recipientPublicKey: request.recipientPublicKey, credential }, issued) : null;
     const { id: _id, ...repository } = pin.repository;
     const response = sourceWorkspaceResponseSchema.safeParse({ authorization, repository, credential: sealed });
     if (!response.success) throw new CapacityGovernanceError('assignment_source_response_invalid',

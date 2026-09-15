@@ -82,7 +82,7 @@ export class WorkdayPreflightService {
 		const maxConcurrency=integer(intent.operatorConstraints?.maxConcurrency,1);
 		const runInput:JsonRecord={
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
-			executionMode:'production',executionKind:'workday',triggerKind:'manual',
+			executionMode:'simulation',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
 			parameters:{ profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
