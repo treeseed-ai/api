@@ -75,7 +75,8 @@ function handler(value: unknown): EngineeringHandlerKind | null {
 }
 
 function chatSpecialization(profile: UnknownRecord): AgentChatProfileConfiguration {
-	const execution = record(profile.execution);
+	const parameters = record(profile.parameters);
+	const execution = record(parameters.execution);
 	const specialization: AgentChatProfileConfiguration = { foundation: 'discussion-v1' };
 	const reasoningEffort = text(execution.reasoningEffort);
 	if (['minimal', 'low', 'medium', 'high', 'xhigh'].includes(reasoningEffort)) specialization.reasoningEffort = reasoningEffort as AgentChatProfileConfiguration['reasoningEffort'];
@@ -87,9 +88,9 @@ function chatSpecialization(profile: UnknownRecord): AgentChatProfileConfigurati
 	if (Number.isFinite(maxCostAmount) && maxCostAmount >= 0) specialization.maxCostAmount = maxCostAmount;
 	const costCurrency = text(execution.costCurrency);
 	if (costCurrency) specialization.costCurrency = costCurrency;
-	const promptTask = text(record(profile.prompt).task);
+	const promptTask = text(parameters.task, text(record(profile.prompt).system));
 	if (promptTask) specialization.promptTask = promptTask;
-	if (Array.isArray(profile.capabilityRequirements)) specialization.capabilityRequirements = profile.capabilityRequirements as NonNullable<AgentChatProfileConfiguration['capabilityRequirements']>;
+	if (Array.isArray(parameters.capabilityRequirements)) specialization.capabilityRequirements = parameters.capabilityRequirements as NonNullable<AgentChatProfileConfiguration['capabilityRequirements']>;
 	return specialization;
 }
 

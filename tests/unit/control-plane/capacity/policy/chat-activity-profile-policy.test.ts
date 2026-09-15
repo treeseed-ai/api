@@ -7,15 +7,17 @@ describe('chat activity profile policy', () => {
 		const agents = capacityWorkdayAgentsFromClasses([{
 			status: 'active',
 			handlerRefs: { agents: [{
-				slug: 'architect',
-				activities: { chat: {
-					enabled: true,
+				schemaVersion: 'treeseed.agent/v1', id: 'sdk/architect', name: 'Architect', agentClass: 'architect',
+				purpose: 'Inspect exact project sources.', responsibilities: ['Return evidence-backed answers.'],
+				capabilities: ['architecture-analysis'], context: { include: ['project-objectives'] },
+				activityProfiles: { chat: {
 					handler: 'writer',
-					prompt: { task: 'Inspect the exact project sources.' },
-					capabilityRequirements: capabilities,
-					execution: {
-						reasoningEffort: 'medium', maxRuntimeSeconds: 180, maxTotalTokens: 32_000,
-						warningTokens: 24_000, maxCostAmount: 5, costCurrency: 'USD',
+					permissions: { content: { read: ['knowledge'], write: ['discussion'] }, tools: ['source.read'] },
+					prompt: { system: 'Inspect the exact project sources.' },
+					parameters: {
+						task: 'Inspect the exact project sources.', capabilityRequirements: capabilities,
+						execution: { reasoningEffort: 'medium', maxRuntimeSeconds: 180, maxTotalTokens: 32_000,
+							warningTokens: 24_000, maxCostAmount: 5, costCurrency: 'USD' },
 					},
 				} },
 			}] },
