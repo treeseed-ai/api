@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createTreeDxProxyOperationService } from '../../../../src/api/control-plane/repositories/treedx/proxy-operation-service.ts';
+import { createTreeDxProxyOperationService } from '../../../../../src/api/control-plane/repositories/treedx/proxy-operation-service.ts';
 
 describe('TreeDX workspace audit inventory', () => {
 	it('uses the audit record identity and does not require a nonexistent upstream request column', async () => {
