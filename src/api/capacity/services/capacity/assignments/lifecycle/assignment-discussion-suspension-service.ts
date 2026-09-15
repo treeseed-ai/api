@@ -16,29 +16,30 @@ export async function suspendAssignmentForDiscussionResponse(store:Store,input:{
 	const metadata=record(current.metadata);
 	const alreadySuspended=current.status==='returned'&&current.leaseState==='released'
 		&&metadata.operationalState==='suspended'&&metadata.waitingMessageId===input.messageId;
+	const now=new Date().toISOString();
+	const authority=terminalAssignmentAuthority(current as unknown as DurableProviderAssignment,now);
+	const suspendedMetadata=JSON.stringify({...metadata,operationalState:'suspended',waitingDiscussionId:input.discussionId,waitingMessageId:input.messageId,checkpoint:input.checkpoint});
+	const suspendedAssignmentExists=`EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+		WHERE assignment.id=? AND assignment.team_id=? AND assignment.status='returned'
+		AND assignment.lease_state='released' AND assignment.lifecycle_code='discussion_response_required'
+		AND assignment.metadata_json::jsonb->>'waitingMessageId'=?)`;
 	if(!alreadySuspended){
 		if(current.status!=='leased'||current.leaseState!=='leased'||current.leaseToken!==input.leaseToken) {
 			throw new CapacityGovernanceError('assignment_discussion_state_stale','Required-response suspension no longer owns the active assignment lease.',409,{stateVersion:current.stateVersion,status:current.status,leaseState:current.leaseState});
 		}
-		const now=new Date().toISOString();
-		const authority=terminalAssignmentAuthority(current as unknown as DurableProviderAssignment,now);
-		await store.run(`UPDATE capacity_provider_assignments SET status='returned',lease_state='released',lease_token=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,returned_at=COALESCE(returned_at,?),lifecycle_code='discussion_response_required',lifecycle_reason=?,metadata_json=?,treedx_proxy_handle_json=?,workspace_context_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND status='leased' AND lease_state='leased' AND lease_token=?`,[
-			now,input.message,JSON.stringify({...metadata,operationalState:'suspended',waitingDiscussionId:input.discussionId,waitingMessageId:input.messageId,checkpoint:input.checkpoint}),JSON.stringify(authority.proxyHandle),JSON.stringify(authority.workspaceContext),now,input.assignmentId,input.teamId,input.leaseToken,
-		]);
-		const transitioned=await store.getProviderAssignment(input.teamId,input.assignmentId);
-		if(transitioned?.status!=='returned'||transitioned.leaseState!=='released'||record(transitioned.metadata).waitingMessageId!==input.messageId) {
-			throw new CapacityGovernanceError('assignment_discussion_suspension_failed','The discussion message committed, but assignment suspension did not reach its authoritative postcondition.',409,{assignment:transitioned});
-		}
 	}
-	const suspended=await store.getProviderAssignment(input.teamId,input.assignmentId);
-	const now=new Date().toISOString();
 	await store.batch([
-		{query:`UPDATE treedx_proxy_handles SET status='revoked',revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE assignment_id=? AND team_id=?`,params:[now,now,input.assignmentId,input.teamId]},
-		{query:`UPDATE capacity_workday_demands SET status='completed',completed_at=COALESCE(completed_at,?),metadata_json=metadata_json,updated_at=? WHERE assignment_id=? AND status IN ('admitted','blocked')`,params:[now,now,input.assignmentId]},
-		{query:`UPDATE capacity_workday_participation_entries SET status='completed',covered_at=COALESCE(covered_at,?),updated_at=? WHERE assignment_id=? AND status='assigned'`,params:[now,now,input.assignmentId]},
-		...(suspended?.invocationId?[{query:`UPDATE agent_invocation_requests SET status='suspended',assignment_id=?,final_message_ref=?,completed_at=COALESCE(completed_at,?),updated_at=? WHERE id=? AND team_id=? AND status IN ('admitted','running','suspended')`,params:[input.assignmentId,input.messagePath,now,now,suspended.invocationId,input.teamId]}]:[]),
+		...(!alreadySuspended?[{query:`UPDATE capacity_provider_assignments SET status='returned',lease_state='released',lease_token=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,returned_at=COALESCE(returned_at,?),lifecycle_code='discussion_response_required',lifecycle_reason=?,metadata_json=?,treedx_proxy_handle_json=?,workspace_context_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND status='leased' AND lease_state='leased' AND lease_token=?`,params:[now,input.message,suspendedMetadata,JSON.stringify(authority.proxyHandle),JSON.stringify(authority.workspaceContext),now,input.assignmentId,input.teamId,input.leaseToken]}]:[]),
+		{query:`UPDATE treedx_proxy_handles SET status='revoked',revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE assignment_id=? AND team_id=? AND ${suspendedAssignmentExists}`,params:[now,now,input.assignmentId,input.teamId,input.assignmentId,input.teamId,input.messageId]},
+		{query:`UPDATE capacity_workday_demands SET status='completed',completed_at=COALESCE(completed_at,?),metadata_json=metadata_json,updated_at=? WHERE assignment_id=? AND status IN ('admitted','blocked') AND ${suspendedAssignmentExists}`,params:[now,now,input.assignmentId,input.assignmentId,input.teamId,input.messageId]},
+		{query:`UPDATE capacity_workday_participation_entries SET status='completed',covered_at=COALESCE(covered_at,?),updated_at=? WHERE assignment_id=? AND status='assigned' AND ${suspendedAssignmentExists}`,params:[now,now,input.assignmentId,input.assignmentId,input.teamId,input.messageId]},
+		...(current.invocationId?[{query:`UPDATE agent_invocation_requests SET status='suspended',assignment_id=?,final_message_ref=?,completed_at=COALESCE(completed_at,?),updated_at=? WHERE id=? AND team_id=? AND status IN ('admitted','running','suspended') AND ${suspendedAssignmentExists}`,params:[input.assignmentId,input.messagePath,now,now,current.invocationId,input.teamId,input.assignmentId,input.teamId,input.messageId]}]:[]),
 	]);
-	return store.getProviderAssignment(input.teamId,input.assignmentId);
+	const suspended=await store.getProviderAssignment(input.teamId,input.assignmentId);
+	if(suspended?.status!=='returned'||suspended.leaseState!=='released'||record(suspended.metadata).waitingMessageId!==input.messageId) {
+		throw new CapacityGovernanceError('assignment_discussion_suspension_failed','The discussion message committed, but assignment suspension did not reach its authoritative postcondition.',409,{assignment:suspended});
+	}
+	return suspended;
 }
 
 export async function closeSuspendedConversationExecution(store:Store,assignment:DurableProviderAssignment,now=new Date().toISOString()) {

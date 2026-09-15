@@ -91,6 +91,28 @@ export class OperatorAssignmentService {
 			'capacity_assignment_requeue_unsafe', 'Only a released returned, failed, expired, or cancelled assignment can be requeued.', 409,
 			{ assignmentId, status: assignment.status, leaseState: assignment.leaseState },
 		);
+		if (assignment.executionNodeId) {
+			const now = new Date().toISOString();
+			const reopened = await this.database.first(`UPDATE execution_nodes SET status='ready',node_revision=node_revision+1,updated_at=?
+				WHERE team_id=? AND id=? AND node_revision>=? AND status IN ('failed','cancelled')
+				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active WHERE active.team_id=?
+					AND active.execution_node_id=execution_nodes.id AND active.execution_node_revision=execution_nodes.node_revision
+					AND active.status IN ('pending','leased','running'))
+				RETURNING node_revision,status`,
+				[now, teamId, assignment.executionNodeId, assignment.executionNodeRevision,
+					teamId]);
+			if (!reopened) {
+				const current = await this.database.first('SELECT node_revision,status FROM execution_nodes WHERE team_id=? AND id=? LIMIT 1',
+					[teamId, assignment.executionNodeId]);
+				if (String(current?.status ?? '') !== 'ready') throw new CapacityGovernanceError(
+					'capacity_assignment_requeue_conflict',
+					`The execution node could not be reopened for a bounded retry; current state is ${String(current?.status ?? 'missing')} at revision ${String(current?.node_revision ?? 'unknown')}.`, 409,
+					{ assignmentId, executionNodeId: assignment.executionNodeId,
+						nodeRevision: current?.node_revision ?? null, nodeStatus: current?.status ?? null },
+				);
+			}
+			return { assignment, demand: null, alreadyLeasable: false };
+		}
 		if (assignment.reservationId) {
 			const reservation = await this.database.first(`SELECT state FROM capacity_reservations WHERE id = ? AND team_id = ? LIMIT 1`, [assignment.reservationId, teamId]);
 			if (!reservation || !['consumed', 'released'].includes(String(reservation.state ?? ''))) throw new CapacityGovernanceError(
@@ -99,16 +121,6 @@ export class OperatorAssignmentService {
 				409,
 				{ assignmentId, reservationId: assignment.reservationId, reservationState: reservation?.state ?? null },
 			);
-		}
-		if (assignment.executionNodeId) {
-			const now = new Date().toISOString();
-			await this.database.run(`UPDATE execution_nodes SET status='ready',node_revision=node_revision+1,updated_at=?
-				WHERE team_id=? AND id=? AND node_revision=?
-				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active WHERE active.team_id=?
-					AND active.execution_node_id=? AND active.execution_node_revision=? AND active.status IN ('pending','leased','running'))`,
-				[now, teamId, assignment.executionNodeId, assignment.executionNodeRevision,
-					teamId, assignment.executionNodeId, assignment.executionNodeRevision]);
-			return { assignment, demand: null, alreadyLeasable: false };
 		}
 		const original = serializeCapacityWorkdayDemandRow(await this.database.first(
 			`SELECT * FROM capacity_workday_demands WHERE team_id = ? AND assignment_id = ? LIMIT 1`, [teamId, assignmentId],

@@ -283,12 +283,19 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 				modeRunId: typeof body.modeRunId === 'string' ? body.modeRunId : null, source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) });
 		},
 		async settle(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
-			const actor = principal(auth, ['provider:usage:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
-			return settleCapacityReservationExactlyOnce(store, { settlementKey: idempotencyKey, teamId: actor.teamId, membershipId: actor.membershipId,
+			const actor = principal(auth, ['provider:usage:write', 'provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
+			const settlement = await settleCapacityReservationExactlyOnce(store, { settlementKey: idempotencyKey, teamId: actor.teamId, membershipId: actor.membershipId,
 				reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), assignmentAttempt: body.assignmentAttempt == null ? null : Number(body.assignmentAttempt),
 				usageDimension: typeof body.usageDimension === 'string' ? body.usageDimension : 'aggregate', usageIdempotencyKey: typeof body.usageIdempotencyKey === 'string' ? body.usageIdempotencyKey : null,
 				activeSeconds: Number(body.activeSeconds), elapsedSeconds: Number(body.elapsedSeconds), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
 				modeRunId: typeof body.modeRunId === 'string' ? body.modeRunId : null, source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) as CapacitySettlementRequest['usageActual'] });
+			const current = await store.getProviderAssignment(actor.teamId, assignmentId);
+			if (current?.executionKind === 'conversation' && current.status === 'returned' && current.leaseState === 'released'
+				&& current.lifecycleCode === 'discussion_response_required') {
+				const closed = await store.returnProviderAssignment(actor, assignmentId, {});
+				if (!closed) throw new CapacityGovernanceError('communication_suspension_close_failed', 'The settled conversation response could not close its suspended execution.', 409);
+			}
+			return settlement;
 		},
 		async createModeRun(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
 			const actor = principal(auth, ['provider:assignments:write', 'provider:usage:write']);
