@@ -137,7 +137,7 @@ export async function resolveEngineeringNodeAuthority(input: {
 	graph: JsonRecord;
 	node: JsonRecord;
 }): Promise<{ exactBaseRef: string | null; predecessorEvidence: GovernedPredecessorEvidence[]; reviewPolicy: GovernedReviewPolicy | null }> {
-	if (record(input.graph.metadata).workflowKind !== 'engineering-test-first') return { exactBaseRef: null, predecessorEvidence: [], reviewPolicy: null };
+	if (record(input.graph.metadata).workflowKind !== 'estimate-derived') return { exactBaseRef: null, predecessorEvidence: [], reviewPolicy: null };
 	return selectedPredecessorEvidence(input);
 }
 

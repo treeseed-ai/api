@@ -2,12 +2,11 @@ import type {
 DecisionAssignmentGraphRecord,
 DeliverableContractRecord,
 DeliverableManifestRecord,
-EngineeringAssignmentGraphRoles,
 StructuredAgentEstimate,
 StructuredAgentEstimateStatus,
 } from '@treeseed/sdk/agent-capacity';
-import { activateDecisionAssignmentGraph,advanceDecisionAssignmentGraph,compileDecisionAssignmentGraphFromEstimates,compileEngineeringAssignmentGraph,validateDecisionAssignmentGraph,validateDeliverableManifest } from '../../../policy/decision-work.ts';
-import { compileEngineeringRevisionCycle,compileGovernedRevisionCycle } from '../../../policy/revision-cycle.ts';
+import { activateDecisionAssignmentGraph,advanceDecisionAssignmentGraph,compileDecisionAssignmentGraphFromEstimates,validateDecisionAssignmentGraph,validateDeliverableManifest } from '../../../policy/decision-work.ts';
+import { compileGovernedRevisionCycle } from '../../../policy/revision-cycle.ts';
 import { randomUUID } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
@@ -31,15 +30,6 @@ function nextTransitionTimestamp(previous: string) {
 	return candidate === previous ? new Date(Date.parse(previous) + 1).toISOString() : candidate;
 }
 
-function engineeringRoles(value: unknown): EngineeringAssignmentGraphRoles {
-	const roles = record(value);
-	return {
-		tester: text(roles.tester), engineer: text(roles.engineer), reviewer: text(roles.reviewer),
-		technicalWriter: text(roles.technicalWriter), releaser: text(roles.releaser),
-		operations: text(roles.operations) || null, researcher: text(roles.researcher) || null, architect: text(roles.architect) || null,
-	};
-}
-
 export class DecisionWorkGraphService {
 	private readonly repository: DecisionWorkGraphRepository;
 	constructor(private readonly store: DecisionWorkGraphStore) { this.repository = new DecisionWorkGraphRepository(store); }
@@ -60,28 +50,15 @@ export class DecisionWorkGraphService {
 		if (!Number.isInteger(version) || version < 1) throw new CapacityGovernanceError('decision_assignment_graph_version_invalid', 'Graph version must be a positive integer.', 400);
 		const now = new Date().toISOString();
 		const workflowKind = text(input.workflowKind) || 'estimate-derived';
-		if (workflowKind !== 'estimate-derived' && workflowKind !== 'engineering-test-first') {
+		if (workflowKind !== 'estimate-derived') {
 			throw new CapacityGovernanceError('decision_assignment_graph_workflow_invalid', `Unsupported workflowKind ${workflowKind}.`, 400);
 		}
-		let compiled;
-		if (workflowKind === 'engineering-test-first') {
-			const roles = engineeringRoles(input.roles);
-			const missingRoles = Object.entries(roles).filter(([key, value]) => !['operations', 'researcher', 'architect'].includes(key) && !value).map(([key]) => key);
-			if (missingRoles.length) throw new CapacityGovernanceError('engineering_assignment_graph_roles_required', 'Engineering graphs require tester, engineer, reviewer, technicalWriter, and releaser roles.', 400, { missingRoles });
-			compiled = compileEngineeringAssignmentGraph({
-				id: text(input.id) || `dag_${idPart(decisionId, 'decision')}_v${version}`,
-				teamId: project.teamId, projectId: project.id, decisionId, version, exactBaseRef: text(input.exactBaseRef), roles,
-				includeResearch: input.includeResearch === true, includeArchitecture: input.includeArchitecture === true,
-				seconds: record(input.seconds), compiledAt: now,
-			});
-		} else {
-			const estimateStatus = (input.estimateStatus ?? 'accepted') as StructuredAgentEstimateStatus;
-			const estimates = Array.isArray(input.estimates) ? input.estimates as StructuredAgentEstimate[] : await this.store.listStructuredAgentEstimatesForDecision(decisionId, { status: estimateStatus });
-			if (!estimates.length) throw new CapacityGovernanceError('decision_assignment_graph_estimates_required', 'At least one accepted structured estimate is required to compile a decision assignment graph.', 409, { decisionId, estimateStatus });
-			const exactBaseRef=text(input.exactBaseRef);
-			if(estimates.some((estimate)=>estimate.schemaVersion===3)&&!/^[0-9a-f]{7,64}$/iu.test(exactBaseRef)) throw new CapacityGovernanceError('decision_assignment_graph_exact_base_required','Canonical estimate v3 workflows require an immutable exact base ref.',400);
-			compiled = compileDecisionAssignmentGraphFromEstimates({ id: text(input.id) || `dag_${idPart(decisionId, 'decision')}_v${version}`, teamId: project.teamId, projectId: project.id, decisionId, version, estimates, exactBaseRef:exactBaseRef||undefined, compiledAt: now, executionMode:text(input.executionMode)==='production'?'production':'simulation', reviewersByAgentClass:record(input.reviewersByAgentClass) as Record<string,string[]>, reportingAgentClass:text(input.reportingAgentClass)||undefined, maximumRevisionCycles:Number.isInteger(Number(input.maximumRevisionCycles))?Number(input.maximumRevisionCycles):undefined });
-		}
+		const estimateStatus = (input.estimateStatus ?? 'accepted') as StructuredAgentEstimateStatus;
+		const estimates = Array.isArray(input.estimates) ? input.estimates as StructuredAgentEstimate[] : await this.store.listStructuredAgentEstimatesForDecision(decisionId, { status: estimateStatus });
+		if (!estimates.length) throw new CapacityGovernanceError('decision_assignment_graph_estimates_required', 'At least one accepted structured estimate is required to compile a decision assignment graph.', 409, { decisionId, estimateStatus });
+		const exactBaseRef=text(input.exactBaseRef);
+		if(estimates.some((estimate)=>estimate.schemaVersion===3)&&!/^[0-9a-f]{7,64}$/iu.test(exactBaseRef)) throw new CapacityGovernanceError('decision_assignment_graph_exact_base_required','Canonical estimate v3 workflows require an immutable exact base ref.',400);
+		const compiled = compileDecisionAssignmentGraphFromEstimates({ id: text(input.id) || `dag_${idPart(decisionId, 'decision')}_v${version}`, teamId: project.teamId, projectId: project.id, decisionId, version, estimates, exactBaseRef:exactBaseRef||undefined, compiledAt: now, executionMode:text(input.executionMode)==='production'?'production':'simulation', reviewersByAgentClass:record(input.reviewersByAgentClass) as Record<string,string[]>, maximumRevisionCycles:Number.isInteger(Number(input.maximumRevisionCycles))?Number(input.maximumRevisionCycles):undefined });
 		if (compiled.diagnostics.some((entry) => entry.severity === 'error')) throw new CapacityGovernanceError('decision_assignment_graph_invalid', 'Decision assignment graph compilation failed.', 400, { diagnostics: compiled.diagnostics });
 		const requestedStatus = input.graphStatus ?? compiled.graph.status;
 		if (requestedStatus !== 'draft' && requestedStatus !== 'compiled' && requestedStatus !== 'blocked') throw new CapacityGovernanceError('decision_assignment_graph_status_invalid', `Cannot create a graph in ${String(requestedStatus)} state.`, 400);
@@ -170,6 +147,14 @@ export class DecisionWorkGraphService {
 		const graphId = text(contract.metadata?.graphId);
 		const graph = graphId ? await this.repository.getGraph(graphId) : null;
 		if (!graph) throw new CapacityGovernanceError('deliverable_contract_graph_missing', 'Deliverable contract is not attached to a durable assignment graph.', 500, { contractId });
+		const producingNode = graph.nodes.find((node) => node.metadata?.producesDeliverableContractId === contract.id);
+		if (!producingNode) throw new CapacityGovernanceError('deliverable_contract_node_missing', 'Deliverable contract has no producing graph node.', 500, { contractId, graphId });
+		if (to === 'approved') {
+			const terminalBlockers = graph.edges
+				.filter((edge) => edge.toNodeId === producingNode.id && (edge.edgeType === 'blocks-completion' || edge.edgeType === 'blocks-release'))
+				.filter((edge) => graph.nodes.find((node) => node.id === edge.fromNodeId)?.status !== 'completed');
+			if (terminalBlockers.length) throw new CapacityGovernanceError('deliverable_dependency_incomplete', 'Deliverable cannot be approved before its typed dependency gates complete.', 409, { contractId, graphId, blockers: terminalBlockers });
+		}
 		if (contract.metadata?.platformControlled === true) {
 			if (to !== 'approved') throw new CapacityGovernanceError('platform_integration_rejection_invalid', 'Platform integration evidence may only be approved after exact verification.', 409, { contractId });
 			const authority=record(input.executionAuthority);
@@ -192,12 +177,11 @@ export class DecisionWorkGraphService {
 			approvedIds.add(contract.id);
 			updatedGraph = { ...advanceDecisionAssignmentGraph(graph, contract.id, approvedIds), active: graph.active, createdAt: graph.createdAt, updatedAt: now };
 		} else {
-			const engineeringRevision = compileEngineeringRevisionCycle(graph, contract.id, reason || 'Reviewer requested revision.');
 			const reviewNode=graph.nodes.find((node)=>node.metadata?.producesDeliverableContractId===contract.id&&node.activityType==='reviewing');
 			const actorNode=graph.nodes.find((node)=>node.id===reviewNode?.metadata?.reviewedNodeId);
-			const governedRevision=!engineeringRevision&&reviewNode&&actorNode&&text(input.rejectedCheckpointRef)&&text(input.findingsRef)
+			const governedRevision=reviewNode&&actorNode&&text(input.rejectedCheckpointRef)&&text(input.findingsRef)
 				?compileGovernedRevisionCycle(graph,{rejectedReviewNodeId:reviewNode.id,rejectedCheckpointRef:text(input.rejectedCheckpointRef),findingsRef:text(input.findingsRef),reason:reason||'Reviewer requested revision.',actorAgentClass:actorNode.targetAgentClass,reviewerAgentClass:reviewNode.targetAgentClass,availableSeconds:Math.max(1,Number(input.availableSeconds??actorNode.capacity.maxSeconds))}):null;
-			const revision=engineeringRevision??governedRevision;
+			const revision=governedRevision;
 			if (revision) {
 				updatedGraph = { ...revision.graph, active: graph.active, createdAt: graph.createdAt, updatedAt: now };
 				newContracts = revision.newContracts.map((entry) => ({ ...entry, metadata: { ...(entry.metadata ?? {}), graphId: graph.id, graphVersion: graph.version }, createdAt: now, updatedAt: now }));

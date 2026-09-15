@@ -1,6 +1,5 @@
 import { evaluateGovernanceProposalReadiness } from '../../../../../governance/proposal-readiness.ts';
-import { resolveEffectiveGroupMembership } from '../../../../../governance/group-membership.ts';
-import type { AgentArtifactManifest,CapacityWorkdayRunRecord,StructuredAgentEstimateRecord } from '@treeseed/sdk/agent-capacity';
+import type { AgentArtifactManifest,CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { validateAgentArtifactManifest } from '../../../../artifact-manifest.ts';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { createHash } from 'node:crypto';
@@ -9,12 +8,11 @@ import type { DurableProviderAssignment } from '../../../../repositories/capacit
 import { assignmentArtifactManifest } from '../context/assignment-deliverable-service.ts';
 import { resolveWorkdayTreeDxConnection,type WorkdayTreeDxConnectionStore } from '../../workdays/treedx/workday-treedx-connection.ts';
 import { resolveProposalFeedbackSubject, reviewedProposalVersion } from './feedback/subject.ts';
+import { decodeWorkdayAgentProfileSnapshot } from '../../workdays/policy/workday-agent-profile-policy.ts';
 
 type JsonRecord = Record<string, unknown>;
 
 export interface AssignmentPlanningOutputStore extends CapacityGovernanceDatabase,WorkdayTreeDxConnectionStore {
-	getStructuredAgentEstimate(id: string): Promise<StructuredAgentEstimateRecord | null>;
-	createStructuredAgentEstimate(decisionId: string, input: JsonRecord): Promise<StructuredAgentEstimateRecord | null>;
 	getGovernanceProposal(id: string): Promise<JsonRecord | null>;
 	createGovernanceProposal(principal: unknown, input: JsonRecord): Promise<JsonRecord | null>;
 	updateGovernanceProposalDraft(principal: unknown,proposalId: string,input: JsonRecord): Promise<JsonRecord | null>;
@@ -39,8 +37,21 @@ function slug(value: string): string {
 	return value.replace(/^proposal:/u, '').replace(/^.*\//u, '').replace(/\.(?:md|mdx)$/iu, '');
 }
 
+/** Resolve the activity payload from the durable assignment envelope.
+ *
+ * Living execution-node assignments deliberately retain the original
+ * decision input inside the admission envelope. Planning-output validation
+ * must bind artifacts against that inner immutable input, not against the
+ * admission wrapper.
+ */
+export function assignmentActivityInput(assignment: DurableProviderAssignment): JsonRecord {
+	const envelopeInput = record(record(assignment.decisionInput).input);
+	const activityInput = record(record(envelopeInput.decisionInput).input);
+	return Object.keys(activityInput).length ? activityInput : envelopeInput;
+}
+
 function proposalRevisionBases(assignment: DurableProviderAssignment) {
-	const input = record(record(assignment.decisionInput).input);
+	const input = assignmentActivityInput(assignment);
 	const intent = record(input.intent);
 	const candidates = [intent.relatedArtifact,...(Array.isArray(intent.relatedArtifacts) ? intent.relatedArtifacts : [])].map(record);
 	return new Set(candidates.flatMap((candidate) => [
@@ -88,40 +99,18 @@ export function assignmentWorkdayRunId(assignment: DurableProviderAssignment): s
 	return text(record(assignment.metadata).workdayRunId, record(assignment.metadata).workday_run_id, assignment.workDayId);
 }
 
-function proposalParticipation(workday: unknown, projectId: string, proposalTypes: string[], groupIds: string[], authorAgentId: string, proposalVersion: number) {
-	const snapshot = record(record(record(workday).parameters).planningGraphByProjectId)[projectId];
-	const agents = Array.isArray(record(snapshot).agents) ? record(snapshot).agents as unknown[] : [];
-	const contracts = record(record(snapshot).proposalTypeContracts);
-	const groups = record(record(snapshot).groups);
-	const edges = Object.values(record(record(snapshot).groupEdges)) as Parameters<typeof resolveEffectiveGroupMembership>[0]['edges'];
-	const unknownGroups = groupIds.filter((id) => !groups[id]);
-	if (unknownGroups.length) throw new CapacityGovernanceError('assignment_proposal_group_not_frozen', 'Proposal group scope is outside the immutable workday topology.', 409, { projectId, unknownGroups });
+function proposalParticipation(workday: unknown, projectId: string, proposalTypes: string[]) {
+	const snapshot = decodeWorkdayAgentProfileSnapshot(record(record(record(workday).parameters).agentProfilesByProjectId)[projectId], projectId);
+	const agents = snapshot.agents as unknown[];
+	const contracts = record(snapshot.proposalTypeContracts);
 	const missingTypes = proposalTypes.filter((id) => !contracts[id]);
 	if (missingTypes.length) throw new CapacityGovernanceError('assignment_proposal_type_not_frozen', 'Agent proposal output contains a type outside the immutable workday contracts.', 409, { projectId, proposalTypes: missingTypes });
 	const requiredClasses = new Set(proposalTypes.flatMap((id) => strings(record(contracts[id]).requiredReviewerClasses)));
-	const subscriptionParticipants = agents.map(record).filter((agent) => {
-		const subscriptions = Array.isArray(record(agent.signalPolicy).subscribesTo) ? record(agent.signalPolicy).subscribesTo as unknown[] : [];
-		return subscriptions.map(record).some((subscription) => {
-			if (text(subscription.contract) !== 'proposal-ready') return false;
-			const accepted = strings(record(subscription.filters).proposalTypes);
-			return !accepted.length || accepted.some((type) => proposalTypes.includes(type));
-		});
-	}).map((agent) => text(agent.slug)).filter(Boolean);
 	const reviewerParticipants = agents.map(record).filter((agent) => requiredClasses.has(text(agent.projectAgentClassSlug)) && ['estimating','reviewing'].includes(text(agent.activityType))).map((agent) => text(agent.slug)).filter(Boolean);
 	const represented = new Set(agents.map(record).filter((agent) => reviewerParticipants.includes(text(agent.slug))).map((agent) => text(agent.projectAgentClassSlug)));
 	const missingReviewerClasses = [...requiredClasses].filter((id) => !represented.has(id));
 	if (missingReviewerClasses.length) throw new CapacityGovernanceError('assignment_proposal_reviewer_unavailable', 'The workday graph cannot satisfy the proposal type reviewer contract.', 409, { projectId, proposalTypes, missingReviewerClasses });
-	const groupMembers = groupIds.length ? agents.map(record).filter((agent) => {
-		const membership = resolveEffectiveGroupMembership({ projectId, directGroupIds: strings(agent.groupIds), edges });
-		return groupIds.some((groupId) => membership.effectiveGroupIds.includes(groupId));
-	}).map((agent) => text(agent.slug)).filter(Boolean) : [];
-	const participantIds = [...new Set([...subscriptionParticipants,...reviewerParticipants,...groupMembers])].sort();
-	const planningGraphRevision = text(record(snapshot).revision);
-	const participationSnapshot = groupIds.length ? {
-		proposalVersion, planningGraphRevision, groupIds: [...groupIds].sort(), memberIds: groupMembers.sort(), authorAgentId,
-		digest: createHash('sha256').update(JSON.stringify({ proposalVersion,planningGraphRevision,groupIds:[...groupIds].sort(),memberIds:groupMembers.sort(),authorAgentId })).digest('hex'),
-	} : null;
-	return { participantIds, requiredReviewerClasses: [...requiredClasses].sort(), participationSnapshot };
+	return { participantIds: reviewerParticipants.sort(), requiredReviewerClasses: [...requiredClasses].sort(), participationSnapshot: null };
 }
 
 function repositoryFile(response: { files?: unknown[]; results?: unknown[]; file?: unknown }): JsonRecord {
@@ -140,10 +129,16 @@ function planningManifest(assignment: DurableProviderAssignment,input: JsonRecor
 	if (!manifest) return null;
 	const validation = validateAgentArtifactManifest(manifest);
 	if (!validation.ok) throw new CapacityGovernanceError('assignment_artifact_manifest_invalid', validation.reason ?? 'Planning artifact manifest is invalid.', 409, { assignmentId: assignment.id });
-	if (manifest.assignmentId !== assignment.id || manifest.projectId !== assignment.projectId || manifest.teamId !== assignment.teamId
-		|| manifest.mode !== 'planning' || manifest.agentClassId !== assignment.projectAgentClassId
-		|| (assignment.agentId && manifest.agentId !== assignment.agentId)) {
-		throw new CapacityGovernanceError('assignment_artifact_manifest_scope_invalid', 'Planning artifact manifest scope does not match the completing assignment.', 409, { assignmentId: assignment.id });
+	const expected = { assignmentId: assignment.id, projectId: assignment.projectId, teamId: assignment.teamId, mode: 'planning',
+		agentClassId: assignment.projectAgentClassId, agentId: assignment.agentId ?? null };
+	const actual = { assignmentId: manifest.assignmentId, projectId: manifest.projectId, teamId: manifest.teamId, mode: manifest.mode,
+		agentClassId: manifest.agentClassId, agentId: manifest.agentId };
+	const mismatches = Object.keys(expected).filter((key) => expected[key as keyof typeof expected] !== actual[key as keyof typeof actual]
+		&& !(key === 'agentId' && expected.agentId === null));
+	if (mismatches.length) {
+		const differences = mismatches.map((key) => `${key} (expected=${JSON.stringify(expected[key as keyof typeof expected])}, actual=${JSON.stringify(actual[key as keyof typeof actual])})`);
+		throw new CapacityGovernanceError('assignment_artifact_manifest_scope_invalid', `Planning artifact manifest scope does not match the completing assignment: ${differences.join(', ')}.`, 409,
+			{ assignmentId: assignment.id, mismatches, expected, actual });
 	}
 	return manifest;
 }
@@ -157,7 +152,8 @@ async function registerProposalArtifacts(
 	const proposalReferences = manifest.contentReferences.filter((reference) => reference.model === 'proposal' || reference.artifactKind === 'planning_proposal');
 	const feedbackReferences = manifest.contentReferences.filter((reference) => reference.artifactKind === 'proposal_feedback_note'
 		|| (reference.model === 'question' && reference.subjectField === 'relatedProposals' && Boolean(reference.subjectId)));
-	if (!proposalReferences.length && !feedbackReferences.length) return [];
+	const executionPlanReferences = manifest.contentReferences.filter((reference) => reference.model === 'execution_plan' || reference.artifactKind === 'execution_plan');
+	if (!proposalReferences.length && !feedbackReferences.length && !executionPlanReferences.length) return [];
 	if (!assignment.workDayId) throw new CapacityGovernanceError('assignment_proposal_workday_missing', 'Proposal output requires durable workday provenance.', 409, { assignmentId: assignment.id });
 	const connection = await resolveWorkdayTreeDxConnection(store, {
 		projectId: assignment.projectId, runId: assignment.workDayId, capabilities: ['repos:read','files:read'],
@@ -168,6 +164,19 @@ async function registerProposalArtifacts(
 	const client = connection.client;
 	const workday = await store.getCapacityWorkdayRun(assignment.teamId, assignmentWorkdayRunId(assignment));
 	const registered: unknown[] = [];
+	for (const reference of executionPlanReferences) {
+		const commitSha = text(reference.commitSha,manifest.commit?.sha);
+		if (!commitSha) throw new CapacityGovernanceError('assignment_execution_plan_commit_missing', 'Execution-plan output requires an immutable TreeDX commit.', 409, { assignmentId: assignment.id, contentPath: reference.contentPath });
+		const response = await client.readRepositoryFiles({ ref: commitSha, paths: [reference.contentPath], encoding: 'utf8', parseFrontmatter: true });
+		const file = repositoryFile(response), frontmatter = record(file.frontmatter);
+		assertPlanningArtifactContent('execution_plan',reference.contentPath,frontmatter,assignment.id);
+		const assignedInput = assignmentActivityInput(assignment), proposalRef = record(assignedInput.proposalRef);
+		if (text(frontmatter.proposalId) !== text(proposalRef.id) || Number(frontmatter.proposalRevision) !== Number(proposalRef.revision)
+			|| text(frontmatter.proposalDigest) !== text(proposalRef.digest) || text(reference.subjectId) !== text(proposalRef.id)) {
+			throw new CapacityGovernanceError('assignment_execution_plan_scope_invalid', 'Execution plan does not bind the exact assigned proposal revision.', 409, { assignmentId: assignment.id, contentPath: reference.contentPath });
+		}
+		registered.push({ model: 'execution_plan', id: text(frontmatter.id), revision: Number(frontmatter.revision), contentPath: reference.contentPath, commitSha });
+	}
 	for (const reference of proposalReferences) {
 		const commitSha = text(reference.commitSha,manifest.commit?.sha);
 		if (!commitSha) throw new CapacityGovernanceError('assignment_proposal_commit_missing', 'Proposal output requires an immutable TreeDX commit.', 409, { assignmentId: assignment.id, contentPath: reference.contentPath });
@@ -177,11 +186,15 @@ async function registerProposalArtifacts(
 		assertPlanningArtifactContent('proposal',reference.contentPath,frontmatter,assignment.id);
 		const body = text(file.body) || text(file.content);
 		const proposalSlug = slug(text(frontmatter.slug) || reference.contentPath);
-		const proposalId = `proposal:${assignment.projectId}:${proposalSlug}`;
+		const assignedProposalId = text(record(assignmentActivityInput(assignment).proposalRef).id);
+		const proposalId = text(reference.subjectId, assignedProposalId) || `proposal:${assignment.projectId}:${proposalSlug}`;
+		if (assignedProposalId && proposalId !== assignedProposalId) throw new CapacityGovernanceError(
+			'assignment_proposal_scope_invalid', 'Proposal output does not identify the exact assigned proposal.', 409,
+			{ assignmentId: assignment.id, expectedProposalId: assignedProposalId, proposalId },
+		);
 		const digest = createHash('sha256').update(text(file.content) || JSON.stringify({ frontmatter,body })).digest('hex');
 		const objectives = strings(frontmatter.relatedObjectives ?? frontmatter.related_objectives);
 		const proposalTypes = strings(frontmatter.proposalTypes ?? frontmatter.proposal_types ?? [frontmatter.proposalType ?? frontmatter.proposal_type]);
-		const groupIds = strings(frontmatter.groupIds ?? frontmatter.group_ids);
 		const evidenceRefs = strings(frontmatter.evidenceRefs ?? frontmatter.evidence_refs);
 		const decisionDependencies = Array.isArray(frontmatter.decisionDependencies ?? frontmatter.decision_dependencies)
 			? frontmatter.decisionDependencies ?? frontmatter.decision_dependencies : [];
@@ -189,7 +202,7 @@ async function registerProposalArtifacts(
 		const contentProvenance = { repositoryId: connection.repositoryId, contentPath: reference.contentPath, commitSha, digest };
 		const current = await store.getGovernanceProposal(proposalId);
 		const proposalVersion = current ? Number(current.activeVersion ?? 0) + 1 : 1;
-		const participation = proposalParticipation(workday, assignment.projectId, proposalTypes, groupIds, text(assignment.agentId), proposalVersion);
+		const participation = proposalParticipation(workday, assignment.projectId, proposalTypes);
 		const requiredParticipantIds = participation.participantIds;
 		const readiness = evaluateGovernanceProposalReadiness({ title: text(frontmatter.title), summary: text(frontmatter.summary,frontmatter.description), body, relatedObjectives: objectives, proposalTypes, evidenceRefs, plan, contentProvenance });
 		if (!readiness.contentReady) throw new CapacityGovernanceError('assignment_proposal_plan_incomplete', 'Agent proposal output does not satisfy the governance planning contract.', 409, { assignmentId: assignment.id, contentPath: reference.contentPath, missingRequirements: readiness.missingContent });
@@ -239,13 +252,18 @@ async function registerProposalArtifacts(
 		const body = text(file.body,file.content);
 		const kind = reference.model === 'question' ? 'question' : text(frontmatter.feedbackKind,frontmatter.feedback_kind).toLowerCase();
 		if (!['support','concern','question','response'].includes(kind)) throw new CapacityGovernanceError('assignment_proposal_feedback_kind_invalid', 'Proposal feedback must declare support, concern, question, or response.', 409, { assignmentId: assignment.id, contentPath: reference.contentPath });
+		const feedbackSeverity = text(frontmatter.feedbackSeverity,frontmatter.feedback_severity) || (['concern','question'].includes(kind) ? 'blocking' : 'advisory');
+		const feedbackStatus = text(frontmatter.feedbackStatus,frontmatter.feedback_status) || (kind === 'response' ? 'resolved' : 'open');
+		const resolves = strings(frontmatter.resolves);
+		if (kind === 'response' && !resolves.length) throw new CapacityGovernanceError('assignment_proposal_feedback_resolution_missing', 'Proposal feedback responses must identify the exact feedback event they resolve.', 409, { assignmentId: assignment.id, contentPath: reference.contentPath });
 		const eventId = `proposal-feedback:${assignment.id}:${reference.receiptId}`;
 		const existingEvent = await store.first(`SELECT id FROM governance_events WHERE id = ? LIMIT 1`, [eventId]);
 		if (!existingEvent) await store.recordGovernanceEvent({
 			id: eventId, eventType: 'proposal.discussion', actorType: 'agent', actorId: assignment.agentId,
 			teamId: assignment.teamId, projectId: assignment.projectId, proposalId,
 			message: text(frontmatter.summary,frontmatter.description,body.slice(0,500)),
-			evidence: { kind, proposalVersion, contentPath: reference.contentPath, commitSha,
+			evidence: { kind, feedbackSeverity, feedbackStatus, producerClass: assignment.projectAgentClassId,
+				...(resolves[0] ? { resolvesEventId: resolves[0] } : {}), proposalVersion, contentPath: reference.contentPath, commitSha,
 				digest: createHash('sha256').update(text(file.content) || JSON.stringify({ frontmatter,body })).digest('hex'),
 				assignmentId: assignment.id, workdayId: assignment.workDayId, modeRunId: manifest.modeRunId },
 		});
@@ -261,40 +279,13 @@ export async function projectCompletedPlanningOutputs(
 	if (assignment.mode !== 'planning') return null;
 	const output = record(input.output);
 	const manifest = planningManifest(assignment,input);
-	await registerProposalArtifacts(store,assignment,manifest);
-	const planningInputRequestId = text(record(record(assignment.decisionInput).input).planningInputRequestId);
+	const registered = await registerProposalArtifacts(store,assignment,manifest);
+	const envelopeInput = record(record(assignment.decisionInput).input);
+	const planningInputRequestId = text(envelopeInput.planningInputRequestId, assignmentActivityInput(assignment).planningInputRequestId);
 	if (planningInputRequestId) await store.run(
 		`UPDATE agent_invocation_requests SET status = 'completed', response_json = ?, completed_at = COALESCE(completed_at, ?)
 		 WHERE id = ? AND team_id = ? AND project_id = ? AND execution_kind = 'workday' AND status IN ('queued','completed')`,
 		[JSON.stringify({ assignmentId: assignment.id, summary: output.summary ?? null }), new Date().toISOString(), planningInputRequestId, assignment.teamId, assignment.projectId],
 	);
-	const estimate = record(record(output.metadata).structuredEstimate);
-	if (!Object.keys(estimate).length) return null;
-	const id = text(estimate.id);
-	const decisionId = text(estimate.decisionId ?? assignment.decisionId);
-	const assignedInput = record(record(assignment.decisionInput).input);
-	const assignedIntent = record(assignedInput.intent);
-	const proposalId = text(estimate.proposalId);
-	const assignedProposalId = text(assignedInput.proposalId ?? assignedIntent.subjectId);
-	if (!id || (!decisionId && !proposalId) || text(estimate.teamId) !== assignment.teamId || text(estimate.projectId) !== assignment.projectId
-		|| text(estimate.agentId) !== text(assignment.agentId)) {
-		throw new CapacityGovernanceError('assignment_planning_estimate_scope_invalid', 'Planning estimate output does not match its assignment scope.', 409, { assignmentId: assignment.id, estimateId: id || null });
-	}
-	if ((!decisionId && proposalId !== assignedProposalId) || (decisionId && assignment.decisionId && decisionId !== assignment.decisionId)) {
-		throw new CapacityGovernanceError('assignment_planning_estimate_scope_invalid', 'Planning estimate output does not match its assignment scope.', 409, { assignmentId: assignment.id, estimateId: id });
-	}
-	// Pre-governance proposal estimates remain durable in the completed mode-run output.
-	// Decision planning owns the structured-estimate repository and is only projected once a decision exists.
-	if (!decisionId) return estimate;
-	const existing = await store.getStructuredAgentEstimate(id);
-	if (existing) {
-		if (existing.decisionId === decisionId && existing.projectId === assignment.projectId && existing.metadata?.assignmentId === assignment.id) return existing;
-		throw new CapacityGovernanceError('assignment_planning_estimate_conflict', 'Planning estimate id is already owned by another assignment scope.', 409, { assignmentId: assignment.id, estimateId: id });
-	}
-	return store.createStructuredAgentEstimate(decisionId, {
-		...estimate,
-		status: 'submitted',
-		metadata: { ...record(estimate.metadata), assignmentId: assignment.id },
-		recordMetadata: { source: 'validated_assignment_planning_output', assignmentId: assignment.id },
-	});
+	return registered.length ? registered : null;
 }

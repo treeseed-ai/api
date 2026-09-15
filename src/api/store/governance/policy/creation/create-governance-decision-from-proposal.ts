@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeGovernanceDecision } from "../../../../persistence/store.ts";
 import { resolveDecisionDependencySnapshots } from '../../../../governance/decision-authority.ts';
+import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { readExactProposal } from '../../../../governance/executable-proposal.ts';
 export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
@@ -30,7 +32,13 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
 		const error: Error & Record<string, any> = new Error(`Decision dependency ${dependencyResult.reference.decisionId} is not current: ${dependencyResult.validation.message}`);
 		error.status = 409; error.code = dependencyResult.validation.code; error.details = { dependency: dependencyResult.reference }; throw error;
 	}
-	const decisionRecord = { decisionDependencies: dependencyResult.dependencies };
+	const exact = await readExactProposal(this, proposal);
+	if (exact.definition.status !== 'ready' || !exact.definition.executionPlan) {
+		const error: Error & Record<string, any> = new Error('An accepted decision requires one ready proposal-owned execution plan.');
+		error.status = 409; error.code = 'governance_decision_execution_plan_required'; throw error;
+	}
+	const proposalRef = exact.ref;
+	const decisionRecord = { decisionDependencies: dependencyResult.dependencies, proposalRef };
     await this.run(`INSERT INTO governance_decisions (
 				id, team_id, project_id, proposal_id, proposal_version, proposal_content_hash, status,
 				title, summary, content_decision_slug, governance_provider_id, governance_rule_json,
@@ -51,7 +59,7 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
         input.electorateSnapshotId ?? null,
         JSON.stringify(input.outcome?.voteResult ?? {}),
         JSON.stringify(voterReasons),
-		JSON.stringify({ ...proposalSnapshot, decisionDependencies: dependencyResult.dependencies }),
+		JSON.stringify({ ...proposalSnapshot, decisionDependencies: dependencyResult.dependencies, proposalRef }),
 		JSON.stringify(decisionRecord),
         input.actorType ?? 'system',
         input.actorId ?? null,
@@ -71,5 +79,6 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
         nextState: 'accepted',
         evidence: { proposalContentHash: proposal.activeContentHash },
     });
+	await reconcileExecutionGraph(this, proposal.teamId, { projectId: proposal.projectId }, `decision:${id}:${proposal.activeVersion}`);
     return this.getGovernanceDecision(id);
 }

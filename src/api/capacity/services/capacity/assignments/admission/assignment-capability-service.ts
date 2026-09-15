@@ -84,7 +84,7 @@ export function compileAssignmentCapabilityContext(input: AssignmentCapabilityIn
 	});
 	const treeDx = record(input.treedxProxyHandle ?? context.treedxProxyHandle);
 	const governedBaseRef = exactBaseRef(input);
-	const synthesizedFrom = ['approved_decision', 'planning_input_request', 'capacity_plan', 'workday_demand', 'verification_failure', 'fallback_queue']
+	const synthesizedFrom = ['approved_decision', 'planning_input_request', 'capacity_plan', 'living_execution_graph', 'workday_demand', 'verification_failure', 'fallback_queue']
 		.includes(String(input.synthesizedFrom ?? ''))
 		? input.synthesizedFrom as ProviderAssignmentSynthesisSource
 		: null;

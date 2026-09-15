@@ -2,6 +2,7 @@ import {
 evaluateCapacityAdmission,
 type CapacityAdmissionDecision,
 type CapacityAdmissionInput,
+type AssignmentAttempt,
 } from '@treeseed/sdk/agent-capacity';
 import { createHash,randomUUID } from 'node:crypto';
 import type { CapacityDatabaseOperation,CapacityGovernanceDatabase } from '../../database.ts';
@@ -53,6 +54,13 @@ export interface CapacityAdmissionCommitRequest {
 	reservationId?: string;
 	assignmentId?: string;
 	expiresAt?: string | null;
+	executionNodeClaim?: {
+		teamId: string;
+		nodeId: string;
+		nodeRevision: number;
+		graphRevision: number;
+		assignmentAttempt: AssignmentAttempt;
+	};
 }
 
 export interface CapacityAdmissionCommitResult {
@@ -68,6 +76,9 @@ function required(value: string, name: string) {
 }
 
 function record(value: unknown): Record<string, unknown> {
+	if (typeof value === 'string') {
+		try { return record(JSON.parse(value)); } catch { return {}; }
+	}
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
@@ -226,7 +237,7 @@ function counterInitializationOperations(input: CapacityAdmissionCommitRequest, 
 	if (decision.counterClaims.length === 0) return [];
 	const teamId = input.admission.request.teamId;
 	return [{
-		query: `INSERT OR IGNORE INTO capacity_admission_counters (id, team_id, scope, scope_id, period_key, hard_limit, committed_amount, state_version, created_at, updated_at) VALUES ${decision.counterClaims.map(() => '(?, ?, ?, ?, ?, ?, 0, 1, ?, ?)').join(', ')}`,
+		query: `INSERT INTO capacity_admission_counters (id, team_id, scope, scope_id, period_key, hard_limit, committed_amount, state_version, created_at, updated_at) VALUES ${decision.counterClaims.map(() => '(?, ?, ?, ?, ?, ?, 0, 1, ?, ?)').join(', ')} ON CONFLICT (id) DO NOTHING`,
 		params: decision.counterClaims.flatMap((claim) => [claim.id, teamId, claim.scope, claim.scopeId, claim.periodKey, claim.hardLimit, now, now]),
 	}];
 }
@@ -334,14 +345,29 @@ export async function commitCapacityAdmission(database: CapacityGovernanceDataba
 	const operations = counterInitializationOperations(input, decision, now);
 	const executionKind = input.assignment.executionKind ?? 'workday';
 	const lanePurpose = input.assignment.lanePurpose ?? (executionKind === 'conversation' ? 'communication' : 'workday');
+	const claim = input.executionNodeClaim;
+	if (claim) {
+		const row = await database.first(`SELECT id FROM execution_nodes WHERE team_id=? AND id=? AND node_revision=? AND status='ready' LIMIT 1`, [claim.teamId, claim.nodeId, claim.nodeRevision]);
+		if (!row) throw new CapacityGovernanceError('execution_node_claim_lost', 'The execution node changed before assignment admission.', 409, { nodeId: claim.nodeId, nodeRevision: claim.nodeRevision });
+	}
+	const reservationValues = [reservationId, idempotencyKey, admissionToken, request.membershipId, grantId, request.providerId, request.executionProviderId ?? null, request.laneId ?? null, lanePurpose, input.assignment.communicationOverflow ? 1 : 0, executionKind, input.assignment.triggerKind ?? 'scheduled', input.assignment.invocationId ?? null, input.assignment.operationHandoffId ?? null, allocationSetId, decision.allocationVersion, JSON.stringify(input.admission.allocationSliceIds), JSON.stringify(decision.policySnapshot), input.assignment.projectAgentClassId, assignmentId, request.mode, request.teamId, request.projectId, workDayId, taskId, request.requestedSeconds, request.requestedSeconds, input.expiresAt ?? null, now, now];
 	operations.push({
-		query: `INSERT OR IGNORE INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind, invocation_id, operation_handoff_id, allocation_set_id, allocation_version, allocation_slice_ids_json, policy_snapshot_json, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, task_id, state, requested_seconds, reserved_seconds, active_seconds, elapsed_seconds, released_seconds, overrun_seconds, expires_at, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?, 0, 0, 0, 0, ?, '{}', ?, ?)`,
-		params: [reservationId, idempotencyKey, admissionToken, request.membershipId, grantId, request.providerId, request.executionProviderId ?? null, request.laneId ?? null, lanePurpose, input.assignment.communicationOverflow ? 1 : 0, executionKind, input.assignment.triggerKind ?? 'scheduled', input.assignment.invocationId ?? null, input.assignment.operationHandoffId ?? null, allocationSetId, decision.allocationVersion, JSON.stringify(input.admission.allocationSliceIds), JSON.stringify(decision.policySnapshot), input.assignment.projectAgentClassId, assignmentId, request.mode, request.teamId, request.projectId, workDayId, taskId, request.requestedSeconds, request.requestedSeconds, input.expiresAt ?? null, now, now],
+		query: `INSERT INTO capacity_reservations (id, idempotency_key, admission_token, membership_id, grant_id, capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind, invocation_id, operation_handoff_id, allocation_set_id, allocation_version, allocation_slice_ids_json, policy_snapshot_json, project_agent_class_id, assignment_id, mode, team_id, project_id, work_day_id, task_id, state, requested_seconds, reserved_seconds, active_seconds, elapsed_seconds, released_seconds, overrun_seconds, expires_at, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?, 0, 0, 0, 0, ?, '{}', ?, ?) ON CONFLICT (id) DO NOTHING`,
+		params: reservationValues,
 	});
 	operations.push(...counterClaimOperations(input, decision, reservationId, admissionToken, now));
 	operations.push({
 		query: `INSERT INTO capacity_provider_assignments (id, membership_id, team_id, project_id, capacity_provider_id, provider_session_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind, invocation_id, parent_workday_id, parent_assignment_id, handoff_root_id, handoff_parent_id, handoff_depth, source_message_refs_json, operation_handoff_id, allocation_set_id, project_agent_class_id, reservation_id, work_day_id, task_id, mode, status, lease_state, state_version, agent_id, handler_id, capacity_envelope_json, decision_input_json, workspace_context_json, allowed_outputs_json, explanation_json, attempt_count, assigned_at, lifecycle_output_json, synthesized_from, synthesis_key, decision_id, proposal_id, fallback_output_id, treedx_proxy_handle_json, metadata_json, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unleased', 1, ?, ?, ?, ?, ?, ?, ?, 0, ?, '{}', ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND idempotency_key = ?) ON CONFLICT (id) DO NOTHING`,
 		params: [assignmentId, request.membershipId, request.teamId, request.projectId, request.providerId, input.assignment.providerSessionId ?? null, request.executionProviderId ?? null, request.laneId ?? null, lanePurpose, input.assignment.communicationOverflow ? 1 : 0, executionKind, input.assignment.triggerKind ?? 'scheduled', input.assignment.invocationId ?? null, input.assignment.parentWorkdayId ?? null, input.assignment.parentAssignmentId ?? null, input.assignment.handoffRootId ?? null, input.assignment.handoffParentId ?? null, input.assignment.handoffDepth ?? 0, JSON.stringify(input.assignment.sourceMessageRefs ?? []), input.assignment.operationHandoffId ?? null, allocationSetId, input.assignment.projectAgentClassId, reservationId, workDayId, taskId, request.mode, input.assignment.agentId ?? null, input.assignment.handlerId ?? null, JSON.stringify(capacityEnvelope), JSON.stringify(decisionInput), JSON.stringify(workspaceContext), JSON.stringify(input.assignment.allowedOutputs ?? {}), JSON.stringify({ ...(input.assignment.explanation ?? {}), admission: decision }), now, input.assignment.synthesizedFrom ?? null, input.assignment.synthesisKey ?? null, input.assignment.decisionId ?? null, input.assignment.proposalId ?? null, input.assignment.fallbackOutputId ?? null, JSON.stringify(input.assignment.treedxProxyHandle ?? {}), JSON.stringify(input.assignment.metadata ?? {}), now, now, reservationId, request.teamId, idempotencyKey],
+	});
+	if (claim) operations.push({
+		query: `UPDATE capacity_provider_assignments SET graph_revision=?,execution_node_id=?,execution_node_revision=?,assignment_attempt_json=?,updated_at=? WHERE id=? AND team_id=? AND reservation_id=?`,
+		params: [claim.graphRevision, claim.nodeId, claim.nodeRevision, JSON.stringify(claim.assignmentAttempt), now, assignmentId, request.teamId, reservationId],
+	});
+	if (claim) operations.push({
+		query: `UPDATE execution_nodes SET status='assigned',updated_at=? WHERE team_id=? AND id=? AND node_revision=? AND status='ready'
+			AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=? AND execution_node_id=? AND execution_node_revision=? AND status IN ('pending','leased','running'))`,
+		params: [now, claim.teamId, claim.nodeId, claim.nodeRevision, assignmentId, claim.teamId, claim.nodeId, claim.nodeRevision],
 	});
 	if (input.assignment.invocationId) operations.push({
 		query: `UPDATE agent_invocation_requests SET status='running', assignment_id=?, blocking_state_json='{}', updated_at=?

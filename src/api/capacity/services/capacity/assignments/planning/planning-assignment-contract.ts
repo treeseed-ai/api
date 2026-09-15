@@ -19,6 +19,7 @@ export function compilePlanningAssignmentInput(
 	const subjectId = text(intent.subjectId);
 	return {
 		...payload,
+		intent,
 		...intent,
 		activityType,
 		subjectModel: subjectModel || null,
@@ -33,13 +34,22 @@ export function compilePlanningAllowedOutputs(
 	activityType: string,
 	allowedWritePaths: string[],
 ) {
+	const configured = record(payload.allowedOutputs);
+	const configuredKinds = Array.isArray(configured.artifactKinds)
+		? configured.artifactKinds.map(String).filter(Boolean)
+		: [];
+	const artifactKinds = [...new Set([
+		...configuredKinds,
+		text(intent.artifactKind),
+	].filter(Boolean))];
 	return {
 		paths: allowedWritePaths,
 		types: [
 			'content_artifact_refs',
 			intent.artifactKind,
-			activityType === 'estimating' ? 'structured_agent_estimate' : null,
+			activityType === 'estimating' ? 'execution_plan' : null,
 		].filter(Boolean),
+		artifactKinds,
 		proposalTypes: Array.isArray(intent.proposalTypes)
 			? intent.proposalTypes.map(String).filter(Boolean)
 			: [],

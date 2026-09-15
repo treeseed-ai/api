@@ -10,8 +10,10 @@ import {
 	type WorkdayStartReceipt,
 	type WorkdayStartRequest,
 } from '@treeseed/sdk/operator-contracts';
+import type { ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { canonicalJson,sha256 } from '../../../../security.ts';
+import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 
 type JsonRecord = Record<string,unknown>;
 
@@ -30,12 +32,14 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','operatorConstraints','agentSelection']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','decisionIds','operatorConstraints','agentSelection']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
 	const projects=input.projects==='all'?'all':Array.isArray(input.projects)?input.projects.map(text).filter(Boolean):[];
 	const constraints=record(input.operatorConstraints);
+	const forbiddenConstraints=Object.keys(constraints).filter((key)=>!['providerIds','maxConcurrency'].includes(key));
+	if(forbiddenConstraints.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday constraints contain retired or unsupported fields.',forbiddenConstraints.map((path)=>({code:'field_forbidden',path:`operatorConstraints.${path}`})));
 	const startsAt=text(input.startsAt)||new Date().toISOString();
 	const intent:WorkdayIntent={
 		schemaVersion:'treeseed.workday-intent/v1', teamId, profileId:text(input.profileId), projects,
@@ -43,11 +47,11 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(input.endsAt!==undefined?{endsAt:text(input.endsAt)}:{}),
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
+		...(Array.isArray(input.decisionIds)?{decisionIds:[...new Set(input.decisionIds.map(text).filter(Boolean))].sort()}:input.decisionIds!==undefined?{decisionIds:input.decisionIds as string[]}:{}),
 		...(input.agentSelection!==undefined?{agentSelection:input.agentSelection as WorkdayIntent['agentSelection']}:{}),
 		...(Object.keys(constraints).length?{operatorConstraints:{
 			...(Array.isArray(constraints.providerIds)?{providerIds:constraints.providerIds.map(text).filter(Boolean)}:{}),
 			...(constraints.maxConcurrency!==undefined?{maxConcurrency:Number(constraints.maxConcurrency)}:{}),
-			...(constraints.reservePercent!==undefined?{reservePercent:Number(constraints.reservePercent)}:{}),
 		}}:{}),
 	};
 	const diagnostics=validateWorkdayIntent(intent);
@@ -72,70 +76,59 @@ export class WorkdayPreflightService {
 	private async compile(teamId:string,intent:WorkdayIntent,requestedById:string|null,id:string):Promise<StoredPreflight> {
 		await this.store.ensureInitialized();
 		const providerId=await this.providerId(teamId,intent);
-		let allocation=await this.store.first(`SELECT * FROM capacity_allocation_sets WHERE team_id = ? AND id = ? AND status = 'active' LIMIT 1`,[teamId,intent.profileId]);
-		if(!allocation) {
-			const indexed=await this.store.first(`SELECT response_json FROM capacity_operation_receipts WHERE team_id=? AND operation='repository-workday-profile.reconcile' AND resource_id LIKE ? ORDER BY created_at DESC LIMIT 1`,[teamId,`%:${intent.profileId}`]);
-			if(indexed) {
-				let allocationSetId='';
-				try {
-					const receipt=record(JSON.parse(String(indexed.response_json)));
-					if(text(record(receipt.generation).profileId)!==intent.profileId) throw new Error('profile identity mismatch');
-					allocationSetId=text(receipt.allocationSetId);
-				} catch { throw new CapacityGovernanceError('workday_profile_index_receipt_invalid','The selected repository profile index receipt is invalid.',500,{profileId:intent.profileId}); }
-				if(allocationSetId) allocation=await this.store.first(`SELECT * FROM capacity_allocation_sets WHERE team_id=? AND id=? AND status='active' LIMIT 1`,[teamId,allocationSetId]);
-			}
-		}
-		if(!allocation) throw new CapacityGovernanceError('workday_profile_not_indexed','The selected repository allocation profile has not been indexed into an accepted allocation generation.',409,{profileId:intent.profileId});
 		const startsAt=intent.startsAt;
 		const endsAt=intent.endsAt??new Date(Date.parse(startsAt)+(intent.durationSeconds??0)*1000).toISOString();
 		const durationSeconds=Math.floor((Date.parse(endsAt)-Date.parse(startsAt))/1000);
 		const maxConcurrency=integer(intent.operatorConstraints?.maxConcurrency,1);
-		const reservePercent=Number(intent.operatorConstraints?.reservePercent??10);
-		if(!Number.isFinite(reservePercent)||reservePercent<0||reservePercent>100) diagnosticsError('workday_intent_invalid','Workday reserve must be between zero and one hundred percent.',[{code:'reserve_invalid',path:'operatorConstraints.reservePercent'}]);
-		const cooperativePlanningPercent=Math.min(20,100-reservePercent);
 		const runInput:JsonRecord={
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
 			executionMode:'production',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
-			parameters:{ profileId:intent.profileId,allocationSetId:String(allocation.id),projectSlugs:intent.projects==='all'?[]:intent.projects,
+			parameters:{ profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
-				objectiveRefs:intent.objectiveFilters??[],planningOnly:false,planningSession:{rounds:3,assignmentTimeboxSeconds:900},timePolicy:{cooperativePlanningPercent,governedExecutionPercent:100-reservePercent-cooperativePlanningPercent,reservePercent} },
+				...(intent.decisionIds?.length?{decisionIds:intent.decisionIds}:{}),
+				objectiveRefs:intent.objectiveFilters??[],planningOnly:false },
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
-		const participants=Array.isArray(projection.planningParticipants)?projection.planningParticipants.map(record):[];
-		const acting=Array.isArray(projection.actingDemands)?projection.actingDemands.map(record):[];
-		const classIds=[...new Set([...participants,...acting].map((entry)=>text(entry.projectAgentClassId)).filter(Boolean))];
-		const classRows=classIds.length?await this.store.all(`SELECT id,slug FROM project_agent_classes WHERE id IN (${classIds.map(()=>'?').join(',')}) ORDER BY id`,classIds):[];
-		const classSlugs=new Map(classRows.map((entry)=>[String(entry.id),String(entry.slug)]));
-		const selectedPlanning=participants.map((entry,index)=>{
-			const nodeId=text(entry.nodeId); const projectId=nodeId.split(':')[0]??''; const classId=text(entry.projectAgentClassId);
-			return {id:`planning:${nodeId}`,projectId,sourceType:'agent-planning-profile',sourceId:text(entry.agentId),mode:'planning' as const,
-				classSlug:classSlugs.get(classId)??classId,requestedSeconds:integer(entry.timeboxSeconds,900),priority:index};
+		const nodeRows=Array.isArray(projection.executionNodeDemands)?projection.executionNodeDemands.map(record):[];
+		const selectedAgentsByProject=new Map((Array.isArray(projection.projects)?projection.projects.map(record):[]).map((project)=>[
+			text(project.id),
+			(Array.isArray(project.agents)?project.agents.map(record):[]),
+		]));
+		const selectedDecisions=new Set(intent.decisionIds??[]);
+		const selectedDemands=nodeRows.flatMap((entry,index)=>{
+			const node=decodeExecutionNode(entry) as ExecutionNode;
+			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
+			if(!node.id||selectedDecisions.size&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
+			const proposalReview=node.kind==='reviewing'&&node.pairRole===null&&node.sourceRef.model==='proposal';
+			const mode=node.kind==='acting'||node.kind==='reviewing'&&!proposalReview?'acting' as const:'planning' as const;
+			if(mode==='acting'&&!decisionRef) return [];
+			const selectedAgents=selectedAgentsByProject.get(node.projectId);
+			// Explicit agent/activity selectors choose only cooperative planning
+			// participants. Accepted decisions remain the sole acting authority.
+			if(mode==='planning'&&selectedAgents&&selectedAgents.length&&!selectedAgents.some((agent)=>
+				[text(agent.classId),text(agent.classSlug),text(agent.agentClass)].includes(node.agentClass??node.kind)
+				&& (Array.isArray(agent.activityTypes)?agent.activityTypes.map(text):[]).includes(node.kind))) return [];
+			return [{id:`execution-node:${node.id}:revision:${node.nodeRevision}`,projectId:node.projectId,sourceType:'execution-node',sourceId:node.id,mode,
+				classSlug:node.agentClass??node.kind,requestedSeconds:integer(node.estimate?.expectedSeconds,1),priority:index,
+				...(decisionRef?{actingAuthority:{ decisionId:decisionRef.id,decisionRevision:decisionRef.revision,executionNodeId:node.id,
+					executionNodeRevision:node.nodeRevision,graphRevision:integer(entry.graph_revision,0),sourceDigest:node.sourceRef.digest }}:{})}];
 		});
-		const selectedActing=acting.map((entry,index)=>{
-			const classId=text(entry.projectAgentClassId); const payload=record(entry.payload); const executionInputId=text(payload.decisionExecutionInputId); const estimateId=text(payload.estimateId);
-			return {id:`acting:${text(entry.capacityPlanId)}:${text(entry.sourceId)}`,projectId:text(entry.projectId),sourceType:'capacity-plan',sourceId:text(entry.sourceId),mode:'acting' as const,
-				classSlug:classSlugs.get(classId)??classId,requestedSeconds:integer(entry.requestedSeconds,1),priority:integer(entry.priority,index+100),actingAuthority:{
-					decisionId:text(entry.decisionId),decisionStatus:'approved' as const,executionInputId,executionInputStatus:'accepted' as const,estimateId,
-					capacityPlanId:text(entry.capacityPlanId),capacityPlanDigest:digest(entry),
-				}};
-		});
-		const selectedDemands=[...selectedPlanning,...selectedActing];
 		const classAccounting=[...new Set(selectedDemands.map((entry)=>entry.classSlug))].sort().map((classSlug)=>({classSlug,
 			allocatedSeconds:selectedDemands.filter((entry)=>entry.classSlug===classSlug).reduce((sum,entry)=>sum+entry.requestedSeconds,0),
 			borrowedSeconds:0,lentSeconds:0,idleSeconds:0,reservedSeconds:0,activeSeconds:0,releasedSeconds:0,overrunSeconds:0}));
-		const indexedProfile=record(jsonRecord(allocation.metadata_json).repositoryProfile);
-		const profileGeneration=integer(indexedProfile.generation??allocation.state_version??allocation.version,1);
+		const appliedPlan=record(projection.appliedPlan);
+		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
-			profileGeneration, profileDigest:text(indexedProfile.profileDigest)||digest(allocation), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[]}),
+			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot}), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],decisionIds:intent.decisionIds??[]}),
 			providerCapacityDigest:digest({providerId,membershipTeam:teamId,availableSeconds:projection.availableSeconds??null}),
 			authorizationDigest:digest({teamId,requestedById,profileId:intent.profileId}),
-			reservationDigest:digest(await this.store.all(`SELECT id,state,requested_seconds,reserved_seconds,active_seconds,elapsed_seconds,released_seconds,overrun_seconds FROM capacity_reservations WHERE team_id = ? AND state IN ('reserved','consuming','overran_pending_approval','continuation_required') ORDER BY id`,[teamId])),
+			reservationDigest:digest([]),
 		};
 		const base={ schemaVersion:'treeseed.workday-preflight/v1' as const,id,teamId,intentDigest:digest(intent),profileId:intent.profileId,
-			profileVersion:text(indexedProfile.profileVersion)||text(allocation.version)||`generation-${profileGeneration}`,...state,selectedDemands,classAccounting,borrowing:[],startsAt,endsAt,
-			maxConcurrency,reserveSeconds:Math.floor(durationSeconds*maxConcurrency*reservePercent/100),expiresAt:new Date(Date.now()+5*60_000).toISOString() };
+			profileVersion:`revision-${profileGeneration}`,...state,selectedDemands,classAccounting,borrowing:[],startsAt,endsAt,
+			maxConcurrency,reserveSeconds:0,expiresAt:new Date(Date.now()+5*60_000).toISOString() };
 		const receipt:WorkdayPreflightReceipt={...base,preflightDigest:digest(base)};
 		const diagnostics=validateWorkdayPreflight(receipt);
 		if(diagnostics.length) diagnosticsError('workday_preflight_invalid','API-derived workday preflight is invalid.',diagnostics);
@@ -173,7 +166,7 @@ export class WorkdayPreflightService {
 		const run=existing??await this.store.createCapacityWorkdayRun(teamId,current.runInput);
 		if(!run) throw new CapacityGovernanceError('workday_start_failed','The API did not create the governed workday.',500);
 		const receipt:WorkdayStartReceipt={schemaVersion:'treeseed.workday-start-receipt/v1',workdayId:String(run.id),preflightId:request.preflightId,preflightDigest:request.preflightDigest,
-			acceptedCapacityPlanIds:stored.receipt.selectedDemands.flatMap((demand)=>demand.actingAuthority?[demand.actingAuthority.capacityPlanId]:[]),assignmentIds:[],reservationIds:[],
+			acceptedExecutionNodeIds:stored.receipt.selectedDemands.flatMap((demand)=>demand.actingAuthority?[demand.actingAuthority.executionNodeId]:[]),assignmentIds:[],reservationIds:[],
 			startedAt:String(run.startedAt??run.started_at??stored.receipt.startsAt),providerReceiptRefs:[],transactionReceiptId:`workday-start:${sha256(canonicalJson(request))}`};
 		await this.store.run(`INSERT INTO capacity_operation_receipts (id,team_id,operation,idempotency_key,request_digest,resource_type,resource_id,response_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,[
 			randomUUID(),teamId,'workday.start',request.idempotencyKey,requestDigest,'workday_start',receipt.workdayId,canonicalJson(receipt),new Date().toISOString(),new Date().toISOString(),

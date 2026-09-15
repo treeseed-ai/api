@@ -124,7 +124,7 @@ export class CapacityWorkdayRunRepository {
 		const rows = await this.database.all(
 			`SELECT * FROM capacity_workday_runs
 			 WHERE team_id = ? AND status = 'running'
-			 ORDER BY started_at ASC, created_at ASC LIMIT ?`,
+			 ORDER BY CASE WHEN execution_kind = 'conversation' THEN 0 ELSE 1 END, started_at ASC, created_at ASC LIMIT ?`,
 			[teamId, boundedLimit + 1],
 		);
 		const selected = rows.filter((row) => row.capacity_provider_id === providerId || policy.allowPlanningFailover || policy.allowActingFailover);

@@ -2,17 +2,9 @@ import type { CapacitySupplyPolicy } from "@treeseed/sdk/agent-capacity";
 import { capacitySupplyCandidateStatus, selectCapacitySupply } from '../../../../policy/supply-selection.ts';
 import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
 import { CapacityGovernanceError } from "../../../../database.ts";
-import type { DurableProviderAssignment } from "../../../../repositories/capacity/assignments/assignment.ts";
-import { CapacityWorkdayDemandRepository } from "../../../../repositories/capacity/workdays/workday-demand.ts";
-import { CapacityWorkdayParticipationRepository } from "../../../../repositories/capacity/workdays/workday-participation.ts";
-import { CapacityWorkdayRunRepository } from "../../../../repositories/capacity/workdays/workday-run.ts";
 import type { ProviderLeasePrincipal } from "../../../accounts/lease-authority-service.ts";
 import type { ProviderSynthesisExecutionProvider } from "../../providers/provider-synthesis-context-service.ts";
-import { evaluateDurableWorkdayContinuation } from "../../workdays/lifecycle/workday-continuation-service.ts";
 import { workdayTreeDxWorkspaceId } from "../../workdays/treedx/workday-treedx-workspace-service.ts";
-import { admitSynthesizedProviderAssignment } from "../admission/assignment-admission-service.ts";
-import { teamSupplyPolicy } from "../../../../domain/supply-policy.ts";
-import { persistIssuedWorkspaceAuthority } from './workspace-authority-persistence.ts';
 import { compileAssignmentTimeBudget } from './assignment-time-budget.ts';
 import { selectAssignmentLane } from './assignment-lane-selection.ts';
 import { assertBatteryAdmission } from './admission/battery-admission.ts';
@@ -22,19 +14,19 @@ export { compilePlanningAllowedOutputs,compilePlanningAssignmentInput } from './
 export { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
 import { resolveAssignmentContentBaseRef } from './content-base-ref.ts';
 import { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
-import { negotiateAssignmentCapabilityOffers, persistCapabilityNegotiation } from './support/capability-offer-negotiation.ts';
-import { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
-import { bindOperationHandoffAssignment } from '../handoffs/operation-handoff-lifecycle-service.ts';
+import { negotiateAssignmentCapabilityOffers } from './support/capability-offer-negotiation.ts';
+import { constrainAssignmentContentPathScope, resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
 import { resolveCrossProjectReadRepositories } from './context/cross-project-read-repositories.ts';
 import { assignmentRecord as record, assignmentText as text,
 	deterministicAssignmentId as assignmentId, type AssignmentJsonRecord as JsonRecord } from './support/assignment-function-support.ts';
-import { recordAssignmentDenial } from './support/assignment-denial.ts';
 import type { AssignmentFunctionStore } from './support/assignment-function-store.ts';
+import type { ExecutionNodeAssignmentInput } from '../../../build/execution-node-demand-compiler.ts';
 export { assignmentConfigurationAttribution } from './assignment-configuration-attribution.ts';
 export { resolveAssignmentContentPathScope } from './assignment-content-path-scope.ts';
+
 export async function assignmentInput(
 	store: AssignmentFunctionStore,
-  demand: Awaited<ReturnType<CapacityWorkdayDemandRepository["claimNext"]>>,
+  demand: ExecutionNodeAssignmentInput,
   principal: ProviderLeasePrincipal,
   sessionId: string,
   executionProviders: ProviderSynthesisExecutionProvider[],
@@ -49,7 +41,8 @@ export async function assignmentInput(
     );
 	const id = demand.assignmentId ?? assignmentId(demand.id, Math.max(0, Number(demand.metadata.failoverCount ?? 0)));
   const payload = record(demand.payload);
-  const intent = record(payload.intent);
+  const nestedDecisionInput = record(record(payload.decisionInput).input);
+  const intent = record(payload.intent ?? nestedDecisionInput.intent);
   const repositoryId = text(payload.repositoryId);
   if (!repositoryId)
     throw new CapacityGovernanceError(
@@ -160,10 +153,17 @@ export async function assignmentInput(
   ].filter(Boolean))];
   const discussionMessageReadPaths = executionKind === 'conversation' ? assignmentDiscussionMessageReadPaths(sourceMessageRefs) : [];
   const chatWritePaths=['discussion-messages','discussion-events','notes','questions','proposals'].flatMap((collection)=>[`${contentRoot}/${collection}`,`${contentRoot}/${collection}/**`]);
+  const declaredOutputPaths = Array.isArray(record(payload.allowedOutputs).paths)
+	? record(payload.allowedOutputs).paths as unknown[] : [];
+  const planningWriteDefaults = declaredOutputPaths.map(String).filter(Boolean);
+  const resolvedPlanningWritePaths = resolveAssignmentContentPathScope(payload, 'write', contentRoot,
+	planningWriteDefaults.length ? planningWriteDefaults : [contentRoot, `${contentRoot}/**`]);
   const taskWritePaths = activityType==='chat'
 	? mergeAssignmentPathScopes(resolveAssignmentContentPathScope(payload,'write',contentRoot,chatWritePaths), assignmentDiscussionWritePaths(contentRoot))
 	: planning
-    ? resolveAssignmentContentPathScope(payload, 'write', contentRoot, [contentRoot, `${contentRoot}/**`])
+    ? planningWriteDefaults.length
+		? constrainAssignmentContentPathScope(resolvedPlanningWritePaths, planningWriteDefaults)
+		: resolvedPlanningWritePaths
     : ["**"];
   const operationalPaths = assignmentOperationalContentPaths(contentRoot, id);
   const bootstrapReadPaths = assignmentBootstrapReadPaths(contentRoot, payload.agentContentPath, intent.subjectPath);
@@ -177,9 +177,9 @@ export async function assignmentInput(
   const configuredBudget = record(record(payload.capacityEnvelope).budget);
   const timing = compileAssignmentTimeBudget({ now, requestedSeconds: demand.requestedSeconds, configuredBudget });
   const { closeoutSeconds, preparationSeconds, authorityExpiresAt } = timing;
-  const treedxProxyHandle = assignmentTreeDxProxyHandle({ assignmentId: id, teamId: demand.teamId, projectId: demand.projectId,
+	const treedxProxyHandle = assignmentTreeDxProxyHandle({ assignmentId: id, teamId: demand.teamId, projectId: demand.projectId,
 	executionMode, repositoryId, workspaceId, allowedPaths: workspaceAllowedPaths, allowedReadPaths, allowedWritePaths,
-	expiresAt: authorityExpiresAt, demandId: demand.id, workdayRunId: demand.workdayRunId });
+	baseRef: contentBaseRef, expiresAt: authorityExpiresAt, demandId: demand.id, workdayRunId: demand.workdayRunId });
 	treedxProxyHandle.readRepositories=sameTeamReadRepositories;
 	treedxProxyHandle.metadata={...record(treedxProxyHandle.metadata),readRepositories:treedxProxyHandle.readRepositories};
   const capacityBudget = timing.capacityBudget;
@@ -363,123 +363,4 @@ export async function assignmentInput(
       baseRef: contentBaseRef,
     },
   };
-}
-
-async function provisionWorkspace(
-  store: AssignmentFunctionStore,
-  demand: NonNullable<
-    Awaited<ReturnType<CapacityWorkdayDemandRepository["claimNext"]>>
-  >,
-  input: ReturnType<typeof assignmentInput>,
-  now: string,
-) {
-  const run = await new CapacityWorkdayRunRepository(store).get(
-    demand.teamId,
-    demand.workdayRunId,
-  );
-  if (!run)
-    throw new CapacityGovernanceError(
-      "capacity_workday_run_missing",
-      "Demand-owned workday run no longer exists.",
-      500,
-      { demandId: demand.id },
-    );
-  const workspace = await store.createCapacityWorkdayTreeDxWorkspace(
-    { id: demand.projectId },
-    run,
-    {
-      repositoryId: input.workspace.repositoryId,
-      assignmentId: input.assignmentId,
-      baseRef: input.workspace.baseRef,
-      branchName: `refs/heads/${input.assignmentId}`,
-      mode: "writable",
-      allowedPaths: input.workspace.allowedPaths,
-      ttlSeconds: Math.max(
-        1800,
-        Number(run.parameters.durationSeconds ?? 600) + 1800,
-      ),
-    },
-  );
-  await persistIssuedWorkspaceAuthority({
-    store,
-    assignmentId: input.assignmentId,
-    proxyHandle: input.treedxProxyHandle,
-    workspaceContext: input.workspaceContext,
-    workspace,
-    now,
-  });
-}
-
-export async function assignNextCompiledDemand(
-  store: AssignmentFunctionStore,
-  principal: ProviderLeasePrincipal,
-  sessionId: string,
-  executionProviders: ProviderSynthesisExecutionProvider[],
-  now = new Date().toISOString(),
-): Promise<DurableProviderAssignment | null> {
-  const demands = new CapacityWorkdayDemandRepository(store);
-  const policy = teamSupplyPolicy(await store.getTeam(principal.teamId));
-  for (const pending of await demands.listProvisioning(
-    principal.teamId,
-    principal.capacityProviderId,
-  )) {
-    const assignment = pending.assignmentId ? await store.getProviderAssignment(principal.teamId, pending.assignmentId) : null;
-    const exactProviders = assignment ? executionProviders.filter((provider) => provider.id === assignment.executionProviderId) : executionProviders;
-    const pendingInput = await assignmentInput(store, pending, principal, sessionId, exactProviders, policy, now);
-    await provisionWorkspace(store, pending, pendingInput, now);
-  }
-  const demand = await demands.claimNext(
-    principal.teamId,
-    principal.capacityProviderId,
-    now,
-	principal.membershipId,
-	sessionId,
-  );
-  if (!demand) return null;
-  const continuation = await evaluateDurableWorkdayContinuation(store, {
-    teamId: demand.teamId,
-    workdayRunId: demand.workdayRunId,
-    workdayId: demand.workdayId,
-    usefulEligibleWork: true,
-    now,
-  });
-  if (!continuation.continue) {
-    await demands.cancelClaim(demand.id, demand.claimToken!, now);
-    return null;
-  }
-  let input: ReturnType<typeof assignmentInput>;
-  try {
-    input = await assignmentInput(store, demand, principal, sessionId, executionProviders, policy, now);
-  } catch (error) {
-    await demands.releaseClaim(demand.id, demand.claimToken!, now);
-    await recordAssignmentDenial(store, principal, demand.id, error, now);
-    return null;
-  }
-  let assignment: DurableProviderAssignment | null;
-  try {
-    assignment = await admitSynthesizedProviderAssignment(
-      store,
-      principal,
-      input,
-    );
-  } catch (error) {
-    await demands.releaseClaim(demand.id, demand.claimToken!, now);
-    await recordAssignmentDenial(store, principal, demand.id, error, now);
-    return null;
-  }
-  if (!assignment) {
-    await demands.releaseClaim(demand.id, demand.claimToken!, now);
-    return null;
-  }
-  await demands.markAdmitted(demand.id, demand.claimToken!, assignment.id, now);
-	await persistCapabilityNegotiation(store, { assignmentId: assignment.id, teamId: demand.teamId,
-		receipt: input.capabilityNegotiation, now });
-	if (assignment.operationHandoffId && assignment.decisionId) await bindOperationHandoffAssignment(store, assignment.operationHandoffId, assignment.id, assignment.decisionId, now);
-  await new CapacityWorkdayParticipationRepository(store).bindAssignment(
-    demand.id,
-    assignment.id,
-    now,
-  );
-  await provisionWorkspace(store, demand, input, now);
-  return store.getProviderAssignment(principal.teamId, assignment.id);
 }

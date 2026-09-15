@@ -1,7 +1,15 @@
 /** Startup must remain diagnosable before HTTP logging exists, without forwarding configuration or SQL. */
 export async function apiStartupStage<T>(stage: 'CONFIG' | 'DATABASE' | 'MIGRATIONS' | 'IDENTITY' | 'APPLICATION' | 'CREDENTIAL_SCHEMA', operation: () => T | Promise<T>): Promise<T> {
   try { return await operation(); }
-  catch (cause) { throw Object.assign(new Error('API startup phase failed', { cause }), { code: `${stage}_FAILED` }); }
+  catch (cause) {
+    const migrationInventory = stage === 'MIGRATIONS' && cause instanceof Error
+      ? cause.message.match(/^database_migration_inventory_mismatch_pending_(\d+)_unexpected_(\d+)$/u)
+      : null;
+    const code = migrationInventory
+      ? `MIG_PENDING_${migrationInventory[1]}_UNEXPECTED_${migrationInventory[2]}`
+      : `${stage}_FAILED`;
+    throw Object.assign(new Error('API startup phase failed', { cause }), { code });
+  }
 }
 
 export function apiStartupDiagnostic(error: unknown) {

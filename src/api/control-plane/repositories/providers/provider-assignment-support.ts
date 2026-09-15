@@ -29,3 +29,11 @@ export function assignmentActivityType(assignment: Record<string, unknown>): unk
 	return decision.activityType ?? assignmentRecord(decision.metadata).activityType
 		?? assignmentRecord(decision.input).activityType ?? assignmentRecord(assignment.metadata).activityType;
 }
+
+export function assignmentWorkdayRunId(assignment: Record<string, unknown>): string | null {
+	const metadata = assignmentRecord(assignment.metadata);
+	for (const value of [assignment.workDayId, metadata.workdayRunId]) {
+		if (typeof value === 'string' && value.trim()) return value.trim();
+	}
+	return null;
+}

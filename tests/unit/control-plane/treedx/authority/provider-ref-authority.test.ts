@@ -17,8 +17,15 @@ describe('assignment TreeDX reference authority', () => {
   });
   it('keeps cross-project access read-only and pinned', () => {
     expect(providerRefAuthority({ handle, projectId: 'team', workspace: false }).ref).toBe('c'.repeat(40));
-    expect(() => providerRefAuthority({ handle, projectId: 'team', workspace: true })).toThrow('Cross-project');
+    expect(() => providerRefAuthority({ handle, projectId: 'team', workspace: true })).toThrow('Secondary project');
     expect(() => providerRefAuthority({ handle, projectId: 'team', workspace: false, requestedRef: produced, producedCommits: [produced] })).toThrow('outside');
     expect(() => providerRefAuthority({ handle, projectId: 'unrelated', workspace: false })).toThrow('no pinned');
   });
+	 it('separates the assignment project from a Team Library primary workspace', () => {
+		const reporter = { ...handle, repositoryProjectId:'team', metadata:{ ...handle.metadata, repositoryProjectId:'team',
+			readRepositories:[{ projectId:'team', baseRef:base }, { projectId:'project', baseRef:'c'.repeat(40) }] } };
+		expect(providerRefAuthority({ handle:reporter, projectId:'team', workspace:true }).ref).toBe(base);
+		expect(providerRefAuthority({ handle:reporter, projectId:'project', workspace:false }).ref).toBe('c'.repeat(40));
+		expect(() => providerRefAuthority({ handle:reporter, projectId:'project', workspace:true })).toThrow('Secondary project');
+	 });
 });

@@ -1,0 +1,150 @@
+import { describe, expect, it } from 'vitest';
+import type { ExecutionNode, GraphRevision } from '@treeseed/sdk/agent-capacity';
+import {
+	applyOperationalState,
+	createExecutionGraphService,
+	persistExecutionGraph,
+	recoverIncompleteReviewCycles,
+} from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+
+const sourceRef = {
+	store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1,
+	digest: `sha256:${'a'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'proposals/one.mdx',
+};
+const permissions = { content: { read: ['proposal'] as const, write: [] }, tools: ['source.read'] as const };
+
+function node(status: ExecutionNode['status']): ExecutionNode {
+	return {
+		schemaVersion: 'treeseed.execution-node/v1', id: 'node', teamId: 'team', projectId: 'project',
+		workItemId: 'work', kind: 'acting', pairRole: 'actor', sourceRef, authorityRefs: [{
+			store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}`,
+		}],
+		ruleRevision: 1, nodeRevision: 1, agentClass: 'engineer', status,
+		estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 },
+		requiredCapabilities: [], requestedPermissions: permissions as never, workspace: 'git',
+		acceptanceCriteria: ['Verified.'], maximumReviewCycles: 1,
+		graphRevisionCreated: 1, graphRevisionUpdated: 1,
+	};
+}
+
+const graph = (revision: number, nodes: ExecutionNode[] = []) => ({
+	teamId: 'team', revision, digest: `sha256:${String(revision).padStart(64, '0')}`, nodes, edges: [],
+});
+
+const revision = (value: number, graphDigest: string): GraphRevision => ({
+	schemaVersion: 'treeseed.graph-revision/v1', teamId: 'team', revision: value, ruleRevision: 1,
+	changedSourceRefs: [sourceRef], graphDigest,
+	changes: { added: [], changed: [], completed: [], blocked: [], stale: [], removedEdges: [], addedEdges: [] },
+	createdAt: '2026-09-13T12:00:00.000Z',
+});
+
+function row(status: ExecutionNode['status']) {
+	const value = node(status);
+	return {
+		id: value.id, team_id: value.teamId, project_id: value.projectId, work_item_id: value.workItemId,
+		kind: value.kind, pair_role: value.pairRole, source_ref_json: JSON.stringify(value.sourceRef),
+		authority_refs_json: JSON.stringify(value.authorityRefs), rule_revision: value.ruleRevision,
+		node_revision: value.nodeRevision, agent_class: value.agentClass, status: value.status,
+		estimate_json: JSON.stringify(value.estimate), required_capabilities_json: '[]',
+		requested_permissions_json: JSON.stringify(value.requestedPermissions), workspace: value.workspace,
+		acceptance_criteria_json: JSON.stringify(value.acceptanceCriteria),
+		maximum_review_cycles: value.maximumReviewCycles, graph_revision_created: 1, graph_revision_updated: 1,
+	};
+}
+
+describe('normalized living execution graph persistence', () => {
+	it('preserves an in-flight node even when its source is replaced', () => {
+		const current = graph(1, [node('running')]);
+		const desired = graph(2, []);
+		expect(applyOperationalState(current, desired, 2).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'running', graphRevisionUpdated: 2 }),
+		]);
+	});
+
+	it('preserves a request-changes node revision across identical source reconciliation', () => {
+		const advanced = { ...node('ready'), nodeRevision: 2 };
+		const reconciled = applyOperationalState(graph(2, [advanced]), graph(3, [node('blocked')]), 3);
+		expect(reconciled.nodes).toEqual([expect.objectContaining({ id: 'node', nodeRevision: 2, status: 'ready' })]);
+	});
+
+	it('recovers an interrupted first request-changes projection without counting failed retries as review cycles', () => {
+		const actor = { ...node('completed'), id: 'actor', nodeRevision: 16, maximumReviewCycles: 2 };
+		const reviewer = { ...node('failed'), id: 'reviewer', kind: 'reviewing' as const, pairRole: 'reviewer' as const,
+			agentClass: 'reviewer', nodeRevision: 2, maximumReviewCycles: 2 };
+		const recovered = recoverIncompleteReviewCycles(graph(3, [actor, reviewer]), new Map([['reviewer', 1]]), 4);
+		expect(recovered.nodes).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: 'actor', status: 'ready', nodeRevision: 17 }),
+			expect.objectContaining({ id: 'reviewer', status: 'blocked', nodeRevision: 3 }),
+		]));
+		const exhausted = recoverIncompleteReviewCycles(graph(3, [{ ...actor, status: 'blocked' }, { ...reviewer, status: 'failed' }]), new Map([['reviewer', 2]]), 4);
+		expect(exhausted.nodes.find((candidate) => candidate.id === 'reviewer')?.status).toBe('failed');
+	});
+
+	it('preserves graph revision metadata when projected semantics are unchanged', () => {
+		const current = graph(1, [node('ready')]);
+		const projected = graph(2, [{ ...node('ready'), graphRevisionCreated: 2, graphRevisionUpdated: 2 }]);
+		expect(applyOperationalState(current, projected, 2).nodes).toEqual([
+			expect.objectContaining({ id: 'node', graphRevisionCreated: 1, graphRevisionUpdated: 1 }),
+		]);
+	});
+
+	it('revises an unassigned node when projected assignment semantics change', () => {
+		const current = graph(1, [node('ready')]);
+		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
+		expect(applyOperationalState(current, graph(2, [projected]), 2).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'ready', nodeRevision: 2, estimate: projected.estimate }),
+		]);
+	});
+
+	it('preserves all immutable semantics for an in-flight node', () => {
+		const current = graph(1, [node('running')]);
+		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
+		expect(applyOperationalState(current, graph(2, [projected]), 2).nodes).toEqual([
+			expect.objectContaining({ status: 'running', nodeRevision: 1, estimate: node('running').estimate }),
+		]);
+	});
+
+	it('does not revise an already stale node on repeated reconciliation', () => {
+		const stale = { ...node('stale'), nodeRevision: 2, graphRevisionUpdated: 2 };
+		expect(applyOperationalState(graph(2, [stale]), graph(3), 3).nodes).toEqual([stale]);
+	});
+
+	it('reactivates a stale node when its exact source returns', () => {
+		const stale = { ...node('stale'), nodeRevision: 2, graphRevisionUpdated: 2 };
+		const projected = { ...node('ready'), graphRevisionCreated: 3, graphRevisionUpdated: 3 };
+		expect(applyOperationalState(graph(2, [stale]), graph(3, [projected]), 3).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'ready', nodeRevision: 3, graphRevisionCreated: 1, graphRevisionUpdated: 3 }),
+		]);
+	});
+
+	it('uses the append-only graph revision as the optimistic lock and receipt', async () => {
+		const operations: Array<{ query: string; params: unknown[] }> = [];
+		const next = graph(2, [node('ready')]);
+		const store = {
+			batch: async (input: typeof operations) => { operations.push(...input); },
+			first: async () => ({ revision: 2, graph_digest: next.digest }),
+		};
+		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
+		expect(operations.some((operation) => operation.query.includes('estimate_json=excluded.estimate_json'))).toBe(true);
+		expect(operations.at(-1)?.query).toContain('COALESCE(MAX(revision),0)');
+		expect(operations.at(-1)?.params.at(-1)).toBe(1);
+		expect(operations.some((operation) => /graph_events|reconciliation_receipts/u.test(operation.query))).toBe(false);
+	});
+
+	it('fails closed when another reconciliation wins the graph revision', async () => {
+		const next = graph(2);
+		const store = {
+			batch: async () => undefined,
+			first: async () => ({ revision: 3, graph_digest: `sha256:${'f'.repeat(64)}` }),
+		};
+		await expect(persistExecutionGraph(store, next, graph(1), revision(2, next.digest)))
+			.rejects.toMatchObject({ code: 'execution_graph_revision_conflict' });
+	});
+
+	it('reads lifecycle state from normalized columns without node JSON', async () => {
+		const service = createExecutionGraphService({ first: async () => row('running') });
+		await expect(service.node({ id: 'admin', roles: ['platform_admin'] }, 'team', 'node')).resolves.toMatchObject({
+			id: 'node', status: 'running', sourceRef,
+		});
+	});
+});

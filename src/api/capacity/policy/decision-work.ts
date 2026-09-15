@@ -9,23 +9,11 @@ DecisionAssignmentGraphNode,
 DecisionDependencySpec,
 DeliverableContract,
 DeliverableManifest,
-EngineeringAssignmentGraphInput,
 StructuredAgentEstimate,
 } from '@treeseed/sdk/agent-capacity';
 
 function uniqueStrings(values: string[]): string[] {
 	return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
-}
-
-function engineeringStageCapability(stage: string) {
-	const capabilities: Record<string, string> = {
-		research: 'treeseed.research.synthesis', architecture: 'treeseed.engineering.architecture', test: 'treeseed.engineering.unit-testing',
-		implementation: 'treeseed.engineering.code-change', verification: 'treeseed.engineering.integration-testing', review: 'treeseed.engineering.review',
-		documentation: 'treeseed.publishing.documentation', release: 'treeseed.engineering.release', operations: 'treeseed.engineering.operations',
-	};
-	const capability = capabilities[stage];
-	if (!capability) throw new Error(`Engineering stage ${stage} has no standardized capability.`);
-	return capability;
 }
 
 function diagnostic(
@@ -52,13 +40,8 @@ function validationResult(diagnostics: AgentCapacityContractDiagnostic[]): Agent
 	return { ok: diagnostics.every((entry) => entry.severity !== 'error'), diagnostics };
 }
 
-function dependencyToContractId(projectId: string, decisionId: string, dependency: DecisionDependencySpec): string {
-	const deliverable = dependency.deliverableType || dependency.capability || dependency.id;
-	return `${projectId}:${decisionId}:deliverable:${deliverable}`.replace(/[^a-zA-Z0-9:_-]+/gu, '-');
-}
-
 function edgeTypeForDependency(dependency: DecisionDependencySpec): DecisionAssignmentGraphEdge['edgeType'] {
-	if (dependency.requiredBefore === 'complete' || dependency.requiredBefore === 'review') return 'blocks-completion';
+	if (dependency.requiredBefore === 'complete') return 'blocks-completion';
 	if (dependency.requiredBefore === 'release') return 'blocks-release';
 	return 'blocks-start';
 }
@@ -172,12 +155,23 @@ export function validateDecisionAssignmentGraph(graph: DecisionAssignmentGraph):
 	validateNonEmptyString(diagnostics, graph.decisionId, 'decisionId');
 	if (!Number.isInteger(graph.version) || graph.version < 1) diagnostic(diagnostics, 'graph_version_invalid', 'Decision assignment graph version must be a positive integer.', 'version');
 	if (graph.compiledBy !== 'api-control-plane') diagnostic(diagnostics, 'graph_compiler_invalid', 'Decision assignment graphs must be compiled by api-control-plane.', 'compiledBy');
+	const estimateIds = new Set(graph.estimateIds);
+	if (graph.estimateIds.length === 0) diagnostic(diagnostics, 'graph_estimate_provenance_required', 'Decision assignment graphs require accepted estimate provenance.', 'estimateIds');
+	if (estimateIds.size !== graph.estimateIds.length) diagnostic(diagnostics, 'graph_estimate_provenance_duplicate', 'Decision assignment graph estimate provenance must be unique.', 'estimateIds');
 	const nodeIds = new Set(graph.nodes.map((node) => node.id));
 	for (const [index, node] of graph.nodes.entries()) {
 		validateNonEmptyString(diagnostics, node.id, 'node.id', `nodes.${index}.id`);
 		validateNonEmptyString(diagnostics, node.targetAgentClass, 'node.targetAgentClass', `nodes.${index}.targetAgentClass`);
 		validateNonNegativeNumber(diagnostics, node.capacity.expectedSeconds, 'node.capacity.expectedSeconds', `nodes.${index}.capacity.expectedSeconds`);
 		validateNonNegativeNumber(diagnostics, node.capacity.maxSeconds, 'node.capacity.maxSeconds', `nodes.${index}.capacity.maxSeconds`);
+		const contributingEstimateIds = Array.isArray(node.metadata?.contributingEstimateIds)
+			? node.metadata.contributingEstimateIds.map(String)
+			: [];
+		if (contributingEstimateIds.length === 0) diagnostic(diagnostics, 'graph_node_estimate_provenance_required', 'Every graph node must identify its contributing accepted estimates.', `nodes.${index}.metadata.contributingEstimateIds`);
+		for (const estimateId of contributingEstimateIds) {
+			if (!estimateIds.has(estimateId)) diagnostic(diagnostics, 'graph_node_estimate_provenance_unknown', `Node references unknown estimate ${estimateId}.`, `nodes.${index}.metadata.contributingEstimateIds`);
+		}
+		if (node.estimateId && !contributingEstimateIds.includes(node.estimateId)) diagnostic(diagnostics, 'graph_node_primary_estimate_missing', 'A node primary estimate must be included in its contributing estimate provenance.', `nodes.${index}.estimateId`);
 	}
 	for (const [index, edge] of graph.edges.entries()) {
 		if (!nodeIds.has(edge.fromNodeId)) diagnostic(diagnostics, 'graph_edge_from_missing', `Edge ${index} references missing fromNodeId.`, `edges.${index}.fromNodeId`);
@@ -198,7 +192,6 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 	estimates: StructuredAgentEstimate[];
 	executionMode?: 'simulation' | 'production';
 	reviewersByAgentClass?: Record<string,string[]>;
-	reportingAgentClass?: string;
 	maximumRevisionCycles?: number;
 	exactBaseRef?: string;
 	compiledAt?: string | null;
@@ -209,50 +202,26 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 		|| String(left.agentId ?? '').localeCompare(String(right.agentId ?? ''))
 		|| left.id.localeCompare(right.id)
 	));
+	if (estimates.length === 0) diagnostic(diagnostics, 'graph_estimates_required', 'At least one accepted structured estimate is required to compile a decision assignment graph.', 'estimates');
 	for (const [index, estimate] of estimates.entries()) {
 		diagnostics.push(...validateStructuredAgentEstimate(estimate).diagnostics.map((entry) => ({ ...entry, path: `estimates.${index}${entry.path ? `.${entry.path}` : ''}` })));
 	}
 	const contractMap = new Map<string, DeliverableContract>();
-	const deliverableProducerNodes = new Map<string, string>();
 	const nodes: DecisionAssignmentGraphNode[] = [];
 	const edges: DecisionAssignmentGraphEdge[] = [];
+	const estimateNodeIds = new Map<string, string>();
+	const outputProducerNodeIds = new Map<string, string[]>();
+	const outputContractIds = new Map<string, string>();
+	const releaseDependencyProducers: Array<{ producerNodeId: string; reason: string }> = [];
 	for (const estimate of estimates) {
-		for (const dependency of estimate.dependencies.filter((entry) => entry.type === 'artifact' && entry.deliverableType)) {
-			const contractId = dependencyToContractId(input.projectId, input.decisionId, dependency);
-			if (!contractMap.has(contractId)) {
-				const producerClass = dependency.capability || dependency.deliverableType || 'producer';
-				contractMap.set(contractId, {
-					id: contractId,
-					teamId: input.teamId,
-					projectId: input.projectId,
-					decisionId: input.decisionId,
-					deliverableType: dependency.deliverableType ?? dependency.id,
-					producerAgentClasses: [producerClass],
-					acceptanceCriteria: dependency.summary ? [dependency.summary] : [],
-					status: 'required',
-					metadata: { sourceDependencyId: dependency.id },
-				});
-				const producerNodeId = `${contractId}:produce`;
-				deliverableProducerNodes.set(contractId, producerNodeId);
-					nodes.push({
-					id: producerNodeId,
-					decisionId: input.decisionId,
-					projectId: input.projectId,
-					targetAgentClass: producerClass,
-						activityType: 'acting',
-						estimateId: estimate.id,
-						groupSnapshot: estimate.groupSnapshot,
-					handler: null,
-					requiredCapabilities: uniqueStrings([dependency.capability ?? ''].filter(Boolean)),
-					requiredDeliverableContractIds: [],
-					inputRefs: [],
-					outputRequirements: [{ id: `${contractId}:output`, outputType: dependency.deliverableType ?? dependency.id, description: dependency.summary, required: true }],
-					capacity: { expectedSeconds: 900, maxSeconds: 900 },
-					status: 'pending',
-					metadata: { producesDeliverableContractId: contractId, generatedFromDependency: dependency.id },
-				});
+		const nodeId = estimate.workUnitId || `estimate:${estimate.id}:work`;
+		for (const reference of [estimate.id, estimate.workUnitId].filter((value): value is string => Boolean(value))) estimateNodeIds.set(reference, nodeId);
+		for (const output of estimate.expectedOutputs) {
+			for (const reference of [output.id, output.outputType].filter((value): value is string => Boolean(value))) {
+				outputProducerNodeIds.set(reference, uniqueStrings([...(outputProducerNodeIds.get(reference) ?? []), nodeId]));
 			}
 		}
+		outputContractIds.set(nodeId, `${input.projectId}:${input.decisionId}:estimate:${estimate.id}:deliverable`);
 	}
 	for (const estimate of estimates) {
 		const nodeId = estimate.workUnitId || `estimate:${estimate.id}:work`;
@@ -269,8 +238,21 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 			status: 'required',
 			metadata: { sourceEstimateId: estimate.id, sourceNodeId: nodeId },
 		});
-		const artifactDependencies = estimate.dependencies.filter((dependency) => dependency.type === 'artifact' && dependency.deliverableType);
-		const requiredDeliverableContractIds = artifactDependencies.map((dependency) => dependencyToContractId(input.projectId, input.decisionId, dependency));
+		const dependencyProducers = estimate.dependencies.flatMap((dependency) => {
+			const candidates = uniqueStrings([
+				...(estimateNodeIds.has(dependency.id) ? [estimateNodeIds.get(dependency.id)!] : []),
+				...(outputProducerNodeIds.get(dependency.id) ?? []),
+				...(dependency.deliverableType ? outputProducerNodeIds.get(dependency.deliverableType) ?? [] : []),
+			].filter((candidate) => candidate !== nodeId));
+			if (candidates.length > 1) diagnostic(diagnostics, 'graph_dependency_ambiguous', `Dependency ${dependency.id} resolves to multiple accepted estimate work units.`, `estimates.${estimate.id}.dependencies.${dependency.id}`);
+			if (candidates.length === 0 && dependency.type === 'artifact' && dependency.optional !== true && !(dependency.contentRefs?.length)) {
+				diagnostic(diagnostics, 'graph_artifact_dependency_unresolved', `Required artifact dependency ${dependency.id} is not produced by an accepted estimate.`, `estimates.${estimate.id}.dependencies.${dependency.id}`);
+			}
+			return candidates.length === 1 ? [{ dependency, producerNodeId: candidates[0]! }] : [];
+		});
+		const requiredDeliverableContractIds = uniqueStrings(dependencyProducers
+			.filter(({ dependency }) => dependency.requiredBefore === 'start')
+			.map(({ producerNodeId }) => outputContractIds.get(producerNodeId)!).filter(Boolean));
 		const inputRefs = estimate.dependencies.flatMap((dependency) => (dependency.contentRefs ?? []).map((ref): ContentRef => ({ model: 'note', collection: 'notes', slug: ref, id: ref })));
 		nodes.push({
 			id: nodeId,
@@ -281,7 +263,10 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 			estimateId: estimate.id,
 			groupSnapshot: estimate.groupSnapshot,
 			handler: null,
-			requiredCapabilities: uniqueStrings(estimate.dependencies.map((dependency) => dependency.capability ?? '').filter(Boolean)),
+			requiredCapabilities: uniqueStrings([
+				...(estimate.requiredProviderCapabilities ?? []),
+				...estimate.dependencies.map((dependency) => dependency.capability ?? '').filter(Boolean),
+			]),
 			requiredDeliverableContractIds,
 			inputRefs,
 			outputRequirements: estimate.expectedOutputs,
@@ -290,6 +275,7 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 			metadata: {
 				stage: 'implementation',
 				estimateId: estimate.id,
+				contributingEstimateIds: [estimate.id],
 				producesDeliverableContractId: outputContractId,
 				confidence: estimate.confidence,
 				riskLevel: estimate.riskLevel,
@@ -297,7 +283,8 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 			},
 		});
 		const reviewerClasses = uniqueStrings(input.reviewersByAgentClass?.[estimate.agentClass]
-			?? (Array.isArray(estimate.metadata?.reviewerAgentClasses) ? estimate.metadata.reviewerAgentClasses.map(String) : ['reviewer']));
+			?? (Array.isArray(estimate.metadata?.reviewerAgentClasses) ? estimate.metadata.reviewerAgentClasses.map(String) : ['review']));
+		const reviewNodeIds: string[] = [];
 		for (const reviewerClass of reviewerClasses) {
 			if (reviewerClass === estimate.agentClass) diagnostic(diagnostics, 'graph_reviewer_not_independent', `Reviewer ${reviewerClass} cannot review its own acting assignment.`, `estimates.${estimate.id}.reviewerAgentClasses`);
 			const reviewContractId = `${outputContractId}:review:${reviewerClass}`;
@@ -314,16 +301,19 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 				requiredCapabilities: ['treeseed.engineering.review'], requiredDeliverableContractIds: [outputContractId], inputRefs,
 				outputRequirements: [{ id: reviewContractId, outputType: 'review_disposition', required: true }],
 				capacity: { expectedSeconds: Math.max(1, estimate.workBreakdown?.independentReviewSeconds ?? 300), maxSeconds: Math.max(1, estimate.workBreakdown?.finalReviewSeconds ?? estimate.workBreakdown?.independentReviewSeconds ?? 300) },
-				status: 'pending', metadata: { stage: 'review', reviewedNodeId: nodeId, reviewedContractId: outputContractId,
+				status: 'pending', metadata: { stage: 'review', reviewedNodeId: nodeId, reviewedContractId: outputContractId, contributingEstimateIds: [estimate.id],
 					producesDeliverableContractId: reviewContractId, exactCheckpointRequired: true, rejectionCreatesRevision: true,
 					maximumRevisionCycles: input.maximumRevisionCycles ?? estimate.workBreakdown?.expectedRevisionCycles ?? 1 },
 			});
+			reviewNodeIds.push(reviewNodeId);
 			edges.push({ fromNodeId: nodeId, toNodeId: reviewNodeId, edgeType: 'blocks-start', reason: 'Independent review requires the exact acting checkpoint.' });
 		}
-		for (const dependency of artifactDependencies) {
-			const contractId = dependencyToContractId(input.projectId, input.decisionId, dependency);
-			const producerNodeId = deliverableProducerNodes.get(contractId);
-			if (producerNodeId) edges.push({ fromNodeId: producerNodeId, toNodeId: nodeId, edgeType: edgeTypeForDependency(dependency), reason: dependency.summary ?? dependency.deliverableType });
+		for (const { dependency, producerNodeId } of dependencyProducers) {
+			const reason = dependency.summary ?? dependency.deliverableType ?? dependency.id;
+			if (dependency.requiredBefore === 'release') releaseDependencyProducers.push({ producerNodeId, reason });
+			else for (const targetNodeId of dependency.requiredBefore === 'review' ? reviewNodeIds : [nodeId]) {
+				edges.push({ fromNodeId: producerNodeId, toNodeId: targetNodeId, edgeType: edgeTypeForDependency(dependency), reason });
+			}
 		}
 	}
 	const reviewNodes = nodes.filter((node) => node.activityType === 'reviewing');
@@ -341,21 +331,10 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 		requiredDeliverableContractIds: reviewNodes.map((node) => String(node.metadata?.producesDeliverableContractId)), inputRefs: [],
 		outputRequirements: [{ id: integrationContractId, outputType: 'governed_integration_receipt', required: true }],
 		capacity: { expectedSeconds: 1, maxSeconds: 1 }, status: 'pending',
-		metadata: { stage: 'integration', platformControlled: true, producesDeliverableContractId: integrationContractId },
+		metadata: { stage: 'integration', platformControlled: true, producesDeliverableContractId: integrationContractId, contributingEstimateIds: estimates.map((estimate) => estimate.id).sort() },
 	});
 	for (const reviewNode of reviewNodes) edges.push({ fromNodeId: reviewNode.id, toNodeId: integrationNodeId, edgeType: 'blocks-start', reason: 'Platform integration waits for every exact review approval.' });
-	const reportContractId = `${input.projectId}:${input.decisionId}:workflow-report`;
-	const reportNodeId = `${input.projectId}:${input.decisionId}:report`;
-	contractMap.set(reportContractId, { id: reportContractId, teamId: input.teamId, projectId: input.projectId, decisionId: input.decisionId,
-		deliverableType: 'assignment_workflow_report', producerAgentClasses: [input.reportingAgentClass ?? 'reporter'],
-		acceptanceCriteria: ['Report must preserve terminal repository outcomes, reviews, failures, usage, settlement, remaining work, and cleanup evidence.'], status: 'required', metadata: { terminalOnly: true } });
-	nodes.push({ id: reportNodeId, decisionId: input.decisionId, projectId: input.projectId, targetAgentClass: input.reportingAgentClass ?? 'reporter',
-		activityType: 'reporting', handler: 'reporter', requiredCapabilities: ['treeseed.coordination.reporting'],
-		requiredDeliverableContractIds: [integrationContractId], inputRefs: [],
-		outputRequirements: [{ id: reportContractId, outputType: 'assignment_workflow_report', required: true }],
-		capacity: { expectedSeconds: Math.max(1, ...estimates.map((estimate) => estimate.workBreakdown?.reportingSeconds ?? 300)), maxSeconds: Math.max(1, ...estimates.map((estimate) => estimate.workBreakdown?.reportingSeconds ?? 300)) },
-		status: 'pending', metadata: { stage: 'reporting', terminalOnly: true, producesDeliverableContractId: reportContractId } });
-	edges.push({ fromNodeId: integrationNodeId, toNodeId: reportNodeId, edgeType: 'blocks-start', reason: 'Reporting waits for governed integration.' });
+	for (const dependency of releaseDependencyProducers) edges.push({ fromNodeId: dependency.producerNodeId, toNodeId: integrationNodeId, edgeType: 'blocks-release', reason: dependency.reason });
 	const graph: DecisionAssignmentGraph = {
 		id: input.id ?? `${input.projectId}:${input.decisionId}:graph:v${input.version ?? 1}`,
 		teamId: input.teamId,
@@ -363,96 +342,17 @@ export function compileDecisionAssignmentGraphFromEstimates(input: {
 		decisionId: input.decisionId,
 		version: input.version ?? 1,
 		status: diagnostics.some((entry) => entry.severity === 'error') ? 'blocked' : 'compiled',
-		estimateIds: estimates.map((estimate) => estimate.id),
+		estimateIds: estimates.map((estimate) => estimate.id).sort(),
 		deliverableContracts: [...contractMap.values()].sort((left, right) => left.id.localeCompare(right.id)),
 		nodes: nodes.sort((left, right) => left.id.localeCompare(right.id)),
 		edges: edges.sort((left, right) => left.fromNodeId.localeCompare(right.fromNodeId) || left.toNodeId.localeCompare(right.toNodeId) || left.edgeType.localeCompare(right.edgeType)),
 		compiledAt: input.compiledAt ?? null,
 		compiledBy: 'api-control-plane',
 		executionMode: input.executionMode ?? 'simulation',
-		metadata: { compiler: 'compileDecisionAssignmentGraphFromEstimates', maximumRevisionCycles: input.maximumRevisionCycles ?? 1, ...(input.exactBaseRef ? { exactBaseRef: input.exactBaseRef } : {}) },
+		metadata: { compiler: 'compileDecisionAssignmentGraphFromEstimates', compilerVersion: 3, workflowKind: 'estimate-derived', maximumRevisionCycles: input.maximumRevisionCycles ?? 1, ...(input.exactBaseRef ? { exactBaseRef: input.exactBaseRef } : {}) },
 	};
 	diagnostics.push(...validateDecisionAssignmentGraph(graph).diagnostics);
 	return { graph, diagnostics };
-}
-
-export function compileEngineeringAssignmentGraph(input: EngineeringAssignmentGraphInput): DecisionAssignmentGraphCompileResult {
-	const version = input.version ?? 1;
-	const graphId = input.id ?? `${input.projectId}:${input.decisionId}:engineering:v${version}`;
-	const stages = [
-		...(input.includeResearch && input.roles.researcher ? [{ key: 'research', role: input.roles.researcher, output: 'research_evidence' }] : []),
-		...(input.includeArchitecture && input.roles.architect ? [{ key: 'architecture', role: input.roles.architect, output: 'architecture_plan' }] : []),
-		{ key: 'test', role: input.roles.tester, output: 'failing_test_proof' },
-		{ key: 'implementation', role: input.roles.engineer, output: 'implementation_change' },
-		{ key: 'verification', role: input.roles.tester, output: 'passing_verification' },
-		{ key: 'review', role: input.roles.reviewer, output: 'review_decision' },
-		{ key: 'documentation', role: input.roles.technicalWriter, output: 'documentation_update' },
-		{ key: 'release', role: input.roles.releaser, output: 'release_readiness' },
-		...(input.roles.operations ? [{ key: 'operations', role: input.roles.operations, output: 'integration_handoff' }] : []),
-	] as const;
-	const contracts = stages.map((stage): DeliverableContract => ({
-		id: `${graphId}:deliverable:${stage.output}`,
-		teamId: input.teamId,
-		projectId: input.projectId,
-		decisionId: input.decisionId,
-		deliverableType: stage.output,
-		producerAgentClasses: [stage.role],
-		reviewerAgentClasses: stage.key === 'review' ? [input.roles.reviewer] : undefined,
-		acceptanceCriteria: [`${stage.output} must preserve exact decision and source-ref provenance.`],
-		status: 'required',
-		metadata: { workflowKind: 'engineering-test-first', stage: stage.key },
-	}));
-	const nodes = stages.map((stage, index): DecisionAssignmentGraphNode => {
-		const previous = contracts[index - 1];
-		return {
-			id: `${graphId}:node:${stage.key}`,
-			decisionId: input.decisionId,
-			projectId: input.projectId,
-			targetAgentClass: stage.role,
-			activityType: stage.key === 'review' ? 'reviewing' : 'acting',
-			handler: null,
-			requiredCapabilities: [engineeringStageCapability(stage.key)],
-			requiredDeliverableContractIds: previous ? [previous.id] : [],
-			inputRefs: [],
-			outputRequirements: [{ id: contracts[index]!.id, outputType: stage.output, required: true }],
-			capacity: { expectedSeconds: Math.max(1, input.seconds?.[stage.key] ?? 900), maxSeconds: Math.max(1, input.seconds?.[stage.key] ?? 900) },
-			status: index === 0 ? 'ready' : 'pending',
-			metadata: {
-				workflowKind: 'engineering-test-first',
-				stage: stage.key,
-				exactBaseRef: input.exactBaseRef,
-				producesDeliverableContractId: contracts[index]!.id,
-				...(stage.key === 'implementation' ? { requiresFailingTestIntegrationRef: true, testMutationForbidden: true } : {}),
-				...(stage.key === 'test' ? { implementationMutationForbidden: true } : {}),
-				...(stage.key === 'review' ? { rejectionCreatesRevision: true } : {}),
-				...(stage.key === 'release' ? { hostedReleaseFailClosed: true } : {}),
-			},
-		};
-	});
-	const edges = nodes.slice(1).map((node, index): DecisionAssignmentGraphEdge => ({
-		fromNodeId: nodes[index]!.id,
-		toNodeId: node.id,
-		edgeType: node.metadata?.stage === 'release' || node.metadata?.stage === 'operations' ? 'blocks-release' : 'blocks-start',
-		reason: `Engineering stage ${String(nodes[index]!.metadata?.stage)} must be approved before ${String(node.metadata?.stage)}.`,
-	}));
-	const graph: DecisionAssignmentGraph = {
-		id: graphId,
-		teamId: input.teamId,
-		projectId: input.projectId,
-		decisionId: input.decisionId,
-		version,
-		status: 'compiled',
-		estimateIds: [],
-		deliverableContracts: contracts,
-		nodes,
-		edges,
-		compiledAt: input.compiledAt ?? null,
-		compiledBy: 'api-control-plane',
-		metadata: { compiler: 'compileEngineeringAssignmentGraph', workflowKind: 'engineering-test-first', exactBaseRef: input.exactBaseRef },
-	};
-	const diagnostics = validateDecisionAssignmentGraph(graph).diagnostics;
-	if (!input.exactBaseRef.trim()) diagnostic(diagnostics, 'engineering_exact_base_ref_required', 'Engineering graphs require an exact base ref.', 'exactBaseRef');
-	return { graph: { ...graph, status: diagnostics.some((entry) => entry.severity === 'error') ? 'blocked' : 'compiled' }, diagnostics };
 }
 
 export function advanceDecisionAssignmentGraph(
@@ -467,7 +367,7 @@ export function advanceDecisionAssignmentGraph(
 	const nodes = graph.nodes.map((node): DecisionAssignmentGraphNode => {
 		if (node.id === producingNode.id) return { ...node, status: 'completed' };
 		if (node.status !== 'pending') return node;
-		const predecessors = graph.edges.filter((edge) => edge.toNodeId === node.id).map((edge) => edge.fromNodeId);
+		const predecessors = graph.edges.filter((edge) => edge.toNodeId === node.id && edge.edgeType === 'blocks-start').map((edge) => edge.fromNodeId);
 		const dependenciesComplete = predecessors.every((id) => completedNodes.has(id));
 		const contractsApproved = node.requiredDeliverableContractIds.every((id) => approvedContractIds.has(id));
 		return dependenciesComplete && contractsApproved ? { ...node, status: 'ready' } : node;
@@ -482,7 +382,7 @@ export function advanceDecisionAssignmentGraph(
 }
 
 export function activateDecisionAssignmentGraph(graph: DecisionAssignmentGraph): DecisionAssignmentGraph {
-	const incoming = new Set(graph.edges.map((edge) => edge.toNodeId));
+	const incoming = new Set(graph.edges.filter((edge) => edge.edgeType === 'blocks-start').map((edge) => edge.toNodeId));
 	return {
 		...graph,
 		status: 'ready',

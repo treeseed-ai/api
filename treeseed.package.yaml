@@ -114,7 +114,7 @@ development:
       dependencies:
         - { id: sdk, target: package, locality: local, reaction: rebuild }
         - { id: deployment, target: package, locality: local, reaction: rebuild }
-        - { id: api, target: service, locality: local, reaction: restart }
+        - { id: api, target: service, locality: local, reaction: rebuild }
       statePolicy: shared-compatible
       migrationPolicy: explicit-review
       secretRefs:

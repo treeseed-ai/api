@@ -1,6 +1,7 @@
 import { createHash,randomUUID } from 'node:crypto';
 import { evaluateMinimumAssignmentDuration } from '../../../policy/timing/assignment-duration.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
+import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
 
@@ -24,11 +25,7 @@ export async function terminalizeCompletedConversationInvocation(
 		FROM agent_invocation_requests invocation WHERE invocation.id=? AND invocation.team_id=? LIMIT 1`, [invocationId, teamId]);
 	if (!invocation || text(invocation.status) !== 'completed' || !text(invocation.execution_id)) return { terminalized: false, reason: 'invocation_not_completed' };
 	if (!Boolean(invocation.integration_ready)) return { terminalized: false, reason: 'content_integration_pending' };
-	const assignmentExecution = text(invocation.assignment_id) ? await store.first(
-		`SELECT workday_run_id FROM capacity_workday_demands WHERE team_id=? AND assignment_id=? ORDER BY updated_at DESC LIMIT 1`,
-		[teamId, text(invocation.assignment_id)],
-	) : null;
-	const executionId = text(assignmentExecution?.workday_run_id) || text(invocation.execution_id);
+	const executionId = text(invocation.execution_id);
 	const execution = await store.first(`SELECT status,execution_kind FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1`, [executionId, teamId]);
 	if (!execution || text(execution.execution_kind) !== 'conversation') throw new CapacityGovernanceError('conversation_execution_provenance_invalid', 'Completed communication invocation does not resolve to its exact conversation execution.', 409, { invocationId, executionId });
 	await store.run(`UPDATE agent_invocation_requests SET execution_id=?,blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=?`, [executionId, new Date().toISOString(), invocationId, teamId]);
@@ -102,9 +99,9 @@ export async function reconcileTerminalConversationInvocations(store: Discussion
 			WHERE team_id=? AND invocation_id=? ORDER BY updated_at DESC LIMIT 1`, [teamId, invocation.id]);
 		if (!assignment) {
 			const executionId = text(invocation.execution_id);
-			const usefulDemand = executionId ? await store.first(`SELECT id FROM capacity_workday_demands
-				WHERE team_id=? AND workday_run_id=? AND status IN ('pending','claimed','admitted') LIMIT 1`, [teamId, executionId]) : null;
-			if (usefulDemand) continue;
+			const readyNode = executionId ? await store.first(`SELECT id FROM execution_nodes
+				WHERE team_id=? AND workday_id=? AND kind='communication' AND status IN ('ready','assigned','running') LIMIT 1`, [teamId, executionId]) : null;
+			if (readyNode) continue;
 			const execution = executionId ? await store.first(`SELECT status FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1`, [executionId, teamId]) : null;
 			if (!execution || !['completed','failed','cancelled','degraded'].includes(text(execution.status))) continue;
 			const now = new Date().toISOString();
@@ -173,13 +170,7 @@ async function assertExactParent(store: DiscussionInvocationStore, input: Discus
 			&& text(assignment.lifecycle_code) === 'discussion_response_required'
 			&& text(metadata.operationalState) === 'suspended';
 		if (suspendedConversation && !input.parentWorkdayId) return null;
-		const demand = await store.first(
-			`SELECT workday_run_id FROM capacity_workday_demands
-			 WHERE team_id = ? AND project_id = ? AND assignment_id = ? AND workday_id = ?
-			 ORDER BY updated_at DESC LIMIT 1`,
-			[input.teamId, input.projectId, input.parentAssignmentId, assignment.work_day_id],
-		);
-		const assignmentRunId = text(demand?.workday_run_id) || text(metadata.workdayRunId);
+		const assignmentRunId = text(assignment.work_day_id) || text(metadata.workdayRunId);
 		if (!assignmentRunId) throw new CapacityGovernanceError(
 			'discussion_parent_workday_provenance_missing',
 			'Discussion parent assignment is not linked to an exact API-owned workday run.',
@@ -240,19 +231,17 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 		handoffRootId: input.handoffRootId ?? null, handoffParentId: input.handoffParentId ?? null, handoffDepth: input.handoffDepth ?? null,
 	});
 	const agentClasses = await store.all(`SELECT id, handler_refs_json, metadata_json FROM project_agent_classes WHERE project_id = ? AND status = 'active' ORDER BY updated_at DESC`, [input.projectId]);
-	let selectedAgent: Row | null = null;
+	let selectedAgent: AgentDefinition | null = null;
 	const agentClass = agentClasses.find((candidate) => {
 		const agents = record(candidate.handler_refs_json).agents;
-		selectedAgent = Array.isArray(agents) ? agents.map(record).find((agent) => {
-			const chat = record(record(agent.activities).chat);
-			return text(agent.slug ?? agent.agentId) === agentSlug && Object.keys(chat).length > 0 && chat.enabled !== false;
-		}) ?? null : null;
+		selectedAgent = Array.isArray(agents) ? agents.flatMap((agent) => {
+			const parsed = validateAgentDefinitionModel(agent);
+			return parsed.ok && parsed.data ? [parsed.data] : [];
+		}).find((agent) => (agent.id === agentSlug || agent.id.endsWith(`/${agentSlug}`)) && Boolean(agent.activityProfiles.chat)) ?? null : null;
 		return Boolean(selectedAgent);
 	});
 	if (!agentClass) throw new CapacityGovernanceError('discussion_agent_chat_profile_missing', `Agent ${agentSlug} has no enabled Chat profile in the selected project.`, 409, { agentSlug });
-	const profileExecution = record(record(record(selectedAgent).activities).chat).execution;
-	const configuredSeconds = Number(record(profileExecution).maxRuntimeSeconds);
-	const productiveSeconds = Number.isInteger(configuredSeconds) && configuredSeconds > 0 ? configuredSeconds : 900;
+	const productiveSeconds = input.durationSeconds;
 	const existing = await store.first(`SELECT * FROM agent_invocation_requests WHERE team_id = ? AND idempotency_key = ? LIMIT 1`, [input.teamId, `${input.idempotencyKey}:${agentSlug}`]);
 	if (existing) {
 		if (text(existing.request_digest) !== requestDigest) throw new CapacityGovernanceError('discussion_invocation_idempotency_conflict', 'Discussion invocation idempotency key is bound to different input.', 409, { invocationId: existing.id });
@@ -273,7 +262,7 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 		return { id: text(existing.id), status, executionId, productiveSeconds, replayed: true };
 	}
 	const definitionRevision = text(record(agentClass.metadata_json).immutableRef);
-	const chatProfileRevision = digest(record(record(selectedAgent).activities).chat);
+	const chatProfileRevision = digest(selectedAgent!.activityProfiles.chat);
 	// A topic is durable conversation history, not one indefinitely reused execution
 	// chain. Each posted message starts an independent root unless the caller supplies
 	// explicit handoff/continuation provenance.
@@ -297,7 +286,8 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 			JSON.stringify([input.messagePath, ...input.contextRefs]), parent?.id ?? null, continuationParentAssignmentId,
 			handoffRootId,handoffParentId,handoffDepth,JSON.stringify([agentSlug]), subjectDigest,
 			input.triggerKind === 'agent-handoff' ? 'agent-asynchronous' : 'human-interactive', now,
-			`${input.idempotencyKey}:${agentSlug}`, requestDigest, '{}', JSON.stringify({ discussionId: input.discussionId, sourceMessageId: input.messageId, sourceCommit: input.messageCommit, definitionRevision, productiveSeconds,
+			`${input.idempotencyKey}:${agentSlug}`, requestDigest, '{}', JSON.stringify({ discussionId: input.discussionId, sourceMessageId: input.messageId,
+				sourceMessagePath: input.messagePath, sourceCommit: input.messageCommit, definitionRevision, productiveSeconds,
 				revisions: { project: input.messageCommit, library: definitionRevision || input.messageCommit, agentDefinition: definitionRevision || input.messageCommit, chatProfile: chatProfileRevision },
 				...(input.communication ? { communication: { ...input.communication, requirement: input.addressRequirements?.[agentSlug] ?? 'required' } } : {}) }), now],
 	);
@@ -321,8 +311,8 @@ async function nextConversationRunId(store: DiscussionInvocationStore, teamId: s
 	const rows = await store.all(`SELECT id,status FROM capacity_workday_runs WHERE team_id = ? AND (id = ? OR id LIKE ?) ORDER BY created_at`, [teamId, base, `${base}-retry-%`]);
 	for (const row of rows) {
 		if (!['pending', 'running'].includes(text(row.status))) continue;
-		const useful = await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id=? AND work_day_id LIKE ? AND status IN ('pending','leased') LIMIT 1`, [invocationId, `workday-${text(row.id)}-%`])
-			?? await store.first(`SELECT id FROM capacity_workday_demands WHERE workday_run_id=? AND status IN ('queued','claimed','admitted') LIMIT 1`, [row.id]);
+		const useful = await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id=? AND work_day_id=? AND status IN ('pending','leased','running') LIMIT 1`, [invocationId, text(row.id)])
+			?? await store.first(`SELECT id FROM execution_nodes WHERE team_id=? AND workday_id=? AND kind='communication' AND status IN ('ready','assigned','running') LIMIT 1`, [teamId,row.id]);
 		if (useful) return { id: text(row.id), existing: true };
 	}
 	return { id: rows.length ? `${base}-retry-${rows.length}` : base, existing: false };
@@ -400,8 +390,8 @@ export async function reconcileBlockedDiscussionInvocations(store:DiscussionInvo
 		if(text(row.status)==='admitted'){
 			const blocking=record(row.blocking_state_json);if(text(blocking.code)!=='communication_admission_claimed')continue;
 			const executionId=text(row.execution_id);const execution=executionId?await store.first(`SELECT status FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1`,[executionId,teamId]):null;
-			const useful=await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id=? AND team_id=? AND status IN ('pending','leased') LIMIT 1`,[invocationId,teamId])
-				??(executionId?await store.first(`SELECT id FROM capacity_workday_demands WHERE workday_run_id=? AND status IN ('queued','claimed','admitted') LIMIT 1`,[executionId]):null);
+			const useful=await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id=? AND team_id=? AND status IN ('pending','leased','running') LIMIT 1`,[invocationId,teamId])
+				??(executionId?await store.first(`SELECT id FROM execution_nodes WHERE team_id=? AND workday_id=? AND kind='communication' AND status IN ('ready','assigned','running') LIMIT 1`,[teamId,executionId]):null);
 			if(useful){await store.run(`UPDATE agent_invocation_requests SET blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=? AND status='admitted' AND execution_id=?`,[now.toISOString(),invocationId,teamId,executionId]);admitted+=1;continue;}
 			if(execution&&text(execution.status)==='running'){
 				try{await store.tickCapacityWorkdayRun(teamId,executionId,now.toISOString(),`discussion-invocation:${invocationId}:initial`);await store.run(`UPDATE agent_invocation_requests SET blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=? AND status='admitted' AND execution_id=?`,[now.toISOString(),invocationId,teamId,executionId]);admitted+=1;continue;}

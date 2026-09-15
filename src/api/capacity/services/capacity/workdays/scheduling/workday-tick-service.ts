@@ -1,22 +1,13 @@
-import type { CapacityPage } from '@treeseed/sdk/capacity-pagination';
 import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { decodeDurableJsonObject } from '../../../../durable-json.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import { compileProviderWorkdayDemand } from '../../../build/demand-compiler.ts';
-import {
-promoteEngineeringWorkflows,
-type EngineeringWorkflowPromotionStore,
-} from '../../../operations/engineering-workflow-promotion-service.ts';
+import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { CapacityWorkdayEventService } from '../content/workday-event-service.ts';
-import { evaluateDurableWorkdayContinuation } from '../lifecycle/workday-continuation-service.ts';
-import type { WorkdayProject } from '../policy/workday-project-policy.ts';
+import { advanceLivingWorkday } from '../lifecycle/living-workday-lifecycle.ts';
 
-interface WorkdayTickStore extends CapacityGovernanceDatabase, EngineeringWorkflowPromotionStore {
-	listTeamProjects(teamId: string): Promise<WorkdayProject[]>;
-	listProjectAgentClassesPage(projectId: string, filters: { limit: number }): Promise<CapacityPage<unknown>>;
-}
+type WorkdayTickStore = CapacityGovernanceDatabase;
 
 export async function tickCapacityWorkdayRun(
 	store: WorkdayTickStore,
@@ -44,22 +35,11 @@ export async function tickCapacityWorkdayRun(
 		'capacity_workday_membership_not_approved', 'Workday tick requires one approved provider membership.', 409,
 		{ runId, providerId: run.capacityProviderId, matchCount: memberships.length },
 	);
-	const engineeringWorkflowPromotions = await promoteEngineeringWorkflows(store, run);
-	const compilation = await compileProviderWorkdayDemand(store, {
-		teamId, capacityProviderId: run.capacityProviderId, membershipId: String(memberships[0]!.id),
-	}, now);
-	const envelopes = await store.all(`SELECT id FROM workday_capacity_envelopes WHERE team_id = ? AND workday_run_id = ? ORDER BY id ASC`, [teamId, runId]);
-	const continuation = [];
-	for (const row of envelopes) {
-		const workdayId = String(row.id);
-		const useful = await store.first(`SELECT id FROM capacity_workday_demands WHERE workday_id = ? AND status IN ('pending','claimed') LIMIT 1`, [workdayId]);
-		continuation.push({ workdayId, ...await evaluateDurableWorkdayContinuation(store, {
-			teamId, workdayRunId: runId, workdayId, usefulEligibleWork: Boolean(useful), now,
-		}) });
-	}
-	const result = { runId, tickedAt: now, engineeringWorkflowPromotions, compilation, continuation };
+	const lifecycle = await advanceLivingWorkday(store, run, now);
+	const executionGraph = await reconcileExecutionGraph(store, teamId, {}, `workday-tick:${runId}:${eventId ?? now}`);
+	const result = { runId, tickedAt: now, lifecycle, executionGraph };
 	if (eventId) await new CapacityWorkdayEventService(store).create(teamId, runId, {
-		id: eventId, eventType: 'workday.tick', status: 'recorded', title: 'Workday demand compilation tick',
+		id: eventId, eventType: 'workday.tick', status: 'recorded', title: 'Workday execution-graph tick',
 		context: { result }, metadata: { idempotencyKey: operationKey }, createdAt: now,
 	});
 	return result;

@@ -1,4 +1,6 @@
 import { commitProposalVersionContent } from './proposal-version-content.ts';
+import { governanceContentHash } from '../../persistence/store.ts';
+import { reconcileExecutionGraph } from '../repositories/capacity/execution/execution-graph-service.ts';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -30,6 +32,29 @@ async function projectFor(store: any, principal: Principal, projectId: string, p
 }
 
 function optionalText(value: unknown) { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
+function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
+
+async function bindInitialProposalContent(store: any, proposal: any, authored: Awaited<ReturnType<typeof commitProposalVersionContent>>) {
+	const update = authored.update;
+	const metadata = { ...record(proposal.metadata), ...record(update.metadata), contentProvenance: update.contentProvenance };
+	const title = optionalText(update.title) ?? String(proposal.title ?? '');
+	const summary = optionalText(update.summary) ?? String(proposal.summary ?? '');
+	const body = optionalText(update.body) ?? String(proposal.body ?? '');
+	const proposalTypes = Array.isArray(update.proposalTypes) ? update.proposalTypes.map(String) : proposal.proposalTypes ?? [proposal.proposalType];
+	const proposalType = proposalTypes[0] ?? proposal.proposalType ?? 'implementation';
+	const contentHash = optionalText(record(update.contentProvenance).digest)
+		?? governanceContentHash({ title, summary, body, proposalType, ...metadata });
+	await store.batch([
+		{ query: `UPDATE governance_proposals SET title=?,summary=?,body=?,proposal_type=?,proposal_types_json=?,metadata_json=?,active_content_hash=?,updated_at=? WHERE id=? AND active_version=1 AND active_content_hash=?`,
+			params: [title, summary, body, proposalType, JSON.stringify(proposalTypes), JSON.stringify(metadata), contentHash, new Date().toISOString(), proposal.id, proposal.activeContentHash] },
+		{ query: `UPDATE governance_proposal_versions SET title=?,summary=?,body=?,content_hash=? WHERE proposal_id=? AND version=1 AND content_hash=?`,
+			params: [title, summary, body, contentHash, proposal.id, proposal.activeContentHash] },
+	]);
+	const bound = await store.getGovernanceProposal(proposal.id);
+	const provenance = record(record(bound?.metadata).contentProvenance);
+	if (!bound || provenance.commitSha !== authored.receipt.commitSha) throw new GovernanceServiceError(409, 'proposal_initial_content_unbound', 'The initial TreeDX proposal commit could not be bound to its governance record.');
+	return bound;
+}
 
 async function proposalFor(store: any, projectId: string, proposalId: string) {
 	const proposal = await store.getGovernanceProposal(proposalId);
@@ -110,10 +135,32 @@ export function createGovernanceService(store: any) {
 		},
 		async createProposal(principal: Principal, projectId: string, body: Record<string, unknown>) {
 			const project = await projectFor(store, principal, projectId, 'projects:manage:team');
+			let created: any;
+			let authored: Awaited<ReturnType<typeof commitProposalVersionContent>> | undefined;
 			try {
-				return await store.createGovernanceProposal(principal, { ...body, teamId: project.teamId, projectId: project.id,
+				created = await store.createGovernanceProposal(principal, { ...body, teamId: project.teamId, projectId: project.id,
 					scope: 'project', createdByType: actorType(principal), createdById: principal!.id });
-			} catch (error) { fail(error, 'governance_proposal_create_failed'); }
+				if (!created) throw new GovernanceServiceError(409, 'governance_proposal_create_failed', 'The proposal record was not created.');
+				authored = await commitProposalVersionContent({ store, proposal: created, principal: principal!, initial: true,
+					update: { ...body, title: created.title, summary: created.summary, body: created.body, proposalTypes: created.proposalTypes,
+						changeReason: 'Create initial proposal request.' } });
+				const proposal = await bindInitialProposalContent(store, created, authored);
+				await reconcileExecutionGraph(store, project.teamId, { projectId: project.id },
+					`proposal-create:${proposal.id}:${authored.receipt.commitSha}`);
+				return { ...proposal, authoringReceipt: authored.receipt };
+			} catch (error) {
+				// A failed pre-commit TreeDX write must not strand an unauthoritative
+				// PostgreSQL proposal. Once TreeDX committed bytes, preserve the row so
+				// an explicit bind repair can recover the immutable content instead.
+				if (created?.id && !authored?.receipt) await store.batch([
+					{ query: 'DELETE FROM governance_events WHERE proposal_id = ?', params: [created.id] },
+					{ query: 'DELETE FROM governance_proposal_versions WHERE proposal_id = ?', params: [created.id] },
+					{ query: 'DELETE FROM governance_proposals WHERE id = ? AND active_version = 1', params: [created.id] },
+				]);
+				if (authored?.receipt) throw new GovernanceServiceError(409, 'proposal_initial_version_unbound',
+					'Initial proposal content was committed to TreeDX but could not be bound to governance.');
+				fail(error, 'governance_proposal_create_failed');
+			}
 		},
 		async updateProposal(principal: Principal, projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string) {
 			await projectFor(store, principal, projectId, 'projects:manage:team');
@@ -121,21 +168,52 @@ export function createGovernanceService(store: any) {
 			const update = versionedBody(body, ifMatch);
 			let authored: Awaited<ReturnType<typeof commitProposalVersionContent>> | undefined;
 			try {
-				try {
-					const replay = await store.updateGovernanceProposalDraft(principal, proposal.id,
-						{ ...update, contentProvenance: proposal.metadata?.contentProvenance, repairExistingVersion: true });
-					return { proposal: replay, idempotentReplay: true };
-				} catch (error) {
-					if ((error as { code?: string }).code !== 'governance_proposal_repair_material_change') throw error;
-				}
 				authored = await commitProposalVersionContent({ store, proposal, principal: principal!, update });
 				const updated = await store.updateGovernanceProposalDraft(principal, proposal.id, authored.update);
+				await reconcileExecutionGraph(store, proposal.teamId, { projectId },
+					`proposal-update:${proposal.id}:${authored.receipt.commitSha}`);
 				return { proposal: updated, authoringReceipt: authored.receipt, idempotentReplay: false };
 			} catch (error) {
 				if (authored?.receipt) throw new GovernanceServiceError(409, 'proposal_version_unbound',
 					'Proposal governance changed after the TreeDX commit.');
 				fail(error, 'governance_proposal_update_failed');
 			}
+		},
+		async resolveProposalFeedback(principal: Principal, projectId: string, proposalId: string, feedbackId: string, body: Record<string, unknown>, ifMatch?: string) {
+			await projectFor(store, principal, projectId, 'projects:manage:team');
+			const proposal = await proposalFor(store, projectId, proposalId);
+			const exact = versionedBody(body, ifMatch);
+			if (Number(exact.expectedProposalVersion) !== Number(proposal.activeVersion)) {
+				throw new GovernanceServiceError(412, 'proposal_precondition_failed', 'The proposal changed after its feedback was inspected.');
+			}
+			const message = optionalText(body.message);
+			if (!message) throw new GovernanceServiceError(422, 'proposal_feedback_resolution_required', 'A resolution explanation is required.');
+			const events = await store.listGovernanceEvents({ proposalId, limit: 300 });
+			const feedback = events.find((event: any) => event.id === feedbackId && event.eventType === 'proposal.discussion');
+			if (!feedback || !['question', 'concern'].includes(optionalText(feedback.evidence?.kind) ?? '')) {
+				throw new GovernanceServiceError(404, 'proposal_feedback_not_found', 'Unknown blocking proposal feedback.');
+			}
+			const existing = events.find((event: any) => event.evidence?.resolvesEventId === feedbackId);
+			if (existing) return { proposalId, feedbackId, resolution: existing, readiness: await store.governanceProposalReadiness(proposalId), idempotentReplay: true };
+			const provenance = proposal.metadata?.contentProvenance ?? {};
+			const contentPath = optionalText(provenance.contentPath) ?? optionalText(provenance.path);
+			const commitSha = optionalText(provenance.commitSha);
+			const digest = optionalText(provenance.digest) ?? optionalText(proposal.activeContentHash);
+			if (!contentPath || !commitSha || !digest) {
+				throw new GovernanceServiceError(409, 'proposal_feedback_resolution_provenance_missing', 'The current proposal revision lacks immutable TreeDX provenance.');
+			}
+			try {
+				const resolution = await store.recordGovernanceEvent({
+					id: `proposal-feedback-resolution:${feedbackId}:${proposal.activeVersion}`,
+					eventType: 'proposal.discussion', actorType: actorType(principal), actorId: principal!.id,
+					teamId: proposal.teamId, projectId, proposalId, proposalVersion: proposal.activeVersion, message,
+					evidence: { kind: 'response', feedbackSeverity: 'advisory', feedbackStatus: 'resolved', resolvesEventId: feedbackId,
+						contentPath, commitSha, digest, proposalVersion: proposal.activeVersion },
+				});
+				await reconcileExecutionGraph(store, proposal.teamId, { projectId },
+					`proposal-feedback-resolution:${proposal.id}:${feedbackId}:${proposal.activeVersion}`);
+				return { proposalId, feedbackId, resolution, readiness: await store.governanceProposalReadiness(proposalId), idempotentReplay: false };
+			} catch (error) { fail(error, 'governance_proposal_feedback_resolution_failed'); }
 		},
 		async openProposal(principal: Principal, projectId: string, proposalId: string, body: Record<string, unknown>, ifMatch?: string) {
 			await projectFor(store, principal, projectId, 'projects:manage:team');

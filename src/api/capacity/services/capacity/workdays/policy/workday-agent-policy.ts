@@ -37,7 +37,7 @@ export type CapacityWorkdayAgent = {
 	capabilityRequirements: UnknownRecord[];
 	planningPriority: number | null;
 	planningAllocationPercent: number | null;
-	activityType: 'planning' | 'estimating' | 'reviewing' | 'reporting' | 'chat';
+	activityType: 'planning' | 'estimating' | 'acting' | 'reviewing' | 'reporting' | 'chat';
 };
 
 export type CapacityWorkdayAssignmentIntent = {
@@ -75,7 +75,8 @@ function handler(value: unknown): EngineeringHandlerKind | null {
 }
 
 function chatSpecialization(profile: UnknownRecord): AgentChatProfileConfiguration {
-	const execution = record(profile.execution);
+	const parameters = record(profile.parameters);
+	const execution = record(parameters.execution);
 	const specialization: AgentChatProfileConfiguration = { foundation: 'discussion-v1' };
 	const reasoningEffort = text(execution.reasoningEffort);
 	if (['minimal', 'low', 'medium', 'high', 'xhigh'].includes(reasoningEffort)) specialization.reasoningEffort = reasoningEffort as AgentChatProfileConfiguration['reasoningEffort'];
@@ -87,9 +88,9 @@ function chatSpecialization(profile: UnknownRecord): AgentChatProfileConfigurati
 	if (Number.isFinite(maxCostAmount) && maxCostAmount >= 0) specialization.maxCostAmount = maxCostAmount;
 	const costCurrency = text(execution.costCurrency);
 	if (costCurrency) specialization.costCurrency = costCurrency;
-	const promptTask = text(record(profile.prompt).task);
+	const promptTask = text(parameters.task, text(record(profile.prompt).system));
 	if (promptTask) specialization.promptTask = promptTask;
-	if (Array.isArray(profile.capabilityRequirements)) specialization.capabilityRequirements = profile.capabilityRequirements as NonNullable<AgentChatProfileConfiguration['capabilityRequirements']>;
+	if (Array.isArray(parameters.capabilityRequirements)) specialization.capabilityRequirements = parameters.capabilityRequirements as NonNullable<AgentChatProfileConfiguration['capabilityRequirements']>;
 	return specialization;
 }
 
@@ -152,12 +153,12 @@ export function compileCapacityWorkdayAssignmentIntent(agent: CapacityWorkdayAge
 	};
 }
 
-export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+function agentsFromClasses(agentClasses: unknown[], activityTypes: readonly CapacityWorkdayAgent['activityType'][], selection?: unknown, planningOnly = false): CapacityWorkdayAgent[] {
 	const agents: CapacityWorkdayAgent[] = [];
 	for (const value of agentClasses) {
 		const agentClass = record(value);
 		const allowedModes = array(agentClass.allowedModes ?? agentClass.allowed_modes).map((mode) => text(mode));
-		if (text(agentClass.status, 'active') !== 'active' || (allowedModes.length > 0 && !allowedModes.includes('planning'))) continue;
+		if (text(agentClass.status, 'active') !== 'active' || planningOnly && allowedModes.length > 0 && !allowedModes.includes('planning')) continue;
 		const metadata = record(agentClass.metadata ?? agentClass.metadata_json);
 		const allocation = Number(
 			metadata.planningAllocationPercent
@@ -168,7 +169,7 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		);
 		const handlerRefs = agentClass.handlerRefs ?? agentClass.handler_refs ?? record(agentClass.handler_refs_json);
 		const selectedProfiles = new Map<string, ProjectAgentActivityRef>();
-		for (const activityType of ['planning', 'reporting', 'reviewing', 'estimating', 'chat'] as const) {
+		for (const activityType of activityTypes) {
 			for (const ref of projectAgentActivityRefs(handlerRefs, activityType)) selectedProfiles.set(`${ref.agentId}:${ref.activityType}`, ref);
 		}
 		for (const selectedActivity of selectedProfiles.values()) {
@@ -232,4 +233,24 @@ export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], select
 		return true;
 	});
 	return selectWorkdayAgents(unique, selection);
+}
+
+export function capacityWorkdayAgentsFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+	return agentsFromClasses(agentClasses, ['planning', 'reporting', 'reviewing', 'estimating', 'chat'], selection, true);
+}
+
+export function capacityWorkdayExecutionAgentsFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+	return agentsFromClasses(agentClasses, ['acting', 'reviewing'], selection);
+}
+
+/** Immutable activity-profile authority used by living execution nodes. This is
+ * deliberately a flat profile set, not a second scheduling graph. */
+export function capacityWorkdayAgentProfilesFromClasses(agentClasses: unknown[], selection?: unknown): CapacityWorkdayAgent[] {
+	const selected = [
+		...agentsFromClasses(agentClasses, ['planning', 'estimating', 'reporting', 'chat'], selection, true),
+		...agentsFromClasses(agentClasses, ['acting', 'reviewing'], selection),
+	];
+	return [...new Map(selected.map((agent) => [`${agent.slug}:${agent.activityType}:${agent.projectAgentClassId}`, agent])).values()]
+		.sort((left, right) => left.projectAgentClassSlug.localeCompare(right.projectAgentClassSlug)
+			|| left.slug.localeCompare(right.slug) || left.activityType.localeCompare(right.activityType));
 }

@@ -99,8 +99,9 @@ export class AvailabilitySessionService {
 
 	private async validateOfferReferences(principal: ProviderAvailabilityPrincipal, input: JsonRecord) {
 		await this.ontology.ensureInitialized();
-		for (const [index, route] of objects(input.offers).entries()) {
-			const parsed = capabilityOfferSchema.safeParse(route.offer);
+		const offers = objects(input.adapters).flatMap((adapter) => objects(adapter.offers));
+		for (const [index, offer] of offers.entries()) {
+			const parsed = capabilityOfferSchema.safeParse(offer);
 			if (!parsed.success) throw new CapacityGovernanceError('provider_capability_offer_invalid', `Capability offer ${index} is invalid.`, 400, { issues: parsed.error.issues });
 			const { offerDigest, ...material } = parsed.data;
 			if (capabilityOfferDigest(material) !== offerDigest) throw new CapacityGovernanceError('provider_capability_offer_digest_mismatch', `Capability offer ${index} digest is invalid.`, 400);
@@ -124,15 +125,10 @@ export class AvailabilitySessionService {
 		const availableFrom = timestamp(input.availableFrom, now);
 		const availableUntil = input.availableUntil == null ? null : timestamp(input.availableUntil, expiresAt);
 		if (availableUntil && Date.parse(availableUntil) <= Date.parse(availableFrom)) throw new CapacityGovernanceError('provider_availability_window_invalid', 'availableUntil must be after availableFrom.', 400);
-		if ('executionProviders' in input || 'execution_providers' in input) throw new CapacityGovernanceError('provider_availability_legacy_shape', 'Availability must use provider v3 adapters and lanes.', 400);
-		const offerRoutes = objects(input.offers);
-		const adapters = offerRoutes.length ? offerRoutes.map((route) => {
-			const offer = object(route.offer); const offerId = String(offer.offerId);
-			return { id: `offer:${offerId}`, status: route.status, laneIds: route.laneIds, maxConcurrentWorkers: route.maxConcurrentWorkers,
-				offers: [offer], capabilities: objects(offer.capabilities).map((reference) => String(reference.id)), metadata: { opaqueOfferRoute: true } };
-		}) : objects(input.adapters);
+		if ('executionProviders' in input || 'execution_providers' in input || 'offers' in input) throw new CapacityGovernanceError('provider_availability_legacy_shape', 'Availability must use the canonical adapters and lanes shape.', 400);
+		const adapters = objects(input.adapters);
 		const lanes = objects(input.lanes);
-		if (!adapters.length || adapters.some((entry) => typeof entry.id !== 'string' || !entry.id.trim())) throw new CapacityGovernanceError('provider_adapter_invalid', 'Availability requires at least one routed capability offer or legacy execution adapter.', 400);
+		if (!adapters.length || adapters.some((entry) => typeof entry.id !== 'string' || !entry.id.trim() || !/^sha256:[a-f0-9]{64}$/u.test(String(entry.runtimeBuild ?? '')))) throw new CapacityGovernanceError('provider_adapter_invalid', 'Availability requires at least one adapter with an exact runtime build.', 400);
 		if (lanes.length !== 3 || new Set(lanes.map((entry) => entry.purpose)).size !== 3 || !['communication', 'platform', 'workday'].every((purpose) => lanes.some((entry) => entry.purpose === purpose))) throw new CapacityGovernanceError('provider_lanes_invalid', 'Availability requires exactly the communication, platform, and workday lanes.', 400);
 		if (lanes.some((entry) => entry.minimumAssignmentDuration !== undefined && !isMinimumAssignmentDuration(entry.minimumAssignmentDuration))) throw new CapacityGovernanceError('provider_lane_minimum_duration_invalid', 'Every advertised minimum assignment duration must satisfy the SDK contract.', 400);
 		const executionProviders = adapters.map((adapter) => ({
@@ -140,7 +136,7 @@ export class AvailabilitySessionService {
 			status: adapter.status === 'available' ? 'active' : adapter.status,
 			maxConcurrentRunners: adapter.maxConcurrentWorkers,
 			lanes: lanes.filter((lane) => Array.isArray(adapter.laneIds) && adapter.laneIds.includes(lane.id)).map((lane) => ({ ...lane,
-				id: object(adapter.metadata).opaqueOfferRoute === true ? `${adapter.id}:${lane.id}` : lane.id,
+				id: lane.id,
 				maxConcurrentRunners: lane.maxConcurrentWorkers })),
 		}));
 		const capacity = object(input.capacity);

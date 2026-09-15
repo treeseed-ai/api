@@ -108,11 +108,11 @@ async function releaseUnsettledTerminalAssignments(
 			`SELECT assignment.id, assignment.membership_id, assignment.reservation_id, assignment.state_version,
 			        assignment.lifecycle_output_json
 			 FROM capacity_provider_assignments assignment
-			 JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
+			 JOIN workday_capacity_envelopes envelope ON envelope.id = assignment.work_day_id
 			 JOIN capacity_reservations reservation ON reservation.id = assignment.reservation_id
 			 LEFT JOIN capacity_ledger_entries settlement ON settlement.reservation_id = assignment.reservation_id
 			   AND settlement.phase = 'task_completed_actual_settlement'
-			 WHERE assignment.team_id = ? AND demand.workday_run_id = ?
+			 WHERE assignment.team_id = ? AND envelope.workday_run_id = ?
 			   AND assignment.status IN ('failed', 'expired', 'cancelled')
 			   AND reservation.state = 'reserved'
 			   AND settlement.id IS NULL
@@ -137,9 +137,9 @@ async function cleanupTerminalAssignmentWorkspaces(
 		const rows = await database.all<{ id: string }>(
 			`SELECT DISTINCT assignment.id
 			 FROM capacity_provider_assignments assignment
-			 JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
+			 JOIN workday_capacity_envelopes envelope ON envelope.id = assignment.work_day_id
 			 JOIN treedx_proxy_handles handle ON handle.assignment_id = assignment.id AND handle.team_id = assignment.team_id
-			 WHERE assignment.team_id = ? AND demand.workday_run_id = ?
+			 WHERE assignment.team_id = ? AND envelope.workday_run_id = ?
 			   AND assignment.status IN ('completed', 'failed', 'expired', 'cancelled')
 			   AND handle.status != 'revoked'
 			 ORDER BY assignment.id ASC LIMIT ?`,
@@ -179,7 +179,7 @@ export async function terminalizeCapacityWorkdayAssignments(
 		            AND assignment.execution_kind = 'conversation' AND assignment.lifecycle_code = 'discussion_response_required'
 		            AND suspended_invocation.id IS NOT NULL) THEN 1 ELSE 0 END), 0) AS unfinished_assignments
 		 FROM capacity_provider_assignments assignment
-		 JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
+		 JOIN workday_capacity_envelopes envelope ON envelope.id = assignment.work_day_id
 		 LEFT JOIN agent_invocation_requests suspended_invocation ON suspended_invocation.assignment_id = assignment.id
 		   AND suspended_invocation.status = 'suspended' AND suspended_invocation.final_message_ref IS NOT NULL
 		 LEFT JOIN (SELECT DISTINCT target_id AS id FROM audit_events
@@ -188,7 +188,7 @@ export async function terminalizeCapacityWorkdayAssignments(
 		 LEFT JOIN (SELECT DISTINCT target_id AS id FROM audit_events
 		   WHERE target_type = 'capacity_provider_assignment' AND event_type = '${CONTENT_INTEGRATED_EVENT}') integrated_assignment
 		   ON integrated_assignment.id = assignment.id
-		 WHERE assignment.team_id = ? AND demand.workday_run_id = ?`,
+		 WHERE assignment.team_id = ? AND envelope.workday_run_id = ?`,
 		[teamId, runId],
 	);
 	const preserveUntil = input.preserveActiveLeasesUntil && Number.isFinite(Date.parse(input.preserveActiveLeasesUntil))
@@ -200,10 +200,10 @@ export async function terminalizeCapacityWorkdayAssignments(
 			`SELECT assignment.id, assignment.membership_id, assignment.reservation_id, assignment.state_version,
 			        assignment.lifecycle_output_json
 			 FROM capacity_provider_assignments assignment
-			 JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
+			 JOIN workday_capacity_envelopes envelope ON envelope.id = assignment.work_day_id
 			 LEFT JOIN agent_invocation_requests suspended_invocation ON suspended_invocation.assignment_id = assignment.id
 			   AND suspended_invocation.status = 'suspended' AND suspended_invocation.final_message_ref IS NOT NULL
-			 WHERE assignment.team_id = ? AND demand.workday_run_id = ?
+			 WHERE assignment.team_id = ? AND envelope.workday_run_id = ?
 			   AND assignment.status NOT IN ('completed', 'failed', 'expired', 'cancelled')
 			   AND NOT (assignment.status = 'returned' AND assignment.lease_state = 'released'
 			     AND assignment.execution_kind = 'conversation' AND assignment.lifecycle_code = 'discussion_response_required'
@@ -288,6 +288,14 @@ export async function terminalizeCapacityWorkdayAssignments(
 				   AND assignment_id IN (SELECT id FROM capacity_provider_assignments WHERE status = 'failed' AND id IN (${ids}))`,
 				params: [input.code ?? 'workday_terminalized', now, now, ...idValues, ...idValues],
 			},
+			{
+				query: `UPDATE execution_nodes SET status='ready',node_revision=node_revision+1,updated_at=?
+				 WHERE team_id=? AND EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+					WHERE assignment.team_id=execution_nodes.team_id AND assignment.execution_node_id=execution_nodes.id
+					AND assignment.execution_node_revision=execution_nodes.node_revision
+					AND assignment.status='failed' AND assignment.id IN (${ids}))`,
+				params: [now, teamId, ...idValues],
+			},
 			];
 		});
 		await database.batch(stateOperations);
@@ -313,7 +321,7 @@ export async function terminalizeCapacityWorkdayAssignments(
 			            AND assignment.execution_kind = 'conversation' AND assignment.lifecycle_code = 'discussion_response_required'
 			            AND suspended_invocation.id IS NOT NULL) THEN 1 ELSE 0 END), 0) AS unfinished_assignments
 		 FROM capacity_provider_assignments assignment
-		 JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
+		 JOIN workday_capacity_envelopes envelope ON envelope.id = assignment.work_day_id
 		 LEFT JOIN agent_invocation_requests suspended_invocation ON suspended_invocation.assignment_id = assignment.id
 		   AND suspended_invocation.status = 'suspended' AND suspended_invocation.final_message_ref IS NOT NULL
 		 LEFT JOIN (SELECT DISTINCT target_id AS id FROM audit_events
@@ -322,12 +330,12 @@ export async function terminalizeCapacityWorkdayAssignments(
 		 LEFT JOIN (SELECT DISTINCT target_id AS id FROM audit_events
 		   WHERE target_type = 'capacity_provider_assignment' AND event_type = '${CONTENT_INTEGRATED_EVENT}') integrated_assignment
 		   ON integrated_assignment.id = assignment.id
-		 WHERE assignment.team_id = ? AND demand.workday_run_id = ?`, [teamId, runId],
+		 WHERE assignment.team_id = ? AND envelope.workday_run_id = ?`, [teamId, runId],
 	);
 	const deferred = await database.first<{ total?: unknown }>(
 		`SELECT COUNT(*) AS total FROM capacity_provider_assignments assignment
-		 JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
-		 WHERE assignment.team_id = ? AND demand.workday_run_id = ? AND assignment.status = 'leased' AND assignment.lease_state = 'leased'
+		 JOIN workday_capacity_envelopes envelope ON envelope.id = assignment.work_day_id
+		 WHERE assignment.team_id = ? AND envelope.workday_run_id = ? AND assignment.status = 'leased' AND assignment.lease_state = 'leased'
 		   AND assignment.lease_token IS NOT NULL AND assignment.lease_expires_at IS NOT NULL AND assignment.lease_expires_at > ?
 		   AND ? > ?`, [teamId, runId, now, preserveUntil, now],
 	);

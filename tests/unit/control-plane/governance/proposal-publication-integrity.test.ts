@@ -7,7 +7,7 @@ function fixture(provenance: Record<string, string> | null = null) {
 	const proposal = { id: 'proposal-1', projectId: 'project-1', teamId: 'team-1', status: 'draft', activeVersion: 1,
 		title: 'Existing draft', summary: 'Existing summary', body: 'Existing body', proposalType: 'implementation',
 		proposalTypes: ['implementation'], metadata, activeContentHash: '' };
-	proposal.activeContentHash = governanceContentHash({ ...proposal, ...metadata });
+	proposal.activeContentHash = provenance?.digest || governanceContentHash({ ...proposal, ...metadata });
 	const store = { ensureInitialized: vi.fn(async () => undefined), getGovernanceProposal: vi.fn(async () => proposal),
 		run: vi.fn(async () => undefined), first: vi.fn(async () => ({ id: 'existing-event' })), batch: vi.fn(async () => undefined),
 		recordGovernanceEvent: vi.fn(async () => undefined) };
@@ -35,7 +35,8 @@ describe('proposal publication provenance', () => {
 	it('retains idempotent replay for an already authored version', async () => {
 		const { proposal, store, update } = fixture({ contentPath: 'proposals/test.md', commitSha: 'a'.repeat(40), digest: 'b'.repeat(64) });
 		expect(await update({ repairExistingVersion: true })).toBe(proposal);
-		expect(store.run).toHaveBeenCalledOnce();
+		expect(store.run).not.toHaveBeenCalled();
+		expect(store.recordGovernanceEvent).not.toHaveBeenCalled();
 		expect(store.batch).not.toHaveBeenCalled();
 	});
 

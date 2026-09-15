@@ -1,13 +1,12 @@
 import { OperationRegistry } from './operation-registry.ts';
 import { createAccountDeleteOperation, createAccountDeletionBlockersOperation, createAccountEmailAddOperation, createAccountEmailConfirmOperation, createAccountEmailPrimaryOperation, createAccountEmailRemoveOperation, createAccountEmailsOperation, createAccountEmailVerifyOperation, createAccountIdentityOperation, createAccountNotificationReadOperation, createAccountNotificationsOperation, createAccountPasswordResetCompleteOperation, createAccountPasswordResetRequestOperation, createAccountPasswordUpdateOperation, createAccountPreferencesOperation, createAccountPreferencesUpdateOperation, createAccountProfileUpdateOperation, createAccountPublicProfileOperation, createAccountRegisterOperation, createAccountSessionRevokeOperation, createAccountSessionsOperation, createCurrentAccountOperation, type AccountOperationDependencies } from './account-operations.ts';
 import { createAccountAdminOperations } from './accounts/admin-operations.ts';
-import { createCapacityPlanOperations, type CapacityPlanOperationDependencies } from './capacity/plans.ts';
-import { createPlanningAndEstimateOperations, type PlanningAndEstimateOperationDependencies } from './capacity/planning-and-estimates.ts';
-import { createAgentGovernanceOperations, type AgentGovernanceOperationDependencies } from './capacity/agent-governance.ts';
 import { createCommunicationOperations, type CommunicationOperationDependencies } from './capacity/communications.ts';
 import { createAgentOperations, type AgentOperationDependencies } from './capacity/agents.ts';
 import { createCapacityQueryOperations, type CapacityQueryOperationDependencies } from './capacity/capacity.ts';
 import { createAssignmentOperations, type AssignmentOperationDependencies } from './capacity/assignments.ts';
+import { createExecutionOperations, type ExecutionOperationDependencies } from './capacity/execution.ts';
+import { createResearchOperations, type ResearchOperationDependencies } from './capacity/research.ts';
 import { createWorkdayOperations, type WorkdayOperationDependencies } from './capacity/workdays.ts';
 import { createDeepHealthOperation, createReadinessOperation, statusOperation, type DeepHealthDependencies } from './core-operations.ts';
 import { createDiscussionOperations, type DiscussionOperationDependencies } from './discussion-operations.ts';
@@ -35,7 +34,7 @@ export * from './operation-registry.ts';
 
 export const controlPlaneOperations = new OperationRegistry([statusOperation]);
 
-export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & InboxOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CapacityPlanOperationDependencies & PlanningAndEstimateOperationDependencies & AgentGovernanceOperationDependencies & CommunicationOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies & AssignmentOperationDependencies & PlatformOperationDependencies & ProviderOperationDependencies & ProviderAssignmentOperationDependencies & TreeDxOperationDependencies & TreeAiOperationDependencies & RealtimeOperationDependencies & SeedOperationDependencies & FeedbackOperationDependencies & CapabilityOntologyOperationDependencies & KnowledgeShareOperationDependencies & HostedTopologyOperationDependencies & AiInstanceDependencies) {
+export function createApiControlPlaneOperations(dependencies: DeepHealthDependencies & ProjectOperationDependencies & AccountOperationDependencies & TeamOperationDependencies & KnowledgeOperationDependencies & DiscussionOperationDependencies & GovernanceOperationDependencies & InboxOperationDependencies & RepositoryOperationDependencies & ServiceOperationDependencies & CommunicationOperationDependencies & WorkdayOperationDependencies & AgentOperationDependencies & CapacityQueryOperationDependencies & AssignmentOperationDependencies & ExecutionOperationDependencies & ResearchOperationDependencies & PlatformOperationDependencies & ProviderOperationDependencies & ProviderAssignmentOperationDependencies & TreeDxOperationDependencies & TreeAiOperationDependencies & RealtimeOperationDependencies & SeedOperationDependencies & FeedbackOperationDependencies & CapabilityOntologyOperationDependencies & KnowledgeShareOperationDependencies & HostedTopologyOperationDependencies & AiInstanceDependencies) {
 	return new OperationRegistry([
 		statusOperation,
 		createReadinessOperation(dependencies),
@@ -55,14 +54,13 @@ export function createApiControlPlaneOperations(dependencies: DeepHealthDependen
 		...createInboxOperations(dependencies),
 		...createRepositoryOperations(dependencies),
 		...createServiceOperations(dependencies),
-		...createCapacityPlanOperations(dependencies),
-		...createPlanningAndEstimateOperations(dependencies),
-		...createAgentGovernanceOperations(dependencies),
 		...createCommunicationOperations(dependencies),
 		...createWorkdayOperations(dependencies),
 		...createAgentOperations(dependencies),
 		...createCapacityQueryOperations(dependencies),
 		...createAssignmentOperations(dependencies),
+		...createExecutionOperations(dependencies),
+		...createResearchOperations(dependencies),
 		...createPlatformOperations(dependencies),
 		...createHostedTopologyOperations(dependencies),
 		...createAiInstanceOperations(dependencies),

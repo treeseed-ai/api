@@ -12,7 +12,7 @@ import { resolveTreeDxProxyBaseUrl, resolveTreeDxProxyToken, treeDxTokenScope, v
 import { providerPrincipal, type ProviderPrincipal } from '../providers/provider-runtime-service.ts';
 import type { OperationInvocationContext } from '../../catalog/operation-registry.ts';
 import { TreeDxUpstreamAdmission, TreeDxUpstreamAdmissionError } from '../../treedx/upstream-admission.ts';
-import { createOfficialTreeDxClient, invokeOfficialTreeDxOperation, requireTreeDxOperation, treeDxOperationScope } from '../../treedx/upstream-operation.ts';
+import { createOfficialTreeDxClient, invokeOfficialTreeDxOperation, requireTreeDxOperation, treeDxBoundedScopedPaths, treeDxOperationScope, treeDxScopedPathAllows } from '../../treedx/upstream-operation.ts';
 import { providerRefAuthority } from './provider-ref-authority.ts';
 
 interface Store extends TreeDxProxyStore {
@@ -134,8 +134,11 @@ async function authorize(store: Store, projectId: string, permission: Permission
 	const readRepositories=Array.isArray(record(handle.metadata).readRepositories)?(record(handle.metadata).readRepositories as unknown[]).map(record):[];
 	const readGrant=readRepositories.find((grant)=>String(grant.projectId)===projectId&&(!resources.repoId||String(grant.repositoryId)===String(resources.repoId)));
 	const owningProject=String(assignment.projectId)===projectId;
-	if(!owningProject&&!readGrant)return reject('treedx_proxy_project_denied','The assignment has no read authority for this project.');
-	if(!owningProject&&permission==='projects:manage:team')return reject('treedx_proxy_cross_project_write_denied','Cross-project TreeDX writes are prohibited.');
+	const primaryRepository=!resources.repoId||String(handle.repositoryId??'')===String(resources.repoId);
+	const primaryProjectId=String(handle.repositoryProjectId??record(handle.metadata).repositoryProjectId??assignment.projectId);
+	const primaryProject=primaryProjectId===projectId;
+	if(!owningProject&&!primaryProject&&!readGrant)return reject('treedx_proxy_project_denied','The assignment has no read authority for this project.');
+	if(permission==='projects:manage:team'&&(!primaryRepository||!primaryProject))return reject('treedx_proxy_cross_project_write_denied','TreeDX writes are restricted to the assignment primary workspace.');
 	if (handle.tokenHash && (!identity.token || createHash('sha256').update(identity.token).digest('hex') !== handle.tokenHash)) return reject('treedx_proxy_token_mismatch', 'TreeDX proxy handle token does not match.');
 	if (!requiredHandleScopes(scope).some((value) => (handle.scopes as unknown[] ?? []).map(String).includes(value))) return reject('treedx_proxy_scope_denied', 'TreeDX proxy handle does not allow this operation.');
 	const requestPaths = scope.paths.filter((value) => value !== '**' && value !== '*');
@@ -144,8 +147,8 @@ async function authorize(store: Store, projectId: string, permission: Permission
 			repositoryId: String(resources.repoId ?? scope.repoIds.find((value) => value !== '*') ?? '') || null,
 			workspaceId: typeof resources.workspaceId === 'string' ? resources.workspaceId : null, operation: scope.capabilities[0] ?? null,
 			path: pathValue, token: identity.token });
-		if (!evaluated.ok&&owningProject) return reject(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
-		if(readGrant&&pathValue){const allowed=Array.isArray(readGrant.allowedPaths)?readGrant.allowedPaths.map(String):[];if(!allowed.some((pattern)=>pattern==='**'||pattern==='*'||pathValue===pattern||pattern.endsWith('/**')&&pathValue.startsWith(pattern.slice(0,-3))))return reject('treedx_proxy_path_denied','The cross-project read path is outside its bounded authority.');}
+		if (!evaluated.ok&&primaryRepository) return reject(evaluated.code ?? 'treedx_proxy_request_denied', evaluated.reason ?? 'TreeDX proxy handle does not allow this request.', evaluated.metadata ?? {});
+		if(readGrant&&!primaryRepository&&pathValue){const allowed=Array.isArray(readGrant.allowedPaths)?readGrant.allowedPaths.map(String):[];if(!allowed.some((pattern)=>treeDxScopedPathAllows(pattern,pathValue)))return reject('treedx_proxy_path_denied','The secondary-repository read path is outside its bounded authority.');}
 	}
 	return { actorType: 'capacity_provider', principal, details, assignment, handle };
 }
@@ -287,10 +290,12 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			// replace the service principal in the bounded delegation token.
 			const crossProjectGrant=access.actorType==='capacity_provider'&&String(access.handle?.projectId)!==projectId
 				?(Array.isArray(record(access.handle?.metadata).readRepositories)?(record(access.handle?.metadata).readRepositories as unknown[]).map(record):[]).find((grant)=>String(grant.projectId)===projectId):null;
+			const crossProjectPaths=crossProjectGrant&&Array.isArray(crossProjectGrant.allowedPaths)
+				? treeDxBoundedScopedPaths(crossProjectGrant.allowedPaths.map(String),scope.paths) : null;
 			const compactScope = access.actorType === 'capacity_provider' ? { ...scope,
 				refs: providerRefs!,
-				paths: crossProjectGrant&&Array.isArray(crossProjectGrant.allowedPaths)?crossProjectGrant.allowedPaths.map(String):treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null).length
-					? treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null) : ['**'] } : scope;
+				paths: crossProjectPaths??(treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null).length
+					? treeDxProxyAuthorizedPathPatterns(access.handle, scope.capabilities[0] ?? null) : ['**']) } : scope;
 			const token = resolveTreeDxProxyToken(runtime, baseUrl, projectId, compactScope, { connectionId: connectionId(library, baseUrl) });
 			try {
 				const payload = await admission.run({ connectionId: connectionId(library, baseUrl), projectId, actorId: actorId(access),

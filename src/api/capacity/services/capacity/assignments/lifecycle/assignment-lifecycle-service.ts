@@ -1,4 +1,4 @@
-import { ASSIGNMENT_PERFORMANCE_SCHEMA,CAPACITY_BUDGET_SCHEMA,emptyCapacityBudget,type ProviderAssignmentExplanation,type ProviderAssignmentLifecycleRequest } from '@treeseed/sdk/agent-capacity';
+import { type AssignmentResult,type ProviderAssignmentExplanation } from '@treeseed/sdk/agent-capacity';
 import { classifyCapacityFailure } from '../../../../policy/failure-classification.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
@@ -8,6 +8,9 @@ import { evaluateProviderAssignmentLeaseAuthority,type ProviderLeasePrincipal } 
 import { projectCompletedResearchWorkflow,type ResearchWorkflowProjectionStore } from '../../../projects/projects-core/research-workflow-projection-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../accounting/settlement-service.ts';
 import { projectCompletedAssignmentDeliverable,type AssignmentDeliverableStore } from '../context/assignment-deliverable-service.ts';
+import { validateAssignmentResultCompletion } from '../context/assignment-result-completion.ts';
+import { resolveProposalReviewDisposition, resolveReviewDisposition } from '../context/review-result.ts';
+import { livingExecutionLifecycleOperations } from './execution/living-execution-lifecycle.ts';
 import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
 import { projectCompletedPlanningOutputs,type AssignmentPlanningOutputStore } from '../planning/assignment-planning-output-service.ts';
 import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
@@ -15,19 +18,13 @@ import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts'
 import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
 import { closeSuspendedConversationExecution } from './assignment-discussion-suspension-service.ts';
 import { terminalizeOperationHandoff } from '../handoffs/operation-handoff-lifecycle-service.ts';
-import { archivedConversationCancellation,assignmentFailureDisposition } from './assignment-failure-policy.ts';
+import { archivedConversationCancellation } from './assignment-failure-policy.ts';
 import { contentIntegrationRequirementOperation } from './assignment-content-integration-requirement.ts';
 import { semanticCompletionPreflightRequired } from './assignment-completion-preflight-service.ts';
 import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
 import { quarantineContextOverflowOffer } from './context-capacity/overflow.ts';
-type JsonRecord = Record<string, unknown>;
-export interface ExtendedProviderAssignmentLifecycleRequest extends ProviderAssignmentLifecycleRequest {
-	activeSeconds?: number | null;
-	elapsedSeconds?: number | null;
-	actualUsd?: number | null;
-	providerUnits?: number | null;
-	usage?: JsonRecord | null;
-}
+import { optionalFiniteNumber,record,terminalPerformance,type ExtendedProviderAssignmentLifecycleRequest,type JsonRecord } from './completion/assignment-terminal-performance.ts';
+export type { ExtendedProviderAssignmentLifecycleRequest } from './completion/assignment-terminal-performance.ts';
 interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, AssignmentDeliverableStore, AssignmentPlanningOutputStore, ResearchWorkflowProjectionStore {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
 	recordAgentFallbackOutput(input: AgentFallbackOutputWrite): Promise<unknown>;
@@ -35,68 +32,8 @@ interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase, A
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<JsonRecord | null>;
 }
 export interface ProviderAssignmentLifecycleMutationResult {
-	assignment: DurableProviderAssignment;
-	leaseToken: string | null;
-	leaseSeconds: number | null;
+	assignment: DurableProviderAssignment; leaseToken: string | null; leaseSeconds: number | null;
 }
-function record(value: unknown): JsonRecord {
-	return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
-}
-
-function optionalFiniteNumber(value: unknown, field: string): number | null {
-	if (value == null || value === '') return null;
-	const parsed = Number(value);
-	if (Number.isFinite(parsed)) return parsed;
-	throw new CapacityGovernanceError(
-		'provider_assignment_usage_invalid',
-		`${field} must be a finite number.`,
-		400,
-		{ field },
-	);
-}
-
-function terminalPerformance(
-	assignment: DurableProviderAssignment,
-	input: ExtendedProviderAssignmentLifecycleRequest,
-	status: 'completed' | 'failed',
-	now: string,
-) {
-	if (input.performance) return input.performance;
-	const metadata = record(assignment.metadata);
-	const envelope = record(assignment.capacityEnvelope);
-	const candidate = record(envelope.budget);
-	const budget = candidate.schemaVersion === CAPACITY_BUDGET_SCHEMA ? candidate
-		: emptyCapacityBudget(String(candidate.deadline ?? now), Math.max(0, Number(record(candidate.time).requestedSeconds ?? 0)));
-	const completion = record(input.completion);
-	const disposition = status === 'completed'
-		? String(completion.disposition ?? 'completed')
-		: assignmentFailureDisposition(input);
-	return {
-		schemaVersion: ASSIGNMENT_PERFORMANCE_SCHEMA, assignmentId: assignment.id, workdayId: assignment.workDayId ?? null,
-		teamId: assignment.teamId, projectId: assignment.projectId, agentId: assignment.agentId ?? null,
-		agentClassId: assignment.projectAgentClassId, activityProfile: String(metadata.activityProfile ?? metadata.activityType ?? assignment.mode),
-		handlerId: assignment.handlerId ?? null, capacityProviderId: assignment.capacityProviderId,
-		executionProviderId: assignment.executionProviderId ?? null, model: metadata.model ? String(metadata.model) : null,
-		groupIds: Array.isArray(metadata.groupIds) ? metadata.groupIds.map(String) : [],
-		configuration: { planningGraphRevision: metadata.planningGraphRevision ? String(metadata.planningGraphRevision) : null,
-			agentDefinitionRevision: metadata.agentDefinitionRevision ? String(metadata.agentDefinitionRevision) : null,
-			agentClassRevision: metadata.agentClassRevision ? String(metadata.agentClassRevision) : null,
-			activityProfileRevision: metadata.activityProfileRevision ? String(metadata.activityProfileRevision) : null,
-			handlerRevision: metadata.handlerRevision ? String(metadata.handlerRevision) : null,
-			groupMembershipRevision: metadata.groupMembershipRevision ? String(metadata.groupMembershipRevision) : null,
-			executionProviderConfigurationRevision: metadata.executionProviderConfigurationRevision ? String(metadata.executionProviderConfigurationRevision) : null },
-		taskSignature: `${assignment.projectAgentClassId}:${assignment.mode}`,
-		disposition, reason: String(input.reason ?? input.message ?? (status === 'completed' ? 'Assignment completed.' : 'Assignment failed.')),
-		acceptanceChecks: Array.isArray(completion.acceptanceChecks) ? completion.acceptanceChecks : [],
-		completedScope: [], remainingScope: [], artifactRefs: Array.isArray(completion.durableArtifactRefs) ? completion.durableArtifactRefs.map(String) : [], budget,
-		actual: { activeSeconds: Math.max(0, Number(input.activeSeconds ?? 0)), elapsedSeconds: Math.max(0, Number(input.elapsedSeconds ?? 0)),
-			inputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0, outputTokens: 0, costAmount: input.actualUsd == null ? null : Number(input.actualUsd),
-			costCurrency: input.actualUsd == null ? null : 'USD', native: [], attempts: Number(assignment.attemptCount ?? 0) + 1 },
-		noUsefulScopedWorkRemaining: completion.noUsefulScopedWorkRemaining === true, agentAssessment: null,
-		systemAssessment: { generatedBy: 'api-recovery', measuredAt: now, enforcementConfidence: record(budget).enforcementConfidence }, downstreamOutcomes: [],
-	};
-}
-
 async function assertRequiredSignals(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment) {
 	const required = Array.isArray(record(assignment.allowedOutputs).publishedSignals)
 		? [...new Set((record(assignment.allowedOutputs).publishedSignals as unknown[]).map(String).map((value) => value.replace(/_/gu, '-')).filter(Boolean))] : [];
@@ -335,7 +272,7 @@ export class ProviderAssignmentLifecycleService {
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
 		const terminalInput = Object.keys(record(input.completion)).length ? input : { ...input, completion: { disposition: 'completed' } };
 		const semanticReceipt=String(record(terminalInput.metadata).semanticCompletionPreflightReceiptDigest??'');
-		const semanticPreflight=semanticCompletionPreflightRequired(assignment,terminalInput)&&/^[a-f0-9]{64}$/u.test(semanticReceipt)?await this.store.first(`SELECT id FROM capacity_workday_events WHERE id = ? AND assignment_id = ? AND team_id = ? AND event_type = 'assignment.semantic_completion_preflight_passed' LIMIT 1`,[`semantic-preflight:${assignment.id}:${semanticReceipt.slice(0,20)}`,assignment.id,assignment.teamId]):!semanticCompletionPreflightRequired(assignment,terminalInput);
+		const semanticPreflight=assignment.assignmentAttempt ? true : semanticCompletionPreflightRequired(assignment,terminalInput)&&/^[a-f0-9]{64}$/u.test(semanticReceipt)?await this.store.first(`SELECT id FROM capacity_workday_events WHERE id = ? AND assignment_id = ? AND team_id = ? AND event_type = 'assignment.semantic_completion_preflight_passed' LIMIT 1`,[`semantic-preflight:${assignment.id}:${semanticReceipt.slice(0,20)}`,assignment.id,assignment.teamId]):!semanticCompletionPreflightRequired(assignment,terminalInput);
 		if(!semanticPreflight)throw new CapacityGovernanceError('assignment_semantic_completion_preflight_required','Artifact-producing assignment completion requires a durable semantic preflight before settlement.',409,{assignmentId:assignment.id});
 		if (assignment.reservationId) {
 			const reservation = await this.store.first(
@@ -346,15 +283,45 @@ export class ProviderAssignmentLifecycleService {
 		}
 		await assertRequiredSignals(this.store, assignment);
 		await assertCommunicationOutcome(this.store, assignment);
-		await projectCompletedPlanningOutputs(this.store, assignment, input as JsonRecord);
-		await projectCompletedResearchWorkflow(this.store, assignment, input as JsonRecord);
-		await projectCompletedAssignmentDeliverable(this.store, assignment, input as JsonRecord);
+		const assignmentResult = assignment.assignmentAttempt
+			? validateAssignmentResultCompletion(assignment, terminalInput as JsonRecord)
+			: null;
+		const reviewDisposition = assignmentResult
+			? await resolveReviewDisposition(this.store, assignment, assignmentResult)
+			: null;
+		const proposalReview = assignmentResult
+			? await resolveProposalReviewDisposition(this.store, assignment, assignmentResult)
+			: null;
+		if (!assignment.assignmentAttempt) {
+			await projectCompletedPlanningOutputs(this.store, assignment, input as JsonRecord);
+			await projectCompletedResearchWorkflow(this.store, assignment, input as JsonRecord);
+			await projectCompletedAssignmentDeliverable(this.store, assignment, input as JsonRecord);
+		}
 		const completed = await this.transition(principal, assignment, terminalInput, now, {
 			status: 'completed',
 			timestampColumn: 'completed_at',
 			defaultCode: 'provider_assignment_completed',
 			defaultReason: null,
+			assignmentResult,
+			reviewDisposition,
 		});
+		const reviewedProposalId = assignment.proposalId ?? (assignment.assignmentAttempt?.sourceRef.model === 'proposal'
+			? assignment.assignmentAttempt.sourceRef.id : null);
+		if (completed && proposalReview && reviewedProposalId) {
+			await this.store.recordGovernanceEvent({
+				eventType: 'proposal.discussion', actorType: 'agent', actorId: assignment.agentId ?? null,
+				teamId: assignment.teamId, projectId: assignment.projectId, proposalId: reviewedProposalId,
+				proposalVersion: assignment.assignmentAttempt?.sourceRef.revision ?? null,
+				nextState: proposalReview.disposition,
+				message: assignmentResult?.summary ?? null,
+				evidence: {
+					kind: proposalReview.disposition === 'approved' ? 'support' : 'concern',
+					feedbackStatus: proposalReview.disposition === 'approved' ? 'resolved' : 'open',
+					proposalVersion: assignment.assignmentAttempt?.sourceRef.revision,
+					decisionRef: proposalReview.reference,
+				},
+			});
+		}
 		if (completed && assignment.invocationId) {
 			await this.store.run(`UPDATE agent_invocation_requests SET assignment_id=?,blocking_state_json=?,updated_at=?
 				WHERE id=? AND team_id=? AND status='running'`, [assignment.id,JSON.stringify({ code:'content_integration_pending',assignmentId:assignment.id }),now,assignment.invocationId,assignment.teamId]);
@@ -429,6 +396,8 @@ export class ProviderAssignmentLifecycleService {
 			defaultCode: string;
 			defaultReason: string | null;
 			metadata?: JsonRecord;
+			assignmentResult?: AssignmentResult | null;
+			reviewDisposition?: 'approved' | 'request-changes' | null;
 		},
 	): Promise<ProviderAssignmentLifecycleMutationResult | null> {
 		const transitionMetadata = options.metadata ?? (['completed','failed','cancelled'].includes(options.status)
@@ -457,8 +426,11 @@ export class ProviderAssignmentLifecycleService {
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
 			   AND lease_token = ? AND (lease_expires_at IS NULL OR lease_expires_at > ?)`, params: [options.status, ...params] }];
+		operations.push(...await livingExecutionLifecycleOperations({ store: this.store, assignment,
+			status: options.status, now, result: options.assignmentResult,
+			reviewDisposition: options.reviewDisposition ?? null }));
 		if (['completed','failed','cancelled'].includes(options.status)) {
-			const integrationRequirement=options.status==='completed'?contentIntegrationRequirementOperation({ assignmentId:assignment.id,capacityProviderId:principal.capacityProviderId,stateVersion:assignment.stateVersion+1,lifecycleOutput,now }):null;
+			const integrationRequirement=!assignment.assignmentAttempt && options.status==='completed'?contentIntegrationRequirementOperation({ assignmentId:assignment.id,capacityProviderId:principal.capacityProviderId,stateVersion:assignment.stateVersion+1,lifecycleOutput,now }):null;
 			if(integrationRequirement)operations.push(integrationRequirement);
 			const terminalWorkspace = terminalAssignmentAuthority(assignment, now);
 			operations.push({
@@ -472,16 +444,18 @@ export class ProviderAssignmentLifecycleService {
 				 WHERE id = ? AND team_id = ? AND status = ? AND state_version = ?`,
 				params: [JSON.stringify(terminalWorkspace.proxyHandle), JSON.stringify(terminalWorkspace.workspaceContext), assignment.id, principal.teamId, options.status, assignment.stateVersion + 1],
 			});
-			const demandStatus = options.status === 'completed' ? 'completed' : options.status==='cancelled'?'cancelled':'blocked';
-			const participationStatus=options.status==='completed'?'completed':'blocked';
-			operations.push({
-				query: `UPDATE capacity_workday_demands SET status = ?, completed_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'admitted'`,
-				params: [demandStatus, now, now, assignment.id],
-			});
-			operations.push({
-				query: `UPDATE capacity_workday_participation_entries SET status = ?, reason_code = ?, covered_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'assigned'`,
-				params: [participationStatus, options.status === 'completed' ? null : input.code ?? options.defaultCode, now, now, assignment.id],
-			});
+			if (!assignment.assignmentAttempt) {
+				const demandStatus = options.status === 'completed' ? 'completed' : options.status==='cancelled'?'cancelled':'blocked';
+				const participationStatus=options.status==='completed'?'completed':'blocked';
+				operations.push({
+					query: `UPDATE capacity_workday_demands SET status = ?, completed_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'admitted'`,
+					params: [demandStatus, now, now, assignment.id],
+				});
+				operations.push({
+					query: `UPDATE capacity_workday_participation_entries SET status = ?, reason_code = ?, covered_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'assigned'`,
+					params: [participationStatus, options.status === 'completed' ? null : input.code ?? options.defaultCode, now, now, assignment.id],
+				});
+			}
 			if (options.status !== 'completed' && assignment.invocationId) operations.push({
 				query: `UPDATE agent_invocation_requests SET status=?, assignment_id=?, completed_at=COALESCE(completed_at,?), blocking_state_json=?, updated_at=? WHERE id=? AND team_id=? AND status IN ('admitted','running')`,
 				params: [options.status==='cancelled'?'cancelled':'failed',assignment.id, now, JSON.stringify({ code: input.code ?? options.defaultCode, reason: input.reason ?? input.message ?? options.defaultReason }), now, assignment.invocationId, assignment.teamId],

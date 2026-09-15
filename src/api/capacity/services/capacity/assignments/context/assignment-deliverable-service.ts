@@ -64,6 +64,11 @@ export async function projectCompletedAssignmentDeliverable(
 	input: JsonRecord,
 ) {
 	if (assignment.mode !== 'acting') return null;
+	// Living execution-graph assignments settle their typed outputs through the
+	// execution node referenced by the durable assignment. The decision-assignment
+	// graph below is the retired promotion path and must not become a second source
+	// of topology or provenance for the same assignment.
+	if (assignment.executionNodeId) return null;
 	const { graphId, nodeId } = executionProvenance(assignment);
 	if (!graphId || !nodeId) throw new CapacityGovernanceError('assignment_deliverable_provenance_missing', 'Acting assignment completion requires graph and node provenance.', 409, { assignmentId: assignment.id });
 	const graph = await store.getDecisionAssignmentGraph(graphId);

@@ -18,7 +18,7 @@ export async function main() {
 		if (process.env.TREESEED_IDENTITY_MIGRATION === '1') {
 			console.log(JSON.stringify({ identity: await migrateManagedApiIdentity(database) }));
 		}
-		console.log('Applied TreeSeed PostgreSQL migrations.');
+		console.log(JSON.stringify({ schemaVersion: 'treeseed.database-migration-inventory/v1', ...await database.migrationInventory() }));
 	} finally {
 		await database.close();
 	}

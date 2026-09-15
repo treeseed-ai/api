@@ -17,7 +17,7 @@ function input(invalidDigest = false) {
 		contextCapacity: { mode: 'unbounded', measurement: null, transportPayloadBytes: 1024, measurementProvenance: { provider: 'test', implementation: 'test', version: null } },
 		limits: {}, commercial: { currency: null, estimatedCost: null }, region: null, trust: [],
 	};
-	return { expectedSequence: 1, offers: [{ offer: { ...material, offerDigest: capabilityOfferDigest(material) }, status: 'available', laneIds: ['communication', 'platform', 'workday'], maxConcurrentWorkers: 1 }],
+	return { expectedSequence: 1, adapters: [{ id: 'adapter-test', runtimeBuild: `sha256:${'1'.repeat(64)}`, offers: [{ ...material, offerDigest: capabilityOfferDigest(material) }], capabilities: [reference.id], status: 'available', laneIds: ['communication', 'platform', 'workday'], maxConcurrentWorkers: 1 }],
 		lanes: ['communication', 'platform', 'workday'].map((purpose) => ({ id: purpose, purpose, maxConcurrentWorkers: 1 })) };
 }
 

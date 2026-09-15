@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { sourceWorkspaceRequestSchema, sourceWorkspaceResponseSchema, type SourceWorkspaceAuthorization } from '@treeseed/sdk/capacity-provider/sandbox';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { sealSourceCredential } from '@treeseed/deployment/security/source';
 import { resolveGitHubSourceAuthority } from '../../../../../security/provider-credential-authority.ts';
 import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../capacity/database.ts';
@@ -7,7 +8,6 @@ import { evaluateProviderAssignmentLeaseAuthority } from '../../../../capacity/s
 import { selectAssignmentSourceRepository } from '../../../../capacity/services/capacity/assignments/context/source-repository.ts';
 import { providerPrincipal, type ProviderPrincipal } from '../provider-runtime-service.ts';
 import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit } from './source-pin.ts';
-import { assignmentPredecessorCandidate } from './candidate-handoff.ts';
 
 type RecordValue = Record<string, unknown>;
 interface SourceStore {
@@ -44,14 +44,12 @@ export function assertSourceAssignmentLease(row: RecordValue | null, principal: 
   return row;
 }
 
-/** Analysis and work are both writable scratch. Only an explicit governed output grants candidate publication. */
+/** Analysis and work are both writable scratch. Git work publishes only to its assignment branch. */
 export function assignmentSourceMode(row: RecordValue) {
-  const outputs = record(row.allowed_outputs_json ?? {});
-  const publishesSourceCandidate = row.execution_kind !== 'conversation'
-    && Array.isArray(outputs.artifactKinds)
-    && outputs.artifactKinds.includes('source-candidate');
-  return { mode: publishesSourceCandidate ? 'work' as const : 'analysis' as const,
-    publication: publishesSourceCandidate ? 'candidate-only' as const : 'denied' as const };
+	const attempt = assignmentAttemptSchema.safeParse(record(row.assignment_attempt_json ?? {}));
+	if (attempt.success) return { mode: attempt.data.workspace.mode === 'git' ? 'work' as const : 'analysis' as const,
+		publication: attempt.data.workspace.mode === 'git' ? 'assignment-branch' as const : 'denied' as const };
+	return { mode: 'analysis' as const, publication: 'denied' as const };
 }
 
 export function createSourceWorkspaceService(database: CapacityGovernanceDatabase, contentStore: SourceStore, options: {
@@ -73,7 +71,19 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     const projectId = String(row.project_id), project = await contentStore.getProject(projectId);
     if (!project || String(project.teamId ?? project.team_id) !== actor.teamId) throw new CapacityGovernanceError('assignment_source_project_forbidden', 'The assignment project is not owned by this team.', 403);
     const configured = selectAssignmentSourceRepository(await contentStore.listHubRepositories(projectId));
-    const predecessor = await assignmentPredecessorCandidate(database, row, configured, options.controlPlaneId);
+    const attempt = assignmentAttemptSchema.safeParse(record(row.assignment_attempt_json ?? {}));
+	const configuredRepository = `${configured.owner}/${configured.name}`;
+	if (attempt.success && !attempt.data.grant.sourceRead.some((repository) => repository === configured.id || repository === configuredRepository)) {
+		throw new CapacityGovernanceError('assignment_source_not_granted', 'The immutable assignment grant does not permit project source access.', 403);
+	}
+	const exactAssignmentSource = attempt.success
+		? attempt.data.contextRefs.find((reference) => reference.store === 'git'
+			&& (reference.repository === configured.id || reference.repository === configuredRepository))
+		: null;
+	if (attempt.success && attempt.data.workspace.mode === 'git'
+		&& attempt.data.workspace.repository !== configured.id && attempt.data.workspace.repository !== configuredRepository) {
+		throw new CapacityGovernanceError('assignment_source_repository_changed', 'Assignment workspace does not match the project software repository.', 409);
+	}
     const context = record(row.workspace_context_json);
     let pin = readAssignmentSourcePin(context);
     if (pin && (pin.repository.id !== configured.id || pin.repository.cloneUrl !== configured.cloneUrl)) throw new CapacityGovernanceError('assignment_source_repository_changed', 'The project source repository changed after this assignment was pinned.', 409);
@@ -81,17 +91,19 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
       owner: configured.owner, repository: configured.name, ...(bindingId ? { bindingId } : {}), ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
     let credential = await credentialFor(pin?.credentialBindingId);
     if (!pin) {
-      const exactCommit = predecessor?.attestation.commit ?? await resolveAuthorizedSourceCommit(configured, credential.token, options.fetchImpl);
+			const exactCommit = attempt.success
+		? (attempt.data.workspace.mode === 'git' ? attempt.data.workspace.baseCommit : exactAssignmentSource?.commit
+			?? await resolveAuthorizedSourceCommit(configured, credential.token, options.fetchImpl))
+		: await resolveAuthorizedSourceCommit(configured, credential.token, options.fetchImpl);
       pin = await persistAssignmentSourcePin(database, { assignmentId, teamId: actor.teamId, providerId: actor.capacityProviderId, membershipId: actor.membershipId,
         runnerId: request.runnerId, leaseToken: request.leaseToken, stateVersion: Number(row.state_version), context,
         pin: { schemaVersion: 'treeseed.assignment-source-pin/v1', repository: configured, exactCommit, credentialBindingId: credential.bindingId,
-          ...(predecessor ? { candidateId: predecessor.id } : {}) }, now: now().toISOString() });
+        }, now: now().toISOString() });
     }
     // Re-resolve the winning binding: a concurrent pin or revocation must never reuse a losing credential.
     credential = await credentialFor(pin.credentialBindingId);
     if (pin.repository.id !== configured.id || pin.repository.cloneUrl !== configured.cloneUrl) throw new CapacityGovernanceError('assignment_source_repository_changed', 'Concurrent source pin selected a different repository.', 409);
-    if ((pin.candidateId ?? null) !== (predecessor?.id ?? null) || (predecessor && pin.exactCommit !== predecessor.attestation.commit)) throw new CapacityGovernanceError('assignment_source_handoff_changed', 'The accepted predecessor candidate changed after source was pinned.', 409);
-    await resolveAuthorizedSourceCommit({ ...pin.repository, ref: predecessor ? configured.ref : pin.exactCommit }, credential.token, options.fetchImpl);
+    await resolveAuthorizedSourceCommit({ ...pin.repository, ref: pin.exactCommit }, credential.token, options.fetchImpl);
     await checkAuthority();
     const issued = now();
     row = assertSourceAssignmentLease(await load(assignmentId, actor), actor, assignmentId, request.runnerId, request.leaseToken, issued);
@@ -106,7 +118,9 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
       ...assignmentSourceMode(row), credentialBindingId: pin.credentialBindingId, issuedAt: issued.toISOString(), expiresAt: new Date(expiry).toISOString() };
     const sealed = sealSourceCredential({ authorization, recipientPublicKey: request.recipientPublicKey, credential }, issued);
     const { id: _id, ...repository } = pin.repository;
-    return sourceWorkspaceResponseSchema.parse({ authorization, repository, credential: sealed,
-      ...(predecessor ? { sourceBundle: { artifactId: predecessor.id, ...predecessor.attestation.bundle } } : {}) });
+    const response = sourceWorkspaceResponseSchema.safeParse({ authorization, repository, credential: sealed });
+    if (!response.success) throw new CapacityGovernanceError('assignment_source_response_invalid',
+      `Source workspace response is invalid: ${response.error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; ')}`, 500);
+    return response.data;
   };
 }

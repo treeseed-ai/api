@@ -43,6 +43,12 @@ function isZodValidationError(error: unknown): boolean {
 		|| (error instanceof Error && error.name === 'ZodError' && Array.isArray((error as { issues?: unknown }).issues));
 }
 
+function zodIssueSummary(error: unknown): string {
+	const issues = error && typeof error === 'object' && Array.isArray((error as { issues?: unknown }).issues)
+		? (error as { issues: Array<{ path?: PropertyKey[]; message?: string }> }).issues : [];
+	return issues.map((issue) => `${(issue.path ?? []).map(String).join('.') || '<root>'}: ${issue.message ?? 'Invalid value.'}`).join('; ');
+}
+
 async function operationInput(context: Context, operation: BoundOperation) {
 	const query = operation.binding.schema.query.parse(Object.fromEntries(new URL(context.req.url).searchParams.entries()));
 	const path = operation.binding.schema.path.parse(context.req.param());
@@ -148,10 +154,13 @@ export function createOperationHttpHandler(
 					code: typeof internal.code === 'string' ? internal.code : null, constraint: typeof internal.constraint === 'string' ? internal.constraint : null }));
 			}
 			const failure = error instanceof ControlPlaneOperationError ? error
-				: isZodValidationError(error) ? new ControlPlaneOperationError(400, 'operation_input_invalid', 'The operation input is invalid.')
+				: isZodValidationError(error) ? new ControlPlaneOperationError(400, 'operation_input_invalid', process.env.TREESEED_ENVIRONMENT === 'local'
+					? `The input for ${descriptor.operationId} is invalid: ${zodIssueSummary(error)}` : 'The operation input is invalid.')
 					: error && typeof error === 'object' && 'code' in error && error.code === '53300'
 						? new ControlPlaneOperationError(503, 'database_capacity_unavailable', 'The control-plane database connection budget is exhausted. Check API and operations-runner pool usage.')
-					: new ControlPlaneOperationError(500, 'operation_failed', 'The operation failed.');
+					: new ControlPlaneOperationError(500, 'operation_failed', process.env.TREESEED_ENVIRONMENT === 'local' && error instanceof Error
+						? `The operation failed: ${error.message.slice(0, 1_024)}`
+						: 'The operation failed.');
 			if (failure.status >= 500) console.error(JSON.stringify({ level: 'error', event: 'operation.failed', operationId: descriptor.operationId,
 				requestId, status: failure.status, code: failure.code, message: failure.message }));
 			return problem(context, failure, requestId);

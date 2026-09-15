@@ -36,44 +36,34 @@ function revisionRefs(...values:unknown[]) {
 
 export function projectAgentActivityRefs(handlerRefs: unknown, activityType: string): ProjectAgentActivityRef[] {
 	const refs = record(handlerRefs);
-	const agents = Array.isArray(refs.agents) ? refs.agents.map(record) : [];
-	return agents.flatMap((agent) => {
-		if (agent.enabled === false) return [];
-		const profile = record(record(agent.activities)[activityType]);
-		if (profile.enabled === false) return [];
-		const agentId = text(agent.slug ?? agent.agentId);
+	const agents = Array.isArray(refs.agents) ? refs.agents : [];
+	return agents.flatMap((candidate) => {
+		const validation = validateAgentDefinitionModel(candidate);
+		if (!validation.ok || !validation.data) return [];
+		const agent = validation.data;
+		const profile = record(agent.activityProfiles[activityType as keyof typeof agent.activityProfiles]);
+		const agentId = text(agent.id);
 		const handlerId = text(profile.handler);
-		const agentQueryRefs=revisionRefs(agent.contextQueryRefs), activityQueryRefs=revisionRefs(profile.contextQueryRefs);
-		const agentQuerySetRefs=revisionRefs(agent.contextQuerySetRefs), activityQuerySetRefs=revisionRefs(profile.contextQuerySetRefs);
+		const agentQueryRefs:Array<{id:string;revision:number}>=[], activityQueryRefs:Array<{id:string;revision:number}>=[];
+		const agentQuerySetRefs:Array<{id:string;revision:number}>=[], activityQuerySetRefs:Array<{id:string;revision:number}>=[];
 		return agentId && handlerId ? [{
 			agentId,
-			agentName: text(agent.name ?? agent.title) ?? agentId,
-			groupIds: Array.isArray(agent.groupIds) ? agent.groupIds.map(String).filter(Boolean) : [],
-			contentPath: text(agent.contentPath), activityType, handlerId, profile, identity: record(agent.identity), summary: text(agent.summary),
+			agentName: agent.name,
+			groupIds: [], contentPath: null, activityType, handlerId, profile,
+			identity: { purpose: agent.purpose, responsibilities: agent.responsibilities }, summary: agent.purpose,
 			contextQueryRefs:revisionRefs(agentQueryRefs,activityQueryRefs),
 			contextQuerySetRefs:revisionRefs(agentQuerySetRefs,activityQuerySetRefs),
 			contextQueryLayers:{agent:{queryRefs:agentQueryRefs,querySetRefs:agentQuerySetRefs},activity:{queryRefs:activityQueryRefs,querySetRefs:activityQuerySetRefs}},
-			instructionTemplateRefs:revisionRefs(agent.instructionTemplateRefs,profile.instructionTemplateRefs),
+			instructionTemplateRefs:[],
 		}] : [];
 	});
 }
-
-const ACTIVITY_TYPES = new Set(['planning', 'estimating', 'reviewing', 'reporting', 'acting', 'chat']);
 
 export function validateProjectAgentActivityRefs(handlerRefs: unknown): string[] {
 	const refs = record(handlerRefs);
 	if (refs.agents === undefined) return [];
 	if (!Array.isArray(refs.agents)) return ['handlerRefs.agents must be an array'];
-	const issues: string[] = [];
-	for (const [index, value] of refs.agents.entries()) {
-		const agent = record(value);
-		if (!text(agent.slug ?? agent.agentId)) issues.push(`handlerRefs.agents[${index}] requires slug`);
-		if ('handler' in agent || 'activityType' in agent) issues.push(`handlerRefs.agents[${index}] must use activities instead of flat handler fields`);
-		const activities = record(agent.activities);
-		for (const [activityType, profileValue] of Object.entries(activities)) {
-			if (!ACTIVITY_TYPES.has(activityType)) issues.push(`handlerRefs.agents[${index}].activities.${activityType} is unsupported`);
-			if (!text(record(profileValue).handler)) issues.push(`handlerRefs.agents[${index}].activities.${activityType}.handler is required`);
-		}
-	}
-	return issues;
+	return refs.agents.flatMap((value, index) => validateAgentDefinitionModel(value).diagnostics
+		.map((diagnostic) => `handlerRefs.agents[${index}].${diagnostic.path}: ${diagnostic.message}`));
 }
+import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';

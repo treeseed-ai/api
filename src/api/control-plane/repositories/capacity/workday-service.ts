@@ -4,6 +4,8 @@ import { authorizeCapacityTeam, type CapacityPrincipal } from './capacity-author
 import { CapacityOperationError } from './capacity-operation-error.ts';
 import { createWorkdayProfileService } from './workdays/profile-service.ts';
 import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
+import { advanceLivingWorkday } from '../../../capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
+import { reconcileExecutionGraph } from './execution/execution-graph-service.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -45,6 +47,17 @@ export function createWorkdayService(store: any) {
 			if (!run) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
 			const events = await store.listCapacityWorkdayEventsPage(teamId, runId, { limit: 50, cursor: null });
 			return { run, events: events.items, eventPage: events.page, scheduling: await communicationSchedulingDiagnostics(store, teamId, runId) };
+		},
+		async stop(principal: CapacityPrincipal, teamId: string, runId: string, body: Record<string, unknown>) {
+			await authorizeCapacityTeam(store, principal, teamId, 'teams:manage:team');
+			try {
+				const run = await store.getCapacityWorkdayRun(teamId, runId);
+				if (!run) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
+				if (run.status !== 'running') throw new CapacityOperationError(409, 'workday_not_active', 'Only an active workday can enter closeout.');
+				const lifecycle = await advanceLivingWorkday(store, run, new Date().toISOString(), true);
+				await reconcileExecutionGraph(store, teamId);
+				return { run: await store.getCapacityWorkdayRun(teamId, runId), lifecycle, reason: body.reason ?? null };
+			} catch (error) { translate(error); }
 		},
 		async events(principal: CapacityPrincipal, teamId: string, runId: string, query: Record<string, unknown>) {
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');

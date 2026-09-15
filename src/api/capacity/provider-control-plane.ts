@@ -119,6 +119,10 @@ export class ProviderControlPlane {
 		return this.agentClassService.create(projectId, input, idempotencyKey);
 	}
 
+	updateProjectAgentClass(projectId: string, classId: string, input: JsonRecord, idempotencyKey: string) {
+		return this.agentClassService.update(projectId, classId, input, idempotencyKey);
+	}
+
 	createProviderAvailabilitySession(principal: ProviderAvailabilityPrincipal, input: Parameters<AvailabilitySessionService['open']>[1]) {
 		return this.availabilityService.open(principal, input);
 	}

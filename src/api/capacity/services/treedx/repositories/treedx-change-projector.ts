@@ -1,16 +1,13 @@
-import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { enqueueTreeDxCommitReplication } from './treedx-commit-replication.ts';
+import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 function subjectKind(path: string) {
-	const match = path.match(/(?:^|\/)(?:content\/)?(books|knowledge|notes|proposals|questions)\//u);
+	const match = path.match(/(?:^|\/)(?:content\/)?(books|knowledge|notes|proposals|questions|execution-plans)\//u);
 	return match?.[1] === 'books' ? 'book' : match?.[1] === 'proposals' ? 'proposal'
-		: match?.[1] === 'questions' ? 'question' : match?.[1] === 'notes' ? 'note' : match?.[1] === 'knowledge' ? 'knowledge' : null;
-}
-
-function signalId(projectId: string, commitSha: string, path: string) {
-	return `signal:treedx-change:${createHash('sha256').update(`${projectId}:${commitSha}:${path}`).digest('hex')}`;
+		: match?.[1] === 'questions' ? 'question' : match?.[1] === 'execution-plans' ? 'execution_plan'
+			: match?.[1] === 'notes' ? 'note' : match?.[1] === 'knowledge' ? 'knowledge' : null;
 }
 
 export async function projectTreeDxCommitSignals(database: CapacityGovernanceDatabase, input: {
@@ -37,24 +34,8 @@ export async function projectTreeDxCommitSignals(database: CapacityGovernanceDat
 		...(input.immutableRef?.startsWith('refs/') ? { sourceRef: input.immutableRef } : {}),
 	});
 	const paths = [...new Set(input.changedPaths.map((path) => path.trim().replace(/^\/+|\/+$/gu, '')).filter(Boolean))].sort();
-	const records = [];
-	for (const path of paths) {
-		const kind = subjectKind(path);
-		if (!kind) continue;
-		const id = signalId(input.projectId, input.commitSha, path);
-		const payload = { commitSha: input.commitSha, digest: createHash('sha256').update(`${input.commitSha}:${path}`).digest('hex'), changedPaths: [path], changeSummary: input.changeSummary, subjectKind: kind,
-			...(kind === 'question' || kind === 'proposal' ? { inboxEligible: true, owningProjectId: input.projectId, authorAgentId: input.agentId ?? null } : {}) };
-		await database.run(`INSERT INTO agent_signals
-			(id,contract_id,subject_kind,subject_id,team_id,project_id,workday_run_id,assignment_id,agent_id,activity_type,capacity_provider_id,causation_id,correlation_id,origin,commit_sha,immutable_ref,digest,changed_paths_json,change_summary,evidence_ref,payload_json,metadata_json,created_at)
-			VALUES (?,'content-changed',?,?,?,?,?,?,?,?,?,?,?,'treedx-change',?,?,?,?,?,?,?, ?, ?) ON CONFLICT(id) DO NOTHING`, [
-			id, kind, path, project.team_id, input.projectId, input.workdayRunId ?? null, input.assignmentId ?? null,
-			input.agentId ?? null, input.activityType ?? null, input.capacityProviderId ?? null,
-			`commit:${input.commitSha}:${path}`, `commit:${input.commitSha}`, input.commitSha, input.immutableRef ?? input.commitSha,
-			payload.digest, JSON.stringify([path]), input.changeSummary, `treedx-commit:${input.commitSha}`,
-			JSON.stringify(payload), JSON.stringify({ actorType: input.actorType, actorId: input.actorId ?? null }), createdAt,
-		]);
-		const persisted = await database.first('SELECT * FROM agent_signals WHERE id = ?', [id]);
-		if (persisted) records.push(persisted);
+	if (paths.some((path) => ['execution_plan', 'proposal', 'question', 'note'].includes(subjectKind(path) ?? ''))) {
+		await reconcileExecutionGraph(database, String(project.team_id), { projectId: input.projectId }, `treedx:${input.projectId}:${input.commitSha}`);
 	}
-	return records;
+	return [];
 }

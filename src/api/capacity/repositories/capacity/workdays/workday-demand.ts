@@ -8,6 +8,7 @@ import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonObject } from '../../../durable-json.ts';
 import { selectWorkdayDemandSupply } from './workday-demand-supply.ts';
+import { CapacityAuditRepository } from '../../support/audit.ts';
 
 type Row = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -38,6 +39,15 @@ function finite(row: Row, column: string, integer = false): number {
 		{ demandId: String(row.id ?? ''), column, value: row[column] ?? null },
 	);
 	return value;
+}
+
+export function capacityDemandRunDeadlineOpen(parameters: unknown, now: string): boolean {
+	const value = typeof parameters === 'string' ? JSON.parse(parameters) : parameters;
+	const record = value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
+	const deadline = record.deadlineAt;
+	if (deadline === null || deadline === undefined || deadline === '') return true;
+	const parsed = Date.parse(String(deadline));
+	return Number.isFinite(parsed) && parsed > Date.parse(now);
 }
 
 export function serializeCapacityWorkdayDemandRow(row: Row | null): CapacityWorkdayDemandRecord | null {
@@ -105,17 +115,19 @@ export class CapacityWorkdayDemandRepository {
 	async claimNext(teamId: string, providerId: string, now: string, membershipId?: string, providerSessionId?: string): Promise<CapacityWorkdayDemandRecord | null> {
 		await this.database.ensureInitialized();
 		const candidates = await this.database.all(
-			`SELECT demand.*, run.capacity_provider_id AS primary_provider_id FROM capacity_workday_demands demand
+			`SELECT demand.*, run.capacity_provider_id AS primary_provider_id, run.parameters_json AS run_parameters_json FROM capacity_workday_demands demand
 			 JOIN capacity_workday_runs run ON run.id = demand.workday_run_id
 			 JOIN workday_capacity_envelopes workday ON workday.id = demand.workday_id
 			 WHERE demand.team_id = ? AND run.status = 'running'
 			   AND workday.status = 'active' AND demand.status = 'pending' AND demand.available_at <= ?
-			 ORDER BY demand.priority DESC, demand.available_at ASC, demand.created_at ASC, demand.id ASC LIMIT 25`,
+			 ORDER BY demand.priority DESC, demand.available_at DESC, demand.created_at DESC, demand.id ASC LIMIT 100`,
 			[teamId, now],
 		);
 		let candidate: Row | null = null;
 		let supplySelection: Record<string, unknown> | null = null;
+		const selectionDiagnostics: Record<string, unknown>[] = [];
 		for (const pending of candidates) {
+			if (!capacityDemandRunDeadlineOpen(pending.run_parameters_json, now)) continue;
 			const selection = await selectWorkdayDemandSupply(this.database, pending, now);
 			if (selection.selected?.capacityProviderId === providerId
 				&& (!membershipId || selection.selected.membershipId === membershipId)
@@ -131,8 +143,50 @@ export class CapacityWorkdayDemandRepository {
 				};
 				break;
 			}
+			selectionDiagnostics.push({ demandId: pending.id, selectedProviderId: selection.selected?.capacityProviderId ?? null,
+				selectedMembershipId: selection.selected?.membershipId ?? null, selectedSessionId: selection.selected?.providerSessionId ?? null });
 		}
-		if (!candidate?.id) return null;
+		if (!candidate?.id) {
+			if (selectionDiagnostics.length > 0 && membershipId && providerSessionId) {
+				const diagnosticDemandId = String(selectionDiagnostics[0]?.demandId ?? providerSessionId);
+				await new CapacityAuditRepository(this.database).record({
+				id: `audit:claim:${providerSessionId}:${diagnosticDemandId}`, teamId, providerId, membershipId,
+				actorType: 'provider-membership', actorId: membershipId,
+				action: 'assignment-function.no-matching-demand', resourceType: 'capacity-workday-demand', resourceId: diagnosticDemandId,
+				idempotencyKey: `claim:${providerSessionId}:${diagnosticDemandId}`,
+					metadata: { providerId, membershipId, providerSessionId, candidates: selectionDiagnostics.slice(0, 25) }, now,
+				});
+			} else if (candidates.length === 0 && membershipId && providerSessionId) {
+				const pending = await this.database.first(
+					`SELECT demand.id AS demand_id, demand.available_at, demand.status AS demand_status,
+					        run.status AS run_status, run.parameters_json AS run_parameters_json,
+					        workday.status AS workday_status
+					   FROM capacity_workday_demands demand
+					   JOIN capacity_workday_runs run ON run.id = demand.workday_run_id
+					   JOIN workday_capacity_envelopes workday ON workday.id = demand.workday_id
+					  WHERE demand.team_id = ? AND demand.status = 'pending'
+					  ORDER BY demand.created_at DESC LIMIT 1`,
+					[teamId],
+				);
+				if (pending?.demand_id) {
+					const diagnosticDemandId = String(pending.demand_id);
+					const parameters = decodeDurableJsonObject(String(pending.run_parameters_json ?? '{}'), {
+						owner: 'capacity workday run', ownerId: diagnosticDemandId, column: 'parameters_json',
+					});
+					await new CapacityAuditRepository(this.database).record({
+						id: `audit:claim-unavailable:${providerSessionId}:${diagnosticDemandId}`, teamId, providerId, membershipId,
+						actorType: 'provider-membership', actorId: membershipId,
+						action: 'assignment-function.no-claimable-demand', resourceType: 'capacity-workday-demand', resourceId: diagnosticDemandId,
+						idempotencyKey: `claim-unavailable:${providerSessionId}:${diagnosticDemandId}`,
+						metadata: { providerId, membershipId, providerSessionId, now,
+							demandStatus: pending.demand_status, availableAt: pending.available_at,
+							runStatus: pending.run_status, workdayStatus: pending.workday_status,
+							deadlineAt: parameters.deadlineAt ?? null }, now,
+					});
+				}
+			}
+			return null;
+		}
 		const claimToken = randomUUID();
 		const metadata = decodeDurableJsonObject(candidate.metadata_json, { owner: 'capacity workday demand', ownerId: String(candidate.id), column: 'metadata_json' });
 		await this.database.run(
@@ -172,7 +226,10 @@ export class CapacityWorkdayDemandRepository {
 			`SELECT demand.* FROM capacity_workday_demands demand
 			 JOIN capacity_workday_runs run ON run.id = demand.workday_run_id
 			 JOIN treedx_proxy_handles handle ON handle.assignment_id = demand.assignment_id
-			 WHERE demand.team_id = ? AND run.capacity_provider_id = ? AND demand.status = 'admitted' AND handle.status = 'provisioning'
+			 JOIN capacity_provider_assignments assignment ON assignment.id = demand.assignment_id
+			 WHERE demand.team_id = ? AND run.capacity_provider_id = ? AND run.status = 'running'
+			   AND demand.status = 'admitted' AND handle.status = 'provisioning'
+			   AND assignment.status = 'pending' AND assignment.lease_state = 'unleased'
 			 ORDER BY demand.admitted_at ASC, demand.id ASC LIMIT ?`, [teamId, providerId, limit],
 		);
 		return rows.map((row) => serializeCapacityWorkdayDemandRow(row)!);

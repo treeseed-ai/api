@@ -76,14 +76,12 @@ describe('provider source workspace authorization', () => {
     expect(f.store.first).not.toHaveBeenCalled();
   });
 
-  it.each(['planning', 'estimating', 'reviewing', 'reporting', 'acting'])('keeps %s source changes disposable without explicit candidate authority', mode => {
-    expect(assignmentSourceMode({ ...row, mode, execution_kind: 'workday' })).toEqual({ mode: 'analysis', publication: 'denied' });
-  });
+  it.each(['planning', 'estimating', 'reviewing', 'reporting', 'acting'])('keeps legacy %s source access read-only', mode => {
+		expect(assignmentSourceMode({ ...row, mode, execution_kind: 'workday' })).toEqual({ mode: 'analysis', publication: 'denied' });
+	});
 
-  it('grants durable source work only for explicit candidate output, and conversations cannot publish', () => {
-    expect(assignmentSourceMode({ ...row, mode: 'acting', execution_kind: 'workday', allowed_outputs_json: '{"artifactKinds":["source-candidate"]}' })).toEqual({ mode: 'work', publication: 'candidate-only' });
-    expect(assignmentSourceMode({ ...row, mode: 'planning', execution_kind: 'workday', allowed_outputs_json: '{"artifactKinds":["source-candidate"]}' })).toEqual({ mode: 'work', publication: 'candidate-only' });
-    expect(assignmentSourceMode({ ...row, mode: 'acting', allowed_outputs_json: '{"artifactKinds":["source-candidate"]}' })).toEqual({ mode: 'analysis', publication: 'denied' });
-    expect(() => assertSourceAssignmentLease(null, principal, 'assignment', 'runner', 'synthetic-lease', now)).toThrow();
-  });
+	it('does not infer publication authority from retired output metadata', () => {
+		expect(assignmentSourceMode({ ...row, mode: 'acting', execution_kind: 'workday', allowed_outputs_json: '{"artifactKinds":["source"]}' })).toEqual({ mode: 'analysis', publication: 'denied' });
+		expect(() => assertSourceAssignmentLease(null, principal, 'assignment', 'runner', 'synthetic-lease', now)).toThrow();
+	});
 });

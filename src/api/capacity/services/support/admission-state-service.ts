@@ -23,6 +23,7 @@ export interface CapacityAdmissionStateRequest {
 	decisionId?: string | null;
 	requiredCapabilities?: string[];
 	budget?: CapacityAdmissionInput['request']['budget'];
+	executionNodeClaim?: { nodeId: string; nodeRevision: number; graphRevision: number } | null;
 }
 
 function numeric(...values: unknown[]) {
@@ -124,11 +125,28 @@ export async function loadCapacityAdmissionState(database: CapacityGovernanceDat
 	const requiredCapabilities = requestedCapabilities;
 	let acting: CapacityAdmissionInput['acting'];
 	if (request.mode === 'acting') {
+		if (request.executionNodeClaim) {
+			const claimed = await database.first(`SELECT node.id FROM execution_nodes node
+				JOIN execution_graph_revisions graph ON graph.team_id=node.team_id
+				WHERE node.team_id=? AND node.project_id=? AND node.id=? AND node.node_revision=?
+				AND graph.revision=? AND node.status='ready'
+				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+					WHERE assignment.team_id=node.team_id AND assignment.execution_node_id=node.id
+					AND assignment.execution_node_revision=node.node_revision)
+				LIMIT 1`, [request.teamId, request.projectId, request.executionNodeClaim.nodeId,
+				request.executionNodeClaim.nodeRevision, request.executionNodeClaim.graphRevision]);
+			if (!claimed) throw new CapacityGovernanceError('execution_node_claim_stale', 'The living execution-node authority changed before admission.', 409, { executionNodeClaim: request.executionNodeClaim });
+			// The ready living node already embodies exact decision, readiness, and
+			// execution-plan authority. Requiring the retired parallel planning rows
+			// here would make the replacement path impossible to execute.
+			acting = { decisionApproved: true, readinessReady: true, capacityPlanAccepted: true };
+		} else {
 		const [readiness, capacityPlan] = request.decisionId ? await Promise.all([
 			database.first(`SELECT * FROM decision_planning_statuses WHERE decision_id = ? AND project_id = ? LIMIT 1`, [request.decisionId, request.projectId]),
 			database.first(`SELECT * FROM agent_capacity_plans WHERE decision_id = ? AND project_id = ? AND status IN ('accepted','scheduled','active') ORDER BY created_at DESC LIMIT 1`, [request.decisionId, request.projectId]),
 		]) : [null, null];
 		acting = { decisionApproved: readiness?.human_approval_state === 'approved', readinessReady: readiness?.execution_readiness === 'ready' && readiness?.planning_inputs_status === 'complete', capacityPlanAccepted: Boolean(capacityPlan) };
+		}
 	}
 	return {
 		now,

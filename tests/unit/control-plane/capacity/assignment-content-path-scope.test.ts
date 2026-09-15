@@ -1,55 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAssignmentContentPathScope } from '../../../../src/api/capacity/services/capacity/assignments/planning/assignment-content-path-scope.ts';
-import { assignmentContextQueryReadPaths, assignmentDiscussionMessageReadPaths, assignmentDiscussionWritePaths, assignmentInstructionTemplateReadPaths, assignmentOperationalContentPaths } from '../../../../src/api/capacity/services/capacity/assignments/planning/assignment-operational-paths.ts';
+import { constrainAssignmentContentPathScope, resolveAssignmentContentPathScope } from '../../../../src/api/capacity/services/capacity/assignments/planning/assignment-content-path-scope.ts';
 
-describe('assignment content path scope', () => {
-	it('accepts top-level library collections when the content root is dot', () => {
-		expect(resolveAssignmentContentPathScope({
-			permissions: { content: { agent: { operations: ['read'] }, knowledge: { operations: ['query'] } } },
-		}, 'read', '.', ['**'])).toEqual(['agents/**', 'knowledge/**']);
+describe('assignment content output boundaries', () => {
+	it('maps canonical execution-plan authority to its TreeDX collection', () => {
+		const payload = { permissions: { content: { execution_plan: { operations: ['create', 'validate', 'commit'] } } } };
+		expect(resolveAssignmentContentPathScope(payload, 'write', '.', [])).toEqual(['execution-plans/**']);
 	});
 
-	it('preserves declared project-wide repository read access alongside TreeDX collections', () => {
-		expect(resolveAssignmentContentPathScope({ permissions: {
-			content: { agent: { operations: ['read'] }, knowledge: { operations: ['query'] } },
-			repository: { readPaths: ['**'], writePaths: [] },
-		} }, 'read', '.', ['fallback/**'])).toEqual(['agents/**', 'knowledge/**', '**']);
+	it('narrows broad model grants to compiler-declared output paths', () => {
+		expect(constrainAssignmentContentPathScope(['notes/**', 'proposals/**'], ['notes/**'])).toEqual(['notes/**']);
 	});
 
-	it('normalizes fallback and operational paths for a top-level library root', () => {
-		expect(resolveAssignmentContentPathScope({}, 'write', '.', [
-			'./discussion-messages', './discussion-messages/**',
-		])).toEqual(['discussion-messages', 'discussion-messages/**']);
-		expect(assignmentOperationalContentPaths('.', 'assignment_1')).toEqual([
-			'assignment-plans/assignment_1.mdx',
-			'assignment-statuses/assignment_1-status-*',
-			'assignment-summaries/assignment_1.mdx',
-		]);
-		expect(assignmentDiscussionWritePaths('.')).toEqual([
-			'discussion-messages', 'discussion-messages/**', 'discussion-events', 'discussion-events/**',
-		]);
-	});
-
-	it('scopes conversation source reads to root or nested discussion messages', () => {
-		expect(assignmentDiscussionMessageReadPaths([
-			'message-id',
-			'discussion-messages/topic/message.mdx',
-			'./discussion-messages/topic/second.mdx',
-			'src/content/discussion-messages/topic/legacy.mdx',
-			'knowledge/private.mdx',
-		])).toEqual([
-			'discussion-messages/topic/message.mdx',
-			'discussion-messages/topic/second.mdx',
-			'src/content/discussion-messages/topic/legacy.mdx',
-		]);
-	});
-
-	it('keeps query and instruction paths repository-relative for a root library', () => {
-		expect(assignmentContextQueryReadPaths('.', [{ kind: 'query-set', id: 'core' }], [])).toEqual([
-			'agent-context-query-sets/core.mdx', 'agent-context-queries/**',
-		]);
-		expect(assignmentInstructionTemplateReadPaths('.', [{ id: 'analysis' }])).toEqual([
-			'agent-instruction-templates/analysis.mdx', 'agent-instruction-templates/analysis.md',
-		]);
+	it('rejects a declared output outside the agent grant', () => {
+		expect(() => constrainAssignmentContentPathScope(['notes/**'], ['decisions/**'])).toThrow('exceed the agent content grant');
 	});
 });

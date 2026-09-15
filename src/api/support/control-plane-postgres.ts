@@ -348,6 +348,25 @@ export class ControlPlanePostgresDatabase {
 		return this.migrationPromise;
 	}
 
+	async migrationInventory() {
+		const migrationRoot = this.migrationRoot ?? resolveControlPlaneMigrationRoot();
+		const source = readdirSync(migrationRoot).filter((file) => file.endsWith('.sql')).sort();
+		const applied = (await this.pool.query('SELECT name FROM treeseed_control_plane_schema_migrations ORDER BY name'))
+			.rows.map((row) => String(row.name));
+		const inspectedTables = ['execution_edges', 'execution_graph_revisions', 'execution_nodes'];
+		const schemaRows = (await this.pool.query(`SELECT table_name,column_name FROM information_schema.columns
+			WHERE table_schema='public' AND table_name = ANY($1::text[]) ORDER BY table_name,ordinal_position`, [inspectedTables])).rows;
+		const schema = Object.fromEntries(inspectedTables.map((table) => [table,
+			schemaRows.filter((row) => row.table_name === table).map((row) => String(row.column_name))]));
+		return {
+			source,
+			applied,
+			pending: source.filter((name) => !applied.includes(name)),
+			unexpected: applied.filter((name) => !source.includes(name)),
+			schema,
+		};
+	}
+
 	private async applyDrizzleMigrations(): Promise<void> {
 		const migrationRoot = this.migrationRoot ?? resolveControlPlaneMigrationRoot();
 		const files = readdirSync(migrationRoot).filter((file) => file.endsWith('.sql')).sort();

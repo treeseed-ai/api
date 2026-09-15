@@ -14,7 +14,7 @@ function record(value:unknown):JsonRecord { return value&&typeof value==='object
 function text(value:unknown){ return typeof value==='string'?value.trim():''; }
 function positive(value:unknown){ const parsed=Number(value); return Number.isInteger(parsed)&&parsed>0?parsed:null; }
 
-export function compileAssignmentExecutionWindow(assignment:Pick<DurableProviderAssignment,'capacityEnvelope'|'metadata'>,now:string,planRef:JsonRecord){
+export function compileAssignmentExecutionWindow(assignment:Pick<DurableProviderAssignment,'capacityEnvelope'|'metadata'>,now:string,executionRef:JsonRecord){
 	const envelope=record(assignment.capacityEnvelope); const budget=record(envelope.budget); const time=record(budget.time);
 	const executionSeconds=positive(time.executionSeconds??time.requestedSeconds??envelope.requestedSeconds);
 	const closeoutSeconds=positive(time.closeoutSeconds??time.closeoutWarningSeconds);
@@ -30,26 +30,29 @@ export function compileAssignmentExecutionWindow(assignment:Pick<DurableProvider
 		? evaluateMinimumAssignmentDuration(requirement as never,now)
 		: minimum;
 	return { capacityEnvelope:{ ...envelope,budget:{ ...budget,time:nextTime,deadline:closeoutDeadlineAt } },
-		metadata:{ ...assignment.metadata,minimumAssignmentDuration:productiveMinimum,operationalState:'executing',executionWindow:{ startedAt:now,executionDeadlineAt,closeoutDeadlineAt,planRef } } };
+		metadata:{ ...assignment.metadata,minimumAssignmentDuration:productiveMinimum,operationalState:'executing',executionWindow:{ startedAt:now,executionDeadlineAt,closeoutDeadlineAt,executionRef } } };
 }
 
 export async function startAssignmentExecutionWindow(database:CapacityGovernanceDatabase,principal:CapacityProviderAccessPrincipal,assignmentId:string,input:JsonRecord,now=new Date().toISOString()){
 	const repository=new ProviderAssignmentRepository(database); const assignment=await repository.get(principal.teamId,assignmentId);
 	if(!assignment) throw new CapacityGovernanceError('provider_assignment_not_found','Unknown assignment.',404);
 	if(assignment.capacityProviderId!==principal.capacityProviderId||assignment.membershipId!==principal.membershipId) throw new CapacityGovernanceError('provider_assignment_forbidden','Provider cannot start execution for this assignment.',403);
-	const key=text(input.idempotencyKey); const planRef=record(input.planRef); const expected=Number(input.expectedStateVersion);
-	if(!key||!text(planRef.id)||!text(planRef.path)) throw new CapacityGovernanceError('assignment_execution_start_evidence_required','Execution start requires an idempotency key and exact assignment-plan id/path.',400);
+	const key=text(input.idempotencyKey); const expected=Number(input.expectedStateVersion);
+	const attempt=assignment.assignmentAttempt;
+	if(!attempt) throw new CapacityGovernanceError('assignment_attempt_required','Execution requires the canonical immutable assignment attempt.',409);
+	if(!key) throw new CapacityGovernanceError('assignment_execution_start_evidence_required','Execution start requires an idempotency key.',400);
+	const executionRef={nodeId:attempt.nodeId,nodeRevision:attempt.nodeRevision,graphRevision:attempt.graphRevision,attempt:attempt.attempt};
 	const existing=record(record(assignment.metadata).executionWindow);
 	if(assignment.status!=='leased'||assignment.leaseState!=='leased'||assignment.leaseToken!==input.leaseToken
 		|| (assignment.leaseExpiresAt && Date.parse(assignment.leaseExpiresAt)<=Date.parse(now))) throw new CapacityGovernanceError('assignment_execution_lease_invalid','Execution start requires the current active lease.',409);
 	if(text(existing.idempotencyKey)===key) {
-		if (text(record(existing.planRef).id)!==text(planRef.id)||text(record(existing.planRef).path)!==text(planRef.path)) throw new CapacityGovernanceError('assignment_execution_replay_mismatch','Execution replay cannot change its assignment plan.',409);
+		if (JSON.stringify(record(existing.executionRef))!==JSON.stringify(executionRef)) throw new CapacityGovernanceError('assignment_execution_replay_mismatch','Execution replay cannot change its immutable graph-node attempt.',409);
 		if (Date.parse(text(existing.executionDeadlineAt))<=Date.parse(now)) throw new CapacityGovernanceError('assignment_execution_window_exhausted','The original productive execution window is exhausted.',409);
 		return assignment;
 	}
 	if(text(existing.startedAt)) throw new CapacityGovernanceError('assignment_execution_already_started','Productive execution already started from a different transition.',409,{ executionWindow:existing });
 	if(!Number.isInteger(expected)||expected!==assignment.stateVersion) throw new CapacityGovernanceError('assignment_execution_state_stale','Execution start requires the exact assignment state version.',409,{ expectedStateVersion:expected,stateVersion:assignment.stateVersion });
-	const compiled=compileAssignmentExecutionWindow(assignment,now,planRef); const metadata={ ...compiled.metadata,executionWindow:{ ...record(compiled.metadata.executionWindow),idempotencyKey:key } };
+	const compiled=compileAssignmentExecutionWindow(assignment,now,executionRef); const metadata={ ...compiled.metadata,executionWindow:{ ...record(compiled.metadata.executionWindow),idempotencyKey:key } };
 	await database.run(`UPDATE capacity_provider_assignments SET capacity_envelope_json=?,metadata_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND state_version=? AND status='leased' AND lease_state='leased' AND lease_token=?`,[
 		JSON.stringify(compiled.capacityEnvelope),JSON.stringify(metadata),now,assignmentId,principal.teamId,expected,input.leaseToken,
 	]);

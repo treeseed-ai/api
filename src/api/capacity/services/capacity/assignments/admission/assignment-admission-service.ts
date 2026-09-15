@@ -1,4 +1,4 @@
-import type { AgentExecutionMode } from '@treeseed/sdk/agent-capacity';
+import type { AgentExecutionMode, AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -52,6 +52,10 @@ export interface SynthesizedProviderAssignmentInput {
 	explanation?: JsonRecord;
 	treedxProxyHandle?: JsonRecord;
 	metadata?: JsonRecord;
+	executionNodeClaim?: {
+		teamId: string; nodeId: string; nodeRevision: number; graphRevision: number;
+		assignmentAttempt: AssignmentAttempt;
+	};
 }
 
 interface SynthesizedAssignmentAdmissionStore extends CapacityGovernanceDatabase {
@@ -101,6 +105,7 @@ export async function admitSynthesizedProviderAssignment(
 		laneId: input.laneId ?? null,
 		providerSessionId: input.providerSessionId ?? null,
 		decisionId: input.decisionId ?? null,
+		executionNodeClaim: input.executionNodeClaim ? { nodeId: input.executionNodeClaim.nodeId, nodeRevision: input.executionNodeClaim.nodeRevision, graphRevision: input.executionNodeClaim.graphRevision } : null,
 		requiredCapabilities: (input.requiredCapabilities ?? []).map(String).filter(Boolean),
 	});
 	const workspaceContext: JsonRecord = {
@@ -112,6 +117,7 @@ export async function admitSynthesizedProviderAssignment(
 		admission,
 		reservationId: input.reservationId,
 		assignmentId: input.assignmentId,
+		executionNodeClaim: input.executionNodeClaim,
 		assignment: {
 			projectAgentClassId: input.projectAgentClassId,
 			providerSessionId: input.providerSessionId ?? null,
@@ -154,7 +160,7 @@ export async function admitSynthesizedProviderAssignment(
 		},
 	});
 	await persistSessionEvent(store, {
-		eventType: 'capacity.assignment.available', teamId: input.teamId, projectId: input.projectId,
+		eventType: 'capacity.assignment.available', teamId: principal.teamId, projectId: input.projectId,
 		resourceId: input.assignmentId,
 		payload: { laneId: input.laneId ?? null, lanePurpose: input.lanePurpose ?? null, executionKind: input.executionKind ?? 'workday' },
 	}).catch(() => undefined);

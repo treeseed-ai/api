@@ -1,4 +1,5 @@
 import { CapacityGovernanceError } from '../../../database.ts';
+import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
 
@@ -29,10 +30,10 @@ function projectAgents(agentClasses: unknown[]) {
 		const value = record(candidate);
 		if (value.status && value.status !== 'active') return [];
 		const handlers = record(value.handlerRefs ?? value.handler_refs_json);
-		return Array.isArray(handlers.agents) ? handlers.agents.map(record) : [];
-	}).filter((agent) => {
-		const chat = record(record(agent.activities).chat);
-		return agent.enabled !== false && chat.enabled !== false && Boolean(text(chat.handler));
+		return Array.isArray(handlers.agents) ? handlers.agents.flatMap((agent) => {
+			const validation = validateAgentDefinitionModel(agent);
+			return validation.ok && validation.data?.activityProfiles.chat ? [validation.data] : [];
+		}) : [];
 	});
 }
 
@@ -55,7 +56,7 @@ export async function resolveTeamCommunicationTargets(store: any, teamId: string
 	const resolved = new Map<string, ResolvedCommunicationTarget>();
 	for (const address of addresses) {
 		const candidates = inventory.flatMap((project) => project.agents
-			.filter((agent) => text(agent.slug ?? agent.agentId) === address.agentSlug)
+			.filter((agent) => agent.id === address.agentSlug || agent.id.endsWith(`/${address.agentSlug}`))
 			.filter(() => !address.projectSlug || [project.projectId, project.projectSlug].includes(address.projectSlug))
 			.map(() => ({ projectId: project.projectId, projectSlug: project.projectSlug, agentSlug: address.agentSlug, requirement: address.requirement })));
 		if (!candidates.length) throw new CapacityGovernanceError('communication_agent_not_found',

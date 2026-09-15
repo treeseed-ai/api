@@ -1,6 +1,7 @@
 import { treeDxDelegationAuthority } from '../../../../../control-plane/treedx/delegation-authority.ts';
 import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
 import { TreeDxInfrastructureClient } from '../../../../../control-plane/treedx/infrastructure-client.ts';
+import { resolveTreeDxServiceUrl } from '../../../../../control-plane/treedx/connection-url.ts';
 
 export interface WorkdayTreeDxConnectionStore {
 	config: Record<string, unknown> & { fetchImpl?: typeof fetch };
@@ -36,7 +37,7 @@ export async function resolveWorkdayTreeDxConnection(
 		connectionId: text(treeDx.connectionId, treeDx.instanceId, 'treedx-workday-binding'),
 		scope: { repositoryIds: [repositoryId], capabilities: input.capabilities, refs: ['*'], paths: ['**'], workdayRunId: input.runId },
 	}).token;
-	const normalizedBaseUrl = baseUrl.replace(/\/+$/u, '');
+	const normalizedBaseUrl = resolveTreeDxServiceUrl(baseUrl, { ...process.env, ...store.config });
 	const transport = new FetchTransport({ baseUrl: normalizedBaseUrl, token, timeoutMs: 60_000, fetchImpl: store.config.fetchImpl });
 	return { baseUrl: normalizedBaseUrl, repositoryId, client: new TreeDxInfrastructureClient(new TreeDxClient({ baseUrl: normalizedBaseUrl, transport }), repositoryId) };
 }
