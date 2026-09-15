@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSourceCredentialRecipient, openSourceCredential } from '@treeseed/deployment/security/source';
+import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { createSourceWorkspaceService, assertSourceAssignmentLease, assignmentSourceMode } from '../../../../../src/api/control-plane/repositories/providers/source/source-workspace-service.ts';
 
 const mocks = vi.hoisted(() => ({ credential: vi.fn(), authority: vi.fn() }));
@@ -9,7 +10,7 @@ const now = new Date('2026-09-10T23:00:00.000Z'), commit = 'a'.repeat(40);
 const principal = { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership', scopes: ['provider:assignments:read'] };
 const row = { id: 'assignment', team_id: 'team', project_id: 'project', capacity_provider_id: 'provider', membership_id: 'membership', runner_id: 'runner',
   lease_token: 'synthetic-lease', status: 'leased', lease_state: 'leased', lease_expires_at: '2026-09-10T23:05:00.000Z', attempt_count: 0, state_version: 7,
-  execution_kind: 'conversation', mode: 'planning', allowed_outputs_json: '{}', workspace_context_json: '{}' };
+  execution_kind: 'conversation', workday_execution_mode: 'production', workday_parameters_json: '{}', mode: 'planning', allowed_outputs_json: '{}', workspace_context_json: '{}' };
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.credential.mockResolvedValue({ bindingId: 'binding', token: 'synthetic-git-token', username: 'x-access-token', expiresAt: '2026-09-10T23:04:00.000Z' });
@@ -27,11 +28,30 @@ function fixture(overrides: Record<string, unknown> = {}) {
   return { current, store, content, fetchImpl, service, recipient, request };
 }
 
+const canonicalAttempt = {
+	schemaVersion: 'treeseed.assignment-attempt/v1', id: 'assignment', idempotencyKey: 'assignment', teamId: 'team', projectId: 'project',
+	workdayId: 'workday', nodeId: 'node', workItemId: 'tests-first', nodeRevision: 1, graphRevision: 1,
+	sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest: `sha256:${'1'.repeat(64)}` },
+	authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'4'.repeat(64)}` }],
+	effectiveProfile: { profileRef: { store: 'treedx', model: 'agent', id: 'sdk/tester', revision: 1, digest: `sha256:${'2'.repeat(64)}` },
+		activity: 'acting', handler: 'actor', handlerOrigin: 'agent-package', prompt: { system: 'Author exact failing tests first.' },
+		permissionCeiling: { content: { read: [], write: [] }, tools: ['source.read', 'source.write'] } },
+	requiredCapabilities: [], grant: { contentRead: [], contentWrite: [], sourceRead: ['repository'], sourceWrite: ['repository'], tools: ['source.read', 'source.write'] },
+	provider: { providerId: 'provider', offerId: 'offer', offerRevision: 1, runtimeBuild: `sha256:${'3'.repeat(64)}` },
+	contextRefs: [{ store: 'git', model: 'repository', id: 'repository', repository: 'repository', commit }], predecessorResultIds: [],
+	acceptanceCriteria: ['Tests fail first.'], workspace: { mode: 'git', repository: 'repository', baseCommit: commit,
+		branch: 'treeseed/assignments/assignment', writablePaths: ['.'] },
+	estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 },
+	limits: { maximumSeconds: 3, maximumContextBytes: 1, maximumContextTokens: 1, maximumContextItems: 1 },
+	deadline: '2026-09-11T00:00:00.000Z', leaseId: 'lease', reservationId: 'reservation', attempt: 1,
+	status: 'created', createdAt: now.toISOString(),
+} as const;
+
 describe('provider source workspace authorization', () => {
   it('pins a revision and seals the credential to the exact current assignment and host key', async () => {
     const f = fixture();
     const response = await f.service({ principal }, 'assignment', f.request);
-    expect(response.authorization).toMatchObject({ providerId: 'provider', assignmentId: 'assignment', attempt: 1, mode: 'analysis', publication: 'denied', source: { teamId: 'team', projectId: 'project', commit } });
+    expect(response.authorization).toMatchObject({ providerId: 'provider', assignmentId: 'assignment', attempt: 1, mode: 'analysis', acquisition: 'upstream-authorized', publication: 'denied', source: { teamId: 'team', projectId: 'project', commit } });
     expect(openSourceCredential({ authorization: response.authorization, delivery: response.credential, privateKey: f.recipient.privateKey }, now).token).toBe('synthetic-git-token');
     expect(JSON.stringify(response)).not.toContain('synthetic-git-token');
     expect(f.current.workspace_context_json).not.toMatch(/synthetic|ciphertext|privateKey/u);
@@ -77,11 +97,24 @@ describe('provider source workspace authorization', () => {
   });
 
   it.each(['planning', 'estimating', 'reviewing', 'reporting', 'acting'])('keeps legacy %s source access read-only', mode => {
-		expect(assignmentSourceMode({ ...row, mode, execution_kind: 'workday' })).toEqual({ mode: 'analysis', publication: 'denied' });
+		expect(assignmentSourceMode({ ...row, mode, execution_kind: 'workday' })).toEqual({ mode: 'analysis', acquisition: 'upstream-authorized', publication: 'denied' });
 	});
 
 	it('does not infer publication authority from retired output metadata', () => {
-		expect(assignmentSourceMode({ ...row, mode: 'acting', execution_kind: 'workday', allowed_outputs_json: '{"artifactKinds":["source"]}' })).toEqual({ mode: 'analysis', publication: 'denied' });
+		expect(assignmentSourceMode({ ...row, mode: 'acting', execution_kind: 'workday', allowed_outputs_json: '{"artifactKinds":["source"]}' })).toEqual({ mode: 'analysis', acquisition: 'upstream-authorized', publication: 'denied' });
 		expect(() => assertSourceAssignmentLease(null, principal, 'assignment', 'runner', 'synthetic-lease', now)).toThrow();
+	});
+
+	it('uses anonymous upstream custody for a frozen simulation base and local custody for its approved predecessor', () => {
+		const parsedAttempt = assignmentAttemptSchema.safeParse(canonicalAttempt);
+		if (!parsedAttempt.success) throw new Error(parsedAttempt.error.message);
+		const base = { ...row, workday_execution_mode: 'simulation', work_day_id: 'workday',
+			workday_parameters_json: '{"acceptanceCampaignId":"campaign"}', assignment_attempt_json: JSON.stringify(canonicalAttempt) };
+		expect(assignmentSourceMode(base)).toMatchObject({ mode: 'work', acquisition: 'upstream-public', publication: 'simulation-branch',
+			publicationRef: 'simulation/campaign/workday/assignment' });
+		const dependent = structuredClone(canonicalAttempt);
+		dependent.workspace.baseCommit = '9'.repeat(40);
+		expect(assignmentSourceMode({ ...base, assignment_attempt_json: JSON.stringify(dependent) })).toMatchObject({
+			mode: 'work', acquisition: 'simulation-local', publication: 'simulation-branch' });
 	});
 });

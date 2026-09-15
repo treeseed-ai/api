@@ -78,7 +78,7 @@ async function resolveCapacityWorkdayPreflight(
 ) {
 	await store.ensureInitialized();
 	const parameters = run.parameters;
-	const executionMode = run.executionMode ?? (parameters.executionMode === 'production' ? 'production' : 'simulation');
+	const executionMode = run.executionMode;
 	const providerId = text(run.capacityProviderId ?? parameters.providerId);
 	if (!providerId) {
 		throw new CapacityGovernanceError('capacity_workday_provider_required', 'Workday requires a capacity provider.', 400);
@@ -117,6 +117,7 @@ async function resolveCapacityWorkdayPreflight(
 		agentProfilesByProjectId: frozenProfilesByProjectId,
 	}).map((participant) => participant.id);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
+		executionMode,
 		policyId: text(parameters.policyId, 'default'), policyRevision: Math.max(1, Number(parameters.policyRevision ?? 1)),
 		policy: { durationSeconds: Math.max(1, Number(parameters.durationSeconds)),
 			maximumConcurrency: Math.max(1, Number(parameters.maximumConcurrency ?? parameters.maxActiveAssignments ?? 1)),
@@ -184,7 +185,7 @@ export async function scheduleCapacityWorkdayRun(
 	}
 	const updated = await store.updateCapacityWorkdayRun(run.teamId, run.id, {
 		parameters: {
-			...parameters, executionMode, appliedPlan: { ...appliedPlan, state: 'active', activatedAt: startedAt },
+			...parameters, appliedPlan: { ...appliedPlan, state: 'active', activatedAt: startedAt },
 			availableSeconds: time.availableSeconds,
 			scheduledProjectIds: projects.map((project) => project.id),
 			scheduledProjectSlugs: projects.map((project) => project.slug ?? project.id),

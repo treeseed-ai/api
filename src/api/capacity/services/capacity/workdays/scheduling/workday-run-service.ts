@@ -39,6 +39,13 @@ function settlementGraceUntil(parameters: JsonRecord, from: string) {
 	const seconds = Math.max(300, Number(parameters.settlementGraceSeconds ?? parameters.waitSeconds ?? 0) || 0);
 	return new Date(Date.parse(from) + seconds * 1000).toISOString();
 }
+function assertExecutionModeOwnedByWorkday(parameters: JsonRecord) {
+	if ('executionMode' in parameters) throw new CapacityGovernanceError(
+		'capacity_workday_execution_mode_duplicated',
+		'Workday executionMode is a top-level immutable property and cannot be duplicated in parameters.',
+		400,
+	);
+}
 export function workdayTerminalizationPreserveUntil(status: CapacityWorkdayRunStatus, parameters: JsonRecord, now: string) {
 	return status === 'completed' ? settlementGraceUntil(parameters, now) : now;
 }
@@ -46,9 +53,8 @@ export function workdayTerminalizationPreserveUntil(status: CapacityWorkdayRunSt
 export function compileCapacityWorkdayRunRecord(teamId: string, input: JsonRecord, options: { now?: string; id?: string } = {}): CapacityWorkdayRunRecord {
 	const now = options.now ?? new Date().toISOString(); const id = options.id ?? text(input.id, randomUUID());
 	const status = parseCapacityWorkdayRunStatus(input.status ?? (input.startedAt ? 'running' : 'queued'));
-	const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters);
-	const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode??(input.executionKind==='conversation'?'production':undefined));
-	parameters.executionMode=executionMode;
+	const parameters = object(input.parameters); assertCapacityWorkdayParametersSafe(parameters); assertExecutionModeOwnedByWorkday(parameters);
+	const executionMode=parseAgentWorkExecutionMode(input.executionMode??(input.executionKind==='conversation'?'production':undefined));
 	parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
 	const durationSeconds = Math.max(0, Number(parameters.durationSeconds ?? input.durationSeconds ?? 0));
 	const startedAt = nullable(input.startedAt) ?? (status === 'running' ? now : null);
@@ -99,10 +105,9 @@ export class CapacityWorkdayRunService {
 		const existing = await this.runs.get(teamId, runId); if (!existing) return null;
 		const now = new Date().toISOString(); const status = parseCapacityWorkdayRunStatus(input.status ?? existing.status);
 		if (status !== existing.status && !TRANSITIONS[existing.status].includes(status)) throw new CapacityGovernanceError('capacity_workday_run_transition_invalid', `Cannot transition workday run from ${existing.status} to ${status}.`, 409, { runId, from: existing.status, to: status });
-		const parameters = object(input.parameters ?? existing.parameters); assertCapacityWorkdayParametersSafe(parameters);
-		const executionMode=parseAgentWorkExecutionMode(input.executionMode??parameters.executionMode??existing.executionMode);
+		const parameters = object(input.parameters ?? existing.parameters); assertCapacityWorkdayParametersSafe(parameters); assertExecutionModeOwnedByWorkday(parameters);
+		const executionMode=parseAgentWorkExecutionMode(input.executionMode??existing.executionMode);
 		if(existing.executionMode&&executionMode!==existing.executionMode) throw new CapacityGovernanceError('capacity_workday_execution_mode_immutable','Workday executionMode cannot change after creation.',409,{runId,existing:existing.executionMode,requested:executionMode});
-		parameters.executionMode=executionMode;
 		parameters.agentSelection = normalizeWorkdayAgentSelection(parameters.agentSelection);
 		if (input.parameters && JSON.stringify(parameters.agentSelection) !== JSON.stringify(normalizeWorkdayAgentSelection(existing.parameters.agentSelection))) {
 			throw new CapacityGovernanceError('capacity_workday_agent_selection_immutable', 'Workday agent selection cannot change after the run is created.', 409, { runId });

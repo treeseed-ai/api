@@ -5,7 +5,7 @@ import { createProviderRegistrationAndAvailabilityOperations } from '../../../..
 function service() {
 	return {
 		authenticator: {},
-		list: vi.fn(), show: vi.fn(), status: vi.fn(), diagnose: vi.fn(), connect: vi.fn(), disconnect: vi.fn(),
+		list: vi.fn(), show: vi.fn(), status: vi.fn(), diagnose: vi.fn(), offers: vi.fn(), connect: vi.fn(), disconnect: vi.fn(),
 		registrationCodeStatus: vi.fn(), revealRegistrationCode: vi.fn(), rotateRegistrationCode: vi.fn(),
 		requests: vi.fn(), request: vi.fn(), approve: vi.fn(), reject: vi.fn(), credentials: vi.fn(), rotateCredentials: vi.fn(), revokeCredentials: vi.fn(),
 		environmentProfiles: { list: vi.fn(), show: vi.fn(), publish: vi.fn(), showGrant: vi.fn(), putGrant: vi.fn(), revokeGrant: vi.fn() },
@@ -23,6 +23,7 @@ describe('provider registration and availability catalog', () => {
 			CONTROL_PLANE_OPERATIONS.providers.show,
 			CONTROL_PLANE_OPERATIONS.providers.status,
 			CONTROL_PLANE_OPERATIONS.providers.diagnose,
+			CONTROL_PLANE_OPERATIONS.providers.offers,
 			CONTROL_PLANE_OPERATIONS.providers.connect,
 			CONTROL_PLANE_OPERATIONS.providers.registrationCode.status,
 			CONTROL_PLANE_OPERATIONS.providers.registrationCode.reveal,

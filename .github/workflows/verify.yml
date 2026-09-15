@@ -34,63 +34,15 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Hydrate exact SDK artifact
-        timeout-minutes: 20
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdk_sha="$(node -e "const spec=require('./package.json').dependencies['@treeseed/sdk']; const match=spec.match(/#([0-9a-f]{40})$/); process.stdout.write(match?.[1] ?? '');")"
-          if [[ -z "${sdk_sha}" ]]; then
-            echo "Using the exact published SDK version declared by package.json."
-            exit 0
-          fi
-          artifact_name="sdk-${sdk_sha}"
-          run_id=""
-          for attempt in {1..120}; do
-            mapfile -t candidate_run_ids < <(
-              gh api "repos/treeseed-ai/sdk/actions/artifacts?name=${artifact_name}&per_page=100" \
-                --jq ".artifacts[] | select(.expired == false and .workflow_run.head_sha == \"${sdk_sha}\") | .workflow_run.id"
-            )
-            for candidate_run_id in "${candidate_run_ids[@]}"; do
-              mapfile -t candidate_state < <(
-                gh run view "${candidate_run_id}" --repo treeseed-ai/sdk \
-                  --json headSha,status,conclusion \
-                  --jq '[.headSha, .status, .conclusion] | .[]'
-              )
-              if [[ "${candidate_state[0]}" == "${sdk_sha}" && "${candidate_state[1]}" == "completed" && "${candidate_state[2]}" == "success" ]]; then
-                run_id="${candidate_run_id}"
-                break
-              fi
-            done
-            [[ -n "${run_id}" ]] && break
-            sleep 10
-          done
-          if [[ -z "${run_id}" ]]; then
-            echo "No successful SDK Verify run published exact artifact ${artifact_name}." >&2
-            exit 1
-          fi
-          mkdir -p artifacts/sdk
-          gh run download "${run_id}" --repo treeseed-ai/sdk --name "${artifact_name}" --dir artifacts/sdk
-
       - name: Install dependencies
         timeout-minutes: 20
-        run: |
-          npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
-          sdk_archive="$(find artifacts/sdk -name '*.tgz' -type f -print -quit 2>/dev/null || true)"
-          if [[ -n "${sdk_archive}" ]]; then
-            rm -rf node_modules/@treeseed/sdk
-            mkdir -p node_modules/@treeseed/sdk
-            tar -xzf "${sdk_archive}" --strip-components=1 -C node_modules/@treeseed/sdk
-            if [[ -d node_modules/@treeseed/deployment/node_modules/@treeseed/sdk ]]; then
-              rm -rf node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
-              mkdir -p node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
-              tar -xzf "${sdk_archive}" --strip-components=1 -C node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
-            fi
-          else
-            node -e "const expected=require('./package.json').dependencies['@treeseed/sdk']; const actual=require('./node_modules/@treeseed/sdk/package.json').version; if(actual!==expected) throw new Error('SDK version mismatch: expected '+expected+', received '+actual);"
-          fi
-          test -f node_modules/@treeseed/sdk/package.json
-          test -d node_modules/@treeseed/sdk/dist
+        run: npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
+      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@b466f942eba5bc9008d0f1085cce3a76ef0d42cd
+        with:
+          github-token: ${{ github.token }}
+          paths: |
+            node_modules/@treeseed/sdk
+            node_modules/@treeseed/deployment/node_modules/@treeseed/sdk
       - run: npm run verify:direct
       - name: Verify real PostgreSQL backup-writer migration closure
         env:

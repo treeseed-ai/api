@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
+import { projectKnowledgeAuthoringBaseRef, projectLibraryPath, resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
 import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
@@ -16,8 +16,22 @@ import { parseFrontmatterDocument } from '../../content/frontmatter.ts';
 import { validateAgentDefinitionSource } from '../repositories/agents/agent-definition-source.ts';
 import { validateProposalTypeSource } from './proposal-type-source.ts';
 
-const operationalModels=new Map([...Object.entries(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map(([model,collection])=>[collection,model] as const),['agent-tests','agent_test'],['execution-plans','execution_plan']]);
+const operationalModels=new Map([...Object.entries(AGENT_OPERATIONAL_CONTENT_COLLECTIONS).map(([model,collection])=>[collection,model] as const),['objectives','objective'],['agent-tests','agent_test'],['execution-plans','execution_plan']]);
 function operationalModel(path:string){const collection=path.split('/').at(-2)??path.split('/')[0]??'';return operationalModels.get(collection)??operationalModels.get(path.split('/')[0]??'')??null;}
+
+export async function additionalPublicationParentRefs(connection: {
+	baseRef: string;
+	publicationRef: string;
+	client: { listRepositoryRefs(repositoryId: string): Promise<Array<{ name?: string; sha?: string; target?: string }>> };
+	repositoryId: string;
+}, workspace: { baseCommitSha: string }) {
+	if (connection.baseRef === connection.publicationRef) return [];
+	const refs = await connection.client.listRepositoryRefs(connection.repositoryId);
+	const remote = refs.find((entry) => entry.name === connection.baseRef);
+	const remoteHead = typeof remote?.sha === 'string' && remote.sha ? remote.sha
+		: typeof remote?.target === 'string' ? remote.target : '';
+	return remoteHead && remoteHead !== workspace.baseCommitSha ? [connection.baseRef] : [];
+}
 
 export function createKnowledgeWorkspaceService(store: any, reader: { projectCatalog(principal: KnowledgePrincipal, projectId: string): Promise<Record<string, any>> }) {
 	const authorization = createKnowledgeAuthorization(store);
@@ -59,7 +73,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			let remote;
 			try {
 				remote = await connection.client.createWorkspace({ workspaceId: treeDxWorkspaceId(id), repoId: connection.repositoryId,
-					baseRef: connection.baseRef, branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 86_400 });
+					baseRef: projectKnowledgeAuthoringBaseRef(connection), branchName, mode: 'writable', allowedPaths: connection.allowedPaths, ttlSeconds: 86_400 });
 			} catch { throw new KnowledgeOperationError(503, 'knowledge_workspace_unavailable', 'The project knowledge workspace could not be created.'); }
 			const workspace = await store.createKnowledgeWorkspaceRecord({ id, teamId: access.project.teamId, projectId,
 				repositoryId: connection.repositoryId, treeDxWorkspaceId: remote.workspaceId, actorUserId: access.principal.id,
@@ -236,6 +250,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			const diff = await connection.client.diff({ workspaceId: access.workspace.treeDxWorkspaceId });
 			if (!diff.changedPaths.length) throw new KnowledgeOperationError(422, 'empty_knowledge_draft', 'The draft has no changes.');
 			const remoteStatus = await connection.client.status({ workspaceId: access.workspace.treeDxWorkspaceId });
+			const additionalParentRefs = await additionalPublicationParentRefs(connection, access.workspace);
 			const deletedPaths=new Set((remoteStatus.changes??[]).filter((change:any)=>change.status==='deleted').map((change:any)=>String(change.path)));
 			const pageRoot=`${projectLibraryPath(connection.contentPath,'knowledge')}/`;
 			for(const changedPath of diff.changedPaths.filter((path:string)=>path.startsWith(pageRoot))) {
@@ -256,7 +271,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 					changedPaths: diff.changedPaths, status: 'committed' as const }
 				: await connection.client.commit({ workspaceId: access.workspace.treeDxWorkspaceId,
 					message: text(input.message) || 'Update knowledge', author: { name: access.principal.id,
-						email: `${access.principal.id}@users.treeseed.local` } });
+						email: `${access.principal.id}@users.treeseed.local` }, additionalParentRefs });
 			await recordTreeDxAuthoringState(store, 'unpublished', { projectId: access.workspace.projectId,
 				repositoryId: access.workspace.repositoryId, commitSha: commit.commitSha, ref: commit.branchName,
 				changedPaths: diff.changedPaths, actorType: 'user', actorId: access.principal.id });

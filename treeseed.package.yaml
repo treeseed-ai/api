@@ -49,16 +49,6 @@ dockerImages:
     release:
       - "<version>"
       - latest
-projectArchitecture:
-  topology: split_site_content
-  rootPath: .
-  sitePath: docs
-  contentPath: src/content
-  contentRuntimeSource: r2_preview_overlay
-  localContentMaterialization: none
-  contentPublishTarget:
-    kind: cloudflare_r2
-    prefix: packages/api
 development:
   schemaVersion: treeseed.development-runtime/v1
   project: { id: api, repository: treeseed-ai/api }
