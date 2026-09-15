@@ -100,8 +100,8 @@ export class WorkdayPreflightService {
 		const selectedDemands=nodeRows.flatMap((entry,index)=>{
 			const node=decodeExecutionNode(entry) as ExecutionNode;
 			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
-			if(!node.id||selectedDecisions.size&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
 			const proposalReview=node.kind==='reviewing'&&node.pairRole===null&&node.sourceRef.model==='proposal';
+			if(!node.id||selectedDecisions.size&&!proposalReview&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
 			const mode=node.kind==='acting'||node.kind==='reviewing'&&!proposalReview?'acting' as const:'planning' as const;
 			if(mode==='acting'&&!decisionRef) return [];
 			const selectedAgents=selectedAgentsByProject.get(node.projectId);

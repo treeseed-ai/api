@@ -300,6 +300,9 @@ export const adminApprovalProvider: GovernanceVotingProvider = {
 		const chamberResults = evaluateChambers(input);
 		if (input.adminDecision === 'approved') return outcome('accepted', 'admin_approved', chamberResults);
 		if (input.adminDecision === 'rejected' || input.adminDecision === 'request_changes') return outcome('rejected', 'admin_rejected', chamberResults);
+		const [admin] = chamberResults;
+		if (admin?.status === 'accepted') return outcome('accepted', 'admin_approved', chamberResults);
+		if (admin?.status === 'rejected') return outcome('rejected', 'admin_rejected', chamberResults);
 		return outcome('voting', 'still_open', chamberResults);
 	},
 };
