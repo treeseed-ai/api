@@ -1,5 +1,12 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import { listReadyExecutionNodes } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+
+const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
+	resolveKnowledgeGatewayConnection: vi.fn(async () => ({ repositoryId: 'repository', client: gateway })),
+}));
+
+import { listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 
 const projectId = 'project';
 const sourceRef = {
@@ -50,11 +57,80 @@ const project = { id: projectId, slug: 'sdk' };
 const contextRefs = [{ store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) }];
 const teamContextStore = {
 	getProjectByTeamAndSlug: vi.fn(async () => ({ id: 'team-project', slug: 'team' })),
-	getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'team-repository', metadata: { resolvedRef: 'f'.repeat(40) } })),
+	getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'team-repository',
+		contentRepositoryRef: '1'.repeat(40), metadata: { resolvedRef: 'f'.repeat(40) } })),
 	listHubRepositories: vi.fn(async () => [{ id: 'repository-sdk', role: 'software', provider: 'github', owner: 'treeseed-ai', name: 'sdk', currentBranch: 'staging' }]),
 };
 
 describe('direct ready-node admission input', () => {
+	it('keeps a suspended conversation node occupied until its response is settled', async () => {
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([]) };
+		await listReadyExecutionNodes(store, run as never, project as never, async () => []);
+		const query = store.all.mock.calls[0]![0];
+		expect(query).toMatch(/assignment\.status<>'returned'[\s\S]*assignment\.execution_kind='conversation'[\s\S]*assignment\.lifecycle_code='discussion_response_required'/u);
+	});
+
+	it.each(['planning', 'estimating'])('loads exact proposal and source context for proposal-level %s nodes', async (kind) => {
+		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
+		const objectiveRef = { store: 'treedx', model: 'objective', id: 'objective', repository: 'treeseed-ai/sdk-library',
+			commit: 'b'.repeat(40), path: 'objectives/core' };
+		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: { frontmatter: {
+			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId, title: 'Governed planning',
+			request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
+			objectiveRefs: [objectiveRef], executionPlan: { workItems: [{
+				id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
+				objective: 'Implement the governed change.', estimate: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 240 },
+				dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
+				acceptanceCriteria: ['Focused tests pass.'],
+			}] },
+		} } });
+		const refs = await workItemContext({ getProjectTreeDxLibrary: vi.fn(async () => ({
+			repositoryId: 'repository', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
+		})) } as never, {
+			teamId: 'team', projectId, id: kind, kind, workItemId: null, sourceRef,
+		} as never);
+		expect(refs).toEqual([sourceRef, { ...objectiveRef, repository: 'repository' }, gitRef]);
+	});
+
+	it('attaches a proposal work item exact Git source to proposal-bound communication', async () => {
+		const source = 'exact proposal bytes';
+		const digest = createHash('sha256').update(source).digest('hex');
+		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
+		gateway.readRepositoryFile.mockResolvedValueOnce({ resolvedRef: 'b'.repeat(40), file: {
+			content: source,
+			frontmatter: {
+				schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId, title: 'Governed planning',
+				request: 'Plan the exact accepted work.', summary: 'Use exact governed context.', status: 'draft',
+				executionPlan: { workItems: [{
+					id: 'implementation', activity: 'acting', agentClass: 'engineer', workspace: 'read-only', review: 'none',
+					objective: 'Implement the governed change.', estimate: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 240 },
+					dependsOn: [], contextRefs: [gitRef], requestedPermissions: permissions, requiredCapabilities: ['source.read'],
+					acceptanceCriteria: ['Focused tests pass.'],
+				}] },
+			},
+		} });
+		const store = {
+			first: vi.fn(async () => ({ content_refs_json: [{
+				kind: 'proposal', id: 'proposal', projectId, immutableRef: 'b'.repeat(40),
+				path: 'proposals/one.mdx', digest: `sha256:${digest}`,
+			}] })),
+			getGovernanceProposal: vi.fn(async () => ({
+				id: 'proposal', teamId: 'team', projectId, activeVersion: 1, activeContentHash: digest,
+				metadata: { contentProvenance: {
+					repositoryId: 'repository', contentPath: 'proposals/one.mdx', commitSha: 'b'.repeat(40), digest,
+				} },
+			})),
+			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'repository' })),
+		};
+		const refs = await workItemContext(store as never, {
+			teamId: 'team', projectId, id: 'invocation', kind: 'communication', sourceRef: {
+				store: 'treedx', model: 'discussion', id: 'invocation', repository: 'repository',
+				commit: 'b'.repeat(40), path: 'discussions/channel/message',
+			},
+		} as never);
+		expect(refs).toEqual([expect.objectContaining({ store: 'treedx', model: 'proposal' }), gitRef]);
+	});
+
 	it('loads the exact profile and predecessor results without creating a demand record', async () => {
 		const store = { ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([nodeRow()])
@@ -68,11 +144,27 @@ describe('direct ready-node admission input', () => {
 			predecessorResults: [result],
 		});
 		expect(candidate.contextRefs).toEqual(expect.arrayContaining([
-			expect.objectContaining({ id: 'team-project:team-readme', path: 'README.md', commit: 'f'.repeat(40) }),
-			expect.objectContaining({ id: 'team-project:team-objective', path: 'objectives/core', commit: 'f'.repeat(40) }),
+			expect.objectContaining({ id: 'team-project:team-readme', path: 'README.md', commit: '1'.repeat(40) }),
+			expect.objectContaining({ id: 'team-project:team-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
+			expect.objectContaining({ id: 'project:project-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
 		]));
 		expect(candidate.sourceRepositories).toEqual(['repository-sdk']);
 		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
+	});
+
+	it('uses an exact resolved commit when the configured content ref is a branch', async () => {
+		const store = { ...teamContextStore,
+			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'team-repository',
+				contentRepositoryRef: 'refs/remotes/origin/staging', metadata: { resolvedRef: 'f'.repeat(40) } })),
+			all: vi.fn().mockResolvedValueOnce([nodeRow()])
+				.mockResolvedValueOnce([{ id: 'class-engineer', handler_refs_json: { agents: [definition] } }])
+				.mockResolvedValueOnce([]),
+		};
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.contextRefs).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: 'team-project:team-objective', commit: 'f'.repeat(40) }),
+			expect.objectContaining({ id: 'project:project-objective', commit: 'f'.repeat(40) }),
+		]));
 	});
 
 	it('limits admission to decision IDs frozen into the workday', async () => {

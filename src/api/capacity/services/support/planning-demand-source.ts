@@ -27,9 +27,10 @@ function isTreeDxStore(value: CapacityGovernanceDatabase): value is CapacityGove
 	return Boolean(candidate.config && typeof candidate.getProjectTreeDxLibrary === 'function');
 }
 
-function preferredContentSource(agent: CapacityWorkdayAgent, sources: TreeDxPlanningDemandSource[]) {
+export function preferredContentSource(agent: CapacityWorkdayAgent, sources: TreeDxPlanningDemandSource[]) {
 	const identity = `${agent.slug}:${agent.activityType}:${agent.handler}`.toLowerCase();
-	const preference = identity.includes('review') ? ['proposal', 'decision-review', 'objective', 'question']
+	const preference = agent.activityType === 'estimating' ? ['proposal', 'objective', 'question', 'knowledge-gap', 'decision-review']
+		: identity.includes('review') ? ['proposal', 'decision-review', 'objective', 'question']
 		: identity.includes('research') ? ['knowledge-gap', 'question', 'objective', 'proposal']
 			: ['objective', 'question', 'knowledge-gap', 'proposal', 'decision-review'];
 	for (const type of preference) {

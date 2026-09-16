@@ -9,8 +9,7 @@ const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.st
 
 function advanceRounds(plan: AppliedWorkday, states: Map<string, string>, now: string): AppliedWorkday {
 	const rounds = plan.planningRounds.map((round, index) => {
-		const complete = round.assignmentIds.length > 0
-			&& round.assignmentIds.every((id) => terminalNodeStates.has(states.get(id) ?? ''));
+		const complete = round.assignmentIds.every((id) => terminalNodeStates.has(states.get(id) ?? ''));
 		const previousComplete = index === 0 || plan.planningRounds[index - 1]?.state === 'complete'
 			|| plan.planningRounds[index - 1]?.assignmentIds.every((id) => terminalNodeStates.has(states.get(id) ?? ''));
 		if (complete) return { ...round, state: 'complete' as const,

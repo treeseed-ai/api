@@ -26,6 +26,7 @@ describe('living execution admission', () => {
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt })).resolves.toBe(committed);
 		const sql = store.batch.mock.calls[0]![0].map((operation: { query: string }) => operation.query).join('\n');
 		expect(sql).toMatch(/FOR UPDATE/u);
+		expect(sql).toMatch(/prior\.status<>'returned'/u);
 		expect(sql).toMatch(/capacity_reservations/u);
 		expect(sql).toMatch(/assignment_attempt_json/u);
 		expect(sql).toMatch(/INSERT INTO treedx_proxy_handles/u);
@@ -41,6 +42,23 @@ describe('living execution admission', () => {
 		expect(store.batch.mock.calls[0]![0].some((operation: { params: unknown[] }) => operation.params.includes('operation'))).toBe(false);
 		expect(sql).not.toMatch(/'workday',\?,\?,\?,\?,'pending'/u);
 		expect(sql).not.toMatch(/capacity_workday_demands|capacity_allocation_sets|agent_capacity_plans/u);
+	});
+
+	it('refuses to re-admit a completed execution-node revision while permitting an explicit returned retry', async () => {
+		const committed = { id: assignment.id, executionNodeId: 'node', executionNodeRevision: 1 };
+		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: vi.fn(async () => []) };
+		await admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
+			assignment: assignment as never, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'lane',
+			lanePurpose: 'workday', executionKind: 'workday', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
+				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt });
+		const operations = store.batch.mock.calls[0]![0] as Array<{ query: string; params: unknown[] }>;
+		const reservation = operations.find((operation) => operation.query.includes('INSERT INTO capacity_reservations'))!;
+		const insertedAssignment = operations.find((operation) => operation.query.includes('INSERT INTO capacity_provider_assignments'))!;
+		expect(reservation.query).toMatch(/prior\.execution_node_revision=node\.node_revision[\s\S]*prior\.status<>'returned'/u);
+		expect(insertedAssignment.query).toMatch(/prior\.execution_node_revision=\?[\s\S]*prior\.status<>'returned'/u);
+		expect(reservation.query).toMatch(/prior\.execution_kind='conversation'[\s\S]*prior\.lifecycle_code='discussion_response_required'/u);
+		expect(insertedAssignment.query).toMatch(/prior\.execution_kind='conversation'[\s\S]*prior\.lifecycle_code='discussion_response_required'/u);
+		expect(insertedAssignment.params.slice(-3)).toEqual(['team', 'node', 1]);
 	});
 
 	it('binds a conversation invocation to the assignment in the admission transaction', async () => {

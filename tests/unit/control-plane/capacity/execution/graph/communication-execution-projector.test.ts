@@ -19,12 +19,22 @@ describe('communication living-graph projection', () => {
 				path: 'discussions/test/messages/request.mdx', durationSeconds: 300,
 			}] });
 		expect(projected.nodes).toEqual([expect.objectContaining({
-			id: 'communication:invocation', kind: 'communication', status: 'ready', agentClass: 'architect',
+			id: 'communication:invocation:conversation-invocation', kind: 'communication', status: 'ready', agentClass: 'architect',
 			workspace: 'treedx', workdayId: 'conversation-invocation',
 			requiredCapabilities: ['treeseed.coordination.conversation'],
 			sourceRef: expect.objectContaining({ model: 'discussion', path: 'discussions/test/messages/request.mdx' }),
 		})]);
 		expect(projected.changedSourceRefs).toEqual([projected.nodes[0]!.sourceRef]);
+	});
+
+	it('uses the conversation workday in node identity so a retry cannot inherit a terminal prior run', () => {
+		const project = (workdayId: string) => projectCommunicationInvocations({ teamId: 'team', revision: 3,
+			profiles: { 'sdk:architect': definition }, sources: [{
+				id: 'invocation', teamId: 'team', projectId: 'sdk', workdayId,
+				agentId: 'architect', repository: 'treeseed-ai/sdk-library', commit: 'a'.repeat(40),
+				path: 'discussions/test/messages/request.mdx', durationSeconds: 300,
+			}] }).nodes[0]!;
+		expect(project('conversation-invocation').id).not.toBe(project('conversation-invocation-retry-1').id);
 	});
 
 	it('fails closed when the addressed agent does not enable chat', () => {

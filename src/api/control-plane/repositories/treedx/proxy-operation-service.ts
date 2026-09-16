@@ -110,7 +110,7 @@ async function deny(store: Store, principal: ProviderPrincipal, input: { project
 
 async function authorize(store: Store, projectId: string, permission: Permission, scope: TreeDxProxyScope,
 	method: string, path: string, query: Record<string, unknown>, context: OperationInvocationContext,
-	resources: Record<string, unknown> = {}): Promise<Access> {
+	resources: Record<string, unknown> = {}, body: unknown = {}): Promise<Access> {
 	const details = await store.getProjectDetails(projectId);
 	if (!details) throw new CapacityGovernanceError('project_not_found', `Unknown project "${projectId}".`, 404);
 	if (!context.providerAuth) {
@@ -132,7 +132,8 @@ async function authorize(store: Store, projectId: string, permission: Permission
 	const handle = await store.getTreeDxProxyHandle(principal.teamId, String(assignment.projectId), identity.handleId);
 	if (!handle || handle.assignmentId && handle.assignmentId !== identity.assignmentId) return reject('treedx_proxy_scope_mismatch', 'TreeDX proxy handle scope does not match the active assignment.');
 	const readRepositories=Array.isArray(record(handle.metadata).readRepositories)?(record(handle.metadata).readRepositories as unknown[]).map(record):[];
-	const readGrant=readRepositories.find((grant)=>String(grant.projectId)===projectId&&(!resources.repoId||String(grant.repositoryId)===String(resources.repoId)));
+	const requestedReadRef=treeDxRequestedReadRef(method,query,body);
+	const readGrant=selectTreeDxReadRepositoryGrant(readRepositories,projectId,resources.repoId,requestedReadRef);
 	const owningProject=String(assignment.projectId)===projectId;
 	const primaryRepository=!resources.repoId||String(handle.repositoryId??'')===String(resources.repoId);
 	const primaryProjectId=String(handle.repositoryProjectId??record(handle.metadata).repositoryProjectId??assignment.projectId);
@@ -151,6 +152,18 @@ async function authorize(store: Store, projectId: string, permission: Permission
 		if(readGrant&&!primaryRepository&&pathValue){const allowed=Array.isArray(readGrant.allowedPaths)?readGrant.allowedPaths.map(String):[];if(!allowed.some((pattern)=>treeDxScopedPathAllows(pattern,pathValue)))return reject('treedx_proxy_path_denied','The secondary-repository read path is outside its bounded authority.');}
 	}
 	return { actorType: 'capacity_provider', principal, details, assignment, handle };
+}
+
+export function selectTreeDxReadRepositoryGrant(grants: Record<string, unknown>[], projectId: string,
+	repositoryId: unknown, requestedRef: unknown) {
+	const repository=String(repositoryId??''),ref=String(requestedRef??'');
+	return grants.find((grant)=>String(grant.projectId)===projectId
+		&&(!repository||String(grant.repositoryId)===repository)
+		&&(!ref||String(grant.baseRef)===ref));
+}
+
+export function treeDxRequestedReadRef(method: string, query: Record<string, unknown>, body: unknown) {
+	return String((method === 'GET' ? query.ref : record(body).ref) ?? '');
 }
 
 function actorId(access: Access) {
@@ -173,11 +186,16 @@ function normalizedError(error: unknown): never {
 	if (!(error instanceof TreeDxApiError)) throw error;
 	const status = [400, 401, 403, 404, 409, 412, 413, 422, 429, 500, 503].includes(error.status) ? error.status : 503;
 	const message = status === 404 ? 'The requested TreeDX resource was not found.'
-		: status === 401 || status === 403 ? 'TreeDX rejected the scoped delegation.'
+		: status === 401 || status === 403 ? `TreeDX rejected the scoped delegation (${error.code}: ${error.message}).`
 			: status === 409 || status === 412 ? 'The TreeDX resource changed or conflicts with this request.'
 				: status === 429 ? 'TreeDX is temporarily busy.'
 					: status >= 500 ? 'TreeDX is temporarily unavailable.' : 'TreeDX rejected the proxied request.';
-	throw new CapacityGovernanceError(`treedx_${error.code}`, message, status as 503);
+	throw new CapacityGovernanceError(`treedx_${error.code}`, message, status as 503, {
+		upstreamStatus: error.status,
+		upstreamCode: error.code,
+		upstreamMessage: error.message,
+		...(error.details === undefined ? {} : { upstreamDetails: error.details }),
+	});
 }
 
 export function createTreeDxProxyOperationService(storeValue: CapacityGovernanceDatabase, runtime: TreeDxProxyRuntime) {
@@ -267,7 +285,7 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 			const operation = requireTreeDxOperation(descriptor.upstream.operationId);
 			const scope = treeDxOperationScope(operation, input, repositoryId(library) ? [repositoryId(library)!] : []);
 			const permission: Permission = descriptor.kind === 'read' ? 'projects:read:team' : 'projects:manage:team';
-			const access = await authorize(store, projectId, permission, scope, operation.method, operation.path, input.query, context, input.path);
+			const access = await authorize(store, projectId, permission, scope, operation.method, operation.path, input.query, context, input.path, input.body);
 			let upstreamInput = input;
 			let providerRefs: string[] | undefined;
 			if (access.actorType === 'capacity_provider') {

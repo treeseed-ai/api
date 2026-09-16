@@ -55,13 +55,38 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	};
 	const common = [assignment.teamId,assignment.nodeId,assignment.nodeRevision];
 	await store.batch([
-		{ query: 'SELECT id FROM execution_nodes WHERE team_id=? AND id=? AND node_revision=? AND status=\'ready\' FOR UPDATE', params: common },
+		{ query: `SELECT node.id FROM execution_nodes node
+			WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
+			AND NOT EXISTS (
+				SELECT 1 FROM capacity_provider_assignments prior
+				WHERE prior.team_id=node.team_id
+				AND prior.execution_node_id=node.id
+				AND prior.execution_node_revision=node.node_revision
+				AND (prior.status<>'returned' OR (
+					prior.execution_kind='conversation'
+					AND prior.lifecycle_code='discussion_response_required'
+				))
+			)
+			FOR UPDATE`, params: common },
 		{ query: `INSERT INTO capacity_reservations
 			(id,idempotency_key,membership_id,capacity_provider_id,execution_provider_id,lane_id,lane_purpose,
 			 project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,state,requested_seconds,
 			 reserved_seconds,active_seconds,elapsed_seconds,released_seconds,overrun_seconds,expires_at,metadata_json,created_at,updated_at)
 			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,'reserved',?,?,0,0,0,0,?,?::jsonb,?,?
-			WHERE EXISTS (SELECT 1 FROM execution_nodes WHERE team_id=? AND id=? AND node_revision=? AND status='ready')
+			WHERE EXISTS (
+				SELECT 1 FROM execution_nodes node
+				WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
+				AND NOT EXISTS (
+					SELECT 1 FROM capacity_provider_assignments prior
+					WHERE prior.team_id=node.team_id
+					AND prior.execution_node_id=node.id
+					AND prior.execution_node_revision=node.node_revision
+					AND (prior.status<>'returned' OR (
+						prior.execution_kind='conversation'
+						AND prior.lifecycle_code='discussion_response_required'
+					))
+				)
+			)
 			ON CONFLICT (id) DO NOTHING`, params: [assignment.reservationId,assignment.idempotencyKey,principal.membershipId,
 				principal.capacityProviderId,input.executionProviderId,input.laneId,input.lanePurpose,input.projectAgentClassId,assignment.id,mode,
 				assignment.teamId,assignment.projectId,assignment.workdayId,assignment.estimate.expectedSeconds,
@@ -75,6 +100,14 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','unleased',1,?,?,?::jsonb,?::jsonb,?::jsonb,'{}','{}',0,?,'{}',
 				 'living_execution_graph',?,?,?,?::jsonb,?,?
 			WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id=? AND team_id=? AND assignment_id=?)
+			AND NOT EXISTS (
+				SELECT 1 FROM capacity_provider_assignments prior
+				WHERE prior.team_id=? AND prior.execution_node_id=? AND prior.execution_node_revision=?
+				AND (prior.status<>'returned' OR (
+					prior.execution_kind='conversation'
+					AND prior.lifecycle_code='discussion_response_required'
+				))
+			)
 			ON CONFLICT (id) DO NOTHING`, params: [assignment.id,principal.membershipId,assignment.teamId,assignment.projectId,
 				principal.capacityProviderId,input.providerSessionId,input.executionProviderId,input.laneId,input.lanePurpose,input.projectAgentClassId,
 				assignment.reservationId,assignment.workdayId,mode,input.executionKind,input.invocationId ?? null,
@@ -82,7 +115,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				JSON.stringify(capacityEnvelope),JSON.stringify(decisionInput),
 				JSON.stringify({ assignmentAttempt: assignment, predecessorResults: input.predecessorResults }),input.now,
 				assignment.idempotencyKey,decisionId,proposalId,JSON.stringify({ requiredCapabilities: assignment.requiredCapabilities }),input.now,input.now,
-				assignment.reservationId,assignment.teamId,assignment.id] },
+				assignment.reservationId,assignment.teamId,assignment.id,
+				assignment.teamId,assignment.nodeId,assignment.nodeRevision] },
 		{ query: `UPDATE capacity_provider_assignments SET graph_revision=?,execution_node_id=?,execution_node_revision=?,
 			assignment_attempt_json=?::jsonb,treedx_proxy_handle_json=?::jsonb,workspace_context_json=?::jsonb,updated_at=?
 			WHERE id=? AND team_id=? AND reservation_id=?`,

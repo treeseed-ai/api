@@ -245,7 +245,7 @@ export function projectTeamExecutionGraph(input: {
 						sourceRef.revision,text(workItem.id),'missing-agent',dependencyClass]);
 					if (!nodes.some((candidate) => candidate.id === conditionId)) nodes.push(executionNodeSchema.parse({
 						schemaVersion: 'treeseed.execution-node/v1', id: conditionId, teamId: source.teamId,
-						projectId: source.projectId, kind: 'condition', pairRole: null, sourceRef,
+						projectId: source.projectId, kind: 'condition', pairRole: null, sourceRef, authorityRefs: [],
 						ruleRevision: RULE_REVISION, nodeRevision: 1, status: 'blocked',
 						condition: { conditionType: 'external', subjectRef: sourceRef,
 							expectedState: `agent-class:${dependencyClass}` },

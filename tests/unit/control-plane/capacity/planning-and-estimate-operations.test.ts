@@ -95,6 +95,24 @@ describe('communication catalog operations', () => {
 		expect(create.mock.calls.map((call) => call[1].projectId).sort()).toEqual(['project-api', 'project-sdk']);
 	});
 
+	it('fails closed when a communication proposal is outside the addressed project', async () => {
+		const create = vi.fn();
+		const service = createCommunicationService(store({
+			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
+			async getGovernanceProposal() { return { id: 'proposal-a', teamId: 'team-a', projectId: 'project-b', status: 'open' }; },
+			async first(query: string) {
+				if (query.includes('communication_discussion_topics')) return { id: 'topic-a', slug: 'agent-chat', status: 'active' };
+				return null;
+			},
+			async run() { return { meta: { changes: 1 } }; },
+			async all() { return []; },
+		}), { create });
+		await expect(service.send(principal, 'team-a', 'Agent Chat', {
+			message: '@sdk/architect Review this proposal.', proposalId: 'proposal-a',
+		}, 'request-a')).rejects.toMatchObject({ code: 'communication_proposal_not_found', status: 404 });
+		expect(create).not.toHaveBeenCalled();
+	});
+
 	it('reads communication send identities from the text-backed JSON column with PostgreSQL JSONB semantics', async () => {
 		const queries: string[] = [];
 		const service = createCommunicationService(store({

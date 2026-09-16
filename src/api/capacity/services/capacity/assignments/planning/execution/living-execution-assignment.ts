@@ -18,13 +18,19 @@ const record = (value: unknown): Record<string, unknown> => {
 };
 
 const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))];
+export const treeDxAuthorizedPaths = (values: Array<string | undefined>) => unique(values).flatMap((path) => {
+	const leaf = path.split('/').at(-1) ?? path;
+	return leaf.includes('.') || /[*?\[\]]/u.test(path)
+		? [path]
+		: [path, `${path}.md`, `${path}.mdx`, `${path}.yaml`, `${path}.yml`, `${path}.json`];
+});
 
 async function issueLivingTreeDxAuthority(store: AssignmentFunctionStore, run: Parameters<typeof buildAssignmentAttempt>[0]['run'],
 	assignment: ReturnType<typeof buildAssignmentAttempt>['assignment'], now: string) {
 	const currentRepositoryId = assignment.workspace.mode === 'treedx'
 		? assignment.workspace.repository
 		: assignment.sourceRef.repository;
-	const readPaths = unique(assignment.grant.contentRead.filter((reference) => reference.repository === currentRepositoryId)
+	const readPaths = treeDxAuthorizedPaths(assignment.grant.contentRead.filter((reference) => reference.repository === currentRepositoryId)
 		.map((reference) => reference.path));
 	const writePaths = unique(assignment.grant.contentWrite.map((reference) => reference.path));
 	const allowedPaths = unique([...readPaths, ...writePaths]);
@@ -46,12 +52,15 @@ async function issueLivingTreeDxAuthority(store: AssignmentFunctionStore, run: P
 		if (!candidateRepositoryId) return [];
 		const references = assignment.grant.contentRead.filter((reference) => reference.repository === candidateRepositoryId);
 		if (!references.length) return [];
-		return [{
-			projectId: String(project.id), projectSlug: String(project.slug ?? ''), repositoryId: candidateRepositoryId,
-			baseRef: String(references[0]!.commit), allowedPaths: unique(references.map((reference) => reference.path)),
-			allowedModels: unique(references.map((reference) => reference.model)),
-			source: String(project.id) === String(teamLibraryProject?.id) ? 'team-library' as const : 'same-team' as const,
-		}];
+		return unique(references.map((reference) => reference.commit)).map((baseRef) => {
+			const exact = references.filter((reference) => reference.commit === baseRef);
+			return {
+				projectId: String(project.id), projectSlug: String(project.slug ?? ''), repositoryId: candidateRepositoryId,
+				baseRef, allowedPaths: treeDxAuthorizedPaths(exact.map((reference) => reference.path)),
+				allowedModels: unique(exact.map((reference) => reference.model)),
+				source: String(project.id) === String(teamLibraryProject?.id) ? 'team-library' as const : 'same-team' as const,
+			};
+		});
 	});
 	let workspace: Record<string, unknown> = {};
 	if (assignment.workspace.mode === 'treedx') {

@@ -14,6 +14,7 @@ import { resolveWorkdayAgentProfileSnapshot } from '../policy/workday-agent-prof
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
 import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
+import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -72,6 +73,11 @@ export function acceptedLibraryRevision(library: { metadata?: unknown; contentRe
 	return immutableRef;
 }
 
+/** Cooperative project planning requires one exact proposal; conversation runs bind exact message context instead. */
+export function requiresGovernedPlanningProposal(run: Pick<DurableCapacityWorkdayRun, 'executionKind' | 'parameters'>): boolean {
+	return run.executionKind === 'workday' && run.parameters.planningOnly === true;
+}
+
 async function resolveCapacityWorkdayPreflight(
 	store: WorkdayScheduleStore,
 	run: DurableCapacityWorkdayRun,
@@ -92,6 +98,17 @@ async function resolveCapacityWorkdayPreflight(
 		'Workday requires an approved capacity-provider membership.', 409, { teamId: run.teamId, providerId });
 	const projects = resolveCapacityWorkdayProjects(requestedSlugs, await store.listTeamProjects(run.teamId));
 	const contexts = new Map<string, { contentRoot: string; repositoryId: string; immutableRef: string }>();
+	const proposalContexts = new Map<string, Record<string, unknown>>();
+	const selectedProposalIds = Array.isArray(parameters.proposalIds) ? parameters.proposalIds.map(text).filter(Boolean) : [];
+	const selectedProposals = await Promise.all(selectedProposalIds.map(async (proposalId) => {
+		const proposal = await store.getGovernanceProposal(proposalId);
+		if (!proposal || text(proposal.teamId) !== run.teamId) throw new CapacityGovernanceError(
+			'capacity_workday_proposal_not_found', `Workday proposal ${proposalId} is unavailable to this team.`, 404, { proposalId });
+		if (!['draft','submitted','open','voting'].includes(text(proposal.status))) throw new CapacityGovernanceError(
+			'capacity_workday_proposal_not_plannable', `Workday proposal ${proposalId} is not open for cooperative planning.`, 409, { proposalId });
+		const exact = await readExactProposal(store, proposal);
+		return { proposalId, projectId: text(proposal.projectId), ref: exact.ref };
+	}));
 	const agentProfiles = new Map<string, Awaited<ReturnType<typeof resolveWorkdayAgentProfileSnapshot>>>();
 	for (const project of projects) {
 		const library = await store.getProjectTreeDxLibrary(project.id);
@@ -109,7 +126,17 @@ async function resolveCapacityWorkdayPreflight(
 		contexts.set(project.id, { contentRoot: contentRoot || capacityWorkdayContentRoot(project), repositoryId, immutableRef });
 		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection);
 		agentProfiles.set(project.id,profileSnapshot);
+		const projectProposals = selectedProposals.filter((proposal) => proposal.projectId === project.id);
+		if (requiresGovernedPlanningProposal(run) && projectProposals.length !== 1) throw new CapacityGovernanceError(
+			'capacity_workday_proposal_selection_invalid', 'A planning-only workday requires exactly one governed proposal per selected project.', 409,
+			{ projectId: project.id, proposalIds: projectProposals.map((proposal) => proposal.proposalId) });
+		if (projectProposals[0]) proposalContexts.set(project.id, projectProposals[0].ref);
 	}
+	const selectedProjectIds = new Set(projects.map((project) => project.id));
+	const outsideSelection = selectedProposals.filter((proposal) => !selectedProjectIds.has(proposal.projectId));
+	if (outsideSelection.length) throw new CapacityGovernanceError('capacity_workday_proposal_project_mismatch',
+		'Every selected proposal must belong to a selected workday project.', 409,
+		{ proposalIds: outsideSelection.map((proposal) => proposal.proposalId) });
 	const time = workdayTime(parameters);
 	const frozenProfilesByProjectId = Object.fromEntries(agentProfiles);
 	const agentIds = workdayParticipants({
@@ -118,6 +145,8 @@ async function resolveCapacityWorkdayPreflight(
 	}).map((participant) => participant.id);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
 		executionMode,
+		activityTypes: Array.isArray(record(parameters.agentSelection).activityTypes)
+			? (record(parameters.agentSelection).activityTypes as unknown[]).map((value) => text(value)) : [],
 		policyId: text(parameters.policyId, 'default'), policyRevision: Math.max(1, Number(parameters.policyRevision ?? 1)),
 		policy: { durationSeconds: Math.max(1, Number(parameters.durationSeconds)),
 			maximumConcurrency: Math.max(1, Number(parameters.maximumConcurrency ?? parameters.maxActiveAssignments ?? 1)),
@@ -125,11 +154,12 @@ async function resolveCapacityWorkdayPreflight(
 			communicationConcurrency: Math.max(1, Number(parameters.communicationConcurrency ?? 1)),
 			projectWeights: record(parameters.projectWeights), agentClassWeights: record(parameters.agentClassWeights) },
 		agentIds, startsAt: startedAt });
-	const planningSeconds = agentIds.length * 2 * appliedPlan.policySnapshot.planningSecondsPerAgent;
+	const planningSeconds = appliedPlan.planningRounds.reduce((total, round) => total + round.assignmentIds.length, 0)
+		* appliedPlan.policySnapshot.planningSecondsPerAgent;
 	if (planningSeconds > time.availableSeconds) throw new CapacityGovernanceError('capacity_workday_planning_capacity_insufficient',
-		'Workday capacity cannot guarantee two planning rounds for every selected agent.', 409,
+		'Workday capacity cannot guarantee the compiled cooperative assignments for every selected agent.', 409,
 		{ requiredSeconds: planningSeconds, availableSeconds: time.availableSeconds, agentCount: agentIds.length });
-	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,contexts,agentProfiles,time,appliedPlan };
+	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,contexts,proposalContexts,agentProfiles,time,appliedPlan };
 }
 
 export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, run: DurableCapacityWorkdayRun) {
@@ -173,7 +203,7 @@ export async function scheduleCapacityWorkdayRun(
 	run: DurableCapacityWorkdayRun,
 ): Promise<{ projects: WorkdayProject[] }> {
 	const resolved = await resolveCapacityWorkdayPreflight(store, run);
-	const { parameters,executionMode,providerId,startedAt,membership,projects,contexts,agentProfiles,time,appliedPlan } = resolved;
+	const { parameters,executionMode,providerId,startedAt,membership,projects,contexts,proposalContexts,agentProfiles,time,appliedPlan } = resolved;
 	for (const project of projects) await reconcileTreeDxRefSignals(store, project.id, startedAt);
 	for (const project of projects) {
 		const context = contexts.get(project.id)!;
@@ -192,6 +222,7 @@ export async function scheduleCapacityWorkdayRun(
 			repositoryIdsByProjectId: Object.fromEntries(
 				projects.map((project) => [project.id, contexts.get(project.id)!.repositoryId]),
 			),
+			planningSourceByProjectId: Object.fromEntries(proposalContexts),
 			workdayContextByProjectId: Object.fromEntries(projects.map((project) => {
 				const context = contexts.get(project.id)!;
 				const root = context.contentRoot === '.' ? '' : `${context.contentRoot.replace(/\/+$/u, '')}/`;

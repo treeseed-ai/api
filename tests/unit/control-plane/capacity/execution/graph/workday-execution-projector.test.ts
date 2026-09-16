@@ -15,7 +15,35 @@ const definition = (agentClass: string, dependsOn: string[] = []) => ({
 });
 
 describe('workday living-graph projection', () => {
-	it('projects exactly two planning rounds, standing dependencies, and closing Reporter work', () => {
+	it('projects six work-owner estimates and one Reviewer covering all six paired reviews', () => {
+		const owners = ['researcher', 'architect', 'tester', 'engineer', 'technical-writer', 'releaser'];
+		const classes = [...owners, 'reviewer'];
+		const profiles = Object.fromEntries(classes.map((agentClass) => {
+			const agent = definition(agentClass) as ReturnType<typeof definition> & { activityProfiles: Record<string, unknown> };
+			agent.activityProfiles.estimating = { handler: 'estimate', permissions, prompt: { system: 'Estimate the exact proposal work.' } };
+			return [`sdk:${agentClass}`, agent];
+		}));
+		const appliedPlan = compileWorkday({ id: 'seven-estimates', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation', activityTypes: ['estimating'],
+			policy: { durationSeconds: 1800, maximumConcurrency: 1, planningSecondsPerAgent: 60,
+				communicationConcurrency: 1, projectWeights: {}, agentClassWeights: {} },
+			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating`), startsAt: '2026-09-14T12:00:00.000Z' });
+		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles,
+			sources: [{ id: 'seven-estimates', teamId: 'team', proposalsByProjectId: { sdk: { executionPlan: {
+				workItems: owners.map((agentClass) => ({ id: `${agentClass}-work`, agentClass, review: 'required', acceptanceCriteria: ['Meet the exact work-item boundary.'] })),
+			} } }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'], agentSelection: { activityTypes: ['estimating'] },
+				planningSourceByProjectId: { sdk: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
+					repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden.mdx' } },
+				agentProfilesByProjectId: { sdk: { agents: Object.values(profiles).map((agent) => ({ definition: agent, activities: ['estimating'] })) } },
+			} }] });
+		expect(graph.nodes).toHaveLength(7);
+		expect(graph.edges).toHaveLength(0);
+		expect(graph.nodes.filter((node) => node.workItemId).map((node) => node.workItemId).sort())
+			.toEqual(owners.map((agentClass) => `${agentClass}-work`).sort());
+		expect(graph.nodes.find((node) => node.agentClass === 'reviewer')?.acceptanceCriteria).toHaveLength(6);
+		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
+	});
+	it('projects an independent first round, all-result second round, and closing Reporter work', () => {
 		const profiles = { 'sdk:architect': definition('architect'), 'sdk:engineer': definition('engineer', ['architect']),
 			'sdk:reporter': definition('reporter') };
 		const appliedPlan = compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
@@ -34,8 +62,7 @@ describe('workday living-graph projection', () => {
 			.toEqual(['treeseed.coordination.reporting']);
 		expect(graph.nodes.filter((node) => node.kind === 'planning')
 			.every((node) => node.requiredCapabilities?.[0] === 'treeseed.coordination.planning')).toBe(true);
-		expect(graph.edges.some((edge) => edge.provenance === 'profile-agent'
-			&& edge.fromNodeId.includes('architect') && edge.toNodeId.includes('engineer'))).toBe(true);
+		expect(graph.edges.some((edge) => edge.provenance === 'profile-agent')).toBe(false);
 		expect(graph.edges.filter((edge) => edge.fromNodeId.startsWith('planning:workday:1:')
 			&& edge.toNodeId.startsWith('planning:workday:2:'))).toHaveLength(9);
 		expect(graph.nodes.filter((node) => node.kind !== 'condition')
@@ -49,17 +76,27 @@ describe('workday living-graph projection', () => {
 		const participantId = 'sdk/sdk/architect:estimating';
 		const appliedPlan = compileWorkday({ id: 'estimating-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation',
+			activityTypes: ['estimating'],
 			policy: { durationSeconds: 600, maximumConcurrency: 1, planningSecondsPerAgent: 60,
 				communicationConcurrency: 1, projectWeights: {}, agentClassWeights: {} },
 			agentIds: [participantId], startsAt: '2026-09-14T12:00:00.000Z' });
+		const proposalRef = { store: 'treedx', model: 'proposal', id: 'golden-sdk', revision: 2,
+			digest: `sha256:${'a'.repeat(64)}`, repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden-sdk.mdx' };
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles: { 'sdk:architect': architect },
-			sources: [{ id: 'estimating-workday', teamId: 'team', parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
+			sources: [{ id: 'estimating-workday', teamId: 'team', proposalsByProjectId: { sdk: { executionPlan: { workItems: [{
+				id: 'architecture-contract', agentClass: 'architect', review: 'required', acceptanceCriteria: ['Explain the one authority boundary.'],
+			}] } } }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
 				agentSelection: { activityTypes: ['estimating'] },
+				planningSourceByProjectId: { sdk: proposalRef },
 				agentProfilesByProjectId: { sdk: { revision: 'test', agents: [{ definition: architect, activities: ['estimating'] }] } } } }] });
-		expect(graph.nodes.filter((node) => node.kind === 'estimating')).toHaveLength(2);
+		expect(graph.nodes.filter((node) => node.kind === 'estimating')).toHaveLength(1);
+		expect(graph.nodes.find((node) => node.kind === 'estimating')?.workItemId).toBe('architecture-contract');
+		expect(graph.edges).toHaveLength(0);
 		expect(graph.nodes.filter((node) => node.kind === 'estimating').every((node) =>
 			node.requiredCapabilities?.[0] === 'treeseed.coordination.estimation')).toBe(true);
 		expect(graph.nodes.some((node) => node.kind === 'planning')).toBe(false);
+		expect(graph.nodes.filter((node) => node.kind === 'estimating').every((node) => node.sourceRef.id === 'golden-sdk'
+			&& node.authorityRefs?.some((reference) => reference.model === 'workday'))).toBe(true);
 	});
 
 	it('does not manufacture subjectless planning rounds for a selected review activity', () => {

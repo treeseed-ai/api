@@ -15,6 +15,7 @@ import { decodeExecutionNode } from '../../../control-plane/repositories/capacit
 import { CapacityGovernanceError } from '../../database.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { selectAssignmentSourceRepository } from '../capacity/assignments/context/source-repository.ts';
+import { readExactProposal } from '../../../governance/executable-proposal.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -28,6 +29,7 @@ const array = (value: unknown): unknown[] => {
 	return [];
 };
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const exactCommit = (...values: unknown[]): string => values.map(text).find((value) => /^[a-f0-9]{40}$/u.test(value)) ?? '';
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
 	if (value && typeof value === 'object') return `{${Object.entries(value as Row).sort(([a], [b]) => a.localeCompare(b))
@@ -35,6 +37,28 @@ const stable = (value: unknown): string => {
 	return JSON.stringify(value);
 };
 const sha256 = (value: unknown) => `sha256:${createHash('sha256').update(stable(value)).digest('hex')}`;
+
+function repositorySlug(value: unknown): string {
+	const candidate = text(value).replace(/\.git$/u, '');
+	const match = candidate.match(/(?:github\.com[/:])([^/]+\/[^/]+)$/u);
+	return match?.[1] ?? candidate;
+}
+
+async function canonicalProposalContextRefs(store: any, node: ExecutionNode, values: unknown[]): Promise<ExactEntityReference[]> {
+	const binding = await store.getProjectTreeDxLibrary(node.projectId);
+	const repositoryId = text(binding?.repositoryId,
+		record(record(record(binding?.topology).contentRepository).treeDx).repositoryId);
+	const aliases = new Set([
+		repositoryId,
+		repositorySlug(binding?.contentRepositoryUrl),
+		repositorySlug(record(record(binding?.topology).contentRepository).githubUrl),
+	].filter(Boolean));
+	return values.map((value) => {
+		const reference = record(value) as ExactEntityReference;
+		if (reference.store !== 'treedx' || !repositoryId || !aliases.has(repositorySlug(reference.repository))) return reference;
+		return { ...reference, repository: repositoryId };
+	});
+}
 
 export interface ReadyExecutionNode {
 	node: ExecutionNode;
@@ -47,21 +71,51 @@ export interface ReadyExecutionNode {
 	readyAt: string;
 }
 
-export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' | 'executionKind'>) {
-	return run.executionKind === 'conversation'
-		? { sql: `node.kind='communication' AND node.workday_id=?`, parameters: [run.id] }
-		: { sql: `node.kind<>'communication' AND (node.workday_id IS NULL OR node.workday_id=?)`, parameters: [run.id] };
+export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' | 'executionKind' | 'parameters'>) {
+	if (run.executionKind === 'conversation') {
+		return { sql: `node.kind='communication' AND node.workday_id=?`, parameters: [run.id] };
+	}
+	if (run.parameters.planningOnly === true) {
+		return {
+			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','reporting')`,
+			parameters: [run.id],
+		};
+	}
+	return { sql: `node.kind<>'communication' AND (node.workday_id IS NULL OR node.workday_id=?)`, parameters: [run.id] };
 }
 
-async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
+export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
 	const source = node.sourceRef;
 	if (node.kind === 'communication' && source.store === 'treedx' && source.repository && source.commit) {
 		const row = await store.first('SELECT content_refs_json FROM agent_invocation_requests WHERE team_id=? AND id=? LIMIT 1',
 			[node.teamId,source.id]);
-		return array(row?.content_refs_json).map(text).filter(Boolean).map((path, index) => ({
-			store: 'treedx' as const, model: path === source.path ? 'discussion' : 'knowledge',
-			id: `${source.id}:context:${index + 1}`, repository: source.repository, commit: source.commit, path,
-		}));
+		const resolved: ExactEntityReference[] = [];
+		for (const [index, value] of array(row?.content_refs_json).entries()) {
+			const path = text(value);
+			if (path) {
+				resolved.push({ store: 'treedx', model: path === source.path ? 'discussion' : 'knowledge',
+					id: `${source.id}:context:${index + 1}`, repository: source.repository, commit: source.commit, path });
+				continue;
+			}
+			const reference = record(value);
+			if (reference.kind !== 'proposal' || text(reference.projectId) !== node.projectId || !text(reference.id)) {
+				throw new CapacityGovernanceError('communication_context_reference_invalid', `Communication node ${node.id} contains an unsupported context reference.`, 409);
+			}
+			const proposal = await store.getGovernanceProposal(text(reference.id));
+			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== node.teamId
+				|| text(proposal.projectId ?? proposal.project_id) !== node.projectId) {
+				throw new CapacityGovernanceError('communication_proposal_context_stale', `Communication node ${node.id} references an unavailable proposal.`, 409);
+			}
+			const exact = await readExactProposal(store, proposal);
+			if (text(reference.immutableRef) !== exact.ref.commit || text(reference.path) !== exact.ref.path
+				|| text(reference.digest) !== text(exact.ref.digest)) {
+				throw new CapacityGovernanceError('communication_proposal_context_moved', `Communication node ${node.id} proposal context changed.`, 409);
+			}
+			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
+				.flatMap((workItem) => array(record(workItem).contextRefs));
+			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
+		}
+		return resolved;
 	}
 	if (node.workdayId && source.store === 'postgresql' && source.model === 'workday') {
 		const row = await store.first('SELECT parameters_json FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1',
@@ -71,7 +125,7 @@ async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEn
 			`Node ${node.id} lacks an exact project context reference.`, 409);
 		return [context as ExactEntityReference];
 	}
-	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path || !node.workItemId) {
+	if (source.store !== 'treedx' || !source.repository || !source.commit || !source.path) {
 		throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} lacks exact proposal provenance.`, 409);
 	}
 	const connection = await resolveKnowledgeGatewayConnection(store, {
@@ -88,13 +142,21 @@ async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEn
 	const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
 	const validation = validatePortableContentData('proposal', record(file.frontmatter));
 	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
+	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
+		const proposal = record(validation.data);
+		return [source, ...await canonicalProposalContextRefs(store, node, [
+			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
+			...(proposal.discussionRef ? [proposal.discussionRef] : []),
+			...array(record(proposal.executionPlan).workItems).flatMap((item) => array(record(item).contextRefs)),
+		])];
+	}
 	if (node.kind === 'reviewing' && node.pairRole === null) {
 		const proposal = record(validation.data);
-		return [
+		return canonicalProposalContextRefs(store, node, [
 			...array(proposal.objectiveRefs),
 			...array(proposal.evidenceRefs),
 			...(proposal.discussionRef ? [proposal.discussionRef] : []),
-		] as ExactEntityReference[];
+		]);
 	}
 	const workItems = array(record(record(validation.data).executionPlan).workItems).map(record);
 	const workItem = workItems.find((candidate) => text(candidate.id) === node.workItemId);
@@ -170,7 +232,9 @@ async function teamCoreContext(store: any, teamId: string): Promise<ExactEntityR
 	if (!project) throw new CapacityGovernanceError('capacity_team_library_missing', 'The managed Team Library project is unavailable.', 409, { teamId });
 	const binding = await store.getProjectTreeDxLibrary(text(project.id));
 	const repository = text(binding?.repositoryId, record(record(record(binding?.topology).contentRepository).treeDx).repositoryId);
-	const commit = text(record(binding?.metadata).resolvedRef, binding?.contentRepositoryRef);
+	const commit = exactCommit(binding?.contentRepositoryRef,
+		record(record(record(binding?.topology).contentRepository)).ref,
+		record(binding?.metadata).resolvedRef);
 	if (!repository || !/^[a-f0-9]{40}$/u.test(commit)) throw new CapacityGovernanceError(
 		'capacity_team_library_not_ready', 'The managed Team Library has no verified immutable TreeDX view.', 409,
 		{ teamId, projectId: project.id },
@@ -179,6 +243,19 @@ async function teamCoreContext(store: any, teamId: string): Promise<ExactEntityR
 		{ store: 'treedx', model: 'knowledge', id: `${text(project.id)}:team-readme`, repository, commit, path: 'README.md' },
 		{ store: 'treedx', model: 'objective', id: `${text(project.id)}:team-objective`, repository, commit, path: 'objectives/core' },
 	];
+}
+
+async function projectCoreContext(store: any, project: WorkdayProject): Promise<ExactEntityReference[]> {
+	const binding = await store.getProjectTreeDxLibrary(text(project.id));
+	const repository = text(binding?.repositoryId, record(record(record(binding?.topology).contentRepository).treeDx).repositoryId);
+	const commit = exactCommit(binding?.contentRepositoryRef,
+		record(record(record(binding?.topology).contentRepository)).ref,
+		record(binding?.metadata).resolvedRef);
+	if (!repository || !/^[a-f0-9]{40}$/u.test(commit)) throw new CapacityGovernanceError(
+		'capacity_project_library_not_ready', 'The project library has no verified immutable TreeDX view.', 409,
+		{ projectId: project.id },
+	);
+	return [{ store: 'treedx', model: 'objective', id: `${text(project.id)}:project-objective`, repository, commit, path: 'objectives/core' }];
 }
 
 /** Read ready nodes directly. No capacity-plan or demand record is materialized. */
@@ -193,10 +270,21 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 		) revision ON true
 		WHERE node.team_id=? AND node.project_id=? AND node.status='ready' AND node.kind<>'condition'
 		AND ${runScope.sql}
+		AND NOT EXISTS (
+			SELECT 1 FROM capacity_provider_assignments assignment
+			WHERE assignment.team_id=node.team_id
+			AND assignment.execution_node_id=node.id
+			AND assignment.execution_node_revision=node.node_revision
+			AND (assignment.status<>'returned' OR (
+				assignment.execution_kind='conversation'
+				AND assignment.lifecycle_code='discussion_response_required'
+			))
+		)
 		ORDER BY node.updated_at,node.id LIMIT 100`, [run.teamId,project.id,...runScope.parameters]);
 	const selectedDecisionIds = new Set(Array.isArray(run.parameters.decisionIds)
 		? run.parameters.decisionIds.map(text).filter(Boolean) : []);
 	const teamContext = await teamCoreContext(store, run.teamId);
+	const projectContext = await projectCoreContext(store, project);
 	const ready: ReadyExecutionNode[] = [];
 	for (const row of rows) {
 		const node = decodeExecutionNode(row);
@@ -222,7 +310,7 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			projectAgentClassId: selected.projectAgentClassId,
 			effectiveProfile: selected.profile,
 			sourceRepositories,
-			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...candidateRefs, ...loadedContext]
+			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...projectContext, ...candidateRefs, ...loadedContext]
 				.filter((reference) => reference.store === 'git'
 					? Boolean(reference.repository && reference.commit)
 					: reference.store === 'treedx' && Boolean(reference.repository && reference.commit && reference.path))

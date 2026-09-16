@@ -29,6 +29,7 @@ export interface ActiveWorkdayProjectionSource {
 	id: string;
 	teamId: string;
 	parameters: Row;
+	proposalsByProjectId?: Record<string, Row>;
 }
 
 function sourceRef(workday: ReturnType<typeof appliedWorkdaySchema.parse>): ExactEntityReference {
@@ -49,6 +50,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 	for (const source of [...input.sources].sort((left, right) => left.id.localeCompare(right.id))) {
 		const workday = appliedWorkdaySchema.parse(record(source.parameters.appliedPlan));
 		const reference = sourceRef(workday);
+		const planningSources = record(source.parameters.planningSourceByProjectId);
 		const participants = workdayParticipants(source.parameters);
 		changedSourceRefs.push(reference);
 		const projectIds = array(source.parameters.scheduledProjectIds).map(text).filter(Boolean).sort();
@@ -58,17 +60,33 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			const current: ExecutionNode[] = [];
 			for (const participant of participants.filter((candidate) => projectIds.includes(candidate.projectId))) {
 				const { projectId, definition, activity } = participant;
+				const planningSource = record(planningSources[projectId]);
+				const nodeSource = ['planning','estimating'].includes(activity) && planningSource.store === 'treedx'
+					&& planningSource.model === 'proposal' ? planningSource as ExactEntityReference : reference;
 				const plannedId = `planning:${workday.id}:${round}:${participant.id}`;
 				if (!plannedIds.has(plannedId)) continue;
 				const profile = definition.activityProfiles[activity]!;
+				const workItems = array(record(source.proposalsByProjectId?.[projectId]?.executionPlan).workItems).map(record);
+				const workItem = activity === 'estimating' && definition.agentClass !== 'reviewer'
+					? workItems.filter((item) => text(item.agentClass) === definition.agentClass) : [];
+				if (activity === 'estimating' && (!workItems.length
+					|| (definition.agentClass !== 'reviewer' && workItem.length !== 1))) throw new Error(
+					`Estimating ${definition.agentClass} requires its exact proposal work item.`);
+				const estimatingCriteria = definition.agentClass === 'reviewer'
+					? workItems.filter((item) => item.review === 'required').map((item) =>
+						`Estimate the generated review of work item ${text(item.id)} independently: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`)
+					: [`Estimate work item ${text(workItem[0]?.id)}: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`,
+						...array(workItem[0]?.acceptanceCriteria).map(text)];
 				const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: plannedId,
 					teamId: input.teamId, projectId, workdayId: workday.id, kind: nodeKind(activity), pairRole: null,
-					sourceRef: reference, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
+					...(activity === 'estimating' && workItem[0] ? { workItemId: text(workItem[0].id) } : {}),
+					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
 					agentClass: definition.agentClass, status: 'blocked',
 					estimate: { minimumSeconds: 1, expectedSeconds: workday.policySnapshot.planningSecondsPerAgent,
 						maximumSeconds: workday.policySnapshot.planningSecondsPerAgent },
 					requiredCapabilities: [capability(activity)], requestedPermissions: profile.permissions,
-					workspace: 'treedx', acceptanceCriteria: [`Return the governed ${activity} contribution within the assigned round.`],
+					workspace: 'treedx', acceptanceCriteria: activity === 'estimating' ? estimatingCriteria
+						: [`Return the governed ${activity} contribution within the assigned round.`],
 					graphRevisionCreated: input.revision, graphRevisionUpdated: input.revision });
 				current.push(node); nodes.push(node);
 			}
@@ -77,15 +95,9 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 		for (const node of roundNodes.get(2) ?? []) for (const predecessor of roundNodes.get(1) ?? []) {
 			edges.push(edge(input.teamId, predecessor.id, node.id, 'work-item', reference, input.revision));
 		}
-		for (const round of [1, 2] as const) for (const node of roundNodes.get(round) ?? []) {
-			const participant = participants.find((candidate) => node.id === `planning:${workday.id}:${round}:${candidate.id}`);
-			const profile = participant?.definition.activityProfiles[participant.activity];
-			for (const dependencyClass of profile?.dependsOn?.agents ?? []) for (const predecessor of roundNodes.get(round) ?? []) {
-				if (predecessor.projectId === node.projectId && predecessor.agentClass === dependencyClass) {
-					edges.push(edge(input.teamId, predecessor.id, node.id, 'profile-agent', reference, input.revision));
-				}
-			}
-		}
+		// Cooperative round one is intentionally independent. Standing activity
+		// dependencies govern proposal work-item execution, not planning opinions;
+		// round two already depends on every exact round-one result.
 		for (const projectId of projectIds) {
 			const reporter = input.profiles[`${projectId}:reporter`];
 			const reporting = reporter?.activityProfiles.reporting;

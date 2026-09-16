@@ -51,6 +51,15 @@ describe('public workday selection custody', () => {
 		expect(parsePublicWorkdayIntent('team', { ...input(), decisionIds: [' decision-b ', 'decision-a', 'decision-b'] }).decisionIds).toEqual(['decision-a', 'decision-b']);
 		expect(() => parsePublicWorkdayIntent('team', { ...input(), decisionIds: [] })).toThrow(/invalid/u);
 	});
+	it('normalizes exact proposal selection for cooperative planning', () => {
+		expect(parsePublicWorkdayIntent('team', { ...input(), proposalIds: [' proposal-b ', 'proposal-a', 'proposal-b'] }).proposalIds)
+			.toEqual(['proposal-a', 'proposal-b']);
+		expect(() => parsePublicWorkdayIntent('team', { ...input(), proposalIds: [] })).toThrow(/invalid/u);
+	});
+	it('preserves explicit planning-only intent and rejects non-boolean values', () => {
+		expect(parsePublicWorkdayIntent('team', { ...input(), planningOnly: true }).planningOnly).toBe(true);
+		expect(() => parsePublicWorkdayIntent('team', { ...input(), planningOnly: 'true' })).toThrow(/invalid/u);
+	});
 	it('freezes exact living-node authority without creating a capacity plan', async () => {
 		const f = fixture();
 		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 600, executionNodeDemands: [{ graph_revision: 7, ...executionNodeRow({ id: 'node', kind: 'acting', agentClass: 'engineering', digest: 'sha256:source', expectedSeconds: 180, nodeRevision: 3, decisionRevision: 2 }) }] });
@@ -92,6 +101,21 @@ describe('public workday selection custody', () => {
 		});
 		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');
 		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['node-review', 'node-acting']);
+	});
+	it('excludes decision-governed acting work from an explicit planning-only workday', async () => {
+		const f = fixture();
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 600,
+			projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'assurance', classSlug: 'assurance', activityTypes: ['estimating'] }] }],
+			executionNodeDemands: [
+				{ graph_revision: 5, ...executionNodeRow({ id: 'node-acting', kind: 'acting', agentClass: 'engineering', digest: 'sha256:acting', expectedSeconds: 180, decisionRevision: 1 }) },
+				{ graph_revision: 5, ...executionNodeRow({ id: 'node-estimate', kind: 'estimating', agentClass: 'assurance', digest: 'sha256:estimate', expectedSeconds: 120 }) },
+			],
+		});
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), planningOnly: true,
+			proposalIds: ['proposal-golden'], agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['estimating'] } }), 'actor');
+		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['node-estimate']);
+		expect(f.stored().runInput.parameters.planningOnly).toBe(true);
+		expect(f.stored().runInput.parameters.proposalIds).toEqual(['proposal-golden']);
 	});
 	it('applies decision selection only to acting work and retains proposal review', async () => {
 		const f = fixture();

@@ -65,8 +65,15 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: branchName, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch((error) => { if (Number(object(error).status) === 404) return null; throw error; });
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
 		const before = existing === null ? null : repositorySource(existing);
-		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before, after: source }] });
 		const expectedDigest = createHash('sha256').update(source).digest('hex');
+		if (before === source) {
+			await connection.client.closeWorkspace(workspace.workspaceId);
+			return { receipt: { path, commitSha: workspace.baseCommitSha, branchName, changedPaths: [], digest: expectedDigest,
+				proposalVersion: version, changeset: { files: [], resultCommitSha: workspace.baseCommitSha } },
+				update: { ...input.update, title, summary, body, proposalTypes: types, metadata: nextMetadata,
+					contentProvenance: { repositoryId: connection.repositoryId, contentPath: path, commitSha: workspace.baseCommitSha, digest: expectedDigest } } };
+		}
+		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [{ path, before, after: source }] });
 		const written = (Array.isArray(changeset.files) ? changeset.files : []).find((file: unknown) => text(object(file).path) === path);
 		if (text(object(written).afterSha256) !== expectedDigest) throw Object.assign(new Error('TreeDX changeset bytes do not match the proposal source. No proposal version was committed; repair changeset custody before retrying.'), {
 			status: 409, code: 'proposal_changeset_digest_mismatch',
