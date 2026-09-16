@@ -15,6 +15,19 @@ const provider = { id: 'codex-implementation', accountingLimits: { modelConfigur
 	accountingObservation: { modelUsage: observation, capabilityUsage: { implementation: observation } } };
 
 describe('live allocation ledger inputs', () => {
+	it('calibrates productive deadline expiration, not uncertain lease recovery', async () => {
+		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_usage_actuals') ? [
+			{ id: 'usage', created_at: now, active_seconds: 180, expected_seconds: 120, allocated_seconds: 180,
+				status: 'failed', lifecycle_code: 'assignment_timeout' },
+		] : []), first: vi.fn(async () => ({ ready_count: 1 })) };
+		const result = await livingAllocationInputs(store as never, { run: run as never, runs: [run as never], providers: [provider as never],
+			capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'engineer', activity: 'act', now });
+		expect(result['codex-implementation']?.measurements[0]?.outcome).toBe('expired');
+		const query = store.all.mock.calls.find(([sql]) => sql.includes('capacity_usage_actuals'))![0];
+		expect(query).toContain("assignment.lifecycle_code='assignment_timeout'");
+		expect(query).not.toContain("assignment.status='expired'");
+		expect(query).toContain('LIMIT 20');
+	});
 	it('does not exempt closing workdays from shared supply and weighted allocation', async () => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing' } } };
 		const store = { all: vi.fn(async () => []), first: vi.fn(async () => ({ ready_count: 1 })) };

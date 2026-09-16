@@ -59,12 +59,13 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			AND assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=?
 			AND assignment.assignment_attempt_json::jsonb->'provider'->>'executionCapabilityId'=?
 			AND assignment.assignment_attempt_json::jsonb->'effectiveProfile'->>'activity'=?
-			AND usage.accounting_mode='aggregate' AND (assignment.status='completed' OR assignment.status='expired')
+			AND usage.accounting_mode='aggregate' AND (assignment.status='completed'
+				OR (assignment.status='failed' AND assignment.lifecycle_code='assignment_timeout'))
 			ORDER BY usage.created_at DESC,usage.id DESC LIMIT 20`,
 			[input.capacityProviderId, provider.id, input.agentClass, limits.modelConfigurationId, input.capabilityId, input.activity]);
 		result[provider.id] = { constraints: [{ id: 'workday-phase-share', remainingSeconds: shares[input.run.id]?.availableSeconds ?? 0 }],
 			measurements: rows.map(row => ({ id: String(row.id), completedAt: String(row.created_at), expectedSeconds: Number(row.expected_seconds),
-				allocatedSeconds: Number(row.allocated_seconds), activeSeconds: Number(row.active_seconds), outcome: row.status === 'completed' ? 'completed' : 'expired' })) };
+				allocatedSeconds: Number(row.allocated_seconds), activeSeconds: Number(row.active_seconds), outcome: row.lifecycle_code === 'assignment_timeout' ? 'expired' : 'completed' })) };
 	}
 	return result;
 }
