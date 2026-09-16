@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         timeout-minutes: 20
         run: npm ci --ignore-scripts --workspaces=false --no-audit --no-fund
-      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@c57912d9ce2e05bfb09209b03aa7c3a1d9489585
+      - uses: treeseed-ai/sdk/.github/actions/install-exact-sdk@88e60b3057896633dcbdda934662a4eeef1880f8
         with:
           github-token: ${{ github.token }}
           paths: |
