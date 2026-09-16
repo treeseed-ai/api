@@ -16,18 +16,23 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 		const limits = provider.accountingLimits, observed = provider.accountingObservation;
 		const capability = limits?.capabilityLimits[input.capabilityId];
 		if (!limits || !observed || !capability) continue;
-		const remaining = (cap: number, observation: typeof observed.modelUsage | undefined) => observation
-			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds: cap,
-				observation, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
-		const supply = Math.min(remaining(limits.dailyActiveSecondsLimit, observed.modelUsage),
-			remaining(capability.dailyActiveSecondsLimit, observed.capabilityUsage[input.capabilityId]));
 		const commitments = await store.all(`SELECT reservation.work_day_id,reservation.mode,reservation.state,
-			reservation.reserved_seconds,reservation.active_seconds FROM capacity_reservations reservation
+			reservation.reserved_seconds,reservation.active_seconds,
+			assignment.assignment_attempt_json::jsonb->'provider'->>'executionCapabilityId' AS capability_id FROM capacity_reservations reservation
 			JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id
 			WHERE reservation.capacity_provider_id=? AND reservation.created_at>=?
 			AND assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=?
-			AND assignment.assignment_attempt_json::jsonb->'provider'->>'executionCapabilityId'=?`,
-			[input.capacityProviderId, `${input.now.slice(0, 10)}T00:00:00.000Z`, limits.modelConfigurationId, input.capabilityId]);
+			`, [input.capacityProviderId, `${input.now.slice(0, 10)}T00:00:00.000Z`, limits.modelConfigurationId]);
+		const capabilityCommitments = commitments.filter(row => row.capability_id === input.capabilityId);
+		const remaining = (cap: number, observation: typeof observed.modelUsage | undefined, ledger: Record<string, unknown>[]) => {
+			const active = ledger.reduce((sum, row) => sum + Number(row.active_seconds), 0);
+			const reserved = ledger.filter(row => ['reserved', 'consuming'].includes(String(row.state)))
+				.reduce((sum, row) => sum + Math.max(0, Number(row.reserved_seconds) - Number(row.active_seconds)), 0);
+			return observation ? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90,
+				dailyLimitSeconds: cap, observation, ledgerActiveSeconds: active, ledgerReservedSeconds: reserved }).availableSeconds : 0;
+		};
+		const supply = Math.min(remaining(limits.dailyActiveSecondsLimit, observed.modelUsage, commitments),
+			remaining(capability.dailyActiveSecondsLimit, observed.capabilityUsage[input.capabilityId], capabilityCommitments));
 		const workdays = [];
 		for (const run of input.runs) {
 			const parsed = appliedWorkdaySchema.safeParse(run.parameters.appliedPlan);
