@@ -133,7 +133,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		{ query: `UPDATE capacity_provider_assignments SET explanation_json=?::jsonb,graph_revision=?,execution_node_id=?,execution_node_revision=?,
 			assignment_attempt_json=?::jsonb,treedx_proxy_handle_json=?::jsonb,workspace_context_json=?::jsonb,updated_at=?
 			WHERE id=? AND team_id=? AND reservation_id=?`,
-			params: [JSON.stringify(input.allocation),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
+			params: [JSON.stringify({ metadata: { allocation: input.allocation } }),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
 				JSON.stringify(input.treedxProxyHandle),JSON.stringify({ assignmentAttempt: assignment,
 					predecessorResults: input.predecessorResults, treedxProxyHandle: input.treedxProxyHandle }),input.now,
 				assignment.id,assignment.teamId,assignment.reservationId] },

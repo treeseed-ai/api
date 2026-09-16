@@ -6,6 +6,7 @@ import { createControlPlanePostgresDatabase } from '../../../../../../src/api/su
 import { admitLivingExecutionAssignment } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
 import { assignment } from '../fixtures/assignment.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { buildProviderAssignmentExplanation } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/assignment-explanation-service.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
@@ -63,6 +64,11 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			expect((await database.pool.query('SELECT count(*)::int AS count FROM capacity_reservations')).rows[0].count).toBe(1);
 			const winner = attempts[results.findIndex(result => result.status === 'fulfilled')]!;
 			await run(winner);
+			const admitted = await new ProviderAssignmentRepository(store as never).get('team', winner.id);
+			expect(admitted?.explanation)
+				.toMatchObject({ metadata: { allocation: { admitted: true } } });
+			expect(buildProviderAssignmentExplanation(admitted!, 'team', { source: 'lease_next_assignment', eligible: true }, now))
+				.toMatchObject({ metadata: { allocation: { admitted: true } } });
 			expect((await database.pool.query('SELECT sum(reserved_amount)::int AS total FROM capacity_reservation_counter_claims')).rows[0].total).toBe(6);
 			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json='{}' WHERE id=$1`, [winner.id]);
 			const repository = new ProviderAssignmentRepository(store as never);

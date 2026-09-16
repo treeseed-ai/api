@@ -1,4 +1,5 @@
 import type { CapacityWorkdayRunRecord,CapacityWorkdayRunStatus } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
 import {
 encodeCapacityPageCursor,
 MAX_CAPACITY_PAGE_LIMIT,
@@ -104,10 +105,26 @@ export class CapacityWorkdayRunRepository {
 
 	async get(teamId: string, runId: string): Promise<DurableCapacityWorkdayRun | null> {
 		await this.database.ensureInitialized();
-		return serializeCapacityWorkdayRunRow(await this.database.first(
+		const run = serializeCapacityWorkdayRunRow(await this.database.first(
 			`SELECT * FROM capacity_workday_runs WHERE id = ? AND team_id = ? LIMIT 1`,
 			[runId, teamId],
 		));
+		if (!run?.parameters.appliedPlan) return run;
+		const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+		const shares = await this.database.all(`SELECT reservation.project_id,node.agent_class,
+			SUM(reservation.requested_seconds) AS admitted_seconds FROM capacity_reservations reservation
+			JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id AND assignment.team_id=reservation.team_id
+			JOIN execution_nodes node ON node.id=assignment.execution_node_id AND node.team_id=assignment.team_id
+			WHERE reservation.team_id=? AND reservation.work_day_id=? GROUP BY reservation.project_id,node.agent_class`, [teamId, runId]);
+		const admittedSecondsByProject: Record<string, number> = {}, admittedSecondsByAgentClass: Record<string, number> = {};
+		for (const share of shares) {
+			const project = String(share.project_id), agentClass = `${project}:${String(share.agent_class)}`;
+			const seconds = Number(share.admitted_seconds);
+			admittedSecondsByProject[project] = (admittedSecondsByProject[project] ?? 0) + seconds;
+			admittedSecondsByAgentClass[agentClass] = (admittedSecondsByAgentClass[agentClass] ?? 0) + seconds;
+		}
+		// Reservations remain the authority; these existing receipt fields are derived, not another persisted counter.
+		return { ...run, parameters: { ...run.parameters, appliedPlan: { ...plan, admittedSecondsByProject, admittedSecondsByAgentClass } } };
 	}
 
 	async listActiveForSupply(
