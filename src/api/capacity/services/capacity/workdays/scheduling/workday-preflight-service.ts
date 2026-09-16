@@ -102,8 +102,10 @@ export class WorkdayPreflightService {
 			(Array.isArray(project.agents)?project.agents.map(record):[]),
 		]));
 		const selectedDecisions=new Set(intent.decisionIds??[]);
+		const selectedProposals=new Set(intent.proposalIds??[]);
 		const selectedDemands=nodeRows.flatMap((entry,index)=>{
 			const node=decodeExecutionNode(entry) as ExecutionNode;
+			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
 			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
 			const proposalReview=node.kind==='reviewing'&&node.pairRole===null&&node.sourceRef.model==='proposal';
 			if(!node.id||selectedDecisions.size&&!proposalReview&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];

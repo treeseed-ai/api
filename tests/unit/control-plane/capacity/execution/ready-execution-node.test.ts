@@ -6,7 +6,7 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => (
 	resolveKnowledgeGatewayConnection: vi.fn(async () => ({ repositoryId: 'repository', client: gateway })),
 }));
 
-import { listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { executionNodeRunScope, listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 
 const projectId = 'project';
 const sourceRef = {
@@ -53,6 +53,13 @@ const result = {
 };
 
 const run = { id: 'run', teamId: 'team', parameters: { decisionIds: ['decision'] } };
+
+it('keeps explicit proposal workdays away from unrelated historical decisions', () => {
+	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { proposalIds: ['golden-sdk'] } });
+	expect(scope.parameters).toEqual(['run', 'golden-sdk']);
+	expect(scope.sql).toContain("node.source_ref_json::jsonb->>'id' IN (?)");
+	expect(scope.sql).toContain('node.workday_id IS NULL');
+});
 const project = { id: projectId, slug: 'sdk' };
 const contextRefs = [{ store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) }];
 const teamContextStore = {

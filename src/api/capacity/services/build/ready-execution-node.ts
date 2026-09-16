@@ -81,6 +81,12 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 			parameters: [run.id],
 		};
 	}
+	const proposalIds = Array.isArray(run.parameters.proposalIds) ? run.parameters.proposalIds.map(text).filter(Boolean) : [];
+	if (proposalIds.length) return {
+		sql: `node.kind<>'communication' AND (node.workday_id=? OR (node.workday_id IS NULL
+			AND node.source_ref_json::jsonb->>'model'='proposal' AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
+		parameters: [run.id, ...proposalIds],
+	};
 	return { sql: `node.kind<>'communication' AND (node.workday_id IS NULL OR node.workday_id=?)`, parameters: [run.id] };
 }
 
