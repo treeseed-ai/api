@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { parsePublicWorkdayIntent, WorkdayPreflightService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
+import { canonicalWorkdayShares } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 
 const input = () => ({ profileId: 'profile', projects: ['sdk'], startsAt: new Date().toISOString(), durationSeconds: 600, agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] } });
 const exactDigest = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -31,6 +32,16 @@ function fixture() {
 }
 
 describe('public workday selection custody', () => {
+	it('resolves allocation slugs to the graph project identity and rejects ambiguous or unselected inputs', () => {
+		const projects = [{ id: 'project-sdk', slug: 'sdk' }, { id: 'project-api', slug: 'api' }];
+		expect(canonicalWorkdayShares({ projectPercentages: { sdk: 75, api: 25 },
+			agentClassPercentages: { sdk: { engineer: 80, tester: 20 } } }, projects)).toEqual({
+			projectPercentages: { 'project-sdk': 75, 'project-api': 25 },
+			agentClassPercentages: { 'project-sdk': { engineer: 80, tester: 20 } },
+		});
+		expect(() => canonicalWorkdayShares({ projectPercentages: { sdk: 50, 'project-sdk': 50 } }, projects)).toThrow('one identifier');
+		expect(() => canonicalWorkdayShares({ projectPercentages: { other: 100 } }, projects)).toThrow('selected project');
+	});
 	it('freezes the admission time when an explicit start is omitted', () => {
 		vi.useFakeTimers();
 		try {
@@ -112,10 +123,10 @@ describe('public workday selection custody', () => {
 			],
 		});
 		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), planningOnly: true,
-			proposalIds: ['proposal-golden'], agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['estimating'] } }), 'actor');
+			proposalIds: ['proposal'], agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['estimating'] } }), 'actor');
 		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['node-estimate']);
 		expect(f.stored().runInput.parameters.planningOnly).toBe(true);
-		expect(f.stored().runInput.parameters.proposalIds).toEqual(['proposal-golden']);
+		expect(f.stored().runInput.parameters.proposalIds).toEqual(['proposal']);
 	});
 	it('applies decision selection only to acting work and retains proposal review', async () => {
 		const f = fixture();

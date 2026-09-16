@@ -35,6 +35,21 @@ function record(value: unknown): JsonRecord {
 	return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
+export function canonicalWorkdayShares(parameters: JsonRecord, projects: WorkdayProject[]) {
+	const canonical = (input: JsonRecord): JsonRecord => Object.fromEntries(Object.entries(input).map(([key, value]) => {
+		const project = projects.find(candidate => candidate.id === key || candidate.slug === key);
+		if (!project) throw new CapacityGovernanceError('capacity_workday_allocation_project_invalid',
+			'Allocation percentages must reference a selected project.', 400, { project: key });
+		if (Object.keys(input).some(other => other !== key && (other === project.id || other === project.slug))) {
+			throw new CapacityGovernanceError('capacity_workday_allocation_project_duplicate',
+				'Use one identifier per allocation project.', 400, { projectId: project.id });
+		}
+		return [project.id, value];
+	}));
+	return { projectPercentages: canonical(record(parameters.projectPercentages)),
+		agentClassPercentages: canonical(record(parameters.agentClassPercentages)) as Record<string, Record<string, number>> };
+}
+
 function workdayTime(parameters: JsonRecord) {
 	const durationSeconds = Number(parameters.durationSeconds);
 	const concurrency = Number(parameters.maximumConcurrency ?? parameters.maxActiveAssignments ?? 1);
@@ -154,8 +169,7 @@ async function resolveCapacityWorkdayPreflight(
 			planningPercent: Number(parameters.planningPercent ?? 20), allocationWeight: Number(parameters.allocationWeight ?? 1),
 			planningTurnMaximumSeconds: Number(parameters.planningTurnMaximumSeconds ?? 180),
 			communicationConcurrency: Math.max(1, Number(parameters.communicationConcurrency ?? 1)),
-			projectPercentages: record(parameters.projectPercentages),
-			agentClassPercentages: record(parameters.agentClassPercentages) as Record<string, Record<string, number>> },
+			...canonicalWorkdayShares(parameters, projects) },
 		agentIds, startsAt: startedAt });
 	// Turn ceilings are not reservations. Admission sizes each turn against supply.
 	const planningSeconds = appliedPlan.planningRounds.length ? agentIds.length * 2 : 0;
