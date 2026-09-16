@@ -23,6 +23,15 @@ function attachPostgresPoolErrorLogger(pool: Pool) {
 type PostgresQueryable = Pick<Pool | PoolClient, 'query'>;
 type PreparedResult = { success: true; results: QueryResultRow[]; meta: { changes: number } };
 
+export async function executePostgresBatch(client: PostgresQueryable, statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
+	const results: PreparedResult[] = [];
+	for (const statement of statements) {
+		const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
+		results.push({ success: true, results: result.rows ?? [], meta: { changes: result.rowCount ?? 0 } });
+	}
+	return results;
+}
+
 const replaceConflictTargets = new Map([
 	['permissions', ['key']],
 	['role_permissions', ['role_id', 'permission_id']],
@@ -99,7 +108,7 @@ function parseInsertOrIgnore(query: string) {
 	};
 }
 
-function translateControlPlaneSqlToPostgres(query: string): string {
+export function translateControlPlaneSqlToPostgres(query: string): string {
 	const normalizedQuery = String(query ?? '');
 	if (/^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+team_role_bindings\s*\(\s*team_membership_id\s*,\s*role_id\s*,\s*created_at\s*\)\s+VALUES\s*\(\s*\?\s*,\s*\?\s*,\s*\?\s*\)\s*$/iu.test(normalizedQuery)) {
 		return `INSERT INTO team_role_bindings (id, team_membership_id, role_id, created_at)
@@ -302,14 +311,7 @@ export class ControlPlanePostgresDatabase {
 	}
 
 	async batch(statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
-		return this.transaction(async client => {
-			const results = [];
-			for (const statement of statements) {
-				const result = await client.query(translateControlPlaneSqlToPostgres(statement.query), statement.bindings ?? statement.params ?? []);
-				results.push({ success: true as const, results: result.rows ?? [], meta: { changes: result.rowCount ?? 0 } });
-			}
-			return results;
-		});
+		return this.transaction(client => executePostgresBatch(client, statements));
 	}
 
 	/** One connection and transaction for authority checks, locks, and writes. */

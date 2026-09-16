@@ -35,7 +35,12 @@ function coldStore() {
 			if (query.includes('FROM capability_definitions')) return definitions.get(`${params[0]}@${params[1]}`) ?? null;
 			return null;
 		}), run: vi.fn(), all: vi.fn() } as unknown as CapacityGovernanceDatabase;
-	return { store, batch };
+	const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+		const row = await store.first(sql, params);
+		return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+	});
+	Object.assign(store, { db: { transaction: vi.fn(async (run: (client: unknown) => Promise<unknown>) => run({ query })) } });
+	return { store, batch, query };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -48,6 +53,16 @@ describe('availability initializes its ontology without a catalog read', () => {
 		await invoke(); await invoke();
 		expect(write).toHaveBeenCalledTimes(2);
 		expect(batch).toHaveBeenCalledTimes(1);
+	});
+	it('locks provider-wide authority before reading accounting and writing the session', async () => {
+		const { store, query } = coldStore();
+		const write = vi.spyOn(AvailabilitySessionRepository.prototype, 'open').mockImplementation(async () => {
+			expect(query.mock.calls[0]?.[0]).toContain('capacity_providers WHERE id=$1 FOR UPDATE');
+			expect(query.mock.calls.findIndex(([sql]) => sql.includes('FROM capacity_provider_availability_sessions'))).toBeGreaterThan(0);
+			return null;
+		});
+		await new AvailabilitySessionService(store).open(principal, input());
+		expect(write).toHaveBeenCalledOnce();
 	});
 	it('still rejects an unknown capability digest after initializing', async () => {
 		const { store } = coldStore();
