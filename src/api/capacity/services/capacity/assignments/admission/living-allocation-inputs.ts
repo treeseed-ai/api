@@ -2,7 +2,7 @@ import { allocateWorkdayCapacity, appliedWorkdaySchema, remainingCapabilitySecon
 	type AllocationMeasurement, type AssignmentAllocationConstraint } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
+import type { ProviderSynthesisExecutionProvider } from '../../providers/provider-synthesis-context-service.ts';
 
 export type LivingAllocationInputs = Record<string, { measurements: AllocationMeasurement[]; constraints: AssignmentAllocationConstraint[] }>;
 

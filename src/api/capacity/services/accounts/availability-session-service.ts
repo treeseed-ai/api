@@ -7,6 +7,8 @@ import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
 import { capabilityOfferDigest, capabilityOfferSchema, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
 import { createCapabilityOntologyService } from '../../../control-plane/repositories/capabilities/capability-ontology-service.ts';
+import { decodeDurableJsonArray } from '../../durable-json.ts';
+import { assertMonotonicAvailabilityAccounting } from './availability-accounting.ts';
 
 type JsonRecord = Record<string, unknown>;
 export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: string; capacityProviderId: string; }
@@ -68,6 +70,7 @@ export class AvailabilitySessionService {
 		await this.validateOfferReferences(principal, input);
 		const now = new Date().toISOString();
 		const write = this.write(principal, randomUUID(), 1, input, now);
+		await this.validateAccounting(write);
 		return this.repository.open(write, [...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now }), ...reconcileSeedGrantOperations(write)]);
 	}
 
@@ -78,6 +81,7 @@ export class AvailabilitySessionService {
 		if (!Number.isInteger(expectedSequence) || expectedSequence < 1) throw new CapacityGovernanceError('provider_availability_sequence_required', 'expectedSequence must be a positive integer.', 400);
 		const now = new Date().toISOString();
 		const write = this.write(principal, sessionId, expectedSequence, input, now);
+		await this.validateAccounting(write);
 		const guard = { sessionId, membershipId: principal.membershipId, teamId: principal.teamId, expectedSequence };
 		return this.repository.refresh(write, expectedSequence, [...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now, availabilityGuard: guard }), ...reconcileSeedGrantOperations(write)]);
 	}
@@ -89,6 +93,13 @@ export class AvailabilitySessionService {
 		if (existing.status === 'closed' || existing.status === 'expired') return existing;
 		if (existing.status !== 'open' && existing.status !== 'draining') throw new CapacityGovernanceError('provider_availability_close_conflict', `Availability session in ${existing.status} state cannot be closed.`, 409, { sessionId });
 		return this.repository.close(principal.teamId, principal.membershipId, sessionId);
+	}
+
+	private async validateAccounting(write: AvailabilitySessionWrite) {
+		const previous = await this.database.first(`SELECT id,execution_providers_json FROM capacity_provider_availability_sessions
+			WHERE capacity_provider_id=? ORDER BY refreshed_at DESC,id DESC LIMIT 1`, [write.providerId]);
+		assertMonotonicAvailabilityAccounting(write.executionProviders, previous ? decodeDurableJsonArray<JsonRecord>(previous.execution_providers_json,
+			{ owner: 'provider availability session', ownerId: String(previous.id), column: 'execution_providers_json' }) : [], write.refreshedAt);
 	}
 
 	private async assertMembership(principal: ProviderAvailabilityPrincipal) {

@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { decodeDurableJsonObject } from '../../../../durable-json.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
@@ -9,8 +8,9 @@ import { advanceLivingWorkday } from '../lifecycle/living-workday-lifecycle.ts';
 import { appliedWorkdaySchema, workdayPhase } from '@treeseed/sdk/agent-capacity';
 import { OperatorAssignmentService } from '../../assignments/observability/operator-assignment-service.ts';
 import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
+import type { WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
 
-type WorkdayTickStore = CapacityGovernanceDatabase;
+type WorkdayTickStore = Parameters<typeof advanceLivingWorkday>[0] & WorkdayTreeDxConnectionStore;
 
 export async function tickCapacityWorkdayRun(
 	store: WorkdayTickStore,

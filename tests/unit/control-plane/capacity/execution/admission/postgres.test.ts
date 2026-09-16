@@ -30,6 +30,10 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			await database.pool.query(`INSERT INTO capacity_provider_availability_sessions
 				(id,membership_id,team_id,capacity_provider_id,opened_at,refreshed_at,expires_at,available_from,created_at,updated_at)
 				VALUES ('session','membership','team','provider',$1,$1,$2,$1,$1,$1)`, [now, assignment.deadline]);
+			const observed = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds: 1, reservedSeconds: 0 };
+			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET execution_providers_json=$1 WHERE id='session'`,
+				[JSON.stringify([{ id: 'codex-implementation', nativeLimits: { modelConfigurationId: 'terra-medium' },
+					accountingObservation: { modelUsage: observed, capabilityUsage: { 'code-change': observed } } }])]);
 			const store = { ensureInitialized: () => database.migrate(),
 				run: async (sql: string, params: unknown[] = []) => { await database.prepare(sql).bind(...params).run(); },
 				first: (sql: string, params: unknown[] = []) => database.prepare(sql).bind(...params).first(),
@@ -48,14 +52,14 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 				principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 				assignment: attempt, allocation: calculateAssignmentAllocation({ estimate: attempt.estimate, measurements: [],
 					constraints: [{ id: 'model-day', remainingSeconds: 3 }] }),
-				accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 3, capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 3 } } },
+				accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 4, capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 4 } } },
 				projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'workday', lanePurpose: 'workday',
 				executionKind: 'workday', predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
 			});
 			const results = await Promise.allSettled(attempts.map(run));
 			expect(results.filter(result => result.status === 'fulfilled'), results.map(result => result.status === 'rejected' ? String(result.reason) : 'admitted').join('\n')).toHaveLength(1);
 			const counters = await database.pool.query('SELECT committed_amount FROM capacity_admission_counters');
-			expect(counters.rows).toEqual([{ committed_amount: 3 }, { committed_amount: 3 }]);
+			expect(counters.rows).toEqual([{ committed_amount: 4 }, { committed_amount: 4 }]);
 			expect((await database.pool.query('SELECT count(*)::int AS count FROM capacity_reservations')).rows[0].count).toBe(1);
 			const winner = attempts[results.findIndex(result => result.status === 'fulfilled')]!;
 			await run(winner);

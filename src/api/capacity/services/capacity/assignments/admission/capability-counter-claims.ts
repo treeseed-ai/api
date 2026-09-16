@@ -20,7 +20,31 @@ export function initializeCapabilityCounters(assignment: AssignmentAttempt, clai
 		VALUES (?,?,?,?,?,?,0,1,?,?) ON CONFLICT (id) DO NOTHING`,
 		params: [claim.id, assignment.teamId, claim.scope, claim.scopeId, claim.day, claim.hardLimit, now, now] })).concat([
 		{ query: `SELECT id FROM capacity_admission_counters WHERE id IN (${claims.map(() => '?').join(',')}) ORDER BY id FOR UPDATE`, params: claims.map(claim => claim.id) },
-	]);
+	]).concat(claims.map(claim => {
+		const capability = claim.scope === 'capability-day';
+		const observation = capability ? "adapter->'accountingObservation'->'capabilityUsage'->?" : "adapter->'accountingObservation'->'modelUsage'";
+		const scope = capability ? "AND assignment.assignment_attempt_json::jsonb->'provider'->>'executionCapabilityId'=?" : '';
+		return { query: `WITH observed AS (
+			SELECT ${observation} AS value FROM capacity_provider_availability_sessions session,
+			jsonb_array_elements(session.execution_providers_json::jsonb) adapter
+			WHERE session.capacity_provider_id=? AND adapter->'nativeLimits'->>'modelConfigurationId'=?
+			ORDER BY session.refreshed_at DESC,session.id DESC LIMIT 1
+		), ledger AS (
+			SELECT COALESCE(SUM(reservation.active_seconds),0) AS active,
+			COALESCE(SUM(CASE WHEN reservation.state IN ('reserved','consuming')
+			THEN GREATEST(0,reservation.reserved_seconds-reservation.active_seconds) ELSE 0 END),0) AS reserved
+			FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id
+			WHERE reservation.capacity_provider_id=? AND reservation.created_at>=?
+			AND assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=? ${scope}
+		) UPDATE capacity_admission_counters SET committed_amount=GREATEST(committed_amount,
+			GREATEST(ledger.active,COALESCE((SELECT (value->>'activeSeconds')::numeric FROM observed WHERE value->>'day'=?),0))
+			+GREATEST(ledger.reserved,COALESCE((SELECT (value->>'reservedSeconds')::numeric FROM observed WHERE value->>'day'=?),0)))
+			FROM ledger WHERE capacity_admission_counters.id=?`, params: [
+			...(capability ? [assignment.provider.executionCapabilityId] : []), assignment.provider.providerId, assignment.provider.modelConfigurationId,
+			assignment.provider.providerId, `${claim.day}T00:00:00.000Z`, assignment.provider.modelConfigurationId,
+			...(capability ? [assignment.provider.executionCapabilityId] : []), claim.day, claim.day, claim.id,
+		] };
+	}));
 }
 
 export function commitCapabilityCounters(assignment: AssignmentAttempt, claims: ReturnType<typeof capabilityCounterClaims>, token: string, now: string): CapacityDatabaseOperation[] {
