@@ -16,7 +16,6 @@ type ProviderAvailabilityPrincipal,
 import type { ProviderLeasePrincipal } from './services/accounts/lease-authority-service.ts';
 import { CapacityAllocationService } from './services/capacity/allocations/allocation-service.ts';
 import { CapacityGrantService } from './services/capacity/allocations/grant-service.ts';
-import { admitSynthesizedProviderAssignment as admitSynthesizedAssignment } from './services/capacity/assignments/admission/assignment-admission-service.ts';
 import type { ProviderSynthesisRequest } from './services/capacity/assignments/context/assignment-synthesis-service.ts';
 import { leaseNextProviderAssignment as leaseProviderAssignment } from './services/capacity/assignments/lifecycle/assignment-lease-service.ts';
 import { ProviderAssignmentLifecycleService } from './services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
@@ -38,7 +37,6 @@ export interface ProviderControlPlaneContext extends CapacityGovernanceDatabase 
 }
 type ProviderServiceContext = ProviderControlPlaneContext
 	& ConstructorParameters<typeof ProjectAgentClassService>[0]
-	& Parameters<typeof admitSynthesizedAssignment>[0]
 	& Parameters<typeof leaseProviderAssignment>[0]
 	& ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0]
 	& Parameters<typeof preflightProviderAssignmentCompletion>[0]
@@ -158,13 +156,6 @@ export class ProviderControlPlane {
 
 	getProviderAssignment(teamId: string, assignmentId: string) {
 		return this.assignmentRepository.get(teamId, assignmentId);
-	}
-
-	admitSynthesizedProviderAssignment(
-		principal: ProviderLeasePrincipal,
-		input: Parameters<typeof admitSynthesizedAssignment>[2],
-	) {
-		return admitSynthesizedAssignment(this.providerContext, principal, input);
 	}
 
 	leaseNextProviderAssignment(principal: ProviderLeasePrincipal, input: Parameters<typeof leaseProviderAssignment>[2] = {}) {
