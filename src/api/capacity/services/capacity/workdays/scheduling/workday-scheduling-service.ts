@@ -123,7 +123,7 @@ async function resolveCapacityWorkdayPreflight(
 		if (!['draft','submitted','open','voting'].includes(text(proposal.status))) throw new CapacityGovernanceError(
 			'capacity_workday_proposal_not_plannable', `Workday proposal ${proposalId} is not open for cooperative planning.`, 409, { proposalId });
 		const exact = await readExactProposal(store, proposal);
-		return { proposalId, projectId: text(proposal.projectId), ref: exact.ref };
+		return { proposalId, projectId: text(proposal.projectId), ref: exact.ref, definition: exact.definition };
 	}));
 	const agentProfiles = new Map<string, Awaited<ReturnType<typeof resolveWorkdayAgentProfileSnapshot>>>();
 	for (const project of projects) {
@@ -158,6 +158,7 @@ async function resolveCapacityWorkdayPreflight(
 	const agentIds = workdayParticipants({
 		agentSelection: parameters.agentSelection,
 		agentProfilesByProjectId: frozenProfilesByProjectId,
+		proposalsByProjectId: Object.fromEntries(selectedProposals.map(proposal => [proposal.projectId, proposal.definition])),
 	}).map((participant) => participant.id);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
 		executionMode,

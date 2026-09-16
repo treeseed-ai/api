@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileWorkday, validateExecutionGraph } from '@treeseed/sdk/agent-capacity';
 import { projectActiveWorkdays } from '../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts';
+import { workdayParticipants } from '../../../../../../src/api/capacity/policy/execution/workday-participants.ts';
 
 const permissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
 const definition = (agentClass: string, dependsOn: string[] = []) => ({
@@ -15,6 +16,21 @@ const definition = (agentClass: string, dependsOn: string[] = []) => ({
 });
 
 describe('workday living-graph projection', () => {
+	it('automatically admits only proposal work owners and Reviewer to estimating; autonomous planning remains valid', () => {
+		const classes = ['engineer', 'reviewer', 'reporter'];
+		const agents = classes.map(agentClass => {
+			const agent = definition(agentClass);
+			return { definition: { ...agent, activityProfiles: { ...agent.activityProfiles,
+				estimating: { handler: 'estimate', permissions, prompt: { system: 'Estimate exact work.' } } } },
+				activities: ['planning', 'estimating'] };
+		});
+		const parameters = { agentProfilesByProjectId: { sdk: { agents } } };
+		expect(workdayParticipants(parameters).map(participant => participant.activity)).toEqual(['planning', 'planning', 'planning']);
+		const participants = workdayParticipants({ ...parameters, proposalsByProjectId: { sdk: { executionPlan: {
+			workItems: [{ id: 'implementation', agentClass: 'engineer', review: 'required' }] } } } });
+		expect(participants.filter(participant => participant.activity === 'estimating').map(participant => participant.definition.agentClass))
+			.toEqual(['engineer', 'reviewer']);
+	});
 	it('projects six work-owner estimates and one Reviewer covering all six paired reviews', () => {
 		const owners = ['researcher', 'architect', 'tester', 'engineer', 'technical-writer', 'releaser'];
 		const classes = [...owners, 'reviewer'];
@@ -31,7 +47,7 @@ describe('workday living-graph projection', () => {
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles,
 			sources: [{ id: 'seven-estimates', teamId: 'team', proposalsByProjectId: { sdk: { executionPlan: {
 				workItems: owners.map((agentClass) => ({ id: `${agentClass}-work`, agentClass, review: 'required', acceptanceCriteria: ['Meet the exact work-item boundary.'] })),
-			} } }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'], agentSelection: { activityTypes: ['estimating'] },
+			} } }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
 				planningSourceByProjectId: { sdk: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 					repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden.mdx' } },
 				agentProfilesByProjectId: { sdk: { agents: Object.values(profiles).map((agent) => ({ definition: agent, activities: ['estimating'] })) } },

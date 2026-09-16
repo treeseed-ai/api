@@ -51,7 +51,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 		const workday = appliedWorkdaySchema.parse(record(source.parameters.appliedPlan));
 		const reference = sourceRef(workday);
 		const planningSources = record(source.parameters.planningSourceByProjectId);
-		const participants = workdayParticipants(source.parameters);
+		const participants = workdayParticipants({ ...source.parameters, proposalsByProjectId: source.proposalsByProjectId });
 		changedSourceRefs.push(reference);
 		const projectIds = array(source.parameters.scheduledProjectIds).map(text).filter(Boolean).sort();
 		const roundNodes = new Map<number, ExecutionNode[]>();
@@ -93,6 +93,11 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			roundNodes.set(round, current);
 		}
 		for (const [round, current] of roundNodes) {
+			for (const estimator of current.filter(node => node.kind === 'estimating')) {
+				for (const contribution of current.filter(node => node.kind === 'planning')) {
+					edges.push(edge(input.teamId, contribution.id, estimator.id, 'work-item', reference, input.revision));
+				}
+			}
 			for (const node of current) for (const predecessor of roundNodes.get(round - 1) ?? []) {
 				edges.push(edge(input.teamId, predecessor.id, node.id, 'work-item', reference, input.revision));
 			}

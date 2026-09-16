@@ -88,7 +88,7 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 		return parameters.appliedPlan ? [{ id: text(row.id), teamId: text(row.team_id), parameters }] : [];
 	});
 	return Promise.all(sources.map(async (source: { id: string; teamId: string; parameters: Row }) => {
-		if (!array(record(source.parameters.agentSelection).activityTypes).includes('estimating')) return source;
+		if (!Object.keys(record(source.parameters.planningSourceByProjectId)).length) return source;
 		const proposalsByProjectId: Record<string, Row> = {};
 		for (const [projectId, value] of Object.entries(record(source.parameters.planningSourceByProjectId))) {
 			const reference = record(value);
