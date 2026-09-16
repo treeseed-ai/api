@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reservationFairUsage, treeDxAuthorizedPaths } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
+import { reservationFairUsage, treeDxAuthorizedPaths } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
 
 describe('living execution TreeDX path authority', () => {
 	it('counts active reservations once and releases unused terminal capacity for fairness', () => {

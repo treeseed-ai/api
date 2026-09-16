@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isR2ReplicationReceipt, mirrorTreeDxCommit, resolveCanonicalTreeDxRef, TREE_DX_MIRROR_SCHEMA } from '../../../../src/operations-runner/treedx/r2-file-mirror.ts';
+import { isR2ReplicationReceipt, mirrorTreeDxCommit, resolveCanonicalTreeDxRef, TREE_DX_MIRROR_SCHEMA } from '../../../../../src/operations-runner/treedx/r2-file-mirror.ts';
 
 class MemoryR2 {
 	objects = new Map<string, Uint8Array>();
