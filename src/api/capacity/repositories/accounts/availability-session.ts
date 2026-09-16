@@ -48,7 +48,8 @@ export function serializeAvailabilitySessionRow(row: Row | null): ProviderAvaila
 				capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String) : [],
 				laneIds: Array.isArray(provider.lanes) ? provider.lanes.map((lane) => String((lane as JsonRecord).id)) : [],
 				maxConcurrentWorkers: Number(provider.maxConcurrentRunners ?? 0), activeWorkers: Number(provider.activeWorkers ?? 0),
-				nativeLimits: object(provider.nativeLimits), observations: object(provider.observations) })) as ProviderAvailabilitySession['snapshot']['adapters'],
+				nativeLimits: object(provider.nativeLimits), observations: object(provider.observations),
+				...(provider.accountingObservation ? { accountingObservation: provider.accountingObservation } : {}) })) as ProviderAvailabilitySession['snapshot']['adapters'],
 			lanes: executionProviders.flatMap((provider) => Array.isArray(provider.lanes) ? provider.lanes.map((entry) => entry as JsonRecord) : []).filter((lane, index, all) => all.findIndex((entry) => entry.id === lane.id) === index).map((lane) => ({
 				id: String(lane.id), purpose: lane.purpose as any, status: 'active', priority: Number(lane.priority ?? 0),
 				reservedConcurrentWorkers: Number(lane.reservedConcurrentWorkers ?? 0), borrowedWorkers: Number(lane.borrowedWorkers ?? 0), lentWorkers: Number(lane.lentWorkers ?? 0), queuedAssignments: Number(lane.queuedAssignments ?? 0),

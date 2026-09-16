@@ -7,6 +7,7 @@ import { decodeDurableJsonObject } from '../../../../durable-json.ts';
 import { teamSupplyPolicy } from '../../../../domain/supply-policy.ts';
 import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
 import { recoverOperationHandoff } from '../handoffs/operation-handoff-lifecycle-service.ts';
+import { capacityTransaction } from '../../../../transaction.ts';
 
 type RecoveryDisposition = 'safe-retry' | 'terminal-failure' | 'completed' | 'operator-action';
 
@@ -159,6 +160,15 @@ function transitionOperations(assignment: DurableProviderAssignment, result: Ass
 }
 
 async function recoverOne(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment, now: string) {
+	return capacityTransaction(database, async transaction => {
+		await transaction.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [assignment.id, assignment.teamId]);
+		const current = await new ProviderAssignmentRepository(transaction).get(assignment.teamId, assignment.id);
+		if (!current || current.stateVersion !== assignment.stateVersion || current.status !== 'leased' || current.leaseState !== 'leased') return null;
+		return recoverLocked(transaction, current, now);
+	});
+}
+
+async function recoverLocked(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment, now: string) {
 	const observed = await evidence(database, assignment);
 	const result = decideAssignmentRecovery(assignment, observed);
 	const leaseExpiry = assignment.leaseExpiresAt ? Date.parse(assignment.leaseExpiresAt) : Number.NaN;

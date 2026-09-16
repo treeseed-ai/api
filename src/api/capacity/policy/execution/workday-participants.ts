@@ -19,8 +19,8 @@ export interface WorkdayParticipant {
  * Reviewing, reporting, and chat already have concrete living-graph sources:
  * proposal/candidate authority, workday closing, and discussion messages.
  * Selecting them filters admission; it must not manufacture subjectless
- * two-round work. Planning remains the default and estimating may explicitly
- * replace it because both are proposal-authoring activities.
+ * work. Default planning includes estimating only where an exact selected
+ * proposal supplies work for that agent; autonomous planning needs no proposal.
  */
 export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 	const snapshots = record(parameters.agentProfilesByProjectId);
@@ -33,7 +33,11 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 			const validation = validateAgentDefinitionModel(entry.definition);
 			if (!validation.ok || !validation.data) continue;
 			const frozenActivities = array(entry.activities).map(text).filter(Boolean) as Activity[];
-			const activities = (explicitActivitySelection ? frozenActivities : frozenActivities.filter((activity) => activity === 'planning'))
+			const workItems = array(record(record(record(parameters.proposalsByProjectId)[projectId]).executionPlan).workItems).map(record);
+			const canEstimate = workItems.some(item => text(item.agentClass) === validation.data!.agentClass)
+				|| (validation.data.agentClass === 'reviewer' && workItems.some(item => item.review === 'required'));
+			const activities = (explicitActivitySelection ? frozenActivities : frozenActivities.filter((activity) =>
+				activity === 'planning' || (activity === 'estimating' && canEstimate)))
 				.filter((activity): activity is 'planning' | 'estimating' => activity === 'planning' || activity === 'estimating');
 			for (const activity of activities) {
 				if (!validation.data.activityProfiles[activity]) continue;

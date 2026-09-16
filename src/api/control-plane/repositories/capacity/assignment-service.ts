@@ -1,6 +1,7 @@
 import { decodeCapacityPageCursor, normalizeCapacityPageLimit } from '@treeseed/sdk/capacity-pagination';
 import { authorizeCapacityTeam, type CapacityPrincipal } from './capacity-authorization.ts';
 import { CapacityOperationError } from './capacity-operation-error.ts';
+import { ProviderAssignmentRepository } from '../../../capacity/repositories/capacity/assignments/assignment.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -18,7 +19,7 @@ function translate(error: unknown): never {
 export function createAssignmentService(store: any) {
 	async function assignment(principal: CapacityPrincipal, teamId: string, assignmentId: string) {
 		await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
-		const result = await store.getProviderAssignment(teamId, assignmentId);
+		const result = await new ProviderAssignmentRepository(store).get(teamId, assignmentId, true);
 		if (!result) throw new CapacityOperationError(404, 'assignment_not_found', 'Assignment not found.');
 		return result;
 	}

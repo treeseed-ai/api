@@ -15,6 +15,16 @@ describe('assignment TreeDX reference authority', () => {
     expect(() => providerRefAuthority({ handle, projectId: 'project', workspace: false, requestedRef: produced })).toThrow('outside');
     expect(() => providerRefAuthority({ handle, projectId: 'project', workspace: false, requestedRef: 'main', producedCommits: ['main'] })).toThrow('outside');
   });
+  it('permits multiple exact commits from the same project library when each is explicitly granted', () => {
+    const proposal = 'd'.repeat(40);
+    const multi = { ...handle, metadata: { ...handle.metadata, readRepositories: [
+      { projectId: 'project', baseRef: base }, { projectId: 'project', baseRef: proposal },
+    ] } };
+    expect(providerRefAuthority({ handle: multi, projectId: 'project', workspace: false, requestedRef: proposal }))
+      .toEqual({ ref: proposal, refs: [proposal] });
+    expect(() => providerRefAuthority({ handle: multi, projectId: 'project', workspace: false, requestedRef: 'e'.repeat(40) }))
+      .toThrow('outside');
+  });
   it('keeps cross-project access read-only and pinned', () => {
     expect(providerRefAuthority({ handle, projectId: 'team', workspace: false }).ref).toBe('c'.repeat(40));
     expect(() => providerRefAuthority({ handle, projectId: 'team', workspace: true })).toThrow('Secondary project');

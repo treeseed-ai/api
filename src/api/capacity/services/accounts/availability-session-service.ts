@@ -7,6 +7,9 @@ import { AvailabilitySessionRepository,type AvailabilitySessionWrite } from '../
 import { upsertCapacityExecutionProviderOperations } from '../../repositories/capacity/providers/execution-provider.ts';
 import { capabilityOfferDigest, capabilityOfferSchema, type CapabilityDefinition } from '@treeseed/sdk/capacity-provider';
 import { createCapabilityOntologyService } from '../../../control-plane/repositories/capabilities/capability-ontology-service.ts';
+import { decodeDurableJsonArray } from '../../durable-json.ts';
+import { assertMonotonicAvailabilityAccounting } from './availability-accounting.ts';
+import { capacityTransaction } from '../../transaction.ts';
 
 type JsonRecord = Record<string, unknown>;
 export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: string; capacityProviderId: string; }
@@ -68,7 +71,8 @@ export class AvailabilitySessionService {
 		await this.validateOfferReferences(principal, input);
 		const now = new Date().toISOString();
 		const write = this.write(principal, randomUUID(), 1, input, now);
-		return this.repository.open(write, [...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now }), ...reconcileSeedGrantOperations(write)]);
+		return this.accountingTransaction(principal, write, database => new AvailabilitySessionRepository(database).open(write,
+			[...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now }), ...reconcileSeedGrantOperations(write)]));
 	}
 
 	async refresh(principal: ProviderAvailabilityPrincipal, sessionId: string, input: JsonRecord) {
@@ -79,7 +83,8 @@ export class AvailabilitySessionService {
 		const now = new Date().toISOString();
 		const write = this.write(principal, sessionId, expectedSequence, input, now);
 		const guard = { sessionId, membershipId: principal.membershipId, teamId: principal.teamId, expectedSequence };
-		return this.repository.refresh(write, expectedSequence, [...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now, availabilityGuard: guard }), ...reconcileSeedGrantOperations(write)]);
+		return this.accountingTransaction(principal, write, database => new AvailabilitySessionRepository(database).refresh(write, expectedSequence,
+			[...upsertCapacityExecutionProviderOperations({ providerId: principal.capacityProviderId, executionProviders: write.executionProviders, providerNativeLimits: write.nativeLimits, createdAt: now, availabilityGuard: guard }), ...reconcileSeedGrantOperations(write)]));
 	}
 
 	async close(principal: ProviderAvailabilityPrincipal, sessionId: string) {
@@ -89,6 +94,20 @@ export class AvailabilitySessionService {
 		if (existing.status === 'closed' || existing.status === 'expired') return existing;
 		if (existing.status !== 'open' && existing.status !== 'draining') throw new CapacityGovernanceError('provider_availability_close_conflict', `Availability session in ${existing.status} state cannot be closed.`, 409, { sessionId });
 		return this.repository.close(principal.teamId, principal.membershipId, sessionId);
+	}
+
+	private async accountingTransaction<T>(principal: ProviderAvailabilityPrincipal, write: AvailabilitySessionWrite,
+		apply: (database: CapacityGovernanceDatabase) => Promise<T>): Promise<T> {
+		return capacityTransaction(this.database, async database => {
+			// Serialize across memberships and sessions before reading the prior observations.
+			await database.run('SELECT id FROM capacity_providers WHERE id=? FOR UPDATE', [write.providerId]);
+			await new AvailabilitySessionService(database).assertMembership(principal);
+			const previous = await database.all(`SELECT id,execution_providers_json FROM capacity_provider_availability_sessions
+				WHERE capacity_provider_id=? ORDER BY refreshed_at DESC,id DESC`, [write.providerId]);
+			assertMonotonicAvailabilityAccounting(write.executionProviders, previous.flatMap(row => decodeDurableJsonArray<JsonRecord>(row.execution_providers_json,
+				{ owner: 'provider availability session', ownerId: String(row.id), column: 'execution_providers_json' })), write.refreshedAt);
+			return apply(database);
+		});
 	}
 
 	private async assertMembership(principal: ProviderAvailabilityPrincipal) {

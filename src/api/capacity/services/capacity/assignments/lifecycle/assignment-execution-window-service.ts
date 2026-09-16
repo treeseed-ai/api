@@ -22,9 +22,15 @@ export function compileAssignmentExecutionWindow(assignment:Pick<DurableProvider
 	const startedMs=Date.parse(now); const preparationDeadline=Date.parse(text(time.preparationDeadlineAt));
 	if(!Number.isFinite(startedMs)) throw new CapacityGovernanceError('assignment_execution_start_time_invalid','Execution start time must be an ISO timestamp.',500);
 	if(Number.isFinite(preparationDeadline)&&startedMs>preparationDeadline) throw new CapacityGovernanceError('assignment_preparation_deadline_exhausted','Initial context and assignment plan did not finish inside the bounded preparation window.',409,{ preparationDeadlineAt:time.preparationDeadlineAt });
-	const executionDeadlineAt=new Date(startedMs+executionSeconds*1_000).toISOString();
-	const closeoutDeadlineAt=new Date(startedMs+(executionSeconds+closeoutSeconds)*1_000).toISOString();
-	const nextTime={ ...time,executionSeconds,closeoutSeconds,executionStartedAt:now,executionDeadlineAt,closeoutStartedAt:executionDeadlineAt,closeoutDeadlineAt,hardDeadlineAt:closeoutDeadlineAt,remainingSeconds:executionSeconds };
+	const authorityDeadline=Date.parse(text(time.authorityDeadlineAt));
+	if(!Number.isFinite(authorityDeadline)) throw new CapacityGovernanceError('assignment_authority_deadline_required','Execution requires its original admission deadline.',500);
+	const hardDeadlineMs=Math.min(authorityDeadline,startedMs+executionSeconds*1_000);
+	if(hardDeadlineMs<=startedMs) throw new CapacityGovernanceError('assignment_execution_window_exhausted','The admission deadline is exhausted.',409);
+	const executionDeadlineAt=new Date(hardDeadlineMs).toISOString();
+	const closeoutDeadlineAt=executionDeadlineAt;
+	const nextTime={ ...time,executionSeconds,closeoutSeconds,executionStartedAt:now,executionDeadlineAt,
+		closeoutStartedAt:new Date(Math.max(startedMs,hardDeadlineMs-closeoutSeconds*1_000)).toISOString(),
+		closeoutDeadlineAt,hardDeadlineAt:executionDeadlineAt,remainingSeconds:Math.floor((hardDeadlineMs-startedMs)/1_000) };
 	const minimum=record(record(assignment.metadata).minimumAssignmentDuration); const requirement=record(minimum.requirement);
 	const productiveMinimum=text(requirement.unit)&&positive(requirement.amount)
 		? evaluateMinimumAssignmentDuration(requirement as never,now)
@@ -66,14 +72,13 @@ export function compileAssignmentCloseoutWindow(assignment:Pick<DurableProviderA
 	const closeoutSeconds=positive(time.closeoutSeconds??time.closeoutWarningSeconds);
 	const executionStartedAt=text(time.executionStartedAt); const executionDeadlineMs=Date.parse(text(time.executionDeadlineAt)); const nowMs=Date.parse(now);
 	if(!executionStartedAt||!closeoutSeconds||!Number.isFinite(nowMs)) throw new CapacityGovernanceError('assignment_closeout_window_invalid','Closeout requires a started execution window and a positive closeout duration.',409);
-	const closeoutStartedMs=Number.isFinite(executionDeadlineMs)?Math.min(nowMs,executionDeadlineMs):nowMs;
+	if(!Number.isFinite(executionDeadlineMs)||nowMs>=executionDeadlineMs) throw new CapacityGovernanceError('assignment_execution_window_exhausted','Closeout cannot extend an exhausted active window.',409);
+	const closeoutStartedMs=nowMs;
 	const closeoutStartedAt=new Date(closeoutStartedMs).toISOString();
-	const closeoutDeadlineAt=new Date(closeoutStartedMs+closeoutSeconds*1_000).toISOString();
-	const executionSeconds=positive(time.executionSeconds??time.requestedSeconds??envelope.requestedSeconds)??0;
-	const consumedExecutionSeconds=Math.max(0,Math.min(executionSeconds,Math.ceil((closeoutStartedMs-Date.parse(executionStartedAt))/1_000)));
-	const releasedExecutionSeconds=Math.max(0,executionSeconds-consumedExecutionSeconds);
-	const nextTime={ ...time,executionDeadlineAt:closeoutStartedAt,closeoutStartedAt,closeoutDeadlineAt,hardDeadlineAt:closeoutDeadlineAt,
-		remainingSeconds:closeoutSeconds,releasedSeconds:Math.max(Number(time.releasedSeconds??0),releasedExecutionSeconds) };
+	const closeoutDeadlineAt=new Date(executionDeadlineMs).toISOString();
+	const releasedExecutionSeconds=0;
+	const nextTime={ ...time,closeoutStartedAt,closeoutDeadlineAt,hardDeadlineAt:closeoutDeadlineAt,
+		remainingSeconds:Math.max(0,Math.floor((executionDeadlineMs-nowMs)/1_000)) };
 	return { capacityEnvelope:{ ...envelope,budget:{ ...budget,time:nextTime,deadline:closeoutDeadlineAt } },
 		metadata:{ ...assignment.metadata,operationalState:'closeout',closeoutWindow:{ startedAt:closeoutStartedAt,closeoutDeadlineAt,releasedExecutionSeconds } } };
 }

@@ -44,7 +44,7 @@ function text(value: unknown): string {
 	return value == null ? '' : String(value);
 }
 
-function typedJson<T>(value: unknown, field: string, assignmentId: string, schema: { safeParse(value: unknown): { success: boolean; data?: T } }): T | null {
+function typedJson<T>(value: unknown, field: string, assignmentId: string, schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: { path: PropertyKey[]; code: string; message: string }[] } } }): T | null {
 	if (value == null || value === '') return null;
 	let decoded = value;
 	if (typeof value === 'string') {
@@ -52,11 +52,27 @@ function typedJson<T>(value: unknown, field: string, assignmentId: string, schem
 		catch { throw new CapacityGovernanceError('provider_assignment_json_invalid', `Assignment ${assignmentId} has invalid ${field}.`, 500, { assignmentId, field }); }
 	}
 	const parsed = schema.safeParse(decoded);
-	if (!parsed.success) throw new CapacityGovernanceError('provider_assignment_contract_invalid', `Assignment ${assignmentId} has invalid ${field}.`, 500, { assignmentId, field });
+	if (!parsed.success) {
+		const issue = parsed.error.issues[0]!;
+		throw new CapacityGovernanceError('provider_assignment_contract_invalid',
+			`Assignment ${assignmentId} has invalid ${field} at ${issue.path.join('.')}: ${issue.message}`,
+			500, { assignmentId, field, diagnostics: parsed.error.issues.map(({ path, code, message }) => ({ path, code, message })) });
+	}
 	return parsed.data ?? null;
 }
 
-export function serializeProviderAssignmentRow(row: Row | null): DurableProviderAssignment | null {
+export function serializeProviderAssignmentRow(row: Row | null, inspection = false): DurableProviderAssignment | null {
+	try { return serializeExecutableAssignmentRow(row); }
+	catch (error) {
+		if (!inspection || !row || !(error instanceof CapacityGovernanceError) || error.code !== 'provider_assignment_contract_invalid') throw error;
+		// Inspection/cancellation never makes an invalid snapshot executable.
+		return serializeExecutableAssignmentRow({ ...row, assignment_attempt_json: null, assignment_result_json: null,
+			explanation_json: { ...json(row.explanation_json, {}, 'explanation_json', text(row.id)),
+				snapshotValidation: { valid: false, ...error.details } } });
+	}
+}
+
+function serializeExecutableAssignmentRow(row: Row | null): DurableProviderAssignment | null {
 	if (!row) return null;
 	const id = text(row.id);
 	const workspaceContext = json(row.workspace_context_json, {}, 'workspace_context_json', id);
@@ -147,7 +163,17 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 export class ProviderAssignmentRepository {
 	constructor(private readonly database: CapacityGovernanceDatabase) {}
 
-	async get(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null> {
+	/** Cancellation must revoke persisted authority even when an executable snapshot is corrupt. */
+	async getForCancellation(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null> {
+		await this.database.ensureInitialized();
+		const row = await this.database.first(`SELECT assignment.*,run.execution_mode AS workday_execution_mode
+			FROM capacity_provider_assignments assignment
+			LEFT JOIN capacity_workday_runs run ON run.id=assignment.work_day_id AND run.team_id=assignment.team_id
+			WHERE assignment.id=? AND assignment.team_id=? LIMIT 1`, [assignmentId, teamId]);
+		return serializeProviderAssignmentRow(row ? { ...row, assignment_attempt_json: null, assignment_result_json: null } : null);
+	}
+
+	async get(teamId: string, assignmentId: string, inspection = false): Promise<DurableProviderAssignment | null> {
 		await this.database.ensureInitialized();
 		return serializeProviderAssignmentRow(await this.database.first(
 			`SELECT assignment.*,run.execution_mode AS workday_execution_mode
@@ -155,7 +181,7 @@ export class ProviderAssignmentRepository {
 			 LEFT JOIN capacity_workday_runs run ON run.id=assignment.work_day_id AND run.team_id=assignment.team_id
 			 WHERE assignment.id = ? AND assignment.team_id = ? LIMIT 1`,
 			[assignmentId, teamId],
-		));
+		), inspection);
 	}
 
 	async list(teamId: string, filters: ProviderAssignmentFilters = {}): Promise<CapacityPage<DurableProviderAssignment>> {
@@ -188,7 +214,7 @@ export class ProviderAssignmentRepository {
 		const hasMore = rows.length > limit;
 		const last = selected.at(-1);
 		return {
-			items: selected.map((row) => serializeProviderAssignmentRow(row) as DurableProviderAssignment),
+			items: selected.map((row) => serializeProviderAssignmentRow(row, true) as DurableProviderAssignment),
 			page: {
 				limit,
 				hasMore,

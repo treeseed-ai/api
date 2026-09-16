@@ -34,7 +34,11 @@ export async function projectTreeDxCommitSignals(database: CapacityGovernanceDat
 		...(input.immutableRef?.startsWith('refs/') ? { sourceRef: input.immutableRef } : {}),
 	});
 	const paths = [...new Set(input.changedPaths.map((path) => path.trim().replace(/^\/+|\/+$/gu, '')).filter(Boolean))].sort();
-	if (paths.some((path) => ['execution_plan', 'proposal', 'question', 'note'].includes(subjectKind(path) ?? ''))) {
+	// An assignment workspace commit is unpublished output. Its canonical
+	// AssignmentResult transition advances the graph; projecting the raw commit as
+	// fresh intent creates a second authority and can re-admit the completed node.
+	if (!input.assignmentId
+		&& paths.some((path) => ['execution_plan', 'proposal', 'question', 'note'].includes(subjectKind(path) ?? ''))) {
 		await reconcileExecutionGraph(database, String(project.team_id), { projectId: input.projectId }, `treedx:${input.projectId}:${input.commitSha}`);
 	}
 	return [];

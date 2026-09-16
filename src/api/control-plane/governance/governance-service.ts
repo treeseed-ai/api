@@ -174,8 +174,11 @@ export function createGovernanceService(store: any) {
 					`proposal-update:${proposal.id}:${authored.receipt.commitSha}`);
 				return { proposal: updated, authoringReceipt: authored.receipt, idempotentReplay: false };
 			} catch (error) {
-				if (authored?.receipt) throw new GovernanceServiceError(409, 'proposal_version_unbound',
-					'Proposal governance changed after the TreeDX commit.');
+				if (authored?.receipt) {
+					const cause = error && typeof error === 'object' ? error as { code?: string; message?: string } : {};
+					throw new GovernanceServiceError(409, cause.code ?? 'proposal_version_unbound',
+						`Proposal version ${authored.receipt.proposalVersion} was authored in TreeDX but could not be bound to governance: ${cause.message ?? String(error)}`);
+				}
 				fail(error, 'governance_proposal_update_failed');
 			}
 		},

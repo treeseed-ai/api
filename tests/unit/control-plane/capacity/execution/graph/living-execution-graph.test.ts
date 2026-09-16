@@ -143,7 +143,8 @@ describe('proposal-owned living execution graph projection', () => {
 		])], profiles });
 		const actor = graph.nodes.find((node) => node.workItemId === 'implementation' && node.pairRole === 'actor')!;
 		const condition = graph.nodes.find((node) => node.kind === 'condition')!;
-		expect(condition).toMatchObject({ status: 'blocked', condition: { conditionType: 'external', expectedState: 'agent-class:tester' } });
+		expect(condition).toMatchObject({ status: 'blocked', authorityRefs: [],
+			condition: { conditionType: 'external', expectedState: 'agent-class:tester' } });
 		expect(actor.status).toBe('blocked');
 		expect(graph.edges).toContainEqual(expect.objectContaining({
 			fromNodeId: condition.id, toNodeId: actor.id, provenance: 'profile-agent',

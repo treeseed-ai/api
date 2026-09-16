@@ -57,22 +57,24 @@ describe('communication catalog operations', () => {
 
 	it('collapses duplicate addresses and keeps an accepted send durable while capacity reconciles', async () => {
 		const create = vi.fn(async () => ({ invocations: [{ blocker: 'communication_supply_unavailable' }] }));
+		const writes: Array<{ query: string; parameters: unknown[] }> = [];
 		const service = createCommunicationService(store({
 			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
 			async first(query: string) {
 				if (query.includes('communication_discussion_topics')) return { id: 'topic-a', slug: 'agent-chat', status: 'active' };
-				if (query.includes('communication_discussion_streams')) return { id: 'stream-a', discussion_id: 'discussion-a' };
+				if (query.includes('communication_discussion_streams')) return { id: 'stream-a', discussion_id: 'agent-chat' };
 				return null;
 			},
-			async run() { return { meta: { changes: 1 } }; },
+			async run(query: string, parameters: unknown[]) { writes.push({ query, parameters }); return { meta: { changes: 1 } }; },
 			async all() { return []; },
 		}), { create });
 		await expect(service.send(principal, 'team-a', 'Agent Chat', {
 			message: '@sdk/architect\nPlease coordinate with @architect.',
 		}, 'request-a')).rejects.toMatchObject({ code: 'communication_send_not_found', status: 404 });
 		expect(create).toHaveBeenCalledWith(principal, expect.objectContaining({
-			recipients: ['architect'], addressRequirements: { architect: 'required' },
+			discussionId: 'agent-chat', recipients: ['architect'], addressRequirements: { architect: 'required' },
 		}), 'request-a:project-a');
+		expect(writes.find(({ query }) => query.includes('communication_discussion_streams'))?.parameters).toContain('agent-chat');
 	});
 
 	it('expands a bare handle into one project stream per matching team agent', async () => {
@@ -93,6 +95,24 @@ describe('communication catalog operations', () => {
 		expect(create.mock.calls.map((call) => call[1].projectId).sort()).toEqual(['project-api', 'project-sdk']);
 	});
 
+	it('fails closed when a communication proposal is outside the addressed project', async () => {
+		const create = vi.fn();
+		const service = createCommunicationService(store({
+			async getProjectDetails() { return { project: { id: 'project-a', slug: 'sdk', teamId: 'team-a' } }; },
+			async getGovernanceProposal() { return { id: 'proposal-a', teamId: 'team-a', projectId: 'project-b', status: 'open' }; },
+			async first(query: string) {
+				if (query.includes('communication_discussion_topics')) return { id: 'topic-a', slug: 'agent-chat', status: 'active' };
+				return null;
+			},
+			async run() { return { meta: { changes: 1 } }; },
+			async all() { return []; },
+		}), { create });
+		await expect(service.send(principal, 'team-a', 'Agent Chat', {
+			message: '@sdk/architect Review this proposal.', proposalId: 'proposal-a',
+		}, 'request-a')).rejects.toMatchObject({ code: 'communication_proposal_not_found', status: 404 });
+		expect(create).not.toHaveBeenCalled();
+	});
+
 	it('reads communication send identities from the text-backed JSON column with PostgreSQL JSONB semantics', async () => {
 		const queries: string[] = [];
 		const service = createCommunicationService(store({
@@ -101,6 +121,9 @@ describe('communication catalog operations', () => {
 
 		await expect(service.sendStatus(principal, 'team-a', 'send-a'))
 			.rejects.toMatchObject({ code: 'communication_send_not_found', status: 404 });
-		expect(queries[0]).toContain("metadata_json::jsonb->'communication'->>'sendId'");
+		expect(queries).toEqual(expect.arrayContaining([
+			expect.stringContaining("execution_kind='conversation' AND status IN ('admitted','running')"),
+			expect.stringContaining("metadata_json::jsonb->'communication'->>'sendId'"),
+		]));
 	});
 });

@@ -32,10 +32,11 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','decisionIds','operatorConstraints','agentSelection']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','operatorConstraints','agentSelection','allocation']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
+	if(input.planningOnly!==undefined&&typeof input.planningOnly!=='boolean') diagnosticsError('workday_intent_invalid','Workday intent is invalid.',[{code:'planning_only_invalid',path:'planningOnly'}]);
 	const projects=input.projects==='all'?'all':Array.isArray(input.projects)?input.projects.map(text).filter(Boolean):[];
 	const constraints=record(input.operatorConstraints);
 	const forbiddenConstraints=Object.keys(constraints).filter((key)=>!['providerIds','maxConcurrency'].includes(key));
@@ -47,8 +48,11 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(input.endsAt!==undefined?{endsAt:text(input.endsAt)}:{}),
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
+		...(input.planningOnly!==undefined?{planningOnly:input.planningOnly as boolean}:{}),
+		...(Array.isArray(input.proposalIds)?{proposalIds:[...new Set(input.proposalIds.map(text).filter(Boolean))].sort()}:input.proposalIds!==undefined?{proposalIds:input.proposalIds as string[]}:{}),
 		...(Array.isArray(input.decisionIds)?{decisionIds:[...new Set(input.decisionIds.map(text).filter(Boolean))].sort()}:input.decisionIds!==undefined?{decisionIds:input.decisionIds as string[]}:{}),
 		...(input.agentSelection!==undefined?{agentSelection:input.agentSelection as WorkdayIntent['agentSelection']}:{}),
+		...(input.allocation!==undefined?{allocation:input.allocation as WorkdayIntent['allocation']}:{}),
 		...(Object.keys(constraints).length?{operatorConstraints:{
 			...(Array.isArray(constraints.providerIds)?{providerIds:constraints.providerIds.map(text).filter(Boolean)}:{}),
 			...(constraints.maxConcurrency!==undefined?{maxConcurrency:Number(constraints.maxConcurrency)}:{}),
@@ -84,11 +88,12 @@ export class WorkdayPreflightService {
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
 			executionMode:'simulation',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
-			parameters:{ profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
+			parameters:{ ...intent.allocation, profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
+				...(intent.proposalIds?.length?{proposalIds:intent.proposalIds}:{}),
 				...(intent.decisionIds?.length?{decisionIds:intent.decisionIds}:{}),
-				objectiveRefs:intent.objectiveFilters??[],planningOnly:false },
+				objectiveRefs:intent.objectiveFilters??[],planningOnly:intent.planningOnly===true },
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
 		const nodeRows=Array.isArray(projection.executionNodeDemands)?projection.executionNodeDemands.map(record):[];
@@ -97,12 +102,15 @@ export class WorkdayPreflightService {
 			(Array.isArray(project.agents)?project.agents.map(record):[]),
 		]));
 		const selectedDecisions=new Set(intent.decisionIds??[]);
+		const selectedProposals=new Set(intent.proposalIds??[]);
 		const selectedDemands=nodeRows.flatMap((entry,index)=>{
 			const node=decodeExecutionNode(entry) as ExecutionNode;
+			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
 			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
 			const proposalReview=node.kind==='reviewing'&&node.pairRole===null&&node.sourceRef.model==='proposal';
 			if(!node.id||selectedDecisions.size&&!proposalReview&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
 			const mode=node.kind==='acting'||node.kind==='reviewing'&&!proposalReview?'acting' as const:'planning' as const;
+			if(intent.planningOnly&&mode==='acting') return [];
 			if(mode==='acting'&&!decisionRef) return [];
 			const selectedAgents=selectedAgentsByProject.get(node.projectId);
 			// Explicit agent/activity selectors choose only cooperative planning
@@ -121,7 +129,7 @@ export class WorkdayPreflightService {
 		const appliedPlan=record(projection.appliedPlan);
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
-			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot}), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],decisionIds:intent.decisionIds??[]}),
+			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot}), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],proposalIds:intent.proposalIds??[],decisionIds:intent.decisionIds??[]}),
 			providerCapacityDigest:digest({providerId,membershipTeam:teamId,availableSeconds:projection.availableSeconds??null}),
 			authorizationDigest:digest({teamId,requestedById,profileId:intent.profileId}),
 			reservationDigest:digest([]),

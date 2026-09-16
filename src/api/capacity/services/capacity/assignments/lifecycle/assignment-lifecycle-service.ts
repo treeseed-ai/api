@@ -3,6 +3,9 @@ import { classifyCapacityFailure } from '../../../../policy/failure-classificati
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
+import { CapacityRuntimeEvidenceRepository } from '../../../../repositories/runtime/runtime-evidence.ts';
+import { capacityTransaction } from '../../../../transaction.ts';
 import type { AgentFallbackOutputWrite } from '../../../../repositories/runtime/runtime-evidence.ts';
 import { evaluateProviderAssignmentLeaseAuthority,type ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
 import { projectCompletedResearchWorkflow,type ResearchWorkflowProjectionStore } from '../../../projects/projects-core/research-workflow-projection-service.ts';
@@ -61,6 +64,7 @@ function activeLeaseOwnedBy(
 	principal: ProviderLeasePrincipal,
 	leaseToken: string | null | undefined,
 	now: string,
+	allowExpired = false,
 ): assignment is DurableProviderAssignment {
 	return Boolean(
 		assignment
@@ -70,7 +74,7 @@ function activeLeaseOwnedBy(
 		&& assignment.leaseState === 'leased'
 		&& assignment.leaseToken
 		&& assignment.leaseToken === leaseToken
-		&& (!assignment.leaseExpiresAt || Date.parse(assignment.leaseExpiresAt) > Date.parse(now)),
+		&& (allowExpired || !assignment.leaseExpiresAt || Date.parse(assignment.leaseExpiresAt) > Date.parse(now)),
 	);
 }
 
@@ -341,9 +345,27 @@ export class ProviderAssignmentLifecycleService {
 			reason: input.reason ?? input.message ?? 'Provider assignment failed and can be retried.',
 		});
 		await this.store.ensureInitialized();
+		return capacityTransaction(this.store, async database => {
+			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [assignmentId, principal.teamId]);
+			const repository = new ProviderAssignmentRepository(database);
+			const evidence = new CapacityRuntimeEvidenceRepository(database);
+			const overrides = { ...database,
+				getProviderAssignment: repository.get.bind(repository),
+				recordAgentFallbackOutput: evidence.recordFallbackOutput.bind(evidence) };
+			const store = new Proxy(this.store, { get: (target, key) =>
+				Reflect.has(overrides, key) ? Reflect.get(overrides, key) : Reflect.get(target, key) });
+			return new ProviderAssignmentLifecycleService(store).failTerminal(principal, assignmentId, input, failure);
+		});
+	}
+
+	private async failTerminal(principal: ProviderLeasePrincipal, assignmentId: string,
+		input: ExtendedProviderAssignmentLifecycleRequest, failure: ReturnType<typeof classifyCapacityFailure>) {
 		const now = new Date().toISOString();
 		const assignment = await this.store.getProviderAssignment(principal.teamId, assignmentId);
-		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
+		// Expiration ends productive authority, not the current owner's obligation
+		// to report its terminal timeout. The row lock prevents recovery taking it.
+		const timeout = input.code === 'assignment_timeout';
+		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now, timeout)) return null;
 		if (input.fallbackOutput) await this.persistFallback(assignment, {
 			...input.fallbackOutput,
 			status: record(input.fallbackOutput).status ?? 'suppressed',
@@ -361,6 +383,7 @@ export class ProviderAssignmentLifecycleService {
 				providerUnits: optionalFiniteNumber(input.providerUnits ?? usage.providerUnits, 'providerUnits'),
 				usd: optionalFiniteNumber(input.actualUsd ?? usage.actualUsd, 'actualUsd'),
 				modeRunId: input.modeRunId ?? null,
+				usageActual: usage,
 				source: 'provider_assignment_fail',
 				existingSettlementPolicy: 'replay',
 				metadata: { reason: input.reason ?? input.message ?? null, code: input.code ?? 'provider_assignment_failed' },
@@ -373,6 +396,7 @@ export class ProviderAssignmentLifecycleService {
 			defaultCode: archived?'discussion_archived':'provider_assignment_failed',
 			defaultReason: archived?'The source Discussion was archived.':'Provider assignment failed.',
 			metadata: { ...record(assignment.metadata), failureClassification: failure },
+			allowExpiredLease: timeout,
 		});
 	}
 
@@ -392,6 +416,7 @@ export class ProviderAssignmentLifecycleService {
 		now: string,
 		options: {
 			status: 'returned' | 'completed' | 'failed' | 'cancelled';
+			allowExpiredLease?: boolean;
 			timestampColumn: 'returned_at' | 'completed_at' | 'failed_at';
 			defaultCode: string;
 			defaultReason: string | null;
@@ -416,7 +441,7 @@ export class ProviderAssignmentLifecycleService {
 		if (transitionMetadata) params.push(JSON.stringify(transitionMetadata));
 		params.push(
 			now, assignment.id, principal.teamId, principal.capacityProviderId, principal.membershipId,
-			assignment.stateVersion, input.leaseToken ?? null, now,
+			assignment.stateVersion, input.leaseToken ?? null, ...(options.allowExpiredLease ? [] : [now]),
 		);
 		const operations = [{ query: `UPDATE capacity_provider_assignments
 			 SET status = ?, lease_state = 'released', lease_token = NULL, lease_expires_at = NULL,
@@ -425,7 +450,7 @@ export class ProviderAssignmentLifecycleService {
 			     attempt_count = attempt_count + 1, state_version = state_version + 1, updated_at = ?
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
-			   AND lease_token = ? AND (lease_expires_at IS NULL OR lease_expires_at > ?)`, params: [options.status, ...params] }];
+			   AND lease_token = ? ${options.allowExpiredLease ? '' : 'AND (lease_expires_at IS NULL OR lease_expires_at > ?)'} `, params: [options.status, ...params] }];
 		operations.push(...await livingExecutionLifecycleOperations({ store: this.store, assignment,
 			status: options.status, now, result: options.assignmentResult,
 			reviewDisposition: options.reviewDisposition ?? null }));

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listTreeDxPlanningDemandSources } from '../../../../../src/api/capacity/services/capacity/workdays/content/workday-content-demand-source.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
-import { bindPlanningContentIntent } from '../../../../../src/api/capacity/services/support/planning-demand-source.ts';
+import { bindPlanningContentIntent, preferredContentSource } from '../../../../../src/api/capacity/services/support/planning-demand-source.ts';
 import { resolveCapacityWorkdayAssignmentIntent } from '../../../../../src/api/capacity/services/capacity/workdays/assignments/workday-assignment-context-service.ts';
 
 const mocks = vi.hoisted(() => ({ resolve: vi.fn(), search: vi.fn(), read: vi.fn(), validate: vi.fn() }));
@@ -37,6 +37,15 @@ describe('selected planning subject', () => {
 		const explicit = { ...intent, subjectId: 'other' }, objective = { ...intent, subjectModel: 'objective' };
 		expect(bindPlanningContentIntent(explicit, source)).toBe(explicit);
 		expect(bindPlanningContentIntent(objective, source)).toBe(objective);
+	});
+});
+describe('planning subject priority', () => {
+	it('binds estimating activity to proposal authority before objectives', () => {
+		const selected = preferredContentSource({ slug: 'sdk/engineer', activityType: 'estimating', handler: 'estimate' } as never, [
+			{ sourceType: 'objective', sourceId: 'objective:core', priority: 80, payload: {} },
+			{ sourceType: 'proposal', sourceId: 'proposal:golden', priority: 70, payload: {} },
+		]);
+		expect(selected?.sourceId).toBe('proposal:golden');
 	});
 });
 describe('workday library source custody', () => {

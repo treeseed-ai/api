@@ -53,7 +53,7 @@ export function projectCommunicationInvocations(input: {
 		};
 		changedSourceRefs.push(sourceRef);
 		nodes.push(executionNodeSchema.parse({
-			schemaVersion: 'treeseed.execution-node/v1', id: `communication:${source.id}`,
+			schemaVersion: 'treeseed.execution-node/v1', id: `communication:${source.id}:${source.workdayId}`,
 			teamId: source.teamId, projectId: source.projectId, workdayId: source.workdayId,
 			kind: 'communication', pairRole: null, sourceRef, authorityRefs: [sourceRef],
 			ruleRevision: 1, nodeRevision: 1, agentClass: definition.agentClass, status: 'ready',

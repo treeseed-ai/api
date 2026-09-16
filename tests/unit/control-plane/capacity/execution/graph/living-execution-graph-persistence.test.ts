@@ -61,6 +61,23 @@ describe('normalized living execution graph persistence', () => {
 		]);
 	});
 
+	it('retires communication nodes after their invocation leaves the active source set', () => {
+		const discussionRef = { ...sourceRef, model: 'discussion' as const, id: 'invocation', path: 'discussions/topic/request.mdx' };
+		const communication = { ...node('assigned'), kind: 'communication' as const, pairRole: null,
+			workItemId: undefined, sourceRef: discussionRef, authorityRefs: [discussionRef], workspace: 'treedx' as const,
+			requestedPermissions: { content: { read: ['discussion' as const], write: ['discussion' as const] }, tools: ['discussion' as const] } };
+		expect(applyOperationalState(graph(1, [communication]), graph(2), 2).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'stale', nodeRevision: 2, graphRevisionUpdated: 2 }),
+		]);
+	});
+
+	it('retires assigned workday nodes after the workday leaves the active source set', () => {
+		const workdayNode = { ...node('assigned'), workdayId: 'terminal-workday' };
+		expect(applyOperationalState(graph(1, [workdayNode]), graph(2), 2).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'stale', nodeRevision: 2, graphRevisionUpdated: 2 }),
+		]);
+	});
+
 	it('preserves a request-changes node revision across identical source reconciliation', () => {
 		const advanced = { ...node('ready'), nodeRevision: 2 };
 		const reconciled = applyOperationalState(graph(2, [advanced]), graph(3, [node('blocked')]), 3);
@@ -126,8 +143,10 @@ describe('normalized living execution graph persistence', () => {
 		};
 		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
 		expect(operations.some((operation) => operation.query.includes('estimate_json=excluded.estimate_json'))).toBe(true);
-		expect(operations.at(-1)?.query).toContain('COALESCE(MAX(revision),0)');
-		expect(operations.at(-1)?.params.at(-1)).toBe(1);
+		expect(operations[0]?.query).toContain('COALESCE(MAX(revision),0)');
+		expect(operations[0]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
+		expect(operations[0]?.params.at(-1)).toBe(1);
+		expect(operations.slice(1).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
 		expect(operations.some((operation) => /graph_events|reconciliation_receipts/u.test(operation.query))).toBe(false);
 	});
 

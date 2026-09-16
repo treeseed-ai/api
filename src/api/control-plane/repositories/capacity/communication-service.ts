@@ -9,6 +9,7 @@ import { reconcileBlockedDiscussionInvocations } from '../../../capacity/service
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
 import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
 import { communicationFailure } from './communication/failure.ts';
+import { readExactProposal } from '../../../governance/executable-proposal.ts';
 
 type Row = Record<string, unknown>;
 type ProviderSnapshot = Row & { maxConcurrentRunners?: number; lanes?: unknown[] };
@@ -297,15 +298,35 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			const created: Row[] = [];
 			for (const projectId of [...new Set(targets.map((target) => target.projectId))]) {
 				const projectTargets = targets.filter((target) => target.projectId === projectId);
+				const contextRefs: Row[] = [];
+				const proposalId = text(body.proposalId);
+				if (proposalId) {
+					const proposal = await store.getGovernanceProposal(proposalId);
+					if (!proposal || text(proposal.teamId, text(proposal.team_id)) !== teamId
+						|| text(proposal.projectId, text(proposal.project_id)) !== projectId) {
+						throw new CapacityOperationError(404, 'communication_proposal_not_found', 'The selected proposal does not belong to this team and project.');
+					}
+					if (!['open', 'discussing'].includes(text(proposal.status))) {
+						throw new CapacityOperationError(409, 'communication_proposal_not_open', 'Discussion context requires an open proposal.');
+					}
+					const exact = await readExactProposal(store, proposal);
+					contextRefs.push({ kind: 'proposal', id: proposalId, projectId,
+						immutableRef: exact.ref.commit, path: exact.ref.path, digest: exact.ref.digest });
+				}
 				const streamId = `stream-${stableId(text(topic.id), projectId)}`;
-				const discussionId = `discussion-${stableId(teamId, `${text(topic.id)}:${projectId}`)}`;
+				// The channel is the durable discussion identity in each project library.
+				// Project-local repositories provide the namespace, so hashing the same
+				// operator-visible identity into a second opaque identifier only creates
+				// competing references between governance and communication.
+				const discussionId = slug;
 				await store.run(`INSERT INTO communication_discussion_streams (id,topic_id,team_id,project_id,discussion_id,created_at,updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 					ON CONFLICT (topic_id,project_id) DO NOTHING`, [streamId, topic.id, teamId, projectId, discussionId, now, now]);
 				const stream = await store.first('SELECT * FROM communication_discussion_streams WHERE topic_id=? AND project_id=? LIMIT 1', [topic.id, projectId]);
 				if (!stream) throw new CapacityOperationError(503, 'communication_topic_stream_unavailable', 'Discussion topic project stream could not be established.');
 				const communication = { channel: slug, topicId: topic.id, streamId: stream.id, sendId };
 				created.push(await discussions.create(principal, { teamId, projectId, discussionId: text(stream.discussion_id), createDiscussion: true,
-					body: body.message, topic: slug, recipients: projectTargets.map((target) => target.agentSlug), durationSeconds: COMMUNICATION_EXECUTION_SECONDS, communication,
+					body: body.message, topic: slug, recipients: projectTargets.map((target) => target.agentSlug), contextRefs,
+					durationSeconds: COMMUNICATION_EXECUTION_SECONDS, communication,
 					addressRequirements: Object.fromEntries(projectTargets.map((target) => [target.agentSlug, target.requirement])) }, `${idempotencyKey}:${projectId}`));
 			}
 			for (const target of targets) {
@@ -328,6 +349,10 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 			await authorizeCapacityTeam(store, principal, teamId, 'projects:read:team');
 			const diagnostics = query.diagnostics === 'full' ? 'full' : 'metadata';
 			if (diagnostics === 'full') await authorizeCapacityTeam(store, principal, teamId, 'agents:diagnostics:team');
+			// Polling a send is the non-interactive equivalent of following its topic.
+			// Keep blocked mentions moving when earlier responses release constrained
+			// communication capacity; requiring a separate timeline read strands sends.
+			await reconcileBlockedDiscussionInvocations(store, teamId);
 			return sendReceipt(teamId, sendId, false, diagnostics);
 		},
 		async topics(principal: CapacityPrincipal, teamId: string, query: Row) {

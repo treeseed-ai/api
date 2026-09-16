@@ -1,14 +1,10 @@
 export function assignmentCloseoutWarningSeconds(requestedSeconds: number, configuredValue: unknown) {
 	const configuredSeconds = Number(configuredValue);
 	const requestedShare = Math.max(1, Math.floor(requestedSeconds * .2));
-	// Short assignments still pay fixed provider/tool latency for their required
-	// plan, status, summary, validation, and single checkpoint. Preserve up to
-	// two minutes for coherent closeout instead of shrinking it to 20 percent.
-	const fixedCloseoutFloor = Math.min(120, Math.max(1, requestedSeconds - 30));
 	const configuredOrDefault = Number.isInteger(configuredSeconds) && configuredSeconds > 0
 		? configuredSeconds
 		: 180;
-	return Math.min(configuredOrDefault, Math.max(requestedShare, fixedCloseoutFloor));
+	return Math.min(requestedSeconds, configuredOrDefault, requestedShare);
 }
 
 export function assignmentPreparationSeconds(configuredValue: unknown) {
@@ -27,9 +23,14 @@ export function compileAssignmentTimeBudget(input: { now: string; requestedSecon
 	const configuredTokens = record(input.configuredBudget.tokens);
 	const closeoutSeconds = assignmentCloseoutWarningSeconds(input.requestedSeconds, configuredTime.closeoutSeconds ?? configuredTime.closeoutWarningSeconds);
 	const preparationSeconds = assignmentPreparationSeconds(configuredTime.preparationSeconds);
-	const preparationDeadlineAt = new Date(Date.parse(input.now) + preparationSeconds * 1_000).toISOString();
-	const closeoutDeadlineAt = new Date(Date.parse(input.now) + (preparationSeconds + closeoutSeconds) * 1_000).toISOString();
-	const authorityExpiresAt = new Date(Date.parse(input.now) + (preparationSeconds + input.requestedSeconds + closeoutSeconds) * 1_000).toISOString();
+	const utcDayEndsAt = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
+	const configuredDeadline = Date.parse(String(input.configuredBudget.deadline ?? ''));
+	const authorityDeadline = Math.min(utcDayEndsAt,
+		Number.isFinite(configuredDeadline) ? configuredDeadline : Infinity,
+		Date.parse(input.now) + (preparationSeconds + input.requestedSeconds) * 1_000);
+	const preparationDeadlineAt = new Date(Math.min(authorityDeadline, Date.parse(input.now) + preparationSeconds * 1_000)).toISOString();
+	const authorityExpiresAt = new Date(authorityDeadline).toISOString();
+	const closeoutDeadlineAt = authorityExpiresAt;
 	return {
 		closeoutSeconds, preparationSeconds, authorityExpiresAt,
 		capacityBudget: {
@@ -53,10 +54,13 @@ export function beginAssignmentPreparationTimeBudget(capacityEnvelope: Record<st
 	const startedAt = Date.parse(now);
 	const preparationSeconds = assignmentPreparationSeconds(time.preparationSeconds);
 	const closeoutSeconds = assignmentCloseoutWarningSeconds(Number(time.executionSeconds ?? time.requestedSeconds ?? envelope.requestedSeconds), time.closeoutSeconds ?? time.closeoutWarningSeconds);
-	const executionSeconds = Math.max(1, Number(time.executionSeconds ?? time.requestedSeconds ?? envelope.requestedSeconds));
-	const preparationDeadlineAt = new Date(startedAt + preparationSeconds * 1_000).toISOString();
-	const closeoutDeadlineAt = new Date(startedAt + (preparationSeconds + closeoutSeconds) * 1_000).toISOString();
-	const authorityDeadlineAt = new Date(startedAt + (preparationSeconds + executionSeconds + closeoutSeconds) * 1_000).toISOString();
+	const authorityDeadlineMs = Date.parse(String(time.authorityDeadlineAt));
+	if (!Number.isFinite(authorityDeadlineMs)) throw new Error('assignment_authority_deadline_required');
+	const preparationDeadlineMs = Date.parse(String(time.preparationDeadlineAt));
+	if (!Number.isFinite(preparationDeadlineMs)) throw new Error('assignment_preparation_deadline_required');
+	const preparationDeadlineAt = new Date(Math.min(preparationDeadlineMs, startedAt + preparationSeconds * 1_000)).toISOString();
+	const authorityDeadlineAt = new Date(authorityDeadlineMs).toISOString();
+	const closeoutDeadlineAt = authorityDeadlineAt;
 	return {
 		...envelope,
 		budget: {

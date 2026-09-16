@@ -10,9 +10,16 @@ describe('living execution run scope', () => {
 	});
 
 	it('keeps ordinary work and run-owned planning off conversation runs', () => {
-		const workday = { id: 'workday-1', executionKind: 'workday' } as const;
+		const workday = { id: 'workday-1', executionKind: 'workday', parameters: {} } as const;
 		expect(executionNodeRunScope(workday as never)).toEqual({
 			sql: `node.kind<>'communication' AND (node.workday_id IS NULL OR node.workday_id=?)`, parameters: ['workday-1'],
+		});
+	});
+
+	it('limits planning-only runs to their own cooperative planning and reporting nodes', () => {
+		const workday = { id: 'workday-1', executionKind: 'workday', parameters: { planningOnly: true } } as const;
+		expect(executionNodeRunScope(workday as never)).toEqual({
+			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','reporting')`, parameters: ['workday-1'],
 		});
 	});
 });

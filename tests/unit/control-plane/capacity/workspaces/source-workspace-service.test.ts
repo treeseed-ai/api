@@ -37,7 +37,7 @@ const canonicalAttempt = {
 		activity: 'acting', handler: 'actor', handlerOrigin: 'agent-package', prompt: { system: 'Author exact failing tests first.' },
 		permissionCeiling: { content: { read: [], write: [] }, tools: ['source.read', 'source.write'] } },
 	requiredCapabilities: [], grant: { contentRead: [], contentWrite: [], sourceRead: ['repository'], sourceWrite: ['repository'], tools: ['source.read', 'source.write'] },
-	provider: { providerId: 'provider', offerId: 'offer', offerRevision: 1, runtimeBuild: `sha256:${'3'.repeat(64)}` },
+	provider: { providerId: 'provider', offerId: 'offer', executionProviderId: 'codex', modelConfigurationId: 'terra-medium', executionCapabilityId: 'code-change', offerRevision: 1, runtimeBuild: `sha256:${'3'.repeat(64)}` },
 	contextRefs: [{ store: 'git', model: 'repository', id: 'repository', repository: 'repository', commit }], predecessorResultIds: [],
 	acceptanceCriteria: ['Tests fail first.'], workspace: { mode: 'git', repository: 'repository', baseCommit: commit,
 		branch: 'treeseed/assignments/assignment', writablePaths: ['.'] },
