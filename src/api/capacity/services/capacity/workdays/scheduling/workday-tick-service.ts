@@ -6,6 +6,9 @@ import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/
 import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { CapacityWorkdayEventService } from '../content/workday-event-service.ts';
 import { advanceLivingWorkday } from '../lifecycle/living-workday-lifecycle.ts';
+import { appliedWorkdaySchema, workdayPhase } from '@treeseed/sdk/agent-capacity';
+import { OperatorAssignmentService } from '../../assignments/observability/operator-assignment-service.ts';
+import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
 
 type WorkdayTickStore = CapacityGovernanceDatabase;
 
@@ -35,6 +38,18 @@ export async function tickCapacityWorkdayRun(
 		'capacity_workday_membership_not_approved', 'Workday tick requires one approved provider membership.', 409,
 		{ runId, providerId: run.capacityProviderId, matchCount: memberships.length },
 	);
+	if (workdayPhase(appliedWorkdaySchema.parse(run.parameters.appliedPlan), now) !== 'planning') {
+		const turns = await store.all(`SELECT assignment.id FROM capacity_provider_assignments assignment
+			JOIN execution_nodes node ON node.team_id=assignment.team_id AND node.id=assignment.execution_node_id
+			WHERE node.team_id=? AND node.workday_id=? AND node.kind IN ('planning','estimating')
+			AND assignment.status IN ('pending','returned','leased') ORDER BY assignment.id`, [teamId, runId]);
+		const cancellation = new OperatorAssignmentService(store, assignment => closeTerminalAssignmentWorkspace(store, assignment));
+		for (const turn of turns) await cancellation.cancel(teamId, String(turn.id), {
+			idempotencyKey: `planning-boundary:${runId}:${turn.id}`, reason: 'Planning window ended; unused capacity returns to acting and review.',
+		});
+		await store.run(`UPDATE execution_nodes SET status='cancelled',updated_at=?
+			WHERE team_id=? AND workday_id=? AND kind IN ('planning','estimating') AND status IN ('ready','blocked')`, [now, teamId, runId]);
+	}
 	const lifecycle = await advanceLivingWorkday(store, run, now);
 	const executionGraph = await reconcileExecutionGraph(store, teamId, {}, `workday-tick:${runId}:${eventId ?? now}`);
 	const result = { runId, tickedAt: now, lifecycle, executionGraph };
