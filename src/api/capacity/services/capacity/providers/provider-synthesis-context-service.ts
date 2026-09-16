@@ -3,6 +3,7 @@ import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonArray } from '../../../durable-json.ts';
 import type { MinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapabilityOffer } from '@treeseed/sdk/capacity-provider';
+import { capabilityAccountingLimitsSchema, type CapabilityAccountingLimits, type CapabilityAccountingObservation } from '@treeseed/sdk/agent-capacity';
 import { capacitySupplyCandidateStatus } from '../../../policy/supply-selection.ts';
 
 type Row = Record<string, unknown>;
@@ -44,6 +45,8 @@ export interface ProviderSynthesisExecutionProvider {
 	status: string;
 	capabilities: string[];
 	offers: CapabilityOffer[];
+	accountingLimits?: CapabilityAccountingLimits;
+	accountingObservation?: { modelUsage: CapabilityAccountingObservation; capabilityUsage: Record<string, CapabilityAccountingObservation> };
 	reliability?: number;
 	pressure?: 'idle' | 'normal' | 'busy' | 'throttled' | 'exhausted';
 	availableConcurrency?: number;
@@ -99,6 +102,9 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		status: capacitySupplyCandidateStatus(provider.status),
 		capabilities: Array.isArray(provider.capabilities) ? provider.capabilities.map(String).filter(Boolean) : [],
 		offers: Array.isArray(provider.offers) ? provider.offers as CapabilityOffer[] : [],
+		...(capabilityAccountingLimitsSchema.safeParse(provider.nativeLimits).success
+			? { accountingLimits: capabilityAccountingLimitsSchema.parse(provider.nativeLimits) } : {}),
+		...(provider.accountingObservation ? { accountingObservation: provider.accountingObservation as ProviderSynthesisExecutionProvider['accountingObservation'] } : {}),
 		reliability: Number.isFinite(Number(provider.reliability)) ? Math.max(0, Math.min(1, Number(provider.reliability))) : 1,
 		pressure: ['idle', 'normal', 'busy', 'throttled', 'exhausted'].includes(String(provider.pressure)) ? provider.pressure as ProviderSynthesisExecutionProvider['pressure'] : 'normal',
 		availableConcurrency: Number.isInteger(Number(provider.availableConcurrency)) ? Math.max(0, Number(provider.availableConcurrency)) : 1,

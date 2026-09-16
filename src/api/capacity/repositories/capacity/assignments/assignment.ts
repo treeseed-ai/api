@@ -147,6 +147,16 @@ export function serializeProviderAssignmentRow(row: Row | null): DurableProvider
 export class ProviderAssignmentRepository {
 	constructor(private readonly database: CapacityGovernanceDatabase) {}
 
+	/** Cancellation must revoke persisted authority even when an executable snapshot is corrupt. */
+	async getForCancellation(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null> {
+		await this.database.ensureInitialized();
+		const row = await this.database.first(`SELECT assignment.*,run.execution_mode AS workday_execution_mode
+			FROM capacity_provider_assignments assignment
+			LEFT JOIN capacity_workday_runs run ON run.id=assignment.work_day_id AND run.team_id=assignment.team_id
+			WHERE assignment.id=? AND assignment.team_id=? LIMIT 1`, [assignmentId, teamId]);
+		return serializeProviderAssignmentRow(row ? { ...row, assignment_attempt_json: null, assignment_result_json: null } : null);
+	}
+
 	async get(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null> {
 		await this.database.ensureInitialized();
 		return serializeProviderAssignmentRow(await this.database.first(

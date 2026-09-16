@@ -2,35 +2,29 @@ import { describe, expect, it, vi } from 'vitest';
 import { admitLivingExecutionAssignment } from '../../../../../src/api/capacity/services/capacity/assignments/admission/living-execution-admission.ts';
 import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
 
-const assignment = {
-	schemaVersion: 'treeseed.assignment-attempt/v1', id: 'assignment', idempotencyKey: 'assignment', teamId: 'team', projectId: 'project',
-	workdayId: 'workday', nodeId: 'node', workItemId: 'work-item', nodeRevision: 1, graphRevision: 2,
-	sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest: `sha256:${'a'.repeat(64)}` }, authorityRefs: [],
-	effectiveProfile: { profileRef: { store: 'treedx', model: 'agent', id: 'sdk/engineer', revision: 1, digest: `sha256:${'b'.repeat(64)}` },
-		activity: 'acting', handler: 'actor', handlerOrigin: 'agent-package', prompt: { system: 'Act.' },
-		permissionCeiling: { content: { read: [], write: [] }, tools: ['source.read', 'source.write'] } },
-	requiredCapabilities: [], grant: { contentRead: [], contentWrite: [], sourceRead: ['treeseed-ai/sdk'], sourceWrite: ['treeseed-ai/sdk'], tools: ['source.read','source.write'] },
-	provider: { providerId: 'provider', offerId: 'offer', offerRevision: 1, runtimeBuild: `sha256:${'c'.repeat(64)}` }, contextRefs: [], predecessorResultIds: [],
-	acceptanceCriteria: ['Complete the exact work item.'],
-	workspace: { mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'd'.repeat(40), branch: 'treeseed/assignments/assignment', writablePaths: ['src'] },
-	estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 }, limits: { maximumSeconds: 3, maximumContextBytes: 1, maximumContextTokens: 1, maximumContextItems: 1 },
-	deadline: '2026-09-14T00:00:00.000Z', leaseId: 'lease', reservationId: 'reservation', attempt: 1, status: 'created', createdAt: '2026-09-13T12:00:00.000Z',
-} as const;
+import { assignment } from './fixtures/assignment.ts';
 const allocation = calculateAssignmentAllocation({ estimate: assignment.estimate, measurements: [],
 	constraints: [{ id: 'execution-window', remainingSeconds: 180 }] });
+const accountingLimits = { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
+	capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 28800 } } };
 
 describe('living execution admission', () => {
 	it('claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority', async () => {
 		const committed = { id: assignment.id, executionNodeId: 'node', executionNodeRevision: 1 };
 		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: vi.fn(async () => []) };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
-			assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'lane',
+			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt })).resolves.toBe(committed);
 		const sql = store.batch.mock.calls[0]![0].map((operation: { query: string }) => operation.query).join('\n');
 		expect(sql).toMatch(/FOR UPDATE/u);
 		expect(sql).toMatch(/prior\.status<>'returned'/u);
 		expect(sql).toMatch(/capacity_reservations/u);
+		expect(sql).toMatch(/committed_amount\+\?<=LEAST\(hard_limit,\?\)/u);
+		expect(sql).toMatch(/INSERT INTO capacity_reservation_counter_claims/u);
+		for (const operation of store.batch.mock.calls[0]![0]) {
+			expect((operation.query.match(/\?/gu) ?? []).length).toBe(operation.params.length);
+		}
 		expect(sql).toMatch(/assignment_attempt_json/u);
 		const explanation = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('SET explanation_json'))!;
 		expect(JSON.parse(String(explanation.params[0]))).toMatchObject({ allocatedSeconds: 3, limitingConstraint: 'task-duration' });
@@ -52,7 +46,7 @@ describe('living execution admission', () => {
 	it('rejects assignment duration changes after allocator sizing without writing a reservation', async () => {
 		const store = { getProviderAssignment: vi.fn().mockResolvedValue(null), batch: vi.fn() };
 		await expect(admitLivingExecutionAssignment(store as never, { principal: {} as never,
-			assignment: assignment as never, allocation: { ...allocation, allocatedSeconds: 2 },
+			accountingLimits, assignment: assignment as never, allocation: { ...allocation, allocatedSeconds: 2 },
 			projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', predecessorResults: [], treedxProxyHandle: {}, now: assignment.createdAt }))
 			.rejects.toMatchObject({ code: 'assignment_allocation_mismatch' });
@@ -63,7 +57,7 @@ describe('living execution admission', () => {
 		const committed = { id: assignment.id, executionNodeId: 'node', executionNodeRevision: 1 };
 		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: vi.fn(async () => []) };
 		await admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
-			assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'lane',
+			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'lane',
 			lanePurpose: 'workday', executionKind: 'workday', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt });
 		const operations = store.batch.mock.calls[0]![0] as Array<{ query: string; params: unknown[] }>;
@@ -80,7 +74,7 @@ describe('living execution admission', () => {
 		const committed = { id: assignment.id, executionNodeId: 'node', executionNodeRevision: 1 };
 		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: vi.fn(async () => []) };
 		await admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
-			assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'communication',
+			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'communication',
 			lanePurpose: 'communication', executionKind: 'conversation', invocationId: 'invocation-1', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt });
 		const binding = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('UPDATE agent_invocation_requests'))!;

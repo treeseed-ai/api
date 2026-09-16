@@ -10,6 +10,7 @@ import { capacityWorkdayRequestedProjectSlugs, resolveCapacityWorkdayProjects } 
 import { admitLivingExecutionAssignment } from '../../admission/living-execution-admission.ts';
 import { buildAssignmentAttempt } from './assignment-attempt-builder.ts';
 import type { AssignmentFunctionStore } from '../support/assignment-function-store.ts';
+import { livingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
 
 const record = (value: unknown): Record<string, unknown> => {
 	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
@@ -167,13 +168,17 @@ export async function assignNextReadyExecutionNode(
 					store, candidate.node.teamId, candidate.node.id, candidate.node.nodeRevision,
 				);
 				try {
+				const allocationInputs = await livingAllocationInputs(store, { run, runs, providers: executionProviders,
+					capacityProviderId: principal.capacityProviderId, capabilityId: candidate.node.requiredCapabilities?.[0] ?? '',
+					agentClass: candidate.node.agentClass!, activity: candidate.effectiveProfile.activity, now });
 				const selected = buildAssignmentAttempt({
-					candidate, run, principal, providerSessionId, providers: executionProviders,
+					candidate, run, principal, providerSessionId, providers: executionProviders, allocationInputs,
 					attempt: priorAttempts + 1, now,
 				});
 				const attempt = selected.assignment;
 					const treedxProxyHandle = await issueLivingTreeDxAuthority(store, run, attempt, now);
 					return await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: selected.allocation,
+						accountingLimits: selected.accountingLimits,
 						projectAgentClassId: candidate.projectAgentClassId, providerSessionId,
 						executionProviderId: selected.executionProviderId, laneId: selected.laneId,
 						lanePurpose: selected.lanePurpose,

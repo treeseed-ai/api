@@ -1,4 +1,6 @@
-import type { AssignmentAttempt, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import type { AssignmentAttempt, CapabilityAccountingLimits, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import { randomUUID } from 'node:crypto';
+import { capabilityCounterClaims, initializeCapabilityCounters, commitCapabilityCounters } from './capability-counter-claims.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -16,6 +18,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	principal: ProviderLeasePrincipal;
 	assignment: AssignmentAttempt;
 	allocation: ReturnType<typeof calculateAssignmentAllocation>;
+	accountingLimits: CapabilityAccountingLimits;
 	projectAgentClassId: string;
 	providerSessionId: string;
 	executionProviderId: string;
@@ -58,7 +61,10 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		capacity: capacityEnvelope, input: {}, metadata: { source: 'living_execution_graph', nodeId: assignment.nodeId },
 	};
 	const common = [assignment.teamId,assignment.nodeId,assignment.nodeRevision];
+	const claims = capabilityCounterClaims(assignment, input.accountingLimits, input.now);
+	const admissionToken = randomUUID();
 	await store.batch([
+		...initializeCapabilityCounters(assignment, claims, input.now),
 		{ query: `SELECT node.id FROM execution_nodes node
 			WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
 			AND NOT EXISTS (
@@ -75,8 +81,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		{ query: `INSERT INTO capacity_reservations
 			(id,idempotency_key,membership_id,capacity_provider_id,execution_provider_id,lane_id,lane_purpose,
 			 project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,state,requested_seconds,
-			 reserved_seconds,active_seconds,elapsed_seconds,released_seconds,overrun_seconds,expires_at,metadata_json,created_at,updated_at)
-			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,'reserved',?,?,0,0,0,0,?,?::jsonb,?,?
+			 reserved_seconds,active_seconds,elapsed_seconds,released_seconds,overrun_seconds,expires_at,metadata_json,created_at,updated_at,admission_token)
+			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,'reserved',?,?,0,0,0,0,?,?::jsonb,?,?,?
 			WHERE EXISTS (
 				SELECT 1 FROM execution_nodes node
 				WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
@@ -91,11 +97,14 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					))
 				)
 			)
+			AND ${claims.map(() => `EXISTS (SELECT 1 FROM capacity_admission_counters WHERE id=? AND committed_amount+?<=LEAST(hard_limit,?))`).join(' AND ')}
 			ON CONFLICT (id) DO NOTHING`, params: [assignment.reservationId,assignment.idempotencyKey,principal.membershipId,
 				principal.capacityProviderId,input.executionProviderId,input.laneId,input.lanePurpose,input.projectAgentClassId,assignment.id,mode,
 				assignment.teamId,assignment.projectId,assignment.workdayId,assignment.limits.maximumSeconds,
 				assignment.limits.maximumSeconds,assignment.deadline,JSON.stringify({ nodeId: assignment.nodeId,
-					nodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision }),input.now,input.now,...common] },
+					nodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision }),input.now,input.now,admissionToken,...common,
+				...claims.flatMap(claim => [claim.id, assignment.limits.maximumSeconds, claim.hardLimit])] },
+		...commitCapabilityCounters(assignment, claims, admissionToken, input.now),
 		{ query: `INSERT INTO capacity_provider_assignments
 			(id,membership_id,team_id,project_id,capacity_provider_id,provider_session_id,execution_provider_id,lane_id,lane_purpose,
 			 project_agent_class_id,reservation_id,work_day_id,mode,execution_kind,invocation_id,status,lease_state,state_version,agent_id,handler_id,

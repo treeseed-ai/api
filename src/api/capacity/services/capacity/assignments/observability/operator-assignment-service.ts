@@ -27,7 +27,7 @@ export class OperatorAssignmentService {
 	async cancel(teamId: string, assignmentId: string, input: { idempotencyKey: string; actorId?: string | null; reason?: string | null }) {
 		await this.database.ensureInitialized();
 		const operationKey = idempotencyKey(input.idempotencyKey);
-		let assignment = await this.assignments.get(teamId, assignmentId);
+		let assignment = await this.assignments.getForCancellation(teamId, assignmentId);
 		if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment does not exist.', 404, { assignmentId });
 		if (assignment.status === 'leased' && assignment.leaseState === 'leased') {
 			const now = new Date().toISOString(), metadata = { ...(assignment.metadata ?? {}), cancellationRequested: true,
@@ -37,7 +37,7 @@ export class OperatorAssignmentService {
 				[JSON.stringify(metadata), input.reason ?? 'Assignment cancellation requested by a team operator.', now, assignmentId, teamId, assignment.stateVersion],
 			);
 			if (!requested) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
-			const cancelling = await this.assignments.get(teamId, assignmentId);
+			const cancelling = await this.assignments.getForCancellation(teamId, assignmentId);
 			if (!cancelling) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment disappeared during cancellation.', 500, { assignmentId });
 			return cancelling;
 		}
@@ -54,7 +54,7 @@ export class OperatorAssignmentService {
 				[input.reason ?? 'Assignment cancelled by a team operator.', now, assignmentId, teamId, assignment.stateVersion],
 			);
 			if (!fenced) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
-			assignment = await this.assignments.get(teamId, assignmentId);
+			assignment = await this.assignments.getForCancellation(teamId, assignmentId);
 			if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment disappeared during cancellation.', 500, { assignmentId });
 		}
 		const terminalAuthority = terminalAssignmentAuthority(assignment, now);
@@ -76,7 +76,7 @@ export class OperatorAssignmentService {
 				AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=?)`,
 				params: [now, teamId, assignment.executionNodeId, assignment.executionNodeRevision, assignmentId, teamId] }] : []),
 		]);
-		const cancelled = await this.assignments.get(teamId, assignmentId);
+		const cancelled = await this.assignments.getForCancellation(teamId, assignmentId);
 		const expectedStatus = failedCleanup ? 'failed' : 'cancelled';
 		if (!cancelled || cancelled.status !== expectedStatus) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
 		return cancelled;

@@ -3,10 +3,12 @@ import {
 	appliedWorkdaySchema,
 	assignmentAttemptSchema,
 	calculateAssignmentAllocation,
+	remainingCapabilitySeconds,
 	workdayPlanningEndsAt,
 	type AssignmentAttempt,
 	type ExactEntityReference,
 	type ExactGrant,
+	type CapabilityAccountingLimits,
 } from '@treeseed/sdk/agent-capacity';
 import { assignmentSourceBranch } from '@treeseed/sdk/capacity-provider/sandbox';
 import { CapacityGovernanceError } from '../../../../../database.ts';
@@ -16,6 +18,7 @@ import type { ReadyExecutionNode } from '../../../../build/ready-execution-node.
 import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
 import { assignmentPreparationSeconds, compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
+import type { LivingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -33,6 +36,8 @@ function selectProvider(requiredCapabilities: string[], providers: ProviderSynth
 	for (const provider of [...providers].sort((left, right) => left.id.localeCompare(right.id))) {
 		if (!['available', 'idle', 'normal'].includes(provider.status) || (provider.availableConcurrency ?? 1) < 1) continue;
 		if (!requiredCapabilities.every((capability) => provider.capabilities.includes(capability))) continue;
+		if (!provider.accountingLimits || !provider.accountingObservation
+			|| !provider.accountingLimits.capabilityLimits[requiredCapabilities[0]!]) continue;
 		const lane = [...provider.lanes].filter((candidate) => candidate.purpose === lanePurpose
 			&& requiredCapabilities.every((capability) => !candidate.capabilities.length || candidate.capabilities.includes(capability)))
 			.sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))[0];
@@ -129,9 +134,10 @@ export function buildAssignmentAttempt(input: {
 	principal: ProviderLeasePrincipal;
 	providerSessionId: string;
 	providers: ProviderSynthesisExecutionProvider[];
+	allocationInputs: LivingAllocationInputs;
 	attempt: number;
 	now: string;
-}): { assignment: AssignmentAttempt; allocation: ReturnType<typeof calculateAssignmentAllocation>;
+}): { assignment: AssignmentAttempt; allocation: ReturnType<typeof calculateAssignmentAllocation>; accountingLimits: CapabilityAccountingLimits;
 	executionProviderId: string; laneId: string; lanePurpose: 'workday' | 'communication' } {
 	const { candidate } = input;
 	if (!candidate.node.estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
@@ -149,8 +155,21 @@ export function buildAssignmentAttempt(input: {
 	const preparationSeconds = assignmentPreparationSeconds(undefined);
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
 		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000 - preparationSeconds);
-	const allocation = calculateAssignmentAllocation({ estimate: candidate.node.estimate, measurements: [],
-		constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds }],
+	const limits = selected.provider.accountingLimits!;
+	const observation = selected.provider.accountingObservation!;
+	const capability = candidate.node.requiredCapabilities![0]!;
+	const capabilityLimits = limits.capabilityLimits[capability]!;
+	const remaining = (dailyLimitSeconds: number, value: typeof observation.modelUsage | undefined) => value
+		? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
+			observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
+	const allocationInputs = input.allocationInputs[selected.provider.id];
+	if (!allocationInputs) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred', 'No current allocation inputs exist for the selected provider.', 409);
+	const allocation = calculateAssignmentAllocation({ estimate: candidate.node.estimate, measurements: allocationInputs.measurements,
+		constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
+			{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
+			{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
+		providerMinimumSeconds: capabilityLimits.minimumAssignmentSeconds,
+		providerMaximumSeconds: capabilityLimits.maximumAssignmentSeconds,
 		...(planning ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
 	if (!allocation.admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
 		'The remaining execution window cannot fit the viable task minimum.', 409, { nodeId: candidate.node.id, allocation });
@@ -170,6 +189,8 @@ export function buildAssignmentAttempt(input: {
 		requiredCapabilities: candidate.node.requiredCapabilities ?? [],
 		grant: exactGrant,
 		provider: { providerId: input.principal.capacityProviderId, offerId: selected.offer.offerId,
+			executionProviderId: selected.provider.id, modelConfigurationId: selected.provider.accountingLimits!.modelConfigurationId,
+			executionCapabilityId: candidate.node.requiredCapabilities![0],
 			offerRevision: 1, runtimeBuild: selected.provider.runtimeBuild },
 		contextRefs,
 		predecessorResultIds: candidate.predecessorResults.map((result) => result.id),
@@ -181,6 +202,6 @@ export function buildAssignmentAttempt(input: {
 		deadline, leaseId: id('lease', [assignmentId]), reservationId: id('reservation', [assignmentId]),
 		attempt: input.attempt, status: 'created', createdAt: input.now,
 	});
-	return { assignment, allocation, executionProviderId: selected.provider.id, laneId: selected.lane.id,
+	return { assignment, allocation, accountingLimits: limits, executionProviderId: selected.provider.id, laneId: selected.lane.id,
 		lanePurpose: communication ? 'communication' : 'workday' };
 }

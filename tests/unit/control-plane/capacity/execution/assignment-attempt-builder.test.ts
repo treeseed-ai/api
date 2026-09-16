@@ -27,6 +27,10 @@ const candidate = {
 const provider = {
 	id: 'codex', runtimeBuild: `sha256:${'f'.repeat(64)}`, status: 'available',
 	capabilities: ['code-change'], availableConcurrency: 1, maxConcurrentRunners: 1,
+	accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
+		capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 28800 } } },
+	accountingObservation: { modelUsage: { day: '2026-09-13', observedAt: '2026-09-13T12:00:00.000Z', healthy: true, activeSeconds: 0, reservedSeconds: 0 },
+		capabilityUsage: { 'code-change': { day: '2026-09-13', observedAt: '2026-09-13T12:00:00.000Z', healthy: true, activeSeconds: 0, reservedSeconds: 0 } } },
 	lanes: [{ id: 'work', purpose: 'workday', priority: 1, capabilities: ['code-change'],
 		maxConcurrentRunners: 1, reservedConcurrentWorkers: 0, borrowWhenIdle: true, lendWhenIdle: true, queueLimit: 10 }],
 	offers: [{ offerId: 'codex-offer', capabilities: [{ id: 'code-change' }] }],
@@ -47,7 +51,7 @@ describe('immutable assignment-attempt construction', () => {
 		const result = buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z',
 		});
 		expect(result).toMatchObject({
@@ -76,7 +80,7 @@ describe('immutable assignment-attempt construction', () => {
 		}] as never;
 		const result = buildAssignmentAttempt({ candidate: revised as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.workspace).toMatchObject({ baseCommit: '9'.repeat(40) });
 	});
@@ -85,7 +89,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [{ ...provider, capabilities: [] }] as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [{ ...provider, capabilities: [] }] as never,
 			attempt: 1, now: '2026-09-13T12:00:00.000Z',
 	})).toThrow(/No advertised provider runtime/u);
 	});
@@ -96,7 +100,7 @@ describe('immutable assignment-attempt construction', () => {
 		const result = buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [{ ...provider, offers: [broad, narrow] }] as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [{ ...provider, offers: [broad, narrow] }] as never,
 			attempt: 1, now: '2026-09-13T12:00:00.000Z',
 		});
 		expect(result.assignment.provider.offerId).toBe('narrow');
@@ -108,7 +112,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: missing as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [provider] as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never,
 			attempt: 1, now: '2026-09-13T12:00:00.000Z',
 		})).toThrow(/must declare its provider capability demand/u);
 	});
@@ -120,7 +124,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: elevated as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z',
 		})).toThrow(/outside its effective activity profile/u);
 	});
@@ -132,7 +136,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: dual as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z',
 		})).toThrow(/Content writes require a TreeDX workspace/u);
 	});
@@ -143,7 +147,7 @@ describe('immutable assignment-attempt construction', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: nearEnd as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:59:30.000Z',
 		})).toThrow('The remaining execution window cannot fit the viable task minimum.');
 	});
@@ -162,7 +166,7 @@ describe('immutable assignment-attempt construction', () => {
 		const communicationProvider = { ...provider, lanes: [{ ...provider.lanes[0]!, id: 'chat', purpose: 'communication' }] };
 		const result = buildAssignmentAttempt({ candidate: chat as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			providerSessionId: 'session', providers: [communicationProvider] as never, attempt: 1,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [communicationProvider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
 		expect(result).toMatchObject({ laneId: 'chat', lanePurpose: 'communication', assignment: {
 			effectiveProfile: { activity: 'chat' }, grant: { sourceRead: ['repository-sdk'], contentWrite: [
