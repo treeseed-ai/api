@@ -266,17 +266,22 @@ export async function leaseNextProviderAssignment(
 	}
 	await recordSynthesisDiagnostic(store, principal, context.session.id, synthesis, now);
 	const recovery = await recoverExpiredProviderAssignments(store, { teamId: principal.teamId, providerId: principal.capacityProviderId, now, limit: 100 });
+	const executionProviderIds = context.executionProviders.filter(provider => provider.status === 'available').map(provider => provider.id);
 	const rows = await store.all(
 		`SELECT * FROM capacity_provider_assignments
 		 WHERE team_id = ? AND capacity_provider_id = ?
 		   AND status IN ('pending', 'returned')
+		   AND execution_provider_id IN (${executionProviderIds.map(() => '?').join(', ') || 'NULL'})
+		   AND NOT EXISTS (SELECT 1 FROM workday_capacity_envelopes workday
+			WHERE workday.id=capacity_provider_assignments.work_day_id
+			AND workday.status IN ('completed','cancelled'))
 		   AND NOT (status='returned' AND execution_kind='conversation' AND lifecycle_code='discussion_response_required')
 		 ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
 		          CASE WHEN status = 'pending' THEN created_at END ASC,
 		          CASE WHEN status = 'returned' THEN returned_at END DESC,
 		          id ASC
 		 LIMIT 100`,
-		[principal.teamId, principal.capacityProviderId],
+		[principal.teamId, principal.capacityProviderId, ...executionProviderIds],
 	);
 	const assignments = rows.map((row) => serializeProviderAssignmentRow(row) as DurableProviderAssignment);
 	const workdayIds = [...new Set(assignments.map(assignmentWorkdayId).filter((id): id is string => Boolean(id)))];
