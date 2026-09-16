@@ -67,6 +67,12 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json='{}' WHERE id=$1`, [winner.id]);
 			const repository = new ProviderAssignmentRepository(store as never);
 			await expect(repository.get('team', winner.id)).rejects.toThrow('invalid assignment_attempt_json');
+			expect(await repository.get('team', winner.id, true)).toMatchObject({
+				id: winner.id, assignmentAttempt: null,
+				explanation: { snapshotValidation: { valid: false, field: 'assignment_attempt_json' } },
+			});
+			await expect(repository.get('team', winner.id)).rejects.toThrow('invalid assignment_attempt_json');
+			expect(await repository.get('other-team', winner.id, true)).toBeNull();
 			expect(await repository.getForCancellation('team', winner.id)).toMatchObject({
 				id: winner.id, status: 'pending', reservationId: winner.reservationId, assignmentAttempt: null,
 			});
