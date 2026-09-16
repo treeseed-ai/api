@@ -9,8 +9,7 @@ import { capabilityOfferDigest, capabilityOfferSchema, type CapabilityDefinition
 import { createCapabilityOntologyService } from '../../../control-plane/repositories/capabilities/capability-ontology-service.ts';
 import { decodeDurableJsonArray } from '../../durable-json.ts';
 import { assertMonotonicAvailabilityAccounting } from './availability-accounting.ts';
-import type { PoolClient } from 'pg';
-import { executePostgresBatch, translateControlPlaneSqlToPostgres } from '../../../support/control-plane-postgres.ts';
+import { capacityTransaction } from '../../transaction.ts';
 
 type JsonRecord = Record<string, unknown>;
 export interface ProviderAvailabilityPrincipal { membershipId: string; teamId: string; capacityProviderId: string; }
@@ -99,17 +98,7 @@ export class AvailabilitySessionService {
 
 	private async accountingTransaction<T>(principal: ProviderAvailabilityPrincipal, write: AvailabilitySessionWrite,
 		apply: (database: CapacityGovernanceDatabase) => Promise<T>): Promise<T> {
-		const db = (this.database as CapacityGovernanceDatabase & { db?: { transaction<T>(run: (client: PoolClient) => Promise<T>): Promise<T> } }).db;
-		if (!db?.transaction) throw new Error('Provider accounting requires the configured PostgreSQL transaction authority.');
-		return db.transaction(async client => {
-			const query = (sql: string, params: unknown[] = []) => client.query(translateControlPlaneSqlToPostgres(sql), params);
-			const database: CapacityGovernanceDatabase = {
-				ensureInitialized: async () => {},
-				run: async (sql, params) => { await query(sql, params); },
-				first: async <R extends Record<string, unknown>>(sql: string, params?: unknown[]) => (await query(sql, params)).rows[0] as R ?? null,
-				all: async <R extends Record<string, unknown>>(sql: string, params?: unknown[]) => (await query(sql, params)).rows as R[],
-				batch: operations => executePostgresBatch(client, operations),
-			};
+		return capacityTransaction(this.database, async database => {
 			// Serialize across memberships and sessions before reading the prior observations.
 			await database.run('SELECT id FROM capacity_providers WHERE id=? FOR UPDATE', [write.providerId]);
 			await new AvailabilitySessionService(database).assertMembership(principal);

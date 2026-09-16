@@ -23,8 +23,13 @@ export function compileAssignmentTimeBudget(input: { now: string; requestedSecon
 	const configuredTokens = record(input.configuredBudget.tokens);
 	const closeoutSeconds = assignmentCloseoutWarningSeconds(input.requestedSeconds, configuredTime.closeoutSeconds ?? configuredTime.closeoutWarningSeconds);
 	const preparationSeconds = assignmentPreparationSeconds(configuredTime.preparationSeconds);
-	const preparationDeadlineAt = new Date(Date.parse(input.now) + preparationSeconds * 1_000).toISOString();
-	const authorityExpiresAt = new Date(Date.parse(input.now) + (preparationSeconds + input.requestedSeconds) * 1_000).toISOString();
+	const utcDayEndsAt = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
+	const configuredDeadline = Date.parse(String(input.configuredBudget.deadline ?? ''));
+	const authorityDeadline = Math.min(utcDayEndsAt,
+		Number.isFinite(configuredDeadline) ? configuredDeadline : Infinity,
+		Date.parse(input.now) + (preparationSeconds + input.requestedSeconds) * 1_000);
+	const preparationDeadlineAt = new Date(Math.min(authorityDeadline, Date.parse(input.now) + preparationSeconds * 1_000)).toISOString();
+	const authorityExpiresAt = new Date(authorityDeadline).toISOString();
 	const closeoutDeadlineAt = authorityExpiresAt;
 	return {
 		closeoutSeconds, preparationSeconds, authorityExpiresAt,

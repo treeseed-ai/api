@@ -35,7 +35,8 @@ export function initializeCapabilityCounters(assignment: AssignmentAttempt, clai
 			THEN GREATEST(0,reservation.reserved_seconds-reservation.active_seconds) ELSE 0 END),0) AS reserved
 			FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id
 			WHERE reservation.capacity_provider_id=? AND reservation.created_at>=?
-			AND assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=? ${scope}
+			AND (assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=?
+				${capability ? '' : "OR NULLIF(assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId','') IS NULL"}) ${scope}
 		) UPDATE capacity_admission_counters SET committed_amount=GREATEST(committed_amount,
 			GREATEST(ledger.active,COALESCE((SELECT (value->>'activeSeconds')::numeric FROM observed WHERE value->>'day'=?),0))
 			+GREATEST(ledger.reserved,COALESCE((SELECT (value->>'reservedSeconds')::numeric FROM observed WHERE value->>'day'=?),0)))

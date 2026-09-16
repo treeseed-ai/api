@@ -21,7 +21,8 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			assignment.assignment_attempt_json::jsonb->'provider'->>'executionCapabilityId' AS capability_id FROM capacity_reservations reservation
 			JOIN capacity_provider_assignments assignment ON assignment.id=reservation.assignment_id
 			WHERE reservation.capacity_provider_id=? AND reservation.created_at>=?
-			AND assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=?
+			AND (assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId'=?
+				OR NULLIF(assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId','') IS NULL)
 			`, [input.capacityProviderId, `${input.now.slice(0, 10)}T00:00:00.000Z`, limits.modelConfigurationId]);
 		const capabilityCommitments = commitments.filter(row => row.capability_id === input.capabilityId);
 		const remaining = (cap: number, observation: typeof observed.modelUsage | undefined, ledger: Record<string, unknown>[]) => {

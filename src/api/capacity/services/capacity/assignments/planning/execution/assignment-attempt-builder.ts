@@ -153,6 +153,7 @@ export function buildAssignmentAttempt(input: {
 	const planning = ['planning', 'estimating'].includes(candidate.node.kind);
 	const windowEnd = planning ? workdayPlanningEndsAt(appliedPlan) : appliedPlan.endsAt;
 	const preparationSeconds = assignmentPreparationSeconds(undefined);
+	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
 		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000 - preparationSeconds);
 	const limits = selected.provider.accountingLimits!;
@@ -166,6 +167,7 @@ export function buildAssignmentAttempt(input: {
 	if (!allocationInputs) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred', 'No current allocation inputs exist for the selected provider.', 409);
 	const allocation = calculateAssignmentAllocation({ estimate: candidate.node.estimate, measurements: allocationInputs.measurements,
 		constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
+			{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000 - preparationSeconds) },
 			{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
 			{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
 		providerMinimumSeconds: capabilityLimits.minimumAssignmentSeconds,
@@ -174,7 +176,8 @@ export function buildAssignmentAttempt(input: {
 	if (!allocation.admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
 		'The remaining execution window cannot fit the viable task minimum.', 409, { nodeId: candidate.node.id, allocation });
 	const deadline = compileAssignmentTimeBudget({ now: input.now,
-		requestedSeconds: allocation.allocatedSeconds, configuredBudget: {} }).authorityExpiresAt;
+		requestedSeconds: allocation.allocatedSeconds,
+		configuredBudget: candidate.node.kind === 'reporting' && appliedPlan.state === 'closing' ? {} : { deadline: windowEnd } }).authorityExpiresAt;
 	const exactGrant = grant(candidate);
 	const contentRead = new Set(exactGrant.contentRead.map(stable));
 	const contextRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx'

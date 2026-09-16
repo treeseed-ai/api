@@ -46,7 +46,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		? 'planning' : 'acting';
 	const decisionId = assignment.authorityRefs.find((reference) => reference.model === 'decision')?.id ?? null;
 	const proposalId = assignment.sourceRef.model === 'proposal' ? assignment.sourceRef.id : null;
-	const timing = compileAssignmentTimeBudget({ now: input.now, requestedSeconds: assignment.limits.maximumSeconds, configuredBudget: {} });
+	const timing = compileAssignmentTimeBudget({ now: input.now, requestedSeconds: assignment.limits.maximumSeconds, configuredBudget: { deadline: assignment.deadline } });
 	const capacityEnvelope = {
 		teamId: assignment.teamId, projectId: assignment.projectId, workDayId: assignment.workdayId, mode,
 		projectAgentClassId: input.projectAgentClassId, capacityProviderId: principal.capacityProviderId,

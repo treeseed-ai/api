@@ -15,6 +15,15 @@ const provider = { id: 'codex-implementation', accountingLimits: { modelConfigur
 	accountingObservation: { modelUsage: observation, capabilityUsage: { implementation: observation } } };
 
 describe('live allocation ledger inputs', () => {
+	it('retains unattributed historical consumption against model supply, not an invented capability', async () => {
+		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_reservations') ? [
+			{ work_day_id: 'historical', mode: 'acting', state: 'consumed', reserved_seconds: 300, active_seconds: 300, capability_id: null },
+		] : []), first: vi.fn(async () => ({ ready_count: 1 })) };
+		const result = await livingAllocationInputs(store as never, { run: run as never, runs: [run as never], providers: [provider as never],
+			capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'engineer', activity: 'act', now });
+		expect(result['codex-implementation']?.constraints[0]?.remainingSeconds).toBe(700);
+		expect(store.all.mock.calls[0]![0]).toContain("NULLIF(assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId','') IS NULL");
+	});
 	it('calibrates productive deadline expiration, not uncertain lease recovery', async () => {
 		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_usage_actuals') ? [
 			{ id: 'usage', created_at: now, active_seconds: 180, expected_seconds: 120, allocated_seconds: 180,
