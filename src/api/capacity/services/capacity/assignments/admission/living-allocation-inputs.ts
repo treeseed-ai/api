@@ -39,16 +39,18 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			const parsed = appliedWorkdaySchema.safeParse(run.parameters.appliedPlan);
 			if (!parsed.success) continue;
 			const plan = parsed.data, phase = workdayPhase(plan, input.now);
-			const readiness = await store.first(`SELECT COUNT(*) AS ready_count FROM execution_nodes
+			const readiness = await store.first(`SELECT COUNT(*) AS ready_count,
+				COALESCE(MAX((estimate_json::jsonb->>'maximumSeconds')::numeric),0) AS maximum_seconds FROM execution_nodes
 				WHERE team_id=? AND workday_id=? AND status='ready' AND required_capabilities_json::jsonb @> ?::jsonb
-				AND ${phase === 'planning' ? "kind IN ('planning','estimating','communication')" : "kind NOT IN ('planning','estimating')"}`,
+				AND ${plan.state === 'closing' ? "kind='reporting'" : phase === 'planning' ? "kind IN ('planning','estimating','communication')" : "kind NOT IN ('planning','estimating')"}`,
 				[run.teamId, run.id, JSON.stringify([input.capabilityId])]);
 			const usage = commitments.filter(row => row.work_day_id === run.id).map(row => ({ planning: row.mode === 'planning',
 				seconds: ['reserved', 'consuming'].includes(String(row.state)) ? Math.max(Number(row.reserved_seconds), Number(row.active_seconds)) : Number(row.active_seconds) }));
 			workdays.push({ plan, committedSeconds: usage.reduce((sum, row) => sum + row.seconds, 0),
 				planningCommittedSeconds: usage.filter(row => row.planning).reduce((sum, row) => sum + row.seconds, 0),
 				maximumAdditionalSeconds: Number(readiness?.ready_count) > 0
-					? Math.max(0, (Date.parse(plan.endsAt) - Date.parse(input.now)) / 1000) * plan.policySnapshot.maximumConcurrency : 0 });
+					? plan.state === 'closing' ? Number(readiness?.maximum_seconds ?? 0)
+						: Math.max(0, (Date.parse(plan.endsAt) - Date.parse(input.now)) / 1000) * plan.policySnapshot.maximumConcurrency : 0 });
 		}
 		const shares = allocateWorkdayCapacity({ remainingSeconds: supply, now: input.now, workdays });
 		const rows = await store.all(`SELECT usage.id,usage.created_at,usage.active_seconds,assignment.status,assignment.lifecycle_code,
