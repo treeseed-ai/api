@@ -32,7 +32,7 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','operatorConstraints','agentSelection']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','operatorConstraints','agentSelection','allocation']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
@@ -52,6 +52,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 		...(Array.isArray(input.proposalIds)?{proposalIds:[...new Set(input.proposalIds.map(text).filter(Boolean))].sort()}:input.proposalIds!==undefined?{proposalIds:input.proposalIds as string[]}:{}),
 		...(Array.isArray(input.decisionIds)?{decisionIds:[...new Set(input.decisionIds.map(text).filter(Boolean))].sort()}:input.decisionIds!==undefined?{decisionIds:input.decisionIds as string[]}:{}),
 		...(input.agentSelection!==undefined?{agentSelection:input.agentSelection as WorkdayIntent['agentSelection']}:{}),
+		...(input.allocation!==undefined?{allocation:input.allocation as WorkdayIntent['allocation']}:{}),
 		...(Object.keys(constraints).length?{operatorConstraints:{
 			...(Array.isArray(constraints.providerIds)?{providerIds:constraints.providerIds.map(text).filter(Boolean)}:{}),
 			...(constraints.maxConcurrency!==undefined?{maxConcurrency:Number(constraints.maxConcurrency)}:{}),
@@ -87,7 +88,7 @@ export class WorkdayPreflightService {
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
 			executionMode:'simulation',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
-			parameters:{ profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
+			parameters:{ ...intent.allocation, profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
 				...(intent.proposalIds?.length?{proposalIds:intent.proposalIds}:{}),

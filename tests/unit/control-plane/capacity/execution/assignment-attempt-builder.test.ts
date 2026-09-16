@@ -34,8 +34,8 @@ const provider = {
 const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedPlan: {
 	schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 	executionMode: 'simulation',
-	policySnapshot: { durationSeconds: 3600, maximumConcurrency: 1, planningSecondsPerAgent: 60,
-		communicationConcurrency: 1, projectWeights: { project: 1 }, agentClassWeights: { engineer: 1 } },
+	policySnapshot: { durationSeconds: 3600, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
+		communicationConcurrency: 1, projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
 	state: 'active', startsAt: '2026-09-13T12:00:00.000Z', endsAt: '2026-09-13T13:00:00.000Z',
 	planningRounds: [{ round: 1, state: 'complete', assignmentIds: ['planning:1:project/engineer'] },
 		{ round: 2, state: 'complete', assignmentIds: ['planning:2:project/engineer'] }],

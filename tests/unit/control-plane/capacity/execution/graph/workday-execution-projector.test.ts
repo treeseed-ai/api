@@ -25,8 +25,8 @@ describe('workday living-graph projection', () => {
 		}));
 		const appliedPlan = compileWorkday({ id: 'seven-estimates', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation', activityTypes: ['estimating'],
-			policy: { durationSeconds: 1800, maximumConcurrency: 1, planningSecondsPerAgent: 60,
-				communicationConcurrency: 1, projectWeights: {}, agentClassWeights: {} },
+			policy: { durationSeconds: 1800, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
+				communicationConcurrency: 1, projectPercentages: {}, agentClassPercentages: {} },
 			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating`), startsAt: '2026-09-14T12:00:00.000Z' });
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles,
 			sources: [{ id: 'seven-estimates', teamId: 'team', proposalsByProjectId: { sdk: { executionPlan: {
@@ -43,18 +43,18 @@ describe('workday living-graph projection', () => {
 		expect(graph.nodes.find((node) => node.agentClass === 'reviewer')?.acceptanceCriteria).toHaveLength(6);
 		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
 	});
-	it('projects an independent first round, all-result second round, and closing Reporter work', () => {
+	it('projects dependency-ordered planning and closing Reporter work', () => {
 		const profiles = { 'sdk:architect': definition('architect'), 'sdk:engineer': definition('engineer', ['architect']),
 			'sdk:reporter': definition('reporter') };
 		const appliedPlan = compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation',
-			policy: { durationSeconds: 3600, maximumConcurrency: 2, planningSecondsPerAgent: 60,
-				communicationConcurrency: 1, projectWeights: { sdk: 1 }, agentClassWeights: { architect: 1, engineer: 1, reporter: 1 } },
+			policy: { durationSeconds: 3600, maximumConcurrency: 2, planningTurnMaximumSeconds: 60,
+				communicationConcurrency: 1, projectPercentages: { sdk: 100 }, agentClassPercentages: {} },
 			agentIds: ['sdk/sdk/architect:planning', 'sdk/sdk/engineer:planning', 'sdk/sdk/reporter:planning'], startsAt: '2026-09-13T12:00:00.000Z' });
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1,
 			sources: [{ id: 'workday', teamId: 'team', parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
 				agentProfilesByProjectId: { sdk: { revision: 'test', agents: Object.values(profiles).map((candidate) => ({ definition: candidate, activities: ['planning'] })) } } } }], profiles });
-		expect(graph.nodes.filter((node) => node.kind === 'planning')).toHaveLength(6);
+		expect(graph.nodes.filter((node) => node.kind === 'planning')).toHaveLength(3);
 		expect(graph.nodes.map((node) => node.kind)).toEqual(expect.arrayContaining(['condition', 'reporting']));
 		expect(graph.nodes.find((node) => node.kind === 'reporting')?.estimate)
 			.toEqual({ minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 });
@@ -62,9 +62,10 @@ describe('workday living-graph projection', () => {
 			.toEqual(['treeseed.coordination.reporting']);
 		expect(graph.nodes.filter((node) => node.kind === 'planning')
 			.every((node) => node.requiredCapabilities?.[0] === 'treeseed.coordination.planning')).toBe(true);
-		expect(graph.edges.some((edge) => edge.provenance === 'profile-agent')).toBe(false);
+		expect(graph.edges.some((edge) => edge.provenance === 'profile-agent'
+			&& edge.fromNodeId.endsWith('sdk/architect:planning') && edge.toNodeId.endsWith('sdk/engineer:planning'))).toBe(true);
 		expect(graph.edges.filter((edge) => edge.fromNodeId.startsWith('planning:workday:1:')
-			&& edge.toNodeId.startsWith('planning:workday:2:'))).toHaveLength(9);
+			&& edge.toNodeId.startsWith('planning:workday:2:'))).toHaveLength(0);
 		expect(graph.nodes.filter((node) => node.kind !== 'condition')
 			.every((node) => node.authorityRefs?.some((reference) => reference.model === 'workday'))).toBe(true);
 		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
@@ -77,8 +78,8 @@ describe('workday living-graph projection', () => {
 		const appliedPlan = compileWorkday({ id: 'estimating-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation',
 			activityTypes: ['estimating'],
-			policy: { durationSeconds: 600, maximumConcurrency: 1, planningSecondsPerAgent: 60,
-				communicationConcurrency: 1, projectWeights: {}, agentClassWeights: {} },
+			policy: { durationSeconds: 600, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
+				communicationConcurrency: 1, projectPercentages: {}, agentClassPercentages: {} },
 			agentIds: [participantId], startsAt: '2026-09-14T12:00:00.000Z' });
 		const proposalRef = { store: 'treedx', model: 'proposal', id: 'golden-sdk', revision: 2,
 			digest: `sha256:${'a'.repeat(64)}`, repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden-sdk.mdx' };
@@ -104,8 +105,8 @@ describe('workday living-graph projection', () => {
 		reviewer.activityProfiles.reviewing = { handler: 'writer', permissions, prompt: { system: 'Review exact governed work.' } };
 		const appliedPlan = compileWorkday({ id: 'review-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 			executionMode: 'simulation',
-			policy: { durationSeconds: 600, maximumConcurrency: 1, planningSecondsPerAgent: 60,
-				communicationConcurrency: 1, projectWeights: {}, agentClassWeights: {} },
+			policy: { durationSeconds: 600, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
+				communicationConcurrency: 1, projectPercentages: {}, agentClassPercentages: {} },
 			agentIds: [], startsAt: '2026-09-14T12:00:00.000Z' });
 		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles: { 'sdk:reviewer': reviewer },
 			sources: [{ id: 'review-workday', teamId: 'team', parameters: { appliedPlan, scheduledProjectIds: ['sdk'],

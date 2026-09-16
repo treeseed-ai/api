@@ -75,7 +75,8 @@ export function acceptedLibraryRevision(library: { metadata?: unknown; contentRe
 
 /** Cooperative project planning requires one exact proposal; conversation runs bind exact message context instead. */
 export function requiresGovernedPlanningProposal(run: Pick<DurableCapacityWorkdayRun, 'executionKind' | 'parameters'>): boolean {
-	return run.executionKind === 'workday' && run.parameters.planningOnly === true;
+	return run.executionKind === 'workday' && Array.isArray(record(run.parameters.agentSelection).activityTypes)
+		&& (record(run.parameters.agentSelection).activityTypes as unknown[]).includes('estimating');
 }
 
 async function resolveCapacityWorkdayPreflight(
@@ -150,13 +151,15 @@ async function resolveCapacityWorkdayPreflight(
 		policyId: text(parameters.policyId, 'default'), policyRevision: Math.max(1, Number(parameters.policyRevision ?? 1)),
 		policy: { durationSeconds: Math.max(1, Number(parameters.durationSeconds)),
 			maximumConcurrency: Math.max(1, Number(parameters.maximumConcurrency ?? parameters.maxActiveAssignments ?? 1)),
-			planningSecondsPerAgent: Math.max(1, Number(parameters.planningSecondsPerAgent ?? 180)),
+			planningPercent: Number(parameters.planningPercent ?? 20), allocationWeight: Number(parameters.allocationWeight ?? 1),
+			planningTurnMaximumSeconds: Number(parameters.planningTurnMaximumSeconds ?? 180),
 			communicationConcurrency: Math.max(1, Number(parameters.communicationConcurrency ?? 1)),
-			projectWeights: record(parameters.projectWeights), agentClassWeights: record(parameters.agentClassWeights) },
+			projectPercentages: record(parameters.projectPercentages),
+			agentClassPercentages: record(parameters.agentClassPercentages) as Record<string, Record<string, number>> },
 		agentIds, startsAt: startedAt });
-	const planningSeconds = appliedPlan.planningRounds.reduce((total, round) => total + round.assignmentIds.length, 0)
-		* appliedPlan.policySnapshot.planningSecondsPerAgent;
-	if (planningSeconds > time.availableSeconds) throw new CapacityGovernanceError('capacity_workday_planning_capacity_insufficient',
+	// Turn ceilings are not reservations. Admission sizes each turn against supply.
+	const planningSeconds = appliedPlan.planningRounds.length ? agentIds.length * 2 : 0;
+	if (planningSeconds > time.availableSeconds * appliedPlan.policySnapshot.planningPercent / 100) throw new CapacityGovernanceError('capacity_workday_planning_capacity_insufficient',
 		'Workday capacity cannot guarantee the compiled cooperative assignments for every selected agent.', 409,
 		{ requiredSeconds: planningSeconds, availableSeconds: time.availableSeconds, agentCount: agentIds.length });
 	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,contexts,proposalContexts,agentProfiles,time,appliedPlan };

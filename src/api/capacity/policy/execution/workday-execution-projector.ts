@@ -55,7 +55,7 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 		changedSourceRefs.push(reference);
 		const projectIds = array(source.parameters.scheduledProjectIds).map(text).filter(Boolean).sort();
 		const roundNodes = new Map<number, ExecutionNode[]>();
-		for (const round of [1, 2] as const) {
+		for (const { round } of workday.planningRounds) {
 			const plannedIds = new Set(workday.planningRounds.find((candidate) => candidate.round === round)?.assignmentIds ?? []);
 			const current: ExecutionNode[] = [];
 			for (const participant of participants.filter((candidate) => projectIds.includes(candidate.projectId))) {
@@ -82,8 +82,8 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 					...(activity === 'estimating' && workItem[0] ? { workItemId: text(workItem[0].id) } : {}),
 					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
 					agentClass: definition.agentClass, status: 'blocked',
-					estimate: { minimumSeconds: 1, expectedSeconds: workday.policySnapshot.planningSecondsPerAgent,
-						maximumSeconds: workday.policySnapshot.planningSecondsPerAgent },
+					estimate: { minimumSeconds: 1, expectedSeconds: workday.policySnapshot.planningTurnMaximumSeconds,
+						maximumSeconds: workday.policySnapshot.planningTurnMaximumSeconds },
 					requiredCapabilities: [capability(activity)], requestedPermissions: profile.permissions,
 					workspace: 'treedx', acceptanceCriteria: activity === 'estimating' ? estimatingCriteria
 						: [`Return the governed ${activity} contribution within the assigned round.`],
@@ -92,12 +92,25 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 			}
 			roundNodes.set(round, current);
 		}
-		for (const node of roundNodes.get(2) ?? []) for (const predecessor of roundNodes.get(1) ?? []) {
-			edges.push(edge(input.teamId, predecessor.id, node.id, 'work-item', reference, input.revision));
+		for (const [round, current] of roundNodes) {
+			for (const node of current) for (const predecessor of roundNodes.get(round - 1) ?? []) {
+				edges.push(edge(input.teamId, predecessor.id, node.id, 'work-item', reference, input.revision));
+			}
+			for (const participant of participants) {
+				const node = current.find((candidate) => candidate.id === `planning:${workday.id}:${round}:${participant.id}`);
+				if (!node) continue;
+				for (const dependency of participant.definition.activityProfiles[participant.activity]?.dependsOn?.agents ?? []) {
+					const upstream = participants.filter((candidate) => candidate.projectId === participant.projectId
+						&& candidate.activity === participant.activity
+						&& (candidate.definition.id === dependency || candidate.definition.agentClass === dependency));
+					if (!upstream.length) throw new Error(`Planning dependency ${dependency} is not selected for ${participant.id}.`);
+					for (const predecessor of current.filter((candidate) => upstream.some((agent) =>
+						candidate.id === `planning:${workday.id}:${round}:${agent.id}`))) {
+						edges.push(edge(input.teamId, predecessor.id, node.id, 'profile-agent', reference, input.revision));
+					}
+				}
+			}
 		}
-		// Cooperative round one is intentionally independent. Standing activity
-		// dependencies govern proposal work-item execution, not planning opinions;
-		// round two already depends on every exact round-one result.
 		for (const projectId of projectIds) {
 			const reporter = input.profiles[`${projectId}:reporter`];
 			const reporting = reporter?.activityProfiles.reporting;

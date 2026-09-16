@@ -1,4 +1,4 @@
-import { appliedWorkdaySchema, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, compilePlanningRounds, workdayPhase, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 
@@ -30,6 +30,16 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	const states = new Map(nodeRows.map((row) => [String(row.id), String(row.status)]));
 	let next = advanceRounds(plan, states, now);
 	if (next.state === 'planned') next = { ...next, state: 'active', activatedAt: next.activatedAt ?? now };
+	if (!requestClose && next.state === 'active' && workdayPhase(next, now) === 'planning'
+		&& next.planningRounds.length && next.planningRounds.every((round) => round.state === 'complete')) {
+		const first = next.planningRounds[0]!;
+		const prefix = `planning:${next.id}:${first.round}:`;
+		const agentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
+		const round = next.planningRounds.at(-1)!.round + 1;
+		const turns = compilePlanningRounds(next.id, agentIds, next.policySnapshot.planningTurnMaximumSeconds, round);
+		next = { ...next, planningRounds: [...next.planningRounds, { round, state: 'active',
+			assignmentIds: turns.map((turn) => turn.id), startedAt: now }] };
+	}
 	if (next.state === 'active' && (requestClose || Date.parse(now) >= Date.parse(next.endsAt))) {
 		next = { ...next, state: 'closing', closingAt: next.closingAt ?? now };
 	}
