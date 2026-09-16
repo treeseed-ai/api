@@ -16,17 +16,20 @@ function repositoryFile(value: unknown): Row {
 	return record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
 }
 
-export async function readExactProposal(store: any, proposal: Row) {
+export async function readExactProposal(store: any, proposal: Row, frozen?: ExactEntityReference) {
 	const metadata = record(proposal.metadata ?? proposal.metadata_json);
 	const provenance = record(metadata.contentProvenance);
 	const projectId = text(proposal.projectId, proposal.project_id);
 	const proposalId = text(proposal.id, proposal.proposal_id);
-	const repository = text(provenance.repositoryId);
-	const path = text(provenance.contentPath);
-	const commit = text(provenance.commitSha);
-	const sourceDigest = text(provenance.digest);
-	const activeDigest = text(proposal.activeContentHash, proposal.active_content_hash, proposal.proposal_content_hash).replace(/^sha256:/u, '');
-	const revision = Number(proposal.activeVersion ?? proposal.active_version ?? proposal.proposal_version);
+	if (frozen && (frozen.store !== 'treedx' || frozen.model !== 'proposal' || frozen.id !== proposalId)) {
+		throw Object.assign(new Error('Frozen proposal identity does not match its governance record.'), { status: 409, code: 'proposal_identity_mismatch' });
+	}
+	const repository = frozen ? text(frozen.repository) : text(provenance.repositoryId);
+	const path = frozen ? text(frozen.path) : text(provenance.contentPath);
+	const commit = frozen ? text(frozen.commit) : text(provenance.commitSha);
+	const sourceDigest = frozen ? text(frozen.digest).replace(/^sha256:/u, '') : text(provenance.digest);
+	const activeDigest = frozen ? sourceDigest : text(proposal.activeContentHash, proposal.active_content_hash, proposal.proposal_content_hash).replace(/^sha256:/u, '');
+	const revision = frozen ? Number(frozen.revision) : Number(proposal.activeVersion ?? proposal.active_version ?? proposal.proposal_version);
 	if (!projectId || !proposalId || !repository || !path || !/^[a-f0-9]{40}$/u.test(commit)
 		|| !/^[a-f0-9]{64}$/u.test(sourceDigest) || !Number.isInteger(revision) || revision < 1) {
 		throw Object.assign(new Error(`Proposal ${proposalId || '(unknown)'} lacks exact TreeDX provenance.`), {

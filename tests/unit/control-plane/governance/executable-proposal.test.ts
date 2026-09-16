@@ -22,4 +22,19 @@ describe('exact executable proposal custody', () => {
 			metadata: { contentProvenance: { repositoryId: 'repository', contentPath: 'proposals/proposal.mdx', commitSha: 'a'.repeat(40), digest } } }))
 			.resolves.toMatchObject({ source, ref: { digest: `sha256:${digest}`, commit: 'a'.repeat(40) } });
 	});
+	it('keeps planning source immutable when genuine estimates advance the governed proposal', async () => {
+		const source = 'Frozen planning input.\n', digest = createHash('sha256').update(source).digest('hex');
+		client.readRepositoryFile.mockResolvedValue({ resolvedRef: 'a'.repeat(40), file: { content: source, frontmatter: {
+			schemaVersion: 'treeseed.proposal/v1', id: 'proposal', projectId: 'project', title: 'Exact source',
+			request: 'Preserve the exact proposal bytes.', status: 'draft',
+		} } });
+		const frozen = { store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1,
+			digest: `sha256:${digest}`, repository: 'repository', path: 'proposals/proposal.mdx', commit: 'a'.repeat(40) };
+		await expect(readExactProposal({}, { id: 'proposal', projectId: 'project', activeVersion: 2,
+			activeContentHash: 'b'.repeat(64), metadata: { contentProvenance: { commitSha: 'b'.repeat(40) } } }, frozen))
+			.resolves.toMatchObject({ source, ref: frozen });
+		expect(client.readRepositoryFile).toHaveBeenCalledWith(expect.objectContaining({ ref: frozen.commit }));
+		await expect(readExactProposal({}, { id: 'other', projectId: 'project' }, frozen))
+			.rejects.toMatchObject({ code: 'proposal_identity_mismatch' });
+	});
 });

@@ -96,7 +96,7 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== teamId
 				|| text(proposal.projectId ?? proposal.project_id) !== projectId) throw new CapacityOperationError(
 				409, 'estimating_proposal_scope_invalid', 'Estimating requires the selected team and project proposal.');
-			const exact = await readExactProposal(store, proposal);
+			const exact = await readExactProposal(store, proposal, reference as import('@treeseed/sdk/agent-capacity').ExactEntityReference);
 			if (stable(exact.ref) !== stable(reference)) throw new CapacityOperationError(
 				409, 'estimating_proposal_source_moved', 'The frozen estimating proposal revision changed.');
 			proposalsByProjectId[projectId] = exact.definition;
