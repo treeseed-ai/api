@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import {
 	appliedWorkdaySchema,
 	assignmentAttemptSchema,
+	calculateAssignmentAllocation,
+	workdayPlanningEndsAt,
 	type AssignmentAttempt,
 	type ExactEntityReference,
 	type ExactGrant,
@@ -13,7 +15,7 @@ import type { ProviderSynthesisExecutionProvider } from '../../../providers/prov
 import type { ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
-import { compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
+import { assignmentPreparationSeconds, compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -129,7 +131,8 @@ export function buildAssignmentAttempt(input: {
 	providers: ProviderSynthesisExecutionProvider[];
 	attempt: number;
 	now: string;
-}): { assignment: AssignmentAttempt; executionProviderId: string; laneId: string; lanePurpose: 'workday' | 'communication' } {
+}): { assignment: AssignmentAttempt; allocation: ReturnType<typeof calculateAssignmentAllocation>;
+	executionProviderId: string; laneId: string; lanePurpose: 'workday' | 'communication' } {
 	const { candidate } = input;
 	if (!candidate.node.estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
 	const communication = candidate.node.kind === 'communication';
@@ -141,8 +144,18 @@ export function buildAssignmentAttempt(input: {
 		'Assignment admission found contradictory execution mode authority.', 409,
 		{ run: input.run.executionMode, appliedPlan: appliedPlan.executionMode },
 	);
+	const planning = ['planning', 'estimating'].includes(candidate.node.kind);
+	const windowEnd = planning ? workdayPlanningEndsAt(appliedPlan) : appliedPlan.endsAt;
+	const preparationSeconds = assignmentPreparationSeconds(undefined);
+	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
+		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000 - preparationSeconds);
+	const allocation = calculateAssignmentAllocation({ estimate: candidate.node.estimate, measurements: [],
+		constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds }],
+		...(planning ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
+	if (!allocation.admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
+		'The remaining execution window cannot fit the viable task minimum.', 409, { nodeId: candidate.node.id, allocation });
 	const deadline = compileAssignmentTimeBudget({ now: input.now,
-		requestedSeconds: candidate.node.estimate.expectedSeconds, configuredBudget: {} }).authorityExpiresAt;
+		requestedSeconds: allocation.allocatedSeconds, configuredBudget: {} }).authorityExpiresAt;
 	const exactGrant = grant(candidate);
 	const contentRead = new Set(exactGrant.contentRead.map(stable));
 	const contextRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx'
@@ -163,11 +176,11 @@ export function buildAssignmentAttempt(input: {
 		acceptanceCriteria: candidate.node.acceptanceCriteria,
 		workspace: workspace(candidate, assignmentId, exactGrant),
 		estimate: candidate.node.estimate,
-		limits: { maximumSeconds: candidate.node.estimate.maximumSeconds, maximumContextBytes: 4_000_000,
+		limits: { maximumSeconds: allocation.allocatedSeconds, maximumContextBytes: 4_000_000,
 			maximumContextTokens: 200_000, maximumContextItems: 1_000 },
 		deadline, leaseId: id('lease', [assignmentId]), reservationId: id('reservation', [assignmentId]),
 		attempt: input.attempt, status: 'created', createdAt: input.now,
 	});
-	return { assignment, executionProviderId: selected.provider.id, laneId: selected.lane.id,
+	return { assignment, allocation, executionProviderId: selected.provider.id, laneId: selected.lane.id,
 		lanePurpose: communication ? 'communication' : 'workday' };
 }

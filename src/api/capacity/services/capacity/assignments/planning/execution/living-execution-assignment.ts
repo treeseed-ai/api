@@ -166,14 +166,14 @@ export async function assignNextReadyExecutionNode(
 				const priorAttempts = await executionNodeAssignmentGeneration(
 					store, candidate.node.teamId, candidate.node.id, candidate.node.nodeRevision,
 				);
+				try {
 				const selected = buildAssignmentAttempt({
 					candidate, run, principal, providerSessionId, providers: executionProviders,
 					attempt: priorAttempts + 1, now,
 				});
 				const attempt = selected.assignment;
-				try {
 					const treedxProxyHandle = await issueLivingTreeDxAuthority(store, run, attempt, now);
-					return await admitLivingExecutionAssignment(store, { principal, assignment: attempt,
+					return await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: selected.allocation,
 						projectAgentClassId: candidate.projectAgentClassId, providerSessionId,
 						executionProviderId: selected.executionProviderId, laneId: selected.laneId,
 						lanePurpose: selected.lanePurpose,
@@ -185,6 +185,7 @@ export async function assignNextReadyExecutionNode(
 					if (error instanceof CapacityGovernanceError && [
 						'execution_node_claim_lost', 'execution_node_claim_stale',
 						'capacity_execution_provider_unavailable',
+						'capacity_assignment_allocation_deferred',
 					].includes(error.code)) continue;
 					throw error;
 				}

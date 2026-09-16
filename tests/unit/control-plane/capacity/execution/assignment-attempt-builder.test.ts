@@ -59,6 +59,7 @@ describe('immutable assignment-attempt construction', () => {
 				grant: { sourceRead: ['treeseed-ai/sdk'], sourceWrite: ['treeseed-ai/sdk'], tools: permissions.tools },
 				workspace: { mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40) },
 				estimate: candidate.node.estimate,
+				limits: { maximumSeconds: 180 },
 			},
 		});
 		expect(JSON.stringify(result)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest|executionPlanRef/u);
@@ -136,16 +137,15 @@ describe('immutable assignment-attempt construction', () => {
 		})).toThrow(/Content writes require a TreeDX workspace/u);
 	});
 
-	it('retains preparation, execution, and closeout authority after admission closes', () => {
+	it('defers instead of extending beyond the viable remaining workday window', () => {
 		const nearEnd = structuredClone(candidate);
 		nearEnd.node.estimate.maximumSeconds = 600;
-		const result = buildAssignmentAttempt({
+		expect(() => buildAssignmentAttempt({
 			candidate: nearEnd as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:59:30.000Z',
-		});
-		expect(result.assignment.deadline).toBe('2026-09-13T13:06:00.000Z');
+		})).toThrow('The remaining execution window cannot fit the viable task minimum.');
 	});
 
 	it('uses the independent communication lane for chat nodes', () => {

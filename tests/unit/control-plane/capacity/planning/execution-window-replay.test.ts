@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
+import { compileAssignmentExecutionWindow, compileAssignmentCloseoutWindow, startAssignmentExecutionWindow, startAssignmentCloseoutWindow } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
+import { compileAssignmentTimeBudget, beginAssignmentPreparationTimeBudget } from '../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts', () => ({ ProviderAssignmentRepository: class { get = mocks.get; } }));
@@ -14,6 +15,22 @@ function assignment() { return { id: 'assignment', capacityProviderId: 'provider
 beforeEach(() => { mocks.get.mockReset(); });
 
 describe('execution transition replay authority', () => {
+  it('keeps closeout inside the allocated active duration and cannot extend admission on preparation replay', () => {
+    const timing = compileAssignmentTimeBudget({ now, requestedSeconds: 180, configuredBudget: {} });
+    expect(timing.authorityExpiresAt).toBe('2026-09-11T12:06:00.000Z');
+    const envelope = { requestedSeconds: 180, budget: timing.capacityBudget };
+    const replay = beginAssignmentPreparationTimeBudget(envelope, '2026-09-11T12:00:30Z');
+    expect(replay.budget.time.authorityDeadlineAt).toBe(timing.authorityExpiresAt);
+    expect(replay.budget.time.preparationDeadlineAt).toBe('2026-09-11T12:03:00.000Z');
+    const started = compileAssignmentExecutionWindow({ capacityEnvelope: envelope, metadata: {} } as never,
+      '2026-09-11T12:00:30Z', executionRef);
+    expect(started.capacityEnvelope.budget.time.hardDeadlineAt).toBe('2026-09-11T12:03:30.000Z');
+    const closed = compileAssignmentCloseoutWindow(started as never, '2026-09-11T12:02:30Z');
+    expect(closed.capacityEnvelope.budget.time.hardDeadlineAt).toBe('2026-09-11T12:03:30.000Z');
+    expect(closed.capacityEnvelope.budget.time.remainingSeconds).toBe(60);
+    expect(() => compileAssignmentCloseoutWindow(started as never, '2026-09-11T12:03:30Z'))
+      .toThrow('Closeout cannot extend an exhausted active window.');
+  });
   it('reuses the original budget on a replacement runner without another transition', async () => {
     const current = assignment(), run = vi.fn(); mocks.get.mockResolvedValue(current);
     const result = await startAssignmentExecutionWindow({ run } as never, principal, 'assignment', {

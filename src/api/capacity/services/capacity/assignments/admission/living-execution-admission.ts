@@ -1,4 +1,4 @@
-import type { AssignmentAttempt } from '@treeseed/sdk/agent-capacity';
+import type { AssignmentAttempt, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -15,6 +15,7 @@ type JsonRecord = Record<string, unknown>;
 export async function admitLivingExecutionAssignment(store: Store, input: {
 	principal: ProviderLeasePrincipal;
 	assignment: AssignmentAttempt;
+	allocation: ReturnType<typeof calculateAssignmentAllocation>;
 	projectAgentClassId: string;
 	providerSessionId: string;
 	executionProviderId: string;
@@ -35,16 +36,19 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		}
 		return replay;
 	}
+	if (!input.allocation.admitted || input.allocation.allocatedSeconds !== assignment.limits.maximumSeconds) {
+		throw new CapacityGovernanceError('assignment_allocation_mismatch', 'Assignment limits must match the allocator-issued duration.', 409);
+	}
 	const mode = assignment.effectiveProfile.activity === 'planning' || assignment.effectiveProfile.activity === 'estimating'
 		? 'planning' : 'acting';
 	const decisionId = assignment.authorityRefs.find((reference) => reference.model === 'decision')?.id ?? null;
 	const proposalId = assignment.sourceRef.model === 'proposal' ? assignment.sourceRef.id : null;
-	const timing = compileAssignmentTimeBudget({ now: input.now, requestedSeconds: assignment.estimate.expectedSeconds, configuredBudget: {} });
+	const timing = compileAssignmentTimeBudget({ now: input.now, requestedSeconds: assignment.limits.maximumSeconds, configuredBudget: {} });
 	const capacityEnvelope = {
 		teamId: assignment.teamId, projectId: assignment.projectId, workDayId: assignment.workdayId, mode,
 		projectAgentClassId: input.projectAgentClassId, capacityProviderId: principal.capacityProviderId,
 		executionProviderId: input.executionProviderId, reservationId: assignment.reservationId,
-		requestedSeconds: assignment.estimate.expectedSeconds, reservedSeconds: assignment.estimate.expectedSeconds,
+		requestedSeconds: assignment.limits.maximumSeconds, reservedSeconds: assignment.limits.maximumSeconds,
 		limits: assignment.limits, budget: timing.capacityBudget,
 	};
 	const decisionInput = {
@@ -89,8 +93,8 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			)
 			ON CONFLICT (id) DO NOTHING`, params: [assignment.reservationId,assignment.idempotencyKey,principal.membershipId,
 				principal.capacityProviderId,input.executionProviderId,input.laneId,input.lanePurpose,input.projectAgentClassId,assignment.id,mode,
-				assignment.teamId,assignment.projectId,assignment.workdayId,assignment.estimate.expectedSeconds,
-				assignment.estimate.expectedSeconds,assignment.deadline,JSON.stringify({ nodeId: assignment.nodeId,
+				assignment.teamId,assignment.projectId,assignment.workdayId,assignment.limits.maximumSeconds,
+				assignment.limits.maximumSeconds,assignment.deadline,JSON.stringify({ nodeId: assignment.nodeId,
 					nodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision }),input.now,input.now,...common] },
 		{ query: `INSERT INTO capacity_provider_assignments
 			(id,membership_id,team_id,project_id,capacity_provider_id,provider_session_id,execution_provider_id,lane_id,lane_purpose,
@@ -117,10 +121,10 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				assignment.idempotencyKey,decisionId,proposalId,JSON.stringify({ requiredCapabilities: assignment.requiredCapabilities }),input.now,input.now,
 				assignment.reservationId,assignment.teamId,assignment.id,
 				assignment.teamId,assignment.nodeId,assignment.nodeRevision] },
-		{ query: `UPDATE capacity_provider_assignments SET graph_revision=?,execution_node_id=?,execution_node_revision=?,
+		{ query: `UPDATE capacity_provider_assignments SET explanation_json=?::jsonb,graph_revision=?,execution_node_id=?,execution_node_revision=?,
 			assignment_attempt_json=?::jsonb,treedx_proxy_handle_json=?::jsonb,workspace_context_json=?::jsonb,updated_at=?
 			WHERE id=? AND team_id=? AND reservation_id=?`,
-			params: [assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
+			params: [JSON.stringify(input.allocation),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
 				JSON.stringify(input.treedxProxyHandle),JSON.stringify({ assignmentAttempt: assignment,
 					predecessorResults: input.predecessorResults, treedxProxyHandle: input.treedxProxyHandle }),input.now,
 				assignment.id,assignment.teamId,assignment.reservationId] },
