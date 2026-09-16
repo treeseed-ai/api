@@ -62,8 +62,7 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			AND usage.accounting_mode='aggregate' AND (assignment.status='completed' OR assignment.status='expired')
 			ORDER BY usage.created_at DESC,usage.id DESC LIMIT 20`,
 			[input.capacityProviderId, provider.id, input.agentClass, limits.modelConfigurationId, input.capabilityId, input.activity]);
-		const closing = appliedWorkdaySchema.parse(input.run.parameters.appliedPlan).state === 'closing';
-		result[provider.id] = { constraints: closing ? [] : [{ id: 'workday-phase-share', remainingSeconds: shares[input.run.id]?.availableSeconds ?? 0 }],
+		result[provider.id] = { constraints: [{ id: 'workday-phase-share', remainingSeconds: shares[input.run.id]?.availableSeconds ?? 0 }],
 			measurements: rows.map(row => ({ id: String(row.id), completedAt: String(row.created_at), expectedSeconds: Number(row.expected_seconds),
 				allocatedSeconds: Number(row.allocated_seconds), activeSeconds: Number(row.active_seconds), outcome: row.status === 'completed' ? 'completed' : 'expired' })) };
 	}

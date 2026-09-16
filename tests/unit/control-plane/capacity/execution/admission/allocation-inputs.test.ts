@@ -15,6 +15,15 @@ const provider = { id: 'codex-implementation', accountingLimits: { modelConfigur
 	accountingObservation: { modelUsage: observation, capabilityUsage: { implementation: observation } } };
 
 describe('live allocation ledger inputs', () => {
+	it('does not exempt closing workdays from shared supply and weighted allocation', async () => {
+		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing' } } };
+		const store = { all: vi.fn(async () => []), first: vi.fn(async () => ({ ready_count: 1 })) };
+		const result = await livingAllocationInputs(store as never, { run: closingRun as never, runs: [closingRun as never],
+			providers: [provider as never], capacityProviderId: 'provider', capabilityId: 'implementation',
+			agentClass: 'engineer', activity: 'review', now });
+		expect(result['codex-implementation']?.constraints).toHaveLength(1);
+		expect(result['codex-implementation']?.constraints[0]?.remainingSeconds).toBeLessThanOrEqual(990);
+	});
 	it('counts unreported API reservations once and includes other capabilities in the shared model budget', async () => {
 		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_reservations') ? [
 			{ work_day_id: 'other', mode: 'acting', state: 'consuming', reserved_seconds: 300, active_seconds: 100, capability_id: 'implementation' },
