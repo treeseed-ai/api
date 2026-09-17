@@ -45,6 +45,9 @@ describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('current communication 
 			const input = { teamId: 'team', projectId: 'project', projectSlug: 'sdk', discussionId: 'acceptance', messageId: 'message', messagePath: 'discussion-messages/acceptance/message.mdx', messageCommit: 'c'.repeat(40), contextRefs: [], agentSlugs: ['architect'], idempotencyKey: 'send', durationSeconds: 180 };
 			expect(await admitDiscussionInvocations(store, input)).toMatchObject([{ status: 'admitted' }]);
 			expect(store.createCapacityWorkdayRun).toHaveBeenCalledOnce();
+			expect(store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
+				parameters: expect.objectContaining({ scheduledProjectIds: ['project'] }),
+			}));
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','sdk','SDK',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('class','team','project','architect','Architect',$1,$1)`, [now]);
 			const realStore = { ...store,
