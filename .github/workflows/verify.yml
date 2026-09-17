@@ -55,7 +55,7 @@ jobs:
       - name: Verify concurrent PostgreSQL pool and workday policy allocation
         env:
           TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
-        run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts
+        run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/workdays/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
       - uses: actions/upload-artifact@v4
