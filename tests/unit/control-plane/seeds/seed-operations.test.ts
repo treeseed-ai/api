@@ -51,21 +51,14 @@ describe('seed catalog operations', () => {
 		})] });
 	});
 
-	it('verifies provider readiness only when an active allocation covers every seeded project', async () => {
-		const allocation = {
-			id: 'allocation-1', team_id: 'team-1', version: 1, status: 'active', effective_from: '2026-08-25T00:00:00.000Z', effective_until: null,
-			reserve_policy_json: JSON.stringify({ percent: 0, overflow: 'deny' }),
-			slices_json: JSON.stringify([{ id: 'slice-1', scope: 'project', targetId: 'project-1', policy: { minPercent: 0, targetPercent: 100, maxPercent: 100, hardCapPercent: 100 } }]),
-			borrowing_rules_json: '[]', metadata_json: '{}', created_by_id: 'owner-1', activated_at: '2026-08-25T00:00:00.000Z', superseded_by_id: null,
-			created_at: '2026-08-25T00:00:00.000Z', updated_at: '2026-08-25T00:00:00.000Z',
-		};
+	it('verifies authorized provider readiness without a retired allocation set', async () => {
 		const store = {
 			ensureInitialized: vi.fn(), all: vi.fn().mockResolvedValue([{ id: 'lane-1', purpose: 'communication', execution_provider_id: 'execution-1' }]),
 			first: vi.fn(async (query: string) => {
 				if (query.includes('capacity_provider_team_memberships membership')) return { id: 'membership-1', capacity_provider_id: 'provider-1' };
 				if (query.includes('capacity_provider_availability_sessions')) return { id: 'session-1' };
 				if (query.includes('capacity_grants')) return { id: 'grant-1', status: 'active' };
-				if (query.includes("capacity_allocation_sets\n\t\t\t WHERE team_id = ? AND status = 'active'")) return allocation;
+				if (query.includes('capacity_allocation_sets')) throw new Error('Retired allocation lookup');
 				return null;
 			}), run: vi.fn(),
 		};
@@ -75,18 +68,11 @@ describe('seed catalog operations', () => {
 		], runtime: { capacityProviders: [{ key: 'capacity-provider:treeseed/local', team: 'team:treeseed', approval: 'trusted-local-owner',
 			requiredLanePurposes: ['communication'], projects: ['project:treeseed/sdk'], environments: ['local'] }] } };
 		await expect(reconcileSeedProviderPrerequisites(store as any, {}, plan, false)).resolves.toEqual({ status: 'verified', receipts: [expect.objectContaining({
-			status: 'verified', allocation: { status: 'active', allocationSetId: 'allocation-1', version: 1 },
+			status: 'verified', projects: [{ projectKey: 'project:treeseed/sdk', environment: 'local', status: 'active', grantId: 'grant-1' }],
 		})] });
 	});
 
 	it('reconciles seeded grants with the execution provider capabilities required by agent work', async () => {
-		const allocation = {
-			id: 'allocation-1', team_id: 'team-1', version: 1, status: 'active', effective_from: '2026-08-25T00:00:00.000Z', effective_until: null,
-			reserve_policy_json: JSON.stringify({ percent: 0, overflow: 'deny' }),
-			slices_json: JSON.stringify([{ id: 'slice-1', scope: 'project', targetId: 'project-1', policy: { minPercent: 0, targetPercent: 100, maxPercent: 100, hardCapPercent: 100 } }]),
-			borrowing_rules_json: '[]', metadata_json: '{}', created_by_id: 'owner-1', activated_at: '2026-08-25T00:00:00.000Z', superseded_by_id: null,
-			created_at: '2026-08-25T00:00:00.000Z', updated_at: '2026-08-25T00:00:00.000Z',
-		};
 		const store = {
 			ensureInitialized: vi.fn(),
 			all: vi.fn().mockResolvedValue([
@@ -97,7 +83,7 @@ describe('seed catalog operations', () => {
 				if (query.includes('capacity_provider_team_memberships membership')) return { id: 'membership-1', capacity_provider_id: 'provider-1' };
 				if (query.includes('capacity_provider_availability_sessions')) return { id: 'session-1' };
 				if (query.includes('capacity_grants')) return { id: 'grant-1', status: 'active' };
-				if (query.includes("capacity_allocation_sets\n\t\t\t WHERE team_id = ? AND status = 'active'")) return allocation;
+				if (query.includes('capacity_allocation_sets')) throw new Error('Retired allocation lookup');
 				return null;
 			}),
 			run: vi.fn(),
