@@ -77,17 +77,17 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 	}
 	if (run.parameters.planningOnly === true) {
 		return {
-			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','reporting')`,
+			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')`,
 			parameters: [run.id],
 		};
 	}
 	const proposalIds = Array.isArray(run.parameters.proposalIds) ? run.parameters.proposalIds.map(text).filter(Boolean) : [];
 	if (proposalIds.length) return {
-		sql: `node.kind<>'communication' AND (node.workday_id=? OR (node.workday_id IS NULL
+		sql: `(node.workday_id=? OR (node.workday_id IS NULL
 			AND node.source_ref_json::jsonb->>'model'='proposal' AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
 		parameters: [run.id, ...proposalIds],
 	};
-	return { sql: `node.kind<>'communication' AND (node.workday_id IS NULL OR node.workday_id=?)`, parameters: [run.id] };
+	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'))`, parameters: [run.id] };
 }
 
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {

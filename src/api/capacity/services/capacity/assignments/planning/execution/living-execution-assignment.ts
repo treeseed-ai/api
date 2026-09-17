@@ -184,7 +184,7 @@ export async function assignNextReadyExecutionNode(
 						lanePurpose: selected.lanePurpose,
 						executionKind: candidate.node.kind === 'communication' ? 'conversation' : 'workday',
 						invocationId: candidate.node.kind === 'communication'
-							? String(record(run.parameters.discussion).invocationId ?? '') || null : null,
+							? candidate.node.sourceRef.id : null,
 						predecessorResults: candidate.predecessorResults, treedxProxyHandle, now });
 				} catch (error) {
 					if (error instanceof CapacityGovernanceError && [

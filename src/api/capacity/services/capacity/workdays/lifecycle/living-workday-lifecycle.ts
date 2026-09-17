@@ -44,6 +44,12 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 		next = { ...next, state: 'closing', closingAt: next.closingAt ?? now };
 	}
 	let status = run.status, completedAt = run.completedAt;
+	if (requestClose && run.executionKind === 'conversation') {
+		// Conversations settle through their durable response, not a Reporter.
+		// Explicit stop is cancellation and must not fabricate successful output.
+		next = { ...next, state: 'ended', endedAt: next.endedAt ?? now };
+		status = 'cancelled'; completedAt = completedAt ?? now;
+	}
 	if (next.state === 'closing') {
 		const reports = nodeRows.filter((row) => row.kind === 'reporting');
 		const reservations = await store.all('SELECT state FROM capacity_reservations WHERE team_id=? AND work_day_id=?',
