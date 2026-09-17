@@ -205,6 +205,6 @@ export function buildAssignmentAttempt(input: {
 		deadline, leaseId: id('lease', [assignmentId]), reservationId: id('reservation', [assignmentId]),
 		attempt: input.attempt, status: 'created', createdAt: input.now,
 	});
-	return { assignment, allocation, accountingLimits: limits, executionProviderId: selected.provider.id, laneId: selected.lane.id,
+	return { assignment, allocation: { ...allocation, opportunity: allocationInputs.opportunity }, accountingLimits: limits, executionProviderId: selected.provider.id, laneId: selected.lane.id,
 		lanePurpose: communication ? 'communication' : 'workday' };
 }

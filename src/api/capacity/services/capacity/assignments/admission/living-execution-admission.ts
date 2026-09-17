@@ -1,4 +1,4 @@
-import type { AssignmentAttempt, CapabilityAccountingLimits, calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
+import type { AssignmentAttempt, CapabilityAccountingLimits, calculateAssignmentAllocation, allocateWorkdayCapacity, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
 import { capabilityCounterClaims, initializeCapabilityCounters, commitCapabilityCounters } from './capability-counter-claims.ts';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
@@ -17,7 +17,8 @@ type JsonRecord = Record<string, unknown>;
 export async function admitLivingExecutionAssignment(store: Store, input: {
 	principal: ProviderLeasePrincipal;
 	assignment: AssignmentAttempt;
-	allocation: ReturnType<typeof calculateAssignmentAllocation>;
+	allocation: ReturnType<typeof calculateAssignmentAllocation> & {
+		opportunity: ReturnType<typeof allocateWorkdayCapacity>[string]; selection: ReturnType<typeof selectFairReadyNode> };
 	accountingLimits: CapabilityAccountingLimits;
 	projectAgentClassId: string;
 	providerSessionId: string;

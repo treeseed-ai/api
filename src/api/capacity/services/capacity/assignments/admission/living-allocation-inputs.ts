@@ -4,7 +4,8 @@ import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../providers/provider-synthesis-context-service.ts';
 
-export type LivingAllocationInputs = Record<string, { measurements: AllocationMeasurement[]; constraints: AssignmentAllocationConstraint[] }>;
+export type LivingAllocationInputs = Record<string, { measurements: AllocationMeasurement[]; constraints: AssignmentAllocationConstraint[];
+	opportunity: ReturnType<typeof allocateWorkdayCapacity>[string] }>;
 
 /** Read existing graph/reservation/usage authority; no performance or allocation store. */
 export async function livingAllocationInputs(store: CapacityGovernanceDatabase, input: {
@@ -66,7 +67,7 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 				OR (assignment.status='failed' AND assignment.lifecycle_code='assignment_timeout'))
 			ORDER BY usage.created_at DESC,usage.id DESC LIMIT 20`,
 			[input.capacityProviderId, provider.id, input.agentClass, limits.modelConfigurationId, input.capabilityId, input.activity]);
-		result[provider.id] = { constraints: [{ id: 'workday-phase-share', remainingSeconds: shares[input.run.id]?.availableSeconds ?? 0 }],
+		result[provider.id] = { opportunity: shares[input.run.id]!, constraints: [{ id: 'workday-phase-share', remainingSeconds: shares[input.run.id]?.availableSeconds ?? 0 }],
 			measurements: rows.map(row => ({ id: String(row.id), completedAt: String(row.created_at), expectedSeconds: Number(row.expected_seconds),
 				allocatedSeconds: Number(row.allocated_seconds), activeSeconds: Number(row.active_seconds), outcome: row.lifecycle_code === 'assignment_timeout' ? 'expired' : 'completed' })) };
 	}

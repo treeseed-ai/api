@@ -63,7 +63,8 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	const diagnostics=validateWorkdayIntent(intent);
 	if(projects!=='all'&&!projects.length) diagnostics.push({code:'projects_required',path:'projects',message:'Select at least one project or all.'});
 	if(diagnostics.length) diagnosticsError('workday_intent_invalid','Workday intent is invalid.',diagnostics);
-	if(intent.agentSelection!==undefined) intent.agentSelection=normalizeWorkdayAgentSelection(intent.agentSelection);
+	if(intent.agentSelection!==undefined) intent.agentSelection=Object.fromEntries(Object.entries(normalizeWorkdayAgentSelection(intent.agentSelection))
+		.filter(([,value])=>!Array.isArray(value)||value.length>0)) as WorkdayIntent['agentSelection'];
 	return intent;
 }
 

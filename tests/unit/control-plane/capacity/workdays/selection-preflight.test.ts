@@ -91,6 +91,9 @@ describe('public workday selection custody', () => {
 		expect(parsePublicWorkdayIntent('team', unselected).agentSelection).toBeUndefined();
 		for (const invalid of [{}, null, { agentSlugs: [] }, { agentSlugs: [''] }, { activityTypes: ['acting'] }]) expect(() => parsePublicWorkdayIntent('team', { ...input(), agentSelection: invalid })).toThrow(/invalid/u);
 		expect(parsePublicWorkdayIntent('team', { ...input(), agentSelection: { ...agentSelection, agentSlugs: [' reviewer ', 'reviewer'] } }).agentSelection?.agentSlugs).toEqual(['reviewer']);
+		const canonical = parsePublicWorkdayIntent('team', input());
+		expect(parsePublicWorkdayIntent('team', canonical as unknown as Record<string, unknown>)).toEqual(canonical);
+		expect(canonical.agentSelection).not.toHaveProperty('classIds');
 	});
 	it('normalizes explicit accepted-decision selection and rejects malformed selection', () => {
 		expect(parsePublicWorkdayIntent('team', { ...input(), decisionIds: [' decision-b ', 'decision-a', 'decision-b'] }).decisionIds).toEqual(['decision-a', 'decision-b']);
