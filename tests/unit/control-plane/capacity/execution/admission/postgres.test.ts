@@ -70,6 +70,14 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			expect(buildProviderAssignmentExplanation(admitted!, 'team', { source: 'lease_next_assignment', eligible: true }, now))
 				.toMatchObject({ metadata: { allocation: { admitted: true } } });
 			expect((await database.pool.query('SELECT sum(reserved_amount)::int AS total FROM capacity_reservation_counter_claims')).rows[0].total).toBe(6);
+			// Terminal overuse is retained as measured truth, never approved by raising
+			// the cap. The real admission path must deny additional work atomically.
+			await database.pool.query('UPDATE capacity_admission_counters SET committed_amount=5');
+			const loser = attempts[results.findIndex(result => result.status === 'rejected')]!;
+			await expect(run(loser)).rejects.toMatchObject({ code: 'execution_node_claim_lost' });
+			expect((await database.pool.query('SELECT hard_limit,committed_amount FROM capacity_admission_counters')).rows)
+				.toEqual([{ hard_limit: 4, committed_amount: 5 }, { hard_limit: 4, committed_amount: 5 }]);
+			expect((await database.pool.query('SELECT count(*)::int AS count FROM capacity_reservations')).rows[0].count).toBe(1);
 			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json='{}' WHERE id=$1`, [winner.id]);
 			const repository = new ProviderAssignmentRepository(store as never);
 			await expect(repository.get('team', winner.id)).rejects.toThrow('invalid assignment_attempt_json');

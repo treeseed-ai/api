@@ -8,7 +8,7 @@ import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
-	it('settles the expired current owner once without allowing late completion or a stale token', async () => {
+	it.each([12, 25])('settles actual %s seconds once without late completion, cap expansion or approval', async activeSeconds => {
 		const connection = new URL(url!);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
@@ -33,6 +33,12 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 				assignment_id,mode,requested_seconds,reserved_seconds,created_at,updated_at)
 				VALUES ('reservation','reservation','admission','membership','team','project','provider','engineer','assignment','acting',20,20,$1,$1)`, [now]);
 			await db.pool.query(`UPDATE capacity_provider_assignments SET reservation_id='reservation' WHERE id='assignment'`);
+			await db.pool.query(`INSERT INTO capacity_admission_counters
+				(id,team_id,scope,scope_id,period_key,hard_limit,committed_amount,created_at,updated_at)
+				VALUES ('counter','team','model-day','terra','2026-09-16',20,20,$1,$1)`, [now]);
+			await db.pool.query(`INSERT INTO capacity_reservation_counter_claims
+				(reservation_id,counter_id,admission_token,reserved_amount,release_policy,created_at,updated_at)
+				VALUES ('reservation','counter','admission',20,'usage-settlement',$1,$1)`, [now]);
 			await db.pool.query(`UPDATE capacity_provider_assignments SET capacity_envelope_json=$1,decision_input_json=$2 WHERE id='assignment'`,
 				[JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting' }), JSON.stringify({ teamId: 'team', projectId: 'project', projectAgentClassId: 'engineer', mode: 'acting', input: {} })]);
 			const store: CapacityGovernanceDatabase & { db: typeof db } = { db, ensureInitialized: () => db.migrate(),
@@ -46,17 +52,23 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 			}) as ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0]);
 			const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
 			const failure = { leaseToken: 'lease', code: 'assignment_timeout', retryable: false,
-				activeSeconds: 12, elapsedSeconds: 15, usage: { inputTokens: 200, outputTokens: 30 } };
+				activeSeconds, elapsedSeconds: activeSeconds + 3, usage: { inputTokens: 200, outputTokens: 30 } };
 			expect(await service.complete(principal, 'assignment', { leaseToken: 'lease' })).toBeNull();
 			expect(await service.fail(principal, 'assignment', { ...failure, leaseToken: 'wrong' })).toBeNull();
 			const outcomes = await Promise.all([service.fail(principal, 'assignment', failure), service.fail(principal, 'assignment', failure)]);
 			expect(outcomes.filter(Boolean)).toHaveLength(1);
 			expect((await repository.get('team', 'assignment'))?.status).toBe('failed');
 			const reservation = await store.first('SELECT state,active_seconds,released_seconds FROM capacity_reservations WHERE id=?', ['reservation']);
-			expect(reservation).toMatchObject({ state: 'consumed', active_seconds: 12, released_seconds: 8 });
+			expect(reservation).toMatchObject({ state: 'consumed', active_seconds: activeSeconds, released_seconds: Math.max(0, 20 - activeSeconds) });
+			expect(await store.first('SELECT hard_limit,committed_amount FROM capacity_admission_counters WHERE id=?', ['counter']))
+				.toMatchObject({ hard_limit: 20, committed_amount: activeSeconds });
+			if (activeSeconds > 20) expect(await store.first(
+				'UPDATE capacity_admission_counters SET committed_amount=committed_amount+1 WHERE id=? AND committed_amount+1<=hard_limit RETURNING id', ['counter']))
+				.toBeNull();
 			const usages = await store.all('SELECT active_seconds,input_tokens,output_tokens FROM capacity_usage_actuals WHERE assignment_id=?', ['assignment']);
 			expect(usages).toHaveLength(1);
-			expect(usages[0]).toMatchObject({ active_seconds: 12, input_tokens: 200, output_tokens: 30 });
+			expect(usages[0]).toMatchObject({ active_seconds: activeSeconds, input_tokens: 200, output_tokens: 30 });
+			expect(await store.all("SELECT id FROM capacity_ledger_entries WHERE phase='overrun_hold'")).toHaveLength(0);
 		} finally {
 			await db.close(); await admin.query(`DROP DATABASE "${name}"`); await admin.end();
 		}

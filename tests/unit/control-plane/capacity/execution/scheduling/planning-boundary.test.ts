@@ -11,18 +11,22 @@ vi.mock('../../../../../../src/api/capacity/services/capacity/assignments/observ
 import { tickCapacityWorkdayRun } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-tick-service.ts';
 
 describe('planning phase boundary', () => {
-	it.each(['2026-09-16T12:10:00.000Z', '2026-09-16T12:30:00.000Z'])('uses ordinary cancellation only after planning at %s', async now => {
+	it.each([
+		['2026-09-16T12:10:00.000Z', 'active'],
+		['2026-09-16T12:30:00.000Z', 'active'],
+		['2026-09-16T12:10:00.000Z', 'closing'],
+	] as const)('uses ordinary cancellation at the boundary or explicit closeout: %s %s', async (now, state) => {
 		fixture.cancel.mockClear(); fixture.advance.mockResolvedValue({});
 		fixture.run = { id: 'workday', teamId: 'team', status: 'running', capacityProviderId: 'provider', parameters: { appliedPlan: {
 			schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
-			executionMode: 'simulation', state: 'active', startsAt: '2026-09-16T12:00:00.000Z', endsAt: '2026-09-16T14:00:00.000Z',
+			executionMode: 'simulation', state, startsAt: '2026-09-16T12:00:00.000Z', endsAt: '2026-09-16T14:00:00.000Z',
 			policySnapshot: { durationSeconds: 7200, maximumConcurrency: 1, communicationConcurrency: 1, planningPercent: 20,
 				allocationWeight: 1, planningTurnMaximumSeconds: 180, projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
 			planningRounds: [], admittedSecondsByProject: {}, admittedSecondsByAgentClass: {},
 		} } };
 		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ id: 'membership' }] : [{ id: 'turn' }]), run: vi.fn() };
 		await tickCapacityWorkdayRun(store as never, 'team', 'workday', now);
-		if (now.includes('12:10')) { expect(fixture.cancel).not.toHaveBeenCalled(); expect(store.run).not.toHaveBeenCalled(); }
+		if (now.includes('12:10') && state === 'active') { expect(fixture.cancel).not.toHaveBeenCalled(); expect(store.run).not.toHaveBeenCalled(); }
 		else {
 			expect(fixture.cancel).toHaveBeenCalledWith('team', 'turn', expect.objectContaining({ idempotencyKey: 'planning-boundary:workday:turn' }));
 			expect(store.all.mock.calls[1]?.[0]).toContain("node.kind IN ('planning','estimating')");
