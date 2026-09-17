@@ -32,6 +32,14 @@ function fixture() {
 }
 
 describe('public workday selection custody', () => {
+	it('preserves explicit production custody and defaults omitted mode to simulation', async () => {
+		const f = fixture();
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), executionMode: 'production' }), 'actor');
+		expect(f.stored().runInput.executionMode).toBe('production');
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');
+		expect(f.stored().runInput.executionMode).toBe('simulation');
+		expect(() => parsePublicWorkdayIntent('team', { ...input(), executionMode: 'other' })).toThrow(/invalid/u);
+	});
 	it('projects inherited team targets onto selected projects without filtering explicit overrides', async () => {
 		const f = fixture();
 		f.store.first.mockImplementation(async (sql: string) => sql.includes('FROM teams') ? { metadata_json: JSON.stringify({ workdayProfile: {

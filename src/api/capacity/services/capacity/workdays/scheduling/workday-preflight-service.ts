@@ -33,7 +33,7 @@ function digest(value:unknown):string { return `sha256:${sha256(canonicalJson(va
 function diagnosticsError(code:string,message:string,diagnostics:unknown):never { throw new CapacityGovernanceError(code,message,400,{diagnostics}); }
 
 export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):WorkdayIntent {
-	const allowed=new Set(['schemaVersion','teamId','profileId','projects','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','operatorConstraints','agentSelection','allocation']);
+	const allowed=new Set(['schemaVersion','teamId','profileId','projects','executionMode','startsAt','endsAt','durationSeconds','objectiveFilters','planningOnly','proposalIds','decisionIds','operatorConstraints','agentSelection','allocation']);
 	const forbidden=Object.keys(input).filter((key)=>!allowed.has(key));
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
@@ -46,6 +46,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	const intent:WorkdayIntent={
 		schemaVersion:'treeseed.workday-intent/v1', teamId, profileId:text(input.profileId)||'default', projects,
 		startsAt,
+		...(input.executionMode !== undefined ? { executionMode: input.executionMode as WorkdayIntent['executionMode'] } : {}),
 		...(input.endsAt!==undefined?{endsAt:text(input.endsAt)}:{}),
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
 		...(Array.isArray(input.objectiveFilters)?{objectiveFilters:input.objectiveFilters.map(text).filter(Boolean)}:{}),
@@ -98,7 +99,7 @@ export class WorkdayPreflightService {
 		}
 		const runInput:JsonRecord={
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
-			executionMode:'simulation',executionKind:'workday',triggerKind:'manual',
+			executionMode:intent.executionMode ?? 'simulation',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
 			parameters:{ ...policy, ...intent.allocation, policyId:profile.id, policyRevision:profile.revision,
 				profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
@@ -156,9 +157,9 @@ export class WorkdayPreflightService {
 		return {receipt,intent,runInput};
 	}
 
-	async preflight(teamId:string,intent:WorkdayIntent,requestedById:string|null):Promise<WorkdayPreflightReceipt> {
-		const stored=await this.compile(teamId,intent,requestedById,randomUUID());
-		await this.store.run(`INSERT INTO capacity_operation_receipts (id,team_id,operation,idempotency_key,request_digest,resource_type,resource_id,response_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,[
+	async preflight(teamId:string,intent:WorkdayIntent,requestedById:string|null,id=randomUUID()):Promise<WorkdayPreflightReceipt> {
+		const stored=await this.compile(teamId,intent,requestedById,id);
+		await this.store.run(`INSERT INTO capacity_operation_receipts (id,team_id,operation,idempotency_key,request_digest,resource_type,resource_id,response_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (team_id,operation,idempotency_key) DO UPDATE SET request_digest=EXCLUDED.request_digest,response_json=EXCLUDED.response_json,updated_at=EXCLUDED.updated_at`,[
 			randomUUID(),teamId,'workday.preflight',stored.receipt.id,stored.receipt.intentDigest,'workday_preflight',stored.receipt.id,canonicalJson(stored),new Date().toISOString(),new Date().toISOString(),
 		]);
 		return stored.receipt;
