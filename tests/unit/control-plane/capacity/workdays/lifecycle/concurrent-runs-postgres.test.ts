@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
-import { createControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
-import { CapacityWorkdayRunService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+import { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
+import { CapacityWorkdayRunService } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
 describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('concurrent local execution in PostgreSQL', () => {
 	it('preserves production and simulation workdays when another workday or conversation starts', async () => {
