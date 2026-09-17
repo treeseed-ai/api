@@ -38,7 +38,8 @@ export async function tickCapacityWorkdayRun(
 		'capacity_workday_membership_not_approved', 'Workday tick requires one approved provider membership.', 409,
 		{ runId, providerId: run.capacityProviderId, matchCount: memberships.length },
 	);
-	if (workdayPhase(appliedWorkdaySchema.parse(run.parameters.appliedPlan), now) !== 'planning') {
+	const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+	if (plan.state === 'closing' || workdayPhase(plan, now) !== 'planning') {
 		const turns = await store.all(`SELECT assignment.id FROM capacity_provider_assignments assignment
 			JOIN execution_nodes node ON node.team_id=assignment.team_id AND node.id=assignment.execution_node_id
 			WHERE node.team_id=? AND node.workday_id=? AND node.kind IN ('planning','estimating')

@@ -1,7 +1,6 @@
 import type { CapacityFailureClassification,CapacityFailureDisposition } from '@treeseed/sdk/agent-capacity';
 
 const OPERATOR_ACTION_CODES = new Set([
-	'capacity_settlement_overrun_requires_approval',
 	'capacity_settlement_idempotency_conflict',
 	'capacity_settlement_usage_conflict',
 	'capacity_usage_idempotency_conflict',

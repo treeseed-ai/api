@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { readOsCredentialFile } from '@treeseed/deployment/security/custody';
 const keyText=(file:string)=>{const key=readOsCredentialFile(file);try{return key.toString('utf8').trim();}finally{key.fill(0);}};
 import { AvailabilitySessionService } from '../../../capacity/services/accounts/availability-session-service.ts';
+import { capabilityAccountingLimitsSchema, type CapabilityAccountingLimits } from '@treeseed/sdk/agent-capacity';
 import { CapacityRegistrationService } from '../../../capacity/services/support/registration-service.ts';
 import { createProviderEnvironmentService } from './provider-environment-service.ts';
 
@@ -46,6 +47,31 @@ function jsonObject(value: unknown): Record<string, unknown> {
 		} catch { return {}; }
 	}
 	return {};
+}
+
+/** Expose the existing provider report, not credentials or arbitrary adapter metadata. */
+export function providerAccountingStatus(value: unknown): Array<{
+	id: unknown; status: unknown; runtimeBuild: unknown;
+	nativeLimits: CapabilityAccountingLimits | null;
+	accountingObservation: { modelUsage: Record<string, unknown>; capabilityUsage: Record<string, Record<string, unknown>> };
+}> {
+	const observation = (input: unknown) => {
+		const row = jsonObject(input);
+		return { day: row.day, observedAt: row.observedAt, healthy: row.healthy,
+			activeSeconds: row.activeSeconds, reservedSeconds: row.reservedSeconds };
+	};
+	const adapters: unknown = typeof value === 'string' ? JSON.parse(value) : value;
+	if (!Array.isArray(adapters)) return [];
+	return adapters.map(input => {
+		const row = jsonObject(input), report = jsonObject(row.accountingObservation);
+		const limits = capabilityAccountingLimitsSchema.safeParse(row.nativeLimits);
+		return { id: row.id, status: row.status, runtimeBuild: row.runtimeBuild,
+			nativeLimits: limits.success ? { modelConfigurationId: limits.data.modelConfigurationId,
+				dailyActiveSecondsLimit: limits.data.dailyActiveSecondsLimit, capabilityLimits: limits.data.capabilityLimits } : null,
+			accountingObservation: { modelUsage: observation(report.modelUsage),
+				capabilityUsage: Object.fromEntries(Object.entries(jsonObject(report.capabilityUsage))
+					.map(([id, entry]) => [id, observation(entry)])) } };
+	});
 }
 
 export function registrationCodeStatus(metadata: { teamId: string; generation: number; keyPrefix: string; createdAt: string; rotatedAt: string | null }) {
@@ -152,14 +178,15 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 		async status(principal: UserPrincipal | null | undefined, teamId: string, providerId: string) {
 			const item = await this.show(principal, teamId, providerId);
 			const [sessions, activeExecutionProvider, unavailableOffers] = await Promise.all([
-				store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]),
+				store.all(`SELECT id, status, expires_at, refreshed_at, metadata_json, execution_providers_json FROM capacity_provider_availability_sessions WHERE team_id = ? AND capacity_provider_id = ? ORDER BY created_at DESC LIMIT 5`, [teamId, providerId]),
 				store.first(`SELECT COUNT(*) AS count FROM capacity_execution_providers WHERE capacity_provider_id = ? AND status = 'active'`, [providerId]),
 				store.all(`SELECT offer_id, execution_provider_id, status, last_seen_at FROM execution_capability_offers
 					WHERE capacity_provider_id = ? AND status <> 'active' ORDER BY last_seen_at DESC, offer_id ASC`, [providerId]),
 			]);
 			const activeExecutionProviderCount = Number(activeExecutionProvider?.count ?? 0);
 			return { provider: item, healthy: providerAvailabilityIsRunnable(sessions, activeExecutionProviderCount), activeExecutionProviderCount,
-				availability: sessions, unavailableOffers, alerts: unavailableOffers.map((offer) => ({
+				availability: sessions.map(({ execution_providers_json, ...session }) => ({ ...session,
+					executionProviders: providerAccountingStatus(execution_providers_json) })), unavailableOffers, alerts: unavailableOffers.map((offer) => ({
 					code: offer.status === 'context_overflow' ? 'provider_context_capacity_overflow' : 'provider_offer_unavailable',
 					offerId: offer.offer_id, executionProviderId: offer.execution_provider_id, status: offer.status,
 					observedAt: offer.last_seen_at,
