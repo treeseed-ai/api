@@ -46,6 +46,22 @@ describe('living workday lifecycle', () => {
 		expect(sql).not.toMatch(/capacity_workday_demands|workday_capacity_envelopes/u);
 	});
 
+	it.each(['failed', 'cancelled', 'stale'])('settles a %s Reporter as a failed workday, not success or an endless drain', async status => {
+		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
+		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
+			? [{ id: 'report', kind: 'reporting', status }] : [{ state: 'released' }]),
+			updateCapacityWorkdayRun: vi.fn(async () => closingRun) };
+		expect(await advanceLivingWorkday(store as never, closingRun, now)).toMatchObject({
+			status: 'failed', plan: { state: 'ended', endedAt: now } });
+	});
+	it('does not end a failed Reporter until reservations are settled', async () => {
+		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
+		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
+			? [{ id: 'report', kind: 'reporting', status: 'failed' }] : [{ state: 'consuming' }]),
+			updateCapacityWorkdayRun: vi.fn(async () => closingRun) };
+		expect(await advanceLivingWorkday(store as never, closingRun, now)).toMatchObject({
+			status: 'running', plan: { state: 'closing' } });
+	});
 	it('ends only after Reporter completion and reservation settlement', async () => {
 		const closing = { ...plan, state: 'closing', closingAt: now } as const;
 		const closingRun = { ...run, parameters: { appliedPlan: closing } } as never;

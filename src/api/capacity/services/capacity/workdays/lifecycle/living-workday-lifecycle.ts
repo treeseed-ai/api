@@ -54,10 +54,11 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 		const reports = nodeRows.filter((row) => row.kind === 'reporting');
 		const reservations = await store.all('SELECT state FROM capacity_reservations WHERE team_id=? AND work_day_id=?',
 			[run.teamId, run.id]);
-		if (reports.length > 0 && reports.every((row) => row.status === 'completed')
+		if (reports.length > 0 && reports.every((row) => terminalNodeStates.has(String(row.status)))
 			&& reservations.every((row) => terminalReservationStates.has(String(row.state)))) {
 			next = { ...next, state: 'ended', endedAt: next.endedAt ?? now };
-			status = 'completed'; completedAt = completedAt ?? now;
+			status = reports.every((row) => row.status === 'completed') ? 'completed' : 'failed';
+			completedAt = completedAt ?? now;
 		}
 	}
 	if (same(next, plan) && status === run.status) return { changed: false, plan: next, status };
