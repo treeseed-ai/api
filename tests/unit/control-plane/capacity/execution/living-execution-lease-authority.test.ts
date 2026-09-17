@@ -22,9 +22,16 @@ describe('living execution lease authority', () => {
 			{ membershipId: 'membership', teamId: 'team', capacityProviderId: 'provider' }, 'assignment',
 			'2026-09-14T01:00:00.000Z', 'session');
 		expect(result).toMatchObject({ eligible: true, reasons: [], gates: {
-			assignmentAuthority: 'living_execution_graph', reservationState: 'reserved', grantStatus: null,
-			allocationStatus: null, workdayStatus: 'running', sessionStatus: 'open',
+			assignmentAuthority: 'living_execution_graph', reservationState: 'reserved',
+			workdayStatus: 'running', sessionStatus: 'open',
 		} });
-		expect(first.mock.calls.some(([query]) => String(query).includes('workday_capacity_envelopes'))).toBe(false);
+		expect(first.mock.calls.some(([query]) => /workday_capacity_envelopes|capacity_allocation_sets/u.test(String(query)))).toBe(false);
+	});
+	it('rejects retired assignment authority without querying another allocator', async () => {
+		const first = vi.fn(async () => ({ synthesized_from: 'workday_demand' }));
+		await expect(evaluateProviderAssignmentLeaseAuthority({ ensureInitialized: async () => undefined, first } as never,
+			{ membershipId: 'membership', teamId: 'team', capacityProviderId: 'provider' }, 'assignment'))
+			.resolves.toMatchObject({ eligible: false, reasons: ['assignment_graph_authority_required'] });
+		expect(first).toHaveBeenCalledOnce();
 	});
 });
