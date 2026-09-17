@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit, type AssignmentSourcePin } from '../../../../../src/api/control-plane/repositories/providers/source/source-pin.ts';
+import { classifyCapacityFailure } from '../../../../../src/api/capacity/policy/failure-classification.ts';
 
 const repository = { id: 'repository', provider: 'github' as const, owner: 'example', name: 'project', ref: 'staging', cloneUrl: 'https://github.com/example/project.git' };
 const pin: AssignmentSourcePin = { schemaVersion: 'treeseed.assignment-source-pin/v1', repository, exactCommit: 'a'.repeat(40), credentialBindingId: 'binding' };
@@ -22,6 +23,24 @@ describe('exact assignment source pins', () => {
 
   it('rejects a response that substitutes another exact revision', async () => {
     await expect(resolveAuthorizedSourceCommit({ ...repository, ref: pin.exactCommit }, 'synthetic-token', async () => new Response('b'.repeat(40)))).rejects.toMatchObject({ code: 'assignment_source_revision_changed' });
+  });
+
+  it.each([
+    { status: 403, headers: { 'x-ratelimit-remaining': '0' }, code: 'assignment_source_rate_limited', retryable: true },
+    { status: 403, headers: { 'retry-after': '60' }, code: 'assignment_source_rate_limited', retryable: true },
+    { status: 429, headers: {}, code: 'assignment_source_rate_limited', retryable: true },
+    { status: 503, headers: {}, code: 'assignment_source_unavailable', retryable: true },
+    { status: 403, headers: {}, code: 'assignment_source_access_denied', retryable: false },
+  ])('preserves HTTP $status diagnostics and existing retry classification without reflecting response bodies', async ({ status, headers, code, retryable }) => {
+    try {
+      await resolveAuthorizedSourceCommit(repository, undefined, async () => new Response('private-provider-body', { status, headers }));
+      throw new Error('expected source failure');
+    } catch (error) {
+      expect(error).toMatchObject({ code });
+      expect(String(error)).toContain(`HTTP ${status}`);
+      expect(String(error)).not.toContain('private-provider-body');
+      expect(classifyCapacityFailure({ code })).toMatchObject({ retryable });
+    }
   });
 
   it('keeps existing context and uses a current lease/version compare-and-swap', async () => {

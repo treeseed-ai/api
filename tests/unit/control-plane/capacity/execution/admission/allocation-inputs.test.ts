@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PGlite } from '@electric-sql/pglite';
 import { livingAllocationInputs } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
 
 const now = '2026-09-16T12:30:00.000Z';
@@ -8,13 +9,47 @@ const plan = { schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'tea
 		allocationWeight: 1, planningTurnMaximumSeconds: 180, projectPercentages: { project: 100 },
 		agentClassPercentages: { project: { engineer: 100 } } }, planningRounds: [],
 	admittedSecondsByProject: {}, admittedSecondsByAgentClass: {} };
-const run = { id: 'workday', teamId: 'team', parameters: { appliedPlan: plan } };
+const run = { id: 'workday', teamId: 'team', parameters: { appliedPlan: plan, scheduledProjectIds: ['project'] } };
 const observation = { day: '2026-09-16', observedAt: now, healthy: true, activeSeconds: 10, reservedSeconds: 0 };
 const provider = { id: 'codex-implementation', accountingLimits: { modelConfigurationId: 'terra-medium',
 	dailyActiveSecondsLimit: 1000, capabilityLimits: { implementation: { dailyActiveSecondsLimit: 1000 } } },
 	accountingObservation: { modelUsage: observation, capabilityUsage: { implementation: observation } } };
 
 describe('live allocation ledger inputs', () => {
+	it('counts shared proposal work through real PostgreSQL graph custody, not only workday-owned nodes', async () => {
+		const db = new PGlite();
+		try {
+			await db.exec(`CREATE TABLE execution_nodes (id text, team_id text, project_id text, workday_id text,
+				status text, kind text, source_ref_json jsonb, estimate_json jsonb, required_capabilities_json jsonb);
+				INSERT INTO execution_nodes VALUES
+				('review','team','project',NULL,'ready','reviewing','{"model":"proposal","id":"golden"}','{"maximumSeconds":300}','["implementation"]'),
+				('other-proposal','team','project',NULL,'ready','acting','{"model":"proposal","id":"other"}','{}','["implementation"]'),
+				('other-project','team','unselected',NULL,'ready','acting','{"model":"proposal","id":"golden"}','{}','["implementation"]'),
+				('other-team','foreign','project',NULL,'ready','acting','{"model":"proposal","id":"golden"}','{}','["implementation"]'),
+				('planning','team','project','workday','ready','planning','{}','{}','["implementation"]');`);
+			const counts: number[] = [];
+			const store = { all: vi.fn(async () => []), first: async (sql: string, values: unknown[]) => {
+				let index = 0;
+				const row = (await db.query<{ ready_count: number }>(sql.replace(/\?/gu, () => `$${++index}`), values)).rows[0];
+				counts.push(Number(row?.ready_count));
+				return row ?? null;
+			} };
+			const selectedRun = { ...run, parameters: { ...run.parameters, proposalIds: ['golden'] } };
+			const calculate = (selected: typeof selectedRun) => livingAllocationInputs(store as never, {
+				run: selected as never, runs: [selected as never], providers: [provider as never],
+				capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'reviewer', activity: 'reviewing', now });
+			expect((await calculate(selectedRun))['codex-implementation']?.opportunity.availableSeconds).toBe(990);
+			expect(counts.at(-1)).toBe(1);
+			const planningOnly = { ...selectedRun, parameters: { ...selectedRun.parameters, planningOnly: true } };
+			expect((await calculate(planningOnly))['codex-implementation']?.opportunity.availableSeconds).toBe(0);
+			await db.exec(`INSERT INTO execution_nodes VALUES
+				('report','team','project','workday','ready','reporting','{}','{"maximumSeconds":300}','["implementation"]')`);
+			const closing = { ...selectedRun, parameters: { ...selectedRun.parameters,
+				appliedPlan: { ...plan, state: 'closing' } } };
+			expect((await calculate(closing))['codex-implementation']?.opportunity.availableSeconds).toBe(300);
+			expect(counts.at(-1)).toBe(1);
+		} finally { await db.close(); }
+	}, 15_000);
 	it('retains unattributed historical consumption against model supply, not an invented capability', async () => {
 		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_reservations') ? [
 			{ work_day_id: 'historical', mode: 'acting', state: 'consumed', reserved_seconds: 300, active_seconds: 300, capability_id: null },

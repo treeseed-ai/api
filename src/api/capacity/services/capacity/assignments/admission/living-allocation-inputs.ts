@@ -3,6 +3,7 @@ import { allocateWorkdayCapacity, appliedWorkdaySchema, remainingCapabilitySecon
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../providers/provider-synthesis-context-service.ts';
+import { executionNodeRunScope } from '../../../build/ready-execution-node.ts';
 
 export type LivingAllocationInputs = Record<string, { measurements: AllocationMeasurement[]; constraints: AssignmentAllocationConstraint[];
 	opportunity: ReturnType<typeof allocateWorkdayCapacity>[string] }>;
@@ -40,11 +41,16 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			const parsed = appliedWorkdaySchema.safeParse(run.parameters.appliedPlan);
 			if (!parsed.success) continue;
 			const plan = parsed.data, phase = workdayPhase(plan, input.now);
+			const scope = executionNodeRunScope(run);
+			const projectIds = Array.isArray(run.parameters.scheduledProjectIds)
+				? run.parameters.scheduledProjectIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [];
 			const readiness = await store.first(`SELECT COUNT(*) AS ready_count,
-				COALESCE(MAX((estimate_json::jsonb->>'maximumSeconds')::numeric),0) AS maximum_seconds FROM execution_nodes
-				WHERE team_id=? AND workday_id=? AND status='ready' AND required_capabilities_json::jsonb @> ?::jsonb
-				AND ${plan.state === 'closing' ? "kind='reporting'" : phase === 'planning' ? "kind IN ('planning','estimating','communication')" : "kind NOT IN ('planning','estimating')"}`,
-				[run.teamId, run.id, JSON.stringify([input.capabilityId])]);
+				COALESCE(MAX((node.estimate_json::jsonb->>'maximumSeconds')::numeric),0) AS maximum_seconds FROM execution_nodes node
+				WHERE node.team_id=? AND ${scope.sql} AND node.status='ready'
+				AND ${projectIds.length ? `node.project_id IN (${projectIds.map(() => '?').join(',')})` : 'false'}
+				AND node.required_capabilities_json::jsonb @> ?::jsonb
+				AND ${plan.state === 'closing' ? "node.kind='reporting'" : phase === 'planning' ? "node.kind IN ('planning','estimating','communication')" : "node.kind NOT IN ('planning','estimating','reporting')"}`,
+				[run.teamId, ...scope.parameters, ...projectIds, JSON.stringify([input.capabilityId])]);
 			const usage = commitments.filter(row => row.work_day_id === run.id).map(row => ({ planning: row.mode === 'planning',
 				seconds: ['reserved', 'consuming'].includes(String(row.state)) ? Math.max(Number(row.reserved_seconds), Number(row.active_seconds)) : Number(row.active_seconds) }));
 			workdays.push({ plan, committedSeconds: usage.reduce((sum, row) => sum + row.seconds, 0),

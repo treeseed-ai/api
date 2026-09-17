@@ -9,6 +9,8 @@ const OPERATOR_ACTION_CODES = new Set([
 
 const RETRYABLE_CODES = new Set([
 	'control_plane_unavailable',
+	'assignment_source_rate_limited',
+	'assignment_source_unavailable',
 	'execution_provider_rate_limited',
 	'execution_provider_unavailable',
 	'lease_expired',

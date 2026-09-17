@@ -21,7 +21,16 @@ export async function resolveAuthorizedSourceCommit(repository: SourceRepository
     method: 'GET', redirect: 'error', signal: AbortSignal.timeout(15_000),
     headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), accept: 'application/vnd.github.sha', 'x-github-api-version': '2022-11-28', 'user-agent': 'treeseed-source-custody' },
   });
-  if (!response.ok) throw new CapacityGovernanceError('assignment_source_access_denied', 'The selected connection cannot read the assigned repository revision.', 403);
+  if (!response.ok) {
+    const rateLimited = response.status === 429 || (response.status === 403
+      && (response.headers.get('x-ratelimit-remaining') === '0' || /^\d+$/u.test(response.headers.get('retry-after') ?? '')));
+    const unavailable = response.status >= 500;
+    throw new CapacityGovernanceError(rateLimited ? 'assignment_source_rate_limited'
+      : unavailable ? 'assignment_source_unavailable' : 'assignment_source_access_denied',
+      `Source repository check failed (GitHub HTTP ${response.status}); ${rateLimited ? 'retry after the provider rate limit resets'
+        : unavailable ? 'retry when the source provider is available' : 'verify connection access to the assigned revision'}.`,
+      rateLimited ? 429 : unavailable ? 503 : 403, { upstreamStatus: response.status });
+  }
   // A SHA response is tiny. Bound consumption instead of buffering arbitrary provider error/output bodies.
   const reader = response.body?.getReader();
   if (!reader) throw new CapacityGovernanceError('assignment_source_revision_invalid', 'The repository did not return an exact revision.', 502);
