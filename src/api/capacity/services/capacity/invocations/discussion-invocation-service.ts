@@ -27,6 +27,7 @@ export async function terminalizeCompletedConversationInvocation(
 	if (!Boolean(invocation.integration_ready)) return { terminalized: false, reason: 'content_integration_pending' };
 	const executionId = text(invocation.execution_id);
 	const execution = await store.first(`SELECT status,execution_kind FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1`, [executionId, teamId]);
+	if (execution && text(execution.execution_kind) === 'workday') return { terminalized: false, reason: 'parent_workday_retained', executionId };
 	if (!execution || text(execution.execution_kind) !== 'conversation') throw new CapacityGovernanceError('conversation_execution_provenance_invalid', 'Completed communication invocation does not resolve to its exact conversation execution.', 409, { invocationId, executionId });
 	await store.run(`UPDATE agent_invocation_requests SET execution_id=?,blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=?`, [executionId, new Date().toISOString(), invocationId, teamId]);
 	if (text(execution.status) === 'completed') return { terminalized: false, reason: 'already_completed', executionId };
@@ -363,10 +364,9 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 				id:runIdentity.id,
 				capacityProviderId: text(supply.capacity_provider_id), scenarioId: `conversation:${input.discussionId}:${agentSlug}`,
 				environment: 'local', executionKind: 'conversation', triggerKind: input.triggerKind ?? 'discussion', hidden: true, status: 'running', startedAt: new Date().toISOString(),
-				parameters: { durationSeconds: effectiveSeconds, maxActiveAssignments: 1, planningOnly: true, projectSlugs: [input.projectSlug],
+				parameters: { durationSeconds: effectiveSeconds, maxActiveAssignments: 1, planningPercent: 0, projectSlugs: [input.projectSlug],
 					providerSourceClosureDigest: supply.providerSourceClosureDigest,
 					agentSelection: { agentSlugs: [agentSlug], activityTypes: ['chat'], classIds: [], classSlugs: [], mode: 'intersection' },
-					timePolicy: { cooperativePlanningPercent: 100, governedExecutionPercent: 0, reservePercent: 0 }, planningSession: { rounds: 1, assignmentTimeboxSeconds: effectiveSeconds },
 					discussion: { discussionId: input.discussionId, messageId: input.messageId, messagePath: input.messagePath, commitSha: input.messageCommit, contextRefs: input.contextRefs, invocationId: invocation.id, parentAssignmentId: invocation.parentAssignmentId ?? null, handoffRootId: invocation.handoffRootId ?? null, handoffParentId: invocation.handoffParentId ?? null, handoffDepth: invocation.handoffDepth ?? 0 },
 				}, requestedById: input.requestedById ?? null,
 			});
@@ -422,14 +422,14 @@ export async function reconcileBlockedDiscussionInvocations(store:DiscussionInvo
 		const active=selectedSubjects.has(serialKey)||await store.first(`SELECT id FROM agent_invocation_requests WHERE project_id=? AND agent_id=? AND subject_digest=? AND id<>? AND status IN ('admitted','running') LIMIT 1`,[row.project_id,row.agent_id,row.subject_digest,invocationId]);
 		if(active){await store.run(`UPDATE agent_invocation_requests SET blocking_state_json=? WHERE id=?`,[JSON.stringify({code:'discussion_agent_serialized'}),invocationId]);continue;}selectedSubjects.add(serialKey);
 		try{
-			const identity=text(row.parent_workday_id)?{id:text(row.parent_workday_id),existing:true}:await nextConversationRunId(store,teamId,invocationId); const productiveSeconds=Math.max(900,Number(metadata.productiveSeconds??0),Number(supply.minimumSeconds??0));
+			const identity=text(row.parent_workday_id)?{id:text(row.parent_workday_id),existing:true}:await nextConversationRunId(store,teamId,invocationId); const productiveSeconds=Math.max(1,Number(metadata.productiveSeconds??0),Number(supply.minimumSeconds??0));
 			if(!identity.existing){
 				const claimToken=randomUUID();
 				await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json=?,updated_at=? WHERE id=? AND team_id=? AND status IN ('queued','blocked') AND (execution_id IS NULL OR execution_id='')`,[identity.id,JSON.stringify({code:'communication_admission_claimed',claimToken}),new Date().toISOString(),invocationId,teamId]);
 				const claimed=await store.first(`SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1`,[invocationId,teamId]);
 				if(text(claimed?.execution_id)!==identity.id||text(record(claimed?.blocking_state_json).claimToken)!==claimToken)continue;
 			}
-			const run=identity.existing?{id:identity.id}:await store.createCapacityWorkdayRun(teamId,{id:identity.id,capacityProviderId:text(supply.capacity_provider_id),scenarioId:`conversation:${text(metadata.discussionId)}:${text(row.agent_id)}`,environment:'local',executionKind:'conversation',triggerKind:text(row.trigger_kind)||'discussion',hidden:true,status:'running',startedAt:new Date().toISOString(),parameters:{durationSeconds:productiveSeconds,maxActiveAssignments:1,planningOnly:true,projectSlugs:[text(row.project_slug)],agentSelection:{agentSlugs:[text(row.agent_id)],activityTypes:['chat'],classIds:[],classSlugs:[],mode:'intersection'},timePolicy:{cooperativePlanningPercent:100,governedExecutionPercent:0,reservePercent:0},planningSession:{rounds:1,assignmentTimeboxSeconds:productiveSeconds},discussion:{discussionId:text(metadata.discussionId),messageId:text(metadata.sourceMessageId),messagePath:text(refs[0]),commitSha:text(metadata.sourceCommit),contextRefs:refs.slice(1),invocationId,parentAssignmentId:row.parent_assignment_id??null,handoffRootId:row.handoff_root_id??null,handoffParentId:row.handoff_parent_id??null,handoffDepth:Number(row.handoff_depth??0)}}});
+			const run=identity.existing?{id:identity.id}:await store.createCapacityWorkdayRun(teamId,{id:identity.id,capacityProviderId:text(supply.capacity_provider_id),scenarioId:`conversation:${text(metadata.discussionId)}:${text(row.agent_id)}`,environment:'local',executionKind:'conversation',triggerKind:text(row.trigger_kind)||'discussion',hidden:true,status:'running',startedAt:new Date().toISOString(),parameters:{durationSeconds:productiveSeconds,maxActiveAssignments:1,planningPercent:0,projectSlugs:[text(row.project_slug)],agentSelection:{agentSlugs:[text(row.agent_id)],activityTypes:['chat'],classIds:[],classSlugs:[],mode:'intersection'},discussion:{discussionId:text(metadata.discussionId),messageId:text(metadata.sourceMessageId),messagePath:text(refs[0]),commitSha:text(metadata.sourceCommit),contextRefs:refs.slice(1),invocationId,parentAssignmentId:row.parent_assignment_id??null,handoffRootId:row.handoff_root_id??null,handoffParentId:row.handoff_parent_id??null,handoffDepth:Number(row.handoff_depth??0)}}});
 			if(!identity.existing)await store.tickCapacityWorkdayRun(teamId,text(run.id),new Date().toISOString(),`discussion-invocation:${invocationId}:initial`);
 			await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=? AND status IN ('queued','blocked','admitted') AND execution_id=?`,[run.id,new Date().toISOString(),invocationId,teamId,run.id]);admitted+=1;availableSlots-=1;
 		}catch(error){

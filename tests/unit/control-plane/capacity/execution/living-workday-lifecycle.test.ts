@@ -14,6 +14,13 @@ const run = { id: 'workday', teamId: 'team', status: 'running', completedAt: nul
 	parameters: { appliedPlan: plan } } as never;
 
 describe('living workday lifecycle', () => {
+	it('cancels an explicitly stopped conversation without waiting for or fabricating a Reporter result', async () => {
+		const conversation = { ...run, executionKind: 'conversation' } as never;
+		const store = { all: vi.fn(async () => []), updateCapacityWorkdayRun: vi.fn(async () => conversation) };
+		const result = await advanceLivingWorkday(store as never, conversation, now, true);
+		expect(result).toMatchObject({ status: 'cancelled', plan: { state: 'ended', endedAt: now } });
+		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({ status: 'cancelled' }));
+	});
 	it('creates a third and subsequent planning cycle before the percentage boundary', async () => {
 		const startsAt = '2026-09-13T15:00:00Z';
 		const currentPlan = { ...plan, startsAt, endsAt: '2026-09-13T16:00:00Z',
