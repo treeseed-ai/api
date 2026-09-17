@@ -22,6 +22,8 @@ describe('live allocation ledger inputs', () => {
 		const result = await livingAllocationInputs(store as never, { run: run as never, runs: [run as never], providers: [provider as never],
 			capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'engineer', activity: 'act', now });
 		expect(result['codex-implementation']?.constraints[0]?.remainingSeconds).toBe(700);
+		expect(result['codex-implementation']?.opportunity).toMatchObject({ weight: 1, totalEligibleWeight: 1,
+			committedSeconds: 0, remainingSupplySeconds: 700, shareSeconds: 700, phase: 'acting', availableSeconds: 700 });
 		expect(store.all.mock.calls[0]![0]).toContain("NULLIF(assignment.assignment_attempt_json::jsonb->'provider'->>'modelConfigurationId','') IS NULL");
 	});
 	it('calibrates productive deadline expiration, not uncertain lease recovery', async () => {

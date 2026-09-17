@@ -33,7 +33,6 @@ export interface CreateWorkdayCapacityEnvelopeInput {
 	completedAt?: string | null;
 	environment?: string | null;
 	availableSeconds?: number | null;
-	timePolicy?: JsonRecord;
 	envelope?: JsonRecord;
 	metadata?: JsonRecord;
 }
@@ -105,7 +104,7 @@ export class WorkdayCapacityEnvelopeRepository {
 			teamId: text(project.team_id), projectId: text(project.id), workDayId: id,
 			environment: input.environment ?? null,
 			allocationSetId: input.allocationSetId ?? nullableText(suppliedEnvelope.allocationSetId),
-			availableSeconds: amount(input.availableSeconds, null), timePolicy: object(input.timePolicy),
+			availableSeconds: amount(input.availableSeconds, null),
 			metadata: object(suppliedEnvelope.metadata ?? metadata),
 			...suppliedEnvelope,
 		};

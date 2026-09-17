@@ -177,7 +177,7 @@ export async function assignNextReadyExecutionNode(
 				});
 				const attempt = selected.assignment;
 					const treedxProxyHandle = await issueLivingTreeDxAuthority(store, run, attempt, now);
-					return await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: selected.allocation,
+					return await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: { ...selected.allocation, selection: selectedNode },
 						accountingLimits: selected.accountingLimits,
 						projectAgentClassId: candidate.projectAgentClassId, providerSessionId,
 						executionProviderId: selected.executionProviderId, laneId: selected.laneId,

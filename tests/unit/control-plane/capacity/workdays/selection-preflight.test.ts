@@ -32,6 +32,14 @@ function fixture() {
 }
 
 describe('public workday selection custody', () => {
+	it('preserves explicit production custody and defaults omitted mode to simulation', async () => {
+		const f = fixture();
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), executionMode: 'production' }), 'actor');
+		expect(f.stored().runInput.executionMode).toBe('production');
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');
+		expect(f.stored().runInput.executionMode).toBe('simulation');
+		expect(() => parsePublicWorkdayIntent('team', { ...input(), executionMode: 'other' })).toThrow(/invalid/u);
+	});
 	it('projects inherited team targets onto selected projects without filtering explicit overrides', async () => {
 		const f = fixture();
 		f.store.first.mockImplementation(async (sql: string) => sql.includes('FROM teams') ? { metadata_json: JSON.stringify({ workdayProfile: {
@@ -83,6 +91,9 @@ describe('public workday selection custody', () => {
 		expect(parsePublicWorkdayIntent('team', unselected).agentSelection).toBeUndefined();
 		for (const invalid of [{}, null, { agentSlugs: [] }, { agentSlugs: [''] }, { activityTypes: ['acting'] }]) expect(() => parsePublicWorkdayIntent('team', { ...input(), agentSelection: invalid })).toThrow(/invalid/u);
 		expect(parsePublicWorkdayIntent('team', { ...input(), agentSelection: { ...agentSelection, agentSlugs: [' reviewer ', 'reviewer'] } }).agentSelection?.agentSlugs).toEqual(['reviewer']);
+		const canonical = parsePublicWorkdayIntent('team', input());
+		expect(parsePublicWorkdayIntent('team', canonical as unknown as Record<string, unknown>)).toEqual(canonical);
+		expect(canonical.agentSelection).not.toHaveProperty('classIds');
 	});
 	it('normalizes explicit accepted-decision selection and rejects malformed selection', () => {
 		expect(parsePublicWorkdayIntent('team', { ...input(), decisionIds: [' decision-b ', 'decision-a', 'decision-b'] }).decisionIds).toEqual(['decision-a', 'decision-b']);
