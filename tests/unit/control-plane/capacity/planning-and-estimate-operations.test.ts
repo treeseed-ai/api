@@ -70,9 +70,11 @@ describe('communication catalog operations', () => {
 		}), { create });
 		await expect(service.send(principal, 'team-a', 'Agent Chat', {
 			message: '@sdk/architect\nPlease coordinate with @architect.',
+			parentWorkdayId: 'workday-a',
 		}, 'request-a')).rejects.toMatchObject({ code: 'communication_send_not_found', status: 404 });
 		expect(create).toHaveBeenCalledWith(principal, expect.objectContaining({
 			discussionId: 'agent-chat', recipients: ['architect'], addressRequirements: { architect: 'required' },
+			parentWorkdayId: 'workday-a', communication: expect.objectContaining({ topicId: 'topic-a', streamId: 'stream-a' }),
 		}), 'request-a:project-a');
 		expect(writes.find(({ query }) => query.includes('communication_discussion_streams'))?.parameters).toContain('agent-chat');
 	});
