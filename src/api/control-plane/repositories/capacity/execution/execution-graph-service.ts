@@ -106,12 +106,13 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 	}));
 }
 
-async function loadCommunicationInvocations(store: any, teamId: string) {
+export async function loadCommunicationInvocations(store: any, teamId: string) {
 	const rows = await store.all(`SELECT invocation.id,invocation.team_id,invocation.project_id,invocation.agent_id,
 		invocation.execution_id,invocation.metadata_json,invocation.content_refs_json,library.repository_id
 		FROM agent_invocation_requests invocation
 		JOIN treedx_project_libraries library ON library.project_id=invocation.project_id
-		WHERE invocation.team_id=? AND invocation.execution_kind='conversation'
+		JOIN capacity_workday_runs execution ON execution.id=invocation.execution_id AND execution.team_id=invocation.team_id
+		WHERE invocation.team_id=? AND invocation.execution_kind='conversation' AND execution.status='running'
 		AND invocation.status IN ('admitted','running') AND invocation.execution_id IS NOT NULL
 		ORDER BY invocation.id`, [teamId]);
 	return rows.flatMap((row: Row) => {

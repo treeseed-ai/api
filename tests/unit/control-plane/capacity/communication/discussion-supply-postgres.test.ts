@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { createControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
-import { admitDiscussionInvocations } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
+import { admitDiscussionInvocations, reconcileBlockedDiscussionInvocations } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
+import { CapacityWorkdayRunService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
+import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 
 describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('current communication supply in PostgreSQL', () => {
 	it('uses reported capability lanes rather than the retired materialized lane owner', async () => {
@@ -42,6 +44,30 @@ describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('current communication 
 			};
 			const input = { teamId: 'team', projectId: 'project', projectSlug: 'sdk', discussionId: 'acceptance', messageId: 'message', messagePath: 'discussion-messages/acceptance/message.mdx', messageCommit: 'c'.repeat(40), contextRefs: [], agentSlugs: ['architect'], idempotencyKey: 'send', durationSeconds: 180 };
 			expect(await admitDiscussionInvocations(store, input)).toMatchObject([{ status: 'admitted' }]);
+			expect(store.createCapacityWorkdayRun).toHaveBeenCalledOnce();
+			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','sdk','SDK',$1,$1)`, [now]);
+			await database.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('class','team','project','architect','Architect',$1,$1)`, [now]);
+			const realStore = { ...store,
+				ensureInitialized: () => database.migrate(),
+				first: (sql: string, values: unknown[] = []) => database.prepare(sql).bind(...values).first(),
+				run: (sql: string, values: unknown[] = []) => database.prepare(sql).bind(...values).run(),
+				batch: (operations: Array<{ query: string; params?: unknown[] }>) => database.batch(operations),
+				scheduleCapacityWorkdayRun: vi.fn(async () => ({})),
+			};
+			const snapshot = compileWorkdayAgentProfileSnapshot([{ id: 'class', slug: 'architect', handler_refs_json: { agents: [agent] } }]);
+			await new CapacityWorkdayRunService(realStore as never).create('team', { id: 'parent', capacityProviderId: 'provider',
+				executionMode: 'simulation', executionKind: 'workday', environment: 'local', status: 'running', startedAt: now,
+				parameters: { durationSeconds: 600, planningPercent: 20, agentProfilesByProjectId: { project: snapshot } } });
+			const parentResult = await admitDiscussionInvocations(realStore, { ...input, idempotencyKey: 'parent-send', parentWorkdayId: 'parent' });
+			expect(parentResult).toMatchObject([{ status: 'admitted', executionId: 'parent' }]);
+			expect((await database.pool.query('SELECT status,execution_id FROM agent_invocation_requests WHERE id=$1', [parentResult[0]!.id])).rows)
+				.toEqual([{ status: 'admitted', execution_id: 'parent' }]);
+			expect(await admitDiscussionInvocations(realStore, { ...input, idempotencyKey: 'parent-send', parentWorkdayId: 'parent' }))
+				.toMatchObject([{ status: 'admitted', executionId: 'parent', replayed: true }]);
+			expect((await database.pool.query('SELECT count(*)::int AS count FROM agent_invocation_requests')).rows).toEqual([{ count: 1 }]);
+			await database.pool.query(`UPDATE capacity_workday_runs SET status='cancelled' WHERE id='parent'`);
+			expect(await reconcileBlockedDiscussionInvocations(realStore, 'team')).toEqual({ admitted: 0, blocked: false });
+			expect((await database.pool.query('SELECT status FROM agent_invocation_requests')).rows).toEqual([{ status: 'failed' }]);
 			expect(store.createCapacityWorkdayRun).toHaveBeenCalledOnce();
 			// The same materialized rows must not authorize an expired report.
 			await database.pool.query(`UPDATE capacity_provider_availability_sessions SET expires_at=$1`, [now]);
