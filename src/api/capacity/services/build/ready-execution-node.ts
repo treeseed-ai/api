@@ -204,8 +204,8 @@ async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ proj
 		`Ready node ${node.id} has no exact active ${node.agentClass} ${node.kind} profile.`, 409);
 }
 
-async function predecessorResults(store: any, node: ExecutionNode): Promise<AssignmentResult[]> {
-	const rows = await store.all(`SELECT result.assignment_result_json
+async function predecessorContext(store: any, node: ExecutionNode): Promise<{ results: AssignmentResult[]; contentRefs: ExactEntityReference[] }> {
+	const rows = await store.all(`SELECT result.assignment_result_json,result.assignment_attempt_json
 		FROM execution_edges edge
 		JOIN execution_nodes predecessor ON predecessor.team_id=edge.team_id AND predecessor.id=edge.from_node_id
 		JOIN capacity_provider_assignments result ON result.team_id=edge.team_id
@@ -215,13 +215,13 @@ async function predecessorResults(store: any, node: ExecutionNode): Promise<Assi
 		WHERE edge.team_id=? AND edge.to_node_id=? AND edge.graph_revision_removed IS NULL
 		ORDER BY edge.id,result.completed_at DESC`, [node.teamId,node.id]);
 	if (node.pairRole === 'actor' && node.nodeRevision > 1 && node.workItemId) rows.push(...await store.all(
-		`SELECT result.assignment_result_json FROM capacity_provider_assignments result
+		`SELECT result.assignment_result_json,result.assignment_attempt_json FROM capacity_provider_assignments result
 		WHERE result.team_id=? AND result.execution_node_id=?
 		AND result.execution_node_revision<? AND result.status='completed'
 		ORDER BY result.execution_node_revision DESC,result.completed_at DESC LIMIT 1`,
 		[node.teamId,node.id,node.nodeRevision],
 	), ...await store.all(
-		`SELECT result.assignment_result_json FROM execution_nodes reviewer
+		`SELECT result.assignment_result_json,result.assignment_attempt_json FROM execution_nodes reviewer
 		JOIN capacity_provider_assignments result ON result.team_id=reviewer.team_id
 			AND result.execution_node_id=reviewer.id AND result.status='completed'
 		WHERE reviewer.team_id=? AND reviewer.project_id=? AND reviewer.work_item_id=? AND reviewer.pair_role='reviewer'
@@ -233,7 +233,20 @@ async function predecessorResults(store: any, node: ExecutionNode): Promise<Assi
 		const parsed = assignmentResultSchema.safeParse(record(row.assignment_result_json));
 		return parsed.success ? [parsed.data] : [];
 	});
-	return [...new Map(results.map((result) => [result.id, result])).values()];
+	const contentRefs = rows.flatMap((row: Row) => {
+		const parsed = assignmentResultSchema.safeParse(record(row.assignment_result_json));
+		if (!parsed.success) return [];
+		const grants = array(record(record(row.assignment_attempt_json).grant).contentWrite).map(record);
+		return parsed.data.references.flatMap((reference) => {
+			if (reference.kind !== 'treedx') return [];
+			const target = grants.find(grant => grant.store === 'treedx' && grant.repository === reference.repository && grant.path === reference.path);
+			if (!target || !text(target.model) || !text(target.id)) return [];
+			return [{ store: 'treedx' as const, model: text(target.model), id: text(target.id),
+				repository: reference.repository, commit: reference.commit, path: reference.path }];
+		});
+	});
+	return { results: [...new Map(results.map((result) => [result.id, result])).values()],
+		contentRefs: [...new Map(contentRefs.map(reference => [stable(reference), reference])).values()] };
 }
 
 async function teamCoreContext(store: any, teamId: string): Promise<ExactEntityReference[]> {
@@ -307,7 +320,8 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			? [selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)).id]
 			: [];
 		const loadedContext = await loadContext(store, node);
-		const predecessors = await predecessorResults(store, node);
+		const predecessor = await predecessorContext(store, node);
+		const predecessors = predecessor.results;
 		const candidateRefs = predecessors.flatMap((result) => result.references).flatMap((reference) => {
 			if (reference.kind !== 'git') return [];
 			const declared = loadedContext.find((item) => item.store === 'git' && item.repository === reference.repository);
@@ -319,7 +333,7 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			projectAgentClassId: selected.projectAgentClassId,
 			effectiveProfile: selected.profile,
 			sourceRepositories,
-			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...projectContext, ...candidateRefs, ...loadedContext]
+			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...projectContext, ...candidateRefs, ...predecessor.contentRefs, ...loadedContext]
 				.filter((reference) => reference.store === 'git'
 					? Boolean(reference.repository && reference.commit)
 					: reference.store === 'treedx' && Boolean(reference.repository && reference.commit && reference.path))
