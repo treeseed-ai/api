@@ -6,7 +6,7 @@ describe('provider accounting diagnostics', () => {
 		const observation = { day: '2026-09-17', observedAt: '2026-09-17T00:00:00Z', healthy: true,
 			activeSeconds: 30, reservedSeconds: 40, credential: 'must-not-appear' };
 		const status = providerAccountingStatus(JSON.stringify([{ id: 'codex-research', status: 'active', runtimeBuild: 'exact-build',
-			credential: 'must-not-appear', nativeLimits: { modelConfigurationId: 'sol-medium', dailyActiveSecondsLimit: 7200,
+			credential: 'must-not-appear', nativeLimits: { credential: 'must-not-appear', modelConfigurationId: 'sol-medium', dailyActiveSecondsLimit: 7200,
 				capabilityLimits: { research: { dailyActiveSecondsLimit: 7200 } } },
 			accountingObservation: { modelUsage: observation, capabilityUsage: { research: observation }, token: 'must-not-appear' } }]));
 		expect(status[0]).toMatchObject({ id: 'codex-research', nativeLimits: { dailyActiveSecondsLimit: 7200 },

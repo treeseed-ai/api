@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { readOsCredentialFile } from '@treeseed/deployment/security/custody';
 const keyText=(file:string)=>{const key=readOsCredentialFile(file);try{return key.toString('utf8').trim();}finally{key.fill(0);}};
 import { AvailabilitySessionService } from '../../../capacity/services/accounts/availability-session-service.ts';
-import { capabilityAccountingLimitsSchema } from '@treeseed/sdk/agent-capacity';
+import { capabilityAccountingLimitsSchema, type CapabilityAccountingLimits } from '@treeseed/sdk/agent-capacity';
 import { CapacityRegistrationService } from '../../../capacity/services/support/registration-service.ts';
 import { createProviderEnvironmentService } from './provider-environment-service.ts';
 
@@ -50,7 +50,11 @@ function jsonObject(value: unknown): Record<string, unknown> {
 }
 
 /** Expose the existing provider report, not credentials or arbitrary adapter metadata. */
-export function providerAccountingStatus(value: unknown) {
+export function providerAccountingStatus(value: unknown): Array<{
+	id: unknown; status: unknown; runtimeBuild: unknown;
+	nativeLimits: CapabilityAccountingLimits | null;
+	accountingObservation: { modelUsage: Record<string, unknown>; capabilityUsage: Record<string, Record<string, unknown>> };
+}> {
 	const observation = (input: unknown) => {
 		const row = jsonObject(input);
 		return { day: row.day, observedAt: row.observedAt, healthy: row.healthy,
@@ -62,7 +66,8 @@ export function providerAccountingStatus(value: unknown) {
 		const row = jsonObject(input), report = jsonObject(row.accountingObservation);
 		const limits = capabilityAccountingLimitsSchema.safeParse(row.nativeLimits);
 		return { id: row.id, status: row.status, runtimeBuild: row.runtimeBuild,
-			nativeLimits: limits.success ? limits.data : null,
+			nativeLimits: limits.success ? { modelConfigurationId: limits.data.modelConfigurationId,
+				dailyActiveSecondsLimit: limits.data.dailyActiveSecondsLimit, capabilityLimits: limits.data.capabilityLimits } : null,
 			accountingObservation: { modelUsage: observation(report.modelUsage),
 				capabilityUsage: Object.fromEntries(Object.entries(jsonObject(report.capabilityUsage))
 					.map(([id, entry]) => [id, observation(entry)])) } };
