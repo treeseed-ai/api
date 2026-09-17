@@ -33,7 +33,9 @@ export interface ActiveWorkdayProjectionSource {
 }
 
 function sourceRef(workday: ReturnType<typeof appliedWorkdaySchema.parse>): ExactEntityReference {
-	return { store: 'postgresql', model: 'workday', id: workday.id, revision: workday.policyRevision, digest: digest(workday) };
+	const { schemaVersion, id, teamId, executionMode, policyId, policyRevision, policySnapshot, startsAt, endsAt } = workday;
+	return { store: 'postgresql', model: 'workday', id, revision: policyRevision,
+		digest: digest({ schemaVersion, id, teamId, executionMode, policyId, policyRevision, policySnapshot, startsAt, endsAt }) };
 }
 
 function edge(teamId: string, fromNodeId: string, toNodeId: string, provenance: ExecutionEdge['provenance'],
