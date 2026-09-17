@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { admitDiscussionInvocations } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
+import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 
 const permissions = { content: { read: ['knowledge', 'discussion'], write: ['discussion'] }, tools: ['discussion', 'source.read'] };
 const agent = (slug: string) => ({
@@ -10,6 +11,27 @@ const agent = (slug: string) => ({
 });
 
 describe('discussion invocation capacity admission', () => {
+	it.each(['selected', 'unknown', 'unselected-chat', 'corrupt'])('authorizes parent communication from the existing frozen profiles: %s', async (scenario) => {
+		const definition = agent('architect');
+		const snapshot = compileWorkdayAgentProfileSnapshot([{ id: 'class', slug: 'architect', handler_refs_json: { agents: [{ ...definition,
+			activityProfiles: { ...definition.activityProfiles, planning: definition.activityProfiles.chat } }] } }],
+			scenario === 'unselected-chat' ? { activityTypes: ['planning'] } : undefined);
+		if (scenario === 'corrupt') snapshot.revision = 'invalid';
+		const store = {
+			first: vi.fn(async (query: string) => query.includes('SELECT * FROM capacity_workday_runs')
+				? { id: 'parent', execution_kind: 'workday', parameters_json: { agentProfilesByProjectId: { project: snapshot } } } : null),
+			all: vi.fn(async (query: string) => query.includes('FROM project_agent_classes')
+				? [{ id: 'class', handler_refs_json: { agents: [agent('architect')] } }] : []),
+			run: vi.fn(async () => ({ meta: { changes: 1 } })),
+			createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn(),
+		};
+		const result = admitDiscussionInvocations(store, { teamId: 'team', projectId: 'project', projectSlug: 'sdk',
+			discussionId: 'discussion', messageId: 'message', messagePath: 'discussion-messages/message.mdx', messageCommit: 'c'.repeat(40),
+			contextRefs: [], agentSlugs: [scenario === 'unknown' ? 'engineer' : 'architect'], idempotencyKey: scenario, parentWorkdayId: 'parent' });
+		if (scenario === 'selected') await expect(result).resolves.toMatchObject([{ status: 'blocked', blocker: 'communication_supply_unavailable' }]);
+		else await expect(result).rejects.toMatchObject({ code: scenario === 'corrupt' ? 'capacity_workday_agent_profile_snapshot_invalid' : 'discussion_parent_agent_not_frozen' });
+		expect(store.createCapacityWorkdayRun).not.toHaveBeenCalled();
+	});
 	it('starts only one conversation execution when the communication lane has one worker', async () => {
 		const claimed = new Map<string, { status: string; execution_id: string; blocking_state_json: string }>();
 		const createdRuns: string[] = [];
