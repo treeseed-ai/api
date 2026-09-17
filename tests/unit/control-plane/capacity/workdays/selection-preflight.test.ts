@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { parsePublicWorkdayIntent, WorkdayPreflightService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
 import { canonicalWorkdayShares } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-scheduling-service.ts';
 
-const input = () => ({ profileId: 'profile', projects: ['sdk'], startsAt: new Date().toISOString(), durationSeconds: 600, agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] } });
+const input = () => ({ profileId: 'default', projects: ['sdk'], startsAt: new Date().toISOString(), durationSeconds: 600, agentSelection: { agentSlugs: ['reviewer'], activityTypes: ['reviewing'] } });
 const exactDigest = (value: string) => `sha256:${createHash('sha256').update(value).digest('hex')}`;
 const executionNodeRow = (value: { id: string; kind: string; agentClass: string; digest: string; expectedSeconds: number; nodeRevision?: number; decisionRevision?: number }) => ({
 	id: value.id, team_id: 'team', project_id: 'project-sdk', kind: value.kind, pair_role: value.kind === 'reviewing' ? 'reviewer' : value.kind === 'acting' ? 'actor' : null,
@@ -20,7 +20,7 @@ function fixture() {
 	const store = {
 		ensureInitialized: vi.fn(async () => {}),
 		all: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ capacity_provider_id: 'provider' }] : sql.includes('project_agent_classes') ? [{ id: 'class', slug: 'assurance' }] : []),
-		first: vi.fn(async (sql: string) => sql.includes('capacity_allocation_sets') ? { id: 'allocation', version: 1 } : sql.includes("operation='workday.start'") ? replay : sql.includes("resource_type='workday_preflight'") ? { response_json: JSON.stringify(stored) } : null),
+		first: vi.fn(async (sql: string) => sql.includes('FROM teams') ? { metadata_json: '{}' } : sql.includes("operation='workday.start'") ? replay : sql.includes("resource_type='workday_preflight'") ? { response_json: JSON.stringify(stored) } : null),
 		run: vi.fn(async (_sql: string, args: unknown[]) => {
 			if (args[2] === 'workday.preflight') stored = JSON.parse(String(args[7]));
 			else replay = { request_digest: args[4], response_json: args[7] };
@@ -32,6 +32,16 @@ function fixture() {
 }
 
 describe('public workday selection custody', () => {
+	it('snapshots the team policy and resolves omitted duration without operator task budgets', async () => {
+		const f = fixture();
+		const { durationSeconds: _duration, profileId: _profile, ...value } = input();
+		const intent = parsePublicWorkdayIntent('team', value);
+		const receipt = await f.service.preflight('team', intent, 'actor');
+		expect(intent.profileId).toBe('default');
+		expect(Date.parse(receipt.endsAt) - Date.parse(receipt.startsAt)).toBe(28_800_000);
+		expect(f.stored().runInput.parameters).toMatchObject({ policyId: 'default', policyRevision: 1,
+			planningPercent: 20, allocationWeight: 1, planningTurnMaximumSeconds: 180, maximumConcurrency: 1 });
+	});
 	it('resolves allocation slugs to the graph project identity and rejects ambiguous or unselected inputs', () => {
 		const projects = [{ id: 'project-sdk', slug: 'sdk' }, { id: 'project-api', slug: 'api' }];
 		expect(canonicalWorkdayShares({ projectPercentages: { sdk: 75, api: 25 },

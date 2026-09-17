@@ -10,7 +10,7 @@ describe('workday catalog operations', () => {
 		const workdays = Object.fromEntries(['list', 'preflight', 'start', 'show', 'stop', 'events', 'schedules', 'createSchedule', 'updateSchedule']
 			.map((name) => [name, vi.fn()])) as any;
 		expect(createWorkdayOperations({ workdays }).map((operation) => operation.binding)).toEqual([
-			CONTROL_PLANE_OPERATIONS.workdays.profilesList, CONTROL_PLANE_OPERATIONS.workdays.profilesShow, CONTROL_PLANE_OPERATIONS.workdays.profilesReconcile,
+			CONTROL_PLANE_OPERATIONS.workdays.profilesList, CONTROL_PLANE_OPERATIONS.workdays.profilesShow, CONTROL_PLANE_OPERATIONS.workdays.profilesUpdate,
 			CONTROL_PLANE_OPERATIONS.workdays.list, CONTROL_PLANE_OPERATIONS.workdays.preflight,
 			CONTROL_PLANE_OPERATIONS.workdays.start, CONTROL_PLANE_OPERATIONS.workdays.show,
 			CONTROL_PLANE_OPERATIONS.workdays.stop,

@@ -14,7 +14,6 @@ AvailabilitySessionService,
 type ProviderAvailabilityPrincipal,
 } from './services/accounts/availability-session-service.ts';
 import type { ProviderLeasePrincipal } from './services/accounts/lease-authority-service.ts';
-import { CapacityAllocationService } from './services/capacity/allocations/allocation-service.ts';
 import { CapacityGrantService } from './services/capacity/allocations/grant-service.ts';
 import type { ProviderSynthesisRequest } from './services/capacity/assignments/context/assignment-synthesis-service.ts';
 import { leaseNextProviderAssignment as leaseProviderAssignment } from './services/capacity/assignments/lifecycle/assignment-lease-service.ts';
@@ -45,14 +44,12 @@ type ProviderServiceContext = ProviderControlPlaneContext
 export class ProviderControlPlane {
 	private readonly providerContext: ProviderServiceContext;
 	private readonly assignmentRepository: ProviderAssignmentRepository;
-	private readonly allocationService: CapacityAllocationService;
 	private readonly agentClassService: ProjectAgentClassService;
 	private readonly availabilityService: AvailabilitySessionService;
 
 	constructor(providerContext: ProviderControlPlaneContext) {
 		this.providerContext = providerContext as unknown as ProviderServiceContext;
 		this.assignmentRepository = new ProviderAssignmentRepository(this.providerContext);
-		this.allocationService = new CapacityAllocationService(this.providerContext);
 		this.agentClassService = new ProjectAgentClassService(this.providerContext);
 		this.availabilityService = new AvailabilitySessionService(this.providerContext);
 	}
@@ -73,33 +70,6 @@ export class ProviderControlPlane {
 
 	async listCapacityGrantsPage(teamId: string, filters: Parameters<CapacityGrantService['listPage']>[1] = {}) {
 		return new CapacityGrantService(this.providerContext).listPage(teamId, filters);
-	}
-
-	async createCapacityAllocationSet(teamId: string, input: JsonRecord = {}) {
-		const idempotencyKey = typeof input.idempotencyKey === 'string' ? input.idempotencyKey.trim() : '';
-		if (!idempotencyKey) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
-		const { idempotencyKey: _idempotencyKey, ...policy } = input;
-		return this.allocationService.create(teamId, policy, typeof input.createdById === 'string' ? input.createdById : null, idempotencyKey);
-	}
-
-	async listCapacityAllocationSetsPage(teamId: string, { limit, cursor }: Partial<Parameters<CapacityAllocationService['listPage']>[1]> = {}) {
-		return this.allocationService.listPage(teamId, { limit, cursor });
-	}
-
-	nextCapacityAllocationVersion(teamId: string) {
-		return this.allocationService.nextVersion(teamId);
-	}
-
-	getCapacityAllocationSet(teamId: string, allocationSetId: string) {
-		return this.allocationService.get(teamId, allocationSetId);
-	}
-
-	getActiveCapacityAllocationSet(teamId: string) {
-		return this.allocationService.getActive(teamId);
-	}
-
-	activateCapacityAllocationSet(teamId: string, allocationSetId: string, idempotencyKey: string) {
-		return this.allocationService.activate(teamId, allocationSetId, idempotencyKey);
 	}
 
 	listProjectAgentClassesPage(projectId: string, filters: Partial<Parameters<ProjectAgentClassService['listPage']>[1]> = {}) {

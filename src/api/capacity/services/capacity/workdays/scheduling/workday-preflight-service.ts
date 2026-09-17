@@ -14,6 +14,7 @@ import type { ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { canonicalJson,sha256 } from '../../../../security.ts';
 import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
+import { readTeamWorkdayProfile } from '../../../../../control-plane/repositories/capacity/workdays/profile-service.ts';
 
 type JsonRecord = Record<string,unknown>;
 
@@ -43,7 +44,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	if(forbiddenConstraints.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday constraints contain retired or unsupported fields.',forbiddenConstraints.map((path)=>({code:'field_forbidden',path:`operatorConstraints.${path}`})));
 	const startsAt=text(input.startsAt)||new Date().toISOString();
 	const intent:WorkdayIntent={
-		schemaVersion:'treeseed.workday-intent/v1', teamId, profileId:text(input.profileId), projects,
+		schemaVersion:'treeseed.workday-intent/v1', teamId, profileId:text(input.profileId)||'default', projects,
 		startsAt,
 		...(input.endsAt!==undefined?{endsAt:text(input.endsAt)}:{}),
 		...(input.durationSeconds!==undefined?{durationSeconds:Number(input.durationSeconds)}:{}),
@@ -79,17 +80,20 @@ export class WorkdayPreflightService {
 
 	private async compile(teamId:string,intent:WorkdayIntent,requestedById:string|null,id:string):Promise<StoredPreflight> {
 		await this.store.ensureInitialized();
+		const profile = await readTeamWorkdayProfile(this.store, teamId);
+		if (intent.profileId !== profile.id) throw new CapacityGovernanceError('workday_profile_not_found', 'Select the team default workday policy.', 404);
 		const providerId=await this.providerId(teamId,intent);
 		const startsAt=intent.startsAt;
-		const endsAt=intent.endsAt??new Date(Date.parse(startsAt)+(intent.durationSeconds??0)*1000).toISOString();
+		const endsAt=intent.endsAt??new Date(Date.parse(startsAt)+(intent.durationSeconds??profile.policy.durationSeconds)*1000).toISOString();
 		const durationSeconds=Math.floor((Date.parse(endsAt)-Date.parse(startsAt))/1000);
-		const maxConcurrency=integer(intent.operatorConstraints?.maxConcurrency,1);
+		const maxConcurrency=integer(intent.operatorConstraints?.maxConcurrency,profile.policy.maximumConcurrency);
 		const runInput:JsonRecord={
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
 			executionMode:'simulation',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
-			parameters:{ ...intent.allocation, profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
-				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maxActiveAssignments:maxConcurrency,
+			parameters:{ ...profile.policy, ...intent.allocation, policyId:profile.id, policyRevision:profile.revision,
+				profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
+				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maximumConcurrency:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),
 				...(intent.proposalIds?.length?{proposalIds:intent.proposalIds}:{}),
 				...(intent.decisionIds?.length?{decisionIds:intent.decisionIds}:{}),
@@ -125,7 +129,7 @@ export class WorkdayPreflightService {
 		});
 		const classAccounting=[...new Set(selectedDemands.map((entry)=>entry.classSlug))].sort().map((classSlug)=>({classSlug,
 			allocatedSeconds:selectedDemands.filter((entry)=>entry.classSlug===classSlug).reduce((sum,entry)=>sum+entry.requestedSeconds,0),
-			borrowedSeconds:0,lentSeconds:0,idleSeconds:0,reservedSeconds:0,activeSeconds:0,releasedSeconds:0,overrunSeconds:0}));
+			idleSeconds:0,reservedSeconds:0,activeSeconds:0,releasedSeconds:0,overrunSeconds:0}));
 		const appliedPlan=record(projection.appliedPlan);
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
@@ -135,8 +139,8 @@ export class WorkdayPreflightService {
 			reservationDigest:digest([]),
 		};
 		const base={ schemaVersion:'treeseed.workday-preflight/v1' as const,id,teamId,intentDigest:digest(intent),profileId:intent.profileId,
-			profileVersion:`revision-${profileGeneration}`,...state,selectedDemands,classAccounting,borrowing:[],startsAt,endsAt,
-			maxConcurrency,reserveSeconds:0,expiresAt:new Date(Date.now()+5*60_000).toISOString() };
+			profileVersion:`revision-${profileGeneration}`,...state,selectedDemands,classAccounting,startsAt,endsAt,
+			maxConcurrency,expiresAt:new Date(Date.now()+5*60_000).toISOString() };
 		const receipt:WorkdayPreflightReceipt={...base,preflightDigest:digest(base)};
 		const diagnostics=validateWorkdayPreflight(receipt);
 		if(diagnostics.length) diagnosticsError('workday_preflight_invalid','API-derived workday preflight is invalid.',diagnostics);
