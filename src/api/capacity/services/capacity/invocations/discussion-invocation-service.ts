@@ -2,6 +2,7 @@ import { createHash,randomUUID } from 'node:crypto';
 import { evaluateMinimumAssignmentDuration } from '../../../policy/timing/assignment-duration.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
+import { decodeWorkdayAgentProfileSnapshot } from '../workdays/policy/workday-agent-profile-policy.ts';
 
 type Row = Record<string, unknown>;
 
@@ -147,10 +148,10 @@ export async function resolveDiscussionInvocationAgents(store:Pick<DiscussionInv
 	return [text(assignment.agent_id)];
 }
 
-function frozenTopologyContainsAgent(parameters: Row, projectId: string, agentSlug: string): boolean {
-	const topology = record(record(parameters.atlasTopologyByProjectId)[projectId]);
-	const nodes = Array.isArray(topology.nodes) ? topology.nodes.map(record) : [];
-	return nodes.some((node) => node.kind === 'agent' && [node.id, node.slug, node.agentId].some((value) => text(value) === agentSlug));
+function frozenProfilesContainChatAgent(parameters: Row, projectId: string, agentSlug: string): boolean {
+	const snapshot = decodeWorkdayAgentProfileSnapshot(record(parameters.agentProfilesByProjectId)[projectId], projectId);
+	return snapshot.agents.some(({ definition, activities }) => activities.includes('chat')
+		&& [definition.id, definition.id.split('/').at(-1)].includes(agentSlug));
 }
 
 async function assertExactParent(store: DiscussionInvocationStore, input: DiscussionInvocationInput) {
@@ -333,8 +334,8 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 	let availableSlots = supply ? await availableCommunicationSlots(store, input.teamId, supply) : 0;
 	const results = [];
 	for (const agentSlug of input.agentSlugs) {
-		if (parent && !frozenTopologyContainsAgent(parent.parameters, input.projectId, agentSlug)) {
-			throw new CapacityGovernanceError('discussion_parent_agent_not_frozen', `Agent ${agentSlug} is not in the parent workday's frozen topology.`, 409, { agentSlug, workdayId: parent.id });
+		if (parent && !frozenProfilesContainChatAgent(parent.parameters, input.projectId, agentSlug)) {
+			throw new CapacityGovernanceError('discussion_parent_agent_not_frozen', `Agent ${agentSlug} has no selected chat activity in the parent workday's frozen profiles.`, 409, { agentSlug, workdayId: parent.id });
 		}
 		const invocation = await persistInvocation(store, input, agentSlug, parent);
 		if (invocation.executionId || invocation.coalesced || !['queued', 'blocked'].includes(invocation.status)) { results.push(invocation); continue; }
