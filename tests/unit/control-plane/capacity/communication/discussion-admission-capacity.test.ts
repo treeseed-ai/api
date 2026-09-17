@@ -51,6 +51,10 @@ describe('discussion invocation capacity admission', () => {
 		});
 
 		expect(createdRuns).toHaveLength(1);
+		// Root lanes are shared by capability-specific adapters. Their legacy
+		// materialized owner must not veto the current canonical availability report.
+		const supplyQuery = store.all.mock.calls.find(([query]) => query.includes('FROM capacity_provider_team_memberships'))?.[0];
+		expect(supplyQuery).not.toContain('capacity_provider_lanes');
 		expect(result.map((item) => ({ status: item.status, blocker: item.blocker ?? null }))).toEqual([
 			{ status: 'admitted', blocker: null },
 			{ status: 'queued', blocker: 'communication_capacity_queued' },

@@ -192,8 +192,6 @@ async function communicationSupply(store: DiscussionInvocationStore, teamId: str
 		`SELECT membership.id AS membership_id, membership.capacity_provider_id, execution.id AS execution_provider_id
 		 FROM capacity_provider_team_memberships membership
 		 JOIN capacity_execution_providers execution ON execution.capacity_provider_id = membership.capacity_provider_id
-		 JOIN capacity_provider_lanes communication ON communication.capacity_provider_id = membership.capacity_provider_id
-		   AND communication.execution_provider_id = execution.id AND communication.status = 'active' AND communication.purpose = 'communication'
 		 WHERE membership.team_id = ? AND membership.status = 'approved' AND execution.status = 'active'
 		 ORDER BY membership.approved_at ASC, execution.id ASC`,
 		[teamId],

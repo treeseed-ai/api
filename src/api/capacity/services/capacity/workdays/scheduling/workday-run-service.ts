@@ -84,16 +84,7 @@ export class CapacityWorkdayRunService {
 
 	async create(teamId: string, input: JsonRecord): Promise<CapacityWorkdayRunRecord> {
 		const now = new Date().toISOString(); const candidate = compileCapacityWorkdayRunRecord(teamId, input, { now }); const { id,status } = candidate;
-		const replacement = status === 'running' && candidate.environment === 'local'
-			? await this.writes.replaceLocal(candidate)
-			: { run: await this.writes.create(candidate), supersededRunIds: [] };
-		for (const runId of replacement.supersededRunIds) {
-			await this.store.closeCapacityWorkdayAdmission(teamId, runId);
-			const staleRun = await this.runs.get(teamId, runId);
-			await this.store.terminalizeCapacityWorkdayAssignments(teamId, runId, { now, preserveActiveLeasesUntil: settlementGraceUntil(staleRun?.parameters ?? {}, now), settlementKeyPrefix: 'workday-supersede', source: 'workday_supersede_assignment_close', code: 'superseded_by_new_local_workday', reason: 'Closed stale workday assignment because a newer local workday superseded the run.', demandStatus:'superseded', metadata: { supersededByRunId: id } });
-			await this.store.terminalizeCapacityWorkdayEnvelopes(teamId, runId, 'failed');
-		}
-		const run = replacement.run;
+		const run = await this.writes.create(candidate);
 		if (status === 'running') {
 			try { await this.store.scheduleCapacityWorkdayRun(run); }
 			catch (error) { await recordCapacityWorkdayScheduleFailure(this.store, run, error, new Date().toISOString()); throw error; }
