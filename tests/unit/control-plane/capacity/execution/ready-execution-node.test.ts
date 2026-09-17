@@ -159,6 +159,27 @@ describe('direct ready-node admission input', () => {
 		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
 	});
 
+	it.each(['book', 'knowledge'])('loads the exact %s candidate using its producing assignment grant', async (model) => {
+		const target = { store: 'treedx', model, id: 'actor-output', repository: 'repository',
+			commit: 'e'.repeat(40), path: `${model}s/actor-output.mdx` };
+		const actorResult = { ...result, references: [{ kind: 'treedx', projectId,
+			repository: target.repository, commit: 'd'.repeat(40), path: target.path }] };
+		const reviewPermissions = { content: { read: ['proposal', 'decision', model], write: ['decision'] }, tools: ['source.read'] };
+		const reviewer = { ...definition, id: 'agent:reviewer', agentClass: 'reviewer',
+			activityProfiles: { reviewing: { handler: 'reviewer', permissions: reviewPermissions,
+				prompt: { system: 'Review the exact immutable actor output.' } } } };
+		const node = { ...nodeRow(), kind: 'reviewing', pair_role: 'reviewer', agent_class: 'reviewer',
+			workspace: 'treedx', requested_permissions_json: reviewPermissions };
+		const createStore = (grants: unknown[]) => ({ ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([node])
+			.mockResolvedValueOnce([{ id: 'class-reviewer', handler_refs_json: { agents: [reviewer] } }])
+			.mockResolvedValueOnce([{ assignment_result_json: actorResult, assignment_attempt_json: { grant: { contentWrite: grants } } }]) });
+		const [candidate] = await listReadyExecutionNodes(createStore([target]), run as never, project as never, async () => contextRefs);
+		expect(candidate.contextRefs).toContainEqual({ ...target, commit: 'd'.repeat(40) });
+		const [denied] = await listReadyExecutionNodes(createStore([{ ...target, path: 'other.mdx' }]), run as never, project as never, async () => contextRefs);
+		expect(denied.contextRefs).not.toContainEqual(expect.objectContaining({ model, commit: 'd'.repeat(40) }));
+	});
+
 	it('uses an exact resolved commit when the configured content ref is a branch', async () => {
 		const store = { ...teamContextStore,
 			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'team-repository',
