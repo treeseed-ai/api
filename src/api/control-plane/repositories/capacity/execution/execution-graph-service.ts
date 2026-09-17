@@ -231,13 +231,21 @@ function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
 export async function persistExecutionGraph(store: any, graph: TeamGraph, current: TeamGraph, revisionRecord: GraphRevision) {
 	const now = revisionRecord.createdAt;
 	const operations: Array<{ query: string; params: unknown[] }> = [{
+		query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId],
+	}, {
 		query: `INSERT INTO execution_graph_revisions
 			(team_id,revision,rule_revision,changed_source_refs_json,graph_digest,changes_json,created_at)
 			SELECT ?,?,?,?,?,?,? WHERE (SELECT COALESCE(MAX(revision),0) FROM execution_graph_revisions WHERE team_id=?)=?
+			AND NOT EXISTS (
+				SELECT 1 FROM jsonb_to_recordset(?::jsonb) AS expected(id text,node_revision integer,status text)
+				LEFT JOIN execution_nodes actual ON actual.id=expected.id AND actual.team_id=?
+				WHERE actual.id IS NULL OR actual.node_revision<>expected.node_revision OR actual.status<>expected.status
+			)
 			ON CONFLICT (team_id,revision) DO NOTHING`,
 		params: [revisionRecord.teamId,revisionRecord.revision,revisionRecord.ruleRevision,
 			JSON.stringify(revisionRecord.changedSourceRefs),revisionRecord.graphDigest,
-			JSON.stringify(revisionRecord.changes),revisionRecord.createdAt,revisionRecord.teamId,current.revision],
+			JSON.stringify(revisionRecord.changes),revisionRecord.createdAt,revisionRecord.teamId,current.revision,
+			JSON.stringify(current.nodes.map(node => ({ id: node.id, node_revision: node.nodeRevision, status: node.status }))),graph.teamId],
 	}];
 	const revisionGuard = `EXISTS (SELECT 1 FROM execution_graph_revisions
 		WHERE team_id=? AND revision=? AND created_at=?)`;

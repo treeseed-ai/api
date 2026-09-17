@@ -16,6 +16,22 @@ const definition = (agentClass: string, dependsOn: string[] = []) => ({
 });
 
 describe('workday living-graph projection', () => {
+	it('keeps policy authority stable across operational accounting and repeated rounds', () => {
+		const architect = definition('architect');
+		const plan = compileWorkday({ id: 'stable', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation', agentIds: ['sdk/sdk/architect:planning'], startsAt: '2026-09-16T12:00:00Z',
+			policy: { durationSeconds: 1800, maximumConcurrency: 1, communicationConcurrency: 1 } });
+		const project = (appliedPlan: typeof plan) => projectActiveWorkdays({ teamId: 'team', revision: 1,
+			profiles: { 'sdk:architect': architect }, sources: [{ id: plan.id, teamId: 'team',
+				parameters: { appliedPlan, scheduledProjectIds: ['sdk'] } }] });
+		const original = project(plan);
+		const advanced = project({ ...plan, state: 'active', activatedAt: '2026-09-16T12:00:01Z',
+			admittedSecondsByProject: { sdk: 180 }, admittedSecondsByAgentClass: { 'sdk:architect': 180 },
+			planningRounds: [...plan.planningRounds, { round: 2, state: 'pending', assignmentIds: [] }] });
+		expect(advanced.changedSourceRefs).toEqual(original.changedSourceRefs);
+		expect(project({ ...plan, policySnapshot: { ...plan.policySnapshot, allocationWeight: 2 } }).changedSourceRefs)
+			.not.toEqual(original.changedSourceRefs);
+	});
 	it('automatically admits only proposal work owners and Reviewer to estimating; autonomous planning remains valid', () => {
 		const classes = ['engineer', 'reviewer', 'reporter'];
 		const agents = classes.map(agentClass => {

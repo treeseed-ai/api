@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import pg from 'pg';
+import { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
 import type { ExecutionNode, GraphRevision } from '@treeseed/sdk/agent-capacity';
 import {
 	applyOperationalState,
@@ -143,10 +146,11 @@ describe('normalized living execution graph persistence', () => {
 		};
 		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
 		expect(operations.some((operation) => operation.query.includes('estimate_json=excluded.estimate_json'))).toBe(true);
-		expect(operations[0]?.query).toContain('COALESCE(MAX(revision),0)');
-		expect(operations[0]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
-		expect(operations[0]?.params.at(-1)).toBe(1);
-		expect(operations.slice(1).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
+		expect(operations[0]?.query).toContain('FOR UPDATE');
+		expect(operations[1]?.query).toContain('COALESCE(MAX(revision),0)');
+		expect(operations[1]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
+		expect(operations[1]?.params[8]).toBe(1);
+		expect(operations.slice(2).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
 		expect(operations.some((operation) => /graph_events|reconciliation_receipts/u.test(operation.query))).toBe(false);
 	});
 
@@ -166,4 +170,44 @@ describe('normalized living execution graph persistence', () => {
 			id: 'node', status: 'running', sourceRef,
 		});
 	});
+});
+
+describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('graph operational-state admission fence in PostgreSQL', () => {
+	it('rejects stale projections after admission and completion without creating a revision', async () => {
+		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
+		const admin = new pg.Pool({ connectionString: connection.href });
+		const name = `treeseed_graph_test_${randomUUID().replaceAll('-', '')}`;
+		await admin.query(`CREATE DATABASE "${name}"`);
+		connection.pathname = `/${name}`;
+		const database = createControlPlanePostgresDatabase(connection.href, { migrationMode: 'apply' });
+		try {
+			await database.migrate();
+			const now = revision(1, '').createdAt;
+			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
+			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
+			const store = {
+				batch: (operations: Array<{ query: string; params: unknown[] }>) => database.batch(operations),
+				first: (sql: string, params: unknown[]) => database.prepare(sql).bind(...params).first(),
+			};
+			const current = graph(1, [node('ready')]);
+			await persistExecutionGraph(store, current, graph(0), revision(1, current.digest));
+			const stale = graph(2, [node('ready')]);
+			for (const status of ['assigned', 'completed'] as const) {
+				await database.pool.query('UPDATE execution_nodes SET status=$1 WHERE id=$2', [status, 'node']);
+				await expect(persistExecutionGraph(store, stale, current, revision(2, stale.digest)))
+					.rejects.toMatchObject({ code: 'execution_graph_revision_conflict' });
+				expect((await database.pool.query('SELECT status FROM execution_nodes WHERE id=$1', ['node'])).rows[0].status).toBe(status);
+				expect((await database.pool.query('SELECT max(revision)::int AS revision FROM execution_graph_revisions')).rows[0].revision).toBe(1);
+			}
+			const refreshed = graph(1, [node('completed')]);
+			const next = applyOperationalState(refreshed, stale, 2);
+			await persistExecutionGraph(store, next, refreshed, revision(2, next.digest));
+			expect((await database.pool.query('SELECT status FROM execution_nodes WHERE id=$1', ['node'])).rows[0].status).toBe('completed');
+		} finally {
+			await database.pool.end();
+			await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);
+			await admin.end();
+		}
+	}, 30_000);
 });
