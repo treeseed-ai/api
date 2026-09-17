@@ -75,6 +75,9 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 	if (run.executionKind === 'conversation') {
 		return { sql: `node.kind='communication' AND node.workday_id=?`, parameters: [run.id] };
 	}
+	if (record(run.parameters.appliedPlan).state === 'closing') {
+		return { sql: `node.kind='reporting' AND node.workday_id=?`, parameters: [run.id] };
+	}
 	if (run.parameters.planningOnly === true) {
 		return {
 			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')`,

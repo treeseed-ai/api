@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { executionNodeRunScope } from '../../../../../../src/api/capacity/services/build/ready-execution-node.ts';
 
 describe('living execution run scope', () => {
+	it('loads only its Reporter during closing, before resolving any other node context', () => {
+		const workday = { id: 'workday-1', executionKind: 'workday', parameters: {
+			appliedPlan: { state: 'closing' }, planningOnly: true, proposalIds: ['proposal-1'],
+		} } as const;
+		expect(executionNodeRunScope(workday as never)).toEqual({
+			sql: `node.kind='reporting' AND node.workday_id=?`, parameters: ['workday-1'],
+		});
+	});
 	it('keeps communication nodes on their exact hidden conversation run', () => {
 		const conversation = { id: 'conversation-1', executionKind: 'conversation' } as const;
 		expect(executionNodeRunScope(conversation as never)).toEqual({
