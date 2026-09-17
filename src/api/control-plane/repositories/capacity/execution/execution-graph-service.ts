@@ -314,8 +314,9 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const proposalProjection = sources.length ? projectTeamExecutionGraph({ teamId, revision, sources, profiles }) : null;
 	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
+	const workdayNodeIds = new Set(workdayProjection.nodes.map((node) => node.id));
 	const retainedProposalNodes = selectedProjectId
-		? current.nodes.filter((node) => node.sourceRef.model === 'proposal' && node.projectId !== selectedProjectId)
+		? current.nodes.filter((node) => node.sourceRef.model === 'proposal' && node.projectId !== selectedProjectId && !workdayNodeIds.has(node.id))
 		: [];
 	const retainedProposalIds = new Set(retainedProposalNodes.map((node) => node.id));
 	const retainedProposalEdges = selectedProjectId

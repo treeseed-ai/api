@@ -87,11 +87,20 @@ export class WorkdayPreflightService {
 		const endsAt=intent.endsAt??new Date(Date.parse(startsAt)+(intent.durationSeconds??profile.policy.durationSeconds)*1000).toISOString();
 		const durationSeconds=Math.floor((Date.parse(endsAt)-Date.parse(startsAt))/1000);
 		const maxConcurrency=integer(intent.operatorConstraints?.maxConcurrency,profile.policy.maximumConcurrency);
+		const policy = { ...profile.policy };
+		if (intent.projects !== 'all' && (Object.keys(policy.projectPercentages).length || Object.keys(policy.agentClassPercentages).length)) {
+			const selected = new Set(intent.projects);
+			const projects = await this.store.all('SELECT id,slug FROM projects WHERE team_id=?', [teamId]);
+			const identities = new Set(projects.filter(row => selected.has(text(row.id)) || selected.has(text(row.slug)))
+				.flatMap(row => [text(row.id), text(row.slug)]));
+			policy.projectPercentages = Object.fromEntries(Object.entries(policy.projectPercentages).filter(([key]) => identities.has(key)));
+			policy.agentClassPercentages = Object.fromEntries(Object.entries(policy.agentClassPercentages).filter(([key]) => identities.has(key)));
+		}
 		const runInput:JsonRecord={
 			id:`workday-${id}`,capacityProviderId:providerId,status:'running',startedAt:startsAt,requestedById,
 			executionMode:'simulation',executionKind:'workday',triggerKind:'manual',
 			environment:'local',scenarioId:`profile:${intent.profileId}`,
-			parameters:{ ...profile.policy, ...intent.allocation, policyId:profile.id, policyRevision:profile.revision,
+			parameters:{ ...policy, ...intent.allocation, policyId:profile.id, policyRevision:profile.revision,
 				profileId:intent.profileId,projectSlugs:intent.projects==='all'?[]:intent.projects,
 				projects:intent.projects==='all'?[]:intent.projects,durationSeconds,maximumConcurrency:maxConcurrency,
 				...(intent.agentSelection?{agentSelection:intent.agentSelection}:{}),

@@ -19,7 +19,7 @@ function fixture() {
 	let stored: any; let replay: any;
 	const store = {
 		ensureInitialized: vi.fn(async () => {}),
-		all: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ capacity_provider_id: 'provider' }] : sql.includes('project_agent_classes') ? [{ id: 'class', slug: 'assurance' }] : []),
+		all: vi.fn(async (sql: string): Promise<Record<string, unknown>[]> => sql.includes('capacity_provider_team_memberships') ? [{ capacity_provider_id: 'provider' }] : sql.includes('project_agent_classes') ? [{ id: 'class', slug: 'assurance' }] : []),
 		first: vi.fn(async (sql: string) => sql.includes('FROM teams') ? { metadata_json: '{}' } : sql.includes("operation='workday.start'") ? replay : sql.includes("resource_type='workday_preflight'") ? { response_json: JSON.stringify(stored) } : null),
 		run: vi.fn(async (_sql: string, args: unknown[]) => {
 			if (args[2] === 'workday.preflight') stored = JSON.parse(String(args[7]));
@@ -32,6 +32,22 @@ function fixture() {
 }
 
 describe('public workday selection custody', () => {
+	it('projects inherited team targets onto selected projects without filtering explicit overrides', async () => {
+		const f = fixture();
+		f.store.first.mockImplementation(async (sql: string) => sql.includes('FROM teams') ? { metadata_json: JSON.stringify({ workdayProfile: {
+			revision: 3, policy: { durationSeconds: 600, maximumConcurrency: 1, communicationConcurrency: 1,
+				planningPercent: 20, allocationWeight: 1, planningTurnMaximumSeconds: 180,
+				projectPercentages: { 'project-sdk': 75, api: 25 }, agentClassPercentages: { sdk: { reviewer: 100 }, api: { engineer: 100 } } },
+		} }) } : null);
+		f.store.all.mockImplementation(async (sql: string) => sql.includes('FROM projects')
+			? [{ id: 'project-sdk', slug: 'sdk' }, { id: 'project-api', slug: 'api' }]
+			: sql.includes('capacity_provider_team_memberships') ? [{ capacity_provider_id: 'provider' }] : []);
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');
+		expect(f.stored().runInput.parameters).toMatchObject({ policyRevision: 3,
+			projectPercentages: { 'project-sdk': 75 }, agentClassPercentages: { sdk: { reviewer: 100 } } });
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), allocation: { projectPercentages: { other: 100 } } }), 'actor');
+		expect(f.stored().runInput.parameters.projectPercentages).toEqual({ other: 100 });
+	});
 	it('snapshots the team policy and resolves omitted duration without operator task budgets', async () => {
 		const f = fixture();
 		const { durationSeconds: _duration, profileId: _profile, ...value } = input();
