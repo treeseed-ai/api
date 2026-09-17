@@ -102,9 +102,6 @@ export async function reconcileTerminalConversationInvocations(store: Discussion
 			WHERE team_id=? AND invocation_id=? ORDER BY updated_at DESC LIMIT 1`, [teamId, invocation.id]);
 		if (!assignment) {
 			const executionId = text(invocation.execution_id);
-			const readyNode = executionId ? await store.first(`SELECT id FROM execution_nodes
-				WHERE team_id=? AND workday_id=? AND kind='communication' AND status IN ('ready','assigned','running') LIMIT 1`, [teamId, executionId]) : null;
-			if (readyNode) continue;
 			const execution = executionId ? await store.first(`SELECT status FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1`, [executionId, teamId]) : null;
 			if (!execution || !['completed','failed','cancelled','degraded'].includes(text(execution.status))) continue;
 			const now = new Date().toISOString();
@@ -381,7 +378,11 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 					throw error;
 				}
 			}
-			await store.run(`UPDATE agent_invocation_requests SET status = 'admitted', execution_id = ?, blocking_state_json='{}', updated_at=? WHERE id = ? AND status IN ('queued','blocked','admitted') AND execution_id=?`, [run.id, new Date().toISOString(), invocation.id, run.id]);
+			await store.run(`UPDATE agent_invocation_requests SET status = 'admitted', execution_id = ?, blocking_state_json='{}', updated_at=? WHERE id = ? AND team_id=? AND status IN ('queued','blocked','admitted') AND (execution_id IS NULL OR execution_id=?)`, [run.id, new Date().toISOString(), invocation.id, input.teamId, run.id]);
+			const admitted = await store.first('SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1', [invocation.id, input.teamId]);
+			if (text(admitted?.status) !== 'admitted' || text(admitted?.execution_id) !== run.id) {
+				results.push({ ...invocation, status: text(admitted?.status) || 'blocked', executionId: text(admitted?.execution_id) || null }); continue;
+			}
 			if (!parent) availableSlots -= 1;
 			results.push({ ...invocation, status: 'admitted', executionId: run.id });
 		} catch (error) {
@@ -404,6 +405,15 @@ export async function reconcileBlockedDiscussionInvocations(store:DiscussionInvo
 	for(const row of rows){
 		const metadata=record(row.metadata_json);const refs=values(row.content_refs_json);
 		const invocationId=text(row.id);
+		if (text(row.parent_workday_id)) {
+			const parent = await store.first('SELECT status,parameters_json FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1', [row.parent_workday_id, teamId]);
+			if (!parent || text(parent.status) !== 'running') {
+				await store.run(`UPDATE agent_invocation_requests SET status='failed',completed_at=COALESCE(completed_at,?),updated_at=?,blocking_state_json=? WHERE id=? AND team_id=? AND status IN ('queued','blocked','admitted')`,
+					[now.toISOString(), now.toISOString(), JSON.stringify({ code: 'parent_workday_terminal' }), invocationId, teamId]);
+				continue;
+			}
+			if (!frozenProfilesContainChatAgent(record(parent.parameters_json), text(row.project_id), text(row.agent_id))) continue;
+		}
 		if(text(row.status)==='admitted'){
 			const executionId=text(row.execution_id);const execution=executionId?await store.first(`SELECT status FROM capacity_workday_runs WHERE id=? AND team_id=? LIMIT 1`,[executionId,teamId]):null;
 			const useful=await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id=? AND team_id=? AND status IN ('pending','leased','running') LIMIT 1`,[invocationId,teamId])
@@ -414,11 +424,11 @@ export async function reconcileBlockedDiscussionInvocations(store:DiscussionInvo
 					const revived=await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id=? AND team_id=? AND status IN ('pending','leased','running') LIMIT 1`,[invocationId,teamId])
 						??await store.first(`SELECT id FROM execution_nodes WHERE team_id=? AND workday_id=? AND kind='communication' AND status IN ('ready','assigned','running') LIMIT 1`,[teamId,executionId]);
 					if(revived){await store.run(`UPDATE agent_invocation_requests SET blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=? AND status='admitted' AND execution_id=?`,[now.toISOString(),invocationId,teamId,executionId]);admitted+=1;availableSlots-=1;continue;}}
-				catch(error){await store.updateCapacityWorkdayRun(teamId,executionId,{status:'failed',error:{code:'conversation_initial_tick_failed',message:error instanceof Error?error.message:String(error)}}).catch(()=>null);}
+				catch(error){if(text(row.execution_kind)==='conversation')await store.updateCapacityWorkdayRun(teamId,executionId,{status:'failed',error:{code:'conversation_initial_tick_failed',message:error instanceof Error?error.message:String(error)}}).catch(()=>null);}
 			}
 			await store.run(`UPDATE agent_invocation_requests SET status='blocked',execution_id=NULL,blocking_state_json=?,updated_at=? WHERE id=? AND team_id=? AND status='admitted' AND assignment_id IS NULL AND execution_id=?`,[JSON.stringify({code:'communication_admission_recovered',priorExecutionId:executionId||null}),now.toISOString(),invocationId,teamId,executionId]);
 		}
-		if(availableSlots<=0){await store.run(`UPDATE agent_invocation_requests SET blocking_state_json=? WHERE id=? AND team_id=? AND status IN ('queued','blocked')`,[JSON.stringify({code:'communication_capacity_queued'}),invocationId,teamId]);continue;}
+		if(availableSlots<=0&&!text(row.parent_workday_id)){await store.run(`UPDATE agent_invocation_requests SET blocking_state_json=? WHERE id=? AND team_id=? AND status IN ('queued','blocked')`,[JSON.stringify({code:'communication_capacity_queued'}),invocationId,teamId]);continue;}
 		const serialKey=`${text(row.project_id)}:${text(row.agent_id)}:${text(row.subject_digest)}`;
 		const active=selectedSubjects.has(serialKey)||await store.first(`SELECT id FROM agent_invocation_requests WHERE project_id=? AND agent_id=? AND subject_digest=? AND id<>? AND status IN ('admitted','running') LIMIT 1`,[row.project_id,row.agent_id,row.subject_digest,invocationId]);
 		if(active){await store.run(`UPDATE agent_invocation_requests SET blocking_state_json=? WHERE id=?`,[JSON.stringify({code:'discussion_agent_serialized'}),invocationId]);continue;}selectedSubjects.add(serialKey);
@@ -432,7 +442,9 @@ export async function reconcileBlockedDiscussionInvocations(store:DiscussionInvo
 			}
 			const run=identity.existing?{id:identity.id}:await store.createCapacityWorkdayRun(teamId,{id:identity.id,capacityProviderId:text(supply.capacity_provider_id),scenarioId:`conversation:${text(metadata.discussionId)}:${text(row.agent_id)}`,environment:'local',executionKind:'conversation',triggerKind:text(row.trigger_kind)||'discussion',hidden:true,status:'running',startedAt:new Date().toISOString(),parameters:{durationSeconds:productiveSeconds,maxActiveAssignments:1,planningPercent:0,projectSlugs:[text(row.project_slug)],agentSelection:{agentSlugs:[text(row.agent_id)],activityTypes:['chat'],classIds:[],classSlugs:[],mode:'intersection'},discussion:{discussionId:text(metadata.discussionId),messageId:text(metadata.sourceMessageId),messagePath:text(refs[0]),commitSha:text(metadata.sourceCommit),contextRefs:refs.slice(1),invocationId,parentAssignmentId:row.parent_assignment_id??null,handoffRootId:row.handoff_root_id??null,handoffParentId:row.handoff_parent_id??null,handoffDepth:Number(row.handoff_depth??0)}}});
 			if(!identity.existing)await store.tickCapacityWorkdayRun(teamId,text(run.id),new Date().toISOString(),`discussion-invocation:${invocationId}:initial`);
-			await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=? AND status IN ('queued','blocked','admitted') AND execution_id=?`,[run.id,new Date().toISOString(),invocationId,teamId,run.id]);admitted+=1;availableSlots-=1;
+			await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json='{}',updated_at=? WHERE id=? AND team_id=? AND status IN ('queued','blocked','admitted') AND (execution_id IS NULL OR execution_id=?)`,[run.id,new Date().toISOString(),invocationId,teamId,run.id]);
+			const observed=await store.first('SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1',[invocationId,teamId]);
+			if(text(observed?.status)==='admitted'&&text(observed?.execution_id)===run.id){admitted+=1;if(!text(row.parent_workday_id))availableSlots-=1;}
 		}catch(error){
 			const claimed=await store.first(`SELECT execution_id FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1`,[invocationId,teamId]);
 			await store.run(`UPDATE agent_invocation_requests SET status='blocked',execution_id=NULL,blocking_state_json=?,updated_at=? WHERE id=? AND team_id=? AND execution_id=?`,[JSON.stringify({code:'communication_admission_blocked',message:error instanceof Error?error.message:String(error)}),new Date().toISOString(),invocationId,teamId,text(claimed?.execution_id)]);
