@@ -6,7 +6,7 @@ import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import {
 capacityWorkdayContentRoot,
-capacityWorkdayRequestedProjectSlugs,
+capacityWorkdayRequestedProjectReferences,
 resolveCapacityWorkdayProjects,
 type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
@@ -105,14 +105,14 @@ async function resolveCapacityWorkdayPreflight(
 	if (!providerId) {
 		throw new CapacityGovernanceError('capacity_workday_provider_required', 'Workday requires a capacity provider.', 400);
 	}
-	const requestedSlugs = capacityWorkdayRequestedProjectSlugs(parameters);
+	const requestedReferences = capacityWorkdayRequestedProjectReferences(parameters);
 	const startedAt = run.startedAt ?? new Date().toISOString();
 	const environment = text(run.environment, 'local');
 	const membership = await store.first(`SELECT id,team_id,capacity_provider_id,status FROM capacity_provider_team_memberships
 		WHERE team_id=? AND capacity_provider_id=? AND status='approved' ORDER BY approved_at ASC,id ASC LIMIT 1`, [run.teamId,providerId]);
 	if (!membership) throw new CapacityGovernanceError('capacity_workday_membership_not_approved',
 		'Workday requires an approved capacity-provider membership.', 409, { teamId: run.teamId, providerId });
-	const projects = resolveCapacityWorkdayProjects(requestedSlugs, await store.listTeamProjects(run.teamId));
+	const projects = resolveCapacityWorkdayProjects(requestedReferences, await store.listTeamProjects(run.teamId));
 	const contexts = new Map<string, { contentRoot: string; repositoryId: string; immutableRef: string }>();
 	const proposalContexts = new Map<string, Record<string, unknown>>();
 	const selectedProposalIds = Array.isArray(parameters.proposalIds) ? parameters.proposalIds.map(text).filter(Boolean) : [];
