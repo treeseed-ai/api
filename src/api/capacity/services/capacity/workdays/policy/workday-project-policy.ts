@@ -21,34 +21,32 @@ export const CANONICAL_WORKDAY_PROJECT_SLUGS = [
 	'admin', 'agent', 'api', 'cli', 'core', 'sdk', 'ui', 'treedx',
 ] as const;
 
-export function capacityWorkdayRequestedProjectSlugs(parameters: JsonRecord = {}): string[] {
+export function capacityWorkdayRequestedProjectReferences(parameters: JsonRecord = {}): string[] {
 	const requested = parameters.projects ?? parameters.projectSlugs ?? 'all';
 	if (requested === 'all' || requested === undefined || requested === null) {
 		return [...CANONICAL_WORKDAY_PROJECT_SLUGS];
 	}
 	const values = Array.isArray(requested) ? requested : String(requested).split(',');
-	const slugs = values.map((value) => String(value).trim()).filter(Boolean).filter((slug) => slug !== 'karyon');
-	return slugs.length > 0 ? [...new Set(slugs)] : [...CANONICAL_WORKDAY_PROJECT_SLUGS];
+	const references = values.map((value) => String(value).trim()).filter(Boolean).filter((reference) => reference !== 'karyon');
+	return references.length > 0 ? [...new Set(references)] : [...CANONICAL_WORKDAY_PROJECT_SLUGS];
 }
 
 export function resolveCapacityWorkdayProjects(
-	requestedSlugs: string[],
+	requestedReferences: string[],
 	projects: WorkdayProject[],
 ): WorkdayProject[] {
-	const bySlug = new Map<string, WorkdayProject>();
+	const byReference = new Map<string, WorkdayProject>();
 	for (const project of projects) {
-		const slug = String(project.slug ?? project.id);
-		if (bySlug.has(slug)) {
-			throw new CapacityGovernanceError(
-				'capacity_workday_project_ambiguous',
-				`Capacity workday project slug ${slug} is ambiguous.`,
-				409,
-				{ slug },
-			);
+		for (const reference of new Set([project.id, project.slug].filter((value): value is string => typeof value === 'string' && value.length > 0))) {
+			const existing = byReference.get(reference);
+			if (existing && existing.id !== project.id) {
+				throw new CapacityGovernanceError('capacity_workday_project_ambiguous',
+					`Capacity workday project reference ${reference} is ambiguous.`, 409, { reference });
+			}
+			byReference.set(reference, project);
 		}
-		bySlug.set(slug, project);
 	}
-	const missing = requestedSlugs.filter((slug) => !bySlug.has(slug));
+	const missing = requestedReferences.filter((reference) => !byReference.has(reference));
 	if (missing.length > 0) {
 		throw new CapacityGovernanceError(
 			'capacity_workday_project_missing',
@@ -57,7 +55,12 @@ export function resolveCapacityWorkdayProjects(
 			{ missing },
 		);
 	}
-	return requestedSlugs.map((slug) => bySlug.get(slug)!);
+	const resolved = requestedReferences.map((reference) => byReference.get(reference)!);
+	if (new Set(resolved.map((project) => project.id)).size !== resolved.length) {
+		throw new CapacityGovernanceError('capacity_workday_project_duplicate',
+			'Capacity workday selected the same project more than once.', 422);
+	}
+	return resolved;
 }
 
 export function capacityWorkdayContentRoot(project: WorkdayProject): string {

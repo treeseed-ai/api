@@ -6,7 +6,7 @@ import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
 import { listReadyExecutionNodes } from '../../../../build/ready-execution-node.ts';
-import { capacityWorkdayRequestedProjectSlugs, resolveCapacityWorkdayProjects } from '../../../workdays/policy/workday-project-policy.ts';
+import { capacityWorkdayRequestedProjectReferences, resolveCapacityWorkdayProjects } from '../../../workdays/policy/workday-project-policy.ts';
 import { admitLivingExecutionAssignment } from '../../admission/living-execution-admission.ts';
 import { buildAssignmentAttempt } from './assignment-attempt-builder.ts';
 import type { AssignmentFunctionStore } from '../support/assignment-function-store.ts';
@@ -138,7 +138,7 @@ export async function assignNextReadyExecutionNode(
 			WHERE team_id=? AND work_day_id=? AND status IN ('pending','leased','running')`, [run.teamId,run.id]);
 		if (Number(activeRow?.active_count ?? 0) >= appliedPlan.policySnapshot.maximumConcurrency) continue;
 		const projects = resolveCapacityWorkdayProjects(
-			capacityWorkdayRequestedProjectSlugs(run.parameters),
+			capacityWorkdayRequestedProjectReferences(run.parameters),
 			await store.listTeamProjects(run.teamId),
 		);
 		const candidates = (await Promise.all(projects.map((project) => listReadyExecutionNodes(store, run, project)))).flat()
