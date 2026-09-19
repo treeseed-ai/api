@@ -73,6 +73,9 @@ describe('discussion invocation capacity admission', () => {
 		});
 
 		expect(createdRuns).toHaveLength(1);
+		expect(store.createCapacityWorkdayRun).toHaveBeenCalledWith('team', expect.objectContaining({
+			parameters: expect.objectContaining({ scheduledProjectIds: ['project'] }),
+		}));
 		// Root lanes are shared by capability-specific adapters. Their legacy
 		// materialized owner must not veto the current canonical availability report.
 		const supplyQuery = store.all.mock.calls.find(([query]) => query.includes('FROM capacity_provider_team_memberships'))?.[0];

@@ -362,7 +362,7 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 				id:runIdentity.id,
 				capacityProviderId: text(supply.capacity_provider_id), scenarioId: `conversation:${input.discussionId}:${agentSlug}`,
 				environment: 'local', executionKind: 'conversation', triggerKind: input.triggerKind ?? 'discussion', hidden: true, status: 'running', startedAt: new Date().toISOString(),
-				parameters: { durationSeconds: effectiveSeconds, maxActiveAssignments: 1, planningPercent: 0, projectSlugs: [input.projectSlug],
+				parameters: { durationSeconds: effectiveSeconds, maxActiveAssignments: 1, planningPercent: 0, projectSlugs: [input.projectSlug], scheduledProjectIds: [input.projectId],
 					providerSourceClosureDigest: supply.providerSourceClosureDigest,
 					agentSelection: { agentSlugs: [agentSlug], activityTypes: ['chat'], classIds: [], classSlugs: [], mode: 'intersection' },
 					discussion: { discussionId: input.discussionId, messageId: input.messageId, messagePath: input.messagePath, commitSha: input.messageCommit, contextRefs: input.contextRefs, invocationId: invocation.id, parentAssignmentId: invocation.parentAssignmentId ?? null, handoffRootId: invocation.handoffRootId ?? null, handoffParentId: invocation.handoffParentId ?? null, handoffDepth: invocation.handoffDepth ?? 0 },
