@@ -16,6 +16,7 @@ import { resolveProposalReviewDisposition, resolveReviewDisposition } from '../c
 import { livingExecutionLifecycleOperations } from './execution/living-execution-lifecycle.ts';
 import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
 import { projectCompletedPlanningOutputs,type AssignmentPlanningOutputStore } from '../planning/assignment-planning-output-service.ts';
+import { integrateAssignmentEstimate } from '../planning/estimates/integration.ts';
 import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
 import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
 import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
@@ -290,6 +291,7 @@ export class ProviderAssignmentLifecycleService {
 		const assignmentResult = assignment.assignmentAttempt
 			? validateAssignmentResultCompletion(assignment, terminalInput as JsonRecord)
 			: null;
+		if (assignmentResult) await integrateAssignmentEstimate(this.store, assignment, assignmentResult);
 		const reviewDisposition = assignmentResult
 			? await resolveReviewDisposition(this.store, assignment, assignmentResult)
 			: null;
