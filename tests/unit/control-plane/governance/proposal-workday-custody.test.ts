@@ -38,11 +38,33 @@ describe('workday-scoped proposal authoring', () => {
 	it('writes a simulation version from exact provenance to local workday custody without publication', async () => {
 		const { input, client, base, path } = fixture();
 		const result = await commitProposalVersionContent(input);
-		expect(client.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({ baseRef: base, branchName: 'refs/heads/workday-1', allowedPaths: [path] }));
+		const proposalBranch = `refs/heads/workday-1-proposal-${createHash('sha256').update('proposal-1').digest('hex').slice(0, 16)}`;
+		expect(client.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({ baseRef: base, branchName: proposalBranch, allowedPaths: [path] }));
 		expect(client.readRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({ ref: base }));
 		expect(result.update.contentProvenance).toMatchObject({ commitSha: 'b'.repeat(40), contentPath: path });
 		expect(recordTreeDxAuthoringState).not.toHaveBeenCalled(); expect(projectTreeDxCommitSignals).not.toHaveBeenCalled();
 		expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');
+	});
+	it('does not reuse an advanced discussion branch that lacks the proposal source', async () => {
+		const { input, client, base } = fixture();
+		client.createWorkspace.mockImplementationOnce(async request => {
+			if (request.branchName === 'refs/heads/workday-1' && request.baseRef === base) {
+				throw new Error('Workspace branch already exists at a different commit.');
+			}
+			return { workspaceId: 'workspace-1', baseCommitSha: base };
+		});
+		await expect(commitProposalVersionContent(input)).resolves.toMatchObject({ update: { contentProvenance: { commitSha: 'b'.repeat(40) } } });
+		expect(client.createWorkspace.mock.calls[0]?.[0].branchName).not.toBe('refs/heads/workday-1');
+	});
+	it('starts a later estimate version from its exact prior proposal commit on the same simulation branch', async () => {
+		const { input, client } = fixture();
+		input.proposal.metadata.contentProvenance.commitSha = 'b'.repeat(40);
+		const first = await commitProposalVersionContent(input);
+		const second = await commitProposalVersionContent(input);
+		expect(client.createWorkspace).toHaveBeenCalledTimes(2);
+		expect(client.createWorkspace.mock.calls[0]?.[0].branchName).toBe(client.createWorkspace.mock.calls[1]?.[0].branchName);
+		expect(client.createWorkspace.mock.calls[1]?.[0].baseRef).toBe('b'.repeat(40));
+		expect(first.update.contentProvenance.commitSha).toBe(second.update.contentProvenance.commitSha);
 	});
 	it.each(['missing', 'terminal', 'project', 'proposal', 'expired'])('rejects %s workday scope before issuing a workspace', async invalid => {
 		const { run, input, client } = fixture();
