@@ -180,6 +180,7 @@ export async function loadDiscussions(input: {
 
 export async function commitDiscussionMessage(input: {
 	store: any; projectId: string; teamId: string; principal: Row; body: string;
+	lookupWorkday?: (teamId: string, workdayId: string) => Promise<{ executionMode: string } | null>;
 	intent: 'discuss' | 'propose'; discussionId?: string; topic?: string; fileRefs?: unknown[]; contextRefs?: AgentAtlasContextReference[];
 	authorType?: 'user' | 'agent' | 'system'; messageId?: string;
 	createDiscussion?: boolean;
@@ -190,8 +191,8 @@ export async function commitDiscussionMessage(input: {
 	authoringRef?: string | null;
 	authoringWorkspace?: { workspaceId: string; baseCommitSha: string; baseRef: string; allowedPaths?: string[] } | null;
 }) {
-	const workday = input.parentWorkdayId
-		? await input.store.getCapacityWorkdayRun(input.teamId, input.parentWorkdayId) : null;
+	const workday = input.parentWorkdayId && input.lookupWorkday
+		? await input.lookupWorkday(input.teamId, input.parentWorkdayId) : null;
 	if (input.parentWorkdayId && !workday) throw Object.assign(new Error('The addressed workday is unavailable.'), {
 		status: 409, code: 'discussion_workday_unavailable',
 	});

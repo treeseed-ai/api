@@ -49,19 +49,24 @@ describe('Discussion message custody', () => {
 	});
 
 	it('keeps a simulation-bound user message on its workday ref without publishing or replicating it', async () => {
-		const store = { getCapacityWorkdayRun: vi.fn(async () => ({ id: 'workday-1', executionMode: 'simulation' })) };
+		const store = {};
+		const lookupWorkday = vi.fn(async () => ({ id: 'workday-1', executionMode: 'simulation' }));
 		await commitDiscussionMessage({ store, projectId: 'sdk', teamId: 'team-1', principal: { id: 'user-1' },
 			body: 'Review the SDK proposal.', intent: 'discuss', parentWorkdayId: 'workday-1',
+			lookupWorkday,
 			discussionId: 'discussion-1', messageId: 'message-1', createDiscussion: true });
+		expect(lookupWorkday).toHaveBeenCalledWith('team-1', 'workday-1');
 		expect(mocks.openWorkspace).toHaveBeenCalledWith(expect.objectContaining({ branchName: 'refs/heads/workday-1' }));
 		expect(mocks.authoring).toHaveBeenCalledWith(store, 'unpublished', expect.objectContaining({ ref: 'refs/heads/workday-1' }));
 		expect(mocks.project).not.toHaveBeenCalled();
 	});
 
 	it('preserves shared projection for an ordinary production message', async () => {
-		const store = { getCapacityWorkdayRun: vi.fn(async () => ({ id: 'workday-1', executionMode: 'production' })) };
+		const store = {};
+		const lookupWorkday = vi.fn(async () => ({ id: 'workday-1', executionMode: 'production' }));
 		await commitDiscussionMessage({ store, projectId: 'sdk', teamId: 'team-1', principal: { id: 'user-1' },
 			body: 'Review the SDK proposal.', intent: 'discuss', parentWorkdayId: 'workday-1',
+			lookupWorkday,
 			discussionId: 'discussion-1', messageId: 'message-1', createDiscussion: true });
 		expect(mocks.authoring).toHaveBeenCalledWith(store, 'integrated', expect.anything());
 		expect(mocks.project).toHaveBeenCalledOnce();

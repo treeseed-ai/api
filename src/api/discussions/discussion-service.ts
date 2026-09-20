@@ -23,6 +23,11 @@ function administrator(principal: Principal) { return principal?.roles?.some((ro
 function failure(error: unknown, status: 409 | 503, code: string): never {
 	if (error instanceof DiscussionServiceError) throw error;
 	const value = record(error);
+	const cause = record(value.cause);
+	console.error('discussion.operation.failed', {
+		code: text(value.code, code), kind: text(value.name, 'Error'), status: Number(value.status) || status,
+		causeCode: text(cause.code), causeKind: text(cause.name), causeStatus: Number(cause.status) || null,
+	});
 	throw new DiscussionServiceError(Number.isInteger(value.status) ? value.status : status, text(value.code, code),
 		'TreeDX Discussion operation failed.');
 }
@@ -168,6 +173,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 				authored = await commitDiscussionMessage({ store, projectId, teamId, principal, body: messageBody,
 					intent: body.intent === 'propose' ? 'propose' : 'discuss', discussionId, messageId,
 					parentWorkdayId,
+					lookupWorkday: (teamId, workdayId) => invocationStore.getCapacityWorkdayRun(teamId, workdayId),
 					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
 					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
 					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [],
