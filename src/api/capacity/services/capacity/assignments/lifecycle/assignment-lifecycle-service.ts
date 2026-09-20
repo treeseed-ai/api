@@ -429,7 +429,12 @@ export class ProviderAssignmentLifecycleService {
 			? { ...record(assignment.metadata), operationalState: options.status }
 			: null);
 		const metadataWrite = transitionMetadata ? ', metadata_json = ?' : '';
-		const performance = options.status === 'returned' ? input.performance ?? null : terminalPerformance(assignment, input, options.status==='completed'?'completed':'failed', now);
+		const settledUsage = assignment.reservationId && options.status !== 'returned'
+			? await this.store.first(`SELECT active_seconds, elapsed_seconds, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, actual_usd
+				FROM capacity_usage_actuals WHERE id = ? AND assignment_id = ? AND accounting_mode = 'aggregate' LIMIT 1`,
+				[`usage:${assignment.id}:${assignment.attemptCount}:aggregate`, assignment.id])
+			: null;
+		const performance = options.status === 'returned' ? input.performance ?? null : terminalPerformance(assignment, input, options.status==='completed'?'completed':'failed', now, record(settledUsage));
 		const lifecycleOutput = composeAssignmentLifecycleOutput(record(input), performance);
 		const params: unknown[] = [
 			input.runnerId ?? null,
