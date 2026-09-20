@@ -16,7 +16,6 @@ const stable = (value: unknown): string => {
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(stable(value)).digest('hex')}`;
 const edgeId = (values: unknown[]) => `edge_${createHash('sha256').update(stable(values)).digest('base64url').slice(0, 32)}`;
 
-const nodeKind = (activity: WorkdayParticipant['activity']): ExecutionNode['kind'] => activity === 'chat' ? 'communication' : activity;
 const capability = (activity: WorkdayParticipant['activity']): string => ({
 	planning: 'treeseed.coordination.planning',
 	estimating: 'treeseed.coordination.estimation',
@@ -30,6 +29,7 @@ export interface ActiveWorkdayProjectionSource {
 	teamId: string;
 	parameters: Row;
 	proposalsByProjectId?: Record<string, Row>;
+	proposalStatusesByProjectId?: Record<string, string>;
 }
 
 function sourceRef(workday: ReturnType<typeof appliedWorkdaySchema.parse>): ExactEntityReference {
@@ -79,11 +79,15 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 						`Estimate the generated review of work item ${text(item.id)} independently: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`)
 					: [`Estimate work item ${text(workItem[0]?.id)}: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`,
 						...array(workItem[0]?.acceptanceCriteria).map(text)];
+				const proposalStatus = source.proposalStatusesByProjectId?.[projectId];
 				const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: plannedId,
-					teamId: input.teamId, projectId, workdayId: workday.id, kind: nodeKind(activity), pairRole: null,
+					teamId: input.teamId, projectId, workdayId: workday.id, kind: activity, pairRole: null,
 					...(activity === 'estimating' && workItem[0] ? { workItemId: text(workItem[0].id) } : {}),
 					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
-					agentClass: definition.agentClass, status: 'blocked',
+						agentClass: definition.agentClass,
+					status: activity === 'estimating' && proposalStatus
+						&& !['draft', 'submitted', 'open'].includes(proposalStatus)
+						? 'cancelled' : 'blocked',
 					estimate: { minimumSeconds: 1, expectedSeconds: workday.policySnapshot.planningTurnMaximumSeconds,
 						maximumSeconds: workday.policySnapshot.planningTurnMaximumSeconds },
 					requiredCapabilities: [capability(activity)], requestedPermissions: profile.permissions,

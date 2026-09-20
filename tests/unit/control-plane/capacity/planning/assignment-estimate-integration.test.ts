@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeAssignmentEstimate } from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
+import { integrateAssignmentEstimate, mergeAssignmentEstimate } from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
 
 const estimate = { minimumSeconds: 100, expectedSeconds: 200, maximumSeconds: 300, rationale: 'Exact source inspection.' };
 const frozen = { id: 'proposal-1', projectId: 'project-1', status: 'draft', executionPlan: { workItems: [
@@ -55,5 +55,15 @@ describe('exact estimator result integration', () => {
 		expect(() => mergeAssignmentEstimate({ frozen, candidate: { ...reviewCandidate,
 			executionPlan: { workItems: [reviewCandidate.executionPlan.workItems[0], frozen.executionPlan.workItems[1]] } },
 			current, workItemId: null })).toThrow('each assigned work item');
+	});
+	it('rejects a racing estimator result before reading or writing a closed proposal', async () => {
+		let reads = 0;
+		const store = { getGovernanceProposal: async () => ({ id: 'proposal-1', projectId: 'project-1', teamId: 'team-1', status: 'accepted' }),
+			getProjectTreeDxLibrary: async () => { reads += 1; return null; } };
+		const assignment = { id: 'assignment-1', projectId: 'project-1', teamId: 'team-1', agentId: 'sdk/engineer',
+			assignmentAttempt: { effectiveProfile: { activity: 'estimating' }, sourceRef: { model: 'proposal', id: 'proposal-1' } } };
+		await expect(integrateAssignmentEstimate(store as never, assignment as never, { references: [] } as never))
+			.rejects.toThrow('after voting or decision');
+		expect(reads).toBe(0);
 	});
 });

@@ -90,6 +90,7 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 	return Promise.all(sources.map(async (source: { id: string; teamId: string; parameters: Row }) => {
 		if (!Object.keys(record(source.parameters.planningSourceByProjectId)).length) return source;
 		const proposalsByProjectId: Record<string, Row> = {};
+		const proposalStatusesByProjectId: Record<string, string> = {};
 		for (const [projectId, value] of Object.entries(record(source.parameters.planningSourceByProjectId))) {
 			const reference = record(value);
 			const proposal = await store.getGovernanceProposal(text(reference.id));
@@ -100,9 +101,10 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 			if (stable(exact.ref) !== stable(reference)) throw new CapacityOperationError(
 				409, 'estimating_proposal_source_moved', 'The frozen estimating proposal revision changed.');
 			proposalsByProjectId[projectId] = exact.definition;
+			proposalStatusesByProjectId[projectId] = text(proposal.status);
 		}
 		// Transient exact TreeDX reads, never another persisted plan authority.
-		return { ...source, proposalsByProjectId };
+		return { ...source, proposalsByProjectId, proposalStatusesByProjectId };
 	}));
 }
 

@@ -70,6 +70,8 @@ export async function integrateAssignmentEstimate(
 	const proposal = await store.getGovernanceProposal(attempt.sourceRef.id);
 	if (!proposal || proposal.projectId !== assignment.projectId || proposal.teamId !== assignment.teamId) throw new CapacityGovernanceError(
 		'assignment_estimate_proposal_mismatch', 'Estimating assignment proposal is outside its project and team.', 409);
+	if (!['draft', 'submitted', 'open'].includes(text(proposal.status))) throw new CapacityGovernanceError(
+		'assignment_estimate_proposal_closed', 'Estimating cannot update a proposal after voting or decision.', 409);
 	const frozen = await readExactProposal(store, proposal, attempt.sourceRef);
 	const current = await readExactProposal(store, proposal);
 	const matches = result.references.filter((reference): reference is Extract<AssignmentResult['references'][number], { kind: 'treedx' }> => reference.kind === 'treedx'
