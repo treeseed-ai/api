@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { compileWorkday, validateExecutionGraph } from '@treeseed/sdk/agent-capacity';
+import { compileWorkday, validateExecutionGraph, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { projectActiveWorkdays } from '../../../../../../src/api/capacity/policy/execution/workday-execution-projector.ts';
 import { workdayParticipants } from '../../../../../../src/api/capacity/policy/execution/workday-participants.ts';
 
-const permissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
-const definition = (agentClass: string, dependsOn: string[] = []) => ({
+const permissions: NonNullable<AgentDefinition['activityProfiles']['planning']>['permissions'] = {
+	content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'],
+};
+const definition = (agentClass: string, dependsOn: string[] = []): AgentDefinition => ({
 	schemaVersion: 'treeseed.agent/v1' as const, id: `sdk/${agentClass}`, name: agentClass, agentClass,
 	purpose: `Perform ${agentClass} work.`, responsibilities: ['Return exact results.'], capabilities: ['reasoning'],
 	context: { include: ['project-objectives'] }, activityProfiles: {
@@ -60,20 +62,28 @@ describe('workday living-graph projection', () => {
 			policy: { durationSeconds: 1800, maximumConcurrency: 1, planningTurnMaximumSeconds: 60,
 				communicationConcurrency: 1, projectPercentages: {}, agentClassPercentages: {} },
 			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating`), startsAt: '2026-09-14T12:00:00.000Z' });
-		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles,
+		const projectionInput: Parameters<typeof projectActiveWorkdays>[0] = { teamId: 'team', revision: 1, profiles,
 			sources: [{ id: 'seven-estimates', teamId: 'team', proposalsByProjectId: { sdk: { executionPlan: {
 				workItems: owners.map((agentClass) => ({ id: `${agentClass}-work`, agentClass, review: 'required', acceptanceCriteria: ['Meet the exact work-item boundary.'] })),
 			} } }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
 				planningSourceByProjectId: { sdk: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 					repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden.mdx' } },
 				agentProfilesByProjectId: { sdk: { agents: Object.values(profiles).map((agent) => ({ definition: agent, activities: ['estimating'] })) } },
-			} }] });
+			} }] };
+		const graph = projectActiveWorkdays(projectionInput);
 		expect(graph.nodes).toHaveLength(7);
 		expect(graph.edges).toHaveLength(0);
 		expect(graph.nodes.filter((node) => node.workItemId).map((node) => node.workItemId).sort())
 			.toEqual(owners.map((agentClass) => `${agentClass}-work`).sort());
 		expect(graph.nodes.find((node) => node.agentClass === 'reviewer')?.acceptanceCriteria).toHaveLength(6);
 		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
+		const accepted = projectActiveWorkdays({ ...projectionInput,
+			sources: projectionInput.sources.map((source) => ({ ...source,
+				proposalStatusesByProjectId: { sdk: 'accepted' } })) });
+		expect(accepted.nodes.filter((node) => node.kind === 'estimating'))
+			.toHaveLength(7);
+		expect(accepted.nodes.every((node) => node.status === 'cancelled')).toBe(true);
+		expect(validateExecutionGraph(accepted.nodes, accepted.edges)).toMatchObject({ ok: true });
 	});
 	it('projects dependency-ordered planning and closing Reporter work', () => {
 		const profiles = { 'sdk:architect': definition('architect'), 'sdk:engineer': definition('engineer', ['architect']),
