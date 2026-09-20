@@ -33,7 +33,9 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 		throw Object.assign(new Error('Proposal authoring requires an active workday bound to this project and proposal.'), { status: 409, code: 'proposal_workday_scope_invalid' });
 	}
 	const simulation = run?.executionMode === 'simulation';
-	const simulationRef = simulation ? `refs/heads/${run.id}` : undefined;
+	// Keep proposal revisions on their exact source lineage. The workday's
+	// discussion branch can originate before this proposal existed.
+	const simulationRef = simulation ? `refs/heads/${run.id}-proposal-${createHash('sha256').update(text(input.proposal.id)).digest('hex').slice(0, 16)}` : undefined;
 	const sourceCommit = text(provenance.commitSha);
 	if (simulation && !/^[a-f0-9]{40}$/u.test(sourceCommit)) throw Object.assign(new Error('Simulation proposal authoring requires exact existing content provenance.'), { status: 409, code: 'proposal_simulation_source_required' });
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId, write: true, relationPaths: true, authoringPaths: true,
