@@ -29,6 +29,7 @@ export function terminalPerformance(
 	input: ExtendedProviderAssignmentLifecycleRequest,
 	status: 'completed' | 'failed',
 	now: string,
+	settledUsage: JsonRecord = {},
 ) {
 	if (input.performance) return input.performance;
 	const metadata = record(assignment.metadata);
@@ -59,10 +60,10 @@ export function terminalPerformance(
 		disposition, reason: String(input.reason ?? input.message ?? (status === 'completed' ? 'Assignment completed.' : 'Assignment failed.')),
 		acceptanceChecks: Array.isArray(completion.acceptanceChecks) ? completion.acceptanceChecks : [],
 		completedScope: [], remainingScope: [], artifactRefs: Array.isArray(completion.durableArtifactRefs) ? completion.durableArtifactRefs.map(String) : [], budget,
-		actual: { activeSeconds: Math.max(0, Number(input.activeSeconds ?? 0)), elapsedSeconds: Math.max(0, Number(input.elapsedSeconds ?? 0)),
-			inputTokens: Math.max(0, Number(usage.inputTokens ?? 0)), cachedInputTokens: Math.max(0, Number(usage.cachedInputTokens ?? 0)),
-			reasoningTokens: Math.max(0, Number(usage.reasoningTokens ?? 0)), outputTokens: Math.max(0, Number(usage.outputTokens ?? 0)), costAmount: input.actualUsd == null ? null : Number(input.actualUsd),
-			costCurrency: input.actualUsd == null ? null : 'USD', native: [], attempts: Number(assignment.attemptCount ?? 0) + 1 },
+		actual: { activeSeconds: Math.max(0, Number(settledUsage.active_seconds ?? input.activeSeconds ?? 0)), elapsedSeconds: Math.max(0, Number(settledUsage.elapsed_seconds ?? input.elapsedSeconds ?? 0)),
+			inputTokens: Math.max(0, Number(settledUsage.input_tokens ?? usage.inputTokens ?? 0)), cachedInputTokens: Math.max(0, Number(settledUsage.cached_input_tokens ?? usage.cachedInputTokens ?? 0)),
+			reasoningTokens: Math.max(0, Number(settledUsage.reasoning_tokens ?? usage.reasoningTokens ?? 0)), outputTokens: Math.max(0, Number(settledUsage.output_tokens ?? usage.outputTokens ?? 0)), costAmount: settledUsage.actual_usd == null && input.actualUsd == null ? null : Number(settledUsage.actual_usd ?? input.actualUsd),
+			costCurrency: settledUsage.actual_usd == null && input.actualUsd == null ? null : 'USD', native: [], attempts: Number(assignment.attemptCount ?? 0) + 1 },
 		noUsefulScopedWorkRemaining: completion.noUsefulScopedWorkRemaining === true, agentAssessment: null,
 		systemAssessment: { generatedBy: 'api-recovery', measuredAt: now, enforcementConfidence: record(budget).enforcementConfidence }, downstreamOutcomes: [],
 	};
