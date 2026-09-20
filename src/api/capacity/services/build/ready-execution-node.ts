@@ -93,6 +93,11 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'))`, parameters: [run.id] };
 }
 
+/** Governance review is planning work; paired work-item review is acting work. */
+export function isProposalGovernanceReview(node: Pick<ExecutionNode, 'kind' | 'pairRole' | 'sourceRef'>): boolean {
+	return node.kind === 'reviewing' && node.pairRole === null && node.sourceRef.model === 'proposal';
+}
+
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
 	const source = node.sourceRef;
 	if (node.kind === 'communication' && source.store === 'treedx' && source.repository && source.commit) {

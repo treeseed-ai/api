@@ -20,13 +20,13 @@ describe('live allocation ledger inputs', () => {
 		const db = new PGlite();
 		try {
 			await db.exec(`CREATE TABLE execution_nodes (id text, team_id text, project_id text, workday_id text,
-				status text, kind text, source_ref_json jsonb, estimate_json jsonb, required_capabilities_json jsonb);
+				status text, kind text, pair_role text, source_ref_json jsonb, estimate_json jsonb, required_capabilities_json jsonb);
 				INSERT INTO execution_nodes VALUES
-				('review','team','project',NULL,'ready','reviewing','{"model":"proposal","id":"golden"}','{"maximumSeconds":300}','["implementation"]'),
-				('other-proposal','team','project',NULL,'ready','acting','{"model":"proposal","id":"other"}','{}','["implementation"]'),
-				('other-project','team','unselected',NULL,'ready','acting','{"model":"proposal","id":"golden"}','{}','["implementation"]'),
-				('other-team','foreign','project',NULL,'ready','acting','{"model":"proposal","id":"golden"}','{}','["implementation"]'),
-				('planning','team','project','workday','ready','planning','{}','{}','["implementation"]');`);
+				('review','team','project',NULL,'ready','reviewing',NULL,'{"model":"proposal","id":"golden"}','{"maximumSeconds":300}','["implementation"]'),
+				('other-proposal','team','project',NULL,'ready','acting',NULL,'{"model":"proposal","id":"other"}','{}','["implementation"]'),
+				('other-project','team','unselected',NULL,'ready','acting',NULL,'{"model":"proposal","id":"golden"}','{}','["implementation"]'),
+				('other-team','foreign','project',NULL,'ready','acting',NULL,'{"model":"proposal","id":"golden"}','{}','["implementation"]'),
+				('planning','team','project','workday','ready','planning',NULL,'{}','{}','["implementation"]');`);
 			const counts: number[] = [];
 			const store = { all: vi.fn(async () => []), first: async (sql: string, values: unknown[]) => {
 				let index = 0;
@@ -35,15 +35,20 @@ describe('live allocation ledger inputs', () => {
 				return row ?? null;
 			} };
 			const selectedRun = { ...run, parameters: { ...run.parameters, proposalIds: ['golden'] } };
-			const calculate = (selected: typeof selectedRun) => livingAllocationInputs(store as never, {
-				run: selected as never, runs: [selected as never], providers: [provider as never],
-				capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'reviewer', activity: 'reviewing', now });
-			expect((await calculate(selectedRun))['codex-implementation']?.opportunity.availableSeconds).toBe(990);
-			expect(counts.at(-1)).toBe(1);
+			const calculate = (selected: typeof selectedRun, at = now) => livingAllocationInputs(store as never, {
+				run: selected as never, runs: [selected as never], providers: [{ ...provider, accountingObservation: {
+					modelUsage: { ...observation, observedAt: at },
+					capabilityUsage: { implementation: { ...observation, observedAt: at } },
+				} } as never],
+				capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'reviewer', activity: 'reviewing', now: at });
+			expect((await calculate(selectedRun, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
+			expect(counts.at(-1)).toBe(2);
+			expect((await calculate(selectedRun))['codex-implementation']?.opportunity.availableSeconds).toBe(0);
 			const planningOnly = { ...selectedRun, parameters: { ...selectedRun.parameters, planningOnly: true } };
-			expect((await calculate(planningOnly))['codex-implementation']?.opportunity.availableSeconds).toBe(0);
+			expect((await calculate(planningOnly, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
+			expect(counts.at(-1)).toBe(1);
 			await db.exec(`INSERT INTO execution_nodes VALUES
-				('report','team','project','workday','ready','reporting','{}','{"maximumSeconds":300}','["implementation"]')`);
+				('report','team','project','workday','ready','reporting',NULL,'{}','{"maximumSeconds":300}','["implementation"]')`);
 			const closing = { ...selectedRun, parameters: { ...selectedRun.parameters,
 				appliedPlan: { ...plan, state: 'closing' } } };
 			expect((await calculate(closing))['codex-implementation']?.opportunity.availableSeconds).toBe(300);

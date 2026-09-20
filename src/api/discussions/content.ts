@@ -31,6 +31,15 @@ class DiscussionAuthoringError extends Error {
 export function discussionAuthoringWorkspaceRefs(authoringRef: string, workspace: { baseCommitSha?: string; baseRef?: string } | null | undefined) {
 	return [...new Set([authoringRef, text(workspace?.baseCommitSha), text(workspace?.baseRef)].filter(Boolean))];
 }
+export function discussionAuthoringAuthority(input: {
+	explicitRef?: string | null; parentWorkdayId?: string | null; executionMode?: string | null; authorType?: string | null;
+}) {
+	const simulation = input.executionMode === 'simulation' && Boolean(input.parentWorkdayId);
+	return {
+		ref: text(input.explicitRef) || (simulation ? `refs/heads/${input.parentWorkdayId}` : ''),
+		state: input.authorType === 'agent' || simulation ? 'unpublished' as const : 'integrated' as const,
+	};
+}
 export function discussionEventPathIdentity(value: string) {
 	const readable = value.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 40) || 'event';
 	const digest = createHash('sha256').update(value).digest('hex').slice(0, 24);
@@ -181,7 +190,14 @@ export async function commitDiscussionMessage(input: {
 	authoringRef?: string | null;
 	authoringWorkspace?: { workspaceId: string; baseCommitSha: string; baseRef: string; allowedPaths?: string[] } | null;
 }) {
-	const authoringRef = text(input.authoringRef);
+	const workday = input.parentWorkdayId
+		? await input.store.getCapacityWorkdayRun(input.teamId, input.parentWorkdayId) : null;
+	if (input.parentWorkdayId && !workday) throw Object.assign(new Error('The addressed workday is unavailable.'), {
+		status: 409, code: 'discussion_workday_unavailable',
+	});
+	const authoring = discussionAuthoringAuthority({ explicitRef: input.authoringRef,
+		parentWorkdayId: input.parentWorkdayId, executionMode: workday?.executionMode, authorType: input.authorType });
+	const authoringRef = authoring.ref;
 	if (input.authorType === 'agent' && input.assignmentId && !/^refs\/heads\/assignment_[A-Za-z0-9_-]+$/u.test(authoringRef)) {
 		throw Object.assign(new Error('Assignment-authored Discussion messages require the exact isolated assignment ref.'), {
 			status: 409, code: 'discussion_assignment_ref_required', details: { assignmentId: input.assignmentId },
@@ -232,7 +248,7 @@ export async function commitDiscussionMessage(input: {
 		const commit = await connection.client.commit({ workspaceId: workspace.workspaceId, message: `discussion: ${topic}`, author: { name: authorName, email: text(input.principal.email, 'discussion@users.treeseed.local') } })
 			.catch((error: unknown) => { throw new DiscussionAuthoringError('commit', error); });
 		const actorType = input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user';
-		if (actorType === 'agent') {
+		if (authoring.state === 'unpublished') {
 			await recordTreeDxAuthoringState(input.store,'unpublished',{ projectId:input.projectId,repositoryId:connection.repositoryId,commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,assignmentId:input.assignmentId ?? null,actorType,actorId:authorId });
 		} else {
 			if (commit.changedPaths.length) {
@@ -252,7 +268,9 @@ export async function commitDiscussionMessage(input: {
 				commitSha:commit.commitSha,ref:commit.branchName,changedPaths:commit.changedPaths,assignmentId:input.assignmentId ?? null,
 				actorType,actorId:authorId });
 		}
-		await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user', actorId: authorId });
+		// Only integrated content enters the shared replication and graph signal path.
+		// Simulation/assignment messages remain readable from their exact journaled commit.
+		if (authoring.state === 'integrated') await projectTreeDxCommitSignals(input.store, { projectId: input.projectId, commitSha: commit.commitSha, immutableRef: commit.branchName, changedPaths: commit.changedPaths, changeSummary: `Discussion message: ${topic}`, actorType: input.authorType === 'agent' ? 'agent' : input.authorType === 'system' ? 'service' : 'user', actorId: authorId });
 		await session.close();
 		return { discussion: { id: discussionId, topic, path: discussionPath }, message: { id: messageId, authorLabel: authorName, body: input.body, path: messagePath }, event: { path: eventPath }, mentions, commitSha: commit.commitSha, changeset: { ...changeset, resultCommitSha: commit.commitSha }, snapshotDigest: createHash('sha256').update(commit.commitSha).digest('hex') };
 	} catch (error) {

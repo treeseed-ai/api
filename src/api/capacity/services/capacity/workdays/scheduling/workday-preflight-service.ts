@@ -14,6 +14,7 @@ import type { ExecutionNode } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { canonicalJson,sha256 } from '../../../../security.ts';
 import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
+import { isProposalGovernanceReview } from '../../../build/ready-execution-node.ts';
 import { readTeamWorkdayProfile } from '../../../../../control-plane/repositories/capacity/workdays/profile-service.ts';
 
 type JsonRecord = Record<string,unknown>;
@@ -122,7 +123,7 @@ export class WorkdayPreflightService {
 			const node=decodeExecutionNode(entry) as ExecutionNode;
 			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
 			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
-			const proposalReview=node.kind==='reviewing'&&node.pairRole===null&&node.sourceRef.model==='proposal';
+			const proposalReview=isProposalGovernanceReview(node);
 			if(!node.id||selectedDecisions.size&&!proposalReview&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
 			const mode=node.kind==='acting'||node.kind==='reviewing'&&!proposalReview?'acting' as const:'planning' as const;
 			if(intent.planningOnly&&mode==='acting') return [];

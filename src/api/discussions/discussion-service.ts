@@ -167,6 +167,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 					includeDiscussion: true, collection: 'discussions', limit: 1 }).catch(() => ({ discussions: [] })) : { discussions: [] };
 				authored = await commitDiscussionMessage({ store, projectId, teamId, principal, body: messageBody,
 					intent: body.intent === 'propose' ? 'propose' : 'discuss', discussionId, messageId,
+					parentWorkdayId,
 					createDiscussion: !text(body.discussionId) || (body.createDiscussion === true && existing.discussions.length === 0), topic: text(record(existing.discussions[0]?.frontmatter).topic) || text(body.topic) || undefined,
 					fileRefs: Array.isArray(body.fileRefs) ? body.fileRefs : [], contextRefs,
 					recipients: Array.isArray(body.recipients) ? body.recipients.map(String) : [],

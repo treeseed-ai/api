@@ -55,8 +55,24 @@ export function createWorkdayService(store: any) {
 				if (!run) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
 				if (run.status !== 'running') throw new CapacityOperationError(409, 'workday_not_active', 'Only an active workday can enter closeout.');
 				const lifecycle = await advanceLivingWorkday(store, run, new Date().toISOString(), true);
-				await reconcileExecutionGraph(store, teamId);
-				return { run: await store.getCapacityWorkdayRun(teamId, runId), lifecycle, reason: body.reason ?? null };
+				// Stopping must remain available when the current proposal graph is invalid.
+				// The workday is already closing, so a failed refresh cannot admit new work.
+				let reconciliation: { status: 'current' | 'deferred'; code?: string } = { status: 'current' };
+				try { await reconcileExecutionGraph(store, teamId); }
+				catch (error) {
+					const code = String((error as { code?: unknown }).code ?? 'graph_reconciliation_failed');
+					const now = new Date().toISOString();
+					const current = await store.getCapacityWorkdayRun(teamId, runId);
+					if (current?.status === 'running' && current.parameters.appliedPlan?.state === 'closing') {
+						await store.updateCapacityWorkdayRun(teamId, runId, {
+							status: 'failed', completedAt: now,
+							parameters: { ...current.parameters, appliedPlan: { ...current.parameters.appliedPlan, state: 'ended', endedAt: now } },
+							error: { code, message: 'Workday stopped because its execution graph could not reconcile.' },
+						});
+					}
+					reconciliation = { status: 'deferred', code };
+				}
+				return { run: await store.getCapacityWorkdayRun(teamId, runId), lifecycle, reconciliation, reason: body.reason ?? null };
 			} catch (error) { translate(error); }
 		},
 		async events(principal: CapacityPrincipal, teamId: string, runId: string, query: Record<string, unknown>) {
