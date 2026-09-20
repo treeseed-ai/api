@@ -5,7 +5,7 @@ import { CapacityWorkdayRunRepository } from '../../../../../repositories/capaci
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
-import { listReadyExecutionNodes } from '../../../../build/ready-execution-node.ts';
+import { isProposalGovernanceReview, listReadyExecutionNodes } from '../../../../build/ready-execution-node.ts';
 import { capacityWorkdayRequestedProjectReferences, resolveCapacityWorkdayProjects } from '../../../workdays/policy/workday-project-policy.ts';
 import { admitLivingExecutionAssignment } from '../../admission/living-execution-admission.ts';
 import { buildAssignmentAttempt } from './assignment-attempt-builder.ts';
@@ -19,6 +19,17 @@ const record = (value: unknown): Record<string, unknown> => {
 };
 
 const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))];
+
+export function isNodeEligibleInWorkdayPhase(
+	node: Parameters<typeof isProposalGovernanceReview>[0], phase: 'planning' | 'acting', closing: boolean,
+): boolean {
+	if (closing) return node.kind === 'reporting';
+	if (node.kind === 'reporting') return false;
+	if (node.kind === 'communication') return true;
+	const planningWork = node.kind === 'planning' || node.kind === 'estimating' || isProposalGovernanceReview(node);
+	return phase === 'planning' ? planningWork : !planningWork;
+}
+
 export function reservationFairUsage(rows: Record<string, unknown>[]) {
 	return rows.map((row) => ({ projectId: String(row.project_id), agentClass: String(row.agent_class),
 		seconds: ['reserved', 'consuming'].includes(String(row.state))
@@ -141,12 +152,9 @@ export async function assignNextReadyExecutionNode(
 			capacityWorkdayRequestedProjectReferences(run.parameters),
 			await store.listTeamProjects(run.teamId),
 		);
+		const phase = workdayPhase(appliedPlan, now);
 		const candidates = (await Promise.all(projects.map((project) => listReadyExecutionNodes(store, run, project)))).flat()
-			.filter((candidate) => candidate.node.kind === 'communication' || appliedPlan.state === 'closing'
-				|| (workdayPhase(appliedPlan, now) === 'planning'
-					? ['planning', 'estimating'].includes(candidate.node.kind)
-					: !['planning', 'estimating'].includes(candidate.node.kind)))
-			.filter((candidate) => appliedPlan.state === 'closing' ? candidate.node.kind === 'reporting' : candidate.node.kind !== 'reporting')
+			.filter((candidate) => isNodeEligibleInWorkdayPhase(candidate.node, phase, appliedPlan.state === 'closing'))
 			.filter((candidate) => appliedPlan.state === 'closing'
 				|| Date.parse(appliedPlan.endsAt) - Date.parse(now) >= (candidate.node.estimate?.minimumSeconds ?? 1) * 1_000);
 		const prior = await store.all(`SELECT node.project_id,node.agent_class,reservation.active_seconds,

@@ -13,6 +13,12 @@ interface Store extends CapacityGovernanceDatabase {
 
 type JsonRecord = Record<string, unknown>;
 
+export function assignmentAccountingMode(assignment: Pick<AssignmentAttempt, 'effectiveProfile' | 'sourceRef' | 'workItemId'>): 'planning' | 'acting' {
+	return assignment.effectiveProfile.activity === 'planning' || assignment.effectiveProfile.activity === 'estimating'
+		|| (assignment.effectiveProfile.activity === 'reviewing' && assignment.sourceRef.model === 'proposal'
+			&& assignment.workItemId === 'proposal-review') ? 'planning' : 'acting';
+}
+
 /** Atomically claim one normalized node and create its one reservation/attempt. */
 export async function admitLivingExecutionAssignment(store: Store, input: {
 	principal: ProviderLeasePrincipal;
@@ -43,8 +49,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	if (!input.allocation.admitted || input.allocation.allocatedSeconds !== assignment.limits.maximumSeconds) {
 		throw new CapacityGovernanceError('assignment_allocation_mismatch', 'Assignment limits must match the allocator-issued duration.', 409);
 	}
-	const mode = assignment.effectiveProfile.activity === 'planning' || assignment.effectiveProfile.activity === 'estimating'
-		? 'planning' : 'acting';
+	const mode = assignmentAccountingMode(assignment);
 	const decisionId = assignment.authorityRefs.find((reference) => reference.model === 'decision')?.id ?? null;
 	const proposalId = assignment.sourceRef.model === 'proposal' ? assignment.sourceRef.id : null;
 	const timing = compileAssignmentTimeBudget({ now: input.now, requestedSeconds: assignment.limits.maximumSeconds, configuredBudget: { deadline: assignment.deadline } });

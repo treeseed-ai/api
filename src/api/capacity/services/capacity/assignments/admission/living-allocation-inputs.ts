@@ -49,7 +49,9 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 				WHERE node.team_id=? AND ${scope.sql} AND node.status='ready'
 				AND ${projectIds.length ? `node.project_id IN (${projectIds.map(() => '?').join(',')})` : 'false'}
 				AND node.required_capabilities_json::jsonb @> ?::jsonb
-				AND ${plan.state === 'closing' ? "node.kind='reporting'" : phase === 'planning' ? "node.kind IN ('planning','estimating','communication')" : "node.kind NOT IN ('planning','estimating','reporting')"}`,
+				AND ${plan.state === 'closing' ? "node.kind='reporting'" : phase === 'planning'
+					? "(node.kind IN ('planning','estimating','communication') OR (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal'))"
+					: "(node.kind NOT IN ('planning','estimating','reporting') AND NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal'))"}`,
 				[run.teamId, ...scope.parameters, ...projectIds, JSON.stringify([input.capabilityId])]);
 			const usage = commitments.filter(row => row.work_day_id === run.id).map(row => ({ planning: row.mode === 'planning',
 				seconds: ['reserved', 'consuming'].includes(String(row.state)) ? Math.max(Number(row.reserved_seconds), Number(row.active_seconds)) : Number(row.active_seconds) }));

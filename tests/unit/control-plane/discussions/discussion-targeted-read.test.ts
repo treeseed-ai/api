@@ -17,7 +17,7 @@ vi.mock('../../../../src/api/knowledge/gateway-treedx-connection.ts', async (imp
 	})),
 }));
 
-import { discussionAuthoringWorkspaceRefs, loadDiscussions } from '../../../../src/api/discussions/content.ts';
+import { discussionAuthoringAuthority, discussionAuthoringWorkspaceRefs, loadDiscussions } from '../../../../src/api/discussions/content.ts';
 import { normalizedWorkspaceScopePaths } from '../../../../src/api/knowledge/gateway-treedx-connection.ts';
 
 describe('targeted Discussion reads', () => {
@@ -87,6 +87,15 @@ describe('targeted Discussion reads', () => {
 });
 
 describe('Discussion assignment authoring authority', () => {
+	it('keeps user messages attached to simulation workdays outside the project publication ref', () => {
+		expect(discussionAuthoringAuthority({ parentWorkdayId: 'workday-123', executionMode: 'simulation', authorType: 'user' }))
+			.toEqual({ ref: 'refs/heads/workday-123', state: 'unpublished' });
+		expect(discussionAuthoringAuthority({ parentWorkdayId: 'workday-123', executionMode: 'production', authorType: 'user' }))
+			.toEqual({ ref: '', state: 'integrated' });
+		expect(discussionAuthoringAuthority({ explicitRef: 'refs/heads/assignment_1', parentWorkdayId: 'workday-123', executionMode: 'simulation', authorType: 'agent' }))
+			.toEqual({ ref: 'refs/heads/assignment_1', state: 'unpublished' });
+	});
+
 	it('retains the assignment branch and immutable workspace base refs', () => {
 		expect(discussionAuthoringWorkspaceRefs('refs/heads/assignment_1', {
 			baseCommitSha: 'a'.repeat(40),

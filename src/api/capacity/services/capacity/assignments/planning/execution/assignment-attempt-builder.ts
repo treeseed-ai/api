@@ -14,7 +14,7 @@ import { assignmentSourceBranch } from '@treeseed/sdk/capacity-provider/sandbox'
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
-import type { ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
+import { isProposalGovernanceReview, type ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
 import { assignmentPreparationSeconds, compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
@@ -150,8 +150,9 @@ export function buildAssignmentAttempt(input: {
 		'Assignment admission found contradictory execution mode authority.', 409,
 		{ run: input.run.executionMode, appliedPlan: appliedPlan.executionMode },
 	);
-	const planning = ['planning', 'estimating'].includes(candidate.node.kind);
-	const windowEnd = planning ? workdayPlanningEndsAt(appliedPlan) : appliedPlan.endsAt;
+	const planningTurn = ['planning', 'estimating'].includes(candidate.node.kind);
+	const planningPhase = planningTurn || isProposalGovernanceReview(candidate.node);
+	const windowEnd = planningPhase ? workdayPlanningEndsAt(appliedPlan) : appliedPlan.endsAt;
 	const preparationSeconds = assignmentPreparationSeconds(undefined);
 	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
@@ -172,7 +173,7 @@ export function buildAssignmentAttempt(input: {
 			{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
 		providerMinimumSeconds: capabilityLimits.minimumAssignmentSeconds,
 		providerMaximumSeconds: capabilityLimits.maximumAssignmentSeconds,
-		...(planning ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
+		...(planningTurn ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
 	if (!allocation.admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
 		'The remaining execution window cannot fit the viable task minimum.', 409, { nodeId: candidate.node.id, allocation });
 	const deadline = compileAssignmentTimeBudget({ now: input.now,
