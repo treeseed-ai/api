@@ -46,9 +46,9 @@ describe('exact TreeDX dependency intake', () => {
 	});
 
 	it('rejects a moved note snapshot', async () => {
-		resolve.mockResolvedValue({ repositoryId: 'sdk-library', publicationRef: 'refs/heads/staging',
+		resolve.mockImplementation(async (_store, input) => ({ repositoryId: `${input.projectId}-library`, publicationRef: 'refs/heads/staging', allowedPaths: ['proposals/**', 'notes/**'],
 			client: { queryGraph: async () => graph,
-				readRepositoryFile: async () => ({ resolvedRef: 'd'.repeat(40), file: { content: 'content', frontmatter: note } }) } });
+				readRepositoryFile: async () => ({ resolvedRef: 'd'.repeat(40), file: { content: 'content', frontmatter: note } }) } }));
 		await expect(loadTeamExactDependencyLinks({}, [sdk, api] as never)).rejects.toThrow('moved during read');
 	});
 

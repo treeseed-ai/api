@@ -21,7 +21,7 @@ export async function loadTeamExactDependencyLinks(store: any, sources: Executab
 		const grant = await resolveKnowledgeGatewayConnection(store, {
 			projectId: source.projectId, write: false, relationPaths: true, readRefs: [source.commit],
 		});
-		const allowed = grant?.allowedPaths.some((pattern) => pattern === '**' || pattern === source.path
+		const allowed = grant?.allowedPaths?.some((pattern) => pattern === '**' || pattern === source.path
 			|| (pattern.endsWith('/**') && source.path.startsWith(pattern.slice(0, -3) + '/')));
 		if (!grant || grant.repositoryId !== source.repository || !allowed) {
 			throw new Error(`TreeDX exact dependency endpoint read grant is missing for project ${source.projectId}.`);
