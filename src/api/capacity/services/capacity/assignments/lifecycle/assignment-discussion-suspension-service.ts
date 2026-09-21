@@ -31,8 +31,6 @@ export async function suspendAssignmentForDiscussionResponse(store:Store,input:{
 	await store.batch([
 		...(!alreadySuspended?[{query:`UPDATE capacity_provider_assignments SET status='returned',lease_state='released',lease_token=NULL,lease_expires_at=NULL,lease_renewed_at=NULL,returned_at=COALESCE(returned_at,?),lifecycle_code='discussion_response_required',lifecycle_reason=?,metadata_json=?,treedx_proxy_handle_json=?,workspace_context_json=?,state_version=state_version+1,updated_at=? WHERE id=? AND team_id=? AND status='leased' AND lease_state='leased' AND lease_token=?`,params:[now,input.message,suspendedMetadata,JSON.stringify(authority.proxyHandle),JSON.stringify(authority.workspaceContext),now,input.assignmentId,input.teamId,input.leaseToken]}]:[]),
 		{query:`UPDATE treedx_proxy_handles SET status='revoked',revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE assignment_id=? AND team_id=? AND ${suspendedAssignmentExists}`,params:[now,now,input.assignmentId,input.teamId,input.assignmentId,input.teamId,input.messageId]},
-		{query:`UPDATE capacity_workday_demands SET status='completed',completed_at=COALESCE(completed_at,?),metadata_json=metadata_json,updated_at=? WHERE assignment_id=? AND status IN ('admitted','blocked') AND ${suspendedAssignmentExists}`,params:[now,now,input.assignmentId,input.assignmentId,input.teamId,input.messageId]},
-		{query:`UPDATE capacity_workday_participation_entries SET status='completed',covered_at=COALESCE(covered_at,?),updated_at=? WHERE assignment_id=? AND status='assigned' AND ${suspendedAssignmentExists}`,params:[now,now,input.assignmentId,input.assignmentId,input.teamId,input.messageId]},
 		...(current.invocationId?[{query:`UPDATE agent_invocation_requests SET status='suspended',assignment_id=?,final_message_ref=?,completed_at=COALESCE(completed_at,?),updated_at=? WHERE id=? AND team_id=? AND status IN ('admitted','running','suspended') AND ${suspendedAssignmentExists}`,params:[input.assignmentId,input.messagePath,now,now,current.invocationId,input.teamId,input.assignmentId,input.teamId,input.messageId]}]:[]),
 	]);
 	const suspended=await store.getProviderAssignment(input.teamId,input.assignmentId);
@@ -44,6 +42,7 @@ export async function suspendAssignmentForDiscussionResponse(store:Store,input:{
 
 export async function closeSuspendedConversationExecution(store:Store,assignment:DurableProviderAssignment,now=new Date().toISOString()) {
 	if(!assignment.invocationId) throw new CapacityGovernanceError('communication_invocation_provenance_missing','Suspended conversation assignment lacks its exact invocation.',409,{assignmentId:assignment.id});
+	if(!assignment.workDayId) throw new CapacityGovernanceError('communication_workday_provenance_missing','Suspended conversation assignment lacks its exact workday.',409,{assignmentId:assignment.id});
 	const ready=await store.first(`SELECT invocation.final_message_ref FROM agent_invocation_requests invocation
 		JOIN capacity_reservations reservation ON reservation.assignment_id=? AND reservation.team_id=?
 		JOIN capacity_ledger_entries settlement ON settlement.reservation_id=reservation.id AND settlement.phase='task_completed_actual_settlement'
@@ -53,10 +52,8 @@ export async function closeSuspendedConversationExecution(store:Store,assignment
 	const summary=JSON.stringify({invocationId:assignment.invocationId,assignmentId:assignment.id,outcome:'required_response_suspended',finalMessageRef:ready.final_message_ref});
 	await store.batch([
 		{query:`UPDATE capacity_workday_runs SET status='degraded',summary_json=?,completed_at=COALESCE(completed_at,?),updated_at=?
-			WHERE team_id=? AND execution_kind='conversation' AND status='running' AND id=(SELECT workday_run_id FROM capacity_workday_demands WHERE team_id=? AND assignment_id=? ORDER BY updated_at DESC LIMIT 1)`,params:[summary,now,now,assignment.teamId,assignment.teamId,assignment.id]},
-		{query:`UPDATE workday_capacity_envelopes SET status='degraded',completed_at=COALESCE(completed_at,?),updated_at=?
-			WHERE team_id=? AND status IN ('queued','active','paused') AND workday_run_id=(SELECT workday_run_id FROM capacity_workday_demands WHERE team_id=? AND assignment_id=? ORDER BY updated_at DESC LIMIT 1)`,params:[now,now,assignment.teamId,assignment.teamId,assignment.id]},
+			WHERE team_id=? AND execution_kind='conversation' AND status='running' AND id=?`,params:[summary,now,now,assignment.teamId,assignment.workDayId]},
 	]);
 	return store.first(`SELECT status,completed_at FROM capacity_workday_runs WHERE team_id=? AND execution_kind='conversation'
-		AND id=(SELECT workday_run_id FROM capacity_workday_demands WHERE team_id=? AND assignment_id=? ORDER BY updated_at DESC LIMIT 1)`,[assignment.teamId,assignment.teamId,assignment.id]);
+		AND id=?`,[assignment.teamId,assignment.workDayId]);
 }

@@ -1,13 +1,10 @@
-import { createHash } from 'node:crypto';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
-import { CapacityWorkdayDemandRepository,serializeCapacityWorkdayDemandRow } from '../../../../repositories/capacity/workdays/workday-demand.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
 import { terminalAssignmentAuthority } from '../lifecycle/assignment-terminal-authority.ts';
 
-function id(value: string) { return `demand_${createHash('sha256').update(value).digest('base64url').slice(0, 32)}`; }
 function idempotencyKey(value: string) {
 	if (!value.trim()) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
 	return value.trim();
@@ -15,13 +12,11 @@ function idempotencyKey(value: string) {
 
 export class OperatorAssignmentService {
 	private readonly assignments: ProviderAssignmentRepository;
-	private readonly demands: CapacityWorkdayDemandRepository;
 	constructor(
 		private readonly database: CapacityGovernanceDatabase,
 		private readonly closeWorkspace?: (assignment: DurableProviderAssignment) => Promise<unknown>,
 	) {
 		this.assignments = new ProviderAssignmentRepository(database);
-		this.demands = new CapacityWorkdayDemandRepository(database);
 	}
 
 	async cancel(teamId: string, assignmentId: string, input: { idempotencyKey: string; actorId?: string | null; reason?: string | null }) {
@@ -69,8 +64,6 @@ export class OperatorAssignmentService {
 			existingSettlementPolicy: 'replay', metadata: { actorId: input.actorId ?? null, reason: input.reason ?? null },
 		}]);
 		await this.database.batch([
-			{ query: `UPDATE capacity_workday_demands SET status = 'cancelled', completed_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'admitted'`, params: [now, now, assignmentId] },
-			{ query: `UPDATE capacity_workday_participation_entries SET status = 'blocked', reason_code = 'operator_cancelled', covered_at = ?, updated_at = ? WHERE assignment_id = ? AND status = 'assigned'`, params: [now, now, assignmentId] },
 			...(assignment.executionNodeId ? [{ query: `UPDATE execution_nodes SET status='cancelled',updated_at=?
 				WHERE team_id=? AND id=? AND node_revision=?
 				AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=?)`,
@@ -84,7 +77,7 @@ export class OperatorAssignmentService {
 
 	async requeue(teamId: string, assignmentId: string, input: { idempotencyKey: string; actorId?: string | null; reason?: string | null }) {
 		await this.database.ensureInitialized();
-		const operationKey = idempotencyKey(input.idempotencyKey);
+		idempotencyKey(input.idempotencyKey);
 		const assignment = await this.assignments.get(teamId, assignmentId);
 		if (!assignment) throw new CapacityGovernanceError('capacity_assignment_not_found', 'Assignment does not exist.', 404, { assignmentId });
 		if (!['returned', 'failed', 'expired', 'cancelled'].includes(assignment.status) || assignment.leaseState === 'leased') throw new CapacityGovernanceError(
@@ -113,31 +106,7 @@ export class OperatorAssignmentService {
 			}
 			return { assignment, demand: null, alreadyLeasable: false };
 		}
-		if (assignment.reservationId) {
-			const reservation = await this.database.first(`SELECT state FROM capacity_reservations WHERE id = ? AND team_id = ? LIMIT 1`, [assignment.reservationId, teamId]);
-			if (!reservation || !['consumed', 'released'].includes(String(reservation.state ?? ''))) throw new CapacityGovernanceError(
-				'capacity_assignment_recovery_decision_required',
-				'Assignment recovery must resolve its original reservation before creating replacement demand.',
-				409,
-				{ assignmentId, reservationId: assignment.reservationId, reservationState: reservation?.state ?? null },
-			);
-		}
-		const original = serializeCapacityWorkdayDemandRow(await this.database.first(
-			`SELECT * FROM capacity_workday_demands WHERE team_id = ? AND assignment_id = ? LIMIT 1`, [teamId, assignmentId],
-		));
-		if (!original) throw new CapacityGovernanceError('capacity_assignment_demand_missing', 'Assignment has no canonical demand provenance.', 409, { assignmentId });
-		const now = new Date().toISOString();
-		const retryKey = `requeue:${original.id}:${operationKey}`;
-		const demand = await this.demands.create({
-			id: id(retryKey), teamId, projectId: original.projectId, workdayRunId: original.workdayRunId,
-			workdayId: original.workdayId, sourceType: original.sourceType, sourceId: original.sourceId,
-			mode: original.mode, projectAgentClassId: original.projectAgentClassId, agentId: original.agentId,
-			handlerId: original.handlerId, activityType: original.activityType, decisionId: original.decisionId,
-			capacityPlanId: original.capacityPlanId, priority: original.priority, requestedSeconds: original.requestedSeconds,
-			idempotencyKey: retryKey, payload: original.payload,
-			metadata: { ...original.metadata, requeuedFromAssignmentId: assignmentId, actorId: input.actorId ?? null, reason: input.reason ?? null },
-			availableAt: now, now,
-		});
-		return { assignment, demand, alreadyLeasable: false };
+		throw new CapacityGovernanceError('capacity_assignment_graph_provenance_required',
+			'Only a living-graph assignment can be requeued; this assignment has no execution node.', 409, { assignmentId });
 	}
 }

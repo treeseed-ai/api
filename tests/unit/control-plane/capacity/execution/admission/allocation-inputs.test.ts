@@ -16,6 +16,19 @@ const provider = { id: 'codex-implementation', accountingLimits: { modelConfigur
 	accountingObservation: { modelUsage: observation, capabilityUsage: { implementation: observation } } };
 
 describe('live allocation ledger inputs', () => {
+	it('sizes chat opportunities against communication concurrency and only chat-ready graph nodes', async () => {
+		const at = '2026-09-16T13:55:00.000Z';
+		const store = { all: vi.fn(async () => []), first: vi.fn(async () => ({ ready_count: 1 })) };
+		const chatRun = { ...run, parameters: { ...run.parameters, appliedPlan: { ...plan,
+			policySnapshot: { ...plan.policySnapshot, communicationConcurrency: 2 } } } };
+		const chatProvider = { ...provider, accountingObservation: { modelUsage: { ...observation, observedAt: at },
+			capabilityUsage: { implementation: { ...observation, observedAt: at } } } };
+		const result = await livingAllocationInputs(store as never, { run: chatRun as never,
+			runs: [chatRun as never], providers: [chatProvider as never], capacityProviderId: 'provider',
+			capabilityId: 'implementation', agentClass: 'architect', activity: 'chat', now: at });
+		expect(result['codex-implementation']?.opportunity.availableSeconds).toBe(600);
+		expect(store.first.mock.calls[0]?.[0]).toContain("node.kind='communication'");
+	});
 	it('counts shared proposal work through real PostgreSQL graph custody, not only workday-owned nodes', async () => {
 		const db = new PGlite();
 		try {

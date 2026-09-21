@@ -15,16 +15,16 @@ describe('context query runtime', () => {
 			test: {
 				queryRef: { id: 'guide-work', revision: 1 }, testRef: 'guide-work-v1',
 				expectedIdentities: ['guide.work'], expectedRelations: [],
-				expectedPaths: ['knowledge/guide/work.md'], expectedSchemaVersions: ['treeseed.knowledge-page/v1'],
+				expectedPaths: ['knowledge/guide/work.md'], expectedSchemaVersions: ['treeseed.knowledge-page/v2'],
 				resultBounds: { min: 1, max: 1 }, budget: { maxContextItems: 1, maxTokens: 500 },
 			},
 			execute: async () => ({ nodes: [{ node: { id: 'file:1', path: 'knowledge/guide/work.md',
-				data: { frontmatter: { id: 'guide.work', schemaVersion: 'treeseed.knowledge-page/v1' } } } }], edges: [] }),
+				data: { frontmatter: { id: 'guide.work', schemaVersion: 'treeseed.knowledge-page/v2' } } } }], edges: [] }),
 		});
 
 		expect(report.status).toBe('passing');
 		expect(report.stats).toMatchObject({ itemCount: 1, identities: expect.arrayContaining(['guide.work']),
-			paths: ['knowledge/guide/work.md'], schemaVersions: ['treeseed.knowledge-page/v1'] });
+			paths: ['knowledge/guide/work.md'], schemaVersions: ['treeseed.knowledge-page/v2'] });
 	});
 
 	it('uses TreeDX token diagnostics when composing query-set budgets',async()=>{

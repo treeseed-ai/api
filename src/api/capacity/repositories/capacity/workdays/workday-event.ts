@@ -39,7 +39,7 @@ export function serializeCapacityWorkdayEventRow(row: Row | null): CapacityWorkd
 	}
 	return {
 		id: required(row, 'id'), runId: required(row, 'run_id'), teamId: required(row, 'team_id'),
-		projectId: nullable(row.project_id), workdayId: nullable(row.workday_id), assignmentId: nullable(row.assignment_id), modeRunId: nullable(row.mode_run_id),
+		projectId: nullable(row.project_id), workdayId: nullable(row.workday_id), assignmentId: nullable(row.assignment_id),
 		eventIndex, eventType: required(row, 'event_type'), status, title: nullable(row.title), message: nullable(row.message),
 		parameters: json(row, 'parameters_json'), context: json(row, 'context_json'), refs: json(row, 'refs_json'), metadata: json(row, 'metadata_json'),
 		createdAt: required(row, 'created_at'),
@@ -47,7 +47,7 @@ export function serializeCapacityWorkdayEventRow(row: Row | null): CapacityWorkd
 }
 
 export interface CapacityWorkdayEventWrite {
-	id: string; projectId: string | null; workdayId: string | null; assignmentId: string | null; modeRunId: string | null;
+	id: string; projectId: string | null; workdayId: string | null; assignmentId: string | null;
 	eventType: string; status: CapacityWorkdayEventStatus; title: string | null; message: string | null;
 	parameters: JsonRecord; context: JsonRecord; refs: JsonRecord; metadata: JsonRecord; createdAt: string;
 }
@@ -59,10 +59,10 @@ export class CapacityWorkdayEventRepository {
 		await this.database.ensureInitialized();
 		await this.database.batch([
 			{ query: `UPDATE capacity_workday_runs SET next_event_index = next_event_index + 1 WHERE id = ? AND team_id = ? AND NOT EXISTS (SELECT 1 FROM capacity_workday_events WHERE id = ?)`, params: [runId, teamId, value.id] },
-			{ query: `INSERT INTO capacity_workday_events (id, run_id, team_id, project_id, workday_id, assignment_id, mode_run_id, event_index, event_type, status, title, message, parameters_json, context_json, refs_json, metadata_json, created_at)
-				SELECT ?, id, team_id, ?, ?, ?, ?, next_event_index - 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM capacity_workday_runs
+			{ query: `INSERT INTO capacity_workday_events (id, run_id, team_id, project_id, workday_id, assignment_id, event_index, event_type, status, title, message, parameters_json, context_json, refs_json, metadata_json, created_at)
+				SELECT ?, id, team_id, ?, ?, ?, next_event_index - 1, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM capacity_workday_runs
 				WHERE id = ? AND team_id = ? AND NOT EXISTS (SELECT 1 FROM capacity_workday_events WHERE id = ?)`,
-				params: [value.id, value.projectId, value.workdayId, value.assignmentId, value.modeRunId, value.eventType, value.status, value.title, value.message, JSON.stringify(value.parameters), JSON.stringify(value.context), JSON.stringify(value.refs), JSON.stringify(value.metadata), value.createdAt, runId, teamId, value.id] },
+				params: [value.id, value.projectId, value.workdayId, value.assignmentId, value.eventType, value.status, value.title, value.message, JSON.stringify(value.parameters), JSON.stringify(value.context), JSON.stringify(value.refs), JSON.stringify(value.metadata), value.createdAt, runId, teamId, value.id] },
 		]);
 		return this.get(teamId, runId, value.id);
 	}

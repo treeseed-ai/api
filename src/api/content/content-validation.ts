@@ -27,7 +27,10 @@ export function validateContentRecord(model: ContentModel, source: string): Cont
 				}],
 			};
 		}
-		return validateContentFrontmatter(model, parseFrontmatterDocument(source).frontmatter);
+		const document = parseFrontmatterDocument(source);
+		return validateContentFrontmatter(model, model === 'discussion_message'
+			? { ...document.frontmatter, body: document.body.trim() }
+			: document.frontmatter);
 	} catch (error) {
 		return {
 			ok: false,

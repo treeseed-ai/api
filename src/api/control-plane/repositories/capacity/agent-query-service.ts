@@ -22,6 +22,11 @@ async function acceptedAgents(store: any, projectId: string) {
 			agentSlug: agent.id.split('/').at(-1) ?? agent.id, name: agent.name,
 			projectAgentClassId: agentClass.id, allocationClass: agentClass.slug, definitionRevision: String(record(agentClass.metadata).immutableRef ?? agentClass.updatedAt ?? ''),
 			definition: agent, activities: agent.activityProfiles, chatEnabled: Boolean(agent.activityProfiles.chat),
+			effectiveActivities: Object.fromEntries(Object.entries(agent.activityProfiles).map(([activity, profile]) => [activity, {
+				handler: profile.handler, origin: profile.handler.includes('/') ? 'project-runtime' : 'agent-package',
+				prompt: profile.prompt, context: [...agent.context.include, ...(profile.additionalContext ?? [])],
+				permissions: profile.permissions, dependsOn: profile.dependsOn ?? null,
+			}])),
 			status: agentClass.status === 'active' ? 'ready' : agentClass.status,
 		})) : [];
 	}).filter((agent: any) => agent.agentSlug);

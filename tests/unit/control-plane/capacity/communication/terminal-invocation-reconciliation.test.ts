@@ -36,7 +36,7 @@ describe('terminal conversation invocation reconciliation', () => {
 			all: vi.fn(async () => [invocation]),
 			first: vi.fn(async (query: string) => {
 				if (query.includes('capacity_provider_assignments')) return null;
-				if (query.includes('capacity_workday_demands')) return null;
+				if (query.includes('execution_nodes')) return null;
 				if (query.includes('capacity_workday_runs')) return { status: 'degraded' };
 				if (query.includes('FROM projects')) return { slug: 'sdk' };
 				return null;
@@ -50,11 +50,11 @@ describe('terminal conversation invocation reconciliation', () => {
 		expect(run).toHaveBeenCalledWith(expect.stringContaining("'agent.failed'"), expect.arrayContaining(['@sdk/architect']));
 	});
 
-	it('keeps an admitted invocation active while its pending demand is useful', async () => {
+	it('keeps an admitted invocation active while its graph communication node is ready', async () => {
 		const invocation = { id: 'invocation-live', team_id: 'team-1', execution_id: 'conversation-live', execution_kind: 'conversation', status: 'admitted' };
 		const store = {
 			all: vi.fn(async () => [invocation]),
-			first: vi.fn(async (query: string) => query.includes('capacity_workday_demands') ? { id: 'demand-live' } : null),
+			first: vi.fn(async (query: string) => query.includes('execution_nodes') ? { id: 'node-live' } : null),
 			run: vi.fn(), createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn(),
 		};
 

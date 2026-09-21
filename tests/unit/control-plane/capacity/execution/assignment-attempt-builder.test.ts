@@ -85,6 +85,57 @@ describe('immutable assignment-attempt construction', () => {
 		expect(result.assignment.workspace).toMatchObject({ baseCommit: '9'.repeat(40) });
 	});
 
+	it('uses the sole Git predecessor as the base for an initial acting node', () => {
+		const following = structuredClone(candidate);
+		following.predecessorResults = [{
+			schemaVersion: 'treeseed.assignment-result/v1', id: 'predecessor', assignmentId: 'previous-assignment',
+			status: 'completed', summary: 'Reviewed predecessor.',
+			references: [{ kind: 'git', repository: 'treeseed-ai/sdk', commit: '9'.repeat(40) }],
+			verification: [], usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: '2026-09-13T12:00:00.000Z',
+		}] as never;
+		const result = buildAssignmentAttempt({ candidate: following as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			now: '2026-09-13T12:00:00.000Z' });
+		expect(result.assignment.workspace).toMatchObject({ baseCommit: '9'.repeat(40) });
+	});
+
+	it('rejects divergent Git predecessors until an explicit integration assignment combines them', () => {
+		const divergent = structuredClone(candidate);
+		divergent.predecessorResults = ['8', '9'].map((digit) => ({
+			schemaVersion: 'treeseed.assignment-result/v1', id: `predecessor-${digit}`, assignmentId: `assignment-${digit}`,
+			status: 'completed', summary: 'Reviewed predecessor.',
+			references: [{ kind: 'git', repository: 'treeseed-ai/sdk', commit: digit.repeat(40) }],
+			verification: [], usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: '2026-09-13T12:00:00.000Z',
+		})) as never;
+		expect(() => buildAssignmentAttempt({ candidate: divergent as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
+			now: '2026-09-13T12:00:00.000Z' })).toThrow(/explicit integration assignment/u);
+	});
+
+	it('gives an authorized Releaser one exact base and every divergent predecessor for integration', () => {
+		const integration = structuredClone(candidate);
+		integration.node.agentClass = 'releaser';
+		integration.node.workItemId = 'simulate-release';
+		integration.node.requestedPermissions.tools = [...permissions.tools, 'release'];
+		integration.effectiveProfile.handler = 'releaser';
+		integration.effectiveProfile.permissionCeiling.tools = [...permissions.tools, 'release'];
+		integration.predecessorResults = ['8', '9'].map((digit) => ({
+			schemaVersion: 'treeseed.assignment-result/v1', id: `predecessor-${digit}`, assignmentId: `assignment-${digit}`,
+			status: 'completed', summary: 'Reviewed predecessor.',
+			references: [{ kind: 'git', repository: 'treeseed-ai/sdk', commit: digit.repeat(40) }],
+			verification: [], usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: '2026-09-13T12:00:00.000Z',
+		})) as never;
+		const result = buildAssignmentAttempt({ candidate: integration as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never,
+			attempt: 1, now: '2026-09-13T12:00:00.000Z' });
+		expect(result.assignment.workspace).toMatchObject({ mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'c'.repeat(40) });
+		expect(result.assignment.predecessorResultIds).toEqual(['predecessor-8', 'predecessor-9']);
+		expect(result.assignment.grant.tools).toContain('release');
+	});
+
 	it('fails closed when no exact provider runtime satisfies the node', () => {
 		expect(() => buildAssignmentAttempt({
 			candidate: candidate as never, run,
@@ -104,6 +155,22 @@ describe('immutable assignment-attempt construction', () => {
 			attempt: 1, now: '2026-09-13T12:00:00.000Z',
 		});
 		expect(result.assignment.provider.offerId).toBe('narrow');
+	});
+
+	it('selects another eligible provider when the first has no workday allocation left', () => {
+		const exhausted = { ...provider, id: 'a-exhausted', offers: [{ ...provider.offers[0]!, offerId: 'exhausted-offer' }] };
+		const available = { ...provider, id: 'b-available', offers: [{ ...provider.offers[0]!, offerId: 'available-offer' }] };
+		const result = buildAssignmentAttempt({ candidate: candidate as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: {
+				'a-exhausted': { measurements: [], constraints: [{ id: 'workday-phase-share', remainingSeconds: 0 }],
+					opportunity: { availableSeconds: 0 } },
+				'b-available': { measurements: [], constraints: [{ id: 'workday-phase-share', remainingSeconds: 300 }],
+					opportunity: { availableSeconds: 300 } },
+			} as never,
+			providerSessionId: 'session', providers: [exhausted, available] as never, attempt: 1,
+			now: '2026-09-13T12:00:00.000Z' });
+		expect(result.assignment.provider).toMatchObject({ executionProviderId: 'b-available', offerId: 'available-offer' });
 	});
 
 	it('rejects executable nodes whose capability demand was not compiled', () => {

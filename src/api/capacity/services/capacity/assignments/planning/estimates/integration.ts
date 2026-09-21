@@ -5,7 +5,12 @@ import type { DurableProviderAssignment } from '../../../../../repositories/capa
 import { readExactProposal } from '../../../../../../governance/executable-proposal.ts';
 import { commitProposalVersionContent } from '../../../../../../control-plane/governance/proposal-version-content.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../knowledge/gateway-treedx-connection.ts';
-import type { AssignmentPlanningOutputStore } from '../assignment-planning-output-service.ts';
+import type { CapacityGovernanceDatabase } from '../../../../../database.ts';
+import type { WorkdayTreeDxConnectionStore } from '../../../workdays/treedx/workday-treedx-connection.ts';
+
+type EstimateIntegrationStore = CapacityGovernanceDatabase & WorkdayTreeDxConnectionStore & {
+	getGovernanceProposal(id: string): Promise<Record<string, unknown> | null>;
+};
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -18,18 +23,19 @@ function workItems(value: Row): Row[] {
 	return Array.isArray(record(value.executionPlan).workItems) ? record(value.executionPlan).workItems as Row[] : [];
 }
 
-/** One estimate belongs to the exact work item selected by the graph, not to a new plan authority. */
+/** An estimator owns all proposal work items of its class; Reviewer owns required reviews. */
 export function mergeAssignmentEstimate(input: {
-	frozen: Row; candidate: Row; current: Row; workItemId: string | null;
+	frozen: Row; candidate: Row; current: Row; agentClass: string;
 }): Row {
 	const frozenItems = workItems(input.frozen);
 	const candidateItems = workItems(input.candidate);
 	const currentItems = workItems(input.current);
-	const reviewer = input.workItemId === null;
-	const index = reviewer ? -1 : frozenItems.findIndex((item) => item.id === input.workItemId);
-	if ((!reviewer && index < 0) || !frozenItems.length || frozenItems.length !== candidateItems.length || frozenItems.length !== currentItems.length
+	const reviewer = input.agentClass === 'reviewer';
+	const targets = frozenItems.flatMap((item, index) => (reviewer ? item.review === 'required'
+		: item.agentClass === input.agentClass) ? [index] : []);
+	if (!targets.length || frozenItems.length !== candidateItems.length || frozenItems.length !== currentItems.length
 		|| new Set(frozenItems.map((item) => item.id)).size !== frozenItems.length) {
-		throw new CapacityGovernanceError('assignment_estimate_work_item_invalid', 'Estimator result does not target one frozen proposal work item.', 409);
+		throw new CapacityGovernanceError('assignment_estimate_work_item_invalid', 'Estimator result has no class-owned frozen proposal work items.', 409);
 	}
 	const withoutEstimate = (item: Row): Row => { const { estimate: _estimate, reviewEstimate: _reviewEstimate, ...rest } = item; return rest; };
 	if (stable({ ...input.candidate, executionPlan: { ...record(input.candidate.executionPlan), workItems: candidateItems.map(withoutEstimate) } })
@@ -38,7 +44,8 @@ export function mergeAssignmentEstimate(input: {
 	}
 	if (candidateItems.some((item, itemIndex) =>
 		stable(reviewer ? item.estimate : item.reviewEstimate) !== stable(reviewer ? frozenItems[itemIndex].estimate : frozenItems[itemIndex].reviewEstimate)
-		|| (!reviewer && itemIndex !== index && stable(item.estimate) !== stable(frozenItems[itemIndex].estimate)))) {
+		|| (!targets.includes(itemIndex) && stable(item[reviewer ? 'reviewEstimate' : 'estimate'])
+			!== stable(frozenItems[itemIndex][reviewer ? 'reviewEstimate' : 'estimate'])))) {
 		throw new CapacityGovernanceError('assignment_estimate_unrelated_change', 'Estimator result changed another work item estimate.', 409);
 	}
 	if (currentItems.some((item, itemIndex) => item.id !== frozenItems[itemIndex].id
@@ -46,7 +53,6 @@ export function mergeAssignmentEstimate(input: {
 		throw new CapacityGovernanceError('assignment_estimate_source_changed', 'Current proposal work items no longer match the frozen assignment source.', 409);
 	}
 	const field = reviewer ? 'reviewEstimate' : 'estimate';
-	const targets = reviewer ? frozenItems.map((_, itemIndex) => itemIndex) : [index];
 	for (const target of targets) {
 		const estimate = record(candidateItems[target][field]);
 		if (!Object.keys(estimate).length || !text(estimate.rationale)) throw new CapacityGovernanceError(
@@ -61,7 +67,7 @@ export function mergeAssignmentEstimate(input: {
 }
 
 export async function integrateAssignmentEstimate(
-	store: AssignmentPlanningOutputStore, assignment: DurableProviderAssignment, result: AssignmentResult,
+	store: EstimateIntegrationStore, assignment: DurableProviderAssignment, result: AssignmentResult,
 ): Promise<void> {
 	if (assignment.assignmentAttempt?.effectiveProfile.activity !== 'estimating') return;
 	const attempt = assignment.assignmentAttempt;
@@ -99,7 +105,7 @@ export async function integrateAssignmentEstimate(
 		'Estimator proposal content is invalid.', 409, { diagnostics: parsed.diagnostics });
 	const candidate = parsed.data as Row;
 	const merged = mergeAssignmentEstimate({ frozen: frozen.definition, candidate, current: current.definition,
-		workItemId: attempt.workItemId ?? null });
+		agentClass: attempt.agentClass });
 	if (stable(merged) === stable(current.definition)) return;
 	const allEstimated = workItems(merged).every((item) => Object.keys(record(item.estimate)).length > 0
 		&& (item.review !== 'required' || Object.keys(record(item.reviewEstimate)).length > 0));
@@ -110,7 +116,7 @@ export async function integrateAssignmentEstimate(
 			objectiveRefs: merged.objectiveRefs, evidenceRefs: merged.evidenceRefs,
 			discussionRef: merged.discussionRef, executionPlan: merged.executionPlan,
 			workdayId: assignment.workDayId, expectedProposalVersion: proposal.activeVersion,
-			changeReason: `Integrate ${attempt.workItemId ?? 'review'} estimate from assignment ${assignment.id}.` } });
+			changeReason: `Integrate ${attempt.agentClass} estimates from assignment ${assignment.id}.` } });
 	await store.updateGovernanceProposalDraft({ id: assignment.agentId, type: 'agent' }, text(proposal.id),
 		{ ...authored.update, createdByType: 'agent', createdById: assignment.agentId });
 }

@@ -165,7 +165,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 							communication: record(body.communication), addressRequirements: record(body.addressRequirements),
 							durationSeconds: Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900))), requestedById: principal.id });
 					}
-					return { discussion: { id: discussionId }, message: replay, invocations, replayed: true };
+					return { discussion: { id: discussionId }, message: replay, commitSha: text(replay.immutableRef), invocations, replayed: true };
 				}
 				contextRefs = await validateDiscussionContextRefs({ store, projectId, teamId, values: body.contextRefs });
 				const existing = text(body.discussionId) ? await loadDiscussions({ store, projectId, discussionId,
@@ -207,13 +207,13 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 
 		async updateStatus(principal: Principal, discussionId: string, body: Record<string, unknown>, idempotencyKey?: string) {
 			const projectId = text(body.projectId);
-			const status = body.status === 'active' ? 'active' : body.status === 'archived' ? 'archived' : null;
+			const status = body.status === 'open' || body.status === 'resolved' || body.status === 'closed' ? body.status : null;
 			if (!projectId || !status) throw new DiscussionServiceError(422, 'discussion_status_invalid',
-				'Discussion lifecycle requires a project and active or archived status.');
+				'Discussion lifecycle requires a project and open, resolved, or closed status.');
 			const project = await projectFor(store, principal, projectId);
 			try {
 				const result = await changeDiscussionStatus({ store, projectId, teamId: project.teamId, discussionId, status, principal });
-				if (status === 'archived') await cancelArchivedDiscussionCapacity(store, projectId, discussionId,
+				if (status === 'closed') await cancelArchivedDiscussionCapacity(store, projectId, discussionId,
 					(teamId, assignmentId, key) => invocationStore.cancelCapacityAssignment(teamId, assignmentId,
 						{ idempotencyKey: key, reason: 'The source Discussion was archived.' }));
 				await sessionEvents.publish({ eventType: 'discussion.lifecycle', teamId: project.teamId, projectId, resourceId: discussionId,

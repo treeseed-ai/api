@@ -7,7 +7,7 @@ export const AGENT_AUTHORITY_PRESET_IDS = [
 
 export type AgentAuthorityPresetId = (typeof AGENT_AUTHORITY_PRESET_IDS)[number];
 
-const OPERATIONAL_TOOLS = ['treeseed.status','treeseed.assignment_activity','treeseed.assignment_plan','treeseed.assignment_status_update','treeseed.assignment_summary'];
+const OPERATIONAL_TOOLS = ['treeseed.status','treeseed.assignment_activity'];
 const MESSAGING_TOOLS = ['treeseed.discussion.read','treeseed.discussion.follow','treeseed.discussion.respond','treeseed.discussion.request_handoff'];
 const CONTENT_TOOLS = ['treeseed.content.describe','treeseed.content.query','treeseed.content.read','treeseed.content.create','treeseed.content.update','treeseed.content.link','treeseed.content.validate','treeseed.content.commit'];
 const SOURCE_READ_TOOLS = ['treeseed.repository.read_file','treeseed.repository.search','treeseed.changed_paths','treeseed.verify'];
@@ -48,14 +48,13 @@ export interface CompiledAgentAuthoritySnapshot {
 	diagnostics: string[];
 }
 
-const OPERATIONAL_MODELS = new Set(['assignment_plan','assignment_status','assignment_summary']);
 const MUTABLE_MODELS:Record<AgentActivityType,Set<string>>={
-	planning:new Set(['proposal','question','note','discussion_message',...OPERATIONAL_MODELS]),
-	estimating:new Set(['note','question','discussion_message',...OPERATIONAL_MODELS]),
+	planning:new Set(['proposal','question','note','discussion_message']),
+	estimating:new Set(['note','question','discussion_message']),
 	acting:new Set<string>(),
-	reviewing:new Set(['note','question','discussion_message',...OPERATIONAL_MODELS]),
-	reporting:new Set(['note','discussion_message',...OPERATIONAL_MODELS]),
-	chat:new Set(['proposal','question','note','discussion_message',...OPERATIONAL_MODELS]),
+	reviewing:new Set(['note','question','discussion_message']),
+	reporting:new Set(['note','discussion_message']),
+	chat:new Set(['proposal','question','note','discussion_message']),
 };
 
 function boundedPermissions(activityType:AgentActivityType,permissions:AgentActivityPermissions|undefined) {

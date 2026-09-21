@@ -4,6 +4,11 @@ import { commitProposalVersionContent } from '../../../src/api/control-plane/gov
 
 vi.mock('../../../src/api/control-plane/governance/proposal-version-content.ts', () => ({ commitProposalVersionContent: vi.fn() }));
 vi.mock('../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts', () => ({ reconcileExecutionGraph: vi.fn(async () => ({ replayed: false })) }));
+vi.mock('../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({ resolveKnowledgeGatewayConnection: vi.fn(async () => ({
+	repositoryId: 'repository', client: { readRepositoryFile: async ({ ref, path }: { ref: string; path: string }) => ({
+		resolvedRef: ref, file: { path, content: '---\ntitle: Resolution\n---\nResolved.' },
+	}) },
+})) }));
 
 function fixture(proposalProjectId = 'project-1') {
 	const store = {
@@ -20,7 +25,9 @@ function fixture(proposalProjectId = 'project-1') {
 		listApprovalRequestsForProject: vi.fn(async () => []),
 		decideApprovalRequest: vi.fn(async (_id, input) => ({ id: 'approval-1', state: input.state, decision: input.decision })),
 	};
-	return { store, service: createGovernanceService(store), principal: { id: 'user-1', roles: ['member'] } };
+	const discussions = { create: vi.fn(async () => ({ message: { id: 'resolution', path: 'discussion-messages/resolution.mdx' },
+		commitSha: 'b'.repeat(40) })) };
+	return { store, discussions, service: createGovernanceService(store, discussions), principal: { id: 'user-1', roles: ['member'] } };
 }
 
 describe('governance service mutation boundaries', () => {
@@ -69,8 +76,18 @@ describe('governance service mutation boundaries', () => {
 		expect(result).toMatchObject({ proposalId: 'proposal-1', feedbackId: 'feedback-1', idempotentReplay: false });
 		expect(store.recordGovernanceEvent).toHaveBeenCalledWith(expect.objectContaining({
 			proposalVersion: 3, evidence: expect.objectContaining({ kind: 'response', feedbackStatus: 'resolved',
-				resolvesEventId: 'feedback-1', contentPath: 'proposals/test.mdx', commitSha: 'a'.repeat(40), digest: 'digest-3' }),
+				resolvesEventId: 'feedback-1', contentPath: 'discussion-messages/resolution.mdx', commitSha: 'b'.repeat(40),
+				resolutionRef: expect.objectContaining({ model: 'discussion-message', repository: 'repository' }) }),
 		}));
+	});
+	it('does not clear feedback when TreeDX authoring fails', async () => {
+		const { store, discussions, service, principal } = fixture();
+		discussions.create.mockRejectedValueOnce(new Error('TreeDX unavailable'));
+		await expect(service.resolveProposalFeedback(principal, 'project-1', 'proposal-1', 'feedback-1',
+			{ message: 'Resolved.', expectedProposalVersion: 3 }, '3')).rejects.toMatchObject({
+			code: 'governance_proposal_feedback_resolution_failed',
+		});
+		expect(store.recordGovernanceEvent).not.toHaveBeenCalled();
 	});
 
 	it('checks project ownership before any proposal mutation', async () => {

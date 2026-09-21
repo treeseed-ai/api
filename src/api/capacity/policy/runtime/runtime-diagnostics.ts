@@ -79,13 +79,6 @@ const CAPACITY_RUNTIME_REASON_DETAILS: Record<string, {
 		nextAction: 'Resolve open questions, accept the proposal, or mark the decision readiness gate ready.',
 		severity: 'warning',
 	},
-	capacity_plan_not_ready: {
-		title: 'Capacity plan is not ready',
-		message: 'Acting work requires an accepted, scheduled, or active capacity plan.',
-		owner: 'project',
-		nextAction: 'Accept or schedule the capacity plan generated during planning.',
-		severity: 'warning',
-	},
 	runner_pressure_exhausted: {
 		title: 'Runner pressure exhausted',
 		message: 'The provider runner reported that local concurrency, quota, or pressure limits are exhausted.',
@@ -185,7 +178,6 @@ export function summarizeCapacityRuntimeDiagnostics(input: {
 	generatedAt?: string;
 	assignments: ProviderAssignment[];
 	explanations?: ProviderAssignmentExplanation[];
-	modeRuns?: AgentModeRun[];
 	treeDxProxyAudit?: Array<Record<string, unknown>>;
 	ledgerEntries?: CapacityLedgerEntry[];
 	fallbackOutputs?: Array<Record<string, unknown>>;
@@ -282,7 +274,6 @@ export function summarizeCapacityRuntimeDiagnostics(input: {
 		generatedAt: input.generatedAt ?? new Date().toISOString(),
 		assignments,
 		explanations,
-		modeRuns: input.modeRuns ?? [],
 		treeDxProxyAudit: input.treeDxProxyAudit ?? [],
 		ledgerEntries: input.ledgerEntries ?? [],
 		fallbackOutputs: input.fallbackOutputs ?? [],

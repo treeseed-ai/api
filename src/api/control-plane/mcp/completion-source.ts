@@ -11,7 +11,6 @@ const sourceOperations: Readonly<Record<string, string>> = {
 	connectionId: 'services.connections.list',
 	agentSlug: 'agents.list',
 	invocationId: 'communications.invocations.list',
-	capacityPlanId: 'plans.list',
 	runId: 'workdays.list',
 	assignmentId: 'assignments.list',
 	operationId: 'operations.list',
@@ -56,7 +55,7 @@ const promptSuggestions: Readonly<Record<string, readonly string[]>> = {
 	operate: ['Inspect current control-plane status', 'Diagnose blockers and suggest the next safe action'],
 	research: ['Research the open question using governed knowledge', 'Identify evidence gaps before proposing work'],
 	'governance-review': ['Review the proposal against current evidence', 'Explain approval blockers and required revisions'],
-	'workday-planning': ['Plan the next time-based workday', 'Explain allocation, borrowing, and starvation protections'],
+	'workday-planning': ['Plan the next time-based workday', 'Explain the workday allocation and available capability supply'],
 	'project-agent-chat': ['Address team agents in a governed cross-project topic', 'Check the status of the current team discussion'],
 };
 

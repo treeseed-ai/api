@@ -18,7 +18,6 @@ export interface CapacityUsageReportRequest {
 	elapsedSeconds: number;
 	providerUnits?: number | null;
 	usd?: number | null;
-	modeRunId?: string | null;
 	source: string;
 	metadata?: Record<string, unknown>;
 	usageActual?: CapacityUsageActualInput;
@@ -72,14 +71,14 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 	const usage = input.usageActual ?? {};
 	return {
 		query: `INSERT INTO capacity_usage_actuals (
-			id, idempotency_key, task_id, work_day_id, project_id, task_signature, execution_profile_id, assignment_id, assignment_attempt, usage_dimension, accounting_mode, mode_run_id, mode,
+			id, idempotency_key, task_id, work_day_id, project_id, task_signature, execution_profile_id, assignment_id, assignment_attempt, usage_dimension, accounting_mode, mode,
 			capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind,
 			invocation_id, parent_workday_id, parent_assignment_id, handoff_root_id, handoff_parent_id, handoff_depth,
 			source_message_refs_json, operation_handoff_id, business_model, model_name, input_tokens, output_tokens,
 			cached_input_tokens, reasoning_tokens, quota_minutes, wall_minutes, files_opened, files_changed, diff_lines_added,
 			diff_lines_removed, test_runs, retry_count, active_seconds, elapsed_seconds, actual_usd,
 			native_usage_json, metadata_json, created_at
-		) SELECT ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?,
+		) SELECT ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?,
 			?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER),
 			CAST(? AS REAL), CAST(? AS REAL), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER),
 			CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), ?, ?, ?
@@ -88,7 +87,7 @@ export function capacityUsageInsertOperation(input: CapacityUsageReportRequest, 
 		params: [identity.id, identity.idempotencyKey, reservation.task_id ?? null, reservation.work_day_id ?? null, reservation.project_id,
 			usage.taskSignature ?? `${reservation.project_agent_class_id ?? 'assignment'}:${reservation.mode ?? 'unknown'}`,
 			usage.executionProfileId ?? 'standard-code-model', input.assignmentId, identity.assignmentAttempt, identity.usageDimension, accountingMode,
-			input.modeRunId ?? null, reservation.mode ?? null, reservation.capacity_provider_id,
+			reservation.mode ?? null, reservation.capacity_provider_id,
 			usage.executionProviderId ?? reservation.execution_provider_id ?? null, reservation.lane_id ?? null,
 			reservation.lane_purpose ?? null, reservation.communication_overflow ?? 0, reservation.execution_kind ?? 'workday',
 			reservation.trigger_kind ?? 'scheduled', reservation.invocation_id ?? null, reservation.parent_workday_id ?? null,

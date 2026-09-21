@@ -60,10 +60,14 @@ describe('review result authority', () => {
 		const proposalDecision = { ...decision, decisionClass: 'proposal', disposition: 'approved', subjectRef: proposalRef };
 		await expect(resolveProposalReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team',
 			projectId: 'project', executionNodeId: 'reviewer', executionNodeRevision: 1 } as never,
-			result, async () => proposalDecision)).resolves.toEqual({ disposition: 'approved', reference: result.references[0] });
+			result, async () => ({ frontmatter: proposalDecision, source: 'exact decision bytes' }))).resolves.toMatchObject({
+				disposition: 'approved', reference: result.references[0],
+				sourceRef: { store: 'treedx', model: 'decision', id: proposalDecision.id,
+					repository: result.references[0].repository, commit: result.references[0].commit },
+			});
 		await expect(resolveProposalReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team',
 			projectId: 'project', executionNodeId: 'reviewer', executionNodeRevision: 1 } as never,
-			result, async () => ({ ...proposalDecision, subjectRef: { ...proposalRef, revision: 1 } })))
+			result, async () => ({ frontmatter: { ...proposalDecision, subjectRef: { ...proposalRef, revision: 1 } }, source: 'other bytes' })))
 			.rejects.toMatchObject({ code: 'proposal_review_decision_required' });
 	});
 });

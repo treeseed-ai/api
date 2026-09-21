@@ -1,4 +1,5 @@
 import type { GovernanceProposalReadiness } from '../../../../../governance/proposal-readiness.ts';
+import { exactEntityReferenceSchema, type ExactEntityReference } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
 
@@ -39,6 +40,45 @@ export interface ProposalPlanningSource {
 	}>;
 }
 
+export interface BlockingProposalFeedback {
+	id: string;
+	kind: 'concern' | 'question';
+	sourceRef: ExactEntityReference;
+	message: string;
+	contentPath: string;
+	commit: string;
+	digest: string;
+	resolved: boolean;
+}
+
+/** Governance events index the current state of exact TreeDX feedback; they are
+ * not a second content store. Keep resolved entries so graph conditions can
+ * transition to completed instead of silently disappearing. */
+export async function loadProposalBlockingFeedback(store: any, proposalId: string): Promise<BlockingProposalFeedback[]> {
+	const feedbackRows = await store.all(`SELECT id,message,evidence_json FROM governance_events
+		WHERE proposal_id = ? AND event_type = 'proposal.discussion' ORDER BY created_at ASC LIMIT 500`, [proposalId]);
+	const resolved = new Set(feedbackRows.flatMap((event: Row) => {
+		const evidence = record(event.evidence_json), ref = record(evidence.resolutionRef);
+		const valid = exactEntityReferenceSchema.safeParse(ref);
+		return text(evidence.resolvesEventId) && valid.success && valid.data.store === 'treedx'
+			&& valid.data.model === 'discussion-message' ? [text(evidence.resolvesEventId)] : [];
+	}));
+	return feedbackRows.flatMap((event: Row) => {
+		const evidence = record(event.evidence_json), kind = text(evidence.kind);
+		if (!['concern', 'question'].includes(kind) || text(evidence.feedbackSeverity) === 'advisory') return [];
+		const parsed = exactEntityReferenceSchema.safeParse(evidence.questionRef ?? evidence.decisionRef);
+		if (!parsed.success || parsed.data.store !== 'treedx' || !['question', 'decision'].includes(parsed.data.model)) {
+			throw Object.assign(new Error('Blocking proposal feedback lacks exact TreeDX content authority.'), {
+				status: 409, code: 'proposal_feedback_source_ref_missing', feedbackId: text(event.id),
+			});
+		}
+		return [{ id: text(event.id), kind: kind as BlockingProposalFeedback['kind'], message: text(event.message),
+			sourceRef: parsed.data,
+			contentPath: text(evidence.contentPath), commit: text(evidence.commitSha), digest: text(evidence.digest),
+			resolved: resolved.has(text(event.id)) }];
+	});
+}
+
 function strings(value: unknown): string[] {
 	return Array.isArray(value) ? [...new Set(value.map(text).filter(Boolean))].sort() : [];
 }
@@ -56,18 +96,8 @@ export async function loadTeamProposalPlanningSources(store: any, teamId: string
 		if (!repositoryId || !path || !/^[a-f0-9]{40}$/u.test(commit) || !contentDigest) continue;
 		const readiness = await store.governanceProposalReadiness(text(row.id));
 		if (!readiness) continue;
-		const feedbackRows = await store.all(`SELECT id,message,evidence_json FROM governance_events
-			WHERE proposal_id = ? AND event_type = 'proposal.discussion' ORDER BY created_at ASC LIMIT 500`, [text(row.id)]);
-		const resolved = new Set(feedbackRows.map((event: Row) => text(record(event.evidence_json).resolvesEventId)).filter(Boolean));
-		const openBlockingFeedback = feedbackRows.flatMap((event: Row) => {
-			const evidence = record(event.evidence_json), kind = text(evidence.kind);
-			if (!['concern','question'].includes(kind) || text(evidence.feedbackSeverity) === 'advisory'
-				|| ['resolved','withdrawn'].includes(text(evidence.feedbackStatus)) || resolved.has(text(event.id))) return [];
-			const contentPath = text(evidence.contentPath), feedbackCommit = text(evidence.commitSha), feedbackDigest = text(evidence.digest);
-			if (!contentPath || !/^[a-f0-9]{40}$/u.test(feedbackCommit) || !feedbackDigest) return [];
-			return [{ id: text(event.id), kind: kind as 'concern' | 'question', message: text(event.message),
-				contentPath, commit: feedbackCommit, digest: feedbackDigest }];
-		});
+		const openBlockingFeedback = (await loadProposalBlockingFeedback(store, text(row.id)))
+			.filter((feedback) => !feedback.resolved && feedback.contentPath && /^[a-f0-9]{40}$/u.test(feedback.commit) && feedback.digest);
 		sources.push({ teamId: text(row.team_id), projectId: text(row.project_id), id: text(row.id), revision: Number(row.active_version),
 			digest: text(row.active_content_hash), status: text(row.status), title: text(row.title), summary: text(row.summary), body: text(row.body),
 			repositoryId, path, commit, contentDigest, createdById: text(row.created_by_id) || null,

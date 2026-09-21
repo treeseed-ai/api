@@ -223,17 +223,10 @@ export async function commitDiscussionMessage(input: {
 	const eventPath = projectLibraryPath(root, 'discussion-events', slug(discussionId), `${now.replace(/[^0-9]/gu, '')}-${messageId}.mdx`);
 	const authorId = text(input.principal.id, 'unknown-user');
 	const authorName = text(input.principal.displayName, input.principal.name, authorId);
-	const discussion = serializeFrontmatterDocument({ title: topic, topic, status: 'active', teamId: input.teamId, projectId: input.projectId, visibility: 'team', participantIds: [authorId], agentIds: mentions, createdAt: now, updatedAt: now }, `# ${topic}\n`);
-	const message = serializeFrontmatterDocument({ title: `${authorName}: ${topic}`.slice(0, 120), discussionId, authorId, authorType: input.authorType ?? 'user', intent: input.intent,
-		mentionedAgents, recipientIds: recipients, fileRefs: Array.isArray(input.fileRefs) ? input.fileRefs : [], contextRefs: input.contextRefs ?? [],
-		...(input.inboxIntent ? { inboxIntent: input.inboxIntent } : {}),
-		...(input.replyTo ? { replyTo: input.replyTo } : {}), sourceMessageRefs: input.sourceMessageRefs ?? [],
-		...(input.authorAgentId ? { authorAgentId: input.authorAgentId } : {}), ...(input.handoffId ? { handoffId: input.handoffId } : {}),
-		...(input.parentWorkdayId ? { parentWorkdayId: input.parentWorkdayId } : {}), ...(input.resultingOperationId ? { resultingOperationId: input.resultingOperationId } : {}), createdAt: now }, `${input.body}\n`);
-	const event = serializeFrontmatterDocument({ title: 'Message committed', discussionId, messageId, phase: 'message.committed', sequence: Date.now(), occurredAt: now, metrics: {}, refs: [messagePath] }, `The user message was committed to TreeDX before assignment dispatch.\n`);
-	for (const [path, source] of [[discussionPath, discussion], [messagePath, message], [eventPath, event]]) {
-		assertDiscussionContent(path, source);
-	}
+	const discussion = serializeFrontmatterDocument({ schemaVersion: 'treeseed.discussion/v1', id: discussionId,
+		projectId: input.projectId, subjectRef: { store: 'postgresql', model: 'project', id: input.projectId },
+		status: 'open', participantClasses: [], title: topic, topic, teamId: input.teamId,
+		visibility: 'team', participantIds: [authorId], agentIds: mentions, createdAt: now, updatedAt: now }, `# ${topic}\n`);
 	const branchName = authoringRef || `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const session = await openDiscussionWorkspace({ store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('message',`${discussionId}\n${messageId}`),
@@ -241,8 +234,36 @@ export async function commitDiscussionMessage(input: {
 	});
 	const workspace = session.workspace;
 	try {
+		const creating=input.createDiscussion===true||!input.discussionId;
+		const currentDiscussion=creating?discussion:(await connection.client.readFile({workspaceId:workspace.workspaceId,path:discussionPath})).content;
+		assertDiscussionContent(discussionPath,currentDiscussion);
+		const discussionRef={store:'treedx' as const,model:'discussion',id:discussionId,path:discussionPath,
+			revision:1,digest:`sha256:${createHash('sha256').update(currentDiscussion).digest('hex')}`};
+		const messageReference=async(value:string)=>{
+			const prefix=projectLibraryPath(root,'discussion-messages');
+			const path=value.startsWith(`${prefix}/`)?value:projectLibraryPath(root,'discussion-messages',slug(discussionId),`${value}.mdx`);
+			if(!path.startsWith(`${prefix}/`)||path.split('/').includes('..'))throw new Error('Discussion message reference escaped its project library.');
+			const history=await loadDiscussions({store:input.store,projectId:input.projectId,exactPaths:[path],collection:'messages',limit:1});
+			const existing=history.messages.find((item:Row)=>item.path===path);
+			if(!existing||!/^[a-f0-9]{40}$/u.test(text(existing.immutableRef)))throw new Error('The referenced Discussion message has no exact readable TreeDX commit.');
+			return {store:'treedx' as const,model:'discussion-message',id:text(record(existing.frontmatter).id),path,
+				commit:text(existing.immutableRef)};
+		};
+		const replyToRef=input.replyTo?await messageReference(input.replyTo):undefined;
+		const sourceMessageRefs=await Promise.all((input.sourceMessageRefs??[]).map(messageReference));
+		const message=serializeFrontmatterDocument({schemaVersion:'treeseed.discussion-message/v1',id:messageId,
+			discussionRef,authorRef:{store:'postgresql',model:input.authorType==='agent'?'agent':'user',id:authorId},
+			title:`${authorName}: ${topic}`.slice(0,120),discussionId,authorId,authorType:input.authorType??'user',intent:input.intent,
+			mentionedAgents,recipientIds:recipients,fileRefs:Array.isArray(input.fileRefs)?input.fileRefs:[],contextRefs:input.contextRefs??[],
+			...(input.inboxIntent?{inboxIntent:input.inboxIntent}:{}),...(replyToRef?{replyToRef}:{}),sourceMessageRefs,
+			...(input.authorAgentId?{authorAgentId:input.authorAgentId}:{}),...(input.handoffId?{handoffId:input.handoffId}:{}),
+			...(input.parentWorkdayId?{parentWorkdayId:input.parentWorkdayId}:{}),
+			...(input.resultingOperationId?{resultingOperationId:input.resultingOperationId}:{}),createdAt:now},`${input.body}\n`);
+		const event=serializeFrontmatterDocument({title:'Message committed',discussionId,messageId,phase:'message.committed',sequence:Date.now(),occurredAt:now,metrics:{},refs:[messagePath]},`The user message was committed to TreeDX before assignment dispatch.\n`);
+		assertDiscussionContent(messagePath,message);
+		assertDiscussionContent(eventPath,event);
 		const changeset = await applyTextChangeset({ client: connection.client, workspace, changes: [
-			...(input.createDiscussion === true || !input.discussionId ? [{ path: discussionPath, before: null, after: discussion }] : []),
+			...(creating ? [{ path: discussionPath, before: null, after: discussion }] : []),
 			{ path: messagePath, before: null, after: message },
 			{ path: eventPath, before: null, after: event },
 		] }).catch((error: unknown) => { throw new DiscussionAuthoringError('changeset', error); });
@@ -341,7 +362,6 @@ export async function appendDiscussionEvent(input: {
 		title: text(input.event.title, phase), discussionId: input.discussionId,
 		phase, sequence: Number(input.event.eventIndex ?? Date.now()),
 		...(input.event.assignmentId ? { assignmentId: String(input.event.assignmentId) } : {}),
-		...(input.event.modeRunId ? { modeRunId: String(input.event.modeRunId) } : {}),
 		...(context.agentId ? { agentId: String(context.agentId) } : {}),
 		...(context.executionProviderId ? { providerId: String(context.executionProviderId) } : {}),
 		occurredAt, metrics: input.event.metadata ?? {}, refs,
@@ -409,7 +429,7 @@ export async function appendDiscussionEvent(input: {
 	}
 }
 
-export async function changeDiscussionStatus(input:{store:any;projectId:string;teamId:string;discussionId:string;status:'active'|'archived';principal:Row}){
+export async function changeDiscussionStatus(input:{store:any;projectId:string;teamId:string;discussionId:string;status:'open'|'resolved'|'closed';principal:Row}){
 	const connection=await resolveKnowledgeGatewayConnection(input.store,{projectId:input.projectId,write:true,communicationPaths:true});
 	if(!connection)throw new Error('The project TreeDX repository is unavailable for Discussion lifecycle changes.');
 	const path=projectLibraryPath(connection.contentPath,'discussions',`${slug(input.discussionId)}.mdx`); const branchName=`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`;
@@ -417,7 +437,7 @@ export async function changeDiscussionStatus(input:{store:any;projectId:string;t
 	if(!file)throw Object.assign(new Error('Unknown Discussion.'),{status:404,code:'discussion_not_found'});
 	const before=text(file.content); const parsed=parseFrontmatterDocument(before); const prior=text(parsed.frontmatter.status);
 	if(prior===input.status)return {discussionId:input.discussionId,path,status:input.status,replayed:true,commitSha:text((read as Row).resolvedRef,branchName)};
-	const now=new Date().toISOString(); const after=serializeFrontmatterDocument({...parsed.frontmatter,status:input.status,...((prior==='open'||prior==='resolved')?{legacyStatus:prior}:{}),updatedAt:now},parsed.body); assertDiscussionContent(path,after);
+	const now=new Date().toISOString(); const after=serializeFrontmatterDocument({...parsed.frontmatter,status:input.status,updatedAt:now},parsed.body); assertDiscussionContent(path,after);
 	const session=await openDiscussionWorkspace({store:input.store,connection,projectId:input.projectId,baseRef:connection.baseRef,branchName,
 		operationKey:discussionWorkspaceOperationKey('status',`${input.discussionId}\n${input.status}`)}); const workspace=session.workspace;
 	try{

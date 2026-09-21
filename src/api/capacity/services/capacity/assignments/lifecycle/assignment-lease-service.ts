@@ -194,8 +194,8 @@ async function eligibleLeaseCandidates(input:{store:ProviderAssignmentLeaseStore
 	const {store,principal,request,assignments,workdayStatuses,now}=input;
 	const workdayWeight = (assignment: DurableProviderAssignment): number => {
 		const workdayId = assignmentWorkdayId(assignment); if (!workdayId) return 1;
-		const status = workdayStatuses.get(workdayId); if (status === 'active') return 0;
-		if (status === 'draft' || status === 'paused') return 2; return status ? 3 : 1;
+		const status = workdayStatuses.get(workdayId); if (status === 'running') return 0;
+		if (status === 'queued') return 2; return status ? 3 : 1;
 	};
 	const retryWeight = (assignment: DurableProviderAssignment): number => {
 		if (assignment.status === 'pending' && assignment.leaseState === 'unleased') return 0;
@@ -272,9 +272,9 @@ export async function leaseNextProviderAssignment(
 		 WHERE team_id = ? AND capacity_provider_id = ?
 		   AND status IN ('pending', 'returned')
 		   AND execution_provider_id IN (${executionProviderIds.map(() => '?').join(', ') || 'NULL'})
-		   AND NOT EXISTS (SELECT 1 FROM workday_capacity_envelopes workday
+		   AND NOT EXISTS (SELECT 1 FROM capacity_workday_runs workday
 			WHERE workday.id=capacity_provider_assignments.work_day_id
-			AND workday.status IN ('completed','cancelled'))
+			AND workday.status IN ('completed','cancelled','failed','degraded'))
 		   AND NOT (status='returned' AND execution_kind='conversation' AND lifecycle_code='discussion_response_required')
 		 ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
 		          CASE WHEN status = 'pending' THEN created_at END ASC,
@@ -288,7 +288,7 @@ export async function leaseNextProviderAssignment(
 	const workdayStatuses = new Map<string, string>();
 	if (workdayIds.length) {
 		const workdayRows = await store.all(
-			`SELECT id, status FROM workday_capacity_envelopes WHERE id IN (${workdayIds.map(() => '?').join(', ')})`,
+			`SELECT id, status FROM capacity_workday_runs WHERE id IN (${workdayIds.map(() => '?').join(', ')})`,
 			workdayIds,
 		);
 		for (const row of workdayRows) {

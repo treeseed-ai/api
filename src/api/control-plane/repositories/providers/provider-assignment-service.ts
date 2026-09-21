@@ -6,7 +6,6 @@ import { startAssignmentCloseoutWindow, startAssignmentExecutionWindow } from '.
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { admitDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
-import { modeRunActivityEvent } from '../../../capacity/services/capacity/workdays/content/mode-run-activity-event.ts';
 import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
 import { assignmentActivityType, assignmentRecord as record, assignmentWorkdayRunId, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
@@ -20,6 +19,10 @@ import { createSourceWorkspaceService } from './source/source-workspace-service.
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
 
 function objectValue(value: unknown): Record<string, unknown> { return record(value); }
+function rejectRetiredModeRun(body: Record<string, unknown>) {
+	if (Object.hasOwn(body, 'modeRunId')) throw new CapacityGovernanceError('mode_run_contract_retired',
+		'Mode-run identity is retired; submit assignment and attempt identity.', 400);
+}
 function stableId(scope: string, value: string) { return createHash('sha256').update(`${scope}:${value}`).digest('hex').slice(0, 32); }
 export function normalizeStoredTimestamp(value: unknown) {
 	if (value instanceof Date && Number.isFinite(value.getTime())) return value.toISOString();
@@ -89,6 +92,7 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 	const principal = (auth: unknown, scopes: string[]) => providerPrincipal(auth, scopes);
 	const lifecycle = async (auth: unknown, assignmentId: string, body: Record<string, unknown>, scope: string,
 		method: 'renewProviderAssignmentLease' | 'returnProviderAssignment' | 'completeProviderAssignment') => {
+		rejectRetiredModeRun(body);
 		const result = await store[method](principal(auth, [scope]), assignmentId, body);
 		if (!result) throw new CapacityGovernanceError('provider_assignment_conflict', 'Assignment lease transition was rejected.', 409);
 		return result;
@@ -131,7 +135,6 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			return result;
 		},
 		startCloseout: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => startAssignmentCloseoutWindow(store, principal(auth, ['provider:assignments:write']), assignmentId, body),
-		preflight: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => store.preflightProviderAssignmentCompletion(principal(auth, ['provider:assignments:write']), assignmentId, body),
 		async respondToDiscussion(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
 			const actor = principal(auth, ['provider:assignments:write']);
 			if (!idempotencyKey) throw new CapacityGovernanceError('idempotency_key_required', 'Discussion response requires an idempotency key.', 400);
@@ -270,25 +273,28 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 		returnAssignment: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'returnProviderAssignment'),
 		complete: (auth: unknown, assignmentId: string, body: Record<string, unknown>) => lifecycle(auth, assignmentId, body, 'provider:assignments:write', 'completeProviderAssignment'),
 		async fail(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
-			const scopes = ['provider:assignments:write']; if (body.usageActualId || body.modeRunId || body.usageActual || body.usage) scopes.push('provider:usage:write');
+			rejectRetiredModeRun(body);
+			const scopes = ['provider:assignments:write']; if (body.usageActualId || body.usageActual || body.usage) scopes.push('provider:usage:write');
 			const result = await store.failProviderAssignment(principal(auth, scopes), assignmentId, body);
 			if (!result) throw new CapacityGovernanceError('provider_assignment_conflict', 'Assignment lease transition was rejected.', 409);
 			return result;
 		},
 		async reportUsage(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
+			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:usage:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
 			return reportCapacityUsage(store, { teamId: actor.teamId, membershipId: actor.membershipId, reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), idempotencyKey,
 				assignmentAttempt: body.assignmentAttempt == null ? null : Number(body.assignmentAttempt), usageDimension: String(body.usageDimension ?? ''), accountingMode: body.accountingMode === 'incremental' ? 'incremental' : 'informational',
 				activeSeconds: Number(body.activeSeconds ?? 0), elapsedSeconds: Number(body.elapsedSeconds ?? 0), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
-				modeRunId: typeof body.modeRunId === 'string' ? body.modeRunId : null, source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) });
+				source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) });
 		},
 		async settle(auth: unknown, assignmentId: string, body: Record<string, unknown>, idempotencyKey = '') {
+			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:usage:write', 'provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
 			const settlement = await settleCapacityReservationExactlyOnce(store, { settlementKey: idempotencyKey, teamId: actor.teamId, membershipId: actor.membershipId,
 				reservationId: String(assignment.reservation_id ?? ''), assignmentId: String(assignment.id), assignmentAttempt: body.assignmentAttempt == null ? null : Number(body.assignmentAttempt),
 				usageDimension: typeof body.usageDimension === 'string' ? body.usageDimension : 'aggregate', usageIdempotencyKey: typeof body.usageIdempotencyKey === 'string' ? body.usageIdempotencyKey : null,
 				activeSeconds: Number(body.activeSeconds), elapsedSeconds: Number(body.elapsedSeconds), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
-				modeRunId: typeof body.modeRunId === 'string' ? body.modeRunId : null, source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) as CapacitySettlementRequest['usageActual'] });
+				source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) as CapacitySettlementRequest['usageActual'] });
 			const current = await store.getProviderAssignment(actor.teamId, assignmentId);
 			if (current?.executionKind === 'conversation' && current.status === 'returned' && current.leaseState === 'released'
 				&& current.lifecycleCode === 'discussion_response_required') {
@@ -296,15 +302,6 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 				if (!closed) throw new CapacityGovernanceError('communication_suspension_close_failed', 'The settled conversation response could not close its suspended execution.', 409);
 			}
 			return settlement;
-		},
-		async createModeRun(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
-			const actor = principal(auth, ['provider:assignments:write', 'provider:usage:write']);
-			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'update');
-			const modeRun = await store.createAgentModeRun({ ...body, teamId: actor.teamId, providerAssignmentId: assignment.id });
-			if (!modeRun) throw new CapacityGovernanceError('provider_assignment_not_found', 'Unknown assignment.', 404);
-			const runId = assignmentWorkdayRunId(assignment);
-			if (runId && store.createCapacityWorkdayEvent) await store.createCapacityWorkdayEvent(actor.teamId, runId, modeRunActivityEvent({ assignment, modeRun }));
-			return modeRun;
 		},
 		async createEvent(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
 			const actor = principal(auth, ['provider:assignments:write']);

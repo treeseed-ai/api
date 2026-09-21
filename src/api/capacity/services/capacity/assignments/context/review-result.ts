@@ -1,4 +1,5 @@
 import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { createHash } from 'node:crypto';
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
 import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
@@ -74,12 +75,14 @@ export async function resolveReviewDisposition(store: CapacityGovernanceDatabase
 export interface ProposalReviewResolution {
 	disposition: 'approved' | 'rejected' | 'deferred';
 	reference: Extract<ReturnType<typeof assignmentResultSchema.parse>['references'][number], { kind: 'treedx' }>;
+	sourceRef: { store: 'treedx'; model: 'decision'; id: string; revision: number; digest: string;
+		repository: string; commit: string; path: string };
 }
 
 /** Validate proposal-review output without turning it into acting-work review. */
 export async function resolveProposalReviewDisposition(store: CapacityGovernanceDatabase, assignment: DurableProviderAssignment,
 	result: ReturnType<typeof assignmentResultSchema.parse>,
-	readDecision: (reference: Extract<ReturnType<typeof assignmentResultSchema.parse>['references'][number], { kind: 'treedx' }>) => Promise<Row | null> = async (reference) => {
+	readDecision: (reference: Extract<ReturnType<typeof assignmentResultSchema.parse>['references'][number], { kind: 'treedx' }>) => Promise<{ frontmatter: Row; source: string } | null> = async (reference) => {
 		const connection = await resolveKnowledgeGatewayConnection(store, {
 			projectId: assignment.projectId, write: false, relationPaths: true, readRefs: [reference.commit],
 		});
@@ -88,7 +91,7 @@ export async function resolveProposalReviewDisposition(store: CapacityGovernance
 			ref: reference.commit, path: reference.path, encoding: 'utf8', parseFrontmatter: true, allowProtected: true }));
 		if (text(response.resolvedRef) !== reference.commit) return null;
 		const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
-		return record(file.frontmatter);
+		return typeof file.content === 'string' ? { frontmatter: record(file.frontmatter), source: file.content } : null;
 	},
 ): Promise<ProposalReviewResolution | null> {
 	const node = assignment.executionNodeId ? await store.first(
@@ -98,13 +101,18 @@ export async function resolveProposalReviewDisposition(store: CapacityGovernance
 	if (text(node?.kind) !== 'reviewing' || node?.pair_role != null) return null;
 	const sourceRef = record(node?.source_ref_json);
 	for (const reference of result.references.filter((candidate) => candidate.kind === 'treedx')) {
-		const parsed = validatePortableContentData('decision', await readDecision(reference));
+		const content = await readDecision(reference);
+		if (!content) continue;
+		const parsed = validatePortableContentData('decision', content.frontmatter);
 		if (!parsed.ok) continue;
 		const decision = record(parsed.data);
 		if (decision.decisionClass !== 'proposal' || decision.projectId !== assignment.projectId
 			|| stable(record(decision.subjectRef)) !== stable(sourceRef)
 			|| !['approved', 'rejected', 'deferred'].includes(text(decision.disposition))) continue;
-		return { disposition: decision.disposition as ProposalReviewResolution['disposition'], reference };
+		return { disposition: decision.disposition as ProposalReviewResolution['disposition'], reference,
+			sourceRef: { store: 'treedx', model: 'decision', id: text(decision.id), revision: 1,
+				digest: `sha256:${createHash('sha256').update(content.source).digest('hex')}`,
+				repository: reference.repository, commit: reference.commit, path: reference.path } };
 	}
 	throw new CapacityGovernanceError('proposal_review_decision_required',
 		'Reviewer completion requires one proposal decision bound to the exact proposal source.', 409,

@@ -46,7 +46,10 @@ export function parseBook(input: { path: string; raw: string }): BookDefinition 
 	if (!KNOWLEDGE_STATUSES.includes(status as never)) throw new Error(`Book ${input.path} has invalid status.`);
 	const book = {
 		schemaVersion: BOOK_SCHEMA_VERSION,
-		id: text(data, 'id', input.path), slug: text(data, 'slug', input.path), title: text(data, 'title', input.path),
+		id: text(data, 'id', input.path), projectId: text(data, 'projectId', input.path),
+		revision: Number(data.revision), sourceDigest: `sha256:${createHash('sha256').update(input.raw).digest('hex')}`,
+		sourcePath: input.path,
+		slug: text(data, 'slug', input.path), title: text(data, 'title', input.path),
 		summary: text(data, 'summary', input.path), description: String(data.description ?? data.summary ?? '').trim(),
 		status: status as BookDefinition['status'], visibility: visibility as BookDefinition['visibility'],
 		order: Number(data.order ?? 0), groupIds: list(data.groupIds), audience: list(data.audience),
@@ -66,23 +69,26 @@ export function parseBook(input: { path: string; raw: string }): BookDefinition 
 export function parseKnowledgePage(input: { path: string; raw: string; updatedAt?: string; sourcePackage?: string }): KnowledgePageDefinition {
 	const parsed = parseFrontmatterDocument(input.raw);
 	const data = parsed.frontmatter;
-	assertPortableContentData('knowledge', data, { path: input.path });
+	assertPortableContentData('knowledge', { ...data, body: parsed.body }, { path: input.path });
 	if (data.schemaVersion !== KNOWLEDGE_PAGE_SCHEMA_VERSION) throw new Error(`Knowledge page ${input.path} must use ${KNOWLEDGE_PAGE_SCHEMA_VERSION}.`);
 	const visibility = String(data.visibility ?? 'public');
 	const status = String(data.status ?? 'published');
 	if (!KNOWLEDGE_VISIBILITIES.includes(visibility as never)) throw new Error(`Knowledge page ${input.path} has invalid visibility.`);
 	if (!KNOWLEDGE_STATUSES.includes(status as never)) throw new Error(`Knowledge page ${input.path} has invalid status.`);
 	const bodyMarkdown = validateKnowledgeMarkdown(parsed.body);
+	const bookRef = data.bookRef as KnowledgePageDefinition['bookRef'];
 	const page = {
 		schemaVersion: KNOWLEDGE_PAGE_SCHEMA_VERSION,
-		id: text(data, 'id', input.path), bookId: text(data, 'bookId', input.path), slug: text(data, 'slug', input.path),
-		title: text(data, 'title', input.path), summary: text(data, 'summary', input.path),
+		id: text(data, 'id', input.path), projectId: text(data, 'projectId', input.path),
+		bookRef, bookId: bookRef.id, slug: text(data, 'slug', input.path),
+		title: text(data, 'title', input.path), summary: String(data.summary ?? data.title ?? '').trim(),
 		status: status as KnowledgePageDefinition['status'], visibility: visibility as KnowledgePageDefinition['visibility'],
 		order: Number(data.order ?? 0), parentId: data.parentId ? String(data.parentId) : undefined,
 		groupIds: list(data.groupIds), contributors: list(data.contributors), relatedBookIds: list(data.relatedBookIds ?? data.relatedBooks),
 		relatedKnowledgeIds: list(data.relatedKnowledgeIds ?? data.relatedTopics), relatedNoteIds: list(data.relatedNoteIds),
 		relatedQuestionIds: list(data.relatedQuestionIds), relatedObjectiveIds: list(data.relatedObjectiveIds),
 		relatedProposalIds: list(data.relatedProposalIds), relatedDecisionIds: list(data.relatedDecisionIds),
+		relatedRefs: Array.isArray(data.relatedRefs) ? data.relatedRefs as KnowledgePageDefinition['relatedRefs'] : undefined,
 		guaranteeIds: list(data.guaranteeIds),
 		audiences: {
 			primary: list((data.audiences as Record<string, unknown> | undefined)?.primary ?? data.audience),
@@ -97,7 +103,7 @@ export function parseKnowledgePage(input: { path: string; raw: string; updatedAt
 		revision: createHash('sha256').update(input.raw).digest('hex'), sourcePackage: input.sourcePackage,
 	};
 	if (!identifier.test(page.id)) throw new Error(`Knowledge page ${input.path} has invalid id.`);
-	if (!identifier.test(page.bookId)) throw new Error(`Knowledge page ${input.path} has invalid bookId.`);
+	if (!identifier.test(page.bookId)) throw new Error(`Knowledge page ${input.path} has invalid book reference.`);
 	if (!slugPattern.test(page.slug)) throw new Error(`Knowledge page ${input.path} has invalid slug.`);
 	return page;
 }
@@ -139,6 +145,10 @@ export function validateKnowledgeCatalog(books: BookDefinition[], pages: Knowled
 	for (const page of pages) {
 		const book = byId.get(page.bookId);
 		if (!book) throw new Error(`Knowledge page "${page.id}" references missing book "${page.bookId}".`);
+		if (page.projectId !== book.projectId || page.bookRef.path !== book.sourcePath || page.bookRef.revision !== book.revision
+			|| page.bookRef.digest !== book.sourceDigest) {
+			throw new Error(`Knowledge page "${page.id}" does not pin the exact owning Book revision and digest.`);
+		}
 		if (visibilityRank[page.visibility] < visibilityRank[book.visibility]) {
 			throw new Error(`Knowledge page "${page.id}" is more visible than book "${book.id}".`);
 		}

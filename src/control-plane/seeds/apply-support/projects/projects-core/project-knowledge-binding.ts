@@ -5,7 +5,6 @@ import { treeDxDelegationAuthority } from '../../../../../api/control-plane/tree
 import { repositoryDefinitionSource, validateAgentDefinitionSource } from '../../../../../api/control-plane/repositories/agents/agent-definition-source.ts';
 import { resolveTreeDxServiceUrl } from '../../../../../api/control-plane/treedx/connection-url.ts';
 import { ContextQueryCheckService } from '../../../../../api/capacity/services/capacity/agents/context-query-check-service.ts';
-import { readProjectProposalTypes } from './project-proposal-types.ts';
 
 function text(...values: unknown[]): string {
 	for (const value of values) if (typeof value === 'string' && value.trim()) return value.trim();
@@ -75,7 +74,7 @@ async function waitForGraphRefresh(client: TreeDxClient, repositoryId: string, r
 	throw new Error('TreeDX graph refresh did not complete before the seed reconciliation deadline.');
 }
 
-async function reconcileProjectAgentClasses(input: {
+export async function reconcileProjectAgentClasses(input: {
 	store: any; client: TreeDxClient; repositoryId: string; projectId: string; teamId: string; projectSlug: string; ref: string;
 	paths?:string[];discoveredRef?:string;
 }) {
@@ -91,6 +90,14 @@ async function reconcileProjectAgentClasses(input: {
 	if (files.length !== paths.length) throw new Error('TreeDX did not read back every discovered agent definition.');
 	const immutableRef = text(read.resolvedRef,input.discoveredRef);
 	if (!/^[a-f0-9]{40}$/u.test(immutableRef)) throw new Error('TreeDX agent definitions did not resolve to an immutable commit.');
+	if (/^[a-f0-9]{40}$/u.test(text(input.discoveredRef)) && immutableRef !== input.discoveredRef) {
+		throw new Error('TreeDX agent definitions moved after discovery.');
+	}
+	const discovered = new Set(paths);
+	const returned = files.map((file) => text(object(file).path));
+	if (returned.some((path) => !discovered.has(path)) || new Set(returned).size !== discovered.size) {
+		throw new Error('TreeDX returned agent definitions outside the discovered paths.');
+	}
 	const definitions = files.map((file) => {
 		const row = object(file); const path = text(row.path); const source = repositoryDefinitionSource(row);
 		const validation = validateAgentDefinitionSource(source);
@@ -104,24 +111,19 @@ async function reconcileProjectAgentClasses(input: {
 		groups.set(key, [...(groups.get(key) ?? []), definition]);
 	}
 	const now = new Date().toISOString();
-	const proposalTypeContracts = await readProjectProposalTypes(input.client, input.repositoryId, immutableRef);
 	for (const [classSlug, members] of groups) {
 		const existing = await input.store.first('SELECT id, created_at FROM project_agent_classes WHERE project_id = ? AND slug = ? LIMIT 1', [input.projectId, classSlug]);
 		const classId = text(existing?.id, `${input.projectId}:${classSlug}`);
 		const agents = members.map(({ definition }) => definition);
-		const profiles = members.flatMap(({ definition }) => Object.entries(object(definition.activityProfiles)));
-		const allowedModes = [...new Set(profiles.map(([activity]) => activity === 'acting' ? 'acting' : 'planning'))];
 		const metadata = { source: 'project-library', immutableRef, libraryRef: input.ref,
 			definitionPaths: members.map(({ path }) => path), definitionDigest: createHash('sha256').update(members.map(({ source }) => source).join('\n')).digest('hex') };
 		await input.store.run(`INSERT INTO project_agent_classes
-			(id,team_id,project_id,slug,name,status,allowed_modes_json,required_capabilities_json,kernel_profile_json,kernel_policy_json,handler_refs_json,output_contracts_json,metadata_json,created_at,updated_at)
-			VALUES (?,?,?,?,?,'active',?,?,?,?,?,?,?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,status='active',allowed_modes_json=excluded.allowed_modes_json,
-			required_capabilities_json=excluded.required_capabilities_json,handler_refs_json=excluded.handler_refs_json,
+			(id,team_id,project_id,slug,name,status,handler_refs_json,metadata_json,created_at,updated_at)
+			VALUES (?,?,?,?,?,'active',?,?,?,?)
+			ON CONFLICT(id) DO UPDATE SET slug=excluded.slug,name=excluded.name,status='active',handler_refs_json=excluded.handler_refs_json,
 			metadata_json=excluded.metadata_json,updated_at=excluded.updated_at`, [
 			classId,input.teamId,input.projectId,classSlug,text(members[0]?.definition.name, classSlug),
-			JSON.stringify(allowedModes.length ? allowedModes : ['planning']),JSON.stringify([]),JSON.stringify({}),JSON.stringify({}),
-			JSON.stringify({ agents, proposalTypeContracts }),JSON.stringify({}),JSON.stringify(metadata),text(existing?.created_at, now),now,
+			JSON.stringify({ agents }),JSON.stringify(metadata),text(existing?.created_at, now),now,
 		]);
 	}
 	const activeSlugs = [...groups.keys()];

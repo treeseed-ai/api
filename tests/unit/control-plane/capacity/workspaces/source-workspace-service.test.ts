@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSourceCredentialRecipient, openSourceCredential } from '@treeseed/deployment/security/source';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
-import { createSourceWorkspaceService, assertSourceAssignmentLease, assignmentSourceMode } from '../../../../../src/api/control-plane/repositories/providers/source/source-workspace-service.ts';
+import { createSourceWorkspaceService, assertSourceAssignmentLease, assignmentSourceMode, assignmentPredecessorSourceCommits } from '../../../../../src/api/control-plane/repositories/providers/source/source-workspace-service.ts';
 
 const mocks = vi.hoisted(() => ({ credential: vi.fn(), authority: vi.fn() }));
 vi.mock('../../../../../src/security/provider-credential-authority.ts', () => ({ resolveGitHubSourceAuthority: mocks.credential }));
@@ -30,7 +30,7 @@ function fixture(overrides: Record<string, unknown> = {}) {
 
 const canonicalAttempt = {
 	schemaVersion: 'treeseed.assignment-attempt/v1', id: 'assignment', idempotencyKey: 'assignment', teamId: 'team', projectId: 'project',
-	workdayId: 'workday', nodeId: 'node', workItemId: 'tests-first', nodeRevision: 1, graphRevision: 1,
+	workdayId: 'workday', nodeId: 'node', agentClass: 'tester', workItemId: 'tests-first', nodeRevision: 1, graphRevision: 1,
 	sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest: `sha256:${'1'.repeat(64)}` },
 	authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'4'.repeat(64)}` }],
 	effectiveProfile: { profileRef: { store: 'treedx', model: 'agent', id: 'sdk/tester', revision: 1, digest: `sha256:${'2'.repeat(64)}` },
@@ -46,6 +46,22 @@ const canonicalAttempt = {
 	deadline: '2026-09-11T00:00:00.000Z', leaseId: 'lease', reservationId: 'reservation', attempt: 1,
 	status: 'created', createdAt: now.toISOString(),
 } as const;
+
+it('authorizes only exact same-repository Git predecessors from the immutable attempt', () => {
+	const approved = 'b'.repeat(40);
+	const attempt = { ...canonicalAttempt, predecessorResultIds: ['approved'] };
+	const result = { schemaVersion: 'treeseed.assignment-result/v1', id: 'approved', assignmentId: 'earlier',
+		status: 'completed', summary: 'Candidate committed.', references: [
+			{ kind: 'git', repository: 'repository', commit: approved },
+			{ kind: 'git', repository: 'other-repository', commit: 'c'.repeat(40) }],
+		verification: [], usage: { elapsedSeconds: 1 }, diagnostics: [], completedAt: now.toISOString() };
+	const row = { assignment_attempt_json: JSON.stringify(attempt), workspace_context_json: JSON.stringify({ predecessorResults: [result] }) };
+	expect(assignmentPredecessorSourceCommits(row, ['repository', 'example/project'], commit)).toEqual([approved]);
+	expect(() => assignmentPredecessorSourceCommits({ ...row, workspace_context_json: JSON.stringify({ predecessorResults: [] }) },
+		['repository'], commit)).toThrow('do not match');
+	expect(() => assignmentPredecessorSourceCommits({ ...row, workspace_context_json: JSON.stringify({ predecessorResults: [{ ...result, id: 'different' }] }) },
+		['repository'], commit)).toThrow('invalid predecessor');
+});
 
 describe('provider source workspace authorization', () => {
   it('pins a revision and seals the credential to the exact current assignment and host key', async () => {
@@ -115,6 +131,10 @@ describe('provider source workspace authorization', () => {
 		const dependent = structuredClone(canonicalAttempt);
 		dependent.workspace.baseCommit = '9'.repeat(40);
 		expect(assignmentSourceMode({ ...base, assignment_attempt_json: JSON.stringify(dependent) })).toMatchObject({
+			mode: 'work', acquisition: 'simulation-local', publication: 'simulation-branch' });
+		const integration = structuredClone(canonicalAttempt);
+		integration.predecessorResultIds = ['approved-actor-1', 'approved-actor-2'];
+		expect(assignmentSourceMode({ ...base, assignment_attempt_json: JSON.stringify(integration) })).toMatchObject({
 			mode: 'work', acquisition: 'simulation-local', publication: 'simulation-branch' });
 	});
 });

@@ -8,9 +8,7 @@ export interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
 	renewProviderAssignmentLease(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	returnProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	completeProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-	preflightProviderAssignmentCompletion(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown>>;
 	failProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-	createAgentModeRun(input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
 	createCapacityWorkdayEvent?(teamId: string, runId: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -25,15 +23,16 @@ export function assignmentRecord(value: unknown): Record<string, unknown> {
 }
 
 export function assignmentActivityType(assignment: Record<string, unknown>): unknown {
-	const decision = assignmentRecord(assignment.decisionInput);
-	return decision.activityType ?? assignmentRecord(decision.metadata).activityType
-		?? assignmentRecord(decision.input).activityType ?? assignmentRecord(assignment.metadata).activityType;
+	const raw = assignment.assignmentAttempt ?? assignment.assignment_attempt_json;
+	let attempt = assignmentRecord(raw);
+	if (typeof raw === 'string') {
+		try { attempt = assignmentRecord(JSON.parse(raw)); }
+		catch { return null; }
+	}
+	return assignmentRecord(attempt.effectiveProfile).activity ?? null;
 }
 
 export function assignmentWorkdayRunId(assignment: Record<string, unknown>): string | null {
-	const metadata = assignmentRecord(assignment.metadata);
-	for (const value of [assignment.workDayId, metadata.workdayRunId]) {
-		if (typeof value === 'string' && value.trim()) return value.trim();
-	}
-	return null;
+	const value = assignment.workDayId ?? assignment.work_day_id;
+	return typeof value === 'string' && value.trim() ? value.trim() : null;
 }

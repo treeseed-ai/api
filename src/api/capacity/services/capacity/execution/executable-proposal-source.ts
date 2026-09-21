@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { CapacityOperationError } from '../../../../control-plane/repositories/capacity/capacity-operation-error.ts';
-import { readExactProposal } from '../../../../governance/executable-proposal.ts';
+import { hasCompleteExecutablePlan, readExactProposal } from '../../../../governance/executable-proposal.ts';
 import type { ExecutableProposalSource } from '../../../policy/execution/execution-graph-projector.ts';
+import { loadProposalBlockingFeedback } from './proposal-planning-source.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -17,7 +18,7 @@ const stable = (value: unknown): string => {
 	return JSON.stringify(value);
 };
 
-/** Load ready proposals for governance review and accepted proposals for work. */
+/** Load structurally complete drafts for review and accepted proposals for work. */
 export async function loadTeamExecutableProposalSources(store: any, teamId: string, projectId?: string): Promise<ExecutableProposalSource[]> {
 	const rows = await store.all(`SELECT
 			p.id AS proposal_id,p.project_id,p.active_version,p.active_content_hash,p.metadata_json,
@@ -39,18 +40,17 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		try { exact = await readExactProposal(store, { ...row, id: row.proposal_id }); }
 		catch (error) {
 			// An unaccepted, non-executable draft is governed history, not graph
-			// demand. An accepted proposal whose executable contract is invalid
-			// is likewise quarantined: it contributes no demand and its prior
-			// nodes become stale, without blocking unrelated team work.
+			// demand. An accepted source must never disappear silently: doing so
+			// would stale its existing graph nodes without a new decision.
 			if (!accepted) continue;
 			const value = error as { status?: number; code?: string };
-			if (value.code === 'proposal_execution_plan_invalid') continue;
 			throw Object.assign(new CapacityOperationError(Number(value.status ?? 409), value.code ?? 'proposal_execution_plan_invalid',
 				error instanceof Error ? error.message : 'The accepted proposal could not be read.'), { diagnostics: (error as { diagnostics?: unknown }).diagnostics });
 		}
-		if (!accepted && exact.definition.status !== 'ready') continue;
-		if (accepted && exact.definition.status !== 'ready' && exact.definition.status !== 'decided') throw new CapacityOperationError(
-			409, 'proposal_execution_status_invalid', 'An accepted decision references a proposal that was not ready for execution.');
+		if (!accepted && (!['draft', 'discussing', 'ready'].includes(text(exact.definition.status))
+			|| !hasCompleteExecutablePlan(exact.definition))) continue;
+		if (accepted && (exact.definition.status === 'withdrawn' || !hasCompleteExecutablePlan(exact.definition))) throw new CapacityOperationError(
+			409, 'proposal_execution_plan_invalid', 'An accepted decision references an incomplete or withdrawn execution plan.');
 		if (accepted && stable(recordedRef) !== stable(exact.ref)) throw new CapacityOperationError(
 			409, 'proposal_decision_ref_stale', 'The accepted decision does not match the current exact proposal revision.');
 		const selectedProjectId = text(row.project_id);
@@ -58,6 +58,7 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 			teamId, projectId: selectedProjectId, repository: exact.ref.repository!, path: exact.ref.path!, commit: exact.ref.commit!,
 			digest: exact.ref.digest!, proposalRevision: Number(accepted ? row.proposal_version : row.active_version),
 			frontmatter: exact.definition,
+			feedback: await loadProposalBlockingFeedback(store, text(row.proposal_id)),
 			decision: accepted ? {
 				id: text(row.accepted_decision_id), revision: 1,
 				digest: `sha256:${createHash('sha256').update(stable(decisionRecord)).digest('hex')}`,

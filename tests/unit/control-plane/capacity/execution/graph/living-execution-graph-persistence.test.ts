@@ -108,6 +108,24 @@ describe('normalized living execution graph persistence', () => {
 		]);
 	});
 
+	it('reopens a completed feedback condition and blocks dependent work', () => {
+		const condition = { ...node('completed'), id: 'question', kind: 'condition' as const, pairRole: null,
+			workItemId: undefined, agentClass: undefined, estimate: undefined, requiredCapabilities: undefined,
+			requestedPermissions: undefined, workspace: undefined,
+			condition: { conditionType: 'question' as const, subjectRef: sourceRef, expectedState: 'feedback:q:resolved' } };
+		const actor = { ...node('ready'), id: 'actor' };
+		const current = { ...graph(1, [condition, actor]), edges: [{
+			schemaVersion: 'treeseed.execution-edge/v1' as const, id: 'condition-edge', teamId: 'team',
+			fromNodeId: condition.id, toNodeId: actor.id, provenance: 'governance' as const,
+			graphRevisionCreated: 1,
+		}] };
+		const projected = { ...graph(2, [{ ...condition, status: 'blocked' as const }, { ...actor, status: 'blocked' as const }]),
+			edges: current.edges };
+		const result = applyOperationalState(current, projected, 2);
+		expect(result.nodes.find((entry) => entry.id === 'question')).toMatchObject({ status: 'blocked', nodeRevision: 2 });
+		expect(result.nodes.find((entry) => entry.id === 'actor')?.status).toBe('blocked');
+	});
+
 	it('revises an unassigned node when projected assignment semantics change', () => {
 		const current = graph(1, [node('ready')]);
 		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
@@ -152,6 +170,23 @@ describe('normalized living execution graph persistence', () => {
 		expect(operations[1]?.params[8]).toBe(1);
 		expect(operations.slice(2).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
 		expect(operations.some((operation) => /graph_events|reconciliation_receipts/u.test(operation.query))).toBe(false);
+	});
+
+	it('writes only the changed component when an unrelated project remains unchanged', async () => {
+		const unchanged = { ...node('ready'), id: 'other-node', projectId: 'other-project' };
+		const changed = { ...node('blocked'), id: 'changed-node' };
+		const current = graph(1, [unchanged, changed]);
+		const next = graph(2, [unchanged, { ...changed, status: 'ready', graphRevisionUpdated: 2 }]);
+		const operations: Array<{ query: string; params: unknown[] }> = [];
+		const store = {
+			batch: async (input: typeof operations) => { operations.push(...input); },
+			first: async () => ({ revision: 2, graph_digest: next.digest }),
+		};
+		await persistExecutionGraph(store, next, current, revision(2, next.digest));
+		const nodeWrites = operations.filter((operation) => operation.query.includes('INSERT INTO execution_nodes'));
+		expect(nodeWrites).toHaveLength(1);
+		expect(nodeWrites[0]?.params[0]).toBe('changed-node');
+		expect(operations[1]?.params[9]).toContain('other-node');
 	});
 
 	it('fails closed when another reconciliation wins the graph revision', async () => {

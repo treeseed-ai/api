@@ -181,14 +181,10 @@ async function columnExists(pool:PostgresQueryable,tableName:string,columnName:s
 
 async function hasAdoptableBaselineSchema(pool: PostgresQueryable): Promise<boolean> {
 	const baselineTables = [
-		'agent_capacity_plans',
 		'better_auth_user',
 		'capacity_ledger_entries',
 		'capacity_providers',
 		'capacity_reservations',
-		'capacity_workday_demands',
-		'capacity_workday_participation_cycles',
-		'capacity_workday_participation_entries',
 		'control_plane_operation_runners',
 		'platform_operations',
 		'capacity_provider_assignments',

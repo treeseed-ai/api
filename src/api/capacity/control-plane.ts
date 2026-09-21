@@ -4,7 +4,6 @@ import { ProviderControlPlane } from './provider-control-plane.ts';
 import { CapacityLedgerRepository } from './repositories/capacity/accounting/ledger.ts';
 import { CapacityReservationRepository } from './repositories/capacity/accounting/reservation.ts';
 import { listRecentTaskUsageActuals,listTaskUsageActualsPage as readTaskUsageActualsPage } from './repositories/capacity/accounting/task-usage.ts';
-import { WorkdayCapacityEnvelopeRepository } from './repositories/capacity/workdays/workday-envelope.ts';
 import type { DurableCapacityWorkdayRun } from './repositories/capacity/workdays/workday-run.ts';
 import { CapacityWorkdayRunRepository } from './repositories/capacity/workdays/workday-run.ts';
 import { CapacityRuntimeEvidenceRepository } from './repositories/runtime/runtime-evidence.ts';
@@ -20,12 +19,8 @@ import { CapacityOperationsQueryService } from './services/capacity/capacity-cor
 import { NativeCapacityService } from './services/capacity/capacity-core/native-capacity-service.ts';
 import { CapacitySummaryService } from './services/capacity/observability/capacity-summary-service.ts';
 import { buildProjectCapacityDiagnostics } from './services/capacity/observability/project-capacity-diagnostics-service.ts';
-import { AgentCapacityPlanService } from './services/capacity/planning/agent-capacity-plan-service.ts';
-import type { WorkdaySummaryOptions } from './services/capacity/workdays/assignments/workday-summary-query-service.ts';
-import { buildWorkdayCapacitySummary } from './services/capacity/workdays/assignments/workday-summary-query-service.ts';
 import { CapacityWorkdayEventService } from './services/capacity/workdays/content/workday-event-service.ts';
 import { terminalizeCapacityWorkdayAssignments as terminalizeWorkdayAssignments } from './services/capacity/workdays/lifecycle/workday-assignment-terminalization-service.ts';
-import { closeCapacityWorkdayAdmission as closeWorkdayAdmission,terminalizeCapacityWorkdayEnvelopes as terminalizeWorkdayEnvelopes } from './services/capacity/workdays/lifecycle/workday-envelope-terminalization-service.ts';
 import { fenceCapacityWorkdayAdmission as fenceWorkdayAdmission } from './services/capacity/workdays/lifecycle/workday-admission-fence-service.ts';
 import { maintainCapacityWorkdayRuns as maintainWorkdayRuns } from './services/capacity/workdays/lifecycle/workday-recovery-service.ts';
 import type { WorkdayProject } from './services/capacity/workdays/policy/workday-project-policy.ts';
@@ -40,9 +35,6 @@ import { collectProjectAgentArtifacts } from './services/projects/projects-core/
 import { listProjectDeletionBlockers } from './services/projects/projects-core/project-deletion-blocker-service.ts';
 import { buildProjectCapacityRuntimeDiagnostics } from './services/runtime/runtime-diagnostics-query-service.ts';
 import { maintainCapacityRuntimeRetention as maintainRuntimeRetention } from './services/runtime/runtime-retention-service.ts';
-import { PlanningStateService } from './services/support/planning-state-service.ts';
-import { StructuredAgentEstimateService } from './services/support/structured-estimate-service.ts';
-import { DecisionWorkGraphService } from './services/treedx/graph/decision-work-graph-service.ts';
 export interface CapacityControlPlaneHost extends CapacityGovernanceDatabase {
 	config: Record<string, unknown>;
 	createTeam(input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
@@ -61,13 +53,8 @@ export type CapacityControlPlaneStore = PublicSurface<CapacityControlPlane>
 	& PublicSurface<ProviderControlPlane>
 	& CapacityControlPlaneHost;
 type CapacityServiceStore = CapacityControlPlaneStore
-	& ConstructorParameters<typeof AgentCapacityPlanService>[0]
-	& ConstructorParameters<typeof PlanningStateService>[0]
-	& ConstructorParameters<typeof StructuredAgentEstimateService>[0]
-	& ConstructorParameters<typeof DecisionWorkGraphService>[0]
 	& ConstructorParameters<typeof ResearchWorkflowService>[0]
 	& ConstructorParameters<typeof CapacityOperationsQueryService>[0]
-	& Parameters<typeof buildWorkdayCapacitySummary>[0]
 	& Parameters<typeof buildProjectCapacityRuntimeDiagnostics>[0]
 	& Parameters<typeof persistProviderAssignmentExplanation>[0]
 	& Parameters<typeof createConfiguredWorkdayTreeDxWorkspace>[0]
@@ -96,22 +83,12 @@ function isoNow() {
 class CapacityControlPlane {
 	private capacityContext!: CapacityServiceStore;
 	private capacityRuntimeEvidenceRepository!: CapacityRuntimeEvidenceRepository;
-	private workdayCapacityEnvelopeRepository!: WorkdayCapacityEnvelopeRepository;
-	private agentCapacityPlanService!: AgentCapacityPlanService;
-	private planningStateService!: PlanningStateService;
-	private structuredAgentEstimateService!: StructuredAgentEstimateService;
-	private decisionWorkGraphService!: DecisionWorkGraphService;
 	private researchWorkflowService!: ResearchWorkflowService;
 	constructor(private readonly host: CapacityControlPlaneHost) {}
 	attach(context: CapacityControlPlaneStore) {
 		const serviceContext = context as unknown as CapacityServiceStore;
 		this.capacityContext = serviceContext;
 		this.capacityRuntimeEvidenceRepository = new CapacityRuntimeEvidenceRepository(serviceContext);
-		this.workdayCapacityEnvelopeRepository = new WorkdayCapacityEnvelopeRepository(serviceContext);
-		this.agentCapacityPlanService = new AgentCapacityPlanService(serviceContext);
-		this.planningStateService = new PlanningStateService(serviceContext);
-		this.structuredAgentEstimateService = new StructuredAgentEstimateService(serviceContext);
-		this.decisionWorkGraphService = new DecisionWorkGraphService(serviceContext);
 		this.researchWorkflowService = new ResearchWorkflowService(serviceContext);
 	}
 	ensureInitialized() { return this.host.ensureInitialized(); }
@@ -122,108 +99,10 @@ class CapacityControlPlane {
 	scopeHash(value: unknown = {}) {
 			return `scope_${createHash('sha256').update(JSON.stringify(value, Object.keys(objectValue(value)).sort())).digest('hex').slice(0, 16)}`;
 		}
-	async upsertDecisionPlanningStatus(input: Parameters<PlanningStateService['upsertPlanningStatus']>[0]) {
-			return this.planningStateService.upsertPlanningStatus(input);
-		}
-	async getDecisionPlanningStatus(decisionId: string) {
-			return this.planningStateService.getPlanningStatus(decisionId);
-		}
-	async createPlanningInputRequest(decisionId: string, input: Parameters<PlanningStateService['createPlanningRequest']>[1]) {
-			return this.planningStateService.createPlanningRequest(decisionId, input);
-		}
-	async listPlanningInputRequests(decisionId: string) {
-			return this.planningStateService.listPlanningRequests(decisionId);
-		}
-	async createDecisionExecutionInput(decisionId: string, input: Parameters<PlanningStateService['createExecutionInput']>[1]) {
-			return this.planningStateService.createExecutionInput(decisionId, input);
-		}
-	async listDecisionExecutionInputs(decisionId: string, filters: Parameters<PlanningStateService['listExecutionInputs']>[1] = {}) {
-			return this.planningStateService.listExecutionInputs(decisionId, filters);
-		}
-	async getDecisionExecutionInput(inputId: string) {
-			return this.planningStateService.getExecutionInput(inputId);
-		}
-	async updateDecisionExecutionInputStatus(inputId: string, status: Parameters<PlanningStateService['transitionExecutionInput']>[1], input: Parameters<PlanningStateService['transitionExecutionInput']>[2] = {}) {
-			return this.planningStateService.transitionExecutionInput(inputId, status, input);
-		}
-	async createStructuredAgentEstimate(decisionId: string, input: Parameters<StructuredAgentEstimateService['create']>[1]) {
-			return this.structuredAgentEstimateService.create(decisionId, input);
-		}
-	async listStructuredAgentEstimatesForDecision(decisionId: string, filters: { status?: Parameters<StructuredAgentEstimateService['listDecision']>[1] } = {}) {
-			return this.structuredAgentEstimateService.listDecision(decisionId, filters.status ?? null);
-		}
-	async getStructuredAgentEstimate(estimateId: string) {
-			return this.structuredAgentEstimateService.get(estimateId);
-		}
-	async updateStructuredAgentEstimateStatus(estimateId: string, status: Parameters<StructuredAgentEstimateService['transition']>[1], input: Parameters<StructuredAgentEstimateService['transition']>[2] = {}) {
-			if (status !== 'accepted' && status !== 'rejected') throw new Error(`Unsupported structured estimate transition ${status}.`);
-			return this.structuredAgentEstimateService.transition(estimateId, status, input);
-		}
-	async acceptStructuredAgentEstimate(estimateId: string, input: Parameters<StructuredAgentEstimateService['transition']>[2] = {}) {
-			return this.updateStructuredAgentEstimateStatus(estimateId, 'accepted', input);
-		}
-	async rejectStructuredAgentEstimate(estimateId: string, input: Parameters<StructuredAgentEstimateService['transition']>[2] = {}) {
-			return this.updateStructuredAgentEstimateStatus(estimateId, 'rejected', input);
-		}
-	async createDecisionAssignmentGraph(decisionId: string, input: JsonRecord = {}) {
-			return this.decisionWorkGraphService.compile(decisionId, input);
-		}
-	async getDecisionAssignmentGraph(graphId: string) {
-			return this.decisionWorkGraphService.getGraph(graphId);
-		}
-	async listDecisionAssignmentGraphsForDecision(decisionId: string, filters: PageFilters = {}) {
-			return this.decisionWorkGraphService.listGraphs(decisionId, filters.active);
-		}
-	async activateDecisionAssignmentGraphVersion(graphId: string) {
-			return this.decisionWorkGraphService.activate(graphId);
-		}
-	async getDeliverableContract(contractId: string) {
-		return this.decisionWorkGraphService.getContract(contractId);
-		}
-	async getDeliverableManifest(manifestId: string) {
-		return this.decisionWorkGraphService.getManifest(manifestId);
-		}
-	async submitDeliverableManifest(contractId: string, input: JsonRecord = {}) {
-			return this.decisionWorkGraphService.submitManifest(contractId, input);
-		}
-	async markDeliverableContractApproved(contractId: string, input: JsonRecord = {}) {
-			return this.decisionWorkGraphService.transitionContract(contractId, 'approved', input);
-		}
-	async markDeliverableContractRejected(contractId: string, input: JsonRecord = {}) {
-			return this.decisionWorkGraphService.transitionContract(contractId, 'rejected', input);
-		}
 	async createResearchWorkflow(projectId: string, input: JsonRecord = {}) { return this.researchWorkflowService.create(projectId, input); }
 	async getResearchWorkflow(id: string) { return this.researchWorkflowService.get(id); }
 	async listResearchWorkflows(projectId: string, filters: PageFilters = {}) { return this.researchWorkflowService.list(projectId, filters.status ?? undefined); }
 	async completeResearchWorkflowStage(id: string, stage: string, input: JsonRecord = {}) { return this.researchWorkflowService.completeStage(id, stage, input); }
-	async createAgentCapacityPlan(decisionId: string, input: Parameters<AgentCapacityPlanService['create']>[1]) {
-			return this.agentCapacityPlanService.create(decisionId, input);
-		}
-	async listAgentCapacityPlans(decisionId: string, filters: Parameters<AgentCapacityPlanService['list']>[1] = {}) {
-			return this.agentCapacityPlanService.list(decisionId, filters);
-		}
-	async getAgentCapacityPlan(planId: string) {
-			return this.agentCapacityPlanService.get(planId);
-		}
-	async updateAgentCapacityPlanStatus(planId: string, status: Parameters<AgentCapacityPlanService['transition']>[1], input: Parameters<AgentCapacityPlanService['transition']>[2] = {}) {
-			return this.agentCapacityPlanService.transition(planId, status, input);
-		}
-	async createWorkdayCapacityEnvelope(input: Parameters<WorkdayCapacityEnvelopeRepository['create']>[0], idempotencyKey?: string | null) {
-			return this.workdayCapacityEnvelopeRepository.create(input, idempotencyKey);
-		}
-	async getWorkdayCapacityEnvelope(workdayId: string) {
-			return this.workdayCapacityEnvelopeRepository.get(workdayId);
-		}
-	async listWorkdayCapacityEnvelopes(projectId: string, filters: Parameters<WorkdayCapacityEnvelopeRepository['list']>[1] = {}) {
-			return this.workdayCapacityEnvelopeRepository.list(projectId, filters);
-		}
-	async updateWorkdayCapacityEnvelopeState(workdayId: string, status: string, idempotencyKey?: string | null) {
-			return this.workdayCapacityEnvelopeRepository.transition(workdayId, status as Parameters<WorkdayCapacityEnvelopeRepository['transition']>[1], idempotencyKey);
-		}
-	async getWorkdayCapacitySummary(workdayId: string, options: WorkdaySummaryOptions = {}) {
-			await this.ensureInitialized();
-			return buildWorkdayCapacitySummary(this.capacityContext, workdayId, options);
-		}
 	async recordProviderAssignmentExplanation(teamId: string, assignmentId: string, input: Parameters<typeof persistProviderAssignmentExplanation>[3]) {
 			return persistProviderAssignmentExplanation(this.capacityContext, teamId, assignmentId, input);
 		}
@@ -261,12 +140,6 @@ class CapacityControlPlane {
 	async preflightCapacityWorkdayRun(run: DurableCapacityWorkdayRun) {
 		return preflightWorkdayRun(this.capacityContext, run);
 	}
-	async terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string) {
-			return terminalizeWorkdayEnvelopes(this.capacityContext, teamId, runId, status);
-		}
-	async closeCapacityWorkdayAdmission(teamId: string, runId: string) {
-		return closeWorkdayAdmission(this.capacityContext, teamId, runId);
-		}
 	async fenceCapacityWorkdayAdmission(teamId: string, runId: string) {
 		return fenceWorkdayAdmission(this.capacityContext, teamId, runId);
 	}
@@ -365,8 +238,8 @@ class CapacityControlPlane {
 	async updateCapacityWorkdaySchedule(teamId: string, scheduleId: string, input: JsonRecord = {}) { return new CapacityWorkdayScheduleService(this.capacityContext).update(teamId, scheduleId, input); }
 	async tickCapacityWorkdaySchedule(teamId: string, scheduleId: string, now?: string) { return new CapacityWorkdayScheduleService(this.capacityContext).tick(teamId, scheduleId, now); }
 	async tickDueCapacityWorkdaySchedules(now?: string) { return new CapacityWorkdayScheduleService(this.capacityContext).tickDue(now); }
-	async collectControlPlaneGeneratedArtifacts(projectId: string, modeRuns: JsonRecord[] = []) {
-			return collectProjectAgentArtifacts(this.capacityContext, projectId, modeRuns.length ? modeRuns : undefined);
+	async collectControlPlaneGeneratedArtifacts(projectId: string) {
+			return collectProjectAgentArtifacts(this.capacityContext, projectId);
 		}
 	async getProjectAgentsSummary(projectId: string, principal: unknown = null) {
 			return buildProjectAgentSummary(this.capacityContext, projectId, principal);

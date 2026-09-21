@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gateway = vi.hoisted(() => ({ readRepositoryFile: vi.fn() }));
 vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({
@@ -44,6 +44,12 @@ const definition = {
 		},
 	},
 };
+const agentCommit = 'a'.repeat(40);
+const agentPath = 'agents/engineer.yaml';
+const classRow = (agent: unknown, id = 'class-engineer') => ({
+	id, handler_refs_json: { agents: [agent] },
+	metadata_json: { source: 'project-library', immutableRef: agentCommit, definitionPaths: [agentPath] },
+});
 
 const result = {
 	schemaVersion: 'treeseed.assignment-result/v1', id: 'result-one', assignmentId: 'assignment-one',
@@ -70,6 +76,11 @@ const teamContextStore = {
 };
 
 describe('direct ready-node admission input', () => {
+	beforeEach(() => {
+		gateway.readRepositoryFile.mockResolvedValue({
+			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: definition },
+		});
+	});
 	it('keeps a suspended conversation node occupied until its response is settled', async () => {
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([]) };
 		await listReadyExecutionNodes(store, run as never, project as never, async () => []);
@@ -141,7 +152,7 @@ describe('direct ready-node admission input', () => {
 	it('loads the exact profile and predecessor results without creating a demand record', async () => {
 		const store = { ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([nodeRow()])
-			.mockResolvedValueOnce([{ id: 'class-engineer', handler_refs_json: { agents: [definition] } }])
+			.mockResolvedValueOnce([classRow(definition)])
 			.mockResolvedValueOnce([{ assignment_result_json: result }]) };
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
 		expect(candidate).toMatchObject({
@@ -156,7 +167,42 @@ describe('direct ready-node admission input', () => {
 			expect.objectContaining({ id: 'project:project-objective', path: 'objectives/core', commit: '1'.repeat(40) }),
 		]));
 		expect(candidate.sourceRepositories).toEqual(['repository-sdk']);
+		expect(candidate.effectiveProfile.profileRef).toMatchObject({
+			store: 'treedx', repository: 'repository', commit: agentCommit, path: agentPath,
+		});
 		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
+	});
+
+	it('carries an approved Reviewer result and its exact Actor Git candidate to dependent work', async () => {
+		const reviewResult = { ...result, id: 'review-result', assignmentId: 'review-assignment',
+			references: [{ kind: 'treedx', projectId, repository: 'repository',
+				commit: 'f'.repeat(40), path: 'decisions/approval.mdx' }] };
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([{ assignment_result_json: reviewResult }, { assignment_result_json: result }]) };
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([reviewResult, result]);
+		const [sql, bindings] = store.all.mock.calls[2]!;
+		expect(sql).toContain("pair.provenance='review-pair'");
+		expect(sql).toContain("reviewer.status='completed'");
+		expect(bindings).toEqual(['team', 'node', 'team', 'node']);
+	});
+
+	it('rejects a projected agent definition that differs from its exact TreeDX source', async () => {
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: agentCommit,
+			file: { path: agentPath, frontmatter: { ...definition, purpose: 'Changed at source.' } } });
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([classRow(definition)]) };
+		await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
+			.rejects.toMatchObject({ code: 'execution_node_agent_profile_moved' });
+	});
+
+	it('rejects an unpinned agent definition instead of using cached profile data', async () => {
+		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow()])
+			.mockResolvedValueOnce([{ ...classRow(definition), metadata_json: {} }]) };
+		await expect(listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs))
+			.rejects.toMatchObject({ code: 'execution_node_agent_profile_unpinned' });
 	});
 
 	it.each(['book', 'knowledge'])('loads the exact %s candidate using its producing assignment grant', async (model) => {
@@ -168,11 +214,14 @@ describe('direct ready-node admission input', () => {
 		const reviewer = { ...definition, id: 'agent:reviewer', agentClass: 'reviewer',
 			activityProfiles: { reviewing: { handler: 'reviewer', permissions: reviewPermissions,
 				prompt: { system: 'Review the exact immutable actor output.' } } } };
+		gateway.readRepositoryFile.mockResolvedValue({
+			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: reviewer },
+		});
 		const node = { ...nodeRow(), kind: 'reviewing', pair_role: 'reviewer', agent_class: 'reviewer',
 			workspace: 'treedx', requested_permissions_json: reviewPermissions };
 		const createStore = (grants: unknown[]) => ({ ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([node])
-			.mockResolvedValueOnce([{ id: 'class-reviewer', handler_refs_json: { agents: [reviewer] } }])
+			.mockResolvedValueOnce([classRow(reviewer, 'class-reviewer')])
 			.mockResolvedValueOnce([{ assignment_result_json: actorResult, assignment_attempt_json: { grant: { contentWrite: grants } } }]) });
 		const [candidate] = await listReadyExecutionNodes(createStore([target]), run as never, project as never, async () => contextRefs);
 		expect(candidate.contextRefs).toContainEqual({ ...target, commit: 'd'.repeat(40) });
@@ -185,7 +234,7 @@ describe('direct ready-node admission input', () => {
 			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'team-repository',
 				contentRepositoryRef: 'refs/remotes/origin/staging', metadata: { resolvedRef: 'f'.repeat(40) } })),
 			all: vi.fn().mockResolvedValueOnce([nodeRow()])
-				.mockResolvedValueOnce([{ id: 'class-engineer', handler_refs_json: { agents: [definition] } }])
+				.mockResolvedValueOnce([classRow(definition)])
 				.mockResolvedValueOnce([]),
 		};
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
@@ -197,7 +246,7 @@ describe('direct ready-node admission input', () => {
 
 	it('limits admission to decision IDs frozen into the workday', async () => {
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([nodeRow('selected'), nodeRow('other', 'other-decision')])
-			.mockResolvedValueOnce([{ id: 'class-engineer', handler_refs_json: { agents: [definition] } }])
+			.mockResolvedValueOnce([classRow(definition)])
 			.mockResolvedValueOnce([]) };
 		const candidates = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
 		expect(candidates.map((candidate) => candidate.node.id)).toEqual(['selected']);
@@ -212,7 +261,7 @@ describe('direct ready-node admission input', () => {
 			agent_class: 'engineer', workspace: 'treedx',
 		};
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([planning])
-			.mockResolvedValueOnce([{ id: 'class-engineer', handler_refs_json: { agents: [definition] } }])
+			.mockResolvedValueOnce([classRow(definition)])
 			.mockResolvedValueOnce([]) };
 		const candidates = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
 		expect(candidates.map((candidate) => candidate.node.id)).toEqual([planning.id]);
@@ -232,7 +281,7 @@ describe('direct ready-node admission input', () => {
 				repository: 'repository', commit: 'f'.repeat(40), path: 'decisions/review.mdx' }] };
 		const store = { ...teamContextStore, all: vi.fn()
 			.mockResolvedValueOnce([revised])
-			.mockResolvedValueOnce([{ id: 'class-engineer', handler_refs_json: { agents: [definition] } }])
+			.mockResolvedValueOnce([classRow(definition)])
 			.mockResolvedValueOnce([])
 			.mockResolvedValueOnce([{ assignment_result_json: result }])
 			.mockResolvedValueOnce([{ assignment_result_json: reviewResult }]) };

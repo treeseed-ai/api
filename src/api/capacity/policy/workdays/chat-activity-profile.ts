@@ -7,10 +7,10 @@ export function compileDefaultChatActivityProfile(
 	// Discussion responses are authored only by treeseed.discussion.respond.
 	// Generic content tools retain custody only for explicitly linked artifacts
 	// and the assignment's own operational records.
-	const writableModels = new Set(['note', 'question', 'proposal', 'assignment_plan', 'assignment_status', 'assignment_summary']);
+	const writableModels = new Set(['note', 'question', 'proposal']);
 	const contextModels = [...new Set([
 		'discussion', 'discussion_message', 'discussion_event', 'discussion_topic', 'agent', 'note', 'question',
-		'proposal', 'decision', 'objective', 'knowledge', 'assignment_plan', 'assignment_status', 'assignment_summary',
+		'proposal', 'decision', 'objective', 'knowledge',
 		...(specialization.contextModels ?? []),
 	])];
 	const tools = [...new Set([
@@ -18,8 +18,7 @@ export function compileDefaultChatActivityProfile(
 		'treedx.read_repository_files', 'treedx.search_workspace', 'treedx.read_workspace_file',
 		'treeseed.repository.read_file', 'treeseed.repository.search',
 		'treeseed.content.create', 'treeseed.content.update', 'treeseed.content.link', 'treeseed.content.validate',
-		'treeseed.content.commit', 'treeseed.status', 'treeseed.assignment_activity', 'treeseed.assignment_plan',
-		'treeseed.assignment_status_update', 'treeseed.assignment_summary', 'treeseed.discussion.read',
+		'treeseed.content.commit', 'treeseed.status', 'treeseed.assignment_activity', 'treeseed.discussion.read',
 		'treeseed.discussion.follow', 'treeseed.discussion.respond', 'treeseed.discussion.request_handoff',
 		'treeseed.discussion.create_artifact', 'treeseed.operation.prepare_handoff', 'treeseed.client_session.request_action',
 		...(specialization.toolAdditions ?? []),

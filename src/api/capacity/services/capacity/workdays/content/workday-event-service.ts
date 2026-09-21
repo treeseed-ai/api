@@ -31,6 +31,8 @@ export class CapacityWorkdayEventService {
 	}
 
 	async create(teamId: string, runId: string, input: JsonRecord): Promise<CapacityWorkdayEventRecord | null> {
+		if (Object.hasOwn(input, 'modeRunId')) throw new CapacityGovernanceError('mode_run_contract_retired',
+			'Mode-run identity is retired; use assignmentId.', 400);
 		const run = await this.runs.get(teamId, runId);
 		if (!run) return null;
 		const eventType = nullable(input.eventType ?? input.type);
@@ -40,7 +42,7 @@ export class CapacityWorkdayEventService {
 		const write = {
 			id,
 			projectId: nullable(input.projectId), workdayId: nullable(input.workdayId ?? input.workDayId),
-			assignmentId: nullable(input.assignmentId), modeRunId: nullable(input.modeRunId), eventType,
+			assignmentId: nullable(input.assignmentId), eventType,
 			status: parseCapacityWorkdayEventStatus(input.status ?? 'recorded'), title: nullable(input.title), message: nullable(input.message),
 			parameters: object(input.parameters), context: object(input.context), refs: object(input.refs), metadata: object(input.metadata),
 			createdAt: nullable(input.createdAt) ?? new Date().toISOString(),
@@ -48,7 +50,7 @@ export class CapacityWorkdayEventService {
 		const existing = await this.events.get(teamId, runId, id);
 		if (existing) {
 			const comparable = (value: CapacityWorkdayEventRecord | typeof write) => ({
-				projectId: value.projectId, workdayId: value.workdayId, assignmentId: value.assignmentId, modeRunId: value.modeRunId,
+				projectId: value.projectId, workdayId: value.workdayId, assignmentId: value.assignmentId,
 				eventType: value.eventType, status: value.status, title: value.title, message: value.message,
 				parameters: value.parameters, context: value.context, refs: value.refs, metadata: value.metadata, createdAt: value.createdAt,
 			});

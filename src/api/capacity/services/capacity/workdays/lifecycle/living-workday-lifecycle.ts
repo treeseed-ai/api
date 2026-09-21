@@ -1,11 +1,54 @@
-import { appliedWorkdaySchema, compilePlanningRounds, workdayPhase, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, compilePlanningRounds, exactEntityReferenceSchema, workdayPhase, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
+import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
+import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
 
 type Row = Record<string, unknown>;
 const terminalNodeStates = new Set(['completed', 'failed', 'cancelled', 'stale']);
 const terminalReservationStates = new Set(['consumed', 'released', 'expired', 'failed']);
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
+
+async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {
+	const sources = { ...record(run.parameters.planningSourceByProjectId) };
+	const proposalsByProjectId: Record<string, Row> = {};
+	const first = plan.planningRounds[0]!;
+	const prefix = `planning:${plan.id}:${first.round}:`;
+	const initialAgentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
+	const projectIds = Array.isArray(run.parameters.scheduledProjectIds) ? run.parameters.scheduledProjectIds : [];
+	for (const projectId of projectIds) {
+		if (typeof projectId !== 'string') continue;
+		const existing = record(sources[projectId]);
+		if (typeof existing.id === 'string') {
+			const proposal = await store.getGovernanceProposal(existing.id);
+			if (!proposal) throw new Error(`planning_proposal_missing:${projectId}`);
+			proposalsByProjectId[projectId] = (await readExactProposal(store, proposal,
+				exactEntityReferenceSchema.parse(existing))).definition;
+			continue;
+		}
+		const candidates = await store.all(`SELECT * FROM governance_proposals WHERE team_id=? AND project_id=?
+			AND status IN ('draft','submitted','open','voting') ORDER BY id LIMIT 101`, [run.teamId, projectId]);
+		if (candidates.length > 100) throw new Error(`planning_proposal_inventory_too_large:${projectId}`);
+		const executable: Array<Awaited<ReturnType<typeof readExactProposal>>> = [];
+		for (const proposal of candidates) {
+			try { executable.push(await readExactProposal(store, proposal)); }
+			catch (error) {
+				if ((error as { code?: unknown })?.code !== 'proposal_execution_plan_invalid') throw error;
+			}
+		}
+		if (executable.length > 1) throw new Error(`planning_proposal_ambiguous:${projectId}`);
+		const exact = executable[0];
+		if (!exact) continue;
+		sources[projectId] = exact.ref;
+		proposalsByProjectId[projectId] = exact.definition;
+	}
+	const estimators = Object.keys(proposalsByProjectId).length
+		? workdayParticipants({ ...run.parameters, proposalsByProjectId })
+			.filter((participant) => participant.activity === 'estimating' && projectIds.includes(participant.projectId))
+			.map((participant) => participant.id) : [];
+	return { sources, agentIds: [...new Set([...initialAgentIds, ...estimators])].sort() };
+}
 
 function advanceRounds(plan: AppliedWorkday, states: Map<string, string>, now: string): AppliedWorkday {
 	const rounds = plan.planningRounds.map((round, index) => {
@@ -32,13 +75,12 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	if (next.state === 'planned') next = { ...next, state: 'active', activatedAt: next.activatedAt ?? now };
 	if (!requestClose && next.state === 'active' && workdayPhase(next, now) === 'planning'
 		&& next.planningRounds.length && next.planningRounds.every((round) => round.state === 'complete')) {
-		const first = next.planningRounds[0]!;
-		const prefix = `planning:${next.id}:${first.round}:`;
-		const agentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
+		const { sources, agentIds } = await nextPlanningParticipants(store, run, next);
 		const round = next.planningRounds.at(-1)!.round + 1;
 		const turns = compilePlanningRounds(next.id, agentIds, next.policySnapshot.planningTurnMaximumSeconds, round);
 		next = { ...next, planningRounds: [...next.planningRounds, { round, state: 'active',
 			assignmentIds: turns.map((turn) => turn.id), startedAt: now }] };
+		run = { ...run, parameters: { ...run.parameters, planningSourceByProjectId: sources } };
 	}
 	if (next.state === 'active' && (requestClose || Date.parse(now) >= Date.parse(next.endsAt))) {
 		next = { ...next, state: 'closing', closingAt: next.closingAt ?? now };

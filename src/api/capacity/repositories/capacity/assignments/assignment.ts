@@ -18,6 +18,7 @@ export interface ProviderAssignmentFilters {
 	projectId?: string | null;
 	providerId?: string | null;
 	status?: string | null;
+	mode?: string | null;
 	assignmentId?: string | null;
 	workdayId?: string | null;
 	executionProviderId?: string | null;
@@ -103,7 +104,6 @@ function serializeExecutableAssignmentRow(row: Row | null): DurableProviderAssig
 		handoffDepth: Number(row.handoff_depth ?? 0),
 		sourceMessageRefs: (() => { try { return JSON.parse(text(row.source_message_refs_json) || '[]') as string[]; } catch { return []; } })(),
 		operationHandoffId: row.operation_handoff_id == null ? null : text(row.operation_handoff_id),
-		allocationSetId: row.allocation_set_id == null ? null : text(row.allocation_set_id),
 		projectAgentClassId: text(row.project_agent_class_id),
 		reservationId: row.reservation_id == null ? null : text(row.reservation_id),
 		workDayId: row.work_day_id == null ? null : text(row.work_day_id),
@@ -119,7 +119,6 @@ function serializeExecutableAssignmentRow(row: Row | null): DurableProviderAssig
 		agentId: row.agent_id == null ? null : text(row.agent_id),
 		handlerId: row.handler_id == null ? null : text(row.handler_id),
 		capacityEnvelope: json(row.capacity_envelope_json, {}, 'capacity_envelope_json', id) as unknown as DurableProviderAssignment['capacityEnvelope'],
-		decisionInput: json(row.decision_input_json, {}, 'decision_input_json', id),
 		workspaceContext,
 		allowedOutputs: json(row.allowed_outputs_json, {}, 'allowed_outputs_json', id),
 		explanation: json(row.explanation_json, {}, 'explanation_json', id),
@@ -192,6 +191,7 @@ export class ProviderAssignmentRepository {
 			[filters.projectId, 'assignment.project_id'],
 			[filters.providerId, 'assignment.capacity_provider_id'],
 			[filters.status, 'assignment.status'],
+			[filters.mode, 'assignment.mode'],
 			[filters.assignmentId, 'assignment.id'],
 			[filters.workdayId, 'assignment.work_day_id'],
 			[filters.executionProviderId, 'assignment.execution_provider_id'],

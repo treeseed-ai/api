@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { communicationSchedulingDiagnostics } from '../../../../../src/api/control-plane/repositories/capacity/communication/scheduling-diagnostics.ts';
-import { selectWorkdayDemandSupply } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-demand-supply.ts';
-
-vi.mock('../../../../../src/api/capacity/repositories/capacity/workdays/workday-demand-supply.ts', () => ({ selectWorkdayDemandSupply: vi.fn() }));
 
 function fixture() {
 	const store = {
@@ -10,22 +7,21 @@ function fixture() {
 			? { status: 'running', execution_mode: 'production', parameters_json: JSON.stringify({ prompt: 'PRIVATE' }) }
 			: { id: 'session', status: 'running' }),
 		all: vi.fn(async (sql: string) => {
-			if (sql.includes('capacity_audit_events')) return [{ created_at: 'now', metadata_json: JSON.stringify({ reasons: ['capacity_team_library_not_ready'], message: 'PRIVATE', details: { token: 'PRIVATE' } }) }];
-			if (sql.includes('SELECT demand.*')) return [{ id: 'demand' }];
+			if (sql.includes('execution_nodes')) return [{ kind: 'communication', status: 'ready', count: '1' }];
 			if (sql.includes('COUNT(*)')) return [{ status: 'pending', count: '1' }];
 			return [{ id: 'wave', status: 'running', round: '1', wave: '1' }];
 		}),
 	};
-	vi.mocked(selectWorkdayDemandSupply).mockResolvedValue({ selected: null, eligible: [], rejected: [], policy: {} } as any);
 	return store;
 }
 
 describe('unassigned chat scheduling diagnostics', () => {
-	it('reports pending demand and denial codes without exposing stored content', async () => {
+	it('reports live graph and assignment counts without exposing stored content or retired demands', async () => {
 		const store = fixture(); const result = await communicationSchedulingDiagnostics(store, 'team', 'run');
-		expect(result).toMatchObject({ executionMode: 'production', sessionStatus: 'running', demands: [{ status: 'pending', count: 1 }], supply: [{ demandId: 'demand', denials: [{ code: 'capacity_team_library_not_ready', at: 'now' }] }] });
+		expect(result).toMatchObject({ executionMode: 'production', sessionStatus: 'running', nodes: [{ kind: 'communication', status: 'ready', count: 1 }], assignments: [{ status: 'pending', count: 1 }] });
 		expect(JSON.stringify(result)).not.toContain('PRIVATE');
 		expect(store.first.mock.calls[0][0]).toContain('team_id=?');
+		expect(store.all.mock.calls.every(([sql]) => !sql.includes('capacity_workday_demands'))).toBe(true);
 		expect(store.all.mock.calls.filter(([sql]) => !sql.includes('workday_planning_waves')).every(([sql]) => sql.includes('team_id=?'))).toBe(true);
 	});
 	it('does not inspect a run outside the authorized team', async () => {

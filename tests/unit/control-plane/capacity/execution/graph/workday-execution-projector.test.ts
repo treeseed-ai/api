@@ -44,12 +44,14 @@ describe('workday living-graph projection', () => {
 		});
 		const parameters = { agentProfilesByProjectId: { sdk: { agents } } };
 		expect(workdayParticipants(parameters).map(participant => participant.activity)).toEqual(['planning', 'planning', 'planning']);
+		expect(workdayParticipants({ ...parameters, agentSelection: { activityTypes: ['planning', 'estimating'] } })
+			.map(participant => participant.activity)).toEqual(['planning', 'planning', 'planning']);
 		const participants = workdayParticipants({ ...parameters, proposalsByProjectId: { sdk: { executionPlan: {
 			workItems: [{ id: 'implementation', agentClass: 'engineer', review: 'required' }] } } } });
 		expect(participants.filter(participant => participant.activity === 'estimating').map(participant => participant.definition.agentClass))
 			.toEqual(['engineer', 'reviewer']);
 	});
-	it('projects six work-owner estimates and one Reviewer covering all six paired reviews', () => {
+	it('projects six work-owner contributions, including multiple items for Engineer, and one Reviewer', () => {
 		const owners = ['researcher', 'architect', 'tester', 'engineer', 'technical-writer', 'releaser'];
 		const classes = [...owners, 'reviewer'];
 		const profiles = Object.fromEntries(classes.map((agentClass) => {
@@ -64,7 +66,8 @@ describe('workday living-graph projection', () => {
 			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating`), startsAt: '2026-09-14T12:00:00.000Z' });
 		const projectionInput: Parameters<typeof projectActiveWorkdays>[0] = { teamId: 'team', revision: 1, profiles,
 			sources: [{ id: 'seven-estimates', teamId: 'team', proposalsByProjectId: { sdk: { executionPlan: {
-				workItems: owners.map((agentClass) => ({ id: `${agentClass}-work`, agentClass, review: 'required', acceptanceCriteria: ['Meet the exact work-item boundary.'] })),
+				workItems: [...owners.map((agentClass) => ({ id: `${agentClass}-work`, agentClass, review: 'required', acceptanceCriteria: ['Meet the exact work-item boundary.'] })),
+					{ id: 'engineer-integration', agentClass: 'engineer', review: 'required', acceptanceCriteria: ['Integrate the implementation.'] }],
 			} } }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
 				planningSourceByProjectId: { sdk: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
 					repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden.mdx' } },
@@ -73,9 +76,12 @@ describe('workday living-graph projection', () => {
 		const graph = projectActiveWorkdays(projectionInput);
 		expect(graph.nodes).toHaveLength(7);
 		expect(graph.edges).toHaveLength(0);
-		expect(graph.nodes.filter((node) => node.workItemId).map((node) => node.workItemId).sort())
-			.toEqual(owners.map((agentClass) => `${agentClass}-work`).sort());
-		expect(graph.nodes.find((node) => node.agentClass === 'reviewer')?.acceptanceCriteria).toHaveLength(6);
+		expect(graph.nodes.filter((node) => node.kind === 'estimating').every((node) => !node.workItemId)).toBe(true);
+		for (const agentClass of owners) expect(graph.nodes.find((node) => node.agentClass === agentClass)?.acceptanceCriteria)
+			.toContain(`Estimate work item ${agentClass}-work: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`);
+		expect(graph.nodes.find((node) => node.agentClass === 'engineer')?.acceptanceCriteria)
+			.toContain('Estimate work item engineer-integration: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.');
+		expect(graph.nodes.find((node) => node.agentClass === 'reviewer')?.acceptanceCriteria).toHaveLength(7);
 		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
 		const accepted = projectActiveWorkdays({ ...projectionInput,
 			sources: projectionInput.sources.map((source) => ({ ...source,
@@ -133,7 +139,8 @@ describe('workday living-graph projection', () => {
 				planningSourceByProjectId: { sdk: proposalRef },
 				agentProfilesByProjectId: { sdk: { revision: 'test', agents: [{ definition: architect, activities: ['estimating'] }] } } } }] });
 		expect(graph.nodes.filter((node) => node.kind === 'estimating')).toHaveLength(1);
-		expect(graph.nodes.find((node) => node.kind === 'estimating')?.workItemId).toBe('architecture-contract');
+		expect(graph.nodes.find((node) => node.kind === 'estimating')?.acceptanceCriteria)
+			.toContain('Estimate work item architecture-contract: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.');
 		expect(graph.edges).toHaveLength(0);
 		expect(graph.nodes.filter((node) => node.kind === 'estimating').every((node) =>
 			node.requiredCapabilities?.[0] === 'treeseed.coordination.estimation')).toBe(true);

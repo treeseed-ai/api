@@ -4,6 +4,7 @@ import {
 	projectTeamExecutionGraph,
 	type ExecutableProposalSource,
 } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
+import { applyOperationalState } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 const permissions = {
 	content: { read: ['proposal', 'decision', 'knowledge'] as const, write: [] },
@@ -94,7 +95,7 @@ function source(items = [
 describe('proposal-owned living execution graph projection', () => {
 	it('derives stable actor and reviewer nodes from each accepted work item', () => {
 		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [source()], profiles, createdAt: '2026-09-13T12:00:00.000Z' });
-		expect(graph.nodes).toHaveLength(6);
+		expect(graph.nodes).toHaveLength(8);
 		expect(graph.nodes.filter((node) => node.pairRole === 'actor')).toHaveLength(3);
 		expect(graph.nodes.filter((node) => node.pairRole === 'reviewer')).toHaveLength(3);
 		expect(graph.edges.filter((edge) => edge.provenance === 'review-pair')).toHaveLength(3);
@@ -113,8 +114,38 @@ describe('proposal-owned living execution graph projection', () => {
 			expect.objectContaining({ fromNodeId: reviewer('tests').id, toNodeId: actor('implementation').id, provenance: 'work-item' }),
 			expect.objectContaining({ fromNodeId: reviewer('tests').id, toNodeId: actor('implementation').id, provenance: 'profile-agent' }),
 		]));
-		expect(actor('architecture').status).toBe('ready');
+		expect(actor('architecture').status).toBe('blocked');
 		expect(actor('tests').status).toBe('blocked');
+		expect(graph.edges).toContainEqual(expect.objectContaining({
+			fromNodeId: graph.nodes.find((node) => node.condition?.conditionType === 'authority')?.id,
+			toNodeId: actor('architecture').id, provenance: 'governance',
+		}));
+	});
+
+	it('projects an exact cross-project TreeDX link from approved reviewer to dependent actor', () => {
+		const sdk = source([workItem({ id: 'simulate-release', agentClass: 'architect', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 })]);
+		const apiBase = source([workItem({ id: 'tests-first', agentClass: 'tester', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 })]);
+		const api = { ...apiBase,
+			projectId: 'api', repository: 'treeseed-ai/api', path: 'proposals/api.mdx',
+			frontmatter: { ...apiBase.frontmatter, id: 'api-plan', projectId: 'api' } };
+		const endpoint = (candidate: ExecutableProposalSource, anchor: string) => ({
+			store: 'treedx' as const, model: 'proposal', id: String(candidate.frontmatter.id),
+			revision: candidate.proposalRevision, digest: candidate.digest, repository: candidate.repository,
+			commit: candidate.commit, path: candidate.path, anchor,
+		});
+		const noteRef = { store: 'treedx' as const, model: 'note', id: 'dependency', repository: api.repository,
+			commit: 'd'.repeat(40), path: 'notes/dependency.md', digest: `sha256:${'e'.repeat(64)}` };
+		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [sdk, api],
+			profiles: { ...profiles, 'api:tester': agent('tester'), 'api:reviewer': agent('reviewer') },
+			dependencyLinks: [{ from: endpoint(sdk, 'work-item/simulate-release'), to: endpoint(api, 'work-item/tests-first'), sourceRef: noteRef }] });
+		const precursor = graph.nodes.find((node) => node.projectId === 'project' && node.workItemId === 'simulate-release' && node.pairRole === 'reviewer')!;
+		const dependent = graph.nodes.find((node) => node.projectId === 'api' && node.workItemId === 'tests-first' && node.pairRole === 'actor')!;
+		expect(graph.edges).toContainEqual(expect.objectContaining({ fromNodeId: precursor.id, toNodeId: dependent.id,
+			provenance: 'treedx-link', sourceRef: noteRef }));
+		expect(() => projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [api],
+			profiles: { 'api:tester': agent('tester'), 'api:reviewer': agent('reviewer') },
+			dependencyLinks: [{ from: endpoint(sdk, 'work-item/simulate-release'), to: endpoint(api, 'work-item/tests-first'), sourceRef: noteRef }] }))
+			.toThrow('absent from the selected graph');
 	});
 
 	it('is replay deterministic and contains no provider selection or output taxonomy', () => {
@@ -125,16 +156,55 @@ describe('proposal-owned living execution graph projection', () => {
 		expect(JSON.stringify(first)).not.toMatch(/providerId|outputType|produces|artifactManifest|sourceCandidate/u);
 	});
 
-	it('projects exactly one proposal Reviewer without current decision authority', () => {
+	it('projects review and proposed work without granting draft acting authority', () => {
 		const candidate = source();
 		candidate.decision = null;
 		candidate.frontmatter.status = 'ready';
 		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [candidate], profiles });
-		expect(graph.nodes).toEqual([expect.objectContaining({ kind: 'reviewing', pairRole: null,
+		expect(graph.nodes).toContainEqual(expect.objectContaining({ kind: 'reviewing', pairRole: null,
 			agentClass: 'reviewer', status: 'ready', workspace: 'treedx', sourceRef: expect.objectContaining({ id: 'agent-runtime' }),
 			requiredCapabilities: ['treeseed.engineering.review'],
-			estimate: { minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 } })]);
-		expect(graph.edges).toEqual([]);
+			estimate: { minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 } }));
+		expect(graph.nodes.filter((node) => node.pairRole === 'actor').every((node) => node.status === 'proposed')).toBe(true);
+		expect(graph.nodes).toContainEqual(expect.objectContaining({ kind: 'condition', status: 'blocked',
+			condition: expect.objectContaining({ conditionType: 'authority', expectedState: 'accepted' }) }));
+	});
+
+	it('retains resolved feedback conditions and blocks acting until questions and decision are complete', () => {
+		const candidate = source();
+		candidate.decision = null;
+		candidate.frontmatter.status = 'draft';
+		const questionRef = { store: 'treedx' as const, model: 'question', id: 'question-1', revision: 1,
+			digest: `sha256:${'d'.repeat(64)}`, repository: candidate.repository,
+			commit: candidate.commit, path: 'questions/question-1.mdx' };
+		candidate.feedback = [{ id: 'question-1', kind: 'question', resolved: false, sourceRef: questionRef }];
+		const draft = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [candidate], profiles });
+		const question = draft.nodes.find((node) => node.condition?.conditionType === 'question')!;
+		const authority = draft.nodes.find((node) => node.condition?.conditionType === 'authority')!;
+		const review = draft.nodes.find((node) => node.kind === 'reviewing' && !node.pairRole)!;
+		expect(question.status).toBe('blocked');
+		expect(review.status).toBe('ready');
+		expect(draft.edges).toContainEqual(expect.objectContaining({ fromNodeId: question.id, toNodeId: authority.id }));
+		const resolved = projectTeamExecutionGraph({ teamId: 'team', revision: 2,
+			sources: [{ ...candidate, feedback: [{ id: 'question-1', kind: 'question', resolved: true, sourceRef: questionRef }] }], profiles });
+		expect(resolved.nodes.find((node) => node.id === question.id)?.status).toBe('completed');
+		expect(resolved.nodes.find((node) => node.id === authority.id)?.status).toBe('blocked');
+		const accepted = projectTeamExecutionGraph({ teamId: 'team', revision: 3,
+			sources: [{ ...candidate, decision: source().decision, feedback: [{ id: 'question-1', kind: 'question', resolved: true, sourceRef: questionRef }] }], profiles });
+		expect(accepted.nodes.find((node) => node.id === question.id)?.status).toBe('completed');
+		expect(accepted.nodes.find((node) => node.id === authority.id)?.status).toBe('completed');
+		const state = (projection: typeof draft) => ({ teamId: 'team', revision: projection.revision.revision,
+			digest: projection.revision.graphDigest, nodes: projection.nodes, edges: projection.edges });
+		const afterResolution = applyOperationalState(state(draft), state(resolved), 2);
+		const afterDecision = applyOperationalState(afterResolution, state(accepted), 3);
+		const architecture = afterDecision.nodes.find((node) => node.workItemId === 'architecture' && node.pairRole === 'actor')!;
+		expect(afterResolution.nodes.find((node) => node.id === architecture.id)?.status).toBe('proposed');
+		expect(architecture.status).toBe('ready');
+		const reopened = projectTeamExecutionGraph({ teamId: 'team', revision: 4,
+			sources: [{ ...candidate, decision: source().decision, feedback: [{ id: 'question-1', kind: 'question', resolved: false, sourceRef: questionRef }] }], profiles });
+		const afterReopen = applyOperationalState(afterDecision, state(reopened), 4);
+		expect(afterReopen.nodes.find((node) => node.id === authority.id)?.status).toBe('blocked');
+		expect(afterReopen.nodes.find((node) => node.id === architecture.id)?.status).toBe('blocked');
 	});
 
 	it('keeps work blocked when a standing agent dependency has no concrete work item', () => {

@@ -1,7 +1,27 @@
-import { describe, expect, it } from 'vitest';
-import { ensureProjectKnowledgeBinding } from '../../../../src/control-plane/seeds/apply-support/projects/projects-core/project-knowledge-binding.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { ensureProjectKnowledgeBinding, reconcileProjectAgentClasses } from '../../../../src/control-plane/seeds/apply-support/projects/projects-core/project-knowledge-binding.ts';
 
 describe('seed TreeDX knowledge binding', () => {
+	it('rejects a moved or mismatched agent source before updating the class projection', async () => {
+		const path = 'agents/architect.mdx';
+		const discoveredRef = 'a'.repeat(40);
+		const run = vi.fn();
+		const store = { run, first: vi.fn() };
+		const client = { query: { readFile: vi.fn(async () => ({ query: {
+			resolvedRef: 'b'.repeat(40), files: [{ path, frontmatter: {} }],
+		} })) } };
+		const input = { store, client: client as never, repositoryId: 'sdk-library', projectId: 'sdk',
+			teamId: 'team', projectSlug: 'api', ref: discoveredRef, discoveredRef, paths: [path] };
+		await expect(reconcileProjectAgentClasses(input)).rejects.toThrow('moved after discovery');
+		client.query.readFile.mockResolvedValue({ query: { resolvedRef: discoveredRef,
+			files: [{ path: 'agents/other.mdx', frontmatter: {} }] } });
+		await expect(reconcileProjectAgentClasses(input)).rejects.toThrow('outside the discovered paths');
+		client.query.readFile.mockResolvedValue({ query: { resolvedRef: discoveredRef,
+			files: [{ path, frontmatter: { id: 'invalid' } }] } });
+		await expect(reconcileProjectAgentClasses(input)).rejects.toThrow('is invalid');
+		expect(run).not.toHaveBeenCalled();
+	});
+
 	it('creates and binds a missing deterministic project repository', async () => {
 		const calls: Array<{ method: string; path: string; body?: unknown }> = [];
 		const bindings: unknown[] = [];
