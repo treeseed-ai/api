@@ -311,7 +311,7 @@ export class ProviderAssignmentLifecycleService {
 					kind: proposalReview.disposition === 'approved' ? 'support' : 'concern',
 					feedbackStatus: proposalReview.disposition === 'approved' ? 'resolved' : 'open',
 					proposalVersion: assignment.assignmentAttempt?.sourceRef.revision,
-					decisionRef: proposalReview.reference,
+					decisionRef: proposalReview.sourceRef,
 				},
 			});
 		}

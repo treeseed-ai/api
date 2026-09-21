@@ -22,6 +22,7 @@ export interface ExecutableProposalSource {
 	digest: string;
 	proposalRevision: number;
 	frontmatter: Row;
+	feedback?: Array<{ id: string; kind: 'concern' | 'question'; resolved: boolean; sourceRef: ExactEntityReference }>;
 	decision: { id: string; revision: number; digest: string; current: boolean } | null;
 }
 
@@ -37,7 +38,7 @@ export interface VerifiedDependencyLink {
 	sourceRef: ExactEntityReference;
 }
 
-const RULE_REVISION = 2;
+const RULE_REVISION = 3;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(record) : [];
@@ -164,13 +165,42 @@ function proposalReviewNode(source: ExecutableProposalSource, profile: ReturnTyp
 			sourceRef.digest, RULE_REVISION, 'proposal-review', 'reviewer']),
 		teamId: source.teamId, projectId: source.projectId, workItemId: 'proposal-review',
 		kind: 'reviewing', pairRole: null, sourceRef, authorityRefs: [sourceRef],
-		ruleRevision: RULE_REVISION, nodeRevision: 1, agentClass: 'reviewer', status: 'ready',
+		ruleRevision: RULE_REVISION, nodeRevision: 1, agentClass: 'reviewer',
+		status: source.decision?.current ? 'completed' : 'ready',
 		estimate: proposalReviewEstimate(source.frontmatter), requiredCapabilities: ['treeseed.engineering.review'],
 		requestedPermissions: profile.permissions, workspace: 'treedx',
 		acceptanceCriteria: [
 			'Validate the exact proposal and its executable work against current project authority.',
 			'Return one proposal decision bound to the exact proposal reference.',
 		],
+		graphRevisionCreated: revision, graphRevisionUpdated: revision,
+	});
+}
+
+function decisionConditionNode(source: ExecutableProposalSource, revision: number): ExecutionNode {
+	const sourceRef = proposalRef(source);
+	const authorityRef = decisionRef(source);
+	return executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1',
+		id: deterministicId('node', [source.teamId, source.projectId, sourceRef.id, sourceRef.revision,
+			sourceRef.digest, RULE_REVISION, 'accepted-decision']),
+		teamId: source.teamId, projectId: source.projectId, kind: 'condition', pairRole: null,
+		sourceRef, authorityRefs: authorityRef ? [authorityRef] : [],
+		ruleRevision: RULE_REVISION, nodeRevision: 1,
+		status: source.decision?.current && (source.feedback ?? []).every((feedback) => feedback.resolved) ? 'completed' : 'blocked',
+		condition: { conditionType: 'authority', subjectRef: sourceRef, expectedState: 'accepted' },
+		graphRevisionCreated: revision, graphRevisionUpdated: revision,
+	});
+}
+
+function feedbackConditionNode(source: ExecutableProposalSource, feedback: NonNullable<ExecutableProposalSource['feedback']>[number], revision: number): ExecutionNode {
+	const sourceRef = proposalRef(source);
+	return executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1',
+		id: deterministicId('node', [source.teamId, source.projectId, sourceRef.id, sourceRef.revision,
+			sourceRef.digest, RULE_REVISION, 'blocking-feedback', feedback.id]),
+		teamId: source.teamId, projectId: source.projectId, kind: 'condition', pairRole: null,
+		sourceRef, authorityRefs: [], ruleRevision: RULE_REVISION, nodeRevision: 1,
+		status: feedback.resolved ? 'completed' : 'blocked',
+		condition: { conditionType: 'question', subjectRef: feedback.sourceRef, expectedState: `feedback:${feedback.id}:resolved` },
 		graphRevisionCreated: revision, graphRevisionUpdated: revision,
 	});
 }
@@ -202,10 +232,17 @@ export function projectTeamExecutionGraph(input: {
 		const exactSource = { ...source, frontmatter: proposal };
 		const sourceRef = proposalRef(exactSource);
 		changedSourceRefs.push(sourceRef);
-		if (!source.decision?.current) {
-			nodes.push(proposalReviewNode(exactSource,
-				profileFor(input.profiles, source.projectId, 'reviewer', 'reviewing'), input.revision));
-			continue;
+		const review = proposalReviewNode(exactSource,
+			profileFor(input.profiles, source.projectId, 'reviewer', 'reviewing'), input.revision);
+		const authority = decisionConditionNode(exactSource, input.revision);
+		nodes.push(review, authority);
+		edges.push(edge({ teamId: source.teamId, fromNodeId: review.id, toNodeId: authority.id,
+			provenance: 'governance', sourceRef }, input.revision));
+		for (const feedback of source.feedback ?? []) {
+			const condition = feedbackConditionNode(exactSource, feedback, input.revision);
+			nodes.push(condition);
+			edges.push(edge({ teamId: source.teamId, fromNodeId: condition.id, toNodeId: authority.id,
+				provenance: 'governance', sourceRef }, input.revision));
 		}
 		const workItems = rows(record(proposal.executionPlan).workItems);
 		const actorByItem = new Map<string, ExecutionNode>();
@@ -216,6 +253,8 @@ export function projectTeamExecutionGraph(input: {
 				profile: profileFor(input.profiles, source.projectId, text(workItem.agentClass), 'acting'),
 				revision: input.revision, pairRole: 'actor' });
 			nodes.push(actor);
+			edges.push(edge({ teamId: source.teamId, fromNodeId: authority.id, toNodeId: actor.id,
+				provenance: 'governance', sourceRef }, input.revision));
 			actorByItem.set(text(workItem.id), actor);
 			if (text(workItem.review) === 'required') {
 				const reviewer = workNode({ source: exactSource, workItem,

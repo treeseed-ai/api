@@ -11,6 +11,17 @@ const record = (value: unknown): Row => {
 };
 const text = (...values: unknown[]): string => String(values.find((value) => typeof value === 'string' && value.trim()) ?? '').trim();
 
+/** A draft may enter the graph only after its work units have genuine bounded
+ * estimates. Readiness and source selection must use the same structural gate. */
+export function hasCompleteExecutablePlan(proposal: Row): boolean {
+	const plan = record(proposal.executionPlan);
+	return Array.isArray(plan.workItems) && plan.workItems.length > 0 && plan.workItems.every((value: unknown) => {
+		const item = record(value);
+		return Number(record(item.estimate).minimumSeconds) > 0
+			&& (item.review !== 'required' || Number(record(item.reviewEstimate).minimumSeconds) > 0);
+	});
+}
+
 function repositoryFile(value: unknown): Row {
 	const response = record(value);
 	return record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));

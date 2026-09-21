@@ -165,7 +165,7 @@ export function createDiscussionService(dependencies: { store: any; capacity: an
 							communication: record(body.communication), addressRequirements: record(body.addressRequirements),
 							durationSeconds: Math.max(60, Math.min(3600, Number(body.durationSeconds ?? 900))), requestedById: principal.id });
 					}
-					return { discussion: { id: discussionId }, message: replay, invocations, replayed: true };
+					return { discussion: { id: discussionId }, message: replay, commitSha: text(replay.immutableRef), invocations, replayed: true };
 				}
 				contextRefs = await validateDiscussionContextRefs({ store, projectId, teamId, values: body.contextRefs });
 				const existing = text(body.discussionId) ? await loadDiscussions({ store, projectId, discussionId,

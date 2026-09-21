@@ -136,14 +136,16 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 	const activeIds = new Set(projected.nodes.map((node) => node.id));
 	const nodes = projected.nodes.map((node) => {
 		const prior = priorById.get(node.id);
-		const operational = prior && ['assigned', 'running', 'completed', 'failed', 'cancelled'].includes(prior.status);
+		const operational = prior && node.kind !== 'condition'
+			&& ['assigned', 'running', 'completed', 'failed', 'cancelled'].includes(prior.status);
 		if (operational) return { ...prior, graphRevisionUpdated: revision };
 		const semantic = (value: ExecutionNode) => {
 			const { status: _status, nodeRevision: _nodeRevision, graphRevisionCreated: _created,
 				graphRevisionUpdated: _updated, ...rest } = value;
 			return rest;
 		};
-		const changed = prior && stable(semantic(prior)) !== stable(semantic(node));
+		const changed = prior && (stable(semantic(prior)) !== stable(semantic(node))
+			|| (node.kind === 'condition' && prior.status !== node.status));
 		const nodeRevision = prior
 			? prior.status === 'stale' || changed ? prior.nodeRevision + 1 : Math.max(prior.nodeRevision, node.nodeRevision)
 			: node.nodeRevision;
@@ -159,6 +161,11 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			: { ...prior, status: 'stale', nodeRevision: prior.nodeRevision + 1, graphRevisionUpdated: revision });
 	}
 	const activeNodes = new Map(nodes.map((node) => [node.id, node]));
+	for (const node of nodes.filter((candidate) => candidate.kind === 'condition' && candidate.status === 'completed')) {
+		const predecessors = projected.edges.filter((edge) => edge.toNodeId === node.id)
+			.map((edge) => activeNodes.get(edge.fromNodeId));
+		if (predecessors.some((candidate) => candidate?.status !== 'completed')) node.status = 'blocked';
+	}
 	for (const node of nodes) {
 		if (node.status === 'proposed' || node.status === 'stale'
 			|| ['assigned', 'running', 'completed', 'failed', 'cancelled'].includes(node.status)) continue;

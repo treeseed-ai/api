@@ -108,6 +108,24 @@ describe('normalized living execution graph persistence', () => {
 		]);
 	});
 
+	it('reopens a completed feedback condition and blocks dependent work', () => {
+		const condition = { ...node('completed'), id: 'question', kind: 'condition' as const, pairRole: null,
+			workItemId: undefined, agentClass: undefined, estimate: undefined, requiredCapabilities: undefined,
+			requestedPermissions: undefined, workspace: undefined,
+			condition: { conditionType: 'question' as const, subjectRef: sourceRef, expectedState: 'feedback:q:resolved' } };
+		const actor = { ...node('ready'), id: 'actor' };
+		const current = { ...graph(1, [condition, actor]), edges: [{
+			schemaVersion: 'treeseed.execution-edge/v1' as const, id: 'condition-edge', teamId: 'team',
+			fromNodeId: condition.id, toNodeId: actor.id, provenance: 'governance' as const,
+			graphRevisionCreated: 1,
+		}] };
+		const projected = { ...graph(2, [{ ...condition, status: 'blocked' as const }, { ...actor, status: 'blocked' as const }]),
+			edges: current.edges };
+		const result = applyOperationalState(current, projected, 2);
+		expect(result.nodes.find((entry) => entry.id === 'question')).toMatchObject({ status: 'blocked', nodeRevision: 2 });
+		expect(result.nodes.find((entry) => entry.id === 'actor')?.status).toBe('blocked');
+	});
+
 	it('revises an unassigned node when projected assignment semantics change', () => {
 		const current = graph(1, [node('ready')]);
 		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };

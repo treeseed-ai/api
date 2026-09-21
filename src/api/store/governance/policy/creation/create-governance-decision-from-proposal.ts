@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeGovernanceDecision } from "../../../../persistence/store.ts";
 import { resolveDecisionDependencySnapshots } from '../../../../governance/decision-authority.ts';
 import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
-import { readExactProposal } from '../../../../governance/executable-proposal.ts';
+import { hasCompleteExecutablePlan, readExactProposal } from '../../../../governance/executable-proposal.ts';
 export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
     await this.ensureInitialized();
     const proposal = await this.getGovernanceProposal(proposalId);
@@ -33,8 +33,8 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
 		error.status = 409; error.code = dependencyResult.validation.code; error.details = { dependency: dependencyResult.reference }; throw error;
 	}
 	const exact = await readExactProposal(this, proposal);
-	if (exact.definition.status !== 'ready' || !exact.definition.executionPlan) {
-		const error: Error & Record<string, any> = new Error('An accepted decision requires one ready proposal-owned execution plan.');
+	if (exact.definition.status === 'withdrawn' || !hasCompleteExecutablePlan(exact.definition)) {
+		const error: Error & Record<string, any> = new Error('An accepted decision requires one complete proposal-owned execution plan.');
 		error.status = 409; error.code = 'governance_decision_execution_plan_required'; throw error;
 	}
 	const proposalRef = exact.ref;

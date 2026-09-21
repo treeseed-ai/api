@@ -1,6 +1,9 @@
 import { commitProposalVersionContent } from './proposal-version-content.ts';
+import { createHash } from 'node:crypto';
 import { governanceContentHash } from '../../persistence/store.ts';
 import { reconcileExecutionGraph } from '../repositories/capacity/execution/execution-graph-service.ts';
+import { resolveKnowledgeGatewayConnection } from '../../knowledge/gateway-treedx-connection.ts';
+import { exactEntityReferenceSchema } from '@treeseed/sdk/agent-capacity';
 
 type Principal = { id: string; roles?: string[]; permissions?: string[]; metadata?: Record<string, unknown> } | undefined;
 
@@ -104,7 +107,7 @@ function approvalState(decision: string) {
 	return 'rejected';
 }
 
-export function createGovernanceService(store: any) {
+export function createGovernanceService(store: any, discussions: { create: (principal: Principal, body: Record<string, unknown>, idempotencyKey: string) => Promise<any> }) {
 	return {
 		async approvals(principal: Principal, projectId: string, query: Record<string, unknown>) {
 			const project = await projectFor(store, principal, projectId, 'projects:read:team');
@@ -197,21 +200,43 @@ export function createGovernanceService(store: any) {
 				throw new GovernanceServiceError(404, 'proposal_feedback_not_found', 'Unknown blocking proposal feedback.');
 			}
 			const existing = events.find((event: any) => event.evidence?.resolvesEventId === feedbackId);
-			if (existing) return { proposalId, feedbackId, resolution: existing, readiness: await store.governanceProposalReadiness(proposalId), idempotentReplay: true };
-			const provenance = proposal.metadata?.contentProvenance ?? {};
-			const contentPath = optionalText(provenance.contentPath) ?? optionalText(provenance.path);
-			const commitSha = optionalText(provenance.commitSha);
-			const digest = optionalText(provenance.digest) ?? optionalText(proposal.activeContentHash);
-			if (!contentPath || !commitSha || !digest) {
-				throw new GovernanceServiceError(409, 'proposal_feedback_resolution_provenance_missing', 'The current proposal revision lacks immutable TreeDX provenance.');
+			if (existing) {
+				const ref = exactEntityReferenceSchema.safeParse(existing.evidence?.resolutionRef);
+				if (!ref.success || ref.data.store !== 'treedx' || ref.data.model !== 'discussion-message') {
+					throw new GovernanceServiceError(409, 'proposal_feedback_resolution_not_authoritative',
+						'The feedback resolution lacks exact TreeDX content authority.');
+				}
+				return { proposalId, feedbackId, resolution: existing, readiness: await store.governanceProposalReadiness(proposalId), idempotentReplay: true };
 			}
 			try {
+				const authored = await discussions.create(principal, { teamId: proposal.teamId, projectId,
+					body: message, intent: 'discuss', topic: `Proposal ${proposalId} feedback`,
+					contextRefs: [], recipients: [] }, `proposal-feedback-resolution:${proposalId}:${feedbackId}:${proposal.activeVersion}`);
+				const contentPath = optionalText(authored.message?.path);
+				const commitSha = optionalText(authored.commitSha);
+				if (!contentPath || !commitSha) throw new GovernanceServiceError(503,
+					'proposal_feedback_resolution_content_missing', 'The feedback resolution has no exact TreeDX message.');
+				const connection = await resolveKnowledgeGatewayConnection(store, { projectId, write: false,
+					communicationPaths: true, readRefs: [commitSha] });
+				if (!connection) throw new GovernanceServiceError(503, 'proposal_feedback_resolution_content_unavailable',
+					'The feedback resolution cannot be read from TreeDX.');
+				const read = record(await connection.client.readRepositoryFile({ repoId: connection.repositoryId,
+					ref: commitSha, path: contentPath, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }));
+				const file = record(read.file ?? (Array.isArray(read.files) ? read.files[0] : null));
+				if (read.resolvedRef !== commitSha || file.path !== contentPath || typeof file.content !== 'string') {
+					throw new GovernanceServiceError(503, 'proposal_feedback_resolution_readback_failed',
+					'The exact TreeDX feedback resolution could not be verified.');
+				}
+				const digest = `sha256:${createHash('sha256').update(file.content).digest('hex')}`;
+				const resolutionRef = { store: 'treedx', model: 'discussion-message',
+					id: optionalText(authored.message?.id) ?? contentPath, revision: 1, digest,
+					repository: connection.repositoryId, path: contentPath, commit: commitSha };
 				const resolution = await store.recordGovernanceEvent({
 					id: `proposal-feedback-resolution:${feedbackId}:${proposal.activeVersion}`,
 					eventType: 'proposal.discussion', actorType: actorType(principal), actorId: principal!.id,
 					teamId: proposal.teamId, projectId, proposalId, proposalVersion: proposal.activeVersion, message,
 					evidence: { kind: 'response', feedbackSeverity: 'advisory', feedbackStatus: 'resolved', resolvesEventId: feedbackId,
-						contentPath, commitSha, digest, proposalVersion: proposal.activeVersion },
+						contentPath, commitSha, digest, resolutionRef, proposalVersion: proposal.activeVersion },
 				});
 				await reconcileExecutionGraph(store, proposal.teamId, { projectId },
 					`proposal-feedback-resolution:${proposal.id}:${feedbackId}:${proposal.activeVersion}`);

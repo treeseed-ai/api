@@ -1,6 +1,7 @@
 import type { GovernanceProposalReadiness } from '../../../../governance/proposal-readiness.ts';
 import type { ControlPlaneStore } from '../../../../persistence/store.ts';
-import { readExactProposal } from '../../../../governance/executable-proposal.ts';
+import { hasCompleteExecutablePlan, readExactProposal } from '../../../../governance/executable-proposal.ts';
+import { loadProposalBlockingFeedback } from '../../../../capacity/services/capacity/execution/proposal-planning-source.ts';
 
 type Row = Record<string, unknown>;
 function record(value: unknown): Row { if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row; if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; } return {}; }
@@ -11,19 +12,15 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 	if (!proposal) return null;
 	const proposalVersion = Number(proposal.activeVersion ?? 0);
 	const events = await this.all(`SELECT id, actor_id, event_type, evidence_json FROM governance_events WHERE proposal_id = ? ORDER BY created_at ASC LIMIT 500`, [proposalId]);
-	const resolved = new Set(events.map((row) => text(record(row.evidence_json).resolvesEventId)).filter(Boolean));
 	const discussions = events.map((row) => ({ ...row, evidence: record(row.evidence_json) })).filter((row) => row.event_type === 'proposal.discussion');
-	const blockers = discussions.filter((row) => ['question', 'concern'].includes(text(row.evidence.kind))
-		&& text(row.evidence.feedbackSeverity) !== 'advisory'
-		&& !['resolved', 'withdrawn'].includes(text(row.evidence.feedbackStatus))
-		&& !resolved.has(text(row.id)));
+	const blockers = (await loadProposalBlockingFeedback(this, proposalId)).filter((feedback) => !feedback.resolved);
 	const reviews = discussions.filter((row) => ['support', 'concern'].includes(text(row.evidence.kind)) && text(row.actor_id) !== text(proposal.createdById)
 		&& Number(row.evidence.proposalVersion) === proposalVersion);
 	let executionPlanReady = false;
 	let exactSourceProblem: string | null = null;
 	if (proposal.projectId) try {
 		const exact = await readExactProposal(this, proposal as unknown as Row);
-		executionPlanReady = exact.definition.status === 'ready' && Boolean(exact.definition.executionPlan);
+		executionPlanReady = exact.definition.status !== 'withdrawn' && hasCompleteExecutablePlan(exact.definition);
 	} catch (error) {
 		exactSourceProblem = text(record(error).code) || (error instanceof Error ? error.message : 'proposal_exact_source_invalid');
 	}
