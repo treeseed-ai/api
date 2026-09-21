@@ -1,17 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../../src/api/governance/executable-proposal.ts', async (importOriginal) => {
-	const original = await importOriginal<typeof import('../../../../src/api/governance/executable-proposal.ts')>();
+vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../../../../../src/api/governance/executable-proposal.ts')>();
 	return { ...original, readExactProposal: vi.fn(async () => ({ definition: {
 		status: 'draft', executionPlan: { workItems: [{ estimate: { minimumSeconds: 10 },
 			review: 'required', reviewEstimate: { minimumSeconds: 5 } }] },
 	} })) };
 });
-vi.mock('../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts',
+vi.mock('../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts',
 	() => ({ reconcileExecutionGraph: vi.fn(async () => undefined) }));
 
-import { governanceProposalReadinessMethod } from '../../../../src/api/store/governance/policy/contracts/governance-proposal-readiness.ts';
-import { createGovernanceDecisionFromProposalMethod } from '../../../../src/api/store/governance/policy/creation/create-governance-decision-from-proposal.ts';
+import { governanceProposalReadinessMethod } from '../../../../../src/api/store/governance/policy/contracts/governance-proposal-readiness.ts';
+import { createGovernanceDecisionFromProposalMethod } from '../../../../../src/api/store/governance/policy/creation/create-governance-decision-from-proposal.ts';
 
 describe('draft proposal graph readiness', () => {
 	it('uses the exact complete draft and independent Reviewer result without a second ready-content revision', async () => {
