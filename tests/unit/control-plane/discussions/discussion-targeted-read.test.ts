@@ -25,7 +25,7 @@ describe('targeted Discussion reads', () => {
 		mocks.listRepositoryPaths.mockReset();
 		mocks.readRepositoryFiles.mockReset().mockImplementation(async ({ ref, paths }) => ({
 			resolvedRef: ref,
-			files: paths.map((path: string) => ({ path, content: `---\ntitle: Direct message\ndiscussionId: discussion-1\nauthorId: user-1\nauthorType: user\nintent: discuss\ncreatedAt: 2026-08-31T12:00:00.000Z\n---\nHello\n` })),
+			files: paths.map((path: string) => ({ path, content: `---\nschemaVersion: treeseed.discussion-message/v1\nid: ${path.split('/').at(-1)?.replace('.mdx','')}\ndiscussionRef:\n  store: treedx\n  model: discussion\n  id: discussion-1\n  path: discussions/discussion-1.mdx\n  revision: 1\n  digest: sha256:${'a'.repeat(64)}\nauthorRef:\n  store: postgresql\n  model: user\n  id: user-1\ndiscussionId: discussion-1\nauthorId: user-1\nauthorType: user\nintent: discuss\ncreatedAt: 2026-08-31T12:00:00.000Z\n---\nHello\n` })),
 		}));
 	});
 

@@ -70,7 +70,7 @@ describe('objective TreeDX workspace authority', () => {
 		const { client, service, workspace } = fixture();
 		const result = await service.updateContent({ id: 'author' }, workspace.id, {
 			kind: 'operational-content', version: 1, create: true, sourcePath: 'objectives/core.md',
-			content: '---\ntitle: Core objective\ndescription: Govern the project through TreeDX.\nstatus: live\ntime_horizon: long-term\n---\n\n# Core objective\n',
+			content: '---\nschemaVersion: treeseed.objective/v1\nid: core\nprojectId: project\ntitle: Core objective\noutcome: Govern the project through TreeDX.\nstatus: active\n---\n',
 		});
 		expect(result).toMatchObject({ workspace: { version: 2 } });
 		expect(client.applyChangeset).toHaveBeenCalledWith(expect.objectContaining({

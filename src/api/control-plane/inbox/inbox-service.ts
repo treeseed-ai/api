@@ -57,7 +57,7 @@ export function createInboxService(input: { store: any; discussions: any; commun
 		if (!row.discussion_id) return [];
 		const history = await loadDiscussions({ store, projectId: row.project_id, discussionId: row.discussion_id, collection: 'messages', limit: 500 }).catch(() => ({ messages: [] }));
 		return history.messages.map((message: Row) => { const fm = record(message.frontmatter); return { id: text(message.id), parentId: text(fm.replyTo) || null,
-			kind: text(fm.inboxIntent, text(fm.intent) === 'answer' ? 'answer' : fm.replyTo ? 'reply' : 'comment'), authorId: text(fm.authorId,'unknown'), authorLabel: text(message.authorLabel,text(fm.authorId,'unknown')),
+			kind: text(fm.inboxIntent, text(fm.intent) === 'answer' ? 'answer' : fm.replyToRef ? 'reply' : 'comment'), authorId: text(fm.authorId,'unknown'), authorLabel: text(message.authorLabel,text(fm.authorId,'unknown')),
 			markdown: text(message.body), createdAt: timestamp(fm.createdAt), provenance: { repositoryId: null, contentPath: text(message.path)||null, commitSha: text(fm.commitSha)||null, digest: createHash('sha256').update(text(message.body)).digest('hex') } }; });
 	}
 	async function syncAgentAnswer(row: Row) {

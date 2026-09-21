@@ -4,6 +4,7 @@ import { treeDxWorkspaceId } from '../../knowledge/workspaces/identity.ts';
 import { applyTextChangeset } from '../../knowledge/changesets/apply-text-changeset.ts';
 import { parseBook, parseKnowledgePage } from '../../knowledge/runtime/catalog.ts';
 import { requireKnowledgePageBookPath } from '../../knowledge/snapshot-projects.ts';
+import { listKnowledgeContentPaths } from '../../knowledge/read-model/repository-paths.ts';
 import { serializeBookDraft, serializeKnowledgePageDraft } from '../../knowledge/runtime/authoring.ts';
 import { projectTreeDxCommitSignals } from '../../capacity/services/treedx/repositories/treedx-change-projector.ts';
 import { recordTreeDxAuthoringState } from '../../capacity/services/treedx/repositories/treedx-authoring-journal.ts';
@@ -128,7 +129,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if (!['draft', 'changes-requested'].includes(access.workspace.status)) throw new KnowledgeOperationError(409, 'knowledge_workspace_locked', 'This draft is locked while it is in review or publication.');
 			if (Number(input.version) !== access.workspace.version) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
 			const connection = await resolveKnowledgeGatewayConnection(store, { projectId: access.workspace.projectId,
-				write: true, workspaceRefs: [access.workspace.branchName], authoringPaths: true });
+				write: true, workspaceRefs: [access.workspace.branchName, access.workspace.baseCommitSha], authoringPaths: true });
 			if (!connection) throw new KnowledgeOperationError(503, 'knowledge_repository_unavailable', 'The project knowledge repository is unavailable.');
 			const sourcePath = text(input.sourcePath);
 			if (input.kind === 'proposal-type') {
@@ -196,7 +197,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 					targetType: 'agent_profile', targetId: sourcePath, data: { workspaceId, projectId: access.workspace.projectId, path: sourcePath } });
 				return { result, workspace: updated.workspace };
 			}
-			let before: string | null = null, status: 'published' | 'archived' = 'published';
+			let before: string | null = null, status: 'published' | 'archived' = 'published', bookRevision = 0;
 			if (sourcePath) {
 				const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
 				before = current.content;
@@ -204,6 +205,7 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 					const currentDefinition = input.kind === 'book' ? parseBook({ path: sourcePath, raw: current.content })
 						: parseKnowledgePage({ path: sourcePath, raw: current.content });
 					status = currentDefinition.status === 'archived' ? 'archived' : 'published';
+					if (input.kind === 'book' && 'revision' in currentDefinition) bookRevision = currentDefinition.revision;
 				} catch {
 					// Invalid historical documents may only be replaced by a complete draft
 					// that passes the current serializer below. No compatibility projection
@@ -211,20 +213,54 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 					status = 'published';
 				}
 			}
+			let contentInput=input;
+			if(input.kind==='page'&&!input.bookRef) {
+				const selectedBookId=text(input.bookId);
+				if(!selectedBookId)throw new KnowledgeOperationError(422,'knowledge_book_required','Choose a Book for this page.');
+				const catalog=await reader.projectCatalog(access.principal,access.workspace.projectId);
+				const selectedBook=(catalog.books??[]).find((entry:any)=>entry.id===selectedBookId);
+				const selectedPath=text(selectedBook?.source?.path);
+				if(!selectedPath)throw new KnowledgeOperationError(422,'knowledge_book_unavailable','The selected Book is unavailable. Publish it before adding pages.');
+				const bookFile=await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:selectedPath});
+				const book=parseBook({path:selectedPath,raw:bookFile.content});
+				if(book.id!==selectedBookId||book.projectId!==access.workspace.projectId)throw new KnowledgeOperationError(409,'knowledge_book_moved','The selected Book changed. Reload before saving.');
+				contentInput={...input,bookRef:{store:'treedx',model:'book',id:book.id,path:selectedPath,revision:book.revision,digest:book.sourceDigest}};
+			}
 			let content;
-			try { content = input.kind === 'book' ? bookDocument(input, status) : pageDocument(input, status); }
+			try { content = input.kind === 'book'
+				? bookDocument(contentInput, access.workspace.projectId, status, bookRevision + 1)
+				: pageDocument(contentInput, access.workspace.projectId, status); }
 			catch (error) { throw new KnowledgeOperationError(422, 'invalid_knowledge_content', error instanceof Error ? error.message : 'Invalid knowledge content.'); }
 			const slug = text(input.slug);
 			const derivedPath = input.kind === 'book' ? projectLibraryPath(connection.contentPath, 'books', `${slug}.md`)
-				: projectLibraryPath(connection.contentPath, 'knowledge', text(input.bookId), `${slug}.md`);
+				: projectLibraryPath(connection.contentPath, 'knowledge', text((contentInput.bookRef as Record<string, unknown> | undefined)?.id), `${slug}.md`);
 			const move = Boolean(sourcePath && sourcePath !== derivedPath && input.move === true);
 			const path = move ? derivedPath : sourcePath || derivedPath;
 			if (!allowedKnowledgePath(access.workspace, path)) throw new KnowledgeOperationError(422, 'knowledge_path_invalid', 'The knowledge path is outside this workspace.');
 			if (sourcePath && sourcePath !== derivedPath && !move) throw new KnowledgeOperationError(422, 'knowledge_path_move_required', 'Changing a knowledge path requires an explicit move operation.');
+			const pageChanges: Array<{path:string;before:string;after:string}> = [];
+			if(input.kind==='book'&&sourcePath) {
+				const nextBook=parseBook({path,raw:content});
+				const pagesRoot=`${projectLibraryPath(connection.contentPath,'knowledge',nextBook.id)}/`;
+				const listed=await listKnowledgeContentPaths(connection,access.workspace.baseCommitSha);
+				const workspaceStatus=await connection.client.status({workspaceId:access.workspace.treeDxWorkspaceId});
+				const deleted=new Set((workspaceStatus.changes??[]).filter((change:any)=>change.status==='deleted').map((change:any)=>String(change.path)));
+				const pagePaths=new Set([
+					...(listed.entries??[]).map((entry:any)=>String(entry.path??'')),
+					...(workspaceStatus.changes??[]).map((change:any)=>String(change.path??'')),
+				].filter((candidate)=>candidate.startsWith(pagesRoot)&&/\.mdx?$/u.test(candidate)&&!deleted.has(candidate)));
+				for(const pagePath of [...pagePaths].sort()) {
+					const original=(await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:pagePath})).content;
+					const page=parseKnowledgePage({path:pagePath,raw:original});
+					if(page.bookRef.id!==nextBook.id||page.projectId!==nextBook.projectId)throw new KnowledgeOperationError(422,'knowledge_book_page_mismatch','The Book has a page with different ownership.');
+					const updated=serializeKnowledgePageDraft({...page,bookRef:{...page.bookRef,path,revision:nextBook.revision,digest:nextBook.sourceDigest!}});
+					if(updated!==original)pageChanges.push({path:pagePath,before:original,after:updated});
+				}
+			}
 			const result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
 				baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: move
-					? [{ path: sourcePath, before, after: null }, { path, before: null, after: content }]
-					: [{ path, before, after: content }],
+					? [{ path: sourcePath, before, after: null }, { path, before: null, after: content }, ...pageChanges]
+					: [{ path, before, after: content }, ...pageChanges],
 				idempotencyKey: `knowledge-content-${workspaceId}-${access.workspace.version}` });
 			const updated = await store.updateKnowledgeWorkspace(workspaceId, { version: access.workspace.version, status: 'draft' });
 			if (!updated.ok) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
@@ -261,6 +297,13 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 				try {
 					const page=parseKnowledgePage({path:changedPath,raw:file.content});
 					requireKnowledgePageBookPath(changedPath,pageRoot,page);
+					const bookPath=String(page.bookRef.path ?? '');
+					const bookRoot=`${projectLibraryPath(connection.contentPath,'books')}/`;
+					if(!bookPath.startsWith(bookRoot)||!bookPath.endsWith('.md'))throw new Error('The exact Book path is outside this project library.');
+					const bookFile=await connection.client.readFile({workspaceId:access.workspace.treeDxWorkspaceId,path:bookPath});
+					const book=parseBook({path:bookPath,raw:bookFile.content});
+					if(book.id!==page.bookRef.id||book.projectId!==page.projectId||book.revision!==page.bookRef.revision
+						||book.sourceDigest!==page.bookRef.digest)throw new Error('The page does not pin the current exact Book revision and digest.');
 				} catch(error) {
 					throw new KnowledgeOperationError(422,'knowledge_page_book_path_required',error instanceof Error?error.message:'Every knowledge document must be a valid page inside its declared book.');
 				}
@@ -339,10 +382,13 @@ function canonicalPath(page: any) {
 	return `/t/${encodeURIComponent(page.source.teamSlug)}/books/${encodeURIComponent(page.source.bookSlug ?? page.bookId)}/${page.slug.split('/').map(encodeURIComponent).join('/')}`;
 }
 
-function pageDocument(body: Record<string, unknown>, status: 'published' | 'archived') {
-	return serializeKnowledgePageDraft({ id: text(body.id), bookId: text(body.bookId), slug: text(body.slug), title: text(body.title),
+function pageDocument(body: Record<string, unknown>, projectId: string, status: 'published' | 'archived') {
+	return serializeKnowledgePageDraft({ id: text(body.id), projectId,
+		bookRef: body.bookRef as import('@treeseed/sdk/agent-capacity').ExactEntityReference,
+		bookId: text((body.bookRef as Record<string, unknown> | undefined)?.id),
+		slug: text(body.slug), title: text(body.title),
 		summary: text(body.summary), status, visibility: body.visibility ?? 'team', order: Number(body.order ?? 0),
-		parentId: text(body.parentId) || undefined, tags: list(body.tags), contributors: list(body.contributors),
+		parentId: text(body.parentId) || undefined, groupIds: list(body.groupIds), contributors: list(body.contributors),
 		relatedBookIds: list(body.relatedBookIds), relatedKnowledgeIds: list(body.relatedKnowledgeIds), relatedNoteIds: list(body.relatedNoteIds),
 		relatedQuestionIds: list(body.relatedQuestionIds), relatedObjectiveIds: list(body.relatedObjectiveIds),
 		relatedProposalIds: list(body.relatedProposalIds), relatedDecisionIds: list(body.relatedDecisionIds), guaranteeIds: list(body.guaranteeIds),
@@ -351,10 +397,11 @@ function pageDocument(body: Record<string, unknown>, status: 'published' | 'arch
 			keywords: list(body.keywords), documentationUrls: list(body.documentationUrls) }, bodyMarkdown: String(body.bodyMarkdown ?? '') });
 }
 
-function bookDocument(body: Record<string, unknown>, status: 'published' | 'archived') {
-	return serializeBookDraft({ id: text(body.id), slug: text(body.slug), title: text(body.title), summary: text(body.summary),
+function bookDocument(body: Record<string, unknown>, projectId: string, status: 'published' | 'archived', revision: number) {
+	return serializeBookDraft({ id: text(body.id), projectId, revision,
+		slug: text(body.slug), title: text(body.title), summary: text(body.summary),
 		description: text(body.description) || text(body.summary), status, visibility: body.visibility ?? 'team', order: Number(body.order ?? 0),
-		topics: list(body.topics), audience: list(body.audience), relatedBookIds: list(body.relatedBookIds),
+		groupIds: list(body.groupIds), audience: list(body.audience), relatedBookIds: list(body.relatedBookIds),
 		editorialCoreNoteId: text(body.editorialCoreNoteId) || undefined, packPolicy: body.packPolicy ?? 'allowed',
 		cover: body.cover && typeof body.cover === 'object' ? body.cover : undefined });
 }
