@@ -15,16 +15,6 @@ export function editorialReviewGate(review: any) {
 	return { ok: true };
 }
 
-export async function verifiedEditorialContextTrace(store: any, projectId: string, contextDigest: string) {
-	if (!/^[a-f0-9]{64}$/u.test(contextDigest)) return null;
-	return store.first(`SELECT id, trace_refs_json FROM agent_mode_runs
-		WHERE project_id = ? AND status = 'succeeded'
-			AND trace_refs_json::jsonb ->> 'editorialContextDigest' = ?
-			AND trace_refs_json::jsonb ->> 'editorialContextSchemaVersion' = 'treeseed.editorial-context/v1'
-			AND trace_refs_json::jsonb ->> 'agentSlug' IN ('guide-writer', 'guide-steward', 'knowledge-cartographer')
-		ORDER BY completed_at DESC NULLS LAST LIMIT 1`, [projectId, contextDigest]);
-}
-
 export function requiredRevisionReviewerIds(review: any) {
 	if (review?.status !== 'changes-requested') return {};
 	return Object.fromEntries(['technical', 'audience'].flatMap((kind) => {

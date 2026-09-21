@@ -215,7 +215,7 @@ async function communicationSupply(store: DiscussionInvocationStore, teamId: str
 		const minimumSeconds = Math.max(0, ...durations.map((duration) => evaluateMinimumAssignmentDuration(duration, now).minimumWindowSeconds));
 		const maxConcurrentWorkers = Math.max(1, Number(communicationLane.maxConcurrentWorkers ?? provider.maxConcurrentWorkers ?? 1) || 1);
 		return { ...candidate, minimumSeconds, maxConcurrentWorkers,
-			providerSourceClosureDigest: text(record(session?.metadata_json).sourceClosureDigest) || null };
+			providerRuntimeBuild: text(record(session?.metadata_json).runtimeBuild) || null };
 	}
 	return null;
 }
@@ -255,8 +255,8 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 		let status = text(existing.status);
 		if (executionId && ['admitted', 'running'].includes(status)) {
 			const execution = await store.first(`SELECT status FROM capacity_workday_runs WHERE id = ? AND team_id = ? LIMIT 1`, [executionId, input.teamId]);
-			const useful = await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id = ? AND team_id = ? AND status IN ('pending','leased') LIMIT 1`, [existing.id, input.teamId])
-				?? await store.first(`SELECT id FROM capacity_workday_demands WHERE workday_run_id = ? AND status IN ('queued','claimed','admitted') LIMIT 1`, [executionId]);
+			const useful = await store.first(`SELECT id FROM capacity_provider_assignments WHERE invocation_id = ? AND team_id = ? AND status IN ('pending','leased','running') LIMIT 1`, [existing.id, input.teamId])
+				?? await store.first(`SELECT id FROM execution_nodes WHERE team_id = ? AND workday_id = ? AND kind = 'communication' AND status = 'ready' LIMIT 1`, [input.teamId, executionId]);
 			const updatedAt = Date.parse(text(existing.updated_at));
 			const admissionIsFresh = Number.isFinite(updatedAt) && Date.now() - updatedAt < 60_000;
 			if ((!execution && !admissionIsFresh) || ['failed', 'cancelled'].includes(text(execution?.status)) || (!useful && !admissionIsFresh)) {
@@ -363,7 +363,7 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 				capacityProviderId: text(supply.capacity_provider_id), scenarioId: `conversation:${input.discussionId}:${agentSlug}`,
 				environment: 'local', executionKind: 'conversation', triggerKind: input.triggerKind ?? 'discussion', hidden: true, status: 'running', startedAt: new Date().toISOString(),
 				parameters: { durationSeconds: effectiveSeconds, maxActiveAssignments: 1, planningPercent: 0, projectSlugs: [input.projectSlug], scheduledProjectIds: [input.projectId],
-					providerSourceClosureDigest: supply.providerSourceClosureDigest,
+					providerRuntimeBuild: supply.providerRuntimeBuild,
 					agentSelection: { agentSlugs: [agentSlug], activityTypes: ['chat'], classIds: [], classSlugs: [], mode: 'intersection' },
 					discussion: { discussionId: input.discussionId, messageId: input.messageId, messagePath: input.messagePath, commitSha: input.messageCommit, contextRefs: input.contextRefs, invocationId: invocation.id, parentAssignmentId: invocation.parentAssignmentId ?? null, handoffRootId: invocation.handoffRootId ?? null, handoffParentId: invocation.handoffParentId ?? null, handoffDepth: invocation.handoffDepth ?? 0 },
 				}, requestedById: input.requestedById ?? null,

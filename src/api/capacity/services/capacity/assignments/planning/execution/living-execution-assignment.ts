@@ -9,7 +9,7 @@ import { isProposalGovernanceReview, listReadyExecutionNodes } from '../../../..
 import { capacityWorkdayRequestedProjectReferences, resolveCapacityWorkdayProjects } from '../../../workdays/policy/workday-project-policy.ts';
 import { admitLivingExecutionAssignment } from '../../admission/living-execution-admission.ts';
 import { buildAssignmentAttempt } from './assignment-attempt-builder.ts';
-import type { AssignmentFunctionStore } from '../support/assignment-function-store.ts';
+import type { LivingExecutionStore } from '../support/living-execution-store.ts';
 import { livingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
 
 const record = (value: unknown): Record<string, unknown> => {
@@ -19,6 +19,14 @@ const record = (value: unknown): Record<string, unknown> => {
 };
 
 const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))];
+
+export function workdayConcurrencyAvailable(kind: string, active: Record<string, number>, policy: {
+	maximumConcurrency: number; communicationConcurrency: number;
+}): boolean {
+	return kind === 'communication'
+		? (active.conversation ?? 0) < policy.communicationConcurrency
+		: (active.workday ?? 0) < policy.maximumConcurrency;
+}
 
 export function isNodeEligibleInWorkdayPhase(
 	node: Parameters<typeof isProposalGovernanceReview>[0], phase: 'planning' | 'acting', closing: boolean,
@@ -42,7 +50,7 @@ export const treeDxAuthorizedPaths = (values: Array<string | undefined>) => uniq
 		: [path, `${path}.md`, `${path}.mdx`, `${path}.yaml`, `${path}.yml`, `${path}.json`];
 });
 
-async function issueLivingTreeDxAuthority(store: AssignmentFunctionStore, run: Parameters<typeof buildAssignmentAttempt>[0]['run'],
+async function issueLivingTreeDxAuthority(store: LivingExecutionStore, run: Parameters<typeof buildAssignmentAttempt>[0]['run'],
 	assignment: ReturnType<typeof buildAssignmentAttempt>['assignment'], now: string) {
 	const currentRepositoryId = assignment.workspace.mode === 'treedx'
 		? assignment.workspace.repository
@@ -121,7 +129,7 @@ async function issueLivingTreeDxAuthority(store: AssignmentFunctionStore, run: P
 }
 
 export async function executionNodeAssignmentGeneration(
-	store: Pick<AssignmentFunctionStore, 'first'>,
+	store: Pick<LivingExecutionStore, 'first'>,
 	teamId: string,
 	nodeId: string,
 	nodeRevision: number,
@@ -133,7 +141,7 @@ export async function executionNodeAssignmentGeneration(
 
 /** Claim one ready graph node without creating a demand or capacity-plan record. */
 export async function assignNextReadyExecutionNode(
-	store: AssignmentFunctionStore,
+	store: LivingExecutionStore,
 	principal: ProviderLeasePrincipal,
 	providerSessionId: string,
 	executionProviders: ProviderSynthesisExecutionProvider[],
@@ -145,9 +153,9 @@ export async function assignNextReadyExecutionNode(
 		if (!parsedPlan.success) continue;
 		const appliedPlan = parsedPlan.data;
 		if (appliedPlan.state === 'planned' || appliedPlan.state === 'ended') continue;
-		const activeRow = await store.first(`SELECT COUNT(*) AS active_count FROM capacity_provider_assignments
-			WHERE team_id=? AND work_day_id=? AND status IN ('pending','leased','running')`, [run.teamId,run.id]);
-		if (Number(activeRow?.active_count ?? 0) >= appliedPlan.policySnapshot.maximumConcurrency) continue;
+		const activeRows = await store.all(`SELECT execution_kind,COUNT(*) AS active_count FROM capacity_provider_assignments
+			WHERE team_id=? AND work_day_id=? AND status IN ('pending','leased','running') GROUP BY execution_kind`, [run.teamId,run.id]);
+		const activeByKind = Object.fromEntries(activeRows.map((row) => [String(row.execution_kind), Number(row.active_count)]));
 		const projects = resolveCapacityWorkdayProjects(
 			capacityWorkdayRequestedProjectReferences(run.parameters),
 			await store.listTeamProjects(run.teamId),
@@ -155,6 +163,7 @@ export async function assignNextReadyExecutionNode(
 		const phase = workdayPhase(appliedPlan, now);
 		const candidates = (await Promise.all(projects.map((project) => listReadyExecutionNodes(store, run, project)))).flat()
 			.filter((candidate) => isNodeEligibleInWorkdayPhase(candidate.node, phase, appliedPlan.state === 'closing'))
+			.filter((candidate) => workdayConcurrencyAvailable(candidate.node.kind, activeByKind, appliedPlan.policySnapshot))
 			.filter((candidate) => appliedPlan.state === 'closing'
 				|| Date.parse(appliedPlan.endsAt) - Date.parse(now) >= (candidate.node.estimate?.minimumSeconds ?? 1) * 1_000);
 		const prior = await store.all(`SELECT node.project_id,node.agent_class,reservation.active_seconds,
@@ -167,7 +176,7 @@ export async function assignNextReadyExecutionNode(
 		const remaining = [...candidates];
 		while (remaining.length) {
 			const selectedNode = selectFairReadyNode(remaining.map((candidate) => ({ id: candidate.node.id,
-				projectId: candidate.node.projectId, agentClass: candidate.node.agentClass!, graphPriority: 0,
+				projectId: candidate.node.projectId, agentClass: candidate.node.agentClass!,
 				readyAt: candidate.readyAt || now })), usage, policy);
 			const candidate = remaining.find((item) => item.node.id === selectedNode?.id);
 			if (!candidate) break;
@@ -186,6 +195,8 @@ export async function assignNextReadyExecutionNode(
 				const attempt = selected.assignment;
 					const treedxProxyHandle = await issueLivingTreeDxAuthority(store, run, attempt, now);
 					return await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: { ...selected.allocation, selection: selectedNode },
+						workdayConcurrencyLimit: candidate.node.kind === 'communication'
+							? appliedPlan.policySnapshot.communicationConcurrency : appliedPlan.policySnapshot.maximumConcurrency,
 						accountingLimits: selected.accountingLimits,
 						projectAgentClassId: candidate.projectAgentClassId, providerSessionId,
 						executionProviderId: selected.executionProviderId, laneId: selected.laneId,

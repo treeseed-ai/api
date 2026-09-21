@@ -22,11 +22,11 @@ function readiness(session: Row) {
 		providers = JSON.parse(String(session.execution_providers_json ?? '[]')) as ProviderSnapshot[];
 		metadata = JSON.parse(String(session.metadata_json ?? '{}')) as Row;
 	} catch {
-		return { ...session, communicationReady: false, sourceClosureDigest: null, blockers: ['provider_snapshot_invalid'] };
+		return { ...session, communicationReady: false, runtimeBuild: null, blockers: ['provider_snapshot_invalid'] };
 	}
 	const ready = providers.some((provider) => Array.isArray(provider.lanes)
 		&& provider.lanes.some((lane) => (lane as Row).purpose === 'communication'));
-	return { ...session, sourceClosureDigest: typeof metadata.sourceClosureDigest === 'string' ? metadata.sourceClosureDigest : null,
+	return { ...session, runtimeBuild: typeof metadata.runtimeBuild === 'string' ? metadata.runtimeBuild : null,
 		communicationReady: ready, blockers: ready ? [] : ['provider_communication_lane_unavailable'] };
 }
 

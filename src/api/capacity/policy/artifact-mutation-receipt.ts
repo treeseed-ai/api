@@ -19,7 +19,6 @@ export interface ArtifactMutationReceipt {
 	executionMode: AgentWorkExecutionMode;
 	upstreamMutationPolicy: UpstreamMutationPolicy;
 	assignmentId: string;
-	modeRunId: string;
 	teamId: string;
 	projectId: string;
 	baseRef: string;
@@ -54,7 +53,7 @@ export function validateArtifactMutationReceipt(value: unknown) {
 	const receipt = value && typeof value === 'object' && !Array.isArray(value) ? value as Partial<ArtifactMutationReceipt> : {};
 	const problems: string[] = [];
 	if (receipt.schemaVersion !== ARTIFACT_MUTATION_RECEIPT_SCHEMA) problems.push('schemaVersion');
-	for (const key of ['id', 'assignmentId', 'modeRunId', 'teamId', 'projectId'] as const) if (!exactRef(receipt[key])) problems.push(key);
+	for (const key of ['id', 'assignmentId', 'teamId', 'projectId'] as const) if (!exactRef(receipt[key])) problems.push(key);
 	if (!['treedx-content', 'source-checkpoint'].includes(String(receipt.kind))) problems.push('kind');
 	if (!['provisional', 'integrated'].includes(String(receipt.phase))) problems.push('phase');
 	if (!['simulation', 'production'].includes(String(receipt.executionMode))) problems.push('executionMode');

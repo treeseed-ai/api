@@ -28,11 +28,13 @@ const stable = (value: unknown): string => {
 };
 const id = (prefix: string, values: unknown[]) => `${prefix}_${createHash('sha256').update(stable(values)).digest('base64url').slice(0, 32)}`;
 
-function selectProvider(requiredCapabilities: string[], providers: ProviderSynthesisExecutionProvider[], lanePurpose: 'workday' | 'communication') {
+function eligibleProviders(requiredCapabilities: string[], providers: ProviderSynthesisExecutionProvider[], lanePurpose: 'workday' | 'communication') {
 	if (!requiredCapabilities.length) throw new CapacityGovernanceError(
 		'capacity_execution_capabilities_required',
 		'An executable node must declare its provider capability demand before admission.', 409,
 	);
+	const eligible: Array<{ provider: ProviderSynthesisExecutionProvider; lane: ProviderSynthesisExecutionProvider['lanes'][number];
+		offer: ProviderSynthesisExecutionProvider['offers'][number] }> = [];
 	for (const provider of [...providers].sort((left, right) => left.id.localeCompare(right.id))) {
 		if (!['available', 'idle', 'normal'].includes(provider.status) || (provider.availableConcurrency ?? 1) < 1) continue;
 		if (!requiredCapabilities.every((capability) => provider.capabilities.includes(capability))) continue;
@@ -45,10 +47,11 @@ function selectProvider(requiredCapabilities: string[], providers: ProviderSynth
 			const capabilities = candidate.capabilities.map((capability) => capability.id);
 			return requiredCapabilities.every((capability) => capabilities.includes(capability));
 		}).sort((left, right) => left.capabilities.length - right.capabilities.length || left.offerId.localeCompare(right.offerId))[0];
-		if (lane && offer) return { provider, lane, offer };
+		if (lane && offer) eligible.push({ provider, lane, offer });
 	}
-	throw new CapacityGovernanceError('capacity_execution_provider_unavailable',
+	if (!eligible.length) throw new CapacityGovernanceError('capacity_execution_provider_unavailable',
 		'No advertised provider runtime satisfies the ready execution node.', 409, { requiredCapabilities });
+	return eligible;
 }
 
 function uniqueReferences(values: ExactEntityReference[]): ExactEntityReference[] {
@@ -117,12 +120,20 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		: [reference.path ?? '**'];
 	if (!writablePaths.length) throw new CapacityGovernanceError('assignment_workspace_write_scope_missing',
 		`Node ${candidate.node.id} has no exact writable paths for its ${candidate.node.workspace} workspace.`, 409);
-	const priorCandidate = candidate.node.pairRole === 'actor' && candidate.node.nodeRevision > 1
-		? candidate.predecessorResults.flatMap((result) => result.references)
-			.find((item) => item.kind === 'git' && item.repository === reference.repository)
-		: undefined;
+	const predecessorCommits = candidate.node.workspace === 'git'
+		? [...new Set(candidate.predecessorResults.flatMap((result) => result.references)
+			.filter((item) => item.kind === 'git' && item.repository === reference.repository)
+			.map((item) => item.commit))]
+		: [];
+	const explicitIntegration = predecessorCommits.length > 1
+		&& candidate.node.kind === 'acting' && candidate.node.pairRole === 'actor'
+		&& candidate.node.agentClass === 'releaser' && exactGrant.tools.includes('release');
+	if (predecessorCommits.length > 1 && !explicitIntegration) throw new CapacityGovernanceError(
+		'assignment_git_integration_required',
+		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicit integration assignment by a Releaser must establish one base.`, 409);
 	return candidate.node.workspace === 'git'
-		? { mode: 'git' as const, repository: reference.repository, baseCommit: priorCandidate?.commit ?? reference.commit,
+		? { mode: 'git' as const, repository: reference.repository,
+			baseCommit: explicitIntegration ? reference.commit : predecessorCommits[0] ?? reference.commit,
 			branch: assignmentSourceBranch(assignmentId), writablePaths }
 		: { mode: 'treedx' as const, workspaceId: workdayTreeDxWorkspaceId(assignmentId), repository: reference.repository,
 			baseCommit: reference.commit, writablePaths };
@@ -137,12 +148,13 @@ export function buildAssignmentAttempt(input: {
 	allocationInputs: LivingAllocationInputs;
 	attempt: number;
 	now: string;
-}): { assignment: AssignmentAttempt; allocation: ReturnType<typeof calculateAssignmentAllocation>; accountingLimits: CapabilityAccountingLimits;
+}): { assignment: AssignmentAttempt; allocation: ReturnType<typeof calculateAssignmentAllocation> & {
+	opportunity: LivingAllocationInputs[string]['opportunity'] }; accountingLimits: CapabilityAccountingLimits;
 	executionProviderId: string; laneId: string; lanePurpose: 'workday' | 'communication' } {
 	const { candidate } = input;
 	if (!candidate.node.estimate) throw new CapacityGovernanceError('execution_node_estimate_missing', 'Ready execution nodes require an estimate.', 409);
 	const communication = candidate.node.kind === 'communication';
-	const selected = selectProvider(candidate.node.requiredCapabilities ?? [], input.providers, communication ? 'communication' : 'workday');
+	const eligible = eligibleProviders(candidate.node.requiredCapabilities ?? [], input.providers, communication ? 'communication' : 'workday');
 	const assignmentId = id('assignment', [candidate.node.teamId,candidate.node.id,candidate.node.nodeRevision,input.attempt]);
 	const appliedPlan = appliedWorkdaySchema.parse(input.run.parameters.appliedPlan);
 	if (appliedPlan.executionMode !== input.run.executionMode) throw new CapacityGovernanceError(
@@ -157,25 +169,32 @@ export function buildAssignmentAttempt(input: {
 	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
 		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000 - preparationSeconds);
-	const limits = selected.provider.accountingLimits!;
-	const observation = selected.provider.accountingObservation!;
 	const capability = candidate.node.requiredCapabilities![0]!;
-	const capabilityLimits = limits.capabilityLimits[capability]!;
-	const remaining = (dailyLimitSeconds: number, value: typeof observation.modelUsage | undefined) => value
-		? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
-			observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
-	const allocationInputs = input.allocationInputs[selected.provider.id];
-	if (!allocationInputs) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred', 'No current allocation inputs exist for the selected provider.', 409);
-	const allocation = calculateAssignmentAllocation({ estimate: candidate.node.estimate, measurements: allocationInputs.measurements,
-		constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
-			{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000 - preparationSeconds) },
-			{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
-			{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
-		providerMinimumSeconds: capabilityLimits.minimumAssignmentSeconds,
-		providerMaximumSeconds: capabilityLimits.maximumAssignmentSeconds,
-		...(planningTurn ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
-	if (!allocation.admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
-		'The remaining execution window cannot fit the viable task minimum.', 409, { nodeId: candidate.node.id, allocation });
+	const considered = eligible.flatMap((selected) => {
+		const allocationInputs = input.allocationInputs[selected.provider.id];
+		if (!allocationInputs) return [];
+		const limits = selected.provider.accountingLimits!;
+		const observation = selected.provider.accountingObservation!;
+		const capabilityLimits = limits.capabilityLimits[capability]!;
+		const remaining = (dailyLimitSeconds: number, value: typeof observation.modelUsage | undefined) => value
+			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
+				observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
+		const allocation = calculateAssignmentAllocation({ estimate: candidate.node.estimate, measurements: allocationInputs.measurements,
+			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
+				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000 - preparationSeconds) },
+				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
+				{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
+			providerMinimumSeconds: capabilityLimits.minimumAssignmentSeconds,
+			providerMaximumSeconds: capabilityLimits.maximumAssignmentSeconds,
+			...(planningTurn ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
+		return [{ selected, allocation, allocationInputs }];
+	});
+	const admitted = considered.find(({ allocation }) => allocation.admitted);
+	if (!admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
+		'The remaining execution window cannot fit the viable task minimum.', 409,
+		{ nodeId: candidate.node.id, providers: considered.map(({ selected, allocation }) => ({ providerId: selected.provider.id, allocation })) });
+	const { selected, allocation, allocationInputs } = admitted;
+	const limits = selected.provider.accountingLimits!;
 	const deadline = compileAssignmentTimeBudget({ now: input.now,
 		requestedSeconds: allocation.allocatedSeconds,
 		configuredBudget: candidate.node.kind === 'reporting' && appliedPlan.state === 'closing' ? {} : { deadline: windowEnd } }).authorityExpiresAt;
@@ -186,7 +205,8 @@ export function buildAssignmentAttempt(input: {
 	const assignment = assignmentAttemptSchema.parse({
 		schemaVersion: 'treeseed.assignment-attempt/v1', id: assignmentId, idempotencyKey: assignmentId,
 		teamId: candidate.node.teamId, projectId: candidate.node.projectId, workdayId: input.run.id,
-		nodeId: candidate.node.id, ...(candidate.node.workItemId ? { workItemId: candidate.node.workItemId } : {}),
+		nodeId: candidate.node.id, agentClass: candidate.node.agentClass,
+		...(candidate.node.workItemId ? { workItemId: candidate.node.workItemId } : {}),
 		nodeRevision: candidate.node.nodeRevision, graphRevision: candidate.graphRevision,
 		sourceRef: candidate.node.sourceRef, authorityRefs: candidate.node.authorityRefs,
 		effectiveProfile: candidate.effectiveProfile,

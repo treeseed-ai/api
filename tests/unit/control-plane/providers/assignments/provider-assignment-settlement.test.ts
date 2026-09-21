@@ -20,6 +20,14 @@ describe('provider assignment settlement', () => {
 		settleCapacityReservationExactlyOnce.mockReset().mockResolvedValue({ replayed: false, entry: { id: 'entry-1' } });
 	});
 
+	it('rejects retired mode-run identity before any settlement or assignment lookup', async () => {
+		const store = { first: vi.fn() } as never;
+		const service = createProviderAssignmentService(store);
+		await expect(service.settle(auth, 'assignment-1', { modeRunId: 'retired-run', activeSeconds: 1, elapsedSeconds: 1 }, 'key'))
+			.rejects.toMatchObject({ code: 'mode_run_contract_retired', status: 400 });
+		expect(settleCapacityReservationExactlyOnce).not.toHaveBeenCalled();
+	});
+
 	it('closes the canonical suspended conversation checkpoint after durable settlement', async () => {
 		const returnProviderAssignment = vi.fn().mockResolvedValue({ assignment: { id: 'assignment-1' } });
 		const store = {

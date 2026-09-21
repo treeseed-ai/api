@@ -27,8 +27,6 @@ import { createServiceConnectionService } from '../control-plane/repositories/se
 import { createServiceCredentials } from '../control-plane/repositories/services/service-credentials.ts';
 import { createHostedTopologyService } from '../control-plane/repositories/infrastructure/hosted-topology-service.ts';
 import {createAiInstanceService} from '../control-plane/repositories/infrastructure/ai-instance-service.ts';
-import { createCapacityPlanService } from '../control-plane/repositories/capacity/capacity-plan-service.ts';
-import { createPlanningAndEstimateService } from '../control-plane/repositories/capacity/planning-and-estimate-service.ts';
 import { createAgentGovernanceService } from '../control-plane/repositories/capacity/agent-governance-service.ts';
 import { createCommunicationService } from '../control-plane/repositories/capacity/communication-service.ts';
 import { createDiagnosticEnvelopeService } from '../../security/diagnostic-envelope.ts';
@@ -248,8 +246,6 @@ export function createPlatformApiApp(options: any = {}) {
 			aiInstances: createAiInstanceService(store, registeredAiNodes),
 			platformProjectCreation: createPlatformProjectCreationService(store, { env: process.env, fetchImpl: options.fetchImpl ?? fetch }),
 			capabilityOntology,
-			plans: createCapacityPlanService(capacity),
-			planningAndEstimates: createPlanningAndEstimateService(capacity),
 			agentGovernance: createAgentGovernanceService(capacity),
 			communications,
 			inbox,

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
 	assignmentResultSchema,
 	effectiveActivityProfileSchema,
@@ -36,7 +35,6 @@ const stable = (value: unknown): string => {
 		.map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(',')}}`;
 	return JSON.stringify(value);
 };
-const sha256 = (value: unknown) => `sha256:${createHash('sha256').update(stable(value)).digest('hex')}`;
 
 function repositorySlug(value: unknown): string {
 	const candidate = text(value).replace(/\.git$/u, '');
@@ -179,14 +177,37 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 }
 
 async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ projectAgentClassId: string; profile: EffectiveActivityProfile }> {
-	const rows = await store.all(`SELECT id,handler_refs_json FROM project_agent_classes
+	const rows = await store.all(`SELECT id,handler_refs_json,metadata_json FROM project_agent_classes
 		WHERE project_id=? AND status='active' ORDER BY id`, [node.projectId]);
-	for (const row of rows) for (const candidate of array(record(row.handler_refs_json).agents)) {
+	for (const row of rows) for (const [index, candidate] of array(record(row.handler_refs_json).agents).entries()) {
 		const validation = validateAgentDefinitionModel(candidate);
 		if (!validation.ok || !validation.data || validation.data.agentClass !== node.agentClass) continue;
 		const activity = node.kind === 'communication' ? 'chat' : node.kind;
 		if (!['planning','estimating','acting','reviewing','reporting','chat'].includes(activity)) continue;
-		const selected = validation.data.activityProfiles[activity as keyof typeof validation.data.activityProfiles];
+		const metadata = record(row.metadata_json);
+		const commit = text(metadata.immutableRef);
+		const path = text(array(metadata.definitionPaths)[index]);
+		if (metadata.source !== 'project-library' || !/^[a-f0-9]{40}$/u.test(commit) || !path) {
+			throw new CapacityGovernanceError('execution_node_agent_profile_unpinned',
+				`Agent class ${text(row.id)} lacks an exact project-library definition.`, 409);
+		}
+		const connection = await resolveKnowledgeGatewayConnection(store, {
+			projectId: node.projectId, write: false, readRefs: [commit],
+		});
+		if (!connection) throw new CapacityGovernanceError('execution_node_agent_profile_unavailable',
+			`Agent class ${text(row.id)} project library is unavailable.`, 409);
+		const response = record(await connection.client.readRepositoryFile({
+			repoId: connection.repositoryId, ref: commit, path,
+			encoding: 'utf8', parseFrontmatter: true, allowProtected: true,
+		}));
+		const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
+		const exact = validateAgentDefinitionModel(record(file.frontmatter));
+		if (text(response.resolvedRef) !== commit || text(file.path) !== path
+			|| !exact.ok || !exact.data || stable(exact.data) !== stable(validation.data)) {
+			throw new CapacityGovernanceError('execution_node_agent_profile_moved',
+				`Agent class ${text(row.id)} differs from its exact project-library definition.`, 409);
+		}
+		const selected = exact.data.activityProfiles[activity as keyof typeof exact.data.activityProfiles];
 		if (!selected) continue;
 		return {
 			projectAgentClassId: text(row.id),
@@ -195,10 +216,8 @@ async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ proj
 				prompt: selected.prompt,
 				...(selected.additionalContext ? { additionalContext: selected.additionalContext } : {}),
 				...(selected.parameters ? { parameters: selected.parameters } : {}),
-				profileRef: {
-					store: 'treedx', model: 'agent', id: validation.data.id,
-					revision: 1, digest: sha256(validation.data),
-				},
+				profileRef: { store: 'treedx', model: 'agent', id: exact.data.id,
+					repository: connection.repositoryId, commit, path },
 				activity,
 				handlerOrigin: selected.handler.includes('/') ? 'project-runtime' : 'agent-package',
 				permissionCeiling: selected.permissions,
@@ -218,7 +237,20 @@ async function predecessorContext(store: any, node: ExecutionNode): Promise<{ re
 			AND result.execution_node_revision=predecessor.node_revision
 			AND result.status='completed'
 		WHERE edge.team_id=? AND edge.to_node_id=? AND edge.graph_revision_removed IS NULL
-		ORDER BY edge.id,result.completed_at DESC`, [node.teamId,node.id]);
+		UNION ALL
+		SELECT actor_result.assignment_result_json,actor_result.assignment_attempt_json
+		FROM execution_edges downstream
+		JOIN execution_nodes reviewer ON reviewer.team_id=downstream.team_id AND reviewer.id=downstream.from_node_id
+			AND reviewer.kind='reviewing' AND reviewer.pair_role='reviewer' AND reviewer.status='completed'
+		JOIN execution_edges pair ON pair.team_id=reviewer.team_id AND pair.to_node_id=reviewer.id
+			AND pair.provenance='review-pair' AND pair.graph_revision_removed IS NULL
+		JOIN execution_nodes actor ON actor.team_id=pair.team_id AND actor.id=pair.from_node_id
+			AND actor.pair_role='actor' AND actor.work_item_id=reviewer.work_item_id
+		JOIN capacity_provider_assignments actor_result ON actor_result.team_id=actor.team_id
+			AND actor_result.execution_node_id=actor.id
+			AND actor_result.execution_node_revision=actor.node_revision AND actor_result.status='completed'
+		WHERE downstream.team_id=? AND downstream.to_node_id=? AND downstream.graph_revision_removed IS NULL`,
+		[node.teamId,node.id,node.teamId,node.id]);
 	if (node.pairRole === 'actor' && node.nodeRevision > 1 && node.workItemId) rows.push(...await store.all(
 		`SELECT result.assignment_result_json,result.assignment_attempt_json FROM capacity_provider_assignments result
 		WHERE result.team_id=? AND result.execution_node_id=?

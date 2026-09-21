@@ -99,7 +99,6 @@ export function serializeTaskUsageActualRow(row: Row | null): CapacityUsageActua
 		assignmentAttempt: nonnegativeNumber(row, 'assignment_attempt'),
 		usageDimension: requiredText(row, 'usage_dimension'),
 		accountingMode: accountingMode(row.accounting_mode),
-		modeRunId: nullableText(row.mode_run_id),
 		mode: capacityMode(row.mode),
 		capacityProviderId: nullableText(row.capacity_provider_id),
 		executionProviderId: nullableText(row.execution_provider_id),

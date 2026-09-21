@@ -73,15 +73,9 @@ export async function projectTreeDxProxyCommit(input: {
 	const library = await input.store.getProjectTreeDxLibrary(input.projectId);
 	const repositoryId = String(input.access.handle?.repositoryId ?? record(library).repositoryId ?? '');
 	if (!repositoryId) throw new CapacityGovernanceError('treedx_authoring_repository_missing','TreeDX commit journaling requires the durable repository identity.',500,{ projectId:input.projectId });
-	const decision = record(assignment?.decisionInput);
-	const assignmentMetadata = record(assignment?.metadata);
-	const activityType = assignment ? String(
-		decision.activityType
-			?? record(decision.metadata).activityType
-			?? record(decision.input).activityType
-			?? assignmentMetadata.activityType
-			?? '',
-	) || null : null;
+	const activityType = assignment
+		? String(record(assignment.assignmentAttempt?.effectiveProfile).activity ?? '') || null
+		: null;
 	await recordTreeDxAuthoringState(input.store,'unpublished',{
 		projectId:input.projectId,
 		repositoryId,

@@ -117,6 +117,32 @@ describe('proposal-owned living execution graph projection', () => {
 		expect(actor('tests').status).toBe('blocked');
 	});
 
+	it('projects an exact cross-project TreeDX link from approved reviewer to dependent actor', () => {
+		const sdk = source([workItem({ id: 'simulate-release', agentClass: 'architect', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 })]);
+		const apiBase = source([workItem({ id: 'tests-first', agentClass: 'tester', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 })]);
+		const api = { ...apiBase,
+			projectId: 'api', repository: 'treeseed-ai/api', path: 'proposals/api.mdx',
+			frontmatter: { ...apiBase.frontmatter, id: 'api-plan', projectId: 'api' } };
+		const endpoint = (candidate: ExecutableProposalSource, anchor: string) => ({
+			store: 'treedx' as const, model: 'proposal', id: String(candidate.frontmatter.id),
+			revision: candidate.proposalRevision, digest: candidate.digest, repository: candidate.repository,
+			commit: candidate.commit, path: candidate.path, anchor,
+		});
+		const noteRef = { store: 'treedx' as const, model: 'note', id: 'dependency', repository: api.repository,
+			commit: 'd'.repeat(40), path: 'notes/dependency.md', digest: `sha256:${'e'.repeat(64)}` };
+		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [sdk, api],
+			profiles: { ...profiles, 'api:tester': agent('tester'), 'api:reviewer': agent('reviewer') },
+			dependencyLinks: [{ from: endpoint(sdk, 'work-item/simulate-release'), to: endpoint(api, 'work-item/tests-first'), sourceRef: noteRef }] });
+		const precursor = graph.nodes.find((node) => node.projectId === 'project' && node.workItemId === 'simulate-release' && node.pairRole === 'reviewer')!;
+		const dependent = graph.nodes.find((node) => node.projectId === 'api' && node.workItemId === 'tests-first' && node.pairRole === 'actor')!;
+		expect(graph.edges).toContainEqual(expect.objectContaining({ fromNodeId: precursor.id, toNodeId: dependent.id,
+			provenance: 'treedx-link', sourceRef: noteRef }));
+		expect(() => projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [api],
+			profiles: { 'api:tester': agent('tester'), 'api:reviewer': agent('reviewer') },
+			dependencyLinks: [{ from: endpoint(sdk, 'work-item/simulate-release'), to: endpoint(api, 'work-item/tests-first'), sourceRef: noteRef }] }))
+			.toThrow('absent from the selected graph');
+	});
+
 	it('is replay deterministic and contains no provider selection or output taxonomy', () => {
 		const first = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [source()], profiles, createdAt: '2026-09-13T12:00:00.000Z' });
 		const second = projectTeamExecutionGraph({ teamId: 'team', revision: 1, sources: [source()], profiles, createdAt: '2026-09-13T13:00:00.000Z' });

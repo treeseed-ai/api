@@ -47,6 +47,7 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			const readiness = await store.first(`SELECT COUNT(*) AS ready_count,
 				COALESCE(MAX((node.estimate_json::jsonb->>'maximumSeconds')::numeric),0) AS maximum_seconds FROM execution_nodes node
 				WHERE node.team_id=? AND ${scope.sql} AND node.status='ready'
+				AND ${input.activity === 'chat' ? "node.kind='communication'" : "node.kind<>'communication'"}
 				AND ${projectIds.length ? `node.project_id IN (${projectIds.map(() => '?').join(',')})` : 'false'}
 				AND node.required_capabilities_json::jsonb @> ?::jsonb
 				AND ${plan.state === 'closing' ? "node.kind='reporting'" : phase === 'planning'
@@ -59,7 +60,8 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 				planningCommittedSeconds: usage.filter(row => row.planning).reduce((sum, row) => sum + row.seconds, 0),
 				maximumAdditionalSeconds: Number(readiness?.ready_count) > 0
 					? plan.state === 'closing' ? Number(readiness?.maximum_seconds ?? 0)
-						: Math.max(0, (Date.parse(plan.endsAt) - Date.parse(input.now)) / 1000) * plan.policySnapshot.maximumConcurrency : 0 });
+						: Math.max(0, (Date.parse(plan.endsAt) - Date.parse(input.now)) / 1000)
+							* (input.activity === 'chat' ? plan.policySnapshot.communicationConcurrency : plan.policySnapshot.maximumConcurrency) : 0 });
 		}
 		const shares = allocateWorkdayCapacity({ remainingSeconds: supply, now: input.now, workdays });
 		const rows = await store.all(`SELECT usage.id,usage.created_at,usage.active_seconds,assignment.status,assignment.lifecycle_code,

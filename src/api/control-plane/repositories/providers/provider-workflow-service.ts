@@ -14,7 +14,7 @@ function authorizedHandle(assignment: Record<string, unknown>, principal: Provid
 		|| assignment.leaseToken !== body.leaseToken || !assignment.leaseExpiresAt || Date.parse(String(assignment.leaseExpiresAt)) <= now) {
 		throw new CapacityGovernanceError('assignment_workflow_lease_invalid', 'Workflow dispatch requires the active assignment lease.', 409);
 	}
-	if (assignment.mode !== 'acting' || !assignment.decisionId || !assignment.allocationSetId) throw new CapacityGovernanceError('assignment_workflow_acting_readiness_required', 'Workflow dispatch requires acting mode, an approved decision, and accepted capacity provenance.', 403);
+	if (assignment.mode !== 'acting' || !assignment.decisionId || !assignment.reservationId || !assignment.executionNodeId) throw new CapacityGovernanceError('assignment_workflow_acting_readiness_required', 'Workflow dispatch requires acting mode, an approved decision, and living-graph capacity provenance.', 403);
 	const handleId = typeof body.handleId === 'string' ? body.handleId : '';
 	const handle = workflowHandles(assignment).find((entry) => entry.id === handleId && entry.operationId === operationId);
 	if (!handle || handle.kind !== 'workflow_operation' || handle.status !== 'active' || (handle.expiresAt && Date.parse(String(handle.expiresAt)) <= now)

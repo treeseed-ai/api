@@ -16,7 +16,7 @@ describe('executable proposal source selection', () => {
 		expect(all).toHaveBeenCalledWith(expect.stringContaining('AND p.project_id = ?'), ['team', 'project']);
 	});
 
-	it('quarantines an invalid accepted execution plan without admitting demand', async () => {
+	it('fails closed on an invalid accepted execution plan without mutating its graph', async () => {
 		const all = vi.fn(async () => [{
 			proposal_id: 'invalid-proposal', project_id: 'project', active_version: 2,
 			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: 'decision',
@@ -26,6 +26,8 @@ describe('executable proposal source selection', () => {
 		exactProposal.mockRejectedValueOnce(Object.assign(new Error('Invalid executable plan.'), {
 			status: 422, code: 'proposal_execution_plan_invalid', diagnostics: [{ path: 'executionPlan' }],
 		}));
-		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toEqual([]);
+		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).rejects.toMatchObject({
+			code: 'proposal_execution_plan_invalid', diagnostics: [{ path: 'executionPlan' }],
+		});
 	});
 });

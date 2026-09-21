@@ -39,8 +39,8 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 			await db.pool.query(`INSERT INTO capacity_reservation_counter_claims
 				(reservation_id,counter_id,admission_token,reserved_amount,release_policy,created_at,updated_at)
 				VALUES ('reservation','counter','admission',20,'usage-settlement',$1,$1)`, [now]);
-			await db.pool.query(`UPDATE capacity_provider_assignments SET capacity_envelope_json=$1,decision_input_json=$2 WHERE id='assignment'`,
-				[JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting' }), JSON.stringify({ teamId: 'team', projectId: 'project', projectAgentClassId: 'engineer', mode: 'acting', input: {} })]);
+			await db.pool.query(`UPDATE capacity_provider_assignments SET capacity_envelope_json=$1 WHERE id='assignment'`,
+				[JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting' })]);
 			const store: CapacityGovernanceDatabase & { db: typeof db } = { db, ensureInitialized: () => db.migrate(),
 				run: async (sql, params = []) => { await db.prepare(sql).bind(...params).run(); },
 				first: (sql, params = []) => db.prepare(sql).bind(...params).first(),

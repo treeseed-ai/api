@@ -39,12 +39,10 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		try { exact = await readExactProposal(store, { ...row, id: row.proposal_id }); }
 		catch (error) {
 			// An unaccepted, non-executable draft is governed history, not graph
-			// demand. An accepted proposal whose executable contract is invalid
-			// is likewise quarantined: it contributes no demand and its prior
-			// nodes become stale, without blocking unrelated team work.
+			// demand. An accepted source must never disappear silently: doing so
+			// would stale its existing graph nodes without a new decision.
 			if (!accepted) continue;
 			const value = error as { status?: number; code?: string };
-			if (value.code === 'proposal_execution_plan_invalid') continue;
 			throw Object.assign(new CapacityOperationError(Number(value.status ?? 409), value.code ?? 'proposal_execution_plan_invalid',
 				error instanceof Error ? error.message : 'The accepted proposal could not be read.'), { diagnostics: (error as { diagnostics?: unknown }).diagnostics });
 		}

@@ -80,15 +80,30 @@ async function resolveTargetSnapshot(store:any,projectId:string){
 	const exact=await connection(store,projectId,false,[commit]);
 	return {connection:exact,snapshot:await snapshotAgents(exact,commit).catch((error)=>failed('target_read',projectId,error))};
 }
-async function snapshotAgents(value:KnowledgeGatewayConnection,ref=value.baseRef){
+export async function snapshotAgents(value:KnowledgeGatewayConnection,ref=value.baseRef){
 	const listed=await value.client.listRepositoryPaths({repoId:value.repositoryId,ref,paths:[projectLibraryPath(value.contentPath,'agents/**')],kinds:['blob'],extensions:['.md','.mdx'],limit:200,allowProtected:true});
 	const commit=text(listed.resolvedRef);
 	if(!/^[0-9a-f]{40}$/u.test(commit))throw new CapacityOperationError(409,'agent_team_snapshot_invalid','TreeDX did not resolve the agent collection to an exact commit.');
+	if(/^[0-9a-f]{40}$/u.test(ref)&&commit!==ref)throw new CapacityOperationError(409,
+		'agent_team_snapshot_moved','Agent collection moved from the requested exact commit.');
 	const paths=(Array.isArray(listed.entries)?listed.entries:[]).map((item:unknown)=>text(record(item).path)).filter(Boolean).sort();
 	if(!paths.length)return {commit,files:[] as SourceFile[]};
 	const read=await value.client.readRepositoryFiles({repoId:value.repositoryId,ref:commit,paths,encoding:'utf8',parseFrontmatter:false,allowProtected:true});
 	if(text(read.resolvedRef)!==commit)throw new CapacityOperationError(409,'agent_team_snapshot_moved','Agent definition bytes did not match the listed commit.');
-	const files=fileRows(read).map((file)=>{const content=sourceBytes(file);const parsed=parseFrontmatterDocument(content);const validation=validateAgentDefinitionModel(parsed.frontmatter);return validation.ok&&validation.data?{path:text(file.path),content,definition:validation.data,sourceDigest:hash(content)}:null;}).filter((file):file is SourceFile=>Boolean(file));
+	const returned=fileRows(read);
+	if(returned.length!==paths.length||new Set(returned.map((file)=>text(file.path))).size!==paths.length
+		||returned.some((file)=>!paths.includes(text(file.path))))throw new CapacityOperationError(409,
+		'agent_team_snapshot_incomplete','TreeDX did not return every exact agent definition in the source snapshot.');
+	const files=returned.map((file)=>{
+		const content=sourceBytes(file),path=text(file.path),parsed=parseFrontmatterDocument(content);
+		const validation=validateAgentDefinitionModel(parsed.frontmatter);
+		if(!validation.ok||!validation.data)throw new CapacityOperationError(409,'agent_team_definition_invalid',
+			`Agent definition ${path||'(unknown)'} is invalid; the exact source snapshot cannot be cloned.`,
+			{path,diagnostics:validation.diagnostics});
+		return {path,content,definition:validation.data,sourceDigest:hash(content)};
+	});
+	if(new Set(files.map((file)=>file.definition.agentClass)).size!==files.length)throw new CapacityOperationError(409,
+		'agent_team_class_ambiguous','Multiple source agent definitions select the same class and would overwrite one target file.');
 	return {commit,files};
 }
 async function readExisting(value:KnowledgeGatewayConnection,commit:string,paths:string[]){
@@ -107,7 +122,7 @@ async function activateDefinitions(store:any,target:Project,definitions:ReturnTy
 		const validation=validateAgentDefinitionModel(parseFrontmatterDocument(item.content).frontmatter);
 		if(!validation.ok||!validation.data)throw new CapacityOperationError(422,'agent_team_definition_invalid','The cloned agent definition cannot be activated.');
 		const existing=entries.find((entry)=>text(entry.slug)===item.agentClass&&entry.status==='active')??entries.find((entry)=>text(entry.slug)===item.agentClass);
-		const input={slug:item.agentClass,name:validation.data.name,status:'active',allowedModes:['planning','acting'],kernelProfile:record(existing?.kernelProfile),kernelPolicy:record(existing?.kernelPolicy),handlerRefs:{agents:[validation.data]},outputContracts:record(existing?.outputContracts),metadata:{...record(existing?.metadata),source:'project-library',immutableRef:commit,libraryRef,definitionPaths:[item.path],definitionDigest:item.digest.replace(/^sha256:/u,'')}};
+		const input={slug:item.agentClass,name:validation.data.name,status:'active',handlerRefs:{agents:[validation.data]},metadata:{...record(existing?.metadata),source:'project-library',immutableRef:commit,libraryRef,definitionPaths:[item.path],definitionDigest:item.digest.replace(/^sha256:/u,'')}};
 		if(existing)await store.updateProjectAgentClass(target.id,text(existing.id),input,`${idempotencyKey}:${target.id}:${item.agentClass}:update`);
 		else await store.createProjectAgentClass(target.id,{id:`${target.id}:${item.agentClass}`,...input},`${idempotencyKey}:${target.id}:${item.agentClass}:create`);
 	}

@@ -15,8 +15,8 @@ describe('provider assignment workday identity', () => {
 		expect(assignmentWorkdayRunId({ workDayId: 'workday-run-1', metadata: {} })).toBe('workday-run-1');
 	});
 
-	it('continues to read the planning metadata representation', () => {
-		expect(assignmentWorkdayRunId({ metadata: { workdayRunId: 'workday-run-1' } })).toBe('workday-run-1');
+	it('does not recover a workday from retired metadata', () => {
+		expect(assignmentWorkdayRunId({ metadata: { workdayRunId: 'workday-run-1' } })).toBeNull();
 	});
 
 	it('keeps the durable assignment field authoritative', () => {

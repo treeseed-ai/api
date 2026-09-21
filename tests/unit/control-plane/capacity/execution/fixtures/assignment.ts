@@ -1,6 +1,6 @@
 export const assignment = {
 	schemaVersion: 'treeseed.assignment-attempt/v1', id: 'assignment', idempotencyKey: 'assignment', teamId: 'team', projectId: 'project',
-	workdayId: 'workday', nodeId: 'node', workItemId: 'work-item', nodeRevision: 1, graphRevision: 2,
+	workdayId: 'workday', nodeId: 'node', agentClass: 'engineer', workItemId: 'work-item', nodeRevision: 1, graphRevision: 2,
 	sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest: `sha256:${'a'.repeat(64)}` }, authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'e'.repeat(64)}` }],
 	effectiveProfile: { profileRef: { store: 'treedx', model: 'agent', id: 'sdk/engineer', revision: 1, digest: `sha256:${'b'.repeat(64)}` },
 		activity: 'acting', handler: 'actor', handlerOrigin: 'agent-package', prompt: { system: 'Implement the exact authorized source change.' },

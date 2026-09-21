@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { capacityWorkdayAgentsFromClasses } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-policy.ts';
+import { compileDefaultChatActivityProfile } from '../../../../../src/api/capacity/policy/workdays/chat-activity-profile.ts';
+import { compileAgentAuthoritySnapshot } from '../../../../../src/api/capacity/policy/authority/agent-authority-presets.ts';
 
 describe('chat activity profile policy', () => {
+	it('never grants retired TreeDX assignment content or operational tools', () => {
+		const profile = compileDefaultChatActivityProfile('sdk/architect');
+		const authority = compileAgentAuthoritySnapshot('chat', profile);
+		const retired = /assignment_(?:plan|status|summary)/u;
+		expect(Object.keys(profile.permissions?.content ?? {})).not.toEqual(expect.arrayContaining([
+			'assignment_plan', 'assignment_status', 'assignment_summary',
+		]));
+		expect(profile.tools?.allowed?.filter((tool) => retired.test(tool))).toEqual([]);
+		expect(authority.tools.allowed.filter((tool) => retired.test(tool))).toEqual([]);
+	});
+
 	it('preserves provider-neutral execution and capability settings from the agent profile', () => {
 		const capabilities = [{ capabilityId: 'treeseed.coordination.conversation', versionRange: '^1.0.0', requirement: 'required' }];
 		const agents = capacityWorkdayAgentsFromClasses([{

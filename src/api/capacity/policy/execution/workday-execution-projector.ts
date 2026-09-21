@@ -72,17 +72,16 @@ export function projectActiveWorkdays(input: { teamId: string; revision: number;
 				const workItem = activity === 'estimating' && definition.agentClass !== 'reviewer'
 					? workItems.filter((item) => text(item.agentClass) === definition.agentClass) : [];
 				if (activity === 'estimating' && (!workItems.length
-					|| (definition.agentClass !== 'reviewer' && workItem.length !== 1))) throw new Error(
-					`Estimating ${definition.agentClass} requires its exact proposal work item.`);
+					|| (definition.agentClass !== 'reviewer' && !workItem.length))) throw new Error(
+					`Estimating ${definition.agentClass} requires proposal work items owned by that class.`);
 				const estimatingCriteria = definition.agentClass === 'reviewer'
 					? workItems.filter((item) => item.review === 'required').map((item) =>
 						`Estimate the generated review of work item ${text(item.id)} independently: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`)
-					: [`Estimate work item ${text(workItem[0]?.id)}: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`,
-						...array(workItem[0]?.acceptanceCriteria).map(text)];
+					: workItem.flatMap((item) => [`Estimate work item ${text(item.id)}: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`,
+						...array(item.acceptanceCriteria).map(text)]);
 				const proposalStatus = source.proposalStatusesByProjectId?.[projectId];
 				const node = executionNodeSchema.parse({ schemaVersion: 'treeseed.execution-node/v1', id: plannedId,
 					teamId: input.teamId, projectId, workdayId: workday.id, kind: activity, pairRole: null,
-					...(activity === 'estimating' && workItem[0] ? { workItemId: text(workItem[0].id) } : {}),
 					sourceRef: nodeSource, authorityRefs: [reference], ruleRevision: 1, nodeRevision: 1,
 						agentClass: definition.agentClass,
 					status: activity === 'estimating' && proposalStatus

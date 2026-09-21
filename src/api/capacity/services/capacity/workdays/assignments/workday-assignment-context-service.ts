@@ -107,10 +107,9 @@ export async function listCapacityWorkdayContentArtifactRefs(
   const rows = await store.all(
     `SELECT assignment.id, assignment.lifecycle_output_json AS outputs_json
 		   FROM capacity_provider_assignments assignment
-		   JOIN capacity_workday_demands demand ON demand.assignment_id = assignment.id
 		  WHERE assignment.team_id = ?
 		    AND assignment.project_id = ?
-		    AND demand.workday_run_id = ?
+		    AND assignment.work_day_id = ?
 		    AND assignment.status = 'completed'
 		  ORDER BY assignment.completed_at DESC, assignment.id ASC
 		  LIMIT ?`,

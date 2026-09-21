@@ -341,7 +341,6 @@ export async function appendDiscussionEvent(input: {
 		title: text(input.event.title, phase), discussionId: input.discussionId,
 		phase, sequence: Number(input.event.eventIndex ?? Date.now()),
 		...(input.event.assignmentId ? { assignmentId: String(input.event.assignmentId) } : {}),
-		...(input.event.modeRunId ? { modeRunId: String(input.event.modeRunId) } : {}),
 		...(context.agentId ? { agentId: String(context.agentId) } : {}),
 		...(context.executionProviderId ? { providerId: String(context.executionProviderId) } : {}),
 		occurredAt, metrics: input.event.metadata ?? {}, refs,

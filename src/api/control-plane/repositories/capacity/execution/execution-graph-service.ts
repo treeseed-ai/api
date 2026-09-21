@@ -12,6 +12,7 @@ import { projectTeamExecutionGraph } from '../../../../capacity/policy/execution
 import { projectActiveWorkdays } from '../../../../capacity/policy/execution/workday-execution-projector.ts';
 import { projectCommunicationInvocations } from '../../../../capacity/policy/execution/communication-execution-projector.ts';
 import { loadTeamExecutableProposalSources } from '../../../../capacity/services/capacity/execution/executable-proposal-source.ts';
+import { loadTeamExactDependencyLinks } from '../../../../capacity/services/capacity/execution/exact-dependency-links.ts';
 import { readExactProposal } from '../../../../governance/executable-proposal.ts';
 import { authorizeCapacityTeam, type CapacityPrincipal } from '../capacity-authorization.ts';
 import { CapacityOperationError } from '../capacity-operation-error.ts';
@@ -252,7 +253,8 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 	}];
 	const revisionGuard = `EXISTS (SELECT 1 FROM execution_graph_revisions
 		WHERE team_id=? AND revision=? AND created_at=?)`;
-	for (const node of graph.nodes) operations.push({
+	const currentNodes = new Map(current.nodes.map((node) => [node.id, node]));
+	for (const node of graph.nodes.filter((candidate) => stable(currentNodes.get(candidate.id)) !== stable(candidate))) operations.push({
 		query: `INSERT INTO execution_nodes (
 			id,team_id,project_id,workday_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
 			rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,
@@ -278,6 +280,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,
 			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
 	});
+	const currentEdges = new Map(current.edges.map((edge) => [edge.id, edge]));
 	const desiredEdges = new Set(graph.edges.map((edge) => edge.id));
 	for (const prior of current.edges) if (!desiredEdges.has(prior.id)) operations.push({
 		query: `UPDATE execution_edges SET graph_revision_removed = ?
@@ -285,7 +288,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 		params: [graph.revision, graph.teamId, prior.id,
 			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
 	});
-	for (const edge of graph.edges) operations.push({
+	for (const edge of graph.edges.filter((candidate) => stable(currentEdges.get(candidate.id)) !== stable(candidate))) operations.push({
 		query: `INSERT INTO execution_edges (id,team_id,from_node_id,to_node_id,provenance,source_ref_json,graph_revision_created,graph_revision_removed,created_at)
 			SELECT ?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
 			ON CONFLICT (id) DO UPDATE SET graph_revision_removed=NULL`,
@@ -303,9 +306,8 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 
 async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}) {
 	const current = await loadGraphSource('projection', () => readGraph(store, teamId));
-	const selectedProjectId = text(body.projectId);
 	const [sources, profiles, workdays, communications] = await Promise.all([
-		loadGraphSource('governance', () => loadTeamExecutableProposalSources(store, teamId, selectedProjectId || undefined)),
+		loadGraphSource('governance', () => loadTeamExecutableProposalSources(store, teamId)),
 		loadGraphSource('agent_profiles', () => loadProfiles(store, teamId)),
 		loadGraphSource('workdays', () => loadActiveWorkdays(store, teamId)),
 		loadGraphSource('communications', () => loadCommunicationInvocations(store, teamId)),
@@ -314,19 +316,13 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		? { teamId, baseRevision: current.revision, desiredRevision: current.revision, desiredDigest: current.digest, changes: { added: [], changed: [], completed: [], blocked: [], stale: [], removedEdges: [], addedEdges: [] } }
 		: current;
 	const revision = current.revision + 1;
-	const proposalProjection = sources.length ? projectTeamExecutionGraph({ teamId, revision, sources, profiles }) : null;
+	const dependencyLinks = new Set(sources.map((source) => source.projectId)).size > 1
+		? await loadGraphSource('dependencies', () => loadTeamExactDependencyLinks(store, sources)) : [];
+	const proposalProjection = sources.length ? projectTeamExecutionGraph({ teamId, revision, sources, profiles, dependencyLinks }) : null;
 	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
-	const workdayNodeIds = new Set(workdayProjection.nodes.map((node) => node.id));
-	const retainedProposalNodes = selectedProjectId
-		? current.nodes.filter((node) => node.sourceRef.model === 'proposal' && node.projectId !== selectedProjectId && !workdayNodeIds.has(node.id))
-		: [];
-	const retainedProposalIds = new Set(retainedProposalNodes.map((node) => node.id));
-	const retainedProposalEdges = selectedProjectId
-		? current.edges.filter((edge) => retainedProposalIds.has(edge.fromNodeId) && retainedProposalIds.has(edge.toNodeId))
-		: [];
-	const nodes = [...retainedProposalNodes, ...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes];
-	const edges = [...retainedProposalEdges, ...(proposalProjection?.edges ?? []), ...workdayProjection.edges];
+	const nodes = [...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes];
+	const edges = [...(proposalProjection?.edges ?? []), ...workdayProjection.edges];
 	const changedSourceRefs = [...new Map([...(proposalProjection?.revision.changedSourceRefs ?? []),
 		...workdayProjection.changedSourceRefs, ...communicationProjection.changedSourceRefs,
 		...(!sources.length && !workdays.length && !communications.length ? current.nodes.map((node) => node.sourceRef) : [])]

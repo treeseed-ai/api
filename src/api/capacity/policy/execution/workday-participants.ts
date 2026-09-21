@@ -37,7 +37,8 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 			const canEstimate = workItems.some(item => text(item.agentClass) === validation.data!.agentClass)
 				|| (validation.data.agentClass === 'reviewer' && workItems.some(item => item.review === 'required'));
 			const activities = (explicitActivitySelection ? frozenActivities : frozenActivities.filter((activity) =>
-				activity === 'planning' || (activity === 'estimating' && canEstimate)))
+				activity === 'planning' || activity === 'estimating'))
+				.filter((activity) => activity !== 'estimating' || canEstimate)
 				.filter((activity): activity is 'planning' | 'estimating' => activity === 'planning' || activity === 'estimating');
 			for (const activity of activities) {
 				if (!validation.data.activityProfiles[activity]) continue;

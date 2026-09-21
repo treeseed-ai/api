@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { assignmentSourceBranch, simulationSourceBranch, sourceWorkspaceRequestSchema, sourceWorkspaceResponseSchema, type SourceWorkspaceAuthorization } from '@treeseed/sdk/capacity-provider/sandbox';
-import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { sealSourceCredential } from '@treeseed/deployment/security/source';
 import { resolveGitHubSourceAuthority } from '../../../../../security/provider-credential-authority.ts';
 import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../../../capacity/database.ts';
@@ -56,7 +56,7 @@ export function assignmentSourceMode(row: RecordValue) {
 	if (attempt.data.workspace.mode === 'git') {
 		const campaignId = String(record(row.workday_parameters_json).acceptanceCampaignId || 'local');
 		const frozenUpstreamBase = attempt.data.contextRefs.some(reference => reference.store === 'git'
-			&& reference.commit === attempt.data.workspace.baseCommit);
+			&& reference.commit === attempt.data.workspace.baseCommit) && attempt.data.predecessorResultIds.length === 0;
 		const acquisition = executionMode === 'production' ? 'upstream-authorized' as const
 			: frozenUpstreamBase ? 'upstream-public' as const : 'simulation-local' as const;
 		const publicationRef = executionMode === 'simulation'
@@ -69,6 +69,29 @@ export function assignmentSourceMode(row: RecordValue) {
 	return { mode: 'analysis' as const,
 		acquisition: executionMode === 'production' ? 'upstream-authorized' as const : 'upstream-public' as const,
 		publication: 'denied' as const };
+}
+
+export function assignmentPredecessorSourceCommits(row: RecordValue, repositories: readonly string[], baseCommit: string): string[] {
+	const attempt = assignmentAttemptSchema.safeParse(record(row.assignment_attempt_json ?? {}));
+	if (!attempt.success || attempt.data.workspace.mode !== 'git') return [];
+	const values = record(row.workspace_context_json).predecessorResults;
+	const results = Array.isArray(values) ? values : [];
+	const expected = attempt.data.predecessorResultIds;
+	if (results.length !== expected.length || new Set(expected).size !== expected.length) throw new CapacityGovernanceError('assignment_source_predecessor_mismatch',
+		'Assignment predecessor results do not match its immutable attempt.', 409);
+	const observed = new Set<string>();
+	const commits = new Set<string>();
+	for (const value of results) {
+		const parsed = assignmentResultSchema.safeParse(value);
+		if (!parsed.success || !expected.includes(parsed.data.id) || observed.has(parsed.data.id)) throw new CapacityGovernanceError(
+			'assignment_source_predecessor_mismatch', 'Assignment contains an invalid predecessor result.', 409);
+		observed.add(parsed.data.id);
+		for (const reference of parsed.data.references) if (reference.kind === 'git'
+			&& repositories.includes(reference.repository) && reference.commit !== baseCommit) commits.add(reference.commit);
+	}
+	if (commits.size > 16) throw new CapacityGovernanceError('assignment_source_predecessor_limit',
+		'Assignment requests more than 16 exact predecessor commits.', 409);
+	return [...commits].sort();
 }
 
 export function createSourceWorkspaceService(database: CapacityGovernanceDatabase, contentStore: SourceStore, options: {
@@ -135,14 +158,16 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     await checkAuthority();
     const issued = now();
     row = assertSourceAssignmentLease(await load(assignmentId, actor), actor, assignmentId, request.runnerId, request.leaseToken, issued);
-    const accepted = readAssignmentSourcePin(record(row.workspace_context_json));
+	const accepted = readAssignmentSourcePin(record(row.workspace_context_json));
     if (JSON.stringify(accepted) !== JSON.stringify(pin)) throw new CapacityGovernanceError('assignment_source_pin_changed', 'Assignment source identity changed during authorization.', 409);
+	const additionalCommits = assignmentPredecessorSourceCommits(row, [configured.id, configuredRepository], pin.exactCommit);
 	const credentialExpiry = credential?.expiresAt ? Date.parse(credential.expiresAt) : issued.getTime() + 300_000;
     const expiry = Math.min(Date.parse(String(row.lease_expires_at)), credentialExpiry, issued.getTime() + 300_000);
     if (!Number.isFinite(expiry) || expiry <= issued.getTime()) throw new CapacityGovernanceError('assignment_source_credential_expired', 'Source credential expired during authorization.', 409);
     const authorization: SourceWorkspaceAuthorization = { schemaVersion: 'treeseed.source-workspace-authorization/v1', id: randomUUID(),
       providerId: actor.capacityProviderId, assignmentId, attempt: Number(row.attempt_count) + 1,
-      source: { controlPlaneId: options.controlPlaneId, teamId: actor.teamId, projectId, repositoryId: pin.repository.id, commit: pin.exactCommit, formatVersion: 1, profile: 'source-only' },
+	  source: { controlPlaneId: options.controlPlaneId, teamId: actor.teamId, projectId, repositoryId: pin.repository.id,
+		commit: pin.exactCommit, ...(additionalCommits.length ? { additionalCommits } : {}), formatVersion: 1, profile: 'source-only' },
 		...sourceMode, ...(pin.credentialBindingId ? { credentialBindingId: pin.credentialBindingId } : {}), issuedAt: issued.toISOString(), expiresAt: new Date(expiry).toISOString() };
 	const sealed = credential ? sealSourceCredential({ authorization, recipientPublicKey: request.recipientPublicKey, credential }, issued) : null;
     const { id: _id, ...repository } = pin.repository;

@@ -24,7 +24,6 @@ export interface WorkdayScheduleStore extends CapacityGovernanceDatabase {
 	getProjectTreeDxLibrary(projectId: string): Promise<{ repositoryId?: unknown; contentPath?: unknown; contentRepositoryRef?: unknown; metadata?: unknown } | null>;
 	createCapacityWorkdayEvent(teamId: string, runId: string, input: JsonRecord): Promise<unknown>;
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: JsonRecord): Promise<DurableCapacityWorkdayRun | null>;
-	terminalizeCapacityWorkdayEnvelopes(teamId: string, runId: string, status: string): Promise<{ terminalized: number }>;
 }
 
 function text(value: unknown, fallback = ''): string {
@@ -88,7 +87,7 @@ export function acceptedLibraryRevision(library: { metadata?: unknown; contentRe
 	return immutableRef;
 }
 
-/** Cooperative project planning requires one exact proposal; conversation runs bind exact message context instead. */
+/** Estimating may attach to one exact proposal; autonomous planning starts with none. */
 export function requiresGovernedPlanningProposal(run: Pick<DurableCapacityWorkdayRun, 'executionKind' | 'parameters'>): boolean {
 	return run.executionKind === 'workday' && Array.isArray(record(run.parameters.agentSelection).activityTypes)
 		&& (record(run.parameters.agentSelection).activityTypes as unknown[]).includes('estimating');
@@ -143,8 +142,8 @@ async function resolveCapacityWorkdayPreflight(
 		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection);
 		agentProfiles.set(project.id,profileSnapshot);
 		const projectProposals = selectedProposals.filter((proposal) => proposal.projectId === project.id);
-		if (requiresGovernedPlanningProposal(run) && projectProposals.length !== 1) throw new CapacityGovernanceError(
-			'capacity_workday_proposal_selection_invalid', 'A planning-only workday requires exactly one governed proposal per selected project.', 409,
+		if (requiresGovernedPlanningProposal(run) && projectProposals.length > 1) throw new CapacityGovernanceError(
+			'capacity_workday_proposal_selection_invalid', 'A planning workday can bind at most one exact proposal per selected project.', 409,
 			{ projectId: project.id, proposalIds: projectProposals.map((proposal) => proposal.proposalId) });
 		if (projectProposals[0]) proposalContexts.set(project.id, projectProposals[0].ref);
 	}
@@ -275,7 +274,6 @@ export async function recordCapacityWorkdayScheduleFailure(
 	const evidence = errorEvidence(error);
 	const failures: JsonRecord[] = [];
 	for (const [owner, operation] of [
-		['envelopes', () => store.terminalizeCapacityWorkdayEnvelopes(run.teamId, run.id, 'failed')],
 		['event', () => recordRequiredEvent(store, run.teamId, run.id, {
 			eventType: 'workday.schedule_failed', status: 'error', title: 'Workday schedule failed', context: { error: evidence.message, code: evidence.code },
 		})],

@@ -31,6 +31,12 @@ export interface ExecutionGraphProjection {
 	revision: GraphRevision;
 }
 
+export interface VerifiedDependencyLink {
+	from: ExactEntityReference;
+	to: ExactEntityReference;
+	sourceRef: ExactEntityReference;
+}
+
 const RULE_REVISION = 2;
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -179,6 +185,7 @@ export function projectTeamExecutionGraph(input: {
 	revision: number;
 	sources: ExecutableProposalSource[];
 	profiles: Record<string, AgentDefinition>;
+	dependencyLinks?: VerifiedDependencyLink[];
 	createdAt?: string;
 }): ExecutionGraphProjection {
 	const nodes: ExecutionNode[] = [];
@@ -256,6 +263,27 @@ export function projectTeamExecutionGraph(input: {
 				}
 			}
 		}
+	}
+
+	for (const link of input.dependencyLinks ?? []) {
+		const endpoint = (ref: ExactEntityReference, role: 'predecessor' | 'dependent') => {
+			const item = ref.anchor?.match(/^work-item\/([a-z0-9]+(?:-[a-z0-9]+)*)$/u)?.[1];
+			const candidates = nodes.filter((node) => node.sourceRef.store === 'treedx'
+				&& node.sourceRef.model === 'proposal' && node.sourceRef.id === ref.id
+				&& node.sourceRef.repository === ref.repository && node.sourceRef.commit === ref.commit
+				&& node.sourceRef.path === ref.path && node.sourceRef.digest === ref.digest
+				&& node.sourceRef.revision === ref.revision && node.workItemId === item);
+			return role === 'predecessor'
+				? candidates.find((node) => node.pairRole === 'reviewer') ?? candidates.find((node) => node.pairRole === 'actor')
+				: candidates.find((node) => node.pairRole === 'actor');
+		};
+		const predecessor = endpoint(link.from, 'predecessor');
+		const dependent = endpoint(link.to, 'dependent');
+		if (!predecessor || !dependent) throw Object.assign(new Error('An exact TreeDX dependency endpoint is absent from the selected graph.'), {
+			code: 'execution_dependency_endpoint_missing', sourceRef: link.sourceRef,
+		});
+		edges.push(edge({ teamId: input.teamId, fromNodeId: predecessor.id, toNodeId: dependent.id,
+			provenance: 'treedx-link', sourceRef: link.sourceRef }, input.revision));
 	}
 
 	const uniqueEdges = [...new Map(edges.map((candidate) => [candidate.id, candidate])).values()];

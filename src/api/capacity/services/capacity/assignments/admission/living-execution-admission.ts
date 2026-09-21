@@ -32,6 +32,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	laneId: string;
 	lanePurpose: 'workday' | 'communication';
 	executionKind: 'workday' | 'conversation';
+	workdayConcurrencyLimit: number;
 	invocationId?: string | null;
 	predecessorResults: unknown[];
 	treedxProxyHandle: JsonRecord;
@@ -49,6 +50,9 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	if (!input.allocation.admitted || input.allocation.allocatedSeconds !== assignment.limits.maximumSeconds) {
 		throw new CapacityGovernanceError('assignment_allocation_mismatch', 'Assignment limits must match the allocator-issued duration.', 409);
 	}
+	if (!Number.isInteger(input.workdayConcurrencyLimit) || input.workdayConcurrencyLimit < 1) {
+		throw new CapacityGovernanceError('workday_concurrency_limit_invalid', 'A positive workday concurrency limit is required.', 409);
+	}
 	const mode = assignmentAccountingMode(assignment);
 	const decisionId = assignment.authorityRefs.find((reference) => reference.model === 'decision')?.id ?? null;
 	const proposalId = assignment.sourceRef.model === 'proposal' ? assignment.sourceRef.id : null;
@@ -60,16 +64,14 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 		requestedSeconds: assignment.limits.maximumSeconds, reservedSeconds: assignment.limits.maximumSeconds,
 		limits: assignment.limits, budget: timing.capacityBudget,
 	};
-	const decisionInput = {
-		teamId: assignment.teamId, projectId: assignment.projectId, projectAgentClassId: input.projectAgentClassId,
-		mode, activityType: assignment.effectiveProfile.activity, workDayId: assignment.workdayId,
-		agentId: assignment.effectiveProfile.profileRef.id, handlerId: assignment.effectiveProfile.handler,
-		capacity: capacityEnvelope, input: {}, metadata: { source: 'living_execution_graph', nodeId: assignment.nodeId },
-	};
 	const common = [assignment.teamId,assignment.nodeId,assignment.nodeRevision];
 	const claims = capabilityCounterClaims(assignment, input.accountingLimits, input.now);
 	const admissionToken = randomUUID();
 	await store.batch([
+		// Serializes admissions for this workday before checking its per-kind
+		// concurrency. The count in the reservation INSERT is therefore atomic.
+		{ query: `SELECT id FROM capacity_workday_runs WHERE team_id=? AND id=? AND status='running' FOR UPDATE`,
+			params: [assignment.teamId, assignment.workdayId] },
 		...initializeCapabilityCounters(assignment, claims, input.now),
 		{ query: `SELECT node.id FROM execution_nodes node
 			WHERE node.team_id=? AND node.id=? AND node.node_revision=? AND node.status='ready'
@@ -104,19 +106,26 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				)
 			)
 			AND ${claims.map(() => `EXISTS (SELECT 1 FROM capacity_admission_counters WHERE id=? AND committed_amount+?<=LEAST(hard_limit,?))`).join(' AND ')}
+			AND EXISTS (SELECT 1 FROM capacity_workday_runs run
+				WHERE run.team_id=? AND run.id=? AND run.status='running')
+			AND (SELECT COUNT(*) FROM capacity_provider_assignments active
+				WHERE active.team_id=? AND active.work_day_id=? AND active.execution_kind=?
+				AND active.status IN ('pending','leased','running')) < ?
 			ON CONFLICT (id) DO NOTHING`, params: [assignment.reservationId,assignment.idempotencyKey,principal.membershipId,
 				principal.capacityProviderId,input.executionProviderId,input.laneId,input.lanePurpose,input.projectAgentClassId,assignment.id,mode,
 				assignment.teamId,assignment.projectId,assignment.workdayId,assignment.limits.maximumSeconds,
 				assignment.limits.maximumSeconds,assignment.deadline,JSON.stringify({ nodeId: assignment.nodeId,
 					nodeRevision: assignment.nodeRevision, graphRevision: assignment.graphRevision }),input.now,input.now,admissionToken,...common,
-				...claims.flatMap(claim => [claim.id, assignment.limits.maximumSeconds, claim.hardLimit])] },
+			...claims.flatMap(claim => [claim.id, assignment.limits.maximumSeconds, claim.hardLimit]),
+			assignment.teamId, assignment.workdayId,
+			assignment.teamId, assignment.workdayId, input.executionKind, input.workdayConcurrencyLimit] },
 		...commitCapabilityCounters(assignment, claims, admissionToken, input.now),
 		{ query: `INSERT INTO capacity_provider_assignments
 			(id,membership_id,team_id,project_id,capacity_provider_id,provider_session_id,execution_provider_id,lane_id,lane_purpose,
 			 project_agent_class_id,reservation_id,work_day_id,mode,execution_kind,invocation_id,status,lease_state,state_version,agent_id,handler_id,
-			 capacity_envelope_json,decision_input_json,workspace_context_json,allowed_outputs_json,explanation_json,
+			 capacity_envelope_json,workspace_context_json,allowed_outputs_json,explanation_json,
 			 attempt_count,assigned_at,lifecycle_output_json,synthesized_from,synthesis_key,decision_id,proposal_id,metadata_json,created_at,updated_at)
-			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','unleased',1,?,?,?::jsonb,?::jsonb,?::jsonb,'{}','{}',0,?,'{}',
+			SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','unleased',1,?,?,?::jsonb,?::jsonb,'{}','{}',0,?,'{}',
 				 'living_execution_graph',?,?,?,?::jsonb,?,?
 			WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id=? AND team_id=? AND assignment_id=?)
 			AND NOT EXISTS (
@@ -131,7 +140,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				principal.capacityProviderId,input.providerSessionId,input.executionProviderId,input.laneId,input.lanePurpose,input.projectAgentClassId,
 				assignment.reservationId,assignment.workdayId,mode,input.executionKind,input.invocationId ?? null,
 				assignment.effectiveProfile.profileRef.id,assignment.effectiveProfile.handler,
-				JSON.stringify(capacityEnvelope),JSON.stringify(decisionInput),
+			JSON.stringify(capacityEnvelope),
 				JSON.stringify({ assignmentAttempt: assignment, predecessorResults: input.predecessorResults }),input.now,
 				assignment.idempotencyKey,decisionId,proposalId,JSON.stringify({ requiredCapabilities: assignment.requiredCapabilities }),input.now,input.now,
 				assignment.reservationId,assignment.teamId,assignment.id,
@@ -167,7 +176,18 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				assignment.nodeId,assignment.nodeRevision] },
 	]);
 	const committed = await store.getProviderAssignment(assignment.teamId, assignment.id);
-	if (!committed) throw new CapacityGovernanceError('execution_node_claim_lost',
-		'The execution node changed before assignment admission.', 409, { nodeId: assignment.nodeId, nodeRevision: assignment.nodeRevision });
+	if (!committed) {
+		const active = await store.first(`SELECT COUNT(*) AS active_count FROM capacity_provider_assignments
+			WHERE team_id=? AND work_day_id=? AND execution_kind=? AND status IN ('pending','leased','running')`,
+			[assignment.teamId, assignment.workdayId, input.executionKind]);
+		if (Number(active?.active_count ?? 0) >= input.workdayConcurrencyLimit) {
+			throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
+				'The workday execution lane has reached its independent concurrency limit.', 409,
+				{ reason: 'workday_concurrency_exhausted', executionKind: input.executionKind,
+					limit: input.workdayConcurrencyLimit });
+		}
+		throw new CapacityGovernanceError('execution_node_claim_lost',
+			'The execution node changed before assignment admission.', 409, { nodeId: assignment.nodeId, nodeRevision: assignment.nodeRevision });
+	}
 	return committed;
 }

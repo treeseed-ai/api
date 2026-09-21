@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
+import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+
+vi.mock('../../../../../src/api/governance/executable-proposal.ts', () => ({
+	readExactProposal: vi.fn(async (_store: unknown, proposal: { id?: string }) => {
+		if (proposal.id === 'incomplete') throw Object.assign(new Error('Proposal has no executable plan.'),
+			{ code: 'proposal_execution_plan_invalid' });
+		return { ref: { store: 'treedx', model: 'proposal', id: 'new-proposal', revision: 1,
+		digest: `sha256:${'a'.repeat(64)}`, repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/new.mdx' },
+		definition: { executionPlan: { workItems: [{ id: 'research', agentClass: 'researcher', review: 'required' }] } } };
+	}),
+}));
 
 const now = '2026-09-13T16:00:00.000Z';
 const policy = { durationSeconds: 60, maximumConcurrency: 2, planningTurnMaximumSeconds: 10,
@@ -32,6 +43,35 @@ describe('living workday lifecycle', () => {
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
 		expect(result.plan.planningRounds.at(-1)).toMatchObject({ round: 3, state: 'active',
 			assignmentIds: ['planning:workday:3:project/architect'] });
+	});
+	it('adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents', async () => {
+		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
+			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+		const permissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
+		const agent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${agentClass}`,
+			name: agentClass, agentClass, purpose: 'Estimate governed work.', responsibilities: ['Return exact results.'],
+			capabilities: ['reasoning'], context: { include: ['project-objectives'] }, activityProfiles: {
+				planning: { handler: 'writer', permissions, prompt: { system: 'Plan useful governed work for this project.' } },
+				estimating: { handler: 'estimate', permissions, prompt: { system: 'Estimate exact proposal work for this project.' } },
+			} });
+		expect(validateAgentDefinitionModel(agent('researcher')).ok).toBe(true);
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer'].map((agentClass) =>
+				({ definition: agent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
+		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
+			? currentPlan.planningRounds.map((round) => ({ id: round.assignmentIds[0], kind: 'planning', status: 'completed' }))
+			: [{ id: 'incomplete', team_id: 'team', project_id: 'project' },
+				{ id: 'new-proposal', team_id: 'team', project_id: 'project' }]),
+			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
+		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual([
+			'planning:workday:3:project/architect',
+			'planning:workday:3:project/project/researcher:estimating',
+			'planning:workday:3:project/project/reviewer:estimating',
+		]);
+		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
+			parameters: expect.objectContaining({ planningSourceByProjectId: { project: expect.objectContaining({ id: 'new-proposal' }) } }),
+		}));
 	});
 	it('completes planning rounds and enters closing without consulting demand or envelope storage', async () => {
 		const updateCapacityWorkdayRun = vi.fn(async () => run);

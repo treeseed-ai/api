@@ -154,6 +154,23 @@ describe('normalized living execution graph persistence', () => {
 		expect(operations.some((operation) => /graph_events|reconciliation_receipts/u.test(operation.query))).toBe(false);
 	});
 
+	it('writes only the changed component when an unrelated project remains unchanged', async () => {
+		const unchanged = { ...node('ready'), id: 'other-node', projectId: 'other-project' };
+		const changed = { ...node('blocked'), id: 'changed-node' };
+		const current = graph(1, [unchanged, changed]);
+		const next = graph(2, [unchanged, { ...changed, status: 'ready', graphRevisionUpdated: 2 }]);
+		const operations: Array<{ query: string; params: unknown[] }> = [];
+		const store = {
+			batch: async (input: typeof operations) => { operations.push(...input); },
+			first: async () => ({ revision: 2, graph_digest: next.digest }),
+		};
+		await persistExecutionGraph(store, next, current, revision(2, next.digest));
+		const nodeWrites = operations.filter((operation) => operation.query.includes('INSERT INTO execution_nodes'));
+		expect(nodeWrites).toHaveLength(1);
+		expect(nodeWrites[0]?.params[0]).toBe('changed-node');
+		expect(operations[1]?.params[9]).toContain('other-node');
+	});
+
 	it('fails closed when another reconciliation wins the graph revision', async () => {
 		const next = graph(2);
 		const store = {

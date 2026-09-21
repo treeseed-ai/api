@@ -7,6 +7,7 @@ import { admitLivingExecutionAssignment } from '../../../../../../src/api/capaci
 import { assignment } from '../fixtures/assignment.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { buildProviderAssignmentExplanation } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/assignment-explanation-service.ts';
+import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
@@ -22,6 +23,8 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			await database.migrate();
 			const now = assignment.createdAt;
 			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
+			await database.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at)
+				VALUES ('workday','team','running','simulation',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','project','Project',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('class','team','project','engineer','Engineer',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES ('provider','test','{}','Provider',$1,$1)`, [now]);
@@ -53,9 +56,9 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 				principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 				assignment: attempt, allocation: calculateAssignmentAllocation({ estimate: attempt.estimate, measurements: [],
 					constraints: [{ id: 'model-day', remainingSeconds: 3 }] }),
-				accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 4, capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 4 } } },
+				accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 10, capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 10 } } },
 				projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'workday', lanePurpose: 'workday',
-				executionKind: 'workday', predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
+				executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
 			});
 			const results = await Promise.allSettled(attempts.map(run));
 			expect(results.filter(result => result.status === 'fulfilled'), results.map(result => result.status === 'rejected' ? String(result.reason) : 'admitted').join('\n')).toHaveLength(1);
@@ -72,11 +75,11 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			expect((await database.pool.query('SELECT sum(reserved_amount)::int AS total FROM capacity_reservation_counter_claims')).rows[0].total).toBe(6);
 			// Terminal overuse is retained as measured truth, never approved by raising
 			// the cap. The real admission path must deny additional work atomically.
-			await database.pool.query('UPDATE capacity_admission_counters SET committed_amount=5');
+			await database.pool.query('UPDATE capacity_admission_counters SET committed_amount=11');
 			const loser = attempts[results.findIndex(result => result.status === 'rejected')]!;
-			await expect(run(loser)).rejects.toMatchObject({ code: 'execution_node_claim_lost' });
+			await expect(run(loser)).rejects.toMatchObject({ code: 'capacity_assignment_allocation_deferred' });
 			expect((await database.pool.query('SELECT hard_limit,committed_amount FROM capacity_admission_counters')).rows)
-				.toEqual([{ hard_limit: 4, committed_amount: 5 }, { hard_limit: 4, committed_amount: 5 }]);
+				.toEqual([{ hard_limit: 10, committed_amount: 11 }, { hard_limit: 10, committed_amount: 11 }]);
 			expect((await database.pool.query('SELECT count(*)::int AS count FROM capacity_reservations')).rows[0].count).toBe(1);
 			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json='{}' WHERE id=$1`, [winner.id]);
 			const repository = new ProviderAssignmentRepository(store as never);
@@ -91,6 +94,15 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 				id: winner.id, status: 'pending', reservationId: winner.reservationId, assignmentAttempt: null,
 			});
 			expect(await repository.getForCancellation('other-team', winner.id)).toBeNull();
+			const settlement = { settlementKey: `settle:${winner.id}`, teamId: 'team', membershipId: 'membership',
+				reservationId: winner.reservationId, assignmentId: winner.id, activeSeconds: 2, elapsedSeconds: 4,
+				source: 'postgres-admission-test' };
+			expect((await settleCapacityReservationExactlyOnce(store as never, settlement)).replayed).toBe(false);
+			expect((await settleCapacityReservationExactlyOnce(store as never, settlement)).replayed).toBe(true);
+			expect((await database.pool.query(`SELECT count(*)::int AS count FROM capacity_ledger_entries
+				WHERE reservation_id=$1 AND phase='task_completed_actual_settlement'`, [winner.reservationId])).rows[0].count).toBe(1);
+			expect((await database.pool.query(`SELECT count(*)::int AS count FROM capacity_usage_actuals
+				WHERE assignment_id=$1 AND accounting_mode='aggregate'`, [winner.id])).rows[0].count).toBe(1);
 		} finally {
 			await database.close();
 			await admin.query(`DROP DATABASE "${name}"`); await admin.end();

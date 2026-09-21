@@ -19,7 +19,8 @@ describe('provider lease candidate scope', () => {
 		expect(all).toHaveBeenCalledOnce();
 		const [query, parameters] = all.mock.calls[0]!;
 		expect(query).toContain('execution_provider_id IN (?)');
-		expect(query).toContain("workday.status IN ('completed','cancelled')");
+		expect(query).toContain('FROM capacity_workday_runs workday');
+		expect(query).toContain("workday.status IN ('completed','cancelled','failed','degraded')");
 		expect(parameters).toEqual(['team', 'provider', 'codex-implementation']);
 	});
 });

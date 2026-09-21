@@ -24,7 +24,6 @@ export interface CapacitySettlementRequest {
 	elapsedSeconds: number;
 	providerUnits?: number | null;
 	usd?: number | null;
-	modeRunId?: string | null;
 	source: string;
 	existingSettlementPolicy?: 'require-match' | 'replay';
 	metadata?: Record<string, unknown>;
@@ -52,7 +51,6 @@ function usageReportInput(input: CapacitySettlementRequest): CapacityUsageReport
 		elapsedSeconds: input.elapsedSeconds,
 		providerUnits: input.providerUnits,
 		usd: input.usd,
-		modeRunId: input.modeRunId,
 		source: input.source,
 		metadata: { ...(input.metadata ?? {}), settlementKey: input.settlementKey },
 		usageActual: input.usageActual,
@@ -191,8 +189,8 @@ function prepareCapacitySettlement(
 	});
 	operations.push(...counterSettlementOperations(input, settlementToken, now, counterSettlements));
 	operations.push({
-		query: `INSERT INTO capacity_ledger_entries (id, settlement_key, membership_id, capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind, invocation_id, operation_handoff_id, reservation_id, assignment_id, mode_run_id, mode, team_id, project_id, work_day_id, task_id, phase, active_seconds, elapsed_seconds, provider_units, usd, source, metadata_json, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'task_completed_actual_settlement', CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL), ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) ON CONFLICT (reservation_id, phase) DO NOTHING`,
-		params: [entryId, input.settlementKey, input.membershipId, reservation.capacity_provider_id, reservation.execution_provider_id ?? null, reservation.lane_id ?? null, reservation.lane_purpose ?? null, reservation.communication_overflow ?? 0, reservation.execution_kind ?? 'workday', reservation.trigger_kind ?? 'scheduled', reservation.invocation_id ?? null, reservation.operation_handoff_id ?? null, input.reservationId, input.assignmentId, input.modeRunId ?? null, reservation.mode ?? null, input.teamId, reservation.project_id ?? null, reservation.work_day_id ?? null, reservation.task_id ?? null, activeSeconds, elapsedSeconds, input.providerUnits ?? null, input.usd ?? null, input.source, JSON.stringify({ ...(input.metadata ?? {}), reservedSeconds, activeSeconds, elapsedSeconds, releasedSeconds: Math.max(0, reservedSeconds - activeSeconds), overrunSeconds: Math.max(0, activeSeconds - reservedSeconds) }), now, input.reservationId, input.teamId, settlementToken],
+		query: `INSERT INTO capacity_ledger_entries (id, settlement_key, membership_id, capacity_provider_id, execution_provider_id, lane_id, lane_purpose, communication_overflow, execution_kind, trigger_kind, invocation_id, operation_handoff_id, reservation_id, assignment_id, mode, team_id, project_id, work_day_id, task_id, phase, active_seconds, elapsed_seconds, provider_units, usd, source, metadata_json, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, CAST(? AS INTEGER), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'task_completed_actual_settlement', CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS REAL), CAST(? AS REAL), ?, ?, ? WHERE EXISTS (SELECT 1 FROM capacity_reservations WHERE id = ? AND team_id = ? AND settlement_token = ?) ON CONFLICT (reservation_id, phase) DO NOTHING`,
+		params: [entryId, input.settlementKey, input.membershipId, reservation.capacity_provider_id, reservation.execution_provider_id ?? null, reservation.lane_id ?? null, reservation.lane_purpose ?? null, reservation.communication_overflow ?? 0, reservation.execution_kind ?? 'workday', reservation.trigger_kind ?? 'scheduled', reservation.invocation_id ?? null, reservation.operation_handoff_id ?? null, input.reservationId, input.assignmentId, reservation.mode ?? null, input.teamId, reservation.project_id ?? null, reservation.work_day_id ?? null, reservation.task_id ?? null, activeSeconds, elapsedSeconds, input.providerUnits ?? null, input.usd ?? null, input.source, JSON.stringify({ ...(input.metadata ?? {}), reservedSeconds, activeSeconds, elapsedSeconds, releasedSeconds: Math.max(0, reservedSeconds - activeSeconds), overrunSeconds: Math.max(0, activeSeconds - reservedSeconds) }), now, input.reservationId, input.teamId, settlementToken],
 	});
 	operations.push({
 		query: `UPDATE capacity_reservations SET active_seconds = ?, elapsed_seconds = ?, released_seconds = ?, overrun_seconds = ?, consumed_provider_units = ?, consumed_usd = ?, state = 'consumed', updated_at = ? WHERE id = ? AND team_id = ? AND settlement_token = ? AND EXISTS (SELECT 1 FROM capacity_ledger_entries WHERE reservation_id = ? AND phase = ? AND id = ?)`,

@@ -27,7 +27,11 @@ describe('agent catalog operations', () => {
 			listProjectAgentClassesPage: vi.fn(async () => ({ items: [{ id: 'class-1', slug: 'engineering', status: 'active', updatedAt: '2026-08-23T00:00:00.000Z', metadata: { immutableRef: 'ref-1' }, handlerRefs: { agents: [{ schemaVersion:'treeseed.agent/v1',id:'project/engineer',name:'Engineer',agentClass:'engineer',purpose:'Implement accepted work.',responsibilities:['Inspect evidence.'],capabilities:['engineering'],activityProfiles:{chat:{handler:'writer',permissions:{content:{read:['knowledge'],write:['discussion']},tools:['source.read']},prompt:{system:'Research before answering.'}}},context:{include:['repository-structure']}}] } }] })),
 		};
 		await expect(createAgentQueryService(store).show(principal, 'project-1', 'engineer')).resolves.toMatchObject({
-			projectId: 'project-1', agent: { agentSlug: 'engineer', allocationClass: 'engineering', chatEnabled: true },
+			projectId: 'project-1', agent: { agentSlug: 'engineer', allocationClass: 'engineering', chatEnabled: true,
+				effectiveActivities: { chat: { handler: 'writer', origin: 'agent-package',
+					prompt: { system: 'Research before answering.' }, context: ['repository-structure'],
+					permissions: { content: { read: ['knowledge'], write: ['discussion'] }, tools: ['source.read'] },
+					dependsOn: null } } },
 		});
 	});
 });

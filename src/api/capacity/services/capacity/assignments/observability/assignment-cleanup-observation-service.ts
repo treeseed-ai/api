@@ -1,5 +1,4 @@
 import { listUnpublishedTreeDxAuthoringState } from '../../../treedx/repositories/treedx-authoring-journal.ts';
-import { logicalModeRunSql } from '../../../../repositories/support/mode-run.ts';
 
 type Row=Record<string,unknown>;
 type Store={ first<T extends Row=Row>(sql:string,params?:unknown[]):Promise<T|null>; all(sql:string,params?:unknown[]):Promise<Row[]> };
@@ -33,18 +32,16 @@ export async function observeAssignmentCleanup(store:Store,assignment:Row) {
 	const projectId=String(assignment.projectId??assignment.project_id??''); const reservationId=String(assignment.reservationId??assignment.reservation_id??'');
 	const status=String(assignment.status??''); const leaseState=String(assignment.leaseState??assignment.lease_state??'');
 	const terminal=['completed','failed','cancelled','expired','returned'].includes(status);
-	const [reservation,demand,workspace,modeRuns,unpublished]=await Promise.all([
+	const [reservation,workspace,unpublished]=await Promise.all([
 		reservationId?store.first('SELECT COUNT(*) AS count FROM capacity_reservations WHERE id = ? AND team_id = ? AND state IN (\'reserved\',\'consuming\')',[reservationId,teamId]):null,
-		store.first('SELECT COUNT(*) AS count FROM capacity_workday_demands WHERE assignment_id = ? AND team_id = ? AND status IN (\'pending\',\'claimed\',\'admitted\',\'blocked\')',[assignmentId,teamId]),
 		store.first('SELECT COUNT(*) AS count FROM treedx_proxy_handles WHERE assignment_id = ? AND team_id = ? AND status = \'issued\'',[assignmentId,teamId]),
-		store.first(`SELECT COUNT(*) AS count FROM agent_mode_runs WHERE provider_assignment_id = ? AND team_id = ? AND status IN ('queued','running') AND ${logicalModeRunSql()}`,[assignmentId,teamId]),
 		listUnpublishedTreeDxAuthoringState(store,projectId,assignmentId),
 	]);
 	const cleanup={
 		verified:false,activeAssignments:terminal?0:1,activeLeases:leaseState==='leased'?1:0,
-		activeReservations:count(reservation),activeDemands:count(demand),activeWorkspaces:count(workspace),
+		activeReservations:count(reservation),activeWorkspaces:count(workspace),
 		activeWorktrees:sourceWorktreeCount(assignment),unpublishedBranches:unpublished.length,
-		staleAuthorities:count(modeRuns)+activeCapabilityCount(assignment),
+		staleAuthorities:activeCapabilityCount(assignment),
 	};
 	cleanup.verified=Object.entries(cleanup).every(([key,value])=>key==='verified'||value===0);
 	return { ...cleanup,assignmentId,projectId,observedAt:new Date().toISOString(),unpublished };
