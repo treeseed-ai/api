@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.content-exact-path:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/assignment-content-readback.test.ts
+    testName: "delegates the exact validated Note commit and path without collection-wide authoring access"
   api.golden.content-receipt:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
