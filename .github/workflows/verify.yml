@@ -58,6 +58,12 @@ jobs:
         run: npx vitest run --config vitest.control-plane.config.ts tests/unit/control-plane/accounts/postgres/pool-budget.test.ts tests/unit/control-plane/capacity/workdays/profile-postgres.test.ts tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts tests/unit/control-plane/capacity/execution/admission/postgres.test.ts tests/unit/control-plane/capacity/communication/discussion-supply-postgres.test.ts tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
       - name: Pack verified artifact
         run: mkdir -p artifacts && npm pack --json --ignore-scripts --pack-destination artifacts
+      - name: Execute coded golden component scenes
+        uses: treeseed-ai/reviewer/.github/actions/run-scenes@e29c5bf2db97188c47fdc67a7a098e81a95ced22
+        env:
+          TREESEED_TEST_POSTGRES_URL: postgres://postgres:migration-test-only@127.0.0.1:5432/postgres
+        with:
+          ids: guarantee.api.golden.component-boundaries
       - uses: actions/upload-artifact@v4
         with:
           name: api-${{ github.sha }}
