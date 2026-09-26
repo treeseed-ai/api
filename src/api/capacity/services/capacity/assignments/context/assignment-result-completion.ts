@@ -1,4 +1,4 @@
-import { assignmentResultSchema, type AssignmentResult } from '@treeseed/sdk/agent-capacity';
+import { assignmentPathAllowed, assignmentResultSchema, type AssignmentResult } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 
@@ -28,7 +28,7 @@ export function validateAssignmentResultCompletion(
 			&& reference.repository === workspace.repository && reference.branch === workspace.branch;
 		if (workspace.mode === 'treedx') return reference.kind === 'treedx'
 			&& reference.repository === workspace.repository && reference.workspaceId === workspace.workspaceId
-			&& workspace.writablePaths.some((path) => path === '**' || reference.path === path || reference.path.startsWith(`${path.replace(/\/$/u, '')}/`));
+			&& assignmentPathAllowed(reference.path, workspace.writablePaths);
 		return false;
 	});
 	if (workspace.mode !== 'read-only' && matching.length === 0) throw new CapacityGovernanceError(

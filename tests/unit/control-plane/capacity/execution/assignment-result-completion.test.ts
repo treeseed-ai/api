@@ -14,6 +14,17 @@ const result = {
 };
 
 describe('canonical assignment result completion', () => {
+	it('accepts exact TreeDX discussion output under a recursive workspace grant', () => {
+		const workspace = { mode: 'treedx', repository: 'repo-sdk', workspaceId: 'workspace-1', baseCommit: 'c'.repeat(40), writablePaths: ['discussion-messages/**', 'discussion-events/**'] };
+		const scoped = { ...assignment, assignmentAttempt: { ...assignment.assignmentAttempt, workspace } };
+		const reference = { kind: 'treedx', projectId: 'project-1', repository: 'repo-sdk', workspaceId: 'workspace-1', commit: 'b'.repeat(40), path: 'discussion-messages/topic/response.mdx' };
+		const output = { ...result, references: [reference] };
+		expect(validateAssignmentResultCompletion(scoped as never, { assignmentResult: output })).toEqual(output);
+		for (const invalid of [{ ...reference, repository: 'other' }, { ...reference, workspaceId: 'other' },
+			{ ...reference, path: 'knowledge/response.mdx' }, { ...reference, path: 'discussion-messages/../knowledge/response.mdx' }]) {
+			expect(() => validateAssignmentResultCompletion(scoped as never, { assignmentResult: { ...output, references: [invalid] } })).toThrow();
+		}
+	});
 	it('accepts the one general AgentKernel result contract', () => {
 		expect(validateAssignmentResultCompletion(assignment as never, { output: { assignmentResult: result } })).toEqual(result);
 	});

@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.recursive-workspace-reference:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/assignment-result-completion.test.ts
+    testName: "accepts exact TreeDX discussion output under a recursive workspace grant"
+  api.golden.send-completion-boundary:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/send-completion.test.ts
+    testName: "does not treat published content as completion while the assignment runs"
+  api.golden.published-reply-failure:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/completion/send-completion.test.ts
+    testName: "reports partial rather than complete for a mixed terminal result"
   api.golden.estimate-merge:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
