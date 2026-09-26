@@ -69,10 +69,48 @@ describe('executable proposal source selection', () => {
 		}]);
 		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toEqual([]);
 		expect(all).toHaveBeenCalledWith(expect.stringContaining('AND p.project_id = ?'), ['team', 'project']);
+		expect(all).toHaveBeenCalledWith(expect.stringContaining("p.status IN ('draft','submitted','open','voting')"), ['team', 'project']);
+	});
+	it('keeps a terminal exact accepted revision as history without reloading obsolete content', async () => {
+		const exactReadsBefore = exactProposal.mock.calls.length;
+		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
+			source_ref_json: { model: 'proposal', id: 'settled-proposal', digest: `sha256:${'a'.repeat(64)}` },
+			status: 'completed',
+		}] : [{
+			proposal_id: 'settled-proposal', project_id: 'project', active_version: 4,
+			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: 'decision',
+			accepted_decision_id: 'decision', proposal_version: 4,
+			decision_record_json: { proposalRef: { id: 'settled-proposal' } },
+		}]);
+		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toEqual([]);
+		expect(exactProposal.mock.calls).toHaveLength(exactReadsBefore);
+	});
+
+	it('keeps a failed accepted revision in the living graph for bounded revision', async () => {
+		const proposalRef = { id: 'revision-proposal', repository: 'treeseed-ai/sdk', path: 'proposals/revision.md',
+			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` };
+		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
+			source_ref_json: { model: 'proposal', id: proposalRef.id, digest: proposalRef.digest }, status: 'failed',
+		}] : query.includes('FROM governance_events') ? [] : [{
+			proposal_id: proposalRef.id, project_id: 'project', active_version: 2,
+			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: 'decision',
+			accepted_decision_id: 'decision', proposal_version: 2,
+			decision_record_json: { proposalRef },
+		}]);
+		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: {
+			status: 'accepted', executionPlan: { workItems: [{ estimate: { minimumSeconds: 10 },
+				review: 'required', reviewEstimate: { minimumSeconds: 5 } }] },
+		} });
+		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toMatchObject([{
+			projectId: 'project', decision: { id: 'decision' },
+		}]);
 	});
 
 	it('fails closed on an invalid accepted execution plan without mutating its graph', async () => {
-		const all = vi.fn(async () => [{
+		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
+			source_ref_json: { model: 'proposal', id: 'invalid-proposal', digest: `sha256:${'a'.repeat(64)}` },
+			status: 'ready',
+		}] : [{
 			proposal_id: 'invalid-proposal', project_id: 'project', active_version: 2,
 			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: 'decision',
 			accepted_decision_id: 'decision', proposal_version: 2,

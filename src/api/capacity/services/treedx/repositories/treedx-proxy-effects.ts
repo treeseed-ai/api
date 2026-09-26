@@ -93,7 +93,7 @@ export async function projectTreeDxProxyCommit(input: {
 		changedPaths,
 		changeSummary: typeof record(input.body).message === 'string' ? String(record(input.body).message) : 'Committed TreeDX content changes.',
 		assignmentId: assignment?.id ?? null,
-		workdayRunId: assignment ? String(assignmentMetadata.workdayRunId ?? '') || null : null,
+		workdayRunId: assignment ? String(assignment.workDayId ?? assignment.workdayId ?? '') || null : null,
 		agentId: assignment ? String(assignment.agentId ?? '') || null : null,
 		activityType,
 		capacityProviderId: input.access.actorType === 'capacity_provider' ? actorId(input.access) : null,

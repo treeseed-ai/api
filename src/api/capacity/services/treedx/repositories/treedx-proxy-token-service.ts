@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { treeDxDelegationAuthority, type TreeDxDelegationAuthority } from '../../../../control-plane/treedx/delegation-authority.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { FetchTransport, TreeDxClient } from '@treeseed/treedx/treedx/client';
+import { TreeDxApiError } from '@treeseed/treedx/treedx/client';
 import { resolveTreeDxServiceUrl } from '../../../../control-plane/treedx/connection-url.ts';
 
 export interface TreeDxProxyScope {
@@ -122,11 +123,14 @@ export async function verifyTreeDxWorkspace(input: {
 	const token = resolveTreeDxProxyToken(input.runtime, baseUrl, input.projectId, treeDxTokenScope({ repoId: repositoryId, capabilities: ['files:read'], paths: ['**'] }));
 	let payload: unknown;
 	try {
-		const transport = new FetchTransport({ baseUrl, token, fetchImpl: input.fetchImpl, timeoutMs: 15_000 });
+		const transport = new FetchTransport({ baseUrl, token, fetchImpl: input.fetchImpl ?? input.runtime.fetchImpl, timeoutMs: 15_000 });
 		payload = await new TreeDxClient({ baseUrl, transport }).workspaces.get(input.workspaceId);
 	} catch (error) {
+		const upstream = error instanceof TreeDxApiError
+			? { status: error.status, code: error.code }
+			: { status: 0, code: 'transport_error' };
 		throw new CapacityGovernanceError('treedx_workspace_verification_failed', 'TreeDX workspace could not be verified for this project.', 503, {
-			projectId: input.projectId, workspaceId: input.workspaceId,
+			projectId: input.projectId, workspaceId: input.workspaceId, upstream,
 		});
 	}
 	const payloadRecord = record(payload); const nestedPayload = record(payloadRecord.payload);

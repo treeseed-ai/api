@@ -112,20 +112,55 @@ export class WorkdayPreflightService {
 				objectiveRefs:intent.objectiveFilters??[],planningOnly:intent.planningOnly===true },
 		};
 		const projection=await this.store.preflightCapacityWorkdayRunRequest(teamId,runInput);
-		const nodeRows=Array.isArray(projection.executionNodeDemands)?projection.executionNodeDemands.map(record):[];
+		let nodeRows=Array.isArray(projection.executionNodeDemands)?projection.executionNodeDemands.map(record):[];
+		const selectedDecisions=new Set(intent.decisionIds??[]);
+		const selectedProposals=new Set(intent.proposalIds??[]);
+		if (runInput.executionMode === 'simulation' && (selectedDecisions.size || selectedProposals.size)) {
+			const active = await this.store.all(`SELECT id,parameters_json FROM capacity_workday_runs
+				WHERE team_id=? AND execution_kind='workday' AND status='running'`, [teamId]);
+			if (active.some((row) => {
+				const parameters = jsonRecord(row.parameters_json);
+				return (Array.isArray(parameters.decisionIds) ? parameters.decisionIds : []).some((value) => selectedDecisions.has(String(value)))
+					|| (Array.isArray(parameters.proposalIds) ? parameters.proposalIds : []).some((value) => selectedProposals.has(String(value)));
+			})) {
+				throw new CapacityGovernanceError('workday_decision_already_running',
+					'The selected decision already belongs to a running workday.', 409);
+			}
+			const graphRows: JsonRecord[] = await this.store.all(`SELECT node.*,
+				(SELECT MAX(revision) FROM execution_graph_revisions WHERE team_id=node.team_id) AS graph_revision
+				FROM execution_nodes node WHERE node.team_id=?`, [teamId]);
+			const edgeRows = await this.store.all(`SELECT from_node_id,to_node_id FROM execution_edges
+				WHERE team_id=? AND graph_revision_removed IS NULL`, [teamId]);
+			const graphNodes = new Map(graphRows.map((row) => [text(row.id), decodeExecutionNode(row) as ExecutionNode]));
+			const projectIds = new Set((Array.isArray(projection.projects) ? projection.projects.map(record) : []).map((row) => text(row.id)));
+			const freshRoots = graphRows.filter((row) => {
+				const node = graphNodes.get(text(row.id));
+				if (!node || !projectIds.has(node.projectId) || !['acting','reviewing'].includes(node.kind)
+					|| !node.authorityRefs.some((ref) => ref.model === 'decision'
+						&& (selectedDecisions.has(ref.id) || selectedProposals.has(node.sourceRef.id)))) return false;
+				return edgeRows.filter((edge) => text(edge.to_node_id) === node.id).every((edge) => {
+					const predecessor = graphNodes.get(text(edge.from_node_id));
+					return predecessor?.kind === 'condition' && predecessor.status === 'completed';
+				});
+			}).map((row) => ({ ...row, status: 'ready', node_revision: Number(row.node_revision) + 1,
+				workday_id: String(runInput.id), graph_revision: Number(row.graph_revision) + 1 }));
+			const rootIds = new Set(freshRoots.map((row) => text((row as JsonRecord).id)));
+			nodeRows = [...nodeRows.filter((row) => !rootIds.has(text(row.id))), ...freshRoots];
+		}
 		const selectedAgentsByProject=new Map((Array.isArray(projection.projects)?projection.projects.map(record):[]).map((project)=>[
 			text(project.id),
 			(Array.isArray(project.agents)?project.agents.map(record):[]),
 		]));
-		const selectedDecisions=new Set(intent.decisionIds??[]);
-		const selectedProposals=new Set(intent.proposalIds??[]);
+		const planningEnabled=Number(record(runInput.parameters).planningPercent??policy.planningPercent)>0;
 		const selectedDemands=nodeRows.flatMap((entry,index)=>{
 			const node=decodeExecutionNode(entry) as ExecutionNode;
-			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
 			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
 			const proposalReview=isProposalGovernanceReview(node);
+			if(proposalReview&&(!selectedProposals.size||!selectedProposals.has(node.sourceRef.id))) return [];
+			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
 			if(!node.id||selectedDecisions.size&&!proposalReview&&(!decisionRef||!selectedDecisions.has(decisionRef.id))) return [];
 			const mode=node.kind==='acting'||node.kind==='reviewing'&&!proposalReview?'acting' as const:'planning' as const;
+			if(mode==='planning'&&!planningEnabled) return [];
 			if(intent.planningOnly&&mode==='acting') return [];
 			if(mode==='acting'&&!decisionRef) return [];
 			const selectedAgents=selectedAgentsByProject.get(node.projectId);

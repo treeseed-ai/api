@@ -76,6 +76,24 @@ describe('public workday selection custody', () => {
 		expect(() => canonicalWorkdayShares({ projectPercentages: { sdk: 50, 'project-sdk': 50 } }, projects)).toThrow('one identifier');
 		expect(() => canonicalWorkdayShares({ projectPercentages: { other: 100 } }, projects)).toThrow('selected project');
 	});
+	it('preflights fresh simulation roots without counting a prior exhausted run as ready work', async () => {
+		const f = fixture();
+		const actor = { ...executionNodeRow({ id: 'actor', kind: 'acting', agentClass: 'engineer',
+			digest: 'source', expectedSeconds: 180, nodeRevision: 4, decisionRevision: 1 }), status: 'blocked', workday_id: 'old' };
+		const reviewer = { ...executionNodeRow({ id: 'reviewer', kind: 'reviewing', agentClass: 'reviewer',
+			digest: 'source', expectedSeconds: 120, nodeRevision: 4, decisionRevision: 1 }), status: 'failed', workday_id: 'old' };
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 7200,
+			projects: [{ id: 'project-sdk', agents: [] }], executionNodeDemands: [], appliedPlan: {} });
+		f.store.all.mockImplementation(async (sql: string) => sql.includes('capacity_provider_team_memberships')
+			? [{ capacity_provider_id: 'provider' }] : sql.includes('FROM execution_nodes node')
+			? [{ ...actor, graph_revision: 4 }, { ...reviewer, graph_revision: 4 }] : sql.includes('FROM execution_edges')
+					? [{ from_node_id: 'actor', to_node_id: 'reviewer' }] : []);
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', {
+			...input(), executionMode: 'simulation', decisionIds: ['decision'], durationSeconds: 7200,
+		}), 'actor');
+		expect(receipt.selectedDemands).toEqual([expect.objectContaining({ sourceId: 'actor',
+			actingAuthority: expect.objectContaining({ executionNodeRevision: 5 }) })]);
+	});
 	it('freezes the admission time when an explicit start is omitted', () => {
 		vi.useFakeTimers();
 		try {
@@ -165,7 +183,7 @@ describe('public workday selection custody', () => {
 		expect(f.stored().runInput.parameters.planningOnly).toBe(true);
 		expect(f.stored().runInput.parameters.proposalIds).toEqual(['proposal']);
 	});
-	it('applies decision selection only to acting work and retains proposal review', async () => {
+	it('keeps decision-only workdays free of unrelated proposal-governance reviews', async () => {
 		const f = fixture();
 		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 600,
 			projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'reviewer', classSlug: 'reviewer', activityTypes: ['reviewing'] }] }],
@@ -176,7 +194,20 @@ describe('public workday selection custody', () => {
 			],
 		});
 		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), decisionIds: ['decision'] }), 'actor');
-		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['proposal-review', 'selected-acting']);
+		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['selected-acting']);
+	});
+	it('excludes all planning demands when the workday has no planning allocation', async () => {
+		const f = fixture();
+		f.store.preflightCapacityWorkdayRunRequest.mockResolvedValue({ availableSeconds: 600,
+			projects: [{ id: 'project-sdk', agents: [{ slug: 'reviewer', agentClass: 'reviewer', classSlug: 'reviewer', activityTypes: ['reviewing'] }] }],
+			executionNodeDemands: [
+				{ graph_revision: 5, ...executionNodeRow({ id: 'proposal-review', kind: 'reviewing', agentClass: 'reviewer', digest: 'proposal', expectedSeconds: 120 }), pair_role: null },
+				{ graph_revision: 5, ...executionNodeRow({ id: 'selected-acting', kind: 'acting', agentClass: 'engineer', digest: 'selected', expectedSeconds: 120, decisionRevision: 1 }) },
+			],
+		});
+		const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), decisionIds: ['decision'],
+			allocation: { planningPercent: 0 } }), 'actor');
+		expect(receipt.selectedDemands.map((demand) => demand.sourceId)).toEqual(['selected-acting']);
 	});
 	it('rejects an altered stored selector instead of compiling broader authority', async () => {
 		const f = fixture(); const receipt = await f.service.preflight('team', parsePublicWorkdayIntent('team', input()), 'actor');

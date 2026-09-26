@@ -4,7 +4,7 @@ import {
 	projectTeamExecutionGraph,
 	type ExecutableProposalSource,
 } from '../../../../../../src/api/capacity/policy/execution/execution-graph-projector.ts';
-import { applyOperationalState } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { applyOperationalState } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 
 const permissions = {
 	content: { read: ['proposal', 'decision', 'knowledge'] as const, write: [] },
@@ -39,9 +39,12 @@ function agent(agentClass: string, dependsOn: string[] = []): AgentDefinition {
 }
 
 const profiles = {
+	'project:researcher': agent('researcher'),
 	'project:architect': agent('architect'),
 	'project:tester': agent('tester', ['architect']),
 	'project:engineer': agent('engineer', ['tester']),
+	'project:technical-writer': agent('technical-writer', ['engineer']),
+	'project:releaser': agent('releaser', ['technical-writer']),
 	'project:reviewer': agent('reviewer'),
 };
 
@@ -102,6 +105,8 @@ describe('proposal-owned living execution graph projection', () => {
 		expect(graph.nodes.every((node) => node.sourceRef.model === 'proposal')).toBe(true);
 		expect(graph.nodes.filter((node) => node.pairRole === 'reviewer')
 			.every((node) => node.requiredCapabilities?.[0] === 'treeseed.engineering.review')).toBe(true);
+		expect(graph.nodes.find((node) => node.workItemId === 'proposal-review')?.estimate)
+			.toEqual({ minimumSeconds: 10, expectedSeconds: 20, maximumSeconds: 30 });
 	});
 
 	it('uses exact work-item and profile dependencies without changing estimates', () => {
@@ -120,6 +125,33 @@ describe('proposal-owned living execution graph projection', () => {
 			fromNodeId: graph.nodes.find((node) => node.condition?.conditionType === 'authority')?.id,
 			toNodeId: actor('architecture').id, provenance: 'governance',
 		}));
+	});
+
+	it('keeps reviewed Research parallel to the immediate engineering chain', () => {
+		const graph = projectTeamExecutionGraph({ teamId: 'team', revision: 1, profiles, sources: [source([
+			workItem({ id: 'research', agentClass: 'researcher', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 }),
+			workItem({ id: 'architecture', agentClass: 'architect', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 }),
+			workItem({ id: 'tests', agentClass: 'tester', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 }),
+			workItem({ id: 'implementation', agentClass: 'engineer', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 }),
+			workItem({ id: 'documentation', agentClass: 'technical-writer', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 }),
+			workItem({ id: 'release', agentClass: 'releaser', minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 }),
+		])] });
+		const actor = (id: string) => graph.nodes.find((node) => node.workItemId === id && node.pairRole === 'actor')!;
+		const reviewer = (id: string) => graph.nodes.find((node) => node.workItemId === id && node.pairRole === 'reviewer')!;
+		const profileEdges = graph.edges.filter((edge) => edge.provenance === 'profile-agent');
+		expect(profileEdges).toEqual(expect.arrayContaining([
+			expect.objectContaining({ fromNodeId: reviewer('architecture').id, toNodeId: actor('tests').id }),
+			expect.objectContaining({ fromNodeId: reviewer('tests').id, toNodeId: actor('implementation').id }),
+			expect.objectContaining({ fromNodeId: reviewer('implementation').id, toNodeId: actor('documentation').id }),
+			expect.objectContaining({ fromNodeId: reviewer('documentation').id, toNodeId: actor('release').id }),
+		]));
+		expect(profileEdges).toHaveLength(4);
+		expect(graph.edges).toContainEqual(expect.objectContaining({
+			fromNodeId: actor('research').id, toNodeId: reviewer('research').id, provenance: 'review-pair',
+		}));
+		expect(graph.edges.some((edge) => edge.fromNodeId === reviewer('research').id
+			&& ['architecture', 'tests', 'implementation', 'documentation', 'release']
+				.some((id) => edge.toNodeId === actor(id).id))).toBe(false);
 	});
 
 	it('projects an exact cross-project TreeDX link from approved reviewer to dependent actor', () => {
@@ -164,7 +196,7 @@ describe('proposal-owned living execution graph projection', () => {
 		expect(graph.nodes).toContainEqual(expect.objectContaining({ kind: 'reviewing', pairRole: null,
 			agentClass: 'reviewer', status: 'ready', workspace: 'treedx', sourceRef: expect.objectContaining({ id: 'agent-runtime' }),
 			requiredCapabilities: ['treeseed.engineering.review'],
-			estimate: { minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90 } }));
+			estimate: { minimumSeconds: 10, expectedSeconds: 20, maximumSeconds: 30 } }));
 		expect(graph.nodes.filter((node) => node.pairRole === 'actor').every((node) => node.status === 'proposed')).toBe(true);
 		expect(graph.nodes).toContainEqual(expect.objectContaining({ kind: 'condition', status: 'blocked',
 			condition: expect.objectContaining({ conditionType: 'authority', expectedState: 'accepted' }) }));

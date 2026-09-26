@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.component-boundaries
+journey: Verify golden component boundaries
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: execution
+status: planned
+gates: [core]
+summary: "Executable component scenarios, not live golden-workday acceptance."
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/component-boundaries.scene.yaml

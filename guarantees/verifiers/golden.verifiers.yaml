@@ -1,0 +1,163 @@
+schemaVersion: treeseed.guarantee-verifiers/v1
+ownerPackage: "@treeseed/api"
+verifiers:
+  api.golden.estimate-merge:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "merges only the assigned estimate while preserving another completed estimate"
+  api.golden.estimate-ownership:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "rejects unrelated content and lets a later class-owned planning turn refine its estimate"
+  api.golden.estimate-target:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "rejects missing, mistargeted, or changed work items"
+  api.golden.estimate-reviewer:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "merges Reviewer estimates for every work item without replacing actor estimates"
+  api.golden.estimate-completeness:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "accepts one class contribution for multiple owned work items and rejects a partial contribution"
+  api.golden.estimating-participants:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "automatically admits only proposal work owners and Reviewer to estimating; autonomous planning remains valid"
+  api.golden.estimating-missing-only:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects estimates only for missing owner and reviewer measurements"
+  api.golden.estimating-six-owners:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects six work-owner contributions, including multiple items for Engineer, and one Reviewer"
+  api.golden.estimating-target-selection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects an explicitly selected estimating profile without falling back to planning"
+  api.golden.review-no-planning:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "does not manufacture subjectless planning rounds for a selected review activity"
+  api.golden.authority-gate:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph.test.ts
+    testName: "retains resolved feedback conditions and blocks acting until questions and decision are complete"
+  api.golden.planning-authority:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "keeps policy authority stable across operational accounting and repeated rounds"
+  api.golden.planning-dependencies:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "projects dependency-ordered planning and closing Reporter work"
+  api.golden.estimate-preservation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "preserves all six golden owner estimates and six reviews regardless of Reviewer publication order"
+  api.golden.closed-authority:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "rejects a racing estimator result before reading or writing a closed proposal"
+  api.golden.graph-generation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph.test.ts
+    testName: "derives stable actor and reviewer nodes from each accepted work item"
+  api.golden.dependencies:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph.test.ts
+    testName: "uses exact work-item and profile dependencies without changing estimates"
+  api.golden.research-parallel:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph.test.ts
+    testName: "keeps reviewed Research parallel to the immediate engineering chain"
+  api.golden.exact-review:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/review-result.test.ts
+    testName: "accepts only an exact classed decision bound to the actor candidate"
+  api.golden.restart:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-recovery-graph-custody.test.ts
+    testName: "finds ready graph work and assignment evidence by the canonical workday IDs"
+  api.golden.missing-result:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-assignment-evidence.test.ts
+    testName: "rejects a completed assignment missing its immutable result"
+  api.golden.admission-fence:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-admission-fence.test.ts
+    testName: "closes and reconciles the authoritative living plan before reporting admission closed"
+  api.golden.concurrency:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/concurrent-runs-postgres.test.ts
+    testName: "preserves production and simulation workdays when another workday or conversation starts"
+  api.golden.cancellation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-terminalization-graph-custody.test.ts
+    testName: "cancels unclaimed graph nodes without touching retired demand rows"
+  api.golden.request-changes:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "advances the same Actor and Reviewer pair when exact review requests changes"
+  api.golden.review-exhaustion:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "blocks the same work item when its bounded review cycles are exhausted"
+  api.golden.fresh-simulation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-lifecycle.test.ts
+    testName: "counts only the current simulation workday when enforcing review cycles"
+  api.golden.revision-feedback:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "passes the prior exact Reviewer result to a revised Actor node"
+  api.golden.candidate-dependency:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "carries an approved Reviewer result and its exact Actor Git candidate to dependent work"
+  api.golden.profile-integrity:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "rejects a projected agent definition that differs from its exact TreeDX source"
+  api.golden.reporter-context:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "loads every canonical workday attempt for Reporter instead of stopping at condition nodes"
+  api.golden.reporter-terminal-gate:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "blocks closing and Reporter on the selected decision review terminals"

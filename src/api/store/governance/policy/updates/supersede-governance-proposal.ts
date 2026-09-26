@@ -1,5 +1,9 @@
 import { ControlPlaneStore,objectValue,optionalStringValue } from "../../../../persistence/store.ts";
+import { assertExpectedProposalVersion } from '../support/simulation-evidence.ts';
 export async function supersedeGovernanceProposalMethod(this: ControlPlaneStore, principal, proposalId, input: any = {}) {
+    const proposal = await this.getGovernanceProposal(proposalId);
+    if (!proposal) return null;
+    assertExpectedProposalVersion(input, proposal.activeVersion);
     return this.transitionGovernanceProposal(proposalId, 'superseded', {
         actorType: 'user',
         actorId: principal?.id ?? null,

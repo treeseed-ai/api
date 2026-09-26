@@ -20,7 +20,7 @@ class DiscussionAuthoringError extends Error {
 	readonly code: string;
 	readonly cause: unknown;
 
-	constructor(stage: 'changeset' | 'commit', cause: unknown) {
+	constructor(stage: 'discussion-read' | 'reference-read' | 'changeset' | 'commit', cause: unknown) {
 		const upstream = cause && typeof cause === 'object' ? cause as Record<string, unknown> : {};
 		super(`TreeDX Discussion ${stage} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
 		this.name = 'DiscussionAuthoringError';
@@ -125,11 +125,11 @@ export async function loadDiscussions(input: {
 		const commitSha=text(state.commitSha); const changedPaths=Array.isArray(state.changedPaths)?state.changedPaths.map(String):[];
 		for (const path of changedPaths) {
 			if (!selectedPaths.includes(path)) continue;
-			const isSelectedDiscussion=selected
+			const isSelectedDiscussion=exactSelection.has(path) || (selected
 				? path === projectLibraryPath(connection.contentPath, 'discussions', `${selected}.mdx`)
 					|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-messages', selected)}/`)
 					|| path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussion-events', selected)}/`)
-				: path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussions')}/`);
+				: path.startsWith(`${projectLibraryPath(connection.contentPath, 'discussions')}/`));
 			if (isSelectedDiscussion) latestUnpublishedByPath.set(path,commitSha);
 		}
 	}
@@ -235,7 +235,8 @@ export async function commitDiscussionMessage(input: {
 	const workspace = session.workspace;
 	try {
 		const creating=input.createDiscussion===true||!input.discussionId;
-		const currentDiscussion=creating?discussion:(await connection.client.readFile({workspaceId:workspace.workspaceId,path:discussionPath})).content;
+		const currentDiscussion=creating?discussion:(await connection.client.readFile({workspaceId:workspace.workspaceId,path:discussionPath})
+			.catch((error: unknown) => { throw new DiscussionAuthoringError('discussion-read', error); })).content;
 		assertDiscussionContent(discussionPath,currentDiscussion);
 		const discussionRef={store:'treedx' as const,model:'discussion',id:discussionId,path:discussionPath,
 			revision:1,digest:`sha256:${createHash('sha256').update(currentDiscussion).digest('hex')}`};
@@ -243,7 +244,8 @@ export async function commitDiscussionMessage(input: {
 			const prefix=projectLibraryPath(root,'discussion-messages');
 			const path=value.startsWith(`${prefix}/`)?value:projectLibraryPath(root,'discussion-messages',slug(discussionId),`${value}.mdx`);
 			if(!path.startsWith(`${prefix}/`)||path.split('/').includes('..'))throw new Error('Discussion message reference escaped its project library.');
-			const history=await loadDiscussions({store:input.store,projectId:input.projectId,exactPaths:[path],collection:'messages',limit:1});
+			const history=await loadDiscussions({store:input.store,projectId:input.projectId,exactPaths:[path],collection:'messages',limit:1})
+				.catch((error: unknown) => { throw new DiscussionAuthoringError('reference-read', error); });
 			const existing=history.messages.find((item:Row)=>item.path===path);
 			if(!existing||!/^[a-f0-9]{40}$/u.test(text(existing.immutableRef)))throw new Error('The referenced Discussion message has no exact readable TreeDX commit.');
 			return {store:'treedx' as const,model:'discussion-message',id:text(record(existing.frontmatter).id),path,

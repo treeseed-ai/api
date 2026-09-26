@@ -17,7 +17,9 @@ export function capabilityCounterClaims(assignment: AssignmentAttempt, limits: C
 export function initializeCapabilityCounters(assignment: AssignmentAttempt, claims: ReturnType<typeof capabilityCounterClaims>, now: string): CapacityDatabaseOperation[] {
 	return claims.map(claim => ({ query: `INSERT INTO capacity_admission_counters
 		(id,team_id,scope,scope_id,period_key,hard_limit,committed_amount,state_version,created_at,updated_at)
-		VALUES (?,?,?,?,?,?,0,1,?,?) ON CONFLICT (id) DO NOTHING`,
+		VALUES (?,?,?,?,?,?,0,1,?,?) ON CONFLICT (id) DO UPDATE
+		SET hard_limit=EXCLUDED.hard_limit,state_version=capacity_admission_counters.state_version+1,
+		updated_at=EXCLUDED.updated_at`,
 		params: [claim.id, assignment.teamId, claim.scope, claim.scopeId, claim.day, claim.hardLimit, now, now] })).concat([
 		{ query: `SELECT id FROM capacity_admission_counters WHERE id IN (${claims.map(() => '?').join(',')}) ORDER BY id FOR UPDATE`, params: claims.map(claim => claim.id) },
 	]).concat(claims.map(claim => {

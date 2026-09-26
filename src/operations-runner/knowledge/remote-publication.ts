@@ -12,7 +12,7 @@ async function observeTreeDxRef(client: any, repositoryId: string, ref: string) 
 
 async function requireTreeDxRef(client: any, repositoryId: string, ref: string, expectedHead: string) {
 	const head = await observeTreeDxRef(client, repositoryId, ref);
-	if (head !== expectedHead) throw new Error(`TreeDX ref ${ref} did not resolve the reviewed publication commit.`);
+	if (head !== expectedHead) throw new Error(`TreeDX ref ${ref} resolved to ${head ?? 'missing'} instead of reviewed commit ${expectedHead}.`);
 }
 
 export function treeDxPromotionExpectedHead(localPublicationHead: string | null, reviewedBaseCommit: string) {

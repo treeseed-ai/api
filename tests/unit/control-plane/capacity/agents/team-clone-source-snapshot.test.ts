@@ -38,12 +38,12 @@ describe('exact TreeDX agent-team source snapshot', () => {
 
 	it('fails closed instead of silently dropping an invalid definition', async () => {
 		await expect(snapshotAgents(connection([{ path: 'agents/invalid.mdx', content: '---\nid: invalid\n---\n' }])))
-			.rejects.toThrow(/invalid; the exact source snapshot cannot be cloned/u);
+			.rejects.toMatchObject({ code: 'agent_team_definition_invalid' });
 	});
 
 	it('rejects two definitions that would overwrite the same target agent class', async () => {
 		const files = ['first', 'second'].map((name) => ({ path: `agents/${name}.mdx`,
 			content: serializeFrontmatterDocument({ ...definition, id: `sdk/${name}` }) }));
-		await expect(snapshotAgents(connection(files))).rejects.toThrow(/Multiple source agent definitions select the same class/u);
+		await expect(snapshotAgents(connection(files))).rejects.toMatchObject({ code: 'agent_team_class_ambiguous' });
 	});
 });

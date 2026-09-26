@@ -11,7 +11,7 @@ export function assignmentPreparationSeconds(configuredValue: unknown) {
 	const configuredSeconds = Number(configuredValue);
 	return Number.isInteger(configuredSeconds) && configuredSeconds > 0
 		? Math.min(configuredSeconds, 900)
-		: 180;
+		: 60;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -26,9 +26,10 @@ export function compileAssignmentTimeBudget(input: { now: string; requestedSecon
 	const utcDayEndsAt = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
 	const configuredDeadline = Date.parse(String(input.configuredBudget.deadline ?? ''));
 	const authorityDeadline = Math.min(utcDayEndsAt,
-		Number.isFinite(configuredDeadline) ? configuredDeadline : Infinity,
-		Date.parse(input.now) + (preparationSeconds + input.requestedSeconds) * 1_000);
-	const preparationDeadlineAt = new Date(Math.min(authorityDeadline, Date.parse(input.now) + preparationSeconds * 1_000)).toISOString();
+		Number.isFinite(configuredDeadline) ? configuredDeadline : Infinity);
+	// Admission can precede the provider lease while another assignment occupies
+	// the worker. Queue time is not preparation or productive execution time.
+	const preparationDeadlineAt = new Date(authorityDeadline).toISOString();
 	const authorityExpiresAt = new Date(authorityDeadline).toISOString();
 	const closeoutDeadlineAt = authorityExpiresAt;
 	return {
@@ -37,7 +38,7 @@ export function compileAssignmentTimeBudget(input: { now: string; requestedSecon
 			schemaVersion: 'treeseed.capacity-budget/v2', ...input.configuredBudget,
 			time: { ...configuredTime, requestedSeconds: input.requestedSeconds, executionSeconds: input.requestedSeconds, preparationSeconds, closeoutSeconds,
 				reservedSeconds: input.requestedSeconds, activeSeconds: 0, elapsedSeconds: 0, releasedSeconds: 0, overrunSeconds: 0,
-				preparationStartedAt: input.now, preparationDeadlineAt, executionStartedAt: null, executionDeadlineAt: null, closeoutStartedAt: null,
+				preparationStartedAt: null, preparationDeadlineAt, executionStartedAt: null, executionDeadlineAt: null, closeoutStartedAt: null,
 				closeoutDeadlineAt, hardDeadlineAt: closeoutDeadlineAt, authorityDeadlineAt: authorityExpiresAt, remainingSeconds: input.requestedSeconds, closeoutWarningSeconds: closeoutSeconds },
 			tokens: { inputTokens: 0, cachedInputTokens: 0, reasoningTokens: 0, outputTokens: 0, hardLimitTokens: configuredTokens.hardLimitTokens ?? null, warningTokens: configuredTokens.warningTokens ?? null, hardLimitEnforceable: configuredTokens.hardLimitEnforceable === true },
 			maxAttempts: Math.max(1, Number(input.configuredBudget.maxAttempts ?? 1)), maxConcurrency: 1, deadline: closeoutDeadlineAt,
@@ -58,7 +59,7 @@ export function beginAssignmentPreparationTimeBudget(capacityEnvelope: Record<st
 	if (!Number.isFinite(authorityDeadlineMs)) throw new Error('assignment_authority_deadline_required');
 	const preparationDeadlineMs = Date.parse(String(time.preparationDeadlineAt));
 	if (!Number.isFinite(preparationDeadlineMs)) throw new Error('assignment_preparation_deadline_required');
-	const preparationDeadlineAt = new Date(Math.min(preparationDeadlineMs, startedAt + preparationSeconds * 1_000)).toISOString();
+	const preparationDeadlineAt = new Date(Math.min(authorityDeadlineMs, startedAt + preparationSeconds * 1_000)).toISOString();
 	const authorityDeadlineAt = new Date(authorityDeadlineMs).toISOString();
 	const closeoutDeadlineAt = authorityDeadlineAt;
 	return {

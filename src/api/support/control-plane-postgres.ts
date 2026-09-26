@@ -307,7 +307,16 @@ export class ControlPlanePostgresDatabase {
 	}
 
 	async batch(statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
-		return this.transaction(client => executePostgresBatch(client, statements));
+		// PostgreSQL aborts the whole transaction on 40P01. Replaying this SQL-only
+		// batch is safe; retrying arbitrary transaction callbacks is not.
+		for (let attempt = 0; ; attempt += 1) {
+			try {
+				return await this.transaction(client => executePostgresBatch(client, statements));
+			} catch (error) {
+				if ((error as { code?: unknown } | null)?.code !== '40P01' || attempt >= 2) throw error;
+				await new Promise(resolve => setTimeout(resolve, 10 * (attempt + 1)));
+			}
+		}
 	}
 
 	/** One connection and transaction for authority checks, locks, and writes. */

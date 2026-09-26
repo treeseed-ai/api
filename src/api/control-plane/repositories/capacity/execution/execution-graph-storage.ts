@@ -32,6 +32,7 @@ export function decodeExecutionNode(row: Row): ExecutionNode {
 		...(row.estimate_json ? { estimate: record(row.estimate_json) } : {}),
 		...(row.required_capabilities_json ? { requiredCapabilities: array(row.required_capabilities_json) } : {}),
 		...(row.requested_permissions_json ? { requestedPermissions: record(row.requested_permissions_json) } : {}),
+		...(row.output_json ? { output: record(row.output_json) } : {}),
 		...(row.workspace ? { workspace: row.workspace } : {}),
 		...(row.acceptance_criteria_json ? { acceptanceCriteria: array(row.acceptance_criteria_json) } : {}),
 		...(row.maximum_review_cycles ? { maximumReviewCycles: integer(row.maximum_review_cycles) } : {}),

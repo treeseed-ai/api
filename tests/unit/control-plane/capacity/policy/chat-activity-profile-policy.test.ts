@@ -7,6 +7,8 @@ describe('chat activity profile policy', () => {
 	it('never grants retired TreeDX assignment content or operational tools', () => {
 		const profile = compileDefaultChatActivityProfile('sdk/architect');
 		const authority = compileAgentAuthoritySnapshot('chat', profile);
+		expect(profile.prompt.system).toContain('the provider publishes it under the assignment lease');
+		expect(profile.prompt.system).toContain('Do not search for or invoke a discussion-write tool in the guest');
 		const retired = /assignment_(?:plan|status|summary)/u;
 		expect(Object.keys(profile.permissions?.content ?? {})).not.toEqual(expect.arrayContaining([
 			'assignment_plan', 'assignment_status', 'assignment_summary',

@@ -114,11 +114,14 @@ export function createKnowledgeReviewService(store: any) {
 			await admitStagingPublication(store, connection, review, workspace, access.principal.id, input.version);
 			const publication = await store.createKnowledgePublication({ workspaceId: workspace.id, reviewId,
 				projectId: workspace.projectId, commitSha: review.commitSha, publishedRef: connection.publicationRef });
-			const operation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'publish_review',
+			const pendingOperation = await store.createPlatformOperation({ namespace: 'knowledge', operation: 'publish_review',
 				target: 'control_plane_operations_runner', idempotencyKey: `knowledge-publication:${publication.id}`,
 				input: { publicationId: publication.id, targetEnvironment,
 					simulation: { ...simulation.evidence, operatorPrincipalId: access.principal.id } },
 				requestedByType: 'user', requestedById: access.principal.id });
+			const operation = pendingOperation.status === 'failed'
+				? await store.retryPlatformOperation(pendingOperation.id)
+				: pendingOperation;
 			return { publication, operation };
 		},
 	};

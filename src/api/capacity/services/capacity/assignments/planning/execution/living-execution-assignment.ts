@@ -28,6 +28,11 @@ export function workdayConcurrencyAvailable(kind: string, active: Record<string,
 		: (active.workday ?? 0) < policy.maximumConcurrency;
 }
 
+export function prioritizeCommunicationCandidates<T extends { node: { kind: string } }>(candidates: T[]): T[] {
+	const communication = candidates.filter((candidate) => candidate.node.kind === 'communication');
+	return communication.length ? communication : candidates;
+}
+
 export function isNodeEligibleInWorkdayPhase(
 	node: Parameters<typeof isProposalGovernanceReview>[0], phase: 'planning' | 'acting', closing: boolean,
 ): boolean {
@@ -148,6 +153,10 @@ export async function assignNextReadyExecutionNode(
 	now = new Date().toISOString(),
 ): Promise<DurableProviderAssignment | null> {
 	const runs = await new CapacityWorkdayRunRepository(store).listActiveForSupply(principal.teamId, principal.capacityProviderId);
+	const deferred: Array<{ runId: string; nodeId: string; code: string; details: unknown }> = [];
+	const selection = { activeRuns: runs.length, readyNodes: 0, phaseEligible: 0, concurrencyEligible: 0,
+		windowEligible: 0, attemptedNodes: 0, claimLost: 0, claimStale: 0, providerUnavailable: 0, allocationDeferred: 0,
+		claimLoss: null as unknown };
 	for (const run of runs) {
 		const parsedPlan = appliedWorkdaySchema.safeParse(run.parameters.appliedPlan);
 		if (!parsedPlan.success) continue;
@@ -161,11 +170,16 @@ export async function assignNextReadyExecutionNode(
 			await store.listTeamProjects(run.teamId),
 		);
 		const phase = workdayPhase(appliedPlan, now);
-		const candidates = (await Promise.all(projects.map((project) => listReadyExecutionNodes(store, run, project)))).flat()
-			.filter((candidate) => isNodeEligibleInWorkdayPhase(candidate.node, phase, appliedPlan.state === 'closing'))
-			.filter((candidate) => workdayConcurrencyAvailable(candidate.node.kind, activeByKind, appliedPlan.policySnapshot))
-			.filter((candidate) => appliedPlan.state === 'closing'
-				|| Date.parse(appliedPlan.endsAt) - Date.parse(now) >= (candidate.node.estimate?.minimumSeconds ?? 1) * 1_000);
+		const ready = (await Promise.all(projects.map((project) => listReadyExecutionNodes(store, run, project)))).flat();
+		selection.readyNodes += ready.length;
+		const inPhase = ready.filter((candidate) => isNodeEligibleInWorkdayPhase(candidate.node, phase, appliedPlan.state === 'closing'));
+		selection.phaseEligible += inPhase.length;
+		const concurrent = inPhase.filter((candidate) => workdayConcurrencyAvailable(candidate.node.kind, activeByKind, appliedPlan.policySnapshot));
+		selection.concurrencyEligible += concurrent.length;
+		const withinWindow = concurrent.filter((candidate) => appliedPlan.state === 'closing'
+			|| Date.parse(appliedPlan.endsAt) - Date.parse(now) >= (candidate.node.estimate?.minimumSeconds ?? 1) * 1_000);
+		selection.windowEligible += withinWindow.length;
+		const candidates = prioritizeCommunicationCandidates(withinWindow);
 		const prior = await store.all(`SELECT node.project_id,node.agent_class,reservation.active_seconds,
 			reservation.reserved_seconds,reservation.state FROM capacity_reservations reservation
 			JOIN capacity_provider_assignments assignment ON assignment.reservation_id=reservation.id
@@ -181,6 +195,7 @@ export async function assignNextReadyExecutionNode(
 			const candidate = remaining.find((item) => item.node.id === selectedNode?.id);
 			if (!candidate) break;
 			remaining.splice(remaining.indexOf(candidate), 1);
+			selection.attemptedNodes += 1;
 				const priorAttempts = await executionNodeAssignmentGeneration(
 					store, candidate.node.teamId, candidate.node.id, candidate.node.nodeRevision,
 				);
@@ -194,26 +209,42 @@ export async function assignNextReadyExecutionNode(
 				});
 				const attempt = selected.assignment;
 					const treedxProxyHandle = await issueLivingTreeDxAuthority(store, run, attempt, now);
-					return await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: { ...selected.allocation, selection: selectedNode },
+					const admitted = await admitLivingExecutionAssignment(store, { principal, assignment: attempt, allocation: { ...selected.allocation, selection: selectedNode },
 						workdayConcurrencyLimit: candidate.node.kind === 'communication'
 							? appliedPlan.policySnapshot.communicationConcurrency : appliedPlan.policySnapshot.maximumConcurrency,
 						accountingLimits: selected.accountingLimits,
 						projectAgentClassId: candidate.projectAgentClassId, providerSessionId,
 						executionProviderId: selected.executionProviderId, laneId: selected.laneId,
-						lanePurpose: selected.lanePurpose,
+						lanePurpose: selected.lanePurpose, providerConcurrencyLimit: selected.providerConcurrencyLimit,
 						executionKind: candidate.node.kind === 'communication' ? 'conversation' : 'workday',
 						invocationId: candidate.node.kind === 'communication'
 							? candidate.node.sourceRef.id : null,
 						predecessorResults: candidate.predecessorResults, treedxProxyHandle, now });
+					return { assignment: admitted, selection };
 				} catch (error) {
 					if (error instanceof CapacityGovernanceError && [
 						'execution_node_claim_lost', 'execution_node_claim_stale',
 						'capacity_execution_provider_unavailable',
 						'capacity_assignment_allocation_deferred',
-					].includes(error.code)) continue;
+					].includes(error.code)) {
+					if (error.code === 'execution_node_claim_lost') { selection.claimLost += 1; selection.claimLoss = error.details; }
+					if (error.code === 'execution_node_claim_stale') selection.claimStale += 1;
+					if (error.code === 'capacity_execution_provider_unavailable') selection.providerUnavailable += 1;
+					if (error.code === 'capacity_assignment_allocation_deferred') selection.allocationDeferred += 1;
+						if (error.code.startsWith('capacity_')) deferred.push({
+							runId: run.id, nodeId: candidate.node.id, code: error.code, details: error.details,
+						});
+						continue;
+					}
 					throw error;
 				}
 		}
 	}
-	return null;
+	if (deferred.length) throw new CapacityGovernanceError(
+		'capacity_assignment_synthesis_deferred',
+		'Ready execution nodes could not fit the currently available provider allocation.',
+		409,
+		{ candidates: deferred },
+	);
+	return { assignment: null, selection };
 }

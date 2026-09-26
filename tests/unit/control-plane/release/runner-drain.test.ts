@@ -9,7 +9,20 @@ vi.mock('../../../../src/operations-runner/entrypoint-support/index.js', () => (
 	createControlPlaneStore: () => null, registerAndHeartbeat: async () => {},
 	runOnceWithClient: mocks.work,
 }));
-import { runLoop } from '../../../../src/operations-runner/entrypoint-support/support/run-loop.ts';
+import { runLoop, startWorkdayMaintenanceClock } from '../../../../src/operations-runner/entrypoint-support/support/run-loop.ts';
+
+it('keeps workday maintenance ticking independently of an operation poll', async () => {
+	vi.useFakeTimers();
+	const maintenance = vi.fn(async () => null);
+	const timer = startWorkdayMaintenanceClock({ runIfDue: maintenance }, 1_000);
+	try {
+		await vi.advanceTimersByTimeAsync(3_000);
+		expect(maintenance).toHaveBeenCalledTimes(4);
+	} finally {
+		clearInterval(timer);
+		vi.useRealTimers();
+	}
+});
 
 it('finishes active work, marks offline, and closes the listener after a drain signal', async () => {
 	const signals = new Map<string, (...args: any[]) => void>();

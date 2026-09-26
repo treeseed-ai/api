@@ -11,6 +11,32 @@ const candidate = { ...frozen, executionPlan: { workItems: [
 ] } };
 
 describe('exact estimator result integration', () => {
+	it('preserves all six golden owner estimates and six reviews regardless of Reviewer publication order', () => {
+		const classes = ['researcher', 'architect', 'tester', 'engineer', 'technical-writer', 'releaser'];
+		const source = { id: 'golden', status: 'draft', executionPlan: { workItems: classes.map((agentClass, index) =>
+			({ id: `work-${index}`, agentClass, review: 'required', objective: `Frozen objective ${index}` })) } };
+		for (let reviewerPosition = 0; reviewerPosition <= classes.length; reviewerPosition += 1) {
+			const order = [...classes];
+			order.splice(reviewerPosition, 0, 'reviewer');
+			let current: Record<string, unknown> = source;
+			for (const agentClass of order) {
+				const field = agentClass === 'reviewer' ? 'reviewEstimate' : 'estimate';
+				// Every isolated workspace starts from the same frozen estimate-free proposal.
+				const contribution = { ...source, executionPlan: { workItems: source.executionPlan.workItems.map((item) =>
+					agentClass === 'reviewer' || item.agentClass === agentClass
+						? { ...item, [field]: { ...estimate, rationale: `${agentClass}: ${item.id}` } } : item) } };
+				current = mergeAssignmentEstimate({ frozen: source, candidate: contribution, current, agentClass });
+				expect(mergeAssignmentEstimate({ frozen: source, candidate: contribution, current, agentClass })).toEqual(current);
+			}
+			const items = (current.executionPlan as { workItems: Array<Record<string, unknown>> }).workItems;
+			expect(items).toHaveLength(6);
+			for (const [index, item] of items.entries()) {
+				expect(item.estimate).toEqual({ ...estimate, rationale: `${classes[index]}: work-${index}` });
+				expect(item.reviewEstimate).toEqual({ ...estimate, rationale: `reviewer: work-${index}` });
+				expect(item.objective).toBe(`Frozen objective ${index}`);
+			}
+		}
+	});
 	it('merges only the assigned estimate while preserving another completed estimate', () => {
 		const prior = { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 180, rationale: 'Research evidence.' };
 		const current = { ...frozen, executionPlan: { workItems: [
@@ -23,12 +49,14 @@ describe('exact estimator result integration', () => {
 		] });
 		expect(mergeAssignmentEstimate({ frozen, candidate, current: merged, agentClass: 'engineer' })).toEqual(merged);
 	});
-	it('rejects unrelated content and a competing estimate', () => {
+	it('rejects unrelated content and lets a later class-owned planning turn refine its estimate', () => {
 		expect(() => mergeAssignmentEstimate({ frozen, candidate: { ...candidate, title: 'New authority' }, current: frozen,
 			agentClass: 'engineer' })).toThrow('outside its assigned estimate');
 		const current = { ...frozen, executionPlan: { workItems: [frozen.executionPlan.workItems[0],
 			{ ...frozen.executionPlan.workItems[1], estimate: { ...estimate, expectedSeconds: 250 } }] } };
-		expect(() => mergeAssignmentEstimate({ frozen, candidate, current, agentClass: 'engineer' })).toThrow('different estimate');
+		expect((mergeAssignmentEstimate({ frozen, candidate, current, agentClass: 'engineer' }).executionPlan as {
+			workItems: Array<{ estimate?: unknown }>;
+		}).workItems[1]?.estimate).toEqual(estimate);
 	});
 	it('rejects missing, mistargeted, or changed work items', () => {
 		expect(() => mergeAssignmentEstimate({ frozen, candidate: frozen, current: frozen,

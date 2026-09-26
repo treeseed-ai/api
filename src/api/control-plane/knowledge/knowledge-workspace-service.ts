@@ -199,7 +199,9 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			}
 			let before: string | null = null, status: 'published' | 'archived' = 'published', bookRevision = 0;
 			if (sourcePath) {
-				const current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath });
+				let current;
+				try { current = await connection.client.readFile({ workspaceId: access.workspace.treeDxWorkspaceId, path: sourcePath }); }
+				catch { throw new KnowledgeOperationError(502, 'knowledge_source_read_failed', 'The existing knowledge source could not be read.'); }
 				before = current.content;
 				try {
 					const currentDefinition = input.kind === 'book' ? parseBook({ path: sourcePath, raw: current.content })
@@ -242,7 +244,9 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 			if(input.kind==='book'&&sourcePath) {
 				const nextBook=parseBook({path,raw:content});
 				const pagesRoot=`${projectLibraryPath(connection.contentPath,'knowledge',nextBook.id)}/`;
-				const listed=await listKnowledgeContentPaths(connection,access.workspace.baseCommitSha);
+				let listed;
+				try { listed=await listKnowledgeContentPaths(connection,access.workspace.baseCommitSha); }
+				catch { throw new KnowledgeOperationError(502, 'knowledge_repin_paths_failed', 'The Book page paths could not be inspected.'); }
 				const workspaceStatus=await connection.client.status({workspaceId:access.workspace.treeDxWorkspaceId});
 				const deleted=new Set((workspaceStatus.changes??[]).filter((change:any)=>change.status==='deleted').map((change:any)=>String(change.path)));
 				const pagePaths=new Set([
@@ -257,11 +261,13 @@ export function createKnowledgeWorkspaceService(store: any, reader: { projectCat
 					if(updated!==original)pageChanges.push({path:pagePath,before:original,after:updated});
 				}
 			}
-			const result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
+			let result;
+			try { result = await applyTextChangeset({ client: connection.client, workspace: { workspaceId: access.workspace.treeDxWorkspaceId,
 				baseCommitSha: access.workspace.baseCommitSha, baseRef: access.workspace.baseRef }, changes: move
 					? [{ path: sourcePath, before, after: null }, { path, before: null, after: content }, ...pageChanges]
 					: [{ path, before, after: content }, ...pageChanges],
-				idempotencyKey: `knowledge-content-${workspaceId}-${access.workspace.version}` });
+				idempotencyKey: `knowledge-content-${workspaceId}-${access.workspace.version}` }); }
+			catch { throw new KnowledgeOperationError(502, 'knowledge_changeset_apply_failed', 'The governed knowledge changeset could not be applied.'); }
 			const updated = await store.updateKnowledgeWorkspace(workspaceId, { version: access.workspace.version, status: 'draft' });
 			if (!updated.ok) throw new KnowledgeOperationError(409, 'stale_workspace', 'The draft changed. Reload before saving.');
 			await store.recordAuditEvent({ eventType: input.kind === 'book' ? 'knowledge.book.updated' : 'knowledge.page.updated',

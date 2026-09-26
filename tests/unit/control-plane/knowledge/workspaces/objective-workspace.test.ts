@@ -42,8 +42,8 @@ describe('objective TreeDX workspace authority', () => {
 		expect(projectKnowledgeAuthoringPaths('teams/example')).toContain('teams/example/objectives/**');
 	});
 
-	it('bases authoring on the TreeDX publication ref instead of its external mirror', () => {
-		expect(projectKnowledgeAuthoringBaseRef({ publicationRef: 'refs/heads/staging' })).toBe('refs/heads/staging');
+	it('bases authoring on the reconciled protected branch', () => {
+		expect(projectKnowledgeAuthoringBaseRef({ baseRef: 'refs/remotes/origin/staging' })).toBe('refs/remotes/origin/staging');
 	});
 
 	it('retains a divergent external mirror as a reviewed merge parent', async () => {

@@ -20,15 +20,26 @@ const stable = (value: unknown): string => {
 
 /** Load structurally complete drafts for review and accepted proposals for work. */
 export async function loadTeamExecutableProposalSources(store: any, teamId: string, projectId?: string): Promise<ExecutableProposalSource[]> {
-	const rows = await store.all(`SELECT
+	const [rows, graphRows] = await Promise.all([store.all(`SELECT
 			p.id AS proposal_id,p.project_id,p.active_version,p.active_content_hash,p.metadata_json,
 			p.decision_id,d.id AS accepted_decision_id,d.proposal_version,d.proposal_content_hash,d.decision_record_json
 		FROM governance_proposals p
 		LEFT JOIN governance_decisions d ON d.id = p.decision_id AND d.proposal_id = p.id
 			AND d.team_id = p.team_id AND d.status = 'accepted' AND d.superseded_at IS NULL
-		WHERE p.team_id = ? AND (p.decision_id IS NULL OR d.id IS NOT NULL)
+		WHERE p.team_id = ? AND ((p.decision_id IS NULL AND p.status IN ('draft','submitted','open','voting')) OR d.id IS NOT NULL)
 			${projectId ? 'AND p.project_id = ?' : ''}
-		ORDER BY p.project_id,p.id`, projectId ? [teamId, projectId] : [teamId]);
+		ORDER BY p.project_id,p.id`, projectId ? [teamId, projectId] : [teamId]),
+		store.all('SELECT source_ref_json,status FROM execution_nodes WHERE team_id=?', [teamId])]);
+	const graphState = new Map<string, { count: number; incomplete: number }>();
+	for (const graphRow of graphRows) {
+		const source = record(graphRow.source_ref_json);
+		if (text(source.model) !== 'proposal') continue;
+		const key = `${text(source.id)}\u0000${text(source.digest)}`;
+		const state = graphState.get(key) ?? { count: 0, incomplete: 0 };
+		state.count += 1;
+		if (text(graphRow.status) !== 'completed') state.incomplete += 1;
+		graphState.set(key, state);
+	}
 	const sources: ExecutableProposalSource[] = [];
 	for (const row of rows) {
 		const accepted = Boolean(text(row.accepted_decision_id));
@@ -36,6 +47,13 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		const recordedRef = record(decisionRecord.proposalRef);
 		// Pre-cutover decisions remain governed history but never become demand.
 		if (accepted && !text(recordedRef.id)) continue;
+		// Once every node for the exact accepted revision is completed, the decision
+		// remains governed history but no longer participates in the living graph.
+		// Failed and cancelled nodes must remain demand so the projector can open the
+		// bounded revision/re-review path instead of staling the accepted decision.
+		// Reuse the graph itself as lifecycle authority; do not add an archive model.
+		const state = graphState.get(`${text(row.proposal_id)}\u0000sha256:${text(row.active_content_hash)}`);
+		if (accepted && state && state.count > 0 && state.incomplete === 0) continue;
 		let exact;
 		try { exact = await readExactProposal(store, { ...row, id: row.proposal_id }); }
 		catch (error) {

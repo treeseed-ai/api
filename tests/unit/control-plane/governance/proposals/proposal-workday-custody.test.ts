@@ -1,20 +1,20 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { commitProposalVersionContent } from '../../../../src/api/control-plane/governance/proposal-version-content.ts';
-import { resolveKnowledgeGatewayConnection } from '../../../../src/api/knowledge/gateway-treedx-connection.ts';
-import { CapacityWorkdayRunRepository } from '../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
-import { recordTreeDxAuthoringState } from '../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
-import { projectTreeDxCommitSignals } from '../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
+import { commitProposalVersionContent } from '../../../../../src/api/control-plane/governance/proposal-version-content.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
+import { CapacityWorkdayRunRepository } from '../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
+import { recordTreeDxAuthoringState } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts';
+import { projectTreeDxCommitSignals } from '../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts';
 
-vi.mock('../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
-	...await original<typeof import('../../../../src/api/knowledge/gateway-treedx-connection.ts')>(), resolveKnowledgeGatewayConnection: vi.fn(),
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', async original => ({
+	...await original<typeof import('../../../../../src/api/knowledge/gateway-treedx-connection.ts')>(), resolveKnowledgeGatewayConnection: vi.fn(),
 }));
-vi.mock('../../../../src/api/governance/proposal-document.ts', () => ({ serializeProposalDocument: () => 'next' }));
-vi.mock('../../../../src/api/knowledge/changesets/apply-text-changeset.ts', () => ({ applyTextChangeset: async () => ({
+vi.mock('../../../../../src/api/governance/proposal-document.ts', () => ({ serializeProposalDocument: () => 'next' }));
+vi.mock('../../../../../src/api/knowledge/changesets/apply-text-changeset.ts', () => ({ applyTextChangeset: async () => ({
 	files: [{ path: 'proposals/governance/example.mdx', afterSha256: createHash('sha256').update('next').digest('hex') }],
 }) }));
-vi.mock('../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts', () => ({ recordTreeDxAuthoringState: vi.fn() }));
-vi.mock('../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts', () => ({ projectTreeDxCommitSignals: vi.fn() }));
+vi.mock('../../../../../src/api/capacity/services/treedx/repositories/treedx-authoring-journal.ts', () => ({ recordTreeDxAuthoringState: vi.fn() }));
+vi.mock('../../../../../src/api/capacity/services/treedx/repositories/treedx-change-projector.ts', () => ({ projectTreeDxCommitSignals: vi.fn() }));
 
 function fixture(mode = 'simulation') {
 	const base = 'a'.repeat(40), path = 'proposals/governance/example.mdx';
@@ -44,6 +44,12 @@ describe('workday-scoped proposal authoring', () => {
 		expect(result.update.contentProvenance).toMatchObject({ commitSha: 'b'.repeat(40), contentPath: path });
 		expect(recordTreeDxAuthoringState).not.toHaveBeenCalled(); expect(projectTreeDxCommitSignals).not.toHaveBeenCalled();
 		expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');
+	});
+	it('binds the canonical repository request field as the revised governance body', async () => {
+		const { input } = fixture();
+		const result = await commitProposalVersionContent({ ...input,
+			update: { ...input.update, request: 'Revised exact proposal request.' } });
+		expect(result.update.body).toBe('Revised exact proposal request.');
 	});
 	it('does not reuse an advanced discussion branch that lacks the proposal source', async () => {
 		const { input, client, base } = fixture();
@@ -90,5 +96,24 @@ describe('workday-scoped proposal authoring', () => {
 		const { input, client } = fixture('production'); await commitProposalVersionContent(input);
 		expect(client.createWorkspace).toHaveBeenCalledWith(expect.objectContaining({ baseRef: 'refs/heads/staging', branchName: 'refs/heads/staging' }));
 		expect(recordTreeDxAuthoringState).toHaveBeenCalledOnce(); expect(projectTreeDxCommitSignals).toHaveBeenCalledOnce();
+	});
+	it('uses the explicit proposal slug for initial source custody', async () => {
+		const { input, client } = fixture('production');
+		input.proposal.metadata.contentProvenance = {} as never;
+		const proposal = { ...input.proposal, contentProposalSlug: 'unique-acceptance-proposal' };
+		client.readRepositoryFile.mockRejectedValueOnce(Object.assign(new Error('Not found'), { status: 404 }));
+		await expect(commitProposalVersionContent({ ...input, proposal, initial: true })).rejects.toMatchObject({ code: 'proposal_changeset_digest_mismatch' });
+		expect(client.readRepositoryFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'proposals/governance/unique-acceptance-proposal.mdx' }));
+		expect(client.commit).not.toHaveBeenCalled();
+	});
+	it('rejects an occupied initial proposal path without changing its bytes', async () => {
+		const { input, client } = fixture('production');
+		input.proposal.metadata.contentProvenance = {} as never;
+		const proposal = { ...input.proposal, contentProposalSlug: 'existing-proposal' };
+		await expect(commitProposalVersionContent({ ...input, proposal, initial: true })).rejects.toMatchObject({
+			status: 409, code: 'proposal_source_path_occupied', path: 'proposals/governance/existing-proposal.mdx',
+		});
+		expect(client.commit).not.toHaveBeenCalled();
+		expect(client.closeWorkspace).toHaveBeenCalledExactlyOnceWith('workspace-1');
 	});
 });
