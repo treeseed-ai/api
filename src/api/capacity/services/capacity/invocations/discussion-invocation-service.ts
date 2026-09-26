@@ -122,6 +122,9 @@ export async function reconcileTerminalConversationInvocations(store: Discussion
 			? await store.first("SELECT id FROM audit_events WHERE target_type='capacity_provider_assignment' AND target_id=? AND event_type='assignment.content.integrated' LIMIT 1", [assignment.id])
 			: null;
 		const successful = text(assignment.status) === 'completed' && Boolean(text(invocation.final_message_ref)) && Boolean(integrated);
+		// Completion releases the lease before asynchronous content integration finishes.
+		// A durable response waiting for integration is not a failed response.
+		if (text(assignment.status) === 'completed' && text(invocation.final_message_ref) && !integrated) continue;
 		const now = new Date().toISOString();
 		const blockingState = successful
 			? { code: 'durable_final_response', assignmentStatus: assignment.status }
