@@ -241,13 +241,15 @@ export function createCommunicationService(store: any, discussions?: { create(pr
 				createdAt: text(frontmatter.createdAt, timestamp(projected?.occurred_at, timestamp(invocation.completed_at, new Date().toISOString()))) }];
 		});
 		const statuses = invocations.map((row: Row) => text(row.status));
-		const finished = statuses.filter((status: string) => ['completed', 'suspended', 'failed', 'cancelled'].includes(status)).length;
+		const finished = statuses.filter((status: string) => ['completed', 'failed', 'cancelled'].includes(status)).length;
+		const successful = invocations.filter((row: Row) => text(row.status) === 'completed'
+			&& responses.some(response => response.invocationId === text(row.id))).length;
 		const status = finished === invocations.length
-			? responses.length === invocations.length ? 'complete' : responses.length ? 'partial' : 'failed'
+			? successful === invocations.length ? 'complete' : successful ? 'partial' : 'failed'
 			: statuses.some((value: string) => ['admitted', 'running'].includes(value)) ? 'running' : 'queued';
-		const targetStatus = (row: Row) => text(record(row.response_json).outcome) === 'abstained' ? 'abstained'
-			: text(row.final_message_ref) || text(row.status) === 'suspended' ? 'responded'
-			: text(row.status) === 'failed' ? 'failed' : text(row.status) === 'cancelled' ? 'cancelled'
+		const targetStatus = (row: Row) => text(row.status) === 'failed' ? 'failed' : text(row.status) === 'cancelled' ? 'cancelled'
+			: text(row.status) === 'completed' && text(record(row.response_json).outcome) === 'abstained' ? 'abstained'
+			: text(row.status) === 'completed' && text(row.final_message_ref) ? 'responded'
 				: ['admitted', 'running'].includes(text(row.status)) ? 'running' : 'queued';
 		const targets = await Promise.all(invocations.map(async (row: Row) => { const assignment = assignmentByInvocation.get(text(row.id)) ?? {}; return ({ projectId: text(row.project_id), projectSlug: projects.get(text(row.project_id))?.slug ?? text(row.project_id),
 			agentSlug: text(row.agent_id), definitionRevision: text(row.agent_revision), revisions: {

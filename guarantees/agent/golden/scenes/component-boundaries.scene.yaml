@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: recursive-workspace-reference
+    action: { verifier: api.golden.recursive-workspace-reference }
+    expect: { status: passed }
+  - id: send-completion-boundary
+    action: { verifier: api.golden.send-completion-boundary }
+    expect: { status: passed }
+  - id: published-reply-failure
+    action: { verifier: api.golden.published-reply-failure }
+    expect: { status: passed }
   - id: estimate-merge
     action: { verifier: api.golden.estimate-merge }
     expect: { status: passed }
