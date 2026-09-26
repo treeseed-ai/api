@@ -2,6 +2,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { reconcileTerminalConversationInvocations } from '../../../../../src/api/capacity/services/capacity/invocations/discussion-invocation-service.ts';
 
 describe('terminal conversation invocation reconciliation', () => {
+	it('waits for content integration after canonical completion, then delivers the durable response', async () => {
+		const invocation = { id: 'invocation-response', team_id: 'team-1', status: 'running', execution_kind: 'conversation', final_message_ref: 'discussion-messages/topic/response.mdx' };
+		let integrated = false;
+		const store = {
+			all: vi.fn(async () => [invocation]),
+			first: vi.fn(async (query: string) => query.includes('capacity_provider_assignments')
+				? { id: 'assignment-response', status: 'completed' }
+				: query.includes('audit_events') && integrated ? { id: 'integration-receipt' } : null),
+			run: vi.fn(), createCapacityWorkdayRun: vi.fn(), tickCapacityWorkdayRun: vi.fn(), updateCapacityWorkdayRun: vi.fn(),
+		};
+		await expect(reconcileTerminalConversationInvocations(store, 'team-1')).resolves.toEqual({ reconciled: 0 });
+		expect(store.run).not.toHaveBeenCalled();
+		integrated = true;
+		await expect(reconcileTerminalConversationInvocations(store, 'team-1')).resolves.toEqual({ reconciled: 1 });
+		expect(store.run).toHaveBeenCalledWith(expect.stringContaining('UPDATE agent_invocation_requests'), expect.arrayContaining(['completed', 'assignment-response']));
+		expect(store.run).not.toHaveBeenCalledWith(expect.stringContaining("'agent.failed'"), expect.anything());
+	});
 	it('fails a stale running invocation and publishes a visible lifecycle event', async () => {
 		const invocation = {
 			id: 'invocation-old', team_id: 'team-1', project_id: 'project-1', agent_id: 'architect',

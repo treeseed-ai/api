@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.response-integration-order:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/communication/terminal-invocation-reconciliation.test.ts
+    testName: "waits for content integration after canonical completion, then delivers the durable response"
   api.golden.recursive-workspace-reference:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

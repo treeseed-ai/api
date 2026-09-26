@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: response-integration-order
+    action: { verifier: api.golden.response-integration-order }
+    expect: { status: passed }
   - id: recursive-workspace-reference
     action: { verifier: api.golden.recursive-workspace-reference }
     expect: { status: passed }
