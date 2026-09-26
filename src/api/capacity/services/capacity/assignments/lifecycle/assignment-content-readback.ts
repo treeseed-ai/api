@@ -10,7 +10,7 @@ type Reference = Extract<AssignmentResult['references'][number], { kind: 'treedx
 export async function verifyAssignmentContent(store: Store, scope: Scope, result: AssignmentResult,
 	read: (reference: Reference) => Promise<{ resolvedRef?: string; files?: { path?: string; content?: unknown }[] }> = async (reference) => {
 		const connection = await resolveKnowledgeGatewayConnection(store, { projectId: scope.projectId,
-			write: false, authoringPaths: true, communicationPaths: true, readRefs: [reference.commit] });
+			write: false, readRefs: [reference.commit], workspacePaths: [reference.path] });
 		if (!connection || connection.repositoryId !== reference.repository) throw new CapacityGovernanceError(
 			'assignment_content_repository_mismatch', 'Result content must belong to its authoritative project library.', 409);
 		return connection.client.readRepositoryFiles({ repoId: reference.repository, ref: reference.commit,

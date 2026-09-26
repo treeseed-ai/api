@@ -6,6 +6,9 @@ workflow:
   - id: content-receipt
     action: { verifier: api.golden.content-receipt }
     expect: { status: passed }
+  - id: content-exact-path
+    action: { verifier: api.golden.content-exact-path }
+    expect: { status: passed }
   - id: content-readback-denial
     action: { verifier: api.golden.content-readback-denial }
     expect: { status: passed }

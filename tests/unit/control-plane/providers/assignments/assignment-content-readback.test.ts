@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { verifyAssignmentContent, recordAssignmentContentIntegration } from '../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
+
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({ resolveKnowledgeGatewayConnection: vi.fn() }));
 
 const scope = { id: 'assignment', teamId: 'team', projectId: 'project' };
 const reference = { kind: 'treedx' as const, projectId: 'project', repository: 'repo', workspaceId: 'workspace',
@@ -9,6 +12,17 @@ const result = { schemaVersion: 'treeseed.assignment-result/v1' as const, id: 'r
 	diagnostics: [], completedAt: '2026-09-26T19:08:00.000Z' };
 
 describe('canonical result content read-back', () => {
+	it('delegates the exact validated Note commit and path without collection-wide authoring access', async () => {
+		const note = { ...reference, path: 'notes/planning/sdk-architect.mdx' };
+		const readRepositoryFiles = vi.fn(async () => ({ resolvedRef: note.commit,
+			files: [{ path: note.path, content: 'Planning contribution' }] }));
+		vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({ repositoryId: note.repository,
+			client: { readRepositoryFiles } } as never);
+		await verifyAssignmentContent({ run: vi.fn(), all: vi.fn() }, scope, { ...result, references: [note] });
+		expect(resolveKnowledgeGatewayConnection).toHaveBeenCalledWith(expect.anything(), {
+			projectId: scope.projectId, write: false, readRefs: [note.commit], workspacePaths: [note.path] });
+		expect(readRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({ ref: note.commit, paths: [note.path] }));
+	});
 	it('produces the integration receipt only from exact readable result content', async () => {
 		const store = { run: vi.fn(), all: vi.fn() };
 		const read = vi.fn(async () => ({ resolvedRef: reference.commit, files: [{ path: reference.path, content: 'Response' }] }));
