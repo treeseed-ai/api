@@ -3,6 +3,7 @@ import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
 import { hasCompleteExecutablePlan, readExactProposal } from '../../../../../governance/executable-proposal.ts';
+import { reconcileAssignmentContent } from '../../assignments/lifecycle/assignment-content-readback.ts';
 
 type Row = Record<string, unknown>;
 const terminalNodeStates = new Set(['completed', 'failed', 'cancelled', 'stale']);
@@ -95,6 +96,7 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	updateCapacityWorkdayRun(teamId: string, runId: string, input: Row): Promise<DurableCapacityWorkdayRun | null>;
 }, run: DurableCapacityWorkdayRun, now: string, requestClose = false) {
 	const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+	await reconcileAssignmentContent(store, run.teamId, run.id);
 	const nodeRows = await store.all('SELECT id,kind,status FROM execution_nodes WHERE team_id=? AND workday_id=? ORDER BY id',
 		[run.teamId, run.id]);
 	const states = new Map(nodeRows.map((row) => [String(row.id), String(row.status)]));

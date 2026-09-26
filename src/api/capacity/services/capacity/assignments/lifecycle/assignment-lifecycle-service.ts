@@ -10,6 +10,7 @@ import type { AgentFallbackOutputWrite } from '../../../../repositories/runtime/
 import { evaluateProviderAssignmentLeaseAuthority,type ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../accounting/settlement-service.ts';
 import { validateAssignmentResultCompletion } from '../context/assignment-result-completion.ts';
+import { verifyAssignmentContent, recordAssignmentContentIntegration } from './assignment-content-readback.ts';
 import { resolveProposalReviewDisposition, resolveReviewDisposition } from '../context/review-result.ts';
 import { livingExecutionLifecycleOperations } from './execution/living-execution-lifecycle.ts';
 import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
@@ -261,6 +262,7 @@ export class ProviderAssignmentLifecycleService {
 		await assertRequiredSignals(this.store, assignment);
 		await assertCommunicationOutcome(this.store, assignment);
 		const assignmentResult = validateAssignmentResultCompletion(assignment, terminalInput as JsonRecord);
+		const contentReferences = await verifyAssignmentContent(this.store, assignment, assignmentResult);
 		if (assignmentResult) await integrateAssignmentEstimate(this.store, assignment, assignmentResult);
 		const reviewDisposition = assignmentResult
 			? await resolveReviewDisposition(this.store, assignment, assignmentResult)
@@ -278,6 +280,7 @@ export class ProviderAssignmentLifecycleService {
 		});
 		const reviewedProposalId = assignment.proposalId ?? (assignment.assignmentAttempt?.sourceRef.model === 'proposal'
 			? assignment.assignmentAttempt.sourceRef.id : null);
+		if (completed) await recordAssignmentContentIntegration(this.store, assignment, assignmentResult, contentReferences);
 		if (completed && proposalReview && reviewedProposalId) {
 			await this.store.recordGovernanceEvent({
 				eventType: 'proposal.discussion', actorType: 'agent', actorId: assignment.agentId ?? null,
