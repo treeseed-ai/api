@@ -6,12 +6,13 @@ import { startAssignmentCloseoutWindow, startAssignmentExecutionWindow } from '.
 import { reconcileBlockedDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { admitDiscussionInvocations } from '../../../capacity/services/capacity/invocations/discussion-invocation-service.ts';
 import { parseCommunicationAddresses } from '@treeseed/sdk/operator-contracts';
+import { assignmentReferenceSchema } from '@treeseed/sdk/agent-capacity';
 import { redactTranscriptValue } from './transcript-redaction.ts';
 import { providerPrincipal, type ProviderPrincipal } from './provider-runtime-service.ts';
 import { assignmentActivityType, assignmentRecord as record, assignmentWorkdayRunId, assertProviderOwnsAssignment, type ProviderAssignmentStore } from './provider-assignment-support.ts';
 import { commitDiscussionMessage } from '../../../discussions/content.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
-import { suspendAssignmentForDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-suspension-service.ts';
+import { recordAssignmentDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-response-service.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
 import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
 import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
@@ -142,10 +143,16 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			if (assignment.executionKind !== 'conversation' || !assignment.invocationId) throw new CapacityGovernanceError('provider_discussion_assignment_required', 'Only a conversation assignment can publish a discussion response.', 409);
 			const invocation = await store.first('SELECT * FROM agent_invocation_requests WHERE id=? AND team_id=? AND assignment_id=? LIMIT 1', [assignment.invocationId, actor.teamId, assignment.id]);
 			if (!invocation) throw new CapacityGovernanceError('communication_invocation_provenance_missing', 'Conversation assignment has no authoritative invocation.', 409);
-			if (assignment.status === 'returned' && String(invocation.final_message_ref ?? '').trim()) return {
+			if (String(invocation.final_message_ref ?? '').trim()) {
+				const response = record(typeof invocation.response_json === 'string' ? JSON.parse(invocation.response_json) : invocation.response_json);
+				const reference = assignmentReferenceSchema.parse(response.reference);
+				if (reference.kind !== 'treedx' || reference.path !== String(invocation.final_message_ref)) throw new CapacityGovernanceError(
+					'communication_response_reference_invalid', 'The recorded response must retain its exact TreeDX reference.', 409);
+				return {
 				schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId, invocationId: assignment.invocationId,
-				messageRef: String(invocation.final_message_ref), status: String(record(invocation.response_json).outcome) === 'abstained' ? 'abstained' : 'responded', settledAt: String(invocation.completed_at ?? assignment.returnedAt ?? new Date().toISOString()),
-			};
+				reference, messageRef: String(invocation.final_message_ref), status: response.outcome === 'abstained' ? 'abstained' : 'responded', settledAt: String(invocation.completed_at ?? new Date().toISOString()),
+				};
+			}
 			const provenance = discussionInvocationProvenance(invocation); const invocationMetadata = provenance.metadata;
 			const { discussionId, sourceMessageId } = provenance; const handle = record(assignment.treedxProxyHandle);
 			const authoringRef = String(handle.branchName ?? '').trim();
@@ -175,6 +182,8 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			const baseCommitSha = String(handle.baseCommitSha ?? handle.baseRef ?? '').trim();
 			const baseRef = String(handle.baseRef ?? handle.baseCommitSha ?? '').trim();
 			const allowedPaths = Array.isArray(handle.allowedPaths) ? handle.allowedPaths.map(String) : [];
+			const workspace = record(record(assignment.assignmentAttempt).workspace);
+			if (workspace.mode !== 'treedx') throw new CapacityGovernanceError('communication_workspace_required', 'Discussion completion requires its granted TreeDX workspace.', 409);
 			if (!workspaceId || !baseCommitSha || !baseRef) throw new CapacityGovernanceError('provider_discussion_workspace_required',
 				'Discussion response requires the exact assignment authoring workspace.', 409);
 			let authored;
@@ -227,15 +236,14 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 					requestedById: String(assignment.agentId ?? ''), communication: { ...communication, streamId: stream.id, parentInvocationId: invocation.id },
 					addressRequirements: Object.fromEntries(projectTargets.map((target) => [target.agentSlug, target.requirement])) });
 			}
-			await suspendAssignmentForDiscussionResponse(store, { assignmentId, teamId: assignment.teamId, leaseToken,
-				discussionId, messageId: authored.message.id, message: String(body.summary ?? markdown.slice(0, 500)),
-				messagePath: authored.message.path, checkpoint: { summary: body.summary ?? null, usage: record(body.usage), commitSha: authored.commitSha },
-			});
-			await store.run(`UPDATE agent_invocation_requests SET response_json=?,updated_at=? WHERE id=? AND team_id=?`, [JSON.stringify({ outcome }), new Date().toISOString(), invocation.id, actor.teamId]);
+			const reference = assignmentReferenceSchema.parse({ kind: 'treedx', projectId: assignment.projectId, repository: workspace.repository,
+				commit: authored.commitSha, path: authored.message.path, workspaceId });
+			await recordAssignmentDiscussionResponse(store, { assignmentId, teamId: assignment.teamId, leaseToken,
+				invocationId: String(invocation.id), messagePath: authored.message.path, outcome, reference });
 			await appendCommunicationEvent(store, assignment, outcome === 'abstained' ? 'agent.abstained' : 'agent.response', outcome === 'abstained' ? 'Agent abstained.' : 'Agent response posted.',
 				{ kind: 'agent', id: String(assignment.agentId ?? 'project-agent'), handle: `@${projectSlug}/${String(assignment.agentId ?? 'agent')}` }, { messageRef: authored.message.path, markdown });
 			return { schemaVersion: 'treeseed.provider-discussion-response-receipt/v1', assignmentId,
-				invocationId: assignment.invocationId, messageRef: authored.message.path, status: outcome, settledAt: new Date().toISOString() };
+				invocationId: assignment.invocationId, messageRef: authored.message.path, reference, status: outcome, settledAt: new Date().toISOString() };
 		},
 		async acknowledgeCommunication(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
 			const actor = principal(auth, ['provider:assignments:write']); const assignment = await ownedAssignment(store, assignmentId, actor);
@@ -295,12 +303,6 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 				usageDimension: typeof body.usageDimension === 'string' ? body.usageDimension : 'aggregate', usageIdempotencyKey: typeof body.usageIdempotencyKey === 'string' ? body.usageIdempotencyKey : null,
 				activeSeconds: Number(body.activeSeconds), elapsedSeconds: Number(body.elapsedSeconds), providerUnits: body.providerUnits == null ? null : Number(body.providerUnits), usd: body.usd == null ? null : Number(body.usd),
 				source: 'provider_usage_report', metadata: objectValue(body.metadata), usageActual: objectValue(body.usageActual) as CapacitySettlementRequest['usageActual'] });
-			const current = await store.getProviderAssignment(actor.teamId, assignmentId);
-			if (current?.executionKind === 'conversation' && current.status === 'returned' && current.leaseState === 'released'
-				&& current.lifecycleCode === 'discussion_response_required') {
-				const closed = await store.returnProviderAssignment(actor, assignmentId, {});
-				if (!closed) throw new CapacityGovernanceError('communication_suspension_close_failed', 'The settled conversation response could not close its suspended execution.', 409);
-			}
 			return settlement;
 		},
 		async createEvent(auth: unknown, assignmentId: string, body: Record<string, unknown>) {

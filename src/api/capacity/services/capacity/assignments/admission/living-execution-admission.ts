@@ -105,10 +105,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				WHERE prior.team_id=node.team_id
 				AND prior.execution_node_id=node.id
 				AND prior.execution_node_revision=node.node_revision
-				AND (prior.status<>'returned' OR (
-					prior.execution_kind='conversation'
-					AND prior.lifecycle_code='discussion_response_required'
-				))
+				AND prior.status<>'returned'
 			)
 			FOR UPDATE`, params: common },
 		{ query: `INSERT INTO capacity_reservations
@@ -125,10 +122,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					WHERE prior.team_id=node.team_id
 					AND prior.execution_node_id=node.id
 					AND prior.execution_node_revision=node.node_revision
-					AND (prior.status<>'returned' OR (
-						prior.execution_kind='conversation'
-						AND prior.lifecycle_code='discussion_response_required'
-					))
+					AND prior.status<>'returned'
 				)
 			)
 			AND ${claims.map(() => `EXISTS (SELECT 1 FROM capacity_admission_counters WHERE id=? AND committed_amount+?<=LEAST(hard_limit,?))`).join(' AND ')}
@@ -161,10 +155,7 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 			AND NOT EXISTS (
 				SELECT 1 FROM capacity_provider_assignments prior
 				WHERE prior.team_id=? AND prior.execution_node_id=? AND prior.execution_node_revision=?
-				AND (prior.status<>'returned' OR (
-					prior.execution_kind='conversation'
-					AND prior.lifecycle_code='discussion_response_required'
-				))
+				AND prior.status<>'returned'
 			)
 			ON CONFLICT (id) DO NOTHING`, params: [assignment.id,principal.membershipId,assignment.teamId,assignment.projectId,
 				principal.capacityProviderId,input.providerSessionId,input.executionProviderId,input.laneId,input.lanePurpose,input.projectAgentClassId,

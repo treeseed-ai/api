@@ -6,6 +6,18 @@ workflow:
   - id: estimate-merge
     action: { verifier: api.golden.estimate-merge }
     expect: { status: passed }
+  - id: response-authority
+    action: { verifier: api.golden.response-authority }
+    expect: { status: passed }
+  - id: response-race
+    action: { verifier: api.golden.response-race }
+    expect: { status: passed }
+  - id: response-sql-authority
+    action: { verifier: api.golden.response-sql-authority }
+    expect: { status: passed }
+  - id: response-continuation
+    action: { verifier: api.golden.response-continuation }
+    expect: { status: passed }
   - id: estimate-ownership
     action: { verifier: api.golden.estimate-ownership }
     expect: { status: passed }

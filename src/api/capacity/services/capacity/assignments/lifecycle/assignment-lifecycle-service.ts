@@ -17,7 +17,6 @@ import { integrateAssignmentEstimate } from '../planning/estimates/integration.t
 import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
 import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
 import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
-import { closeSuspendedConversationExecution } from './assignment-discussion-suspension-service.ts';
 import { terminalizeOperationHandoff } from '../handoffs/operation-handoff-lifecycle-service.ts';
 import { archivedConversationCancellation } from './assignment-failure-policy.ts';
 import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
@@ -173,28 +172,6 @@ export class ProviderAssignmentLifecycleService {
 		await this.store.ensureInitialized();
 		const now = new Date().toISOString();
 		const assignment = await this.store.getProviderAssignment(principal.teamId, assignmentId);
-		if (assignment?.status === 'returned' && assignment.leaseState === 'released'
-			&& record(assignment.metadata).operationalState === 'suspended'
-			&& assignment.lifecycleCode === 'discussion_response_required') {
-			if (assignment.capacityProviderId !== principal.capacityProviderId || assignment.membershipId !== principal.membershipId) return null;
-			const existing = record(assignment.lifecycleOutput);
-			const observed = composeAssignmentLifecycleOutput(record(input), input.performance ?? existing.performance ?? null);
-			const merged = { ...existing, ...observed };
-			if (JSON.stringify(existing) === JSON.stringify(merged)) {
-				await closeSuspendedConversationExecution(this.store,assignment,now);
-				return { assignment, leaseToken: null, leaseSeconds: null };
-			}
-			await this.store.run(
-				`UPDATE capacity_provider_assignments SET lifecycle_output_json = ?, state_version = state_version + 1, updated_at = ?
-				 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ? AND state_version = ?
-				   AND status = 'returned' AND lease_state = 'released' AND lifecycle_code = 'discussion_response_required'`,
-				[JSON.stringify(merged), now, assignment.id, assignment.teamId, assignment.capacityProviderId, assignment.membershipId, assignment.stateVersion],
-			);
-			const repaired = await this.store.getProviderAssignment(principal.teamId, assignmentId);
-			if (!repaired || repaired.stateVersion !== assignment.stateVersion + 1 || repaired.status !== 'returned') return null;
-			await closeSuspendedConversationExecution(this.store,repaired,now);
-			return { assignment: repaired, leaseToken: null, leaseSeconds: null };
-		}
 		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
 		const contextCapacityAlert=await quarantineContextOverflowOffer({store:this.store,assignment,code:input.code,observedAt:now});
 		if (record(assignment.metadata).cancellationRequested === true) {
