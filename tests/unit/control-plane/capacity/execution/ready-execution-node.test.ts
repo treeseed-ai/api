@@ -100,11 +100,12 @@ describe('direct ready-node admission input', () => {
 			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: definition },
 		});
 	});
-	it('keeps a suspended conversation node occupied until its response is settled', async () => {
+	it('keeps a leased communication node occupied without a special returned checkpoint', async () => {
 		const store = { ...teamContextStore, all: vi.fn().mockResolvedValueOnce([]) };
 		await listReadyExecutionNodes(store, run as never, project as never, async () => []);
 		const query = store.all.mock.calls[0]![0];
-		expect(query).toMatch(/assignment\.status<>'returned'[\s\S]*assignment\.execution_kind='conversation'[\s\S]*assignment\.lifecycle_code='discussion_response_required'/u);
+		expect(query).toContain("assignment.status<>'returned'");
+		expect(query).not.toContain('discussion_response_required');
 	});
 
 	it.each(['planning', 'estimating'])('loads exact proposal and source context for proposal-level %s nodes', async (kind) => {

@@ -86,8 +86,8 @@ describe('living execution admission', () => {
 		expect(reservation.query).toMatch(/prior\.execution_node_revision=node\.node_revision[\s\S]*prior\.status<>'returned'/u);
 		expect(reservation.query).toContain('node.workday_id IS NULL OR review_history.work_day_id=node.workday_id');
 		expect(insertedAssignment.query).toMatch(/prior\.execution_node_revision=\?[\s\S]*prior\.status<>'returned'/u);
-		expect(reservation.query).toMatch(/prior\.execution_kind='conversation'[\s\S]*prior\.lifecycle_code='discussion_response_required'/u);
-		expect(insertedAssignment.query).toMatch(/prior\.execution_kind='conversation'[\s\S]*prior\.lifecycle_code='discussion_response_required'/u);
+		expect(reservation.query).not.toContain('discussion_response_required');
+		expect(insertedAssignment.query).not.toContain('discussion_response_required');
 		expect(insertedAssignment.params.slice(-3)).toEqual(['team', 'node', 1]);
 	});
 

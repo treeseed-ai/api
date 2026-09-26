@@ -400,10 +400,7 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			WHERE assignment.team_id=node.team_id
 			AND assignment.execution_node_id=node.id
 			AND assignment.execution_node_revision=node.node_revision
-			AND (assignment.status<>'returned' OR (
-				assignment.execution_kind='conversation'
-				AND assignment.lifecycle_code='discussion_response_required'
-			))
+			AND assignment.status<>'returned'
 		)
 		ORDER BY node.updated_at,node.id LIMIT 100`, [run.teamId,project.id,...runScope.parameters]);
 	const selectedDecisionIds = new Set(Array.isArray(run.parameters.decisionIds)

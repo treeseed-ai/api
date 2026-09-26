@@ -140,13 +140,15 @@ export async function resolveDiscussionInvocationAgents(store:Pick<DiscussionInv
 	teamId:string;projectId:string;discussionId:string;parentAssignmentId?:string|null;mentionedAgents:string[];
 }) {
 	if(input.mentionedAgents.length||!input.parentAssignmentId)return input.mentionedAgents;
-	const assignment=await store.first(`SELECT agent_id,status,lease_state,execution_kind,lifecycle_code,metadata_json
-		FROM capacity_provider_assignments WHERE id=? AND team_id=? AND project_id=? LIMIT 1`,[input.parentAssignmentId,input.teamId,input.projectId]);
+	const assignment=await store.first(`SELECT assignment.agent_id,assignment.status,assignment.lease_state,assignment.execution_kind,
+		invocation.metadata_json,invocation.final_message_ref FROM capacity_provider_assignments assignment
+		JOIN agent_invocation_requests invocation ON invocation.id=assignment.invocation_id AND invocation.team_id=assignment.team_id
+		WHERE assignment.id=? AND assignment.team_id=? AND assignment.project_id=? LIMIT 1`,[input.parentAssignmentId,input.teamId,input.projectId]);
 	const metadata=record(assignment?.metadata_json);
-	const valid=assignment&&text(assignment.status)==='returned'&&text(assignment.lease_state)==='released'
-		&&text(assignment.execution_kind)==='conversation'&&text(assignment.lifecycle_code)==='discussion_response_required'
-		&&text(metadata.operationalState)==='suspended'&&text(metadata.waitingDiscussionId)===input.discussionId;
-	if(!valid||!text(assignment?.agent_id))throw new CapacityGovernanceError('discussion_continuation_parent_invalid','A mention-free continuation requires the exact suspended assignment waiting on this Discussion.',409,{parentAssignmentId:input.parentAssignmentId,discussionId:input.discussionId});
+	const valid=assignment&&text(assignment.status)==='completed'&&text(assignment.lease_state)==='released'
+		&&text(assignment.execution_kind)==='conversation'&&Boolean(text(assignment.final_message_ref))
+		&&text(metadata.discussionId)===input.discussionId;
+	if(!valid||!text(assignment?.agent_id))throw new CapacityGovernanceError('discussion_continuation_parent_invalid','A mention-free continuation requires the exact completed response in this Discussion.',409,{parentAssignmentId:input.parentAssignmentId,discussionId:input.discussionId});
 	return [text(assignment.agent_id)];
 }
 
@@ -169,12 +171,10 @@ async function assertExactParent(store: DiscussionInvocationStore, input: Discus
 			throw new CapacityGovernanceError('discussion_parent_assignment_invalid', 'Discussion invocation requires an exact assignment in the selected team and project.', 409);
 		}
 		const metadata = record(assignment.metadata_json);
-		const suspendedConversation = text(assignment.status) === 'returned'
+		const completedConversation = text(assignment.status) === 'completed'
 			&& text(assignment.lease_state) === 'released'
-			&& text(assignment.execution_kind) === 'conversation'
-			&& text(assignment.lifecycle_code) === 'discussion_response_required'
-			&& text(metadata.operationalState) === 'suspended';
-		if (suspendedConversation && !input.parentWorkdayId) return null;
+			&& text(assignment.execution_kind) === 'conversation';
+		if (completedConversation && !input.parentWorkdayId) return null;
 		const assignmentRunId = text(assignment.work_day_id) || text(metadata.workdayRunId);
 		if (!assignmentRunId) throw new CapacityGovernanceError(
 			'discussion_parent_workday_provenance_missing',
@@ -280,7 +280,7 @@ async function persistInvocation(store: DiscussionInvocationStore, input: Discus
 	const subjectDigest = digest({ discussionId: input.discussionId, messageId: input.messageId,
 		sendId: text(input.communication?.sendId) || null, agentSlug, subject: text(input.subject) || null });
 	const pending=await store.first(`SELECT id,content_refs_json FROM agent_invocation_requests WHERE team_id=? AND project_id=? AND agent_id=? AND subject_digest=? AND status IN ('queued','blocked') ORDER BY requested_at LIMIT 1`,[input.teamId,input.projectId,agentSlug,subjectDigest]);
-	const prior = input.continuationOfAssignmentId ? await store.first(`SELECT id,assignment_id,handoff_root_id,handoff_depth FROM agent_invocation_requests WHERE team_id = ? AND project_id = ? AND agent_id = ? AND assignment_id = ? AND status = 'suspended' ORDER BY completed_at DESC,requested_at DESC LIMIT 1`, [input.teamId,input.projectId,agentSlug,input.continuationOfAssignmentId]) : null;
+	const prior = input.continuationOfAssignmentId ? await store.first(`SELECT id,assignment_id,handoff_root_id,handoff_depth FROM agent_invocation_requests WHERE team_id = ? AND project_id = ? AND agent_id = ? AND assignment_id = ? AND status = 'completed' ORDER BY completed_at DESC,requested_at DESC LIMIT 1`, [input.teamId,input.projectId,agentSlug,input.continuationOfAssignmentId]) : null;
 	const continuationParentAssignmentId = text(prior?.assignment_id) || input.continuationOfAssignmentId || input.parentAssignmentId || null;
 	const handoffParentId = text(input.handoffParentId) || text(prior?.id) || null;
 	const handoffRootId = text(input.handoffRootId) || text(prior?.handoff_root_id) || handoffParentId;

@@ -28,13 +28,13 @@ describe('provider assignment settlement', () => {
 		expect(settleCapacityReservationExactlyOnce).not.toHaveBeenCalled();
 	});
 
-	it('closes the canonical suspended conversation checkpoint after durable settlement', async () => {
+	it('settles conversation usage without inventing a returned checkpoint or completing before its result', async () => {
 		const returnProviderAssignment = vi.fn().mockResolvedValue({ assignment: { id: 'assignment-1' } });
 		const store = {
 			first: vi.fn().mockResolvedValue({ id: 'assignment-1', team_id: 'team-1', membership_id: 'membership-1', reservation_id: 'reservation-1' }),
 			getProviderAssignment: vi.fn().mockResolvedValue({
 				id: 'assignment-1', teamId: 'team-1', membershipId: 'membership-1', capacityProviderId: 'provider-1',
-				executionKind: 'conversation', status: 'returned', leaseState: 'released', lifecycleCode: 'discussion_response_required',
+				executionKind: 'conversation', status: 'leased', leaseState: 'leased', lifecycleCode: null,
 			}),
 			returnProviderAssignment,
 		} as never;
@@ -42,7 +42,7 @@ describe('provider assignment settlement', () => {
 
 		await expect(service.settle(auth, 'assignment-1', { activeSeconds: 4, elapsedSeconds: 5, usageActual: {} }, 'settlement-1'))
 			.resolves.toEqual({ replayed: false, entry: { id: 'entry-1' } });
-		expect(returnProviderAssignment).toHaveBeenCalledWith(auth.principal, 'assignment-1', {});
+		expect(returnProviderAssignment).not.toHaveBeenCalled();
 	});
 
 	it('does not invoke conversation closeout for ordinary workday settlement', async () => {

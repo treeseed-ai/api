@@ -161,3 +161,23 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
     testName: "blocks closing and Reporter on the selected decision review terminals"
+  api.golden.response-authority:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/provider-discussion-response.test.ts
+    testName: "records the exact response without returning the assignment or revoking its lease"
+  api.golden.response-continuation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/completed-response-continuation.test.ts
+    testName: "resumes the exact agent only after canonical completion and lease release"
+  api.golden.response-race:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/provider-discussion-response.test.ts
+    testName: "fails closed if concurrent lease loss prevents durable response attribution"
+  api.golden.response-sql-authority:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
+    testName: "retains the exact live lease and blocks stale or cross-team response attribution in PostgreSQL"

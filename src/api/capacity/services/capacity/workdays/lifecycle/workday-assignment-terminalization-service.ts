@@ -172,14 +172,9 @@ export async function terminalizeCapacityWorkdayAssignments(
 		          AND (${assignmentContentIntegrationReadySql()}) THEN 1 ELSE 0 END), 0) AS completed_assignments,
 		        COALESCE(SUM(CASE WHEN assignment.status IN ('failed', 'expired', 'cancelled') THEN 1 ELSE 0 END), 0) AS failed_assignments,
 		        COALESCE(SUM(CASE WHEN (assignment.status NOT IN ('completed', 'failed', 'expired', 'cancelled')
-		          OR (assignment.status = 'completed' AND NOT (${assignmentContentIntegrationReadySql()})))
-		          AND NOT (assignment.status = 'returned' AND assignment.lease_state = 'released'
-		            AND assignment.execution_kind = 'conversation' AND assignment.lifecycle_code = 'discussion_response_required'
-		            AND suspended_invocation.id IS NOT NULL) THEN 1 ELSE 0 END), 0) AS unfinished_assignments
+		          OR (assignment.status = 'completed' AND NOT (${assignmentContentIntegrationReadySql()}))) THEN 1 ELSE 0 END), 0) AS unfinished_assignments
 		 FROM capacity_provider_assignments assignment
 		 JOIN capacity_workday_runs run ON run.id = assignment.work_day_id AND run.team_id = assignment.team_id
-		 LEFT JOIN agent_invocation_requests suspended_invocation ON suspended_invocation.assignment_id = assignment.id
-		   AND suspended_invocation.status = 'suspended' AND suspended_invocation.final_message_ref IS NOT NULL
 		 LEFT JOIN (SELECT DISTINCT target_id AS id FROM audit_events
 		   WHERE target_type = 'capacity_provider_assignment' AND event_type = '${CONTENT_INTEGRATION_REQUIRED_EVENT}') integration_required
 		   ON integration_required.id = assignment.id
@@ -199,13 +194,8 @@ export async function terminalizeCapacityWorkdayAssignments(
 			        assignment.lifecycle_output_json
 			 FROM capacity_provider_assignments assignment
 			 JOIN capacity_workday_runs run ON run.id = assignment.work_day_id AND run.team_id = assignment.team_id
-			 LEFT JOIN agent_invocation_requests suspended_invocation ON suspended_invocation.assignment_id = assignment.id
-			   AND suspended_invocation.status = 'suspended' AND suspended_invocation.final_message_ref IS NOT NULL
 			 WHERE assignment.team_id = ? AND run.id = ?
 			   AND assignment.status NOT IN ('completed', 'failed', 'expired', 'cancelled')
-			   AND NOT (assignment.status = 'returned' AND assignment.lease_state = 'released'
-			     AND assignment.execution_kind = 'conversation' AND assignment.lifecycle_code = 'discussion_response_required'
-			     AND suspended_invocation.id IS NOT NULL)
 			   AND NOT (? > ? AND assignment.status = 'leased' AND assignment.lease_state = 'leased'
 			     AND assignment.lease_token IS NOT NULL AND assignment.lease_expires_at IS NOT NULL AND assignment.lease_expires_at > ?)
 			 ORDER BY assignment.created_at ASC, assignment.id ASC
@@ -286,14 +276,9 @@ export async function terminalizeCapacityWorkdayAssignments(
 		          AND (${assignmentContentIntegrationReadySql()}) THEN 1 ELSE 0 END), 0) AS completed_assignments,
 		        COALESCE(SUM(CASE WHEN assignment.status IN ('failed', 'expired', 'cancelled') THEN 1 ELSE 0 END), 0) AS failed_assignments,
 		        COALESCE(SUM(CASE WHEN (assignment.status NOT IN ('completed', 'failed', 'expired', 'cancelled')
-		          OR (assignment.status = 'completed' AND NOT (${assignmentContentIntegrationReadySql()})))
-		          AND NOT (assignment.status = 'returned' AND assignment.lease_state = 'released'
-			            AND assignment.execution_kind = 'conversation' AND assignment.lifecycle_code = 'discussion_response_required'
-			            AND suspended_invocation.id IS NOT NULL) THEN 1 ELSE 0 END), 0) AS unfinished_assignments
+		          OR (assignment.status = 'completed' AND NOT (${assignmentContentIntegrationReadySql()}))) THEN 1 ELSE 0 END), 0) AS unfinished_assignments
 		 FROM capacity_provider_assignments assignment
 		 JOIN capacity_workday_runs run ON run.id = assignment.work_day_id AND run.team_id = assignment.team_id
-		 LEFT JOIN agent_invocation_requests suspended_invocation ON suspended_invocation.assignment_id = assignment.id
-		   AND suspended_invocation.status = 'suspended' AND suspended_invocation.final_message_ref IS NOT NULL
 		 LEFT JOIN (SELECT DISTINCT target_id AS id FROM audit_events
 		   WHERE target_type = 'capacity_provider_assignment' AND event_type = '${CONTENT_INTEGRATION_REQUIRED_EVENT}') integration_required
 		   ON integration_required.id = assignment.id

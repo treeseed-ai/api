@@ -159,12 +159,7 @@ export class CapacityWorkdayRecoveryRepository {
     const [assignment, readyNode, event] = await Promise.all([
       this.database.first(
 		`SELECT assignment.id FROM capacity_provider_assignments assignment
-		  LEFT JOIN agent_invocation_requests suspended_invocation ON suspended_invocation.assignment_id = assignment.id
-		    AND suspended_invocation.status = 'suspended' AND suspended_invocation.final_message_ref IS NOT NULL
-		  WHERE assignment.team_id = ? AND assignment.work_day_id = ? AND assignment.status IN ('pending','leased','running','returned')
-		  AND NOT (assignment.status = 'returned' AND assignment.lease_state = 'released'
-		    AND assignment.execution_kind = 'conversation' AND assignment.lifecycle_code = 'discussion_response_required'
-		    AND suspended_invocation.id IS NOT NULL) LIMIT 1`,
+		  WHERE assignment.team_id = ? AND assignment.work_day_id = ? AND assignment.status IN ('pending','leased','running','returned') LIMIT 1`,
         [run.teamId, run.id],
       ),
       this.database.first(
