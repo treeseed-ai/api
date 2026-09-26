@@ -69,6 +69,24 @@ describe('targeted Discussion reads', () => {
 		expect(result.messages.find((message) => message.path === path)?.immutableRef).toBe(commitSha);
 	});
 
+	it('resolves an exact unpublished reply reference without requiring a separate discussion selector', async () => {
+		const path = 'discussion-messages/discussion-1/source.mdx';
+		const commitSha = 'c'.repeat(40);
+		const original = mocks.readRepositoryFiles.getMockImplementation()!;
+		mocks.readRepositoryFiles.mockImplementation(async (request) => {
+			if (request.ref === 'refs/heads/staging') throw Object.assign(new Error('Not published'), { code: 'not_found' });
+			return original(request);
+		});
+		const result = await loadDiscussions({
+			store: { all: vi.fn(async () => [{ result_status: 'authoring_unpublished',
+				metadata_json: JSON.stringify({ commitSha, changedPaths: [path] }) }]) },
+			projectId: 'project-1', exactPaths: [path], collection: 'messages', limit: 1,
+		});
+		expect(mocks.readRepositoryFiles).toHaveBeenCalledTimes(1);
+		expect(mocks.readRepositoryFiles).toHaveBeenCalledWith(expect.objectContaining({ ref: commitSha, paths: [path] }));
+		expect(result.messages).toMatchObject([{ path, immutableRef: commitSha }]);
+	});
+
 	it.each(['path', 'identity'])('keeps an exact %s read isolated from more than a page of journal history', async (selection) => {
 		const path = 'discussion-messages/discussion-1/requested.mdx';
 		const commitSha = 'b'.repeat(40);

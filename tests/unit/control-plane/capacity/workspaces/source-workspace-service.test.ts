@@ -93,8 +93,8 @@ describe('provider source workspace authorization', () => {
   });
 
   it('denies revoked capacity authority and wrong-project ownership', async () => {
-    const f = fixture(); mocks.authority.mockResolvedValueOnce({ eligible: false });
-    await expect(f.service({ principal }, 'assignment', f.request)).rejects.toMatchObject({ code: 'assignment_source_authority_revoked' });
+    const f = fixture(); mocks.authority.mockResolvedValueOnce({ eligible: false, reasons: ['availability_session_not_open'] });
+    await expect(f.service({ principal }, 'assignment', f.request)).rejects.toMatchObject({ code: 'assignment_source_authority_revoked', message: expect.stringContaining('availability_session_not_open') });
     f.content.getProject.mockResolvedValue({ id: 'project', teamId: 'other' });
     await expect(f.service({ principal }, 'assignment', f.request)).rejects.toMatchObject({ code: 'assignment_source_project_forbidden' });
     expect(mocks.credential).not.toHaveBeenCalled();
@@ -136,5 +136,26 @@ describe('provider source workspace authorization', () => {
 		integration.predecessorResultIds = ['approved-actor-1', 'approved-actor-2'];
 		expect(assignmentSourceMode({ ...base, assignment_attempt_json: JSON.stringify(integration) })).toMatchObject({
 			mode: 'work', acquisition: 'simulation-local', publication: 'simulation-branch' });
+	});
+
+	it('reads a reviewed simulation candidate from local custody, not GitHub', async () => {
+		const candidateCommit = '9'.repeat(40);
+		const reviewed = { ...canonicalAttempt,
+			grant: { ...canonicalAttempt.grant, sourceWrite: [] },
+			workspace: { mode: 'treedx', repository: 'library', baseCommit: commit,
+				workspaceId: 'review-workspace', writablePaths: ['notes/review.mdx'] },
+			contextRefs: [{ store: 'git', model: 'repository', id: 'node:candidate', repository: 'repository', commit: candidateCommit },
+				...canonicalAttempt.contextRefs],
+			predecessorResultIds: ['actor-result'],
+		};
+		const parsed = assignmentAttemptSchema.safeParse(reviewed);
+		if (!parsed.success) throw new Error(parsed.error.message);
+		const f = fixture({ workday_execution_mode: 'simulation', work_day_id: 'workday',
+			assignment_attempt_json: JSON.stringify(reviewed) });
+		const response = await f.service({ principal }, 'assignment', f.request);
+		expect(response.authorization).toMatchObject({ mode: 'analysis', acquisition: 'simulation-local',
+			publication: 'denied', source: { commit: candidateCommit } });
+		expect(f.fetchImpl).not.toHaveBeenCalled();
+		expect(mocks.credential).not.toHaveBeenCalled();
 	});
 });

@@ -185,11 +185,18 @@ function normalizedError(error: unknown): never {
 	}
 	if (!(error instanceof TreeDxApiError)) throw error;
 	const status = [400, 401, 403, 404, 409, 412, 413, 422, 429, 500, 503].includes(error.status) ? error.status : 503;
+	// Report only known, credential-free conflict reasons to assignment diagnostics.
+	// The raw upstream message remains in the private error details below.
+	const safeConflictReasons = new Set([
+		'Workspace is not writable.', 'Workspace has expired.', 'Workspace has no active writable lease.',
+		'expectedSha does not match.', 'The workspace must be committed before its branch can be abandoned.',
+	]);
+	const conflictReason = safeConflictReasons.has(error.message) ? ` (${error.message})` : '';
 	const message = status === 404 ? 'The requested TreeDX resource was not found.'
 		: status === 401 || status === 403 ? `TreeDX rejected the scoped delegation (${error.code}: ${error.message}).`
-			: status === 409 || status === 412 ? 'The TreeDX resource changed or conflicts with this request.'
+			: status === 409 || status === 412 ? `The TreeDX resource changed or conflicts with this request${conflictReason}.`
 				: status === 429 ? 'TreeDX is temporarily busy.'
-					: status >= 500 ? 'TreeDX is temporarily unavailable.' : 'TreeDX rejected the proxied request.';
+					: status >= 500 ? `TreeDX is temporarily unavailable (${status}:${error.code}).` : 'TreeDX rejected the proxied request.';
 	throw new CapacityGovernanceError(`treedx_${error.code}`, message, status as 503, {
 		upstreamStatus: error.status,
 		upstreamCode: error.code,

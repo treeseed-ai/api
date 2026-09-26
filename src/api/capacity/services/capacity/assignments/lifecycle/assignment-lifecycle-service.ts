@@ -23,6 +23,7 @@ import { archivedConversationCancellation } from './assignment-failure-policy.ts
 import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
 import { quarantineContextOverflowOffer } from './context-capacity/overflow.ts';
 import { optionalFiniteNumber,record,terminalPerformance,type ExtendedProviderAssignmentLifecycleRequest,type JsonRecord } from './completion/assignment-terminal-performance.ts';
+import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 export type { ExtendedProviderAssignmentLifecycleRequest } from './completion/assignment-terminal-performance.ts';
 interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
@@ -314,7 +315,15 @@ export class ProviderAssignmentLifecycleService {
 					decisionRef: proposalReview.sourceRef,
 				},
 			});
+			if (proposalReview.disposition !== 'deferred') await this.store.evaluateGovernanceProposal(reviewedProposalId, {
+				expectedProposalVersion: assignment.assignmentAttempt?.sourceRef.revision,
+				adminDecision: proposalReview.disposition === 'approved' ? 'approved' : 'rejected',
+				actorType: 'agent', actorId: assignment.agentId ?? null,
+			});
 		}
+		if (completed && assignmentResult && (assignment.assignmentAttempt?.effectiveProfile.activity === 'estimating'
+			|| proposalReview)) await reconcileExecutionGraph(this.store, assignment.teamId, {},
+			`assignment-result:${assignment.id}:${assignment.stateVersion}`);
 		if (completed && assignment.invocationId) {
 			await this.store.run(`UPDATE agent_invocation_requests SET assignment_id=?,blocking_state_json=?,updated_at=?
 				WHERE id=? AND team_id=? AND status='running'`, [assignment.id,JSON.stringify({ code:'content_integration_pending',assignmentId:assignment.id }),now,assignment.invocationId,assignment.teamId]);
@@ -420,7 +429,10 @@ export class ProviderAssignmentLifecycleService {
 		const settledUsage = assignment.reservationId && options.status !== 'returned'
 			? await this.store.first(`SELECT active_seconds, elapsed_seconds, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, actual_usd FROM capacity_usage_actuals WHERE id = ? AND assignment_id = ? AND accounting_mode = 'aggregate' LIMIT 1`, [`usage:${assignment.id}:${assignment.attemptCount}:aggregate`, assignment.id]) : null;
 		const performance = options.status === 'returned' ? input.performance ?? null : terminalPerformance(assignment, input, options.status==='completed'?'completed':'failed', now, record(settledUsage));
-		const lifecycleOutput = composeAssignmentLifecycleOutput(record(input), performance);
+		// The validated TreeDX work-review decision is the disposition authority.
+		// Persist it with the lifecycle output so review-cycle accounting never
+		// depends on a provider repeating that decision in its raw response.
+		const lifecycleOutput = composeAssignmentLifecycleOutput(record(input), performance, options.reviewDisposition);
 		const params: unknown[] = [
 			input.runnerId ?? null,
 			now,
@@ -443,6 +455,7 @@ export class ProviderAssignmentLifecycleService {
 			   AND lease_token = ? ${options.allowExpiredLease ? '' : 'AND (lease_expires_at IS NULL OR lease_expires_at > ?)'} `, params: [options.status, ...params] }];
 		operations.push(...await livingExecutionLifecycleOperations({ store: this.store, assignment,
 			status: options.status, now, result: options.assignmentResult,
+			returnCode: options.status === 'returned' ? input.code : undefined,
 			reviewDisposition: options.reviewDisposition ?? null }));
 		if (['completed','failed','cancelled'].includes(options.status)) {
 			const terminalWorkspace = terminalAssignmentAuthority(assignment, now);

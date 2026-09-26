@@ -41,8 +41,14 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	const connection = await resolveKnowledgeGatewayConnection(input.store, { projectId, write: true, relationPaths: true, authoringPaths: true,
 		...(simulationRef ? { workspaceRefs: [simulationRef], readRefs: [sourceCommit] } : {}) });
 	if (!connection) throw Object.assign(new Error('The project TreeDX repository is unavailable for proposal authoring.'), { status: 503, code: 'proposal_treedx_unavailable' });
-	const title = text(input.update.title, input.proposal.title); const summary = text(input.update.summary, input.proposal.summary); const body = text(input.update.body, input.proposal.body); const types = list(input.update.proposalTypes).length ? list(input.update.proposalTypes) : list(input.proposal.proposalTypes ?? input.proposal.proposal_types_json);
-	const path = text(provenance.contentPath) || projectLibraryPath(connection.contentPath, 'proposals/governance', `${slug(title)}.mdx`); const branchName = simulationRef ?? `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
+	const title = text(input.update.title, input.proposal.title); const summary = text(input.update.summary, input.proposal.summary);
+	// Repository proposal documents call this field `request`; PostgreSQL calls
+	// it `body`. Accept the canonical document field on revision and bind the
+	// authored bytes back into the one governance body authority.
+	const body = text(input.update.request, input.update.body, input.proposal.body);
+	const types = list(input.update.proposalTypes).length ? list(input.update.proposalTypes) : list(input.proposal.proposalTypes ?? input.proposal.proposal_types_json);
+	const proposalSlug = text(input.proposal.contentProposalSlug, input.proposal.content_proposal_slug) || slug(title);
+	const path = text(provenance.contentPath) || projectLibraryPath(connection.contentPath, 'proposals/governance', `${slug(proposalSlug)}.mdx`); const branchName = simulationRef ?? `refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u, '')}`;
 	const baseRef = simulation ? sourceCommit : branchName;
 	const workspace = await connection.client.createWorkspace({ workspaceId: treeDxWorkspaceId(randomUUID()), repoId: connection.repositoryId, baseRef, branchName, mode: 'writable', allowedPaths: simulation ? [path] : connection.allowedPaths, ttlSeconds: 600 });
 	const expectedBase = text(input.update.expectedTreeDxBase);
@@ -81,6 +87,9 @@ export async function commitProposalVersionContent(input: { store: any; proposal
 	catch (error) { await connection.client.closeWorkspace(workspace.workspaceId).catch(() => undefined); throw error; }
 	try {
 		const existing = await connection.client.readRepositoryFile({ repoId: connection.repositoryId, ref: baseRef, path, encoding: 'utf8', parseFrontmatter: false, allowProtected: true }).catch((error) => { if (Number(object(error).status) === 404) return null; throw error; });
+		if (input.initial === true && existing !== null) throw Object.assign(new Error('The proposal source path already exists; choose a distinct proposal slug.'), {
+			status: 409, code: 'proposal_source_path_occupied', path,
+		});
 		if (existing && text(object(existing).resolvedRef) !== workspace.baseCommitSha) throw Object.assign(new Error('The proposal content branch changed while its current version was read.'), { status: 409, code: 'proposal_content_base_stale' });
 		const before = existing === null ? null : repositorySource(existing);
 		const expectedDigest = createHash('sha256').update(source).digest('hex');

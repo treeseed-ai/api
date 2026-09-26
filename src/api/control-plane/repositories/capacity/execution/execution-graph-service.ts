@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
+import { applyOperationalState, recoverIncompleteReviewCycles, reviewCycleLimitReached, recoverInterruptedGovernanceReviews,
+	recoverableGovernanceReviewAttemptHistory, stable, digest, record, text, type TeamGraph } from './execution-graph-state.ts';
 import {
 	graphRevisionSchema,
 	validateAgentDefinitionModel,
-	validateExecutionGraph,
 	type AgentDefinition,
 	type ExecutionEdge,
 	type ExecutionNode,
@@ -19,34 +19,67 @@ import { CapacityOperationError } from '../capacity-operation-error.ts';
 import { decodeExecutionEdge, decodeExecutionNode } from './execution-graph-storage.ts';
 
 type Row = Record<string, unknown>;
-type TeamGraph = { teamId: string; revision: number; digest: string; nodes: ExecutionNode[]; edges: ExecutionEdge[] };
-const record = (value: unknown): Row => {
-	if (value && typeof value === 'object' && !Array.isArray(value)) return value as Row;
-	if (typeof value === 'string') try { return record(JSON.parse(value)); } catch { return {}; }
-	return {};
-};
 const array = (value: unknown): unknown[] => {
 	if (Array.isArray(value)) return value;
 	if (typeof value === 'string') try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 	return [];
 };
-const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const integer = (value: unknown): number => Number.isInteger(Number(value)) ? Number(value) : 0;
-const stable = (value: unknown): string => {
-	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
-	if (value && typeof value === 'object') return `{${Object.entries(value as Row).sort(([a], [b]) => a.localeCompare(b))
-		.map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(',')}}`;
-	return JSON.stringify(value);
+export const isRevisionRequiredReviewDisposition = (value: unknown): boolean => value === 'request-changes';
+export const terminalAssignmentWasRequeued = (row: Row): boolean => {
+	const requestedAt = Date.parse(text(record(record(row.metadata_json).operatorRetry).requestedAt));
+	const terminalAt = Date.parse(text(row.terminal_at));
+	return Number.isFinite(requestedAt) && Number.isFinite(terminalAt) && requestedAt >= terminalAt;
 };
-const digest = (value: unknown): string => `sha256:${createHash('sha256').update(stable(value)).digest('hex')}`;
-
+export function selectTerminalAssignmentRows(rows: readonly Row[], nodes: readonly ExecutionNode[], edges: readonly ExecutionEdge[]): Row[] {
+	const nodeById = new Map(nodes.map((node) => [node.id, node]));
+	const pairedNode = new Map(edges.filter((edge) => edge.provenance === 'review-pair')
+		.flatMap((edge) => [[edge.fromNodeId, edge.toNodeId], [edge.toNodeId, edge.fromNodeId]]));
+	const selected = new Map<string, Row>();
+	for (const row of rows) {
+		const nodeId = text(row.execution_node_id);
+		if (!selected.has(nodeId)) selected.set(nodeId, row);
+	}
+	// An approval settles one immutable Actor candidate. A duplicate Reviewer
+	// assignment against that same candidate cannot reopen it; only a newer
+	// completed Actor candidate can make an earlier approval obsolete.
+	for (const row of rows) {
+		const nodeId = text(row.execution_node_id);
+		if (nodeById.get(nodeId)?.pairRole !== 'reviewer' || text(row.status) !== 'completed'
+			|| text(record(record(row.lifecycle_output_json).activityCompletion).reviewDisposition) !== 'approved') continue;
+		const actor = selected.get(pairedNode.get(nodeId) ?? '');
+		const reviewedAt = Date.parse(text(row.terminal_at));
+		const actorAt = Date.parse(text(actor?.terminal_at));
+		if (text(actor?.status) !== 'completed' || !Number.isFinite(reviewedAt)
+			|| !Number.isFinite(actorAt) || reviewedAt < actorAt) continue;
+		const current = selected.get(nodeId);
+		if (text(record(record(current?.lifecycle_output_json).activityCompletion).reviewDisposition) !== 'approved') selected.set(nodeId, row);
+	}
+	return [...selected.values()];
+}
+export function simulationRunBySelection(workdays: readonly { id: string; executionMode?: string; parameters: Row }[], field: 'decisionIds' | 'proposalIds'): Map<string, string> {
+	const selected = new Map<string, string>();
+	for (const workday of workdays) {
+		if (workday.executionMode !== 'simulation') continue;
+		for (const selectedId of array(workday.parameters[field]).map(text).filter(Boolean)) {
+			const previous = selected.get(selectedId);
+			if (previous && previous !== workday.id) throw new CapacityOperationError(409,
+				'execution_simulation_selection_overlap', 'One proposal or decision cannot run in two simultaneous simulations.');
+			selected.set(selectedId, workday.id);
+		}
+	}
+	return selected;
+}
+export const simulationRunByDecision = (workdays: readonly { id: string; executionMode?: string; parameters: Row }[]) =>
+	simulationRunBySelection(workdays, 'decisionIds');
 async function loadGraphSource<T>(source: string, loader: () => Promise<T>): Promise<T> {
 	try {
 		return await loader();
 	} catch (error) {
 		if (error instanceof CapacityOperationError) throw error;
+		const detail = error instanceof Error ? error.message.replace(/\s+/g, ' ').trim().slice(0, 500) : 'unknown source failure';
 		throw new CapacityOperationError(500, `execution_graph_${source}_unavailable`,
-			`The execution graph ${source} source could not be loaded.`);
+			`The execution graph ${source} source could not be loaded: ${detail}`);
 	}
 }
 
@@ -82,11 +115,12 @@ async function loadProfiles(store: any, teamId: string): Promise<Record<string, 
 }
 
 async function loadActiveWorkdays(store: any, teamId: string) {
-	const rows = await store.all(`SELECT id,team_id,parameters_json FROM capacity_workday_runs
+	const rows = await store.all(`SELECT id,team_id,parameters_json,execution_mode FROM capacity_workday_runs
 		WHERE team_id=? AND execution_kind='workday' AND status='running' ORDER BY id`, [teamId]);
 	const sources = rows.flatMap((row: Row) => {
 		const parameters = record(row.parameters_json);
-		return parameters.appliedPlan ? [{ id: text(row.id), teamId: text(row.team_id), parameters }] : [];
+		return parameters.appliedPlan ? [{ id: text(row.id), teamId: text(row.team_id), parameters,
+			executionMode: text(row.execution_mode) }] : [];
 	});
 	return Promise.all(sources.map(async (source: { id: string; teamId: string; parameters: Row }) => {
 		if (!Object.keys(record(source.parameters.planningSourceByProjectId)).length) return source;
@@ -116,7 +150,7 @@ export async function loadCommunicationInvocations(store: any, teamId: string) {
 		JOIN treedx_project_libraries library ON library.project_id=invocation.project_id
 		JOIN capacity_workday_runs execution ON execution.id=invocation.execution_id AND execution.team_id=invocation.team_id
 		WHERE invocation.team_id=? AND invocation.execution_kind='conversation' AND execution.status='running'
-		AND invocation.status IN ('admitted','running') AND invocation.execution_id IS NOT NULL
+		AND invocation.status IN ('admitted','running','suspended') AND invocation.execution_id IS NOT NULL
 		ORDER BY invocation.id`, [teamId]);
 	return rows.flatMap((row: Row) => {
 		const metadata = record(row.metadata_json);
@@ -129,84 +163,6 @@ export async function loadCommunicationInvocations(store: any, teamId: string) {
 			workdayId: text(row.execution_id), agentId: text(row.agent_id), repository, commit, path,
 			durationSeconds: Math.max(1, integer(metadata.productiveSeconds) || 900) }];
 	});
-}
-
-export function applyOperationalState(current: TeamGraph, projected: TeamGraph, revision: number): TeamGraph {
-	const priorById = new Map(current.nodes.map((node) => [node.id, node]));
-	const activeIds = new Set(projected.nodes.map((node) => node.id));
-	const nodes = projected.nodes.map((node) => {
-		const prior = priorById.get(node.id);
-		const operational = prior && node.kind !== 'condition'
-			&& ['assigned', 'running', 'completed', 'failed', 'cancelled'].includes(prior.status);
-		if (operational) return { ...prior, graphRevisionUpdated: revision };
-		const semantic = (value: ExecutionNode) => {
-			const { status: _status, nodeRevision: _nodeRevision, graphRevisionCreated: _created,
-				graphRevisionUpdated: _updated, ...rest } = value;
-			return rest;
-		};
-		const changed = prior && (stable(semantic(prior)) !== stable(semantic(node))
-			|| (node.kind === 'condition' && prior.status !== node.status));
-		const nodeRevision = prior
-			? prior.status === 'stale' || changed ? prior.nodeRevision + 1 : Math.max(prior.nodeRevision, node.nodeRevision)
-			: node.nodeRevision;
-		return { ...node, nodeRevision,
-			graphRevisionCreated: prior?.graphRevisionCreated ?? node.graphRevisionCreated, graphRevisionUpdated: revision };
-	});
-	for (const prior of current.nodes) {
-		if (activeIds.has(prior.id)) continue;
-		nodes.push(prior.status === 'stale'
-			? prior
-			: !prior.workdayId && prior.kind !== 'communication' && ['assigned', 'running'].includes(prior.status)
-			? { ...prior, graphRevisionUpdated: revision }
-			: { ...prior, status: 'stale', nodeRevision: prior.nodeRevision + 1, graphRevisionUpdated: revision });
-	}
-	const activeNodes = new Map(nodes.map((node) => [node.id, node]));
-	for (const node of nodes.filter((candidate) => candidate.kind === 'condition' && candidate.status === 'completed')) {
-		const predecessors = projected.edges.filter((edge) => edge.toNodeId === node.id)
-			.map((edge) => activeNodes.get(edge.fromNodeId));
-		if (predecessors.some((candidate) => candidate?.status !== 'completed')) node.status = 'blocked';
-	}
-	for (const node of nodes) {
-		if (node.status === 'proposed' || node.status === 'stale'
-			|| ['assigned', 'running', 'completed', 'failed', 'cancelled'].includes(node.status)) continue;
-		if (node.kind === 'condition') continue;
-		const predecessors = projected.edges.filter((edge) => edge.toNodeId === node.id).map((edge) => activeNodes.get(edge.fromNodeId));
-		node.status = predecessors.every((candidate) => candidate?.status === 'completed') ? 'ready' : 'blocked';
-	}
-	const withoutGraphRevision = (node: ExecutionNode) => {
-		const { graphRevisionCreated: _created, graphRevisionUpdated: _updated, ...value } = node;
-		return value;
-	};
-	const normalizedNodes = nodes.map((node) => {
-		const prior = priorById.get(node.id);
-		return prior && activeIds.has(node.id) && stable(withoutGraphRevision(prior)) === stable(withoutGraphRevision(node))
-			? { ...node, graphRevisionCreated: prior.graphRevisionCreated, graphRevisionUpdated: prior.graphRevisionUpdated }
-			: node;
-	}).sort((left, right) => left.id.localeCompare(right.id));
-	const priorEdges = new Map(current.edges.map((candidate) => [candidate.id, candidate]));
-	const edges = projected.edges.map((candidate) => ({ ...candidate,
-		graphRevisionCreated: priorEdges.get(candidate.id)?.graphRevisionCreated ?? candidate.graphRevisionCreated }));
-	const checked = validateExecutionGraph(normalizedNodes, edges);
-	if (!checked.ok) throw Object.assign(new CapacityOperationError(422, 'execution_graph_invalid', 'The reconciled execution graph is invalid.'), { diagnostics: checked.diagnostics });
-	return { teamId: projected.teamId, revision, nodes: normalizedNodes, edges,
-		digest: digest({ teamId: projected.teamId, nodes: normalizedNodes, edges }) };
-}
-
-/** Reconcile a committed request-changes result whose paired node update was interrupted. */
-export function recoverIncompleteReviewCycles(graph: TeamGraph, completedReviews: ReadonlyMap<string, number>, revision: number): TeamGraph {
-	for (const reviewer of graph.nodes) {
-		const completed = completedReviews.get(reviewer.id) ?? 0;
-		if (reviewer.pairRole !== 'reviewer' || reviewer.status !== 'failed' || completed < 1
-			|| completed >= (reviewer.maximumReviewCycles ?? 1)) continue;
-		const actor = graph.nodes.find((node) => node.projectId === reviewer.projectId
-			&& node.workItemId === reviewer.workItemId && node.pairRole === 'actor'
-			&& (node.status === 'blocked' || node.status === 'completed'));
-		if (!actor) continue;
-		reviewer.nodeRevision += 1; reviewer.status = 'blocked'; reviewer.graphRevisionUpdated = revision;
-		actor.nodeRevision += 1; actor.status = 'ready'; actor.graphRevisionUpdated = revision;
-	}
-	graph.digest = digest({ teamId: graph.teamId, nodes: graph.nodes, edges: graph.edges });
-	return graph;
 }
 
 function graphChanges(current: TeamGraph, desired: TeamGraph) {
@@ -265,16 +221,16 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 		query: `INSERT INTO execution_nodes (
 			id,team_id,project_id,workday_id,work_item_id,kind,pair_role,source_ref_json,authority_refs_json,
 			rule_revision,node_revision,agent_class,status,estimate_json,required_capabilities_json,
-			requested_permissions_json,workspace,acceptance_criteria_json,maximum_review_cycles,condition_json,
+			requested_permissions_json,output_json,workspace,acceptance_criteria_json,maximum_review_cycles,condition_json,
 			graph_revision_created,graph_revision_updated,created_at,updated_at
-		) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
+		) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${revisionGuard}
 		ON CONFLICT (id) DO UPDATE SET
 			project_id=excluded.project_id,workday_id=excluded.workday_id,work_item_id=excluded.work_item_id,
 			kind=excluded.kind,pair_role=excluded.pair_role,source_ref_json=excluded.source_ref_json,
 			authority_refs_json=excluded.authority_refs_json,rule_revision=excluded.rule_revision,
 			node_revision=excluded.node_revision,agent_class=excluded.agent_class,status=excluded.status,
 			estimate_json=excluded.estimate_json,required_capabilities_json=excluded.required_capabilities_json,
-			requested_permissions_json=excluded.requested_permissions_json,workspace=excluded.workspace,
+			requested_permissions_json=excluded.requested_permissions_json,output_json=excluded.output_json,workspace=excluded.workspace,
 			acceptance_criteria_json=excluded.acceptance_criteria_json,maximum_review_cycles=excluded.maximum_review_cycles,
 			condition_json=excluded.condition_json,
 			graph_revision_updated=excluded.graph_revision_updated,updated_at=excluded.updated_at`,
@@ -282,7 +238,7 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 			JSON.stringify(node.sourceRef),JSON.stringify(node.authorityRefs ?? []),node.ruleRevision,node.nodeRevision,
 			node.agentClass ?? null,node.status,node.estimate ? JSON.stringify(node.estimate) : null,
 			node.requiredCapabilities ? JSON.stringify(node.requiredCapabilities) : null,
-			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.workspace ?? null,
+			node.requestedPermissions ? JSON.stringify(node.requestedPermissions) : null,node.output ? JSON.stringify(node.output) : null,node.workspace ?? null,
 			node.acceptanceCriteria ? JSON.stringify(node.acceptanceCriteria) : null,node.maximumReviewCycles ?? null,
 			node.condition ? JSON.stringify(node.condition) : null,node.graphRevisionCreated,node.graphRevisionUpdated,now,now,
 			revisionRecord.teamId,revisionRecord.revision,revisionRecord.createdAt],
@@ -313,11 +269,25 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 
 async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}) {
 	const current = await loadGraphSource('projection', () => readGraph(store, teamId));
-	const [sources, profiles, workdays, communications] = await Promise.all([
+	const [sources, profiles, workdays, communications, activeAssignmentRows, terminalAssignmentRows, reviewCycleRows] = await Promise.all([
 		loadGraphSource('governance', () => loadTeamExecutableProposalSources(store, teamId)),
 		loadGraphSource('agent_profiles', () => loadProfiles(store, teamId)),
 		loadGraphSource('workdays', () => loadActiveWorkdays(store, teamId)),
 		loadGraphSource('communications', () => loadCommunicationInvocations(store, teamId)),
+		loadGraphSource('assignments', () => store.all(`SELECT DISTINCT execution_node_id,work_day_id FROM capacity_provider_assignments
+			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('pending','leased','running','returned')`, [teamId])),
+		loadGraphSource('assignment_history', () => store.all(`SELECT
+			execution_node_id,execution_node_revision,work_day_id,status,lifecycle_output_json,metadata_json,
+			COALESCE(completed_at,failed_at,updated_at) AS terminal_at FROM capacity_provider_assignments
+			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('completed','failed','expired','cancelled')
+			ORDER BY execution_node_id,execution_node_revision DESC,
+				CASE WHEN status='completed' THEN 0 ELSE 1 END,
+				COALESCE(completed_at,failed_at,updated_at) DESC,id DESC`, [teamId])),
+		loadGraphSource('review_cycle_history', () => store.all(`SELECT execution_node_id,work_day_id,COUNT(*) AS count
+			FROM capacity_provider_assignments WHERE team_id=? AND status='completed'
+			AND assignment_result_json IS NOT NULL
+			AND lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
+			AND execution_node_id IS NOT NULL GROUP BY execution_node_id,work_day_id`, [teamId])),
 	]);
 	if (!sources.length && !workdays.length && !communications.length && !current.nodes.length) return body.plan === true
 		? { teamId, baseRevision: current.revision, desiredRevision: current.revision, desiredDigest: current.digest, changes: { added: [], changed: [], completed: [], blocked: [], stale: [], removedEdges: [], addedEdges: [] } }
@@ -326,7 +296,23 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const dependencyLinks = new Set(sources.map((source) => source.projectId)).size > 1
 		? await loadGraphSource('dependencies', () => loadTeamExactDependencyLinks(store, sources)) : [];
 	const proposalProjection = sources.length ? projectTeamExecutionGraph({ teamId, revision, sources, profiles, dependencyLinks }) : null;
-	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles });
+	const activeSimulationByDecision = simulationRunByDecision(workdays);
+	const activeSimulationByProposal = simulationRunBySelection(workdays, 'proposalIds');
+	const decisionRun = (node: ExecutionNode) => {
+		const decisionId = node.authorityRefs?.find((reference) => reference.model === 'decision')?.id;
+		if (!decisionId) return '';
+		const byDecision = activeSimulationByDecision.get(decisionId) ?? '';
+		const byProposal = activeSimulationByProposal.get(node.sourceRef.id) ?? '';
+		if (byDecision && byProposal && byDecision !== byProposal) throw new CapacityOperationError(409,
+			'execution_simulation_selection_overlap', 'The same proposal decision belongs to two simultaneous simulations.');
+		return byDecision || byProposal;
+	};
+	if (proposalProjection) proposalProjection.nodes = proposalProjection.nodes.map((node) => {
+		const runId = decisionRun(node);
+		return runId ? { ...node, workdayId: runId } : node;
+	});
+	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles,
+		decisionNodes: proposalProjection?.nodes ?? [] });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
 	const nodes = [...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes];
 	const edges = [...(proposalProjection?.edges ?? []), ...workdayProjection.edges];
@@ -335,13 +321,88 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		...(!sources.length && !workdays.length && !communications.length ? current.nodes.map((node) => node.sourceRef) : [])]
 		.map((reference) => [stable(reference), reference])).values()];
 	const base: TeamGraph = { teamId, revision, digest: digest({ teamId, nodes, edges }), nodes, edges };
-	const desired = applyOperationalState(current, base, current.revision + 1);
+	const nodeById = new Map(base.nodes.map((node) => [node.id, node]));
+	const belongsToCurrentAttempt = (row: Row) => {
+		const node = nodeById.get(text(row.execution_node_id));
+		return !node?.workdayId || !decisionRun(node) || text(row.work_day_id) === node.workdayId;
+	};
+	const eligibleTerminalRows = (terminalAssignmentRows as Row[])
+		.filter((row) => belongsToCurrentAttempt(row) && !terminalAssignmentWasRequeued(row));
+	const effectiveTerminalAssignmentRows = selectTerminalAssignmentRows(eligibleTerminalRows, base.nodes, base.edges);
+	const terminalByNode = new Map(effectiveTerminalAssignmentRows.map((row: Row) => [text(row.execution_node_id), row]));
+	const completedReviewCycles = new Map((reviewCycleRows as Row[]).filter(belongsToCurrentAttempt)
+		.map((row: Row) => [text(row.execution_node_id), integer(row.count)]));
+	const latestRequestChangesReviewers = new Set(effectiveTerminalAssignmentRows.filter((row: Row) =>
+		text(row.status) === 'completed'
+		&& text(record(record(row.lifecycle_output_json).activityCompletion).reviewDisposition) === 'request-changes')
+		.map((row: Row) => text(row.execution_node_id)));
+	const pairedNode = new Map(base.edges.filter((edge) => edge.provenance === 'review-pair')
+		.flatMap((edge) => [[edge.fromNodeId, edge.toNodeId], [edge.toNodeId, edge.fromNodeId]]));
+	const terminalStatuses = new Map<string, { status: ExecutionNode['status']; nodeRevision: number }>(effectiveTerminalAssignmentRows.flatMap((row: Row): Array<[string, { status: ExecutionNode['status']; nodeRevision: number }]> => {
+		const disposition = text(record(record(row.lifecycle_output_json).activityCompletion).reviewDisposition);
+		const status = text(row.status);
+		const nodeId = text(row.execution_node_id);
+		// A failed Actor revision is terminal graph evidence. Dropping it here lets
+		// the projection restore the Actor to blocked/ready and can cause its paired
+		// Reviewer to re-review an older successful candidate. Preserve the exact
+		// failed/cancelled revision so the review edge remains fail-closed.
+		if (status !== 'completed') return [[nodeId, {
+			status: status === 'cancelled' ? 'cancelled' as const : 'failed' as const,
+			nodeRevision: integer(row.execution_node_revision),
+		}]];
+		const counterpart = terminalByNode.get(pairedNode.get(nodeId) ?? '');
+		const counterpartDisposition = text(record(record(counterpart?.lifecycle_output_json).activityCompletion).reviewDisposition);
+		const terminalAt = Date.parse(text(row.terminal_at));
+		const counterpartAt = Date.parse(text(counterpart?.terminal_at));
+		const node = base.nodes.find((candidate) => candidate.id === nodeId);
+		const counterpartNodeId = pairedNode.get(nodeId) ?? '';
+		const counterpartNode = base.nodes.find((candidate) => candidate.id === counterpartNodeId);
+		// Even an approval is stale if the Actor subsequently published a newer
+		// candidate. Compare immutable assignment completion times rather than
+		// graph revisions, which also advance during harmless reprojection.
+		if (node?.pairRole === 'reviewer' && counterpart?.status === 'completed'
+			&& Number.isFinite(counterpartAt) && Number.isFinite(terminalAt) && counterpartAt > terminalAt) return [[nodeId, {
+			status: 'blocked' as const,
+			nodeRevision: Math.max(integer(row.execution_node_revision), integer(counterpart.execution_node_revision)),
+		}]];
+		const reviewLimitReached = counterpartNode?.pairRole === 'reviewer'
+			&& reviewCycleLimitReached(completedReviewCycles.get(counterpartNodeId) ?? 0, counterpartNode.maximumReviewCycles);
+		// A request-changes result governs only until its Actor publishes a newer
+		// immutable candidate. Conversely, an Actor result older than the paired
+		// request-changes finding is no longer the current candidate.
+		if (node?.pairRole === 'actor' && isRevisionRequiredReviewDisposition(counterpartDisposition)
+			&& Number.isFinite(counterpartAt) && counterpartAt >= terminalAt) return [[nodeId, {
+				status: reviewLimitReached ? 'blocked' as const : 'ready' as const,
+				nodeRevision: integer(row.execution_node_revision),
+			}]];
+		return [[nodeId, {
+			// Only Reviewer decisions govern an Actor/Reviewer cycle. Actor handlers
+			// may use revision-required to describe the candidate they produced; that
+			// must not convert an otherwise successful Actor assignment into failure.
+			status: node?.pairRole === 'reviewer' && isRevisionRequiredReviewDisposition(disposition)
+				? 'failed' as const : 'completed' as const,
+			nodeRevision: integer(row.execution_node_revision),
+		}]];
+	}));
+	const desired = applyOperationalState(current, base, current.revision + 1,
+		new Set((activeAssignmentRows as Row[]).filter(belongsToCurrentAttempt).map((row: Row) => text(row.execution_node_id)).filter(Boolean)), terminalStatuses);
 	const recoverableReviewers = desired.nodes.filter((node) => node.pairRole === 'reviewer' && node.status === 'failed');
 	if (recoverableReviewers.length) {
-		const rows = await store.all(`SELECT execution_node_id,COUNT(*) AS count FROM capacity_provider_assignments
-			WHERE team_id=? AND status='completed' AND assignment_result_json IS NOT NULL
-			AND execution_node_id IS NOT NULL GROUP BY execution_node_id`, [teamId]);
-		recoverIncompleteReviewCycles(desired, new Map(rows.map((row: Row) => [text(row.execution_node_id), integer(row.count)])), revision);
+		recoverIncompleteReviewCycles(desired, completedReviewCycles, latestRequestChangesReviewers, revision);
+	}
+	const interruptedReviews = desired.nodes.filter((node) => node.kind === 'reviewing' && node.status === 'failed');
+	if (interruptedReviews.length) {
+		const attempts = await store.all(`SELECT execution_node_id,status,lifecycle_code,lifecycle_reason,assignment_result_json
+			FROM capacity_provider_assignments WHERE team_id=? AND execution_node_id IN (${interruptedReviews.map(() => '?').join(',')})`,
+			[teamId, ...interruptedReviews.map((node) => node.id)]);
+		const grouped = new Map<string, Row[]>();
+		for (const attempt of attempts) grouped.set(text(attempt.execution_node_id),
+			[...(grouped.get(text(attempt.execution_node_id)) ?? []), attempt]);
+		const eligible = new Set(interruptedReviews.filter((node) => {
+			const history = grouped.get(node.id) ?? [];
+			return recoverableGovernanceReviewAttemptHistory(history);
+		}).map((node) => node.id));
+		recoverInterruptedGovernanceReviews(desired, eligible, revision);
 	}
 	const changes = graphChanges(current, desired);
 	if (body.plan === true) return { teamId, baseRevision: current.revision, desiredRevision: desired.revision, desiredDigest: desired.digest, changes };

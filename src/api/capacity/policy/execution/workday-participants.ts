@@ -34,8 +34,10 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 			if (!validation.ok || !validation.data) continue;
 			const frozenActivities = array(entry.activities).map(text).filter(Boolean) as Activity[];
 			const workItems = array(record(record(record(parameters.proposalsByProjectId)[projectId]).executionPlan).workItems).map(record);
-			const canEstimate = workItems.some(item => text(item.agentClass) === validation.data!.agentClass)
-				|| (validation.data.agentClass === 'reviewer' && workItems.some(item => item.review === 'required'));
+			const canEstimate = workItems.some(item => text(item.agentClass) === validation.data!.agentClass
+				&& Object.keys(record(item.estimate)).length === 0)
+				|| (validation.data.agentClass === 'reviewer' && workItems.some(item => item.review === 'required'
+					&& Object.keys(record(item.reviewEstimate)).length === 0));
 			const activities = (explicitActivitySelection ? frozenActivities : frozenActivities.filter((activity) =>
 				activity === 'planning' || activity === 'estimating'))
 				.filter((activity) => activity !== 'estimating' || canEstimate)

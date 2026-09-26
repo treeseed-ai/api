@@ -68,7 +68,7 @@ export async function loadProposalBlockingFeedback(store: any, proposalId: strin
 		if (!['concern', 'question'].includes(kind) || text(evidence.feedbackSeverity) === 'advisory') return [];
 		const parsed = exactEntityReferenceSchema.safeParse(evidence.questionRef ?? evidence.decisionRef);
 		if (!parsed.success || parsed.data.store !== 'treedx' || !['question', 'decision'].includes(parsed.data.model)) {
-			throw Object.assign(new Error('Blocking proposal feedback lacks exact TreeDX content authority.'), {
+			throw Object.assign(new Error(`Proposal ${proposalId} blocking feedback ${text(event.id)} lacks exact TreeDX content authority.`), {
 				status: 409, code: 'proposal_feedback_source_ref_missing', feedbackId: text(event.id),
 			});
 		}

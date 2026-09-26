@@ -49,30 +49,34 @@ export function createWorkdayService(store: any) {
 			return { run, events: events.items, eventPage: events.page, scheduling: await communicationSchedulingDiagnostics(store, teamId, runId) };
 		},
 		async stop(principal: CapacityPrincipal, teamId: string, runId: string, body: Record<string, unknown>) {
-			await authorizeCapacityTeam(store, principal, teamId, 'teams:manage:team');
+			const actor = await authorizeCapacityTeam(store, principal, teamId, 'teams:manage:team');
 			try {
 				const run = await store.getCapacityWorkdayRun(teamId, runId);
 				if (!run) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found.');
 				if (run.status !== 'running') throw new CapacityOperationError(409, 'workday_not_active', 'Only an active workday can enter closeout.');
-				const lifecycle = await advanceLivingWorkday(store, run, new Date().toISOString(), true);
+				const now = new Date().toISOString();
+				const lifecycle = await advanceLivingWorkday(store, run, now, true);
+				const reason = String(body.reason ?? 'Workday stopped by an authorized operator.');
+				const terminalization = await store.terminalizeCapacityWorkdayAssignments(teamId, runId, {
+					now, settlementKeyPrefix: 'workday-operator-stop', source: 'capacity_workday_operator_stop',
+					code: 'workday_operator_stopped', reason, metadata: { requestedById: actor.id },
+				});
+				const closing = await store.getCapacityWorkdayRun(teamId, runId);
+				if (!closing) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found after terminalization.');
+				await store.updateCapacityWorkdayRun(teamId, runId, {
+					status: 'cancelled', completedAt: now,
+					parameters: { ...closing.parameters, appliedPlan: { ...closing.parameters.appliedPlan, state: 'ended', endedAt: now } },
+					summary: { outcome: 'operator_stopped', reason, terminalization },
+				});
 				// Stopping must remain available when the current proposal graph is invalid.
-				// The workday is already closing, so a failed refresh cannot admit new work.
+				// The workday is already terminal, so a failed refresh cannot admit new work.
 				let reconciliation: { status: 'current' | 'deferred'; code?: string } = { status: 'current' };
 				try { await reconcileExecutionGraph(store, teamId); }
 				catch (error) {
 					const code = String((error as { code?: unknown }).code ?? 'graph_reconciliation_failed');
-					const now = new Date().toISOString();
-					const current = await store.getCapacityWorkdayRun(teamId, runId);
-					if (current?.status === 'running' && current.parameters.appliedPlan?.state === 'closing') {
-						await store.updateCapacityWorkdayRun(teamId, runId, {
-							status: 'failed', completedAt: now,
-							parameters: { ...current.parameters, appliedPlan: { ...current.parameters.appliedPlan, state: 'ended', endedAt: now } },
-							error: { code, message: 'Workday stopped because its execution graph could not reconcile.' },
-						});
-					}
 					reconciliation = { status: 'deferred', code };
 				}
-				return { run: await store.getCapacityWorkdayRun(teamId, runId), lifecycle, reconciliation, reason: body.reason ?? null };
+				return { run: await store.getCapacityWorkdayRun(teamId, runId), lifecycle, terminalization, reconciliation, reason };
 			} catch (error) { translate(error); }
 		},
 		async events(principal: CapacityPrincipal, teamId: string, runId: string, query: Record<string, unknown>) {

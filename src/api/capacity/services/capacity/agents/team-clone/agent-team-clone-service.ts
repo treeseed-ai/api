@@ -3,7 +3,6 @@ import {
 	agentTeamClonePlanSchema,
 	agentTeamCloneRequestSchema,
 	validateAgentDefinitionModel,
-	type AgentDefinition,
 	type AgentTeamClonePlan,
 	type AgentTeamCloneRequest,
 } from '@treeseed/sdk/agent-capacity';
@@ -15,10 +14,11 @@ import { projectTreeDxCommitSignals } from '../../../treedx/repositories/treedx-
 import { recordTreeDxAuthoringState } from '../../../treedx/repositories/treedx-authoring-journal.ts';
 import { authorizeCapacityTeam,type CapacityPrincipal } from '../../../../../control-plane/repositories/capacity/capacity-authorization.ts';
 import { CapacityOperationError } from '../../../../../control-plane/repositories/capacity/capacity-operation-error.ts';
+import { snapshotAgentDefinitions, type AgentDefinitionSourceFile } from '../agent-definition-snapshot.ts';
 
 type Row = Record<string,unknown>;
 type Project = { id:string; slug:string; name:string; status?:string };
-type SourceFile = { path:string; content:string; definition:AgentDefinition; sourceDigest:string };
+type SourceFile = AgentDefinitionSourceFile;
 const record=(value:unknown):Row=>value&&typeof value==='object'&&!Array.isArray(value)?value as Row:{};
 const text=(value:unknown):string=>typeof value==='string'?value.trim():'';
 const hash=(value:string)=>`sha256:${createHash('sha256').update(value).digest('hex')}`;
@@ -29,7 +29,6 @@ const planDigest=(value:Omit<AgentTeamClonePlan,'digest'>)=>hash(stable(value));
 const branch=(connection:KnowledgeGatewayConnection)=>`refs/heads/${connection.authoringBranch.replace(/^refs\/heads\//u,'')}`;
 
 function fileRows(value:unknown):Row[]{const row=record(value);return (Array.isArray(row.files)?row.files:Array.isArray(row.results)?row.results:[]).map(record);}
-function sourceBytes(value:unknown):string{const content=record(value).content;if(typeof content!=='string')throw new CapacityOperationError(502,'agent_team_source_missing','TreeDX did not return exact agent definition bytes.');return content;}
 function selectProject(projects:Project[],selector:string):Project|null{return projects.find((project)=>project.id===selector||project.slug===selector)??null;}
 function classAgents(value:unknown):unknown[]{const agents=record(record(value).handlerRefs).agents;return Array.isArray(agents)?agents:[];}
 function replaceIdentityText(value:string,source:Project,target:Project):string{return value
@@ -80,32 +79,7 @@ async function resolveTargetSnapshot(store:any,projectId:string){
 	const exact=await connection(store,projectId,false,[commit]);
 	return {connection:exact,snapshot:await snapshotAgents(exact,commit).catch((error)=>failed('target_read',projectId,error))};
 }
-export async function snapshotAgents(value:KnowledgeGatewayConnection,ref=value.baseRef){
-	const listed=await value.client.listRepositoryPaths({repoId:value.repositoryId,ref,paths:[projectLibraryPath(value.contentPath,'agents/**')],kinds:['blob'],extensions:['.md','.mdx'],limit:200,allowProtected:true});
-	const commit=text(listed.resolvedRef);
-	if(!/^[0-9a-f]{40}$/u.test(commit))throw new CapacityOperationError(409,'agent_team_snapshot_invalid','TreeDX did not resolve the agent collection to an exact commit.');
-	if(/^[0-9a-f]{40}$/u.test(ref)&&commit!==ref)throw new CapacityOperationError(409,
-		'agent_team_snapshot_moved','Agent collection moved from the requested exact commit.');
-	const paths=(Array.isArray(listed.entries)?listed.entries:[]).map((item:unknown)=>text(record(item).path)).filter(Boolean).sort();
-	if(!paths.length)return {commit,files:[] as SourceFile[]};
-	const read=await value.client.readRepositoryFiles({repoId:value.repositoryId,ref:commit,paths,encoding:'utf8',parseFrontmatter:false,allowProtected:true});
-	if(text(read.resolvedRef)!==commit)throw new CapacityOperationError(409,'agent_team_snapshot_moved','Agent definition bytes did not match the listed commit.');
-	const returned=fileRows(read);
-	if(returned.length!==paths.length||new Set(returned.map((file)=>text(file.path))).size!==paths.length
-		||returned.some((file)=>!paths.includes(text(file.path))))throw new CapacityOperationError(409,
-		'agent_team_snapshot_incomplete','TreeDX did not return every exact agent definition in the source snapshot.');
-	const files=returned.map((file)=>{
-		const content=sourceBytes(file),path=text(file.path),parsed=parseFrontmatterDocument(content);
-		const validation=validateAgentDefinitionModel(parsed.frontmatter);
-		if(!validation.ok||!validation.data)throw new CapacityOperationError(409,'agent_team_definition_invalid',
-			`Agent definition ${path||'(unknown)'} is invalid; the exact source snapshot cannot be cloned.`,
-			{path,diagnostics:validation.diagnostics});
-		return {path,content,definition:validation.data,sourceDigest:hash(content)};
-	});
-	if(new Set(files.map((file)=>file.definition.agentClass)).size!==files.length)throw new CapacityOperationError(409,
-		'agent_team_class_ambiguous','Multiple source agent definitions select the same class and would overwrite one target file.');
-	return {commit,files};
-}
+export const snapshotAgents = snapshotAgentDefinitions;
 async function readExisting(value:KnowledgeGatewayConnection,commit:string,paths:string[]){
 	if(!paths.length)return new Map<string,string>();
 	const response=await value.client.readRepositoryFiles({repoId:value.repositoryId,ref:commit,paths,encoding:'utf8',parseFrontmatter:false,allowProtected:true}).catch((error)=>{if(Number(record(error).status)===404)return {resolvedRef:commit,files:[]};throw error;});

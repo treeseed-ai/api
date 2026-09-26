@@ -9,6 +9,26 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts',async(or
 }));
 
 describe('Book revision custody',()=>{
+	it('replaces an invalid historical Book without validating the retired source shape',async()=>{
+		const workspace={id:'draft-legacy',projectId:'project',actorUserId:'author',status:'draft',version:1,
+			treeDxWorkspaceId:'remote',baseCommitSha:'a'.repeat(40),baseRef:'staging',
+			branchName:'refs/heads/knowledge/draft-legacy',allowedPaths:['books/**','knowledge/**']};
+		const source='---\nschemaVersion: treeseed.book/v2\nid: core\nslug: core\ntitle: Core\nsummary: Legacy book\nstatus: published\nvisibility: team\norder: 0\ntopics: []\n---\n';
+		const client={readFile:vi.fn(async()=>({sha:'old-sha',content:source})),
+			listRepositoryPaths:vi.fn(async()=>({resolvedRef:'a'.repeat(40),entries:[],page:{hasMore:false}})),
+			status:vi.fn(async()=>({changes:[]})),applyChangeset:vi.fn(async()=>({applied:true}))};
+		vi.mocked(resolveKnowledgeGatewayConnection).mockResolvedValue({client,contentPath:'.',repositoryId:'repo-1'} as never);
+		const store={getKnowledgeWorkspace:vi.fn(async()=>workspace),
+			getProjectDetails:vi.fn(async()=>({project:{id:'project',teamId:'team'}})),
+			principalCanAccessTeam:vi.fn(async()=>true),
+			getTeamAccessSummary:vi.fn(async()=>({permissions:['knowledge:author']})),
+			updateKnowledgeWorkspace:vi.fn(async()=>({ok:true,workspace:{...workspace,version:2}})),
+			recordAuditEvent:vi.fn(async()=>undefined)};
+		const service=createKnowledgeWorkspaceService(store,{projectCatalog:vi.fn(async()=>({books:[],pages:[]}))});
+		await service.updateContent({id:'author'},workspace.id,{kind:'book',version:1,sourcePath:'books/core.md',
+			id:'core',slug:'core',title:'Core',summary:'Governed book',visibility:'team',order:0});
+		expect(client.applyChangeset.mock.calls[0]?.[0]?.patch).toContain('treeseed.book/v3');
+	});
 	it('repins every existing page in the same governed changeset as its Book update',async()=>{
 		const seed=managedTeamLibrarySeedFiles('project');
 		const bookPath='books/team-operations.md';

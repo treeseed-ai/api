@@ -39,6 +39,8 @@ describe('live allocation ledger inputs', () => {
 				('other-proposal','team','project',NULL,'ready','acting',NULL,'{"model":"proposal","id":"other"}','{}','["implementation"]'),
 				('other-project','team','unselected',NULL,'ready','acting',NULL,'{"model":"proposal","id":"golden"}','{}','["implementation"]'),
 				('other-team','foreign','project',NULL,'ready','acting',NULL,'{"model":"proposal","id":"golden"}','{}','["implementation"]'),
+				('selected-actor','team','project',NULL,'ready','acting','actor','{"model":"proposal","id":"golden"}','{}','["implementation"]'),
+				('selected-paired-review','team','project',NULL,'ready','reviewing','reviewer','{"model":"proposal","id":"golden"}','{}','["implementation"]'),
 				('planning','team','project','workday','ready','planning',NULL,'{}','{}','["implementation"]');`);
 			const counts: number[] = [];
 			const store = { all: vi.fn(async () => []), first: async (sql: string, values: unknown[]) => {
@@ -56,10 +58,15 @@ describe('live allocation ledger inputs', () => {
 				capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'reviewer', activity: 'reviewing', now: at });
 			expect((await calculate(selectedRun, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
 			expect(counts.at(-1)).toBe(2);
-			expect((await calculate(selectedRun))['codex-implementation']?.opportunity.availableSeconds).toBe(0);
+			// After the phase boundary, only the selected Actor and its paired
+			// Reviewer remain eligible; proposal governance review no longer counts.
+			expect((await calculate(selectedRun))['codex-implementation']?.opportunity.availableSeconds).toBe(990);
+			expect(counts.at(-1)).toBe(2);
 			const planningOnly = { ...selectedRun, parameters: { ...selectedRun.parameters, planningOnly: true } };
 			expect((await calculate(planningOnly, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
-			expect(counts.at(-1)).toBe(1);
+			// Governance review is planning work, not implementation. A planning-only
+			// run must retain that node as well as its ordinary planning turn.
+			expect(counts.at(-1)).toBe(2);
 			await db.exec(`INSERT INTO execution_nodes VALUES
 				('report','team','project','workday','ready','reporting',NULL,'{}','{"maximumSeconds":300}','["implementation"]')`);
 			const closing = { ...selectedRun, parameters: { ...selectedRun.parameters,
@@ -89,9 +96,44 @@ describe('live allocation ledger inputs', () => {
 		expect(result['codex-implementation']?.measurements[0]?.outcome).toBe('expired');
 		const query = store.all.mock.calls.find(([sql]) => sql.includes('capacity_usage_actuals'))![0];
 		expect(query).toContain("assignment.lifecycle_code='assignment_timeout'");
+		expect(query).toContain("node.pair_role IS DISTINCT FROM 'actor'");
+		expect(query).toContain("node.status='completed' AND assignment.execution_node_revision=node.node_revision");
 		expect(query).not.toContain("assignment.status='expired'");
 		expect(query).toContain('LIMIT 20');
 	});
+	it('does not learn a short success from an Actor attempt rejected by review', async () => {
+		const db = new PGlite();
+		try {
+			await db.exec(`CREATE TABLE execution_nodes (id text, team_id text, agent_class text, pair_role text, status text, node_revision integer);
+				CREATE TABLE capacity_provider_assignments (id text, team_id text, execution_node_id text, execution_node_revision integer,
+					capacity_provider_id text, execution_provider_id text, status text, lifecycle_code text, assignment_attempt_json jsonb);
+				CREATE TABLE capacity_usage_actuals (id text, assignment_id text, created_at text, active_seconds integer, accounting_mode text);
+				INSERT INTO execution_nodes VALUES ('accepted','team','tester','actor','completed',2),('rejected','team','tester','actor','failed',2);
+				INSERT INTO capacity_provider_assignments VALUES
+				('old','team','accepted',1,'provider','codex-implementation','completed',NULL,
+				 '{"estimate":{"expectedSeconds":360},"limits":{"maximumSeconds":360},"provider":{"modelConfigurationId":"terra-medium","executionCapabilityId":"implementation"},"effectiveProfile":{"activity":"act"}}'),
+				('accepted','team','accepted',2,'provider','codex-implementation','completed',NULL,
+				 '{"estimate":{"expectedSeconds":360},"limits":{"maximumSeconds":600},"provider":{"modelConfigurationId":"terra-medium","executionCapabilityId":"implementation"},"effectiveProfile":{"activity":"act"}}'),
+				('rejected','team','rejected',1,'provider','codex-implementation','completed',NULL,
+				 '{"estimate":{"expectedSeconds":360},"limits":{"maximumSeconds":360},"provider":{"modelConfigurationId":"terra-medium","executionCapabilityId":"implementation"},"effectiveProfile":{"activity":"act"}}'),
+				('expired','team','rejected',2,'provider','codex-implementation','failed','assignment_timeout',
+				 '{"estimate":{"expectedSeconds":360},"limits":{"maximumSeconds":385},"provider":{"modelConfigurationId":"terra-medium","executionCapabilityId":"implementation"},"effectiveProfile":{"activity":"act"}}');
+				INSERT INTO capacity_usage_actuals VALUES
+				('old','old','2026-09-16T12:01:00Z',180,'aggregate'),
+				('accepted','accepted','2026-09-16T12:02:00Z',500,'aggregate'),
+				('rejected','rejected','2026-09-16T12:03:00Z',180,'aggregate'),
+				('expired','expired','2026-09-16T12:04:00Z',385,'aggregate');`);
+			const store = { all: async (sql: string, values: unknown[]) => {
+				if (!sql.includes('capacity_usage_actuals')) return [];
+				let index = 0;
+				return (await db.query(sql.replace(/\?/gu, () => `$${++index}`), values)).rows;
+			}, first: async () => ({ ready_count: 1 }) };
+			const result = await livingAllocationInputs(store as never, { run: run as never, runs: [run as never],
+				providers: [provider as never], capacityProviderId: 'provider', capabilityId: 'implementation',
+				agentClass: 'tester', activity: 'act', now });
+			expect(result['codex-implementation']?.measurements.map(({ id }) => id)).toEqual(['expired', 'accepted']);
+		} finally { await db.close(); }
+	}, 15_000);
 	it('does not exempt closing workdays from shared supply and weighted allocation', async () => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing' } } };
 		const store = { all: vi.fn(async () => []), first: vi.fn(async () => ({ ready_count: 1 })) };

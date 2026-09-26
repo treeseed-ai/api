@@ -1,11 +1,16 @@
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
+import { livingExecutionLifecycleOperations } from './execution/living-execution-lifecycle.ts';
 
 type Row=Record<string,unknown>;
 type Store=CapacityGovernanceDatabase&{getProviderAssignment(teamId:string,assignmentId:string):Promise<Row|null>};
 
 function record(value:unknown):Row { return value&&typeof value==='object'&&!Array.isArray(value)?value as Row:{}; }
+function jsonRecord(value:unknown):Row {
+	if(typeof value!=='string')return record(value);
+	try{return record(JSON.parse(value));}catch{return {};}
+}
 
 export async function suspendAssignmentForDiscussionResponse(store:Store,input:{
 	assignmentId:string;teamId:string;leaseToken:string;discussionId:string;messageId:string;
@@ -49,10 +54,31 @@ export async function closeSuspendedConversationExecution(store:Store,assignment
 		WHERE invocation.id=? AND invocation.team_id=? AND invocation.assignment_id=? AND invocation.status='suspended'
 		  AND invocation.final_message_ref IS NOT NULL LIMIT 1`,[assignment.id,assignment.teamId,assignment.invocationId,assignment.teamId,assignment.id]);
 	if(!ready) throw new CapacityGovernanceError('communication_suspension_settlement_incomplete','Suspended conversation cannot close before its final message and exact settlement are durable.',409,{assignmentId:assignment.id,invocationId:assignment.invocationId});
-	const summary=JSON.stringify({invocationId:assignment.invocationId,assignmentId:assignment.id,outcome:'required_response_suspended',finalMessageRef:ready.final_message_ref});
+	const run=await store.first(`SELECT parameters_json,execution_kind,status FROM capacity_workday_runs
+		WHERE team_id=? AND id=? LIMIT 1`,[assignment.teamId,assignment.workDayId]);
+	if(!run) throw new CapacityGovernanceError('communication_workday_missing','Suspended conversation cannot close without its exact workday.',409,{assignmentId:assignment.id,workdayId:assignment.workDayId});
+	const executionKind=String(run.execution_kind??'');
+	if(!['conversation','workday'].includes(executionKind)) throw new CapacityGovernanceError(
+		'communication_workday_kind_invalid','Suspended conversation must belong to a conversation execution or an active parent workday.',409,
+		{assignmentId:assignment.id,workdayId:assignment.workDayId,executionKind},
+	);
+	const parameters=jsonRecord(run.parameters_json),appliedPlan=record(parameters.appliedPlan);
+	if(appliedPlan.schemaVersion!=='treeseed.workday/v1') throw new CapacityGovernanceError('communication_workday_plan_invalid','Suspended conversation cannot close without its authoritative applied plan.',409,{assignmentId:assignment.id,workdayId:assignment.workDayId});
+	const graphOperations=await livingExecutionLifecycleOperations({store,assignment,status:'completed',now});
+	if(executionKind==='workday') {
+		if(String(run.status)!=='running') throw new CapacityGovernanceError(
+			'communication_parent_workday_not_running','A parent-workday response cannot complete after its workday stops.',409,
+			{assignmentId:assignment.id,workdayId:assignment.workDayId,status:run.status},
+		);
+		await store.batch(graphOperations);
+		return {status:run.status,completed_at:null};
+	}
+	const terminalParameters={...parameters,appliedPlan:{...appliedPlan,state:'ended',endedAt:appliedPlan.endedAt??now}};
+	const summary=JSON.stringify({invocationId:assignment.invocationId,assignmentId:assignment.id,outcome:'required_response_completed',finalMessageRef:ready.final_message_ref});
 	await store.batch([
-		{query:`UPDATE capacity_workday_runs SET status='degraded',summary_json=?,completed_at=COALESCE(completed_at,?),updated_at=?
-			WHERE team_id=? AND execution_kind='conversation' AND status='running' AND id=?`,params:[summary,now,now,assignment.teamId,assignment.workDayId]},
+		...graphOperations,
+		{query:`UPDATE capacity_workday_runs SET status='completed',parameters_json=?,summary_json=?,completed_at=COALESCE(completed_at,?),updated_at=?
+			WHERE team_id=? AND execution_kind='conversation' AND status='running' AND id=?`,params:[JSON.stringify(terminalParameters),summary,now,now,assignment.teamId,assignment.workDayId]},
 	]);
 	return store.first(`SELECT status,completed_at FROM capacity_workday_runs WHERE team_id=? AND execution_kind='conversation'
 		AND id=?`,[assignment.teamId,assignment.workDayId]);

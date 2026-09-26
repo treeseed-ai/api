@@ -46,13 +46,21 @@ export async function resolveReviewDisposition(store: CapacityGovernanceDatabase
 	const predecessorRows = await store.all(`SELECT completed.assignment_result_json,actor.workspace,actor.source_ref_json
 		FROM execution_edges edge
 		JOIN execution_nodes actor ON actor.team_id=edge.team_id AND actor.id=edge.from_node_id AND actor.pair_role='actor'
-		JOIN capacity_provider_assignments completed ON completed.team_id=edge.team_id
-			AND completed.execution_node_id=actor.id AND completed.execution_node_revision=actor.node_revision
-			AND completed.status='completed'
+	JOIN LATERAL (
+			SELECT assignment_result_json FROM capacity_provider_assignments candidate
+			WHERE candidate.team_id=edge.team_id AND candidate.execution_node_id=actor.id
+				AND candidate.status='completed' AND candidate.assignment_result_json IS NOT NULL
+				${assignment.executionMode === 'simulation' && assignment.workDayId ? 'AND candidate.work_day_id=?' : ''}
+				AND candidate.completed_at<=?
+			ORDER BY candidate.execution_node_revision DESC,candidate.completed_at DESC,candidate.id DESC LIMIT 1
+		) completed ON true
 		WHERE edge.team_id=? AND edge.to_node_id=? AND edge.provenance='review-pair'
-			AND edge.graph_revision_removed IS NULL`, [assignment.teamId, assignment.executionNodeId]);
+			AND edge.graph_revision_removed IS NULL`, [...(assignment.executionMode === 'simulation' && assignment.workDayId ? [assignment.workDayId] : []), assignment.assignedAt ?? assignment.createdAt,
+			assignment.teamId, assignment.executionNodeId]);
+	const expected = new Set(assignment.assignmentAttempt?.predecessorResultIds ?? []);
 	const candidates = predecessorRows.flatMap((row) => {
 		const parsed = assignmentResultSchema.safeParse(record(row.assignment_result_json));
+		if (parsed.success && expected.size && !expected.has(parsed.data.id)) return [];
 		const references = parsed.success ? parsed.data.references.filter((reference) => reference.kind !== 'url') : [];
 		return references.length > 0 ? references : text(row.workspace) === 'read-only' ? [record(row.source_ref_json)] : [];
 	});

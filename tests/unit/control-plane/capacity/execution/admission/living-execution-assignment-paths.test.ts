@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reservationFairUsage, treeDxAuthorizedPaths, workdayConcurrencyAvailable } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
+import { prioritizeCommunicationCandidates, reservationFairUsage, treeDxAuthorizedPaths, workdayConcurrencyAvailable } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/living-execution-assignment.ts';
 
 describe('living execution TreeDX path authority', () => {
 	it('keeps communication admission independent of the ordinary workday slot', () => {
@@ -8,6 +8,12 @@ describe('living execution TreeDX path authority', () => {
 		expect(workdayConcurrencyAvailable('communication', { workday: 1, conversation: 1 }, policy)).toBe(true);
 		expect(workdayConcurrencyAvailable('communication', { workday: 0, conversation: 2 }, policy)).toBe(false);
 		expect(workdayConcurrencyAvailable('reviewing', { workday: 0, conversation: 2 }, policy)).toBe(true);
+	});
+	it('services ready communication before ordinary workday candidates', () => {
+		const planning = { node: { kind: 'planning', id: 'planning' } };
+		const communication = { node: { kind: 'communication', id: 'communication' } };
+		expect(prioritizeCommunicationCandidates([planning, communication])).toEqual([communication]);
+		expect(prioritizeCommunicationCandidates([planning])).toEqual([planning]);
 	});
 	it('counts active reservations once and releases unused terminal capacity for fairness', () => {
 		const rows = ['reserved', 'consuming', 'consumed', 'released'].map((state) => ({

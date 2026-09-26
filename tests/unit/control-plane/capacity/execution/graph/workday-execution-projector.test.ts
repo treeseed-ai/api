@@ -50,6 +50,40 @@ describe('workday living-graph projection', () => {
 			workItems: [{ id: 'implementation', agentClass: 'engineer', review: 'required' }] } } } });
 		expect(participants.filter(participant => participant.activity === 'estimating').map(participant => participant.definition.agentClass))
 			.toEqual(['engineer', 'reviewer']);
+		expect(workdayParticipants({ ...parameters, proposalsByProjectId: { sdk: { executionPlan: {
+			workItems: [{ id: 'implementation', agentClass: 'engineer', review: 'required',
+				estimate: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 180, rationale: 'Measured owner estimate.' },
+				reviewEstimate: { minimumSeconds: 30, expectedSeconds: 60, maximumSeconds: 90, rationale: 'Measured review estimate.' } }] } } } })
+			.filter(participant => participant.activity === 'estimating')).toEqual([]);
+	});
+	it('projects estimates only for missing owner and reviewer measurements', () => {
+		const classes = ['architect', 'engineer', 'reviewer'];
+		const profiles = Object.fromEntries(classes.map((agentClass) => {
+			const agent = definition(agentClass) as ReturnType<typeof definition> & { activityProfiles: Record<string, unknown> };
+			agent.activityProfiles.estimating = { handler: 'estimate', permissions, prompt: { system: 'Estimate exact work.' },
+				...(agentClass === 'engineer' ? { dependsOn: { agents: ['architect'] } } : {}) };
+			return [`sdk:${agentClass}`, agent];
+		}));
+		const appliedPlan = compileWorkday({ id: 'missing-estimates', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation', policy: { durationSeconds: 1800, maximumConcurrency: 1,
+				planningTurnMaximumSeconds: 60, communicationConcurrency: 1, projectPercentages: {}, agentClassPercentages: {} },
+			agentIds: classes.map((agentClass) => `sdk/sdk/${agentClass}:estimating`), startsAt: '2026-09-14T12:00:00.000Z' });
+		const estimate = { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 180, rationale: 'Existing exact estimate.' };
+		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1, profiles, sources: [{ id: appliedPlan.id,
+			teamId: 'team', proposalsByProjectId: { sdk: { executionPlan: { workItems: [
+				{ id: 'architecture', agentClass: 'architect', review: 'required', estimate },
+				{ id: 'implementation', agentClass: 'engineer', review: 'required', reviewEstimate: estimate },
+			] } } }, parameters: { appliedPlan, scheduledProjectIds: ['sdk'],
+				planningSourceByProjectId: { sdk: { store: 'treedx', model: 'proposal', id: 'proposal', revision: 1,
+					repository: 'sdk-library', commit: 'b'.repeat(40), path: 'proposals/golden.mdx' } },
+				agentProfilesByProjectId: { sdk: { agents: Object.values(profiles).map((agent) => ({ definition: agent,
+					activities: ['estimating'] })) } } } }] });
+		expect(graph.nodes.filter((node) => node.kind === 'estimating').map((node) => node.agentClass).sort())
+			.toEqual(['engineer', 'reviewer']);
+		expect(graph.nodes.find((node) => node.agentClass === 'engineer')?.acceptanceCriteria)
+			.toContain('Estimate work item implementation: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.');
+		expect(graph.nodes.find((node) => node.agentClass === 'reviewer')?.acceptanceCriteria)
+			.toEqual(['Estimate the generated review of work item architecture independently: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.']);
 	});
 	it('projects six work-owner contributions, including multiple items for Engineer, and one Reviewer', () => {
 		const owners = ['researcher', 'architect', 'tester', 'engineer', 'technical-writer', 'releaser'];
@@ -75,8 +109,13 @@ describe('workday living-graph projection', () => {
 			} }] };
 		const graph = projectActiveWorkdays(projectionInput);
 		expect(graph.nodes).toHaveLength(7);
-		expect(graph.edges).toHaveLength(0);
-		expect(graph.nodes.filter((node) => node.kind === 'estimating').every((node) => !node.workItemId)).toBe(true);
+		expect(graph.edges).toHaveLength(6);
+		expect(graph.edges.filter((edge) => edge.toNodeId.endsWith('sdk/reviewer:estimating'))
+			.map((edge) => edge.fromNodeId).sort()).toEqual(owners.map((owner) =>
+			`planning:seven-estimates:1:sdk/sdk/${owner}:estimating`).sort());
+		expect(graph.nodes.filter((node) => node.kind === 'estimating' && node.agentClass !== 'engineer'
+			&& node.agentClass !== 'reviewer').every((node) => node.workItemId === `${node.agentClass}-work`)).toBe(true);
+		expect(graph.nodes.find((node) => node.agentClass === 'engineer')?.workItemId).toBeUndefined();
 		for (const agentClass of owners) expect(graph.nodes.find((node) => node.agentClass === agentClass)?.acceptanceCriteria)
 			.toContain(`Estimate work item ${agentClass}-work: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.`);
 		expect(graph.nodes.find((node) => node.agentClass === 'engineer')?.acceptanceCriteria)
@@ -119,6 +158,30 @@ describe('workday living-graph projection', () => {
 		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
 	});
 
+	it('blocks closing and Reporter on the selected decision review terminals', () => {
+		const reporter = definition('reporter');
+		const plan = compileWorkday({ id: 'decision-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation', policy: { durationSeconds: 900, maximumConcurrency: 1,
+				communicationConcurrency: 1, projectPercentages: { sdk: 100 }, agentClassPercentages: {} },
+			agentIds: [], startsAt: '2026-09-22T12:00:00.000Z' });
+		const decision = { store: 'postgresql' as const, model: 'decision' as const, id: 'decision-1', revision: 1,
+			digest: `sha256:${'a'.repeat(64)}` };
+		const base = { schemaVersion: 'treeseed.execution-node/v1' as const, teamId: 'team', projectId: 'sdk',
+			sourceRef: decision, authorityRefs: [decision], ruleRevision: 1, nodeRevision: 1,
+			status: 'blocked' as const, graphRevisionCreated: 1, graphRevisionUpdated: 1 };
+		const actor = { ...base, id: 'actor', kind: 'acting' as const, pairRole: 'actor' as const,
+			workItemId: 'release', agentClass: 'releaser', maximumReviewCycles: 2 };
+		const reviewer = { ...base, id: 'reviewer', kind: 'reviewing' as const, pairRole: 'reviewer' as const,
+			workItemId: 'release', agentClass: 'reviewer', maximumReviewCycles: 2 };
+		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1,
+			sources: [{ id: plan.id, teamId: 'team', parameters: { appliedPlan: { ...plan, state: 'closing',
+				closingAt: '2026-09-22T12:15:00.000Z' }, scheduledProjectIds: ['sdk'], decisionIds: ['decision-1'] } }],
+			profiles: { 'sdk:reporter': reporter }, decisionNodes: [actor, reviewer] });
+		const condition = graph.nodes.find((node) => node.kind === 'condition')!;
+		expect(graph.edges.filter((candidate) => candidate.toNodeId === condition.id).map((candidate) => candidate.fromNodeId))
+			.toEqual(['reviewer']);
+	});
+
 	it('projects an explicitly selected estimating profile without falling back to planning', () => {
 		const architect = definition('architect') as ReturnType<typeof definition> & { activityProfiles: Record<string, unknown> };
 		architect.activityProfiles.estimating = { handler: 'estimate', permissions, prompt: { system: 'Estimate exact work.' } };
@@ -139,6 +202,7 @@ describe('workday living-graph projection', () => {
 				planningSourceByProjectId: { sdk: proposalRef },
 				agentProfilesByProjectId: { sdk: { revision: 'test', agents: [{ definition: architect, activities: ['estimating'] }] } } } }] });
 		expect(graph.nodes.filter((node) => node.kind === 'estimating')).toHaveLength(1);
+		expect(graph.nodes.find((node) => node.kind === 'estimating')?.workItemId).toBe('architecture-contract');
 		expect(graph.nodes.find((node) => node.kind === 'estimating')?.acceptanceCriteria)
 			.toContain('Estimate work item architecture-contract: minimumSeconds, expectedSeconds, maximumSeconds, and rationale.');
 		expect(graph.edges).toHaveLength(0);

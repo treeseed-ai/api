@@ -211,7 +211,8 @@ export function createGovernanceService(store: any, discussions: { create: (prin
 			try {
 				const authored = await discussions.create(principal, { teamId: proposal.teamId, projectId,
 					body: message, intent: 'discuss', topic: `Proposal ${proposalId} feedback`,
-					contextRefs: [], recipients: [] }, `proposal-feedback-resolution:${proposalId}:${feedbackId}:${proposal.activeVersion}`);
+					contextRefs: [], recipients: [], ...(optionalText(body.workdayId) ? { parentWorkdayId: optionalText(body.workdayId) } : {}) },
+					`proposal-feedback-resolution:${proposalId}:${feedbackId}:${proposal.activeVersion}`);
 				const contentPath = optionalText(authored.message?.path);
 				const commitSha = optionalText(authored.commitSha);
 				if (!contentPath || !commitSha) throw new GovernanceServiceError(503,

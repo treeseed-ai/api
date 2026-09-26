@@ -214,7 +214,7 @@ function prepareCapacitySettlement(
 export async function settleCapacityReservationExactlyOnce(database: CapacityGovernanceDatabase, input: CapacitySettlementRequest) {
 	await database.ensureInitialized();
 	if (!input.settlementKey.trim()) throw new CapacityGovernanceError('capacity_settlement_key_required', 'settlementKey is required.', 400);
-	const reservation = await database.first(`SELECT reservation.*, assignment.attempt_count AS assignment_attempt, assignment.parent_workday_id, assignment.parent_assignment_id, assignment.handoff_root_id, assignment.handoff_parent_id, assignment.handoff_depth, assignment.source_message_refs_json FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id = reservation.assignment_id WHERE reservation.id = ? AND reservation.team_id = ? LIMIT 1`, [input.reservationId, input.teamId]);
+	const reservation = await database.first(`SELECT reservation.*, assignment.attempt_count AS assignment_attempt, assignment.assignment_attempt_json, assignment.parent_workday_id, assignment.parent_assignment_id, assignment.handoff_root_id, assignment.handoff_parent_id, assignment.handoff_depth, assignment.source_message_refs_json FROM capacity_reservations reservation JOIN capacity_provider_assignments assignment ON assignment.id = reservation.assignment_id WHERE reservation.id = ? AND reservation.team_id = ? LIMIT 1`, [input.reservationId, input.teamId]);
 	if (!reservation) throw new CapacityGovernanceError('capacity_reservation_not_found', 'Capacity reservation does not exist.', 404);
 	const usageInput = usageReportInput(input);
 	const usageIdentityValue = capacityUsageIdentity(usageInput, reservation);

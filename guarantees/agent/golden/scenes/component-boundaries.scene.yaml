@@ -1,0 +1,101 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.component-boundaries
+title: api golden component boundaries
+scope: local-component-tests
+workflow:
+  - id: estimate-merge
+    action: { verifier: api.golden.estimate-merge }
+    expect: { status: passed }
+  - id: estimate-ownership
+    action: { verifier: api.golden.estimate-ownership }
+    expect: { status: passed }
+  - id: estimate-target
+    action: { verifier: api.golden.estimate-target }
+    expect: { status: passed }
+  - id: estimate-reviewer
+    action: { verifier: api.golden.estimate-reviewer }
+    expect: { status: passed }
+  - id: estimate-completeness
+    action: { verifier: api.golden.estimate-completeness }
+    expect: { status: passed }
+  - id: estimating-participants
+    action: { verifier: api.golden.estimating-participants }
+    expect: { status: passed }
+  - id: estimating-missing-only
+    action: { verifier: api.golden.estimating-missing-only }
+    expect: { status: passed }
+  - id: estimating-six-owners
+    action: { verifier: api.golden.estimating-six-owners }
+    expect: { status: passed }
+  - id: estimating-target-selection
+    action: { verifier: api.golden.estimating-target-selection }
+    expect: { status: passed }
+  - id: review-no-planning
+    action: { verifier: api.golden.review-no-planning }
+    expect: { status: passed }
+  - id: authority-gate
+    action: { verifier: api.golden.authority-gate }
+    expect: { status: passed }
+  - id: planning-authority
+    action: { verifier: api.golden.planning-authority }
+    expect: { status: passed }
+  - id: planning-dependencies
+    action: { verifier: api.golden.planning-dependencies }
+    expect: { status: passed }
+  - id: estimate-preservation
+    action: { verifier: api.golden.estimate-preservation }
+    expect: { status: passed }
+  - id: closed-authority
+    action: { verifier: api.golden.closed-authority }
+    expect: { status: passed }
+  - id: graph-generation
+    action: { verifier: api.golden.graph-generation }
+    expect: { status: passed }
+  - id: dependencies
+    action: { verifier: api.golden.dependencies }
+    expect: { status: passed }
+  - id: research-parallel
+    action: { verifier: api.golden.research-parallel }
+    expect: { status: passed }
+  - id: exact-review
+    action: { verifier: api.golden.exact-review }
+    expect: { status: passed }
+  - id: restart
+    action: { verifier: api.golden.restart }
+    expect: { status: passed }
+  - id: missing-result
+    action: { verifier: api.golden.missing-result }
+    expect: { status: passed }
+  - id: admission-fence
+    action: { verifier: api.golden.admission-fence }
+    expect: { status: passed }
+  - id: concurrency
+    action: { verifier: api.golden.concurrency }
+    expect: { status: passed }
+  - id: cancellation
+    action: { verifier: api.golden.cancellation }
+    expect: { status: passed }
+  - id: request-changes
+    action: { verifier: api.golden.request-changes }
+    expect: { status: passed }
+  - id: review-exhaustion
+    action: { verifier: api.golden.review-exhaustion }
+    expect: { status: passed }
+  - id: fresh-simulation
+    action: { verifier: api.golden.fresh-simulation }
+    expect: { status: passed }
+  - id: revision-feedback
+    action: { verifier: api.golden.revision-feedback }
+    expect: { status: passed }
+  - id: candidate-dependency
+    action: { verifier: api.golden.candidate-dependency }
+    expect: { status: passed }
+  - id: profile-integrity
+    action: { verifier: api.golden.profile-integrity }
+    expect: { status: passed }
+  - id: reporter-context
+    action: { verifier: api.golden.reporter-context }
+    expect: { status: passed }
+  - id: reporter-terminal-gate
+    action: { verifier: api.golden.reporter-terminal-gate }
+    expect: { status: passed }

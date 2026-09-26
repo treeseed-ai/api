@@ -39,13 +39,15 @@ export function terminalPerformance(
 		: emptyCapacityBudget(String(candidate.deadline ?? now), Math.max(0, Number(record(candidate.time).requestedSeconds ?? 0)));
 	const completion = record(input.completion);
 	const usage = record(input.usage);
+	const activity = String(record(record(assignment.assignmentAttempt).effectiveProfile).activity
+		?? metadata.activityProfile ?? metadata.activityType ?? assignment.mode);
 	const disposition = status === 'completed'
 		? String(completion.disposition ?? 'completed')
 		: assignmentFailureDisposition(input);
 	return {
 		schemaVersion: ASSIGNMENT_PERFORMANCE_SCHEMA, assignmentId: assignment.id, workdayId: assignment.workDayId ?? null,
 		teamId: assignment.teamId, projectId: assignment.projectId, agentId: assignment.agentId ?? null,
-		agentClassId: assignment.projectAgentClassId, activityProfile: String(metadata.activityProfile ?? metadata.activityType ?? assignment.mode),
+		agentClassId: assignment.projectAgentClassId, activityProfile: activity,
 		handlerId: assignment.handlerId ?? null, capacityProviderId: assignment.capacityProviderId,
 		executionProviderId: assignment.executionProviderId ?? null, model: metadata.model ? String(metadata.model) : null,
 		groupIds: Array.isArray(metadata.groupIds) ? metadata.groupIds.map(String) : [],
@@ -56,7 +58,7 @@ export function terminalPerformance(
 			handlerRevision: metadata.handlerRevision ? String(metadata.handlerRevision) : null,
 			groupMembershipRevision: metadata.groupMembershipRevision ? String(metadata.groupMembershipRevision) : null,
 			executionProviderConfigurationRevision: metadata.executionProviderConfigurationRevision ? String(metadata.executionProviderConfigurationRevision) : null },
-		taskSignature: `${assignment.projectAgentClassId}:${assignment.mode}`,
+		taskSignature: `${assignment.projectAgentClassId}:${activity}`,
 		disposition, reason: String(input.reason ?? input.message ?? (status === 'completed' ? 'Assignment completed.' : 'Assignment failed.')),
 		acceptanceChecks: Array.isArray(completion.acceptanceChecks) ? completion.acceptanceChecks : [],
 		completedScope: [], remainingScope: [], artifactRefs: Array.isArray(completion.durableArtifactRefs) ? completion.durableArtifactRefs.map(String) : [], budget,

@@ -32,9 +32,18 @@ export async function evaluateProviderAssignmentLeaseAuthority(
 		database.first(`SELECT status FROM treedx_proxy_handles WHERE assignment_id = ? AND team_id = ? LIMIT 1`, [assignmentId, principal.teamId]),
 	]);
 	const selectedSessionId = availabilitySessionId || assignment.provider_session_id;
-	const session = selectedSessionId
+	let session = selectedSessionId
 		? await database.first(`SELECT * FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? LIMIT 1`, [selectedSessionId, principal.membershipId, principal.teamId])
 		: await database.first(`SELECT * FROM capacity_provider_availability_sessions WHERE membership_id = ? AND team_id = ? AND status = 'open' ORDER BY refreshed_at DESC, updated_at DESC LIMIT 1`, [principal.membershipId, principal.teamId]);
+	// A provider can re-open availability while an already leased assignment is preparing its
+	// source. Continue that exact lease under the same approved membership, never a new claim.
+	const leaseExpiry = assignment.lease_expires_at ? Date.parse(String(assignment.lease_expires_at)) : Number.NaN;
+	if (!availabilitySessionId && session?.status !== 'open' && assignment.status === 'leased'
+		&& assignment.lease_state === 'leased' && Number.isFinite(leaseExpiry) && leaseExpiry > Date.parse(now)) {
+		const current = await database.first(`SELECT * FROM capacity_provider_availability_sessions WHERE membership_id = ? AND team_id = ? AND capacity_provider_id = ? AND status = 'open' ORDER BY refreshed_at DESC, updated_at DESC LIMIT 1`,
+			[principal.membershipId, principal.teamId, principal.capacityProviderId]);
+		if (current) session = current;
+	}
 	const reasons: string[] = [];
 	if (String(assignment.membership_id ?? '') !== principal.membershipId) reasons.push('assignment_membership_mismatch');
 	if (membership?.membership_status !== 'approved') reasons.push('membership_not_approved');
@@ -43,7 +52,6 @@ export async function evaluateProviderAssignmentLeaseAuthority(
 	else {
 		if (!['reserved', 'consuming'].includes(String(reservation.state))) reasons.push('reservation_not_active');
 	}
-	const leaseExpiry = assignment.lease_expires_at ? Date.parse(String(assignment.lease_expires_at)) : Number.NaN;
 	const activeWorkdayStatus = 'running';
 	const validCompletedWorkdayLease = workday?.status === 'completed'
 		&& assignment.status === 'leased'

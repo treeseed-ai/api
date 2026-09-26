@@ -21,8 +21,12 @@ describe('living execution admission', () => {
 		expect(sql).toMatch(/capacity_workday_runs WHERE team_id=\? AND id=\? AND status='running' FOR UPDATE/u);
 		expect(sql).toMatch(/active\.execution_kind=\?[\s\S]*active\.status IN \('pending','leased','running'\)\) < \?/u);
 		expect(sql).toMatch(/prior\.status<>'returned'/u);
+		expect(sql).toMatch(/review_pair\.provenance='review-pair'/u);
+		expect(sql).toMatch(/reviewDisposition\}'='request-changes'/u);
+		expect(sql).toMatch(/>=COALESCE\(reviewer\.maximum_review_cycles,1\)/u);
 		expect(sql).toMatch(/capacity_reservations/u);
 		expect(sql).toMatch(/committed_amount\+\?<=LEAST\(hard_limit,\?\)/u);
+		expect(sql).toMatch(/ON CONFLICT \(id\) DO UPDATE\s+SET hard_limit=EXCLUDED.hard_limit/u);
 		expect(sql).toMatch(/INSERT INTO capacity_reservation_counter_claims/u);
 		for (const operation of store.batch.mock.calls[0]![0]) {
 			expect((operation.query.match(/\?/gu) ?? []).length).toBe(operation.params.length);
@@ -77,9 +81,10 @@ describe('living execution admission', () => {
 				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt });
 		const operations = store.batch.mock.calls[0]![0] as Array<{ query: string; params: unknown[] }>;
 		const reservation = operations.find((operation) => operation.query.includes('INSERT INTO capacity_reservations'))!;
-		expect(reservation.params.slice(-4)).toEqual(['team', 'workday', 'workday', 1]);
+		expect(reservation.params.slice(-8)).toEqual(['team', 'workday', 'workday', 1, 'team', 'provider', 'lane', 1]);
 		const insertedAssignment = operations.find((operation) => operation.query.includes('INSERT INTO capacity_provider_assignments'))!;
 		expect(reservation.query).toMatch(/prior\.execution_node_revision=node\.node_revision[\s\S]*prior\.status<>'returned'/u);
+		expect(reservation.query).toContain('node.workday_id IS NULL OR review_history.work_day_id=node.workday_id');
 		expect(insertedAssignment.query).toMatch(/prior\.execution_node_revision=\?[\s\S]*prior\.status<>'returned'/u);
 		expect(reservation.query).toMatch(/prior\.execution_kind='conversation'[\s\S]*prior\.lifecycle_code='discussion_response_required'/u);
 		expect(insertedAssignment.query).toMatch(/prior\.execution_kind='conversation'[\s\S]*prior\.lifecycle_code='discussion_response_required'/u);
@@ -96,6 +101,6 @@ describe('living execution admission', () => {
 		const binding = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('UPDATE agent_invocation_requests'))!;
 		expect(binding.params).toEqual(['assignment', assignment.createdAt, 'invocation-1', 'team', 'assignment']);
 		const reservation = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_reservations'))!;
-		expect(reservation.params.slice(-4)).toEqual(['team', 'workday', 'conversation', 2]);
+		expect(reservation.params.slice(-8)).toEqual(['team', 'workday', 'conversation', 2, 'team', 'provider', 'communication', 1]);
 	});
 });

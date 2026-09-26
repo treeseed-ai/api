@@ -57,9 +57,10 @@ export function mergeAssignmentEstimate(input: {
 		const estimate = record(candidateItems[target][field]);
 		if (!Object.keys(estimate).length || !text(estimate.rationale)) throw new CapacityGovernanceError(
 			'assignment_estimate_missing', 'Estimator result must include a structured estimate and rationale for each assigned work item.', 409);
-		const existing = currentItems[target][field];
-		if (existing !== undefined && stable(existing) !== stable(estimate)) throw new CapacityGovernanceError(
-			'assignment_estimate_conflict', 'The assigned work item already has a different estimate.', 409);
+		// Estimates remain class-owned and mutable throughout planning. The living
+		// graph serializes each class's rounds, so a later authorized turn may refine
+		// its prior value after seeing predecessor contributions. Proposal decision
+		// closes this path; unrelated classes and fields remain rejected above.
 	}
 	return { ...input.current, executionPlan: { ...record(input.current.executionPlan),
 		workItems: currentItems.map((item, itemIndex) => targets.includes(itemIndex)

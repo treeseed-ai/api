@@ -40,9 +40,9 @@ export async function synthesizeProviderAssignments(
 	const now = new Date().toISOString();
 	const context = await resolveProviderSynthesisContext(store, principal, { ...input, now });
 	const providerSessionId = String(input.sessionId ?? input.providerSessionId ?? context.session.id);
-	const assignment = await assignNextReadyExecutionNode(store, principal, providerSessionId, context.executionProviders, now);
+	const { assignment, selection } = await assignNextReadyExecutionNode(store, principal, providerSessionId, context.executionProviders, now);
 	return {
 		assignments: assignment ? [assignment] : [],
-		diagnostics: { source: 'living-execution-graph', assigned: Boolean(assignment) },
+		diagnostics: { source: 'living-execution-graph', assigned: Boolean(assignment), selection },
 	};
 }

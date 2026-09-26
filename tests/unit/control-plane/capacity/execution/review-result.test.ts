@@ -25,11 +25,13 @@ describe('review result authority', () => {
 				references: [{ kind: 'git', repository: 'treeseed-ai/sdk', commit: candidateCommit }] },
 		}]) };
 		await expect(resolveReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team', projectId: 'project',
-			executionNodeId: 'reviewer', executionNodeRevision: 1 } as never, result, async () => decision))
+			executionNodeId: 'reviewer', executionNodeRevision: 1, assignedAt: '2026-09-13T11:59:00.000Z' } as never, result, async () => decision))
 			.resolves.toBe('request-changes');
 		await expect(resolveReviewDisposition(store as never, { id: 'review-assignment', teamId: 'team', projectId: 'project',
-			executionNodeId: 'reviewer', executionNodeRevision: 1 } as never, result, async () => ({ ...decision,
+			executionNodeId: 'reviewer', executionNodeRevision: 1, assignedAt: '2026-09-13T11:59:00.000Z' } as never, result, async () => ({ ...decision,
 				subjectRef: { ...decision.subjectRef, commit: 'd'.repeat(40) } }))).rejects.toMatchObject({ code: 'review_decision_required' });
+		expect(store.all).toHaveBeenCalledWith(expect.stringContaining('candidate.completed_at<=?'),
+			['2026-09-13T11:59:00.000Z', 'team', 'reviewer']);
 	});
 
 	it('accepts the exact source only for a read-only actor with no produced candidate', async () => {

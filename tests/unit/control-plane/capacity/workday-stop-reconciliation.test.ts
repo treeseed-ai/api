@@ -32,6 +32,9 @@ describe('workday stop when graph reconciliation fails', () => {
 				run = { ...run, ...input } as typeof run;
 				return run;
 			}),
+			terminalizeCapacityWorkdayAssignments: vi.fn(async () => ({ assignmentCount: 2, completedAssignments: 1,
+				failedAssignments: 1, unfinishedAssignmentCount: 0, deferredActiveAssignmentCount: 0,
+				settlementErrors: [], settlementErrorCount: 0, settlementErrorsTruncated: false })),
 		};
 		mocks.advance.mockImplementation(async () => {
 			run = { ...run, parameters: { appliedPlan: { state: 'closing' } } };
@@ -40,8 +43,12 @@ describe('workday stop when graph reconciliation fails', () => {
 		mocks.reconcile.mockRejectedValue(Object.assign(new Error('Invalid proposal'), { code: 'execution_permission_ceiling_exceeded' }));
 
 		const result = await createWorkdayService(store).stop(principal, 'team-1', 'run-1', { reason: 'operator stop' });
-		expect(result).toMatchObject({ run: { status: 'failed', parameters: { appliedPlan: { state: 'ended' } } },
+		expect(result).toMatchObject({ run: { status: 'cancelled', parameters: { appliedPlan: { state: 'ended' } } },
+			terminalization: { unfinishedAssignmentCount: 0, deferredActiveAssignmentCount: 0 },
 			reconciliation: { status: 'deferred', code: 'execution_permission_ceiling_exceeded' } });
-		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team-1', 'run-1', expect.objectContaining({ status: 'failed' }));
+		expect(store.terminalizeCapacityWorkdayAssignments).toHaveBeenCalledWith('team-1', 'run-1', expect.objectContaining({
+			code: 'workday_operator_stopped', source: 'capacity_workday_operator_stop',
+		}));
+		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team-1', 'run-1', expect.objectContaining({ status: 'cancelled' }));
 	});
 });

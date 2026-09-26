@@ -6,7 +6,8 @@ vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => (
 	resolveKnowledgeGatewayConnection: vi.fn(async () => ({ repositoryId: 'repository', client: gateway })),
 }));
 
-import { executionNodeRunScope, listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { executionNodeRunScope, linearPredecessorSourceCommit, listReadyExecutionNodes, workItemContext } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+import { resolveKnowledgeGatewayConnection } from '../../../../../src/api/knowledge/gateway-treedx-connection.ts';
 
 const projectId = 'project';
 const sourceRef = {
@@ -60,11 +61,28 @@ const result = {
 
 const run = { id: 'run', teamId: 'team', parameters: { decisionIds: ['decision'] } };
 
+it('selects one verified linear predecessor and rejects divergent candidates', () => {
+	const tester = { resultId: 'tester', commit: 'a'.repeat(40), predecessorResultIds: [] };
+	const engineer = { resultId: 'engineer', commit: 'b'.repeat(40), predecessorResultIds: ['tester'] };
+	const independent = { resultId: 'independent', commit: 'c'.repeat(40), predecessorResultIds: [] };
+	expect(linearPredecessorSourceCommit([tester, engineer])).toBe(engineer.commit);
+	expect(linearPredecessorSourceCommit([engineer, tester])).toBe(engineer.commit);
+	expect(linearPredecessorSourceCommit([tester, independent])).toBeUndefined();
+});
+
 it('keeps explicit proposal workdays away from unrelated historical decisions', () => {
 	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { proposalIds: ['golden-sdk'] } });
 	expect(scope.parameters).toEqual(['run', 'golden-sdk']);
 	expect(scope.sql).toContain("node.source_ref_json::jsonb->>'id' IN (?)");
 	expect(scope.sql).toContain('node.workday_id IS NULL');
+});
+
+it('keeps decision-only workdays away from unselected proposal-governance reviews', () => {
+	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { decisionIds: ['decision'] } });
+	expect(scope.parameters).toEqual(['run']);
+	expect(scope.sql).toContain("node.kind='reviewing'");
+	expect(scope.sql).toContain("node.pair_role IS NULL");
+	expect(scope.sql).toContain("node.source_ref_json::jsonb->>'model'='proposal'");
 });
 const project = { id: projectId, slug: 'sdk' };
 const contextRefs = [{ store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) }];
@@ -77,6 +95,7 @@ const teamContextStore = {
 
 describe('direct ready-node admission input', () => {
 	beforeEach(() => {
+		vi.mocked(resolveKnowledgeGatewayConnection).mockClear();
 		gateway.readRepositoryFile.mockResolvedValue({
 			resolvedRef: agentCommit, file: { path: agentPath, frontmatter: definition },
 		});
@@ -128,14 +147,16 @@ describe('direct ready-node admission input', () => {
 			},
 		} });
 		const store = {
-			first: vi.fn(async () => ({ content_refs_json: [{
-				kind: 'proposal', id: 'proposal', projectId, immutableRef: 'b'.repeat(40),
-				path: 'proposals/one.mdx', digest: `sha256:${digest}`,
-			}] })),
+			first: vi.fn(async (query: string) => query.includes('governance_proposal_versions')
+				? { version: 1 }
+				: { requested_at: '2026-09-22T07:00:00.000Z', content_refs_json: [{
+					kind: 'proposal', id: 'proposal', projectId, immutableRef: 'b'.repeat(40),
+					path: 'proposals/one.mdx', digest: `sha256:${digest}`,
+				}] }),
 			getGovernanceProposal: vi.fn(async () => ({
-				id: 'proposal', teamId: 'team', projectId, activeVersion: 1, activeContentHash: digest,
+				id: 'proposal', teamId: 'team', projectId, activeVersion: 2, activeContentHash: 'f'.repeat(64),
 				metadata: { contentProvenance: {
-					repositoryId: 'repository', contentPath: 'proposals/one.mdx', commitSha: 'b'.repeat(40), digest,
+					repositoryId: 'repository', contentPath: 'proposals/one.mdx', commitSha: 'c'.repeat(40), digest: 'f'.repeat(64),
 				} },
 			})),
 			getProjectTreeDxLibrary: vi.fn(async () => ({ repositoryId: 'repository' })),
@@ -147,6 +168,8 @@ describe('direct ready-node admission input', () => {
 			},
 		} as never);
 		expect(refs).toEqual([expect.objectContaining({ store: 'treedx', model: 'proposal' }), gitRef]);
+		expect(store.first).toHaveBeenCalledWith(expect.stringContaining('governance_proposal_versions'),
+			['proposal', digest, '2026-09-22T07:00:00.000Z']);
 	});
 
 	it('loads the exact profile and predecessor results without creating a demand record', async () => {
@@ -170,7 +193,27 @@ describe('direct ready-node admission input', () => {
 		expect(candidate.effectiveProfile.profileRef).toMatchObject({
 			store: 'treedx', repository: 'repository', commit: agentCommit, path: agentPath,
 		});
+		expect(resolveKnowledgeGatewayConnection).toHaveBeenCalledWith(store, expect.objectContaining({
+			projectId, write: false, readRefs: [agentCommit], workspacePaths: [agentPath],
+		}));
 		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
+	});
+	it('loads every canonical workday attempt for Reporter instead of stopping at condition nodes', async () => {
+		const reporter = { ...definition, id: 'agent:reporter', name: 'Reporter', agentClass: 'reporter',
+			activityProfiles: { reporting: { handler: 'reporter', permissions,
+				prompt: { system: 'Record exact workday evidence without a model.' } } } };
+		gateway.readRepositoryFile.mockResolvedValue({ resolvedRef: agentCommit,
+			file: { path: agentPath, frontmatter: reporter } });
+		const failed = { ...result, id: 'failed-result', assignmentId: 'failed-assignment', status: 'failed' };
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([{ ...nodeRow(), kind: 'reporting', pair_role: null,
+				workday_id: 'run', agent_class: 'reporter', authority_refs_json: [], workspace: 'treedx' }])
+			.mockResolvedValueOnce([classRow(reporter, 'class-reporter')])
+			.mockResolvedValueOnce([{ assignment_result_json: failed }, { assignment_result_json: result }]) };
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([failed, result]);
+		expect(store.all.mock.calls[2]).toEqual([expect.stringContaining('FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=?'), ['team', 'run']]);
+		expect(store.all.mock.calls[2]![0]).not.toContain('JOIN execution_edges');
 	});
 
 	it('carries an approved Reviewer result and its exact Actor Git candidate to dependent work', async () => {
@@ -186,7 +229,27 @@ describe('direct ready-node admission input', () => {
 		const [sql, bindings] = store.all.mock.calls[2]!;
 		expect(sql).toContain("pair.provenance='review-pair'");
 		expect(sql).toContain("reviewer.status='completed'");
-		expect(bindings).toEqual(['team', 'node', 'team', 'node']);
+		expect(sql.match(/candidate\.decision_id=\?/gu)).toHaveLength(2);
+		expect(bindings).toEqual(['decision', 'team', 'node', 'decision', 'team', 'node']);
+	});
+
+	it('does not carry an older decision review into an initial Actor revision', async () => {
+		const revised = nodeRow();
+		revised.node_revision = 2;
+		const store = { ...teamContextStore, all: vi.fn()
+			.mockResolvedValueOnce([revised])
+			.mockResolvedValueOnce([classRow(definition)])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([]) };
+		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(candidate.predecessorResults).toEqual([]);
+		const [priorActorSql, priorActorBindings] = store.all.mock.calls[3]!;
+		const [priorReviewerSql, priorReviewerBindings] = store.all.mock.calls[4]!;
+		expect(priorActorSql).toContain('result.decision_id=?');
+		expect(priorActorBindings).toEqual(['team', 'node', 2, 'decision']);
+		expect(priorReviewerSql).toContain('result.decision_id=?');
+		expect(priorReviewerBindings).toEqual(['team', projectId, 'implementation', 'decision']);
 	});
 
 	it('rejects a projected agent definition that differs from its exact TreeDX source', async () => {
@@ -290,7 +353,7 @@ describe('direct ready-node admission input', () => {
 		expect(candidate.contextRefs).toEqual(expect.arrayContaining([
 			expect.objectContaining({ store: 'git', commit: 'd'.repeat(40) }),
 		]));
-		expect(store.all.mock.calls[3]![1]).toEqual(['team', 'node', 18]);
-		expect(store.all.mock.calls[4]![1]).toEqual(['team', projectId, 'implementation']);
+		expect(store.all.mock.calls[3]![1]).toEqual(['team', 'node', 18, 'decision']);
+		expect(store.all.mock.calls[4]![1]).toEqual(['team', projectId, 'implementation', 'decision']);
 	});
 });

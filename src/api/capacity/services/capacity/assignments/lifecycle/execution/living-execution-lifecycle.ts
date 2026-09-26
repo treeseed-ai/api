@@ -25,6 +25,7 @@ export async function livingExecutionLifecycleOperations(input: {
 	assignment: DurableProviderAssignment;
 	status: string;
 	now: string;
+	returnCode?: string;
 	result?: AssignmentResult | null;
 	reviewDisposition?: 'approved' | 'request-changes' | null;
 }): Promise<Operation[]> {
@@ -33,7 +34,13 @@ export async function livingExecutionLifecycleOperations(input: {
 	const attempt = Number(assignment.assignmentAttempt?.attempt ?? 1);
 	const configuredAttempts = Number(record(record(assignment.capacityEnvelope).budget).maxAttempts ?? 1);
 	const maxAttempts = Number.isFinite(configuredAttempts) ? Math.max(1, Math.min(20, Math.floor(configuredAttempts))) : 1;
-	const nodeStatus = status === 'returned' ? attempt < maxAttempts ? 'ready' : 'failed'
+	// A control-plane restart can interrupt the provider's response before a
+	// governance review is committed. Give that exact review one bounded retry;
+	// an ordinary return still obeys the immutable assignment attempt limit.
+	const recoverableReviewReturn = status === 'returned'
+		&& (input.returnCode === 'provider_runtime_recovery' || input.returnCode === 'provider_restart_recovery')
+		&& attempt === 1 && !input.result;
+	const nodeStatus = status === 'returned' ? attempt < maxAttempts || recoverableReviewReturn ? 'ready' : 'failed'
 		: status === 'completed' ? 'completed'
 			: status === 'cancelled' ? 'cancelled' : 'failed';
 	const operations: Operation[] = [];
@@ -52,15 +59,24 @@ export async function livingExecutionLifecycleOperations(input: {
 	if (!target) return operations;
 	const revisionRequested = status === 'completed' && target.pairRole === 'reviewer'
 		&& input.reviewDisposition === 'request-changes';
-	const actor = revisionRequested ? nodes.find((node) => node.workItemId === target.workItemId
-		&& node.projectId === target.projectId && node.pairRole === 'actor') : undefined;
+	const pairEdge = revisionRequested ? edges.find((candidate) => candidate.toNodeId === target.id
+		&& candidate.provenance === 'review-pair') : undefined;
+	const actor = pairEdge ? nodes.find((node) => node.id === pairEdge.fromNodeId && node.pairRole === 'actor') : undefined;
+	const actorRevision = actor?.nodeRevision;
+	const reviewScope = assignment.executionMode === 'simulation' && assignment.workDayId
+		? 'AND history.work_day_id=?' : '';
+	const reviewScopeParams = reviewScope ? [assignment.workDayId] : [];
 	const priorReviewRow = revisionRequested ? await input.store.first(`SELECT COUNT(*) AS count
 		FROM capacity_provider_assignments WHERE team_id=? AND execution_node_id=?
-		AND status='completed' AND assignment_result_json IS NOT NULL`, [assignment.teamId, target.id]) : null;
+		AND status='completed' AND assignment_result_json IS NOT NULL
+		AND lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
+		${reviewScope ? 'AND work_day_id=?' : ''}`,
+		[assignment.teamId, target.id, ...reviewScopeParams]) : null;
 	const reviewExhausted = revisionRequested
 		&& Number(priorReviewRow?.count ?? 0) + 1 >= (target.maximumReviewCycles ?? 1);
 	if (revisionRequested && !actor) throw new Error('review_actor_node_missing');
-	target.status = nodeStatus as ExecutionNode['status'];
+	target.status = recoverableReviewReturn && target.workItemId !== 'proposal-review' && attempt >= maxAttempts
+		? 'failed' : nodeStatus as ExecutionNode['status'];
 	target.graphRevisionUpdated = nextRevision;
 	const changed = [target.id];
 	if (revisionRequested && actor) {
@@ -74,25 +90,46 @@ export async function livingExecutionLifecycleOperations(input: {
 		actor.graphRevisionUpdated = nextRevision;
 		changed.push(actor.id);
 	}
-	if (status === 'completed' && !revisionRequested) for (const successor of nodes.filter((node) => node.status === 'blocked')) {
+	if (status === 'completed' && !revisionRequested) for (const successor of nodes.filter((node) => node.status === 'blocked'
+		|| (target.pairRole === 'actor' && node.pairRole === 'reviewer' && node.status === 'failed'
+			&& node.workItemId === target.workItemId && node.nodeRevision <= target.nodeRevision))) {
 		const predecessorIds = edges.filter((edge) => edge.toNodeId === successor.id).map((edge) => edge.fromNodeId);
 		if (predecessorIds.includes(target.id) && predecessorIds.every((id) => nodes.find((node) => node.id === id)?.status === 'completed')) {
+			if (target.pairRole === 'actor' && successor.pairRole === 'reviewer') {
+				successor.nodeRevision = Math.max(successor.nodeRevision, target.nodeRevision);
+			}
 			successor.status = 'ready'; successor.graphRevisionUpdated = nextRevision; changed.push(successor.id);
 		}
 	}
 	if (revisionRequested && actor) operations.push({
 		query: `UPDATE execution_nodes SET
-			node_revision=node_revision+1,status=?,
+			node_revision=node_revision+1,status=CASE WHEN 1+(
+				SELECT COUNT(*) FROM capacity_provider_assignments history
+				WHERE history.team_id=? AND history.execution_node_id=? AND history.status='completed'
+				AND history.id<>?
+				AND history.assignment_result_json IS NOT NULL
+				AND history.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
+				${reviewScope}
+			)>=? THEN 'failed' ELSE 'blocked' END,
 			graph_revision_updated=?,updated_at=?
 			WHERE team_id=? AND id=? AND node_revision=? AND status IN ('assigned','running')`,
-		params: [reviewExhausted ? 'failed' : 'blocked', nextRevision, now, assignment.teamId, target.id, assignment.executionNodeRevision],
+		params: [assignment.teamId, target.id, assignment.id, ...reviewScopeParams, target.maximumReviewCycles ?? 1,
+			nextRevision, now, assignment.teamId, target.id, assignment.executionNodeRevision],
 	});
 	if (revisionRequested && actor) operations.push({
 		query: `UPDATE execution_nodes SET
-			node_revision=node_revision+1,status=?,
+			node_revision=node_revision+1,status=CASE WHEN 1+(
+				SELECT COUNT(*) FROM capacity_provider_assignments history
+				WHERE history.team_id=? AND history.execution_node_id=? AND history.status='completed'
+				AND history.id<>?
+				AND history.assignment_result_json IS NOT NULL
+				AND history.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
+				${reviewScope}
+			)>=? THEN 'blocked' ELSE 'ready' END,
 			graph_revision_updated=?,updated_at=?
-			WHERE team_id=? AND project_id=? AND work_item_id=? AND pair_role='actor' AND status='completed'`,
-		params: [reviewExhausted ? 'blocked' : 'ready', nextRevision, now, assignment.teamId, actor.projectId, actor.workItemId],
+			WHERE team_id=? AND id=? AND node_revision=? AND pair_role='actor' AND status='completed'`,
+		params: [assignment.teamId, target.id, assignment.id, ...reviewScopeParams, target.maximumReviewCycles ?? 1,
+			nextRevision, now, assignment.teamId, actor.id, actorRevision],
 	});
 	if (!revisionRequested) operations.push({
 		query: `UPDATE execution_nodes SET status=?,graph_revision_updated=?,updated_at=?
@@ -103,8 +140,12 @@ export async function livingExecutionLifecycleOperations(input: {
 			assignment.executionNodeId, assignment.executionNodeRevision],
 	});
 	if (status === 'completed' && !revisionRequested) operations.push({
-		query: `UPDATE execution_nodes target SET status='ready',graph_revision_updated=?,updated_at=?
-			WHERE target.team_id=? AND target.status='blocked'
+		query: `UPDATE execution_nodes target SET
+			node_revision=CASE WHEN ?='actor' AND target.pair_role='reviewer'
+				THEN GREATEST(target.node_revision,?) ELSE target.node_revision END,
+			status='ready',graph_revision_updated=?,updated_at=?
+			WHERE target.team_id=? AND (target.status='blocked' OR (?='actor' AND target.pair_role='reviewer'
+				AND target.work_item_id=? AND target.node_revision<=? AND target.status='failed'))
 			AND EXISTS (SELECT 1 FROM execution_edges edge WHERE edge.team_id=target.team_id
 				AND edge.to_node_id=target.id AND edge.from_node_id=? AND edge.graph_revision_removed IS NULL)
 			AND NOT EXISTS (
@@ -113,7 +154,8 @@ export async function livingExecutionLifecycleOperations(input: {
 				WHERE edge.team_id=target.team_id AND edge.to_node_id=target.id
 				AND edge.graph_revision_removed IS NULL AND predecessor.status<>'completed'
 			)`,
-		params: [nextRevision, now, assignment.teamId, assignment.executionNodeId],
+		params: [target.pairRole, target.nodeRevision, nextRevision, now, assignment.teamId,
+			target.pairRole, target.workItemId, target.nodeRevision, assignment.executionNodeId],
 	});
 	const assignmentAttempt = assignment.assignmentAttempt;
 	if (assignmentAttempt) operations.push({

@@ -15,6 +15,7 @@ describe('operator assignment requeue', () => {
 		getAssignment.mockResolvedValue({
 			id: 'assignment-1', teamId: 'team-1', status: 'returned', leaseState: 'released',
 			reservationId: 'reservation-1', executionNodeId: 'node-1', executionNodeRevision: 1,
+			stateVersion: 4, metadata: { retained: true },
 		});
 		const database = {
 			ensureInitialized: vi.fn(),
@@ -27,5 +28,12 @@ describe('operator assignment requeue', () => {
 
 		expect(result).toMatchObject({ demand: null, alreadyLeasable: false });
 		expect(database.first).toHaveBeenCalledOnce();
+		expect(database.first.mock.calls[0]?.[0]).toContain("target.status='ready'");
+		expect(database.first.mock.calls[0]?.[0]).toContain('marked_assignment');
+		expect(database.first.mock.calls[0]?.[0]).toContain("reopened.pair_role='actor'");
+		expect(database.first.mock.calls[0]?.[0]).toContain("reviewer.pair_role='reviewer'");
+		expect(JSON.parse(String(database.first.mock.calls[0]?.[1]?.[3]))).toMatchObject({
+			retained: true, operatorRetry: { requestedAt: expect.any(String) },
+		});
 	});
 });

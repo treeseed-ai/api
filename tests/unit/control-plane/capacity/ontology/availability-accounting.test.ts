@@ -3,7 +3,7 @@ import { assertMonotonicAvailabilityAccounting } from '../../../../../src/api/ca
 import { serializeAvailabilitySessionRow } from '../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
 const now = '2026-09-16T12:00:00.000Z';
 const observation = { day: '2026-09-16', observedAt: now, healthy: true, activeSeconds: 100, reservedSeconds: 0 };
-const adapter = { id: 'codex-implementation', nativeLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
+const adapter = { id: 'codex-implementation', adapter: 'codex', isolation: 'microvm', nativeLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
 	capabilityLimits: { implementation: { dailyActiveSecondsLimit: 28800 } } }, accountingObservation: {
 		modelUsage: observation, capabilityUsage: { implementation: observation } } };
 describe('availability usage continuity', () => {
@@ -13,6 +13,7 @@ describe('availability usage continuity', () => {
 			execution_providers_json: JSON.stringify([adapter]), capabilities_json: '[]', native_limits_json: '{}',
 			runner_pressure_json: '{}', constraints_json: '{}' });
 		expect(result?.snapshot.adapters[0]?.accountingObservation).toEqual(adapter.accountingObservation);
+		expect(result?.snapshot.adapters[0]).toMatchObject({ adapter: 'codex', isolation: 'microvm' });
 	});
 	it('rejects decreasing model usage even if the report is unhealthy or the adapter ID changes', () => {
 		const current = { ...adapter, id: 'another-terra', accountingObservation: { ...adapter.accountingObservation,

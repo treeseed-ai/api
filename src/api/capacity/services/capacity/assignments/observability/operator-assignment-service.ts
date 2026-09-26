@@ -86,14 +86,39 @@ export class OperatorAssignmentService {
 		);
 		if (assignment.executionNodeId) {
 			const now = new Date().toISOString();
-			const reopened = await this.database.first(`UPDATE execution_nodes SET status='ready',node_revision=node_revision+1,updated_at=?
-				WHERE team_id=? AND id=? AND node_revision>=? AND status IN ('failed','cancelled')
-				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active WHERE active.team_id=?
-					AND active.execution_node_id=execution_nodes.id AND active.execution_node_revision=execution_nodes.node_revision
+			const retryMetadata = { ...(assignment.metadata ?? {}), operatorRetry: {
+				requestedAt: now, requestedBy: input.actorId ?? null, reason: input.reason ?? null,
+			} };
+			const reopened = await this.database.first(`WITH target AS (
+				SELECT team_id,id,project_id,work_item_id,pair_role,source_ref_json,authority_refs_json,node_revision,status
+				FROM execution_nodes WHERE team_id=? AND id=? AND node_revision>=? FOR UPDATE
+			), marked_assignment AS (
+				UPDATE capacity_provider_assignments terminal SET metadata_json=?,state_version=state_version+1,updated_at=?
+				FROM target WHERE terminal.id=? AND terminal.team_id=? AND terminal.state_version=?
+				AND terminal.status IN ('returned','failed','expired','cancelled') AND terminal.lease_state<>'leased'
+				AND (target.status IN ('failed','cancelled') OR (target.status='ready' AND EXISTS (
+					SELECT 1 FROM capacity_provider_assignments prior WHERE prior.team_id=target.team_id
+					AND prior.execution_node_id=target.id AND prior.execution_node_revision=target.node_revision
+					AND prior.status IN ('completed','failed','cancelled','expired')
+				)))
+				AND NOT EXISTS (SELECT 1 FROM capacity_provider_assignments active WHERE active.team_id=target.team_id
+					AND active.execution_node_id=target.id AND active.execution_node_revision=target.node_revision
 					AND active.status IN ('pending','leased','running'))
-				RETURNING node_revision,status`,
-				[now, teamId, assignment.executionNodeId, assignment.executionNodeRevision,
-					teamId]);
+				RETURNING terminal.id
+			), reopened AS (
+				UPDATE execution_nodes node SET status='ready',node_revision=node.node_revision+1,updated_at=?
+				FROM target,marked_assignment WHERE node.team_id=target.team_id AND node.id=target.id
+				RETURNING node.team_id,node.project_id,node.work_item_id,node.pair_role,node.source_ref_json,node.authority_refs_json,node.node_revision,node.status
+			), paired_reviewer AS (
+				UPDATE execution_nodes reviewer SET status='blocked',node_revision=GREATEST(reviewer.node_revision,reopened.node_revision),updated_at=?
+				FROM reopened WHERE reopened.pair_role='actor'
+				AND reviewer.team_id=reopened.team_id AND reviewer.project_id=reopened.project_id
+				AND reviewer.work_item_id=reopened.work_item_id AND reviewer.pair_role='reviewer'
+				AND reviewer.source_ref_json=reopened.source_ref_json AND reviewer.authority_refs_json=reopened.authority_refs_json
+				RETURNING reviewer.id
+			) SELECT node_revision,status FROM reopened`,
+				[teamId, assignment.executionNodeId, assignment.executionNodeRevision,
+					JSON.stringify(retryMetadata), now, assignment.id, teamId, assignment.stateVersion, now, now]);
 			if (!reopened) {
 				const current = await this.database.first('SELECT node_revision,status FROM execution_nodes WHERE team_id=? AND id=? LIMIT 1',
 					[teamId, assignment.executionNodeId]);

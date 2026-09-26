@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGovernanceService, GovernanceServiceError } from '../../../src/api/control-plane/governance/governance-service.ts';
-import { commitProposalVersionContent } from '../../../src/api/control-plane/governance/proposal-version-content.ts';
+import { createGovernanceService, GovernanceServiceError } from '../../../../../src/api/control-plane/governance/governance-service.ts';
+import { commitProposalVersionContent } from '../../../../../src/api/control-plane/governance/proposal-version-content.ts';
 
-vi.mock('../../../src/api/control-plane/governance/proposal-version-content.ts', () => ({ commitProposalVersionContent: vi.fn() }));
-vi.mock('../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts', () => ({ reconcileExecutionGraph: vi.fn(async () => ({ replayed: false })) }));
-vi.mock('../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({ resolveKnowledgeGatewayConnection: vi.fn(async () => ({
+vi.mock('../../../../../src/api/control-plane/governance/proposal-version-content.ts', () => ({ commitProposalVersionContent: vi.fn() }));
+vi.mock('../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts', () => ({ reconcileExecutionGraph: vi.fn(async () => ({ replayed: false })) }));
+vi.mock('../../../../../src/api/knowledge/gateway-treedx-connection.ts', () => ({ resolveKnowledgeGatewayConnection: vi.fn(async () => ({
 	repositoryId: 'repository', client: { readRepositoryFile: async ({ ref, path }: { ref: string; path: string }) => ({
 		resolvedRef: ref, file: { path, content: '---\ntitle: Resolution\n---\nResolved.' },
 	}) },
@@ -70,10 +70,12 @@ describe('governance service mutation boundaries', () => {
 	});
 
 	it('resolves exact blocking feedback against the current immutable proposal revision', async () => {
-		const { store, service, principal } = fixture();
+		const { store, discussions, service, principal } = fixture();
 		const result = await service.resolveProposalFeedback(principal, 'project-1', 'proposal-1', 'feedback-1',
-			{ message: 'Revision 3 adds the deterministic gate.', expectedProposalVersion: 3 }, '3');
+			{ message: 'Revision 3 adds the deterministic gate.', expectedProposalVersion: 3, workdayId: 'workday-1' }, '3');
 		expect(result).toMatchObject({ proposalId: 'proposal-1', feedbackId: 'feedback-1', idempotentReplay: false });
+		expect(discussions.create).toHaveBeenCalledWith(principal,
+			expect.objectContaining({ parentWorkdayId: 'workday-1' }), expect.any(String));
 		expect(store.recordGovernanceEvent).toHaveBeenCalledWith(expect.objectContaining({
 			proposalVersion: 3, evidence: expect.objectContaining({ kind: 'response', feedbackStatus: 'resolved',
 				resolvesEventId: 'feedback-1', contentPath: 'discussion-messages/resolution.mdx', commitSha: 'b'.repeat(40),

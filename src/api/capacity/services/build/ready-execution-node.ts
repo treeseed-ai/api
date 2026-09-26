@@ -1,5 +1,6 @@
 import {
 	assignmentResultSchema,
+	assignmentAttemptSchema,
 	effectiveActivityProfileSchema,
 	validateAgentDefinitionModel,
 	type AssignmentResult,
@@ -27,7 +28,7 @@ const array = (value: unknown): unknown[] => {
 	if (typeof value === 'string') try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 	return [];
 };
-const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const text = (...values: unknown[]): string => values.map((value) => typeof value === 'string' ? value.trim() : '').find(Boolean) ?? '';
 const exactCommit = (...values: unknown[]): string => values.map(text).find((value) => /^[a-f0-9]{40}$/u.test(value)) ?? '';
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -66,29 +67,46 @@ export interface ReadyExecutionNode {
 	contextRefs: ExactEntityReference[];
 	sourceRepositories: string[];
 	predecessorResults: AssignmentResult[];
+	lineageSourceCommit?: string;
+	directPredecessorSourceCommit?: string;
 	readyAt: string;
+}
+
+export function linearPredecessorSourceCommit(entries: Array<{ resultId: string; commit: string; predecessorResultIds: string[] }>) {
+	const distinct = [...new Map(entries.map((entry) => [entry.resultId, entry])).values()];
+	const terminal = distinct.filter((entry) => distinct.every((other) =>
+		other.resultId === entry.resultId || entry.predecessorResultIds.includes(other.resultId)));
+	return terminal.length === 1 ? terminal[0]!.commit : undefined;
 }
 
 export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' | 'executionKind' | 'parameters'>) {
 	if (run.executionKind === 'conversation') {
 		return { sql: `node.kind='communication' AND node.workday_id=?`, parameters: [run.id] };
 	}
+	const proposalIds = Array.isArray(run.parameters.proposalIds) ? run.parameters.proposalIds.map(text).filter(Boolean) : [];
 	if (record(run.parameters.appliedPlan).state === 'closing') {
 		return { sql: `node.kind='reporting' AND node.workday_id=?`, parameters: [run.id] };
 	}
 	if (run.parameters.planningOnly === true) {
+		if (proposalIds.length) return {
+			sql: `(node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')
+				OR (node.workday_id IS NULL AND node.kind='reviewing' AND node.pair_role IS NULL
+					AND node.source_ref_json::jsonb->>'model'='proposal'
+					AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
+			parameters: [run.id, ...proposalIds],
+		};
 		return {
 			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')`,
 			parameters: [run.id],
 		};
 	}
-	const proposalIds = Array.isArray(run.parameters.proposalIds) ? run.parameters.proposalIds.map(text).filter(Boolean) : [];
 	if (proposalIds.length) return {
 		sql: `(node.workday_id=? OR (node.workday_id IS NULL
 			AND node.source_ref_json::jsonb->>'model'='proposal' AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
 		parameters: [run.id, ...proposalIds],
 	};
-	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'))`, parameters: [run.id] };
+	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'
+		AND NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal')))`, parameters: [run.id] };
 }
 
 /** Governance review is planning work; paired work-item review is acting work. */
@@ -99,7 +117,7 @@ export function isProposalGovernanceReview(node: Pick<ExecutionNode, 'kind' | 'p
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
 	const source = node.sourceRef;
 	if (node.kind === 'communication' && source.store === 'treedx' && source.repository && source.commit) {
-		const row = await store.first('SELECT content_refs_json FROM agent_invocation_requests WHERE team_id=? AND id=? LIMIT 1',
+		const row = await store.first('SELECT content_refs_json,requested_at FROM agent_invocation_requests WHERE team_id=? AND id=? LIMIT 1',
 			[node.teamId,source.id]);
 		const resolved: ExactEntityReference[] = [];
 		for (const [index, value] of array(row?.content_refs_json).entries()) {
@@ -118,11 +136,20 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 				|| text(proposal.projectId ?? proposal.project_id) !== node.projectId) {
 				throw new CapacityGovernanceError('communication_proposal_context_stale', `Communication node ${node.id} references an unavailable proposal.`, 409);
 			}
-			const exact = await readExactProposal(store, proposal);
-			if (text(reference.immutableRef) !== exact.ref.commit || text(reference.path) !== exact.ref.path
-				|| text(reference.digest) !== text(exact.ref.digest)) {
-				throw new CapacityGovernanceError('communication_proposal_context_moved', `Communication node ${node.id} proposal context changed.`, 409);
-			}
+			const digest = text(reference.digest).replace(/^sha256:/u, '');
+			const version = await store.first(`SELECT version FROM governance_proposal_versions
+				WHERE proposal_id=? AND content_hash=? AND created_at<=? ORDER BY version DESC LIMIT 1`,
+				[text(reference.id), digest, text(row?.requested_at)]);
+			if (!version) throw new CapacityGovernanceError('communication_proposal_context_stale',
+				`Communication node ${node.id} has no governed version for its sent proposal context.`, 409);
+			// Discussion is bound to the immutable proposal version at send time.
+			// Later genuine estimates may advance the active proposal without
+			// invalidating already-admitted planning conversation.
+			const exact = await readExactProposal(store, proposal, {
+				store: 'treedx', model: 'proposal', id: text(reference.id), revision: Number(version.version),
+				repository: source.repository, commit: text(reference.immutableRef),
+				path: text(reference.path), digest: text(reference.digest),
+			});
 			const workItemRefs = array(record(exact.definition.executionPlan).workItems)
 				.flatMap((workItem) => array(record(workItem).contextRefs));
 			resolved.push(exact.ref, ...await canonicalProposalContextRefs(store, node, workItemRefs));
@@ -192,7 +219,7 @@ async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ proj
 				`Agent class ${text(row.id)} lacks an exact project-library definition.`, 409);
 		}
 		const connection = await resolveKnowledgeGatewayConnection(store, {
-			projectId: node.projectId, write: false, readRefs: [commit],
+			projectId: node.projectId, write: false, readRefs: [commit], workspacePaths: [path],
 		});
 		if (!connection) throw new CapacityGovernanceError('execution_node_agent_profile_unavailable',
 			`Agent class ${text(row.id)} project library is unavailable.`, 409);
@@ -228,14 +255,25 @@ async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ proj
 		`Ready node ${node.id} has no exact active ${node.agentClass} ${node.kind} profile.`, 409);
 }
 
-async function predecessorContext(store: any, node: ExecutionNode): Promise<{ results: AssignmentResult[]; contentRefs: ExactEntityReference[] }> {
-	const rows = await store.all(`SELECT result.assignment_result_json,result.assignment_attempt_json
+async function predecessorContext(store: any, node: ExecutionNode, sourceRepository?: string): Promise<{ results: AssignmentResult[]; contentRefs: ExactEntityReference[]; lineageSourceCommit?: string; directPredecessorSourceCommit?: string }> {
+	const decisionId = (node.authorityRefs ?? []).find((reference) => reference.model === 'decision')?.id;
+	const decisionFilter = (alias: string) => decisionId ? `AND ${alias}.decision_id=?` : '';
+	const runFilter = (alias: string) => node.workdayId ? `AND ${alias}.work_day_id=?` : '';
+	const candidateParameters = () => [...(decisionId ? [decisionId] : []), ...(node.workdayId ? [node.workdayId] : [])];
+	const rows: Row[] = node.kind === 'reporting' ? await store.all(`SELECT assignment_result_json,assignment_attempt_json
+		FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=?
+			AND status IN ('completed','failed','cancelled','expired','returned') AND assignment_result_json IS NOT NULL
+		ORDER BY created_at,id`, [node.teamId, node.workdayId]) : await store.all(`SELECT result.assignment_result_json,result.assignment_attempt_json
 		FROM execution_edges edge
 		JOIN execution_nodes predecessor ON predecessor.team_id=edge.team_id AND predecessor.id=edge.from_node_id
-		JOIN capacity_provider_assignments result ON result.team_id=edge.team_id
-			AND result.execution_node_id=predecessor.id
-			AND result.execution_node_revision=predecessor.node_revision
-			AND result.status='completed'
+		JOIN LATERAL (
+			SELECT assignment_result_json,assignment_attempt_json FROM capacity_provider_assignments candidate
+			WHERE candidate.team_id=edge.team_id AND candidate.execution_node_id=predecessor.id
+				AND candidate.status='completed' AND candidate.assignment_result_json IS NOT NULL
+				${decisionFilter('candidate')}
+				${runFilter('candidate')}
+			ORDER BY candidate.execution_node_revision DESC,candidate.completed_at DESC,candidate.id DESC LIMIT 1
+		) result ON true
 		WHERE edge.team_id=? AND edge.to_node_id=? AND edge.graph_revision_removed IS NULL
 		UNION ALL
 		SELECT actor_result.assignment_result_json,actor_result.assignment_attempt_json
@@ -246,31 +284,48 @@ async function predecessorContext(store: any, node: ExecutionNode): Promise<{ re
 			AND pair.provenance='review-pair' AND pair.graph_revision_removed IS NULL
 		JOIN execution_nodes actor ON actor.team_id=pair.team_id AND actor.id=pair.from_node_id
 			AND actor.pair_role='actor' AND actor.work_item_id=reviewer.work_item_id
-		JOIN capacity_provider_assignments actor_result ON actor_result.team_id=actor.team_id
-			AND actor_result.execution_node_id=actor.id
-			AND actor_result.execution_node_revision=actor.node_revision AND actor_result.status='completed'
+		JOIN LATERAL (
+			SELECT assignment_result_json,assignment_attempt_json FROM capacity_provider_assignments candidate
+			WHERE candidate.team_id=actor.team_id AND candidate.execution_node_id=actor.id
+				AND candidate.status='completed' AND candidate.assignment_result_json IS NOT NULL
+				${decisionFilter('candidate')}
+				${runFilter('candidate')}
+			ORDER BY candidate.execution_node_revision DESC,candidate.completed_at DESC,candidate.id DESC LIMIT 1
+		) actor_result ON true
 		WHERE downstream.team_id=? AND downstream.to_node_id=? AND downstream.graph_revision_removed IS NULL`,
-		[node.teamId,node.id,node.teamId,node.id]);
-	if (node.pairRole === 'actor' && node.nodeRevision > 1 && node.workItemId) rows.push(...await store.all(
+		[...candidateParameters(),node.teamId,node.id,...candidateParameters(),node.teamId,node.id]);
+	const directCommits = [...new Set(rows.flatMap((row: Row) => {
+		const result = assignmentResultSchema.safeParse(record(row.assignment_result_json));
+		return result.success ? result.data.references.filter((reference): reference is Extract<typeof reference, { kind: 'git' }> => reference.kind === 'git'
+			&& (!sourceRepository || reference.repository === sourceRepository))
+			.map((reference) => reference.commit) : [];
+	}))];
+	const directPredecessorSourceCommit = directCommits.length === 1 ? directCommits[0] : undefined;
+	const priorActorRows = node.pairRole === 'actor' && node.nodeRevision > 1 && node.workItemId ? await store.all(
 		`SELECT result.assignment_result_json,result.assignment_attempt_json FROM capacity_provider_assignments result
 		WHERE result.team_id=? AND result.execution_node_id=?
 		AND result.execution_node_revision<? AND result.status='completed'
+		${decisionFilter('result')}
+		${runFilter('result')}
 		ORDER BY result.execution_node_revision DESC,result.completed_at DESC LIMIT 1`,
-		[node.teamId,node.id,node.nodeRevision],
-	), ...await store.all(
+		[node.teamId,node.id,node.nodeRevision,...candidateParameters()],
+	) : [];
+	if (node.pairRole === 'actor' && node.nodeRevision > 1 && node.workItemId) rows.push(...priorActorRows, ...await store.all(
 		`SELECT result.assignment_result_json,result.assignment_attempt_json FROM execution_nodes reviewer
 		JOIN capacity_provider_assignments result ON result.team_id=reviewer.team_id
 			AND result.execution_node_id=reviewer.id AND result.status='completed'
 		WHERE reviewer.team_id=? AND reviewer.project_id=? AND reviewer.work_item_id=? AND reviewer.pair_role='reviewer'
+		${decisionFilter('result')}
+		${runFilter('result')}
 		ORDER BY result.completed_at DESC LIMIT 1`,
-		[node.teamId,node.projectId,node.workItemId],
+		[node.teamId,node.projectId,node.workItemId,...candidateParameters()],
 	));
-	const results = rows.flatMap((row: Row) => {
+	const results: AssignmentResult[] = rows.flatMap((row: Row) => {
 		if (!row.assignment_result_json) return [];
 		const parsed = assignmentResultSchema.safeParse(record(row.assignment_result_json));
 		return parsed.success ? [parsed.data] : [];
 	});
-	const contentRefs = rows.flatMap((row: Row) => {
+	const contentRefs: ExactEntityReference[] = rows.flatMap((row: Row) => {
 		const parsed = assignmentResultSchema.safeParse(record(row.assignment_result_json));
 		if (!parsed.success) return [];
 		const grants = array(record(record(row.assignment_attempt_json).grant).contentWrite).map(record);
@@ -282,7 +337,18 @@ async function predecessorContext(store: any, node: ExecutionNode): Promise<{ re
 				repository: reference.repository, commit: reference.commit, path: reference.path }];
 		});
 	});
+	const gitResults = rows.flatMap((row: Row) => {
+		const result = assignmentResultSchema.safeParse(record(row.assignment_result_json));
+		const attempt = assignmentAttemptSchema.safeParse(record(row.assignment_attempt_json));
+		if (!result.success || !attempt.success) return [];
+		return result.data.references.filter((reference) => reference.kind === 'git')
+			.map((reference) => ({ resultId: result.data.id, commit: reference.commit,
+				predecessorResultIds: attempt.data.predecessorResultIds }));
+	});
+	const lineageSourceCommit = linearPredecessorSourceCommit(gitResults);
 	return { results: [...new Map(results.map((result) => [result.id, result])).values()],
+		...(lineageSourceCommit ? { lineageSourceCommit } : {}),
+		...(directPredecessorSourceCommit ? { directPredecessorSourceCommit } : {}),
 		contentRefs: [...new Map(contentRefs.map(reference => [stable(reference), reference])).values()] };
 }
 
@@ -342,11 +408,15 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 		ORDER BY node.updated_at,node.id LIMIT 100`, [run.teamId,project.id,...runScope.parameters]);
 	const selectedDecisionIds = new Set(Array.isArray(run.parameters.decisionIds)
 		? run.parameters.decisionIds.map(text).filter(Boolean) : []);
+	const selectedProposalIds = new Set(Array.isArray(run.parameters.proposalIds)
+		? run.parameters.proposalIds.map(text).filter(Boolean) : []);
 	const teamContext = await teamCoreContext(store, run.teamId);
 	const projectContext = await projectCoreContext(store, project);
 	const ready: ReadyExecutionNode[] = [];
 	for (const row of rows) {
 		const node = decodeExecutionNode(row);
+		if (isProposalGovernanceReview(node)
+			&& (!selectedProposalIds.size || !selectedProposalIds.has(node.sourceRef.id))) continue;
 		const decisionIds = (node.authorityRefs ?? []).filter((reference) => reference.model === 'decision').map((reference) => reference.id);
 		// A workday's decision selection constrains only nodes whose authority is a
 		// decision. Cooperative planning and lifecycle reporting are authorized by
@@ -357,7 +427,8 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			? [selectAssignmentSourceRepository(await store.listHubRepositories(node.projectId)).id]
 			: [];
 		const loadedContext = await loadContext(store, node);
-		const predecessor = await predecessorContext(store, node);
+		const predecessor = await predecessorContext(store, node,
+			loadedContext.find((item) => item.store === 'git')?.repository);
 		const predecessors = predecessor.results;
 		const candidateRefs = predecessors.flatMap((result) => result.references).flatMap((reference) => {
 			if (reference.kind !== 'git') return [];
@@ -376,6 +447,9 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 					: reference.store === 'treedx' && Boolean(reference.repository && reference.commit && reference.path))
 				.map((reference) => [stable(reference), reference])).values()],
 			predecessorResults: predecessors,
+			...(predecessor.lineageSourceCommit ? { lineageSourceCommit: predecessor.lineageSourceCommit } : {}),
+			...(predecessor.directPredecessorSourceCommit
+				? { directPredecessorSourceCommit: predecessor.directPredecessorSourceCommit } : {}),
 			readyAt: text(row.updated_at),
 		});
 	}

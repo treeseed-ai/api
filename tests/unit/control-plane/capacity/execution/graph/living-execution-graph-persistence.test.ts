@@ -4,11 +4,17 @@ import pg from 'pg';
 import { createControlPlanePostgresDatabase } from '../../../../../../src/api/support/control-plane-postgres.ts';
 import type { ExecutionNode, GraphRevision } from '@treeseed/sdk/agent-capacity';
 import {
-	applyOperationalState,
 	createExecutionGraphService,
+	isRevisionRequiredReviewDisposition,
 	persistExecutionGraph,
-	recoverIncompleteReviewCycles,
+	selectTerminalAssignmentRows,
+	simulationRunByDecision,
+	simulationRunBySelection,
+	terminalAssignmentWasRequeued,
 } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { applyOperationalState, recoverIncompleteReviewCycles, recoverInterruptedGovernanceReviews,
+	recoverableGovernanceReviewAttemptHistory, reviewCycleLimitReached,
+} from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
 
 const sourceRef = {
 	store: 'treedx' as const, model: 'proposal', id: 'proposal', revision: 1,
@@ -32,6 +38,83 @@ function node(status: ExecutionNode['status']): ExecutionNode {
 
 const graph = (revision: number, nodes: ExecutionNode[] = []) => ({
 	teamId: 'team', revision, digest: `sha256:${String(revision).padStart(64, '0')}`, nodes, edges: [],
+});
+
+it('uses only the canonical request-changes review disposition', () => {
+	expect(isRevisionRequiredReviewDisposition('request-changes')).toBe(true);
+	expect(isRevisionRequiredReviewDisposition('revision-required')).toBe(false);
+	expect(isRevisionRequiredReviewDisposition('rejected')).toBe(false);
+});
+
+it('keeps an approved review authoritative over a duplicate result until the Actor publishes a new candidate', () => {
+	const actor = { ...node('completed'), id: 'actor' };
+	const reviewer = { ...node('completed'), id: 'reviewer', kind: 'reviewing' as const, pairRole: 'reviewer' as const };
+	const pair = { schemaVersion: 'treeseed.execution-edge/v1' as const, id: 'pair', teamId: 'team',
+		fromNodeId: 'actor', toNodeId: 'reviewer', provenance: 'review-pair' as const, graphRevisionCreated: 1 };
+	const result = (id: string, at: string, disposition = '') => ({ execution_node_id: id, status: 'completed',
+		execution_node_revision: 1, terminal_at: at, lifecycle_output_json: { activityCompletion: { reviewDisposition: disposition } } });
+	const approved = result('reviewer', '2026-09-25T08:06:00.000Z', 'approved');
+	const duplicate = result('reviewer', '2026-09-25T08:50:00.000Z', 'request-changes');
+	const originalActor = result('actor', '2026-09-25T08:01:00.000Z');
+	expect(selectTerminalAssignmentRows([duplicate, approved, originalActor], [actor, reviewer], [pair])
+		.find((entry) => entry.execution_node_id === 'reviewer')).toBe(approved);
+	const revisedActor = result('actor', '2026-09-25T08:55:00.000Z');
+	expect(selectTerminalAssignmentRows([revisedActor, duplicate, approved, originalActor], [actor, reviewer], [pair])
+		.find((entry) => entry.execution_node_id === 'reviewer')).toBe(duplicate);
+});
+
+it('binds each accepted decision to at most one active simulation workday', () => {
+	expect(simulationRunByDecision([{ id: 'fresh', executionMode: 'simulation', parameters: { decisionIds: ['decision'] } }]).get('decision')).toBe('fresh');
+	expect(simulationRunByDecision([{ id: 'production', executionMode: 'production', parameters: { decisionIds: ['decision'] } }]).size).toBe(0);
+	expect(() => simulationRunByDecision([
+		{ id: 'first', executionMode: 'simulation', parameters: { decisionIds: ['decision'] } },
+		{ id: 'second', executionMode: 'simulation', parameters: { decisionIds: ['decision'] } },
+	])).toThrow(/simultaneous simulations/u);
+	expect(simulationRunBySelection([{ id: 'golden', executionMode: 'simulation', parameters: {
+		proposalIds: ['proposal'], decisionIds: [],
+	} }], 'proposalIds').get('proposal')).toBe('golden');
+});
+
+it('starts a new simulation from projected readiness without adopting a prior exhausted review', () => {
+	const exhausted = { ...node('blocked'), nodeRevision: 4, workdayId: 'old' };
+	const fresh = { ...node('blocked'), workdayId: 'fresh' };
+	const result = applyOperationalState(graph(4, [exhausted]), graph(5, [fresh]), 5, new Set(),
+		new Map([['node', { status: 'blocked' as const, nodeRevision: 4 }]]));
+	expect(result.nodes[0]).toMatchObject({ status: 'ready', workdayId: 'fresh', nodeRevision: 5 });
+	expect(applyOperationalState(result, graph(6, [fresh]), 6).nodes[0]).toMatchObject({
+		status: 'ready', workdayId: 'fresh', nodeRevision: 5,
+	});
+});
+
+it('retires every terminal simulation node before another workday selects its decision', () => {
+	for (const status of ['completed', 'blocked', 'failed'] as const) {
+		const old = { ...node(status), workdayId: 'stopped-workday', nodeRevision: 3 };
+		const retired = applyOperationalState(graph(3, [old]), graph(4, [node('ready')]), 4,
+			new Set(), new Map([['node', { status, nodeRevision: 3 }]]));
+		expect(retired.nodes[0]).toMatchObject({ status: 'stale', workdayId: 'stopped-workday', nodeRevision: 4 });
+		const fresh = applyOperationalState(retired, graph(5, [{ ...node('blocked'), workdayId: 'new-workday' }]), 5);
+		expect(fresh.nodes[0]).toMatchObject({ status: 'ready', workdayId: 'new-workday' });
+	}
+});
+
+it('recovers only the one exact governance review returned by an interrupted provider', () => {
+	const reviewer = { ...node('failed'), workItemId: 'proposal-review', kind: 'reviewing' as const,
+		pairRole: null, id: 'review' };
+	const recovered = recoverInterruptedGovernanceReviews(graph(2, [reviewer]), new Set(['review']), 3);
+	expect(recovered.nodes[0]).toMatchObject({ status: 'ready', nodeRevision: 2 });
+	expect(recoverInterruptedGovernanceReviews(graph(2, [{ ...reviewer, status: 'failed', nodeRevision: 1 }]), new Set(), 3).nodes[0]?.status).toBe('failed');
+});
+
+it('bounds transient governance read recovery and never replays a durable result', () => {
+	const restart = { status: 'returned', lifecycle_code: 'provider_runtime_recovery', assignment_result_json: null };
+	const transient = { status: 'returned', lifecycle_code: 'agent_executor_failed',
+		lifecycle_reason: 'assignment_context_read_failed:proposal:commit:path:TreeDX is temporarily unavailable.',
+		assignment_result_json: null };
+	expect(recoverableGovernanceReviewAttemptHistory([restart, transient])).toBe(true);
+	expect(recoverableGovernanceReviewAttemptHistory([restart, transient, restart])).toBe(false);
+	expect(recoverableGovernanceReviewAttemptHistory([{ ...transient, assignment_result_json: '{}' }])).toBe(false);
+	expect(recoverableGovernanceReviewAttemptHistory([{ ...transient,
+		lifecycle_reason: 'assignment_context_read_failed:proposal:forbidden' }])).toBe(false);
 });
 
 const revision = (value: number, graphDigest: string): GraphRevision => ({
@@ -59,8 +142,14 @@ describe('normalized living execution graph persistence', () => {
 	it('preserves an in-flight node even when its source is replaced', () => {
 		const current = graph(1, [node('running')]);
 		const desired = graph(2, []);
-		expect(applyOperationalState(current, desired, 2).nodes).toEqual([
+		expect(applyOperationalState(current, desired, 2, new Set(['node'])).nodes).toEqual([
 			expect.objectContaining({ id: 'node', status: 'running', graphRevisionUpdated: 2 }),
+		]);
+	});
+
+	it('retires an orphaned assigned proposal node when no active assignment owns it', () => {
+		expect(applyOperationalState(graph(1, [node('assigned')]), graph(2), 2).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'stale', nodeRevision: 2, graphRevisionUpdated: 2 }),
 		]);
 	});
 
@@ -91,13 +180,41 @@ describe('normalized living execution graph persistence', () => {
 		const actor = { ...node('completed'), id: 'actor', nodeRevision: 16, maximumReviewCycles: 2 };
 		const reviewer = { ...node('failed'), id: 'reviewer', kind: 'reviewing' as const, pairRole: 'reviewer' as const,
 			agentClass: 'reviewer', nodeRevision: 2, maximumReviewCycles: 2 };
-		const recovered = recoverIncompleteReviewCycles(graph(3, [actor, reviewer]), new Map([['reviewer', 1]]), 4);
+		const paired = { ...graph(3, [actor, reviewer]), edges: [{ id: 'pair', teamId: 'team', fromNodeId: 'actor',
+			toNodeId: 'reviewer', provenance: 'review-pair' as const, graphRevisionCreated: 1 }] };
+		const recovered = recoverIncompleteReviewCycles(paired, new Map([['reviewer', 1]]), new Set(['reviewer']), 4);
 		expect(recovered.nodes).toEqual(expect.arrayContaining([
 			expect.objectContaining({ id: 'actor', status: 'ready', nodeRevision: 17 }),
 			expect.objectContaining({ id: 'reviewer', status: 'blocked', nodeRevision: 3 }),
 		]));
-		const exhausted = recoverIncompleteReviewCycles(graph(3, [{ ...actor, status: 'blocked' }, { ...reviewer, status: 'failed' }]), new Map([['reviewer', 2]]), 4);
+		const exhausted = recoverIncompleteReviewCycles({ ...paired, nodes: [{ ...actor, status: 'blocked' }, { ...reviewer, status: 'failed' }] }, new Map([['reviewer', 2]]), new Set(['reviewer']), 4);
 		expect(exhausted.nodes.find((candidate) => candidate.id === 'reviewer')?.status).toBe('failed');
+	});
+
+	it('does not reopen the Actor after a later Reviewer timeout', () => {
+		const actor = { ...node('completed'), id: 'actor', nodeRevision: 14, maximumReviewCycles: 2 };
+		const reviewer = { ...node('failed'), id: 'reviewer', kind: 'reviewing' as const, pairRole: 'reviewer' as const,
+			agentClass: 'reviewer', nodeRevision: 15, maximumReviewCycles: 2 };
+		const paired = { ...graph(3, [actor, reviewer]), edges: [{ id: 'pair', teamId: 'team', fromNodeId: 'actor',
+			toNodeId: 'reviewer', provenance: 'review-pair' as const, graphRevisionCreated: 1 }] };
+		const recovered = recoverIncompleteReviewCycles(paired, new Map([['reviewer', 1]]), new Set(), 4);
+		expect(recovered.nodes).toEqual(expect.arrayContaining([
+			expect.objectContaining({ id: 'actor', status: 'completed', nodeRevision: 14 }),
+			expect.objectContaining({ id: 'reviewer', status: 'failed', nodeRevision: 15 }),
+		]));
+	});
+
+	it('treats maximumReviewCycles as the total bounded Reviewer decisions', () => {
+		expect(reviewCycleLimitReached(1, 2)).toBe(false);
+		expect(reviewCycleLimitReached(2, 2)).toBe(true);
+		expect(reviewCycleLimitReached(3, 2)).toBe(true);
+	});
+
+	it('does not let a superseded terminal attempt close an operator-requeued node', () => {
+		expect(terminalAssignmentWasRequeued({ terminal_at: '2026-09-23T12:00:00.000Z',
+			metadata_json: { operatorRetry: { requestedAt: '2026-09-23T12:01:00.000Z' } } })).toBe(true);
+		expect(terminalAssignmentWasRequeued({ terminal_at: '2026-09-23T12:02:00.000Z',
+			metadata_json: { operatorRetry: { requestedAt: '2026-09-23T12:01:00.000Z' } } })).toBe(false);
 	});
 
 	it('preserves graph revision metadata when projected semantics are unchanged', () => {
@@ -129,7 +246,7 @@ describe('normalized living execution graph persistence', () => {
 	it('revises an unassigned node when projected assignment semantics change', () => {
 		const current = graph(1, [node('ready')]);
 		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
-		expect(applyOperationalState(current, graph(2, [projected]), 2).nodes).toEqual([
+		expect(applyOperationalState(current, graph(2, [projected]), 2, new Set(['node'])).nodes).toEqual([
 			expect.objectContaining({ id: 'node', status: 'ready', nodeRevision: 2, estimate: projected.estimate }),
 		]);
 	});
@@ -137,7 +254,7 @@ describe('normalized living execution graph persistence', () => {
 	it('preserves all immutable semantics for an in-flight node', () => {
 		const current = graph(1, [node('running')]);
 		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
-		expect(applyOperationalState(current, graph(2, [projected]), 2).nodes).toEqual([
+		expect(applyOperationalState(current, graph(2, [projected]), 2, new Set(['node'])).nodes).toEqual([
 			expect.objectContaining({ status: 'running', nodeRevision: 1, estimate: node('running').estimate }),
 		]);
 	});
@@ -152,6 +269,95 @@ describe('normalized living execution graph persistence', () => {
 		const projected = { ...node('ready'), graphRevisionCreated: 3, graphRevisionUpdated: 3 };
 		expect(applyOperationalState(graph(2, [stale]), graph(3, [projected]), 3).nodes).toEqual([
 			expect.objectContaining({ id: 'node', status: 'ready', nodeRevision: 3, graphRevisionCreated: 1, graphRevisionUpdated: 3 }),
+		]);
+	});
+
+	it('restores terminal assignment state when an exact source returns after transient staleness', () => {
+		const stale = { ...node('stale'), nodeRevision: 2, graphRevisionUpdated: 2 };
+		const projected = { ...node('ready'), graphRevisionCreated: 3, graphRevisionUpdated: 3 };
+		expect(applyOperationalState(graph(2, [stale]), graph(3, [projected]), 3, new Set(),
+			new Map([['node', { status: 'completed' as const, nodeRevision: 1 }]])).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 2,
+				graphRevisionCreated: 1, graphRevisionUpdated: 3 }),
+		]);
+	});
+
+	it('converges a caller-selected terminal result across projection revisions', () => {
+		const reactivated = { ...node('ready'), nodeRevision: 3, graphRevisionUpdated: 3 };
+		expect(applyOperationalState(graph(3, [reactivated]), graph(4, [node('ready')]), 4, new Set(),
+			new Map([['node', { status: 'completed' as const, nodeRevision: 1 }]])).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 3, graphRevisionUpdated: 4 }),
+		]);
+	});
+
+	it('does not re-ready an Actor blocked by terminal review exhaustion', () => {
+		const exhausted = { ...node('ready'), nodeRevision: 4, graphRevisionUpdated: 3 };
+		expect(applyOperationalState(graph(3, [exhausted]), graph(4, [node('blocked')]), 4, new Set(),
+			new Map([['node', { status: 'blocked' as const, nodeRevision: 3 }]])).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'blocked', nodeRevision: 4, graphRevisionUpdated: 4 }),
+		]);
+	});
+
+	it('does not reopen an approved Reviewer after projection-only revision bumps', () => {
+		const reviewer = { ...node('completed'), id: 'reviewer', kind: 'reviewing' as const,
+			pairRole: 'reviewer' as const, agentClass: 'reviewer', nodeRevision: 3 };
+		const projected = { ...reviewer, status: 'blocked' as const, nodeRevision: 1,
+			graphRevisionCreated: 4, graphRevisionUpdated: 4 };
+		const terminal = new Map([['reviewer', { status: 'completed' as const, nodeRevision: 2 }]]);
+		const reconciled = applyOperationalState(graph(3, [reviewer]), graph(4, [projected]), 4, new Set(), terminal);
+		expect(reconciled.nodes).toEqual([
+			expect.objectContaining({ id: 'reviewer', status: 'completed', nodeRevision: 3 }),
+		]);
+		expect(applyOperationalState(reconciled, graph(5, [projected]), 5, new Set(), terminal).nodes[0])
+			.toMatchObject({ status: 'completed', nodeRevision: 3 });
+	});
+
+	it('readies a request-changes Reviewer after the revised Actor completes', () => {
+		const actor = { ...node('completed'), id: 'actor', nodeRevision: 4 };
+		const reviewer = { ...node('blocked'), id: 'reviewer', kind: 'reviewing' as const,
+			pairRole: 'reviewer' as const, agentClass: 'reviewer', nodeRevision: 4 };
+		const pair = { schemaVersion: 'treeseed.execution-edge/v1' as const,
+			id: 'pair', teamId: 'team', fromNodeId: 'actor', toNodeId: 'reviewer',
+			provenance: 'review-pair' as const, graphRevisionCreated: 1 };
+		const result = applyOperationalState(
+			{ ...graph(3, [actor, reviewer]), edges: [pair] },
+			{ ...graph(4, [{ ...actor, status: 'blocked' }, reviewer]), edges: [pair] },
+			4, new Set(), new Map([
+				['actor', { status: 'completed' as const, nodeRevision: 4 }],
+				['reviewer', { status: 'blocked' as const, nodeRevision: 3 }],
+			]),
+		);
+		expect(result.nodes.find((candidate) => candidate.id === 'reviewer')).toMatchObject({ status: 'ready', nodeRevision: 4 });
+	});
+
+	it('keeps a Reviewer blocked when the current Actor revision failed', () => {
+		const actor = { ...node('running'), id: 'actor', pairRole: 'actor' as const, nodeRevision: 3 };
+		const reviewer = { ...node('completed'), id: 'reviewer', kind: 'reviewing' as const,
+			pairRole: 'reviewer' as const, agentClass: 'reviewer', nodeRevision: 2 };
+		const projectedActor = { ...actor, status: 'blocked' as const, nodeRevision: 1 };
+		const projectedReviewer = { ...reviewer, status: 'blocked' as const, nodeRevision: 1 };
+		const pair = { schemaVersion: 'treeseed.execution-edge/v1' as const,
+			id: 'pair', teamId: 'team', fromNodeId: 'actor', toNodeId: 'reviewer',
+			provenance: 'review-pair' as const, graphRevisionCreated: 1 };
+		const result = applyOperationalState(
+			{ ...graph(3, [actor, reviewer]), edges: [pair] },
+			{ ...graph(4, [projectedActor, projectedReviewer]), edges: [pair] },
+			4,
+			new Set(),
+			new Map([
+				['actor', { status: 'failed' as const, nodeRevision: 3 }],
+				['reviewer', { status: 'completed' as const, nodeRevision: 2 }],
+			]),
+		);
+		expect(result.nodes.find((candidate) => candidate.id === 'actor')).toMatchObject({ status: 'failed', nodeRevision: 3 });
+		expect(result.nodes.find((candidate) => candidate.id === 'reviewer')).toMatchObject({ status: 'blocked', nodeRevision: 3 });
+	});
+
+	it('closes the completion race when the assignment settles before its assigned node update', () => {
+		const assigned = { ...node('assigned'), nodeRevision: 3, graphRevisionUpdated: 3 };
+		expect(applyOperationalState(graph(3, [assigned]), graph(4, [node('ready')]), 4, new Set(),
+			new Map([['node', { status: 'completed' as const, nodeRevision: 3 }]])).nodes).toEqual([
+			expect.objectContaining({ id: 'node', status: 'completed', nodeRevision: 3 }),
 		]);
 	});
 

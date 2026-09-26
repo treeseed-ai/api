@@ -67,7 +67,9 @@ export function assignmentSourceMode(row: RecordValue) {
 			publicationRef };
 	}
 	return { mode: 'analysis' as const,
-		acquisition: executionMode === 'production' ? 'upstream-authorized' as const : 'upstream-public' as const,
+		acquisition: executionMode === 'production' ? 'upstream-authorized' as const
+			: attempt.data.contextRefs.some((reference) => reference.store === 'git' && reference.id.endsWith(':candidate'))
+				? 'simulation-local' as const : 'upstream-public' as const,
 		publication: 'denied' as const };
 }
 
@@ -112,7 +114,8 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     let row = assertSourceAssignmentLease(await load(assignmentId, actor), actor, assignmentId, request.runnerId, request.leaseToken, now());
     const checkAuthority = async () => {
       const authority = await evaluateProviderAssignmentLeaseAuthority(database, actor, assignmentId, now().toISOString());
-      if (!authority.eligible) throw new CapacityGovernanceError('assignment_source_authority_revoked', 'Provider membership, capacity grant, or assignment authority is no longer active.', 403);
+      if (!authority.eligible) throw new CapacityGovernanceError('assignment_source_authority_revoked',
+        `Assignment source authority is no longer active: ${authority.reasons?.join(', ') || 'unspecified gate'}`, 403);
     };
     await checkAuthority();
     const projectId = String(row.project_id), project = await contentStore.getProject(projectId);
