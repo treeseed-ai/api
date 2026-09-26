@@ -169,7 +169,7 @@ verifiers:
   api.golden.response-continuation:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
-    testFile: tests/unit/control-plane/capacity/communication/completed-response-continuation.test.ts
+    testFile: tests/unit/control-plane/providers/assignments/completed-response-continuation.test.ts
     testName: "resumes the exact agent only after canonical completion and lease release"
   api.golden.response-race:
     kind: vitestCase
