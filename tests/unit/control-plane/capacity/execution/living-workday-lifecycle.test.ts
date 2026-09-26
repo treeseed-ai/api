@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+vi.mock('../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-content-readback.ts', () => ({
+	reconcileAssignmentContent: vi.fn(async () => undefined),
+}));
 import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
 import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
 

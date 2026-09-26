@@ -4,6 +4,7 @@ import { CapacityGovernanceError } from '../../../database.ts';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { decodeWorkdayAgentProfileSnapshot } from '../workdays/policy/workday-agent-profile-policy.ts';
 import { assignmentPreparationSeconds } from '../assignments/planning/assignment-time-budget.ts';
+import { reconcileAssignmentContent } from '../assignments/lifecycle/assignment-content-readback.ts';
 
 type Row = Record<string, unknown>;
 
@@ -98,6 +99,7 @@ async function appendInvocationFailureEvent(store: DiscussionInvocationStore, in
 
 /** Reconcile provider-terminal assignments before they can serialize later topic messages forever. */
 export async function reconcileTerminalConversationInvocations(store: DiscussionInvocationStore, teamId: string) {
+	await reconcileAssignmentContent(store, teamId);
 	const active = await store.all(`SELECT * FROM agent_invocation_requests
 		WHERE team_id=? AND execution_kind='conversation' AND status IN ('admitted','running')
 		ORDER BY requested_at LIMIT 100`, [teamId]);

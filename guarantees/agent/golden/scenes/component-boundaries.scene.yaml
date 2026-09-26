@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: content-receipt
+    action: { verifier: api.golden.content-receipt }
+    expect: { status: passed }
+  - id: content-readback-denial
+    action: { verifier: api.golden.content-readback-denial }
+    expect: { status: passed }
   - id: response-integration-order
     action: { verifier: api.golden.response-integration-order }
     expect: { status: passed }
