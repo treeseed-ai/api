@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { CapacityWorkdayMaintenanceScheduler, runCapacityWorkdayMaintenance } from '../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.ts';
+import { CapacityWorkdayMaintenanceScheduler, runCapacityWorkdayMaintenance } from '../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-maintenance-service.ts';
 
 function fixture() {
 	return {

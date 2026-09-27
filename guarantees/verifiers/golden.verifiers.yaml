@@ -4,12 +4,12 @@ verifiers:
   api.golden.maintenance-failure-isolation:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
-    testFile: tests/unit/control-plane/capacity/workday-maintenance.test.ts
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-maintenance.test.ts
     testName: "reconciles running graphs after each housekeeping failure and preserves diagnostics"
   api.golden.maintenance-retry:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
-    testFile: tests/unit/control-plane/capacity/workday-maintenance.test.ts
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-maintenance.test.ts
     testName: "retries after a failed sweep without overlapping maintenance passes"
   api.golden.content-exact-path:
     kind: vitestCase
