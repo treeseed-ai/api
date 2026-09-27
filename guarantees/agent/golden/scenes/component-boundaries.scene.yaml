@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: maintenance-failure-isolation
+    action: { verifier: api.golden.maintenance-failure-isolation }
+    expect: { status: passed }
+  - id: maintenance-retry
+    action: { verifier: api.golden.maintenance-retry }
+    expect: { status: passed }
   - id: content-receipt
     action: { verifier: api.golden.content-receipt }
     expect: { status: passed }

@@ -68,13 +68,25 @@ export async function runCapacityWorkdayMaintenance(
 	store: CapacityWorkdayMaintenanceStore,
 	now = new Date().toISOString(),
 ): Promise<CapacityWorkdayMaintenanceResult> {
-	const [workdays, assignments, retention, schedules] = await Promise.all([
+	const results = await Promise.allSettled([
 		store.maintainCapacityWorkdayRuns(null, now),
 		store.recoverExpiredProviderAssignments({ now, limit: 200 }),
 		store.maintainCapacityRuntimeRetention(now),
 		store.tickDueCapacityWorkdaySchedules(now),
 	]);
 	const running = await retickRunningWorkdays(store,now);
+	// Housekeeping is not graph authority. A failed sweep must not suppress
+	// ready-node reconciliation; retain the failure for the runner diagnostics.
+	const failures = results.flatMap((result, index) => result.status === 'rejected'
+		? [new Error(`${['workdays', 'assignments', 'retention', 'schedules'][index]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`)] : []);
+	if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('; '));
+	const [workdays, assignments, retention, schedules] = results.map(result => {
+		if (result.status === 'rejected') throw result.reason;
+		return result.value;
+	}) as [Awaited<ReturnType<typeof store.maintainCapacityWorkdayRuns>>,
+		Awaited<ReturnType<typeof store.recoverExpiredProviderAssignments>>,
+		Awaited<ReturnType<typeof store.maintainCapacityRuntimeRetention>>,
+		Awaited<ReturnType<typeof store.tickDueCapacityWorkdaySchedules>>];
 	return {
 		ranAt: now,
 		terminalizedWorkdays: workdays.expired + (workdays.recoveredTerminalRuns ?? 0),
