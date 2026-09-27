@@ -154,6 +154,7 @@ export class AvailabilitySessionService {
 			...adapter,
 			status: adapter.status === 'available' ? 'active' : adapter.status,
 			maxConcurrentRunners: adapter.maxConcurrentWorkers,
+			availableConcurrency: Math.max(0, Number(adapter.maxConcurrentWorkers) - Number(adapter.activeWorkers ?? 0)),
 			lanes: lanes.filter((lane) => Array.isArray(adapter.laneIds) && adapter.laneIds.includes(lane.id)).map((lane) => ({ ...lane,
 				id: lane.id,
 				maxConcurrentRunners: lane.maxConcurrentWorkers })),

@@ -45,6 +45,23 @@ function coldStore() {
 
 afterEach(() => vi.restoreAllMocks());
 describe('availability initializes its ontology without a catalog read', () => {
+	it('derives five-slot remaining headroom from canonical adapter worker counts on open and refresh', async () => {
+		const { store } = coldStore();
+		for (const operation of ['open', 'refresh'] as const) {
+			const write = vi.spyOn(AvailabilitySessionRepository.prototype, operation).mockResolvedValue(null);
+			const service = new AvailabilitySessionService(store);
+			for (const activeWorkers of [0, 2, 5, 6]) {
+				const supplied = input();
+				supplied.adapters[0]!.maxConcurrentWorkers = 5;
+				Object.assign(supplied.adapters[0]!, { activeWorkers });
+				if (operation === 'open') await service.open(principal, supplied);
+				else await service.refresh(principal, 'session-test', supplied);
+				expect(write.mock.calls.at(-1)![0].executionProviders[0]).toMatchObject({
+					maxConcurrentRunners: 5, availableConcurrency: Math.max(0, 5 - activeWorkers) });
+			}
+			write.mockRestore();
+		}
+	});
 	it.each(['open', 'refresh'] as const)('%s initializes a cold catalog before validating offers', async (operation) => {
 		const { store, batch } = coldStore();
 		const write = vi.spyOn(AvailabilitySessionRepository.prototype, operation).mockResolvedValue(null);

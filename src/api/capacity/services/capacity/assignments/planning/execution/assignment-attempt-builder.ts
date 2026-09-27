@@ -279,6 +279,7 @@ export function buildAssignmentAttempt(input: {
 	});
 	return { assignment, allocation: { ...allocation, opportunity: allocationInputs.opportunity }, accountingLimits: limits, executionProviderId: selected.provider.id, laneId: selected.lane.id,
 		lanePurpose: communication ? 'communication' : 'workday',
-		providerConcurrencyLimit: Math.max(1, Math.min(selected.provider.availableConcurrency ?? 1,
-			selected.provider.maxConcurrentRunners, selected.lane.maxConcurrentRunners)) };
+		// Admission counts existing assignments against a total ceiling, not remaining headroom.
+		providerConcurrencyLimit: Math.max(1, Math.min(selected.provider.maxConcurrentRunners,
+			selected.lane.maxConcurrentRunners)) };
 }
