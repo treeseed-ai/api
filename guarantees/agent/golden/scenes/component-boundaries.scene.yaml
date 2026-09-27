@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: canonical-adapter-headroom
+    action: { verifier: api.golden.canonical-adapter-headroom }
+    expect: { status: passed }
+  - id: total-admission-ceiling
+    action: { verifier: api.golden.total-admission-ceiling }
+    expect: { status: passed }
   - id: proposal-review-source
     action: { verifier: api.golden.proposal-review-source }
     expect: { status: passed }

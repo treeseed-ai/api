@@ -47,6 +47,22 @@ const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedP
 } } } as never;
 
 describe('immutable assignment-attempt construction', () => {
+	it('uses the total five-slot ceiling rather than remaining headroom for atomic admission', () => {
+		for (const remaining of [5, 3, 1]) {
+			const offered = { ...provider, availableConcurrency: remaining, maxConcurrentRunners: 5,
+				lanes: [{ ...provider.lanes[0]!, maxConcurrentRunners: 5 }] };
+			const result = buildAssignmentAttempt({ candidate: candidate as never, run,
+				principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+				allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+				providers: [offered] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
+			expect(result.providerConcurrencyLimit).toBe(5);
+		}
+		const offered = { ...provider, availableConcurrency: 0, maxConcurrentRunners: 5 };
+		expect(() => buildAssignmentAttempt({ candidate: candidate as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			providers: [offered] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' })).toThrow();
+	});
 	it('passes the exact Architecture Book and grants a valid page within that Book', () => {
 		const architecture = {
 			store: 'treedx' as const, model: 'book', id: 'sdk-architecture',
