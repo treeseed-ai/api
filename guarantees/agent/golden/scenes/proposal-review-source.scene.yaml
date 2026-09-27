@@ -1,0 +1,4 @@
+workflow:
+  - id: exact-proposal-source
+    action: { verifier: api.golden.proposal-review-source }
+    expect: { status: passed }
