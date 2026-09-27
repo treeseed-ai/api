@@ -108,7 +108,7 @@ describe('direct ready-node admission input', () => {
 		expect(query).not.toContain('discussion_response_required');
 	});
 
-	it.each(['planning', 'estimating'])('loads exact proposal and source context for proposal-level %s nodes', async (kind) => {
+	it.each(['planning', 'estimating', 'reviewing'])('loads exact proposal and source context for proposal-level %s nodes', async (kind) => {
 		const gitRef = { store: 'git', model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) };
 		const objectiveRef = { store: 'treedx', model: 'objective', id: 'objective', repository: 'treeseed-ai/sdk-library',
 			commit: 'b'.repeat(40), path: 'objectives/core' };
@@ -125,7 +125,7 @@ describe('direct ready-node admission input', () => {
 		const refs = await workItemContext({ getProjectTreeDxLibrary: vi.fn(async () => ({
 			repositoryId: 'repository', contentRepositoryUrl: 'https://github.com/treeseed-ai/sdk-library.git',
 		})) } as never, {
-			teamId: 'team', projectId, id: kind, kind, workItemId: null, sourceRef,
+			teamId: 'team', projectId, id: kind, kind, pairRole: null, workItemId: null, sourceRef,
 		} as never);
 		expect(refs).toEqual([sourceRef, { ...objectiveRef, repository: 'repository' }, gitRef]);
 	});

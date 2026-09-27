@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: proposal-review-source
+    action: { verifier: api.golden.proposal-review-source }
+    expect: { status: passed }
   - id: maintenance-failure-isolation
     action: { verifier: api.golden.maintenance-failure-isolation }
     expect: { status: passed }

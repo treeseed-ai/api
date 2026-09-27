@@ -181,21 +181,13 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
 	const validation = validatePortableContentData('proposal', record(file.frontmatter));
 	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
-	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
+	if ((!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) || isProposalGovernanceReview(node)) {
 		const proposal = record(validation.data);
 		return [source, ...await canonicalProposalContextRefs(store, node, [
 			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
 			...(proposal.discussionRef ? [proposal.discussionRef] : []),
 			...array(record(proposal.executionPlan).workItems).flatMap((item) => array(record(item).contextRefs)),
 		])];
-	}
-	if (node.kind === 'reviewing' && node.pairRole === null) {
-		const proposal = record(validation.data);
-		return canonicalProposalContextRefs(store, node, [
-			...array(proposal.objectiveRefs),
-			...array(proposal.evidenceRefs),
-			...(proposal.discussionRef ? [proposal.discussionRef] : []),
-		]);
 	}
 	const workItems = array(record(record(validation.data).executionPlan).workItems).map(record);
 	const workItem = workItems.find((candidate) => text(candidate.id) === node.workItemId);
