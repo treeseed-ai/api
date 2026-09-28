@@ -52,12 +52,14 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 			}) as ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0]);
 			const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
 			const failure = { leaseToken: 'lease', code: 'assignment_timeout', retryable: false,
-				activeSeconds, elapsedSeconds: activeSeconds + 3, usage: { inputTokens: 200, outputTokens: 30 } };
+				activeSeconds, elapsedSeconds: activeSeconds + 3, usage: { inputTokens: 200, outputTokens: 30 },
+				output: { teardown: { verified: true, completedAt: now } } };
 			expect(await service.complete(principal, 'assignment', { leaseToken: 'lease' })).toBeNull();
 			expect(await service.fail(principal, 'assignment', { ...failure, leaseToken: 'wrong' })).toBeNull();
 			const outcomes = await Promise.all([service.fail(principal, 'assignment', failure), service.fail(principal, 'assignment', failure)]);
 			expect(outcomes.filter(Boolean)).toHaveLength(1);
-			expect((await repository.get('team', 'assignment'))?.status).toBe('failed');
+			expect(await repository.get('team', 'assignment')).toMatchObject({ status: 'failed',
+				lifecycleOutput: { teardown: { verified: true, completedAt: now } } });
 			const reservation = await store.first('SELECT state,active_seconds,released_seconds FROM capacity_reservations WHERE id=?', ['reservation']);
 			expect(reservation).toMatchObject({ state: 'consumed', active_seconds: activeSeconds, released_seconds: Math.max(0, 20 - activeSeconds) });
 			expect(await store.first('SELECT hard_limit,committed_amount FROM capacity_admission_counters WHERE id=?', ['counter']))

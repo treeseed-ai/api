@@ -21,6 +21,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph-persistence.test.ts
     testName: "binds the real proposal Reviewer before a decision exists without adopting an unrelated run"
+  api.golden.timeout-report-grace:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/assignment-recovery-service.test.ts
+    testName: "keeps productive expiry distinct from bounded provider timeout reporting"
   api.golden.public-exact-source:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
