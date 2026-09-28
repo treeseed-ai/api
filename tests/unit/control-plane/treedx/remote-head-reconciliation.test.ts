@@ -45,6 +45,7 @@ describe('TreeDX protected branch reconciliation', () => {
 			async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project', authority_id: 'authority',
 				owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
 				expected_head: newHead, observed_head: newHead, content_repository_ref: oldHead,
+				library_updated_at: '2026-08-31T11:00:00.000Z',
 				metadata_json: JSON.stringify({ resolvedRef: oldHead }) }]; },
 			async createPlatformOperation(value: any) { operations.push(value); return { id: 'operation', status: 'queued' }; },
 		};
@@ -61,6 +62,7 @@ describe('TreeDX protected branch reconciliation', () => {
 		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
 			authority_id: 'authority', owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
 			expected_head: newHead, observed_head: newHead, content_repository_ref: 'refs/remotes/origin/staging',
+			library_updated_at: '2026-08-31T11:00:00.000Z',
 			metadata_json: JSON.stringify({ resolvedRef: newHead }) }]; },
 			async createPlatformOperation(value: any) { operations.push(value); return { id: 'operation', status: 'queued' }; } };
 		const result = await new TreeDxRemoteHeadReconciliationScheduler(store, 1, githubFetch())
@@ -74,7 +76,7 @@ describe('TreeDX protected branch reconciliation', () => {
 		resolveCredential.mockRejectedValueOnce(Object.assign(new Error('secret material'), { code: 'credential_unavailable' }));
 		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
 			authority_id: 'authority', owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
-			content_repository_ref: oldHead, metadata_json: '{}' }]; } };
+			content_repository_ref: oldHead, library_updated_at: '2026-08-31T11:00:00.000Z', metadata_json: '{}' }]; } };
 		try {
 			const result = await new TreeDxRemoteHeadReconciliationScheduler(store, 1, githubFetch())
 				.runIfDue(Date.parse('2026-08-31T12:00:00.000Z'));
@@ -90,6 +92,7 @@ describe('TreeDX protected branch reconciliation', () => {
 		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
 			authority_id: 'authority', owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
 			expected_head: oldHead, observed_head: oldHead, content_repository_ref: publicationRef,
+			library_updated_at: '2026-08-31T11:00:00.000Z',
 			metadata_json: JSON.stringify({ resolvedRef: oldHead }) }]; },
 			async createPlatformOperation() { return { id: 'failed-operation', status: 'failed' }; },
 			async retryPlatformOperation(id: string) { retried.push(id); } };
@@ -97,6 +100,23 @@ describe('TreeDX protected branch reconciliation', () => {
 			.runIfDue(Date.parse('2026-08-31T12:00:00.000Z'));
 		expect(result).toMatchObject({ queued: 1, failed: 0 });
 		expect(retried).toEqual(['failed-operation']);
+	});
+
+	it('creates a new operation when the library binding drifts after an earlier exact-head success', async () => {
+		const keys: string[] = [];
+		let libraryUpdatedAt = '2026-08-31T11:00:00.000Z';
+		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
+			authority_id: 'authority', owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
+			expected_head: newHead, observed_head: newHead, content_repository_ref: oldHead,
+			library_updated_at: libraryUpdatedAt, metadata_json: JSON.stringify({ resolvedRef: newHead }) }]; },
+			async createPlatformOperation(value: any) { keys.push(value.idempotencyKey); return { id: 'prior-success', status: 'succeeded' }; } };
+		const scheduler = new TreeDxRemoteHeadReconciliationScheduler(store, 1, githubFetch());
+		await scheduler.runIfDue(Date.parse('2026-08-31T12:00:00.000Z'));
+		await scheduler.runIfDue(Date.parse('2026-08-31T12:00:01.000Z'));
+		expect(keys[0]).toBe(keys[1]);
+		libraryUpdatedAt = '2026-08-31T12:00:02.000Z';
+		await scheduler.runIfDue(Date.parse('2026-08-31T12:00:03.000Z'));
+		expect(keys[2]).not.toBe(keys[0]);
 	});
 
 	it('fetches, indexes, advances the logical binding, and queues the exact R2 mirror', async () => {

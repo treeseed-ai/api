@@ -12,8 +12,10 @@ function parse(value: unknown) {
 	try { return object(JSON.parse(value)); } catch { return {}; }
 }
 
-function operationKey(projectId: string, publicationRef: string, remoteHead: string) {
-	const digest = createHash('sha256').update(`${projectId}:${publicationRef}:${remoteHead}`).digest('hex');
+function operationKey(projectId: string, publicationRef: string, remoteHead: string,
+	canonicalRef: string, resolvedRef: string, libraryUpdatedAt: string) {
+	const digest = createHash('sha256').update(JSON.stringify({ projectId, publicationRef, remoteHead,
+		canonicalRef, resolvedRef, libraryUpdatedAt })).digest('hex');
 	return `treedx-remote-head:${digest}`;
 }
 
@@ -26,7 +28,8 @@ export class TreeDxRemoteHeadReconciliationScheduler {
 	async runIfDue(time = Date.now()) {
 		if (time - this.lastAttemptAt < this.intervalMs) return { scheduled: false };
 		this.lastAttemptAt = time;
-		const bindings: any[] = await this.store.all(`SELECT b.*,l.repository_id,l.content_repository_ref,l.metadata_json
+		const bindings: any[] = await this.store.all(`SELECT b.*,l.repository_id,l.content_repository_ref,l.metadata_json,
+			l.updated_at AS library_updated_at
 			FROM project_remote_repository_bindings b JOIN treedx_project_libraries l ON l.project_id=b.project_id
 			WHERE b.provider_id='github' AND b.grant_status='ready' AND l.repository_id IS NOT NULL
 			ORDER BY b.project_id`);
@@ -44,10 +47,14 @@ export class TreeDxRemoteHeadReconciliationScheduler {
 				const metadata = parse(binding.metadata_json);
 				const currentResolvedRef = String(metadata.resolvedRef ?? '');
 				const canonicalRef = String(binding.content_repository_ref ?? '');
+				const libraryUpdatedAt = String(binding.library_updated_at ?? '');
 				const remoteRef = `refs/remotes/origin/${publicationRef.slice('refs/heads/'.length)}`;
 				if (binding.expected_head === remoteHead && binding.observed_head === remoteHead
 					&& currentResolvedRef === remoteHead && canonicalRef === remoteRef) continue;
-				const idempotencyKey = operationKey(String(binding.project_id), publicationRef, remoteHead);
+				if (!libraryUpdatedAt) throw Object.assign(new Error('The library binding has no version timestamp.'),
+					{ code: 'library_binding_version_missing' });
+				const idempotencyKey = operationKey(String(binding.project_id), publicationRef, remoteHead,
+					canonicalRef, currentResolvedRef, libraryUpdatedAt);
 				const operation = await this.store.createPlatformOperation({ namespace: 'treedx', operation: 'reconcile_remote_head',
 					target: 'control_plane_operations_runner', idempotencyKey,
 					input: { teamId: binding.team_id, projectId: binding.project_id, publicationRef, remoteHead },
