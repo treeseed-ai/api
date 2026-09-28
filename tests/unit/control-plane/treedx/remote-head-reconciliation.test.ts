@@ -69,6 +69,22 @@ describe('TreeDX protected branch reconciliation', () => {
 		expect(operations).toHaveLength(0);
 	});
 
+	it('reports a safe project-scoped code when a provider observation fails', async () => {
+		const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+		resolveCredential.mockRejectedValueOnce(Object.assign(new Error('secret material'), { code: 'credential_unavailable' }));
+		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
+			authority_id: 'authority', owner: 'treeseed-ai', name: 'sdk-library', publication_ref: publicationRef,
+			content_repository_ref: oldHead, metadata_json: '{}' }]; } };
+		try {
+			const result = await new TreeDxRemoteHeadReconciliationScheduler(store, 1, githubFetch())
+				.runIfDue(Date.parse('2026-08-31T12:00:00.000Z'));
+			expect(result).toMatchObject({ failed: 1, queued: 0 });
+			expect(log).toHaveBeenCalledWith(JSON.stringify({ event: 'treedx.remote-head.reconciliation-observation-failed',
+				projectId: 'project', code: 'credential_unavailable' }));
+			expect(log.mock.calls.flat().join(' ')).not.toContain('secret material');
+		} finally { log.mockRestore(); }
+	});
+
 	it('retries the same exact-head operation after a recoverable failure', async () => {
 		const retried: string[] = [];
 		const store: any = { config: {}, async all() { return [{ id: 'binding', team_id: 'team', project_id: 'project',
