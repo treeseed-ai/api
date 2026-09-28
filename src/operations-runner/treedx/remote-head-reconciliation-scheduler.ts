@@ -56,7 +56,13 @@ export class TreeDxRemoteHeadReconciliationScheduler {
 					await this.store.retryPlatformOperation(operation.id);
 				}
 				queued += 1;
-			} catch {
+			} catch (error) {
+				// Report only a stable code and project identity; provider errors may contain credentials.
+				const code = (error as { code?: unknown })?.code;
+				console.error(JSON.stringify({ event: 'treedx.remote-head.reconciliation-observation-failed',
+					projectId: String(binding.project_id),
+					code: typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/u.test(code)
+						? code : 'remote_head_observation_failed' }));
 				// A broken provider binding must not block reconciliation for other projects.
 				failed += 1;
 			}
