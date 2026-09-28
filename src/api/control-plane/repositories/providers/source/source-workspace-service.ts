@@ -130,6 +130,9 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
 		? attempt.data.contextRefs.find((reference) => reference.store === 'git'
 			&& (reference.repository === configured.id || reference.repository === configuredRepository))
 		: null;
+	const exactAttemptCommit = attempt.success
+		? attempt.data.workspace.mode === 'git' ? attempt.data.workspace.baseCommit : exactAssignmentSource?.commit
+		: undefined;
 	if (attempt.success && attempt.data.workspace.mode === 'git'
 		&& attempt.data.workspace.repository !== configured.id && attempt.data.workspace.repository !== configuredRepository) {
 		throw new CapacityGovernanceError('assignment_source_repository_changed', 'Assignment workspace does not match the project software repository.', 409);
@@ -143,10 +146,7 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
       owner: configured.owner, repository: configured.name, ...(bindingId ? { bindingId } : {}), ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}) });
 	let credential = credentialRequired ? await credentialFor(pin?.credentialBindingId ?? undefined) : null;
     if (!pin) {
-			const exactCommit = attempt.success
-		? (attempt.data.workspace.mode === 'git' ? attempt.data.workspace.baseCommit : exactAssignmentSource?.commit
-			?? await resolveAuthorizedSourceCommit(configured, credential?.token, options.fetchImpl))
-		: await resolveAuthorizedSourceCommit(configured, credential?.token, options.fetchImpl);
+			const exactCommit = exactAttemptCommit ?? await resolveAuthorizedSourceCommit(configured, credential?.token, options.fetchImpl);
       pin = await persistAssignmentSourcePin(database, { assignmentId, teamId: actor.teamId, providerId: actor.capacityProviderId, membershipId: actor.membershipId,
         runnerId: request.runnerId, leaseToken: request.leaseToken, stateVersion: Number(row.state_version), context,
         pin: { schemaVersion: 'treeseed.assignment-source-pin/v1', repository: configured, exactCommit, credentialBindingId: credential?.bindingId ?? null,
@@ -155,7 +155,14 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     // Re-resolve the winning binding: a concurrent pin or revocation must never reuse a losing credential.
 	credential = credentialRequired ? await credentialFor(pin.credentialBindingId ?? undefined) : null;
     if (pin.repository.id !== configured.id || pin.repository.cloneUrl !== configured.cloneUrl) throw new CapacityGovernanceError('assignment_source_repository_changed', 'Concurrent source pin selected a different repository.', 409);
-	if (sourceMode.acquisition !== 'simulation-local') {
+	// An immutable public-source SHA is already authorized by the assignment's
+	// exact grant and is verified by the broker's Git fetch/object hash. Repeated
+	// anonymous GitHub REST lookups would exhaust its 60-request hourly quota.
+	// Credential-bound source and moving refs still require upstream validation.
+	if (exactAttemptCommit && pin.exactCommit !== exactAttemptCommit) throw new CapacityGovernanceError(
+		'assignment_source_pin_changed', 'The source pin differs from the immutable assignment revision.', 409);
+	if (sourceMode.acquisition !== 'simulation-local'
+		&& !(sourceMode.acquisition === 'upstream-public' && exactAttemptCommit)) {
 		await resolveAuthorizedSourceCommit({ ...pin.repository, ref: pin.exactCommit }, credential?.token, options.fetchImpl);
 	}
     await checkAuthority();

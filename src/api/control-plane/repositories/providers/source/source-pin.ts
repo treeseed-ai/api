@@ -13,7 +13,7 @@ interface PinStore {
   run(sql: string, parameters: unknown[]): Promise<unknown>;
 }
 
-/** GitHub authorization is rechecked even for a cached pin. Never follow a credential-bearing redirect. */
+/** Resolve a moving ref or recheck credential-bound upstream access; never follow a credential-bearing redirect. */
 export async function resolveAuthorizedSourceCommit(repository: SourceRepository, token?: string, fetchImpl: typeof fetch = fetch) {
   // Revalidate the tuple rather than trusting a stored transport URL.
   const validated = selectAssignmentSourceRepository([{ ...repository, role: 'software', currentBranch: repository.ref }]);
