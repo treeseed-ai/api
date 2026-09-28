@@ -72,6 +72,16 @@ export function simulationRunBySelection(workdays: readonly { id: string; execut
 }
 export const simulationRunByDecision = (workdays: readonly { id: string; executionMode?: string; parameters: Row }[]) =>
 	simulationRunBySelection(workdays, 'decisionIds');
+export function simulationRunForNode(node: ExecutionNode, byDecision: ReadonlyMap<string, string>, byProposal: ReadonlyMap<string, string>): string {
+	const decisionId = node.authorityRefs?.find((reference) => reference.model === 'decision')?.id;
+	const selectedDecision = decisionId ? byDecision.get(decisionId) ?? '' : '';
+	// A proposal Reviewer runs before a decision exists. Its explicit proposal
+	// selection is already authoritative for this simulation workday.
+	const selectedProposal = byProposal.get(node.sourceRef.id) ?? '';
+	if (selectedDecision && selectedProposal && selectedDecision !== selectedProposal) throw new CapacityOperationError(409,
+		'execution_simulation_selection_overlap', 'The proposal and decision belong to different simultaneous simulations.');
+	return selectedDecision || selectedProposal;
+}
 async function loadGraphSource<T>(source: string, loader: () => Promise<T>): Promise<T> {
 	try {
 		return await loader();
@@ -298,15 +308,7 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const proposalProjection = sources.length ? projectTeamExecutionGraph({ teamId, revision, sources, profiles, dependencyLinks }) : null;
 	const activeSimulationByDecision = simulationRunByDecision(workdays);
 	const activeSimulationByProposal = simulationRunBySelection(workdays, 'proposalIds');
-	const decisionRun = (node: ExecutionNode) => {
-		const decisionId = node.authorityRefs?.find((reference) => reference.model === 'decision')?.id;
-		if (!decisionId) return '';
-		const byDecision = activeSimulationByDecision.get(decisionId) ?? '';
-		const byProposal = activeSimulationByProposal.get(node.sourceRef.id) ?? '';
-		if (byDecision && byProposal && byDecision !== byProposal) throw new CapacityOperationError(409,
-			'execution_simulation_selection_overlap', 'The same proposal decision belongs to two simultaneous simulations.');
-		return byDecision || byProposal;
-	};
+	const decisionRun = (node: ExecutionNode) => simulationRunForNode(node, activeSimulationByDecision, activeSimulationByProposal);
 	if (proposalProjection) proposalProjection.nodes = proposalProjection.nodes.map((node) => {
 		const runId = decisionRun(node);
 		return runId ? { ...node, workdayId: runId } : node;

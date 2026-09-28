@@ -12,6 +12,9 @@ workflow:
   - id: proposal-review-source
     action: { verifier: api.golden.proposal-review-source }
     expect: { status: passed }
+  - id: proposal-review-binding
+    action: { verifier: api.golden.proposal-review-binding }
+    expect: { status: passed }
   - id: immutable-public-source
     action: { verifier: api.golden.public-exact-source }
     expect: { status: passed }

@@ -10,6 +10,7 @@ import {
 	selectTerminalAssignmentRows,
 	simulationRunByDecision,
 	simulationRunBySelection,
+	simulationRunForNode,
 	terminalAssignmentWasRequeued,
 } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { applyOperationalState, recoverIncompleteReviewCycles, recoverInterruptedGovernanceReviews,
@@ -73,6 +74,18 @@ it('binds each accepted decision to at most one active simulation workday', () =
 	expect(simulationRunBySelection([{ id: 'golden', executionMode: 'simulation', parameters: {
 		proposalIds: ['proposal'], decisionIds: [],
 	} }], 'proposalIds').get('proposal')).toBe('golden');
+});
+
+it('binds the real proposal Reviewer before a decision exists without adopting an unrelated run', () => {
+	const proposalReview = { ...node('ready'), sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal' },
+		workItemId: 'proposal-review', kind: 'reviewing', authorityRefs: [{ store: 'treedx', model: 'proposal', id: 'proposal' }] } as never;
+	const proposalRuns = new Map([['proposal', 'simulation-a']]);
+	expect(simulationRunForNode(proposalReview, new Map(), proposalRuns)).toBe('simulation-a');
+	expect(simulationRunForNode(proposalReview, new Map(), new Map([['other', 'simulation-b']]))).toBe('');
+	const accepted = { ...proposalReview, authorityRefs: [{ store: 'treedx', model: 'decision', id: 'decision' }] } as never;
+	expect(simulationRunForNode(accepted, new Map([['decision', 'simulation-a']]), proposalRuns)).toBe('simulation-a');
+	expect(() => simulationRunForNode(accepted, new Map([['decision', 'simulation-b']]), proposalRuns))
+		.toThrow('different simultaneous simulations');
 });
 
 it('starts a new simulation from projected readiness without adopting a prior exhausted review', () => {

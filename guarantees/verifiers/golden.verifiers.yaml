@@ -16,6 +16,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
     testName: "loads exact proposal and source context for proposal-level reviewing nodes"
+  api.golden.proposal-review-binding:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph-persistence.test.ts
+    testName: "binds the real proposal Reviewer before a decision exists without adopting an unrelated run"
   api.golden.public-exact-source:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
