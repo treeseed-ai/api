@@ -47,6 +47,12 @@ export class TreeDxInfrastructureClient {
 		const result = await this.upstream.operation<any>(operation.method, operation.path, { pathParams: { repo_id: repoId }, body });
 		return result?.retirement ?? result;
 	}
+	async discardOrphanRef(input: Input) {
+		const { repoId, ...body } = input;
+		const operation = requireTreeDxOperation('discardOrphanRepositoryRef');
+		const result = await this.upstream.operation<any>(operation.method, operation.path, { pathParams: { repo_id: repoId }, body });
+		return result?.discard ?? result;
+	}
 	getPlacement(repoId: string) { return this.upstream.registry.getPlacement(repoId) as Promise<any>; }
 
 	readRepositoryFile(input: Input) { const { repoId, ...body } = input; return this.upstream.query.readFile(this.repositoryId(repoId), body) as Promise<any>; }

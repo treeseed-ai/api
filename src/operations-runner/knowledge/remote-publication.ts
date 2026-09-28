@@ -15,10 +15,6 @@ async function requireTreeDxRef(client: any, repositoryId: string, ref: string, 
 	if (head !== expectedHead) throw new Error(`TreeDX ref ${ref} resolved to ${head ?? 'missing'} instead of reviewed commit ${expectedHead}.`);
 }
 
-export function treeDxPromotionExpectedHead(localPublicationHead: string | null, reviewedBaseCommit: string) {
-	return localPublicationHead ?? reviewedBaseCommit;
-}
-
 function missingSourceRef(error: unknown) {
 	return error instanceof Error && /ref or object not found/iu.test(error.message);
 }
@@ -66,34 +62,19 @@ export async function publishRemoteRepository(input: {
 		const readBack = await remoteHead({ store: input.store, binding, fetchImpl: input.fetchImpl });
 		if (readBack !== input.reviewedCommit) throw new Error('The provider remote did not retain the reviewed publication commit.');
 	}
-	const integrationRef = `refs/heads/treedx/incoming/${input.reviewedCommit}`;
+	const remoteRef = `refs/remotes/origin/${fullHead(input.publicationRef).slice('refs/heads/'.length)}`;
 	const fetchCredential = await createRemoteGitCredentialDelivery({
 		...input, repositoryBindingId: binding.id, credentialAuthorityId: binding.authority_id,
 		nodeId: input.connection.nodeId, sourceRef: fullHead(input.publicationRef),
-		destinationRef: integrationRef, expectedRemoteHead: input.reviewedCommit, purpose: 'fetch',
-		refspec: `+${fullHead(input.publicationRef)}:${integrationRef}`,
+		destinationRef: remoteRef, expectedRemoteHead: input.reviewedCommit, purpose: 'fetch',
+		refspec: `+${fullHead(input.publicationRef)}:${remoteRef}`,
 	});
 	await input.connection.client.fetchRemote({ repoId: input.connection.repositoryId, remoteName: 'origin',
 		remoteUrl: binding.clone_url, credentialId: fetchCredential.deliveryId,
-		refspecs: [`+${fullHead(input.publicationRef)}:${integrationRef}`] });
-	await requireTreeDxRef(input.connection.client, input.connection.repositoryId, integrationRef, input.reviewedCommit);
-	const localPublicationHead = await observeTreeDxRef(input.connection.client, input.connection.repositoryId,
-		fullHead(input.publicationRef));
-	let promotion;
-	if (localPublicationHead === input.reviewedCommit) {
-		promotion = { status: 'already_current', beforeHead: input.reviewedCommit, afterHead: input.reviewedCommit };
-	} else {
-		promotion = await input.connection.client.promoteRef({ repoId: input.connection.repositoryId,
-			sourceRef: integrationRef, destinationRef: fullHead(input.publicationRef),
-			expectedDestinationHead: treeDxPromotionExpectedHead(localPublicationHead, input.baseCommit) });
-	}
-	if (promotion.afterHead !== input.reviewedCommit) throw new Error('TreeDX publication ref did not match the remote reviewed commit.');
-	await requireTreeDxRef(input.connection.client, input.connection.repositoryId, fullHead(input.publicationRef), input.reviewedCommit);
-	await input.connection.client.retireRef({ repoId: input.connection.repositoryId, ref: integrationRef,
-		mergedIntoRef: fullHead(input.publicationRef), expectedHead: input.reviewedCommit,
-		expectedMergedIntoHead: input.reviewedCommit });
+		refspecs: [`+${fullHead(input.publicationRef)}:${remoteRef}`] });
+	await requireTreeDxRef(input.connection.client, input.connection.repositoryId, remoteRef, input.reviewedCommit);
 	const now = new Date().toISOString();
 	await input.store.run(`UPDATE project_remote_repository_bindings SET expected_head = ?, observed_head = ?, drift = 'none',
 		version = version + 1, updated_at = ? WHERE id = ?`, [input.reviewedCommit, input.reviewedCommit, now, binding.id]);
-	return { push, fetch: { ref: integrationRef }, promotion };
+	return { push, fetch: { ref: remoteRef } };
 }

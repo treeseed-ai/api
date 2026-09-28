@@ -150,7 +150,7 @@ export function createKnowledgePublicationExecutor(options: any) {
 				publicationRef: publication.published_ref, authoringRef: workspace.branchName,
 				fetchImpl: options.fetchImpl,
 			});
-			let push = publicationAlreadyApplied ? undefined : remote?.push ?? remote?.promotion;
+			let push = publicationAlreadyApplied ? undefined : remote?.push;
 			if (!publicationAlreadyApplied && managedLocal) {
 				const promote = (sourceRef: string) => connection.client.promoteRef({ repoId: connection.repositoryId, sourceRef,
 					destinationRef: publication.published_ref, expectedDestinationHead: workspace.baseCommitSha });
@@ -217,18 +217,30 @@ export function createKnowledgePublicationExecutor(options: any) {
 			if (!manifest || !containsPublicationCommit(manifest, publication, workspace)) {
 				throw new Error('The immutable publication manifest does not contain the reviewed commit.');
 			}
-			if (managedLocal || external) {
+			if (managedLocal) {
 				await connection.client.retireRef({ repoId: connection.repositoryId, ref: workspace.branchName,
 					mergedIntoRef: publication.published_ref, expectedHead: publication.commit_sha,
 					expectedMergedIntoHead: publication.commit_sha });
+			}
+			if (external) {
+				// GitHub is the published branch authority. A divergent local staging branch
+				// must not be force-promoted over unpublished TreeDX history.
+				const maintenance = await resolveConnection(store, { projectId: workspace.projectId,
+					write: false, maintenanceRefs: [workspace.branchName, publication.commit_sha] });
+				if (!maintenance) throw new Error('TreeDX publication cleanup authority is unavailable.');
+				await maintenance.client.discardOrphanRef({ repoId: connection.repositoryId, ref: workspace.branchName,
+					expectedHead: publication.commit_sha,
+					reason: `Exact reviewed commit ${publication.commit_sha} published and verified on ${publication.published_ref}.` });
 			}
 			await connection.client.closeWorkspace(workspace.treeDxWorkspaceId);
 			const now = new Date().toISOString();
 			const updated = await store.completeKnowledgePublication(publication.id, { workspaceId: workspace.id,
 				workspaceVersion: workspace.version, publishedRevision: manifest.revision, completedAt: now });
 			if (!updated.ok) throw new Error('Knowledge publication state changed while the runner was working.');
+			const integratedRef = external
+				? `refs/remotes/origin/${publication.published_ref.replace(/^refs\/heads\//u, '')}` : publication.published_ref;
 			await recordTreeDxAuthoringState(store,'integrated',{ projectId:workspace.projectId,repositoryId:workspace.repositoryId,
-				commitSha:publication.commit_sha,ref:publication.published_ref,changedPaths:Array.isArray(review.changedPaths) ? review.changedPaths : [],
+				commitSha:publication.commit_sha,ref:integratedRef,changedPaths:Array.isArray(review.changedPaths) ? review.changedPaths : [],
 				actorType:'service',actorId:'knowledge-publication-runner' });
 			await recordPublicationEntryAudits({ store, storage: publicationStorage, publication, workspace, previous: auditPrevious, manifest });
 			await recordPublicationCompletedAudit({ store, publication, workspace, review, manifest,
