@@ -49,6 +49,10 @@ describe('workday stop when graph reconciliation fails', () => {
 		expect(store.terminalizeCapacityWorkdayAssignments).toHaveBeenCalledWith('team-1', 'run-1', expect.objectContaining({
 			code: 'workday_operator_stopped', source: 'capacity_workday_operator_stop',
 		}));
+		const terminalizationInput = store.terminalizeCapacityWorkdayAssignments.mock.calls[0]?.[2] as unknown as {
+			now: string; preserveActiveLeasesUntil: string;
+		};
+		expect(Date.parse(terminalizationInput.preserveActiveLeasesUntil) - Date.parse(terminalizationInput.now)).toBe(300_000);
 		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team-1', 'run-1', expect.objectContaining({ status: 'cancelled' }));
 	});
 });
