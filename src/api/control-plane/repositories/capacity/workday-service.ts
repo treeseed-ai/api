@@ -6,6 +6,7 @@ import { createWorkdayProfileService } from './workdays/profile-service.ts';
 import { communicationSchedulingDiagnostics } from './communication/scheduling-diagnostics.ts';
 import { advanceLivingWorkday } from '../../../capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
 import { reconcileExecutionGraph } from './execution/execution-graph-service.ts';
+import { workdayTerminalizationPreserveUntil } from '../../../capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
 function page(query: Record<string, unknown>) {
 	try { return { limit: normalizeCapacityPageLimit(query.limit), cursor: decodeCapacityPageCursor(query.cursor) }; }
@@ -60,6 +61,7 @@ export function createWorkdayService(store: any) {
 				const terminalization = await store.terminalizeCapacityWorkdayAssignments(teamId, runId, {
 					now, settlementKeyPrefix: 'workday-operator-stop', source: 'capacity_workday_operator_stop',
 					code: 'workday_operator_stopped', reason, metadata: { requestedById: actor.id },
+					preserveActiveLeasesUntil: workdayTerminalizationPreserveUntil('cancelled', run.parameters, now),
 				});
 				const closing = await store.getCapacityWorkdayRun(teamId, runId);
 				if (!closing) throw new CapacityOperationError(404, 'workday_not_found', 'Workday not found after terminalization.');

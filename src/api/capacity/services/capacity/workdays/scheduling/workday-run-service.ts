@@ -45,7 +45,9 @@ function assertExecutionModeOwnedByWorkday(parameters: JsonRecord) {
 	);
 }
 export function workdayTerminalizationPreserveUntil(status: CapacityWorkdayRunStatus, parameters: JsonRecord, now: string) {
-	return status === 'completed' ? settlementGraceUntil(parameters, now) : now;
+	// Closing admission must not steal a live provider lease before it can report
+	// actual usage and verified teardown. Recovery terminalizes it after grace.
+	return status === 'completed' || status === 'cancelled' ? settlementGraceUntil(parameters, now) : now;
 }
 
 export function compileCapacityWorkdayRunRecord(teamId: string, input: JsonRecord, options: { now?: string; id?: string } = {}): CapacityWorkdayRunRecord {
