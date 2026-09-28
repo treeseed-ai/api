@@ -58,10 +58,10 @@ describe('live allocation ledger inputs', () => {
 				capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'reviewer', activity: 'reviewing', now: at });
 			expect((await calculate(selectedRun, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
 			expect(counts.at(-1)).toBe(2);
-			// After the phase boundary, only the selected Actor and its paired
-			// Reviewer remain eligible; proposal governance review no longer counts.
+			// The same ready proposal governance node can use acting capacity after
+			// the planning window; accepted work stays decision-gated in the graph.
 			expect((await calculate(selectedRun))['codex-implementation']?.opportunity.availableSeconds).toBe(990);
-			expect(counts.at(-1)).toBe(2);
+			expect(counts.at(-1)).toBe(3);
 			const planningOnly = { ...selectedRun, parameters: { ...selectedRun.parameters, planningOnly: true } };
 			expect((await calculate(planningOnly, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
 			// Governance review is planning work, not implementation. A planning-only

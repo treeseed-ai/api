@@ -26,6 +26,31 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph-persistence.test.ts
     testName: "binds the real proposal Reviewer before a decision exists without adopting an unrelated run"
+  api.golden.proposal-review-phase:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/proposal-review-phase.test.ts
+    testName: "carries one ready proposal Reviewer into acting, but never admits paired work review during planning"
+  api.golden.proposal-review-accounting:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/proposal-review-phase.test.ts
+    testName: "charges governance review to its allocator-issued phase and paired work review to acting"
+  api.golden.proposal-review-supply:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "counts shared proposal work through real PostgreSQL graph custody, not only workday-owned nodes"
+  api.golden.proposal-review-window:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: "uses the acting window for a governance review whose viable minimum outlives planning"
+  api.golden.proposal-review-phase-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-execution-admission.test.ts
+    testName: "fails closed when an assignment has no allocator-issued active phase"
   api.golden.timeout-report-grace:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

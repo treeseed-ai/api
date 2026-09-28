@@ -387,6 +387,33 @@ describe('immutable assignment-attempt construction', () => {
 			now: '2026-09-13T12:59:01.000Z' })).toThrow(/cannot fit the viable task minimum/u);
 	});
 
+	it('uses the acting window for a governance review whose viable minimum outlives planning', () => {
+		const review = structuredClone(candidate);
+		review.node.kind = 'reviewing' as never;
+		review.node.pairRole = null;
+		review.node.workItemId = 'proposal-review';
+		review.node.sourceRef = sourceRef;
+		review.node.workspace = 'treedx';
+		review.node.estimate = { minimumSeconds: 780, expectedSeconds: 1320, maximumSeconds: 1980 };
+		review.node.requestedPermissions = { content: { read: ['proposal'], write: ['decision'] },
+			tools: ['source.read', 'verification'] } as never;
+		review.effectiveProfile.activity = 'reviewing';
+		review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
+		const currentObservation = { ...provider.accountingObservation.modelUsage, observedAt: '2026-09-13T12:30:00.000Z' };
+		const reviewProvider = { ...provider, accountingObservation: { modelUsage: currentObservation,
+			capabilityUsage: { 'code-change': currentObservation } } };
+		const result = buildAssignmentAttempt({ candidate: review as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements: [], constraints: [],
+				opportunity: { phase: 'acting', availableSeconds: 1800 } } } as never,
+			providerSessionId: 'session', providers: [reviewProvider] as never, attempt: 1,
+			now: '2026-09-13T12:30:00.000Z' });
+		expect(result.allocation.admitted).toBe(true);
+		expect(result.assignment.limits.maximumSeconds).toBeGreaterThanOrEqual(780);
+		expect(Date.parse(result.assignment.deadline)).toBeGreaterThan(Date.parse('2026-09-13T12:20:00.000Z'));
+		expect(Date.parse(result.assignment.deadline)).toBeLessThanOrEqual(Date.parse('2026-09-13T13:00:00.000Z'));
+	});
+
 	it('rejects executable nodes whose capability demand was not compiled', () => {
 		const missing = structuredClone(candidate);
 		missing.node.requiredCapabilities = [];

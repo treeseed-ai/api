@@ -32,10 +32,11 @@ const reviewCycleAdmissionFence = `NOT EXISTS (
 	)>=COALESCE(reviewer.maximum_review_cycles,1)
 )`;
 
-export function assignmentAccountingMode(assignment: Pick<AssignmentAttempt, 'effectiveProfile' | 'sourceRef' | 'workItemId'>): 'planning' | 'acting' {
+export function assignmentAccountingMode(assignment: Pick<AssignmentAttempt, 'effectiveProfile' | 'sourceRef' | 'workItemId'>,
+	phase: 'planning' | 'acting' | 'ended'): 'planning' | 'acting' {
 	return assignment.effectiveProfile.activity === 'planning' || assignment.effectiveProfile.activity === 'estimating'
 		|| (assignment.effectiveProfile.activity === 'reviewing' && assignment.sourceRef.model === 'proposal'
-			&& assignment.workItemId === 'proposal-review') ? 'planning' : 'acting';
+			&& assignment.workItemId === 'proposal-review' && phase === 'planning') ? 'planning' : 'acting';
 }
 
 /** Atomically claim one normalized node and create its one reservation/attempt. */
@@ -76,7 +77,10 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	const providerConcurrencyLimit = input.providerConcurrencyLimit ?? 1;
 	if (!Number.isInteger(providerConcurrencyLimit) || providerConcurrencyLimit < 1) throw new CapacityGovernanceError(
 		'provider_concurrency_limit_invalid', 'A positive provider concurrency limit is required.', 409);
-	const mode = assignmentAccountingMode(assignment);
+	const phase = input.allocation.opportunity?.phase;
+	if (phase !== 'planning' && phase !== 'acting') throw new CapacityGovernanceError(
+		'assignment_allocation_phase_invalid', 'Admission requires the allocator-issued active workday phase.', 409);
+	const mode = assignmentAccountingMode(assignment, phase);
 	const decisionId = assignment.authorityRefs.find((reference) => reference.model === 'decision')?.id ?? null;
 	const proposalId = assignment.sourceRef.model === 'proposal' ? assignment.sourceRef.id : null;
 	const timing = compileAssignmentTimeBudget({ now: input.now, requestedSeconds: assignment.limits.maximumSeconds, configuredBudget: { deadline: assignment.deadline } });

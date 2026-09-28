@@ -5,6 +5,7 @@ import {
 	calculateAssignmentAllocation,
 	remainingCapabilitySeconds,
 	workdayPlanningEndsAt,
+	workdayPhase,
 	type AssignmentAttempt,
 	type ExactEntityReference,
 	type ExactGrant,
@@ -209,7 +210,8 @@ export function buildAssignmentAttempt(input: {
 	const planningEnd = workdayPlanningEndsAt(appliedPlan);
 	const planningTurn = ['planning', 'estimating'].includes(candidate.node.kind)
 		|| (communication && Date.parse(input.now) < Date.parse(planningEnd));
-	const planningPhase = planningTurn || isProposalGovernanceReview(candidate.node);
+	const planningPhase = planningTurn || (isProposalGovernanceReview(candidate.node)
+		&& workdayPhase(appliedPlan, input.now) === 'planning');
 	const windowEnd = planningPhase ? planningEnd : appliedPlan.endsAt;
 	const preparationSeconds = assignmentPreparationSeconds(undefined);
 	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
