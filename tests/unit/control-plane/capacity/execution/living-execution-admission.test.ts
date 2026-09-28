@@ -3,12 +3,23 @@ import { admitLivingExecutionAssignment } from '../../../../../src/api/capacity/
 import { calculateAssignmentAllocation } from '@treeseed/sdk/agent-capacity';
 
 import { assignment } from './fixtures/assignment.ts';
-const allocation = calculateAssignmentAllocation({ estimate: assignment.estimate, measurements: [],
-	constraints: [{ id: 'execution-window', remainingSeconds: 180 }] });
+const allocation = { ...calculateAssignmentAllocation({ estimate: assignment.estimate, measurements: [],
+	constraints: [{ id: 'execution-window', remainingSeconds: 180 }] }),
+	opportunity: { phase: 'acting' } } as never;
 const accountingLimits = { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
 	capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 28800 } } };
 
 describe('living execution admission', () => {
+	it('fails closed when an assignment has no allocator-issued active phase', async () => {
+		const store = { getProviderAssignment: vi.fn().mockResolvedValue(null), batch: vi.fn(async () => []) };
+		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			accountingLimits, assignment: assignment as never, allocation: { ...allocation, opportunity: undefined } as never,
+			projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'lane',
+			lanePurpose: 'workday', executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [],
+			treedxProxyHandle: { id: 'tdx_assignment' }, now: assignment.createdAt })).rejects.toMatchObject({
+			code: 'assignment_allocation_phase_invalid' });
+		expect(store.batch).not.toHaveBeenCalled();
+	});
 	it('claims the node, reservation, and immutable attempt in one batch without legacy demand/allocation authority', async () => {
 		const committed = { id: assignment.id, executionNodeId: 'node', executionNodeRevision: 1 };
 		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: vi.fn(async () => []) };

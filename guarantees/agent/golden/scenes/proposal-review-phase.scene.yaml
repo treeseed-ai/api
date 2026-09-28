@@ -1,0 +1,20 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.proposal-review-phase
+title: Governed review across planning and acting
+scope: local-component-tests
+workflow:
+  - id: phase-eligibility
+    action: { verifier: api.golden.proposal-review-phase }
+    expect: { status: passed }
+  - id: phase-accounting
+    action: { verifier: api.golden.proposal-review-accounting }
+    expect: { status: passed }
+  - id: ready-supply
+    action: { verifier: api.golden.proposal-review-supply }
+    expect: { status: passed }
+  - id: viable-deadline
+    action: { verifier: api.golden.proposal-review-window }
+    expect: { status: passed }
+  - id: missing-phase-denial
+    action: { verifier: api.golden.proposal-review-phase-denial }
+    expect: { status: passed }

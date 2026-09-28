@@ -39,8 +39,9 @@ export function isNodeEligibleInWorkdayPhase(
 	if (closing) return node.kind === 'reporting';
 	if (node.kind === 'reporting') return false;
 	if (node.kind === 'communication') return true;
-	const planningWork = node.kind === 'planning' || node.kind === 'estimating' || isProposalGovernanceReview(node);
-	return phase === 'planning' ? planningWork : !planningWork;
+	const governanceReview = isProposalGovernanceReview(node);
+	const planningWork = node.kind === 'planning' || node.kind === 'estimating';
+	return governanceReview || (phase === 'planning' ? planningWork : !planningWork);
 }
 
 export function reservationFairUsage(rows: Record<string, unknown>[]) {
