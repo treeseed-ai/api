@@ -3,6 +3,9 @@ id: api.golden.estimate-contention
 title: Concurrent estimate integration
 scope: local-component-tests
 workflow:
+  - id: project-independent-owner-estimates
+    action: { verifier: api.golden.owner-estimate-graph }
+    expect: { status: passed }
   - id: reconcile-class-estimate
     action: { verifier: api.golden.estimate-lease-reconciliation }
     expect: { status: passed }
