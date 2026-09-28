@@ -54,8 +54,10 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 				.bind(attempt.nodeId, attempt.teamId, attempt.projectId, attempt.workdayId, 'acting', attempt.createdAt, attempt.createdAt).run();
 			const run = (attempt: typeof attempts[number]) => admitLivingExecutionAssignment(store as never, {
 				principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
-				assignment: attempt, allocation: calculateAssignmentAllocation({ estimate: attempt.estimate, measurements: [],
+				assignment: attempt, allocation: { ...calculateAssignmentAllocation({ estimate: attempt.estimate, measurements: [],
 					constraints: [{ id: 'model-day', remainingSeconds: 3 }] }),
+					// Direct-admission fixture: production obtains this phase from the workday allocator.
+					opportunity: { phase: 'acting' } } as never,
 				accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 10, capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 10 } } },
 				projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'codex', laneId: 'workday', lanePurpose: 'workday',
 				executionKind: 'workday', workdayConcurrencyLimit: 1, predecessorResults: [], treedxProxyHandle: { id: `tdx-${attempt.id}` }, now: attempt.createdAt,
