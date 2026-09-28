@@ -206,9 +206,11 @@ export function buildAssignmentAttempt(input: {
 		'Assignment admission found contradictory execution mode authority.', 409,
 		{ run: input.run.executionMode, appliedPlan: appliedPlan.executionMode },
 	);
-	const planningTurn = ['planning', 'estimating'].includes(candidate.node.kind);
+	const planningEnd = workdayPlanningEndsAt(appliedPlan);
+	const planningTurn = ['planning', 'estimating'].includes(candidate.node.kind)
+		|| (communication && Date.parse(input.now) < Date.parse(planningEnd));
 	const planningPhase = planningTurn || isProposalGovernanceReview(candidate.node);
-	const windowEnd = planningPhase ? workdayPlanningEndsAt(appliedPlan) : appliedPlan.endsAt;
+	const windowEnd = planningPhase ? planningEnd : appliedPlan.endsAt;
 	const preparationSeconds = assignmentPreparationSeconds(undefined);
 	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'

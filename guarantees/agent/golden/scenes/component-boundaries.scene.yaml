@@ -9,6 +9,9 @@ workflow:
   - id: total-admission-ceiling
     action: { verifier: api.golden.total-admission-ceiling }
     expect: { status: passed }
+  - id: planning-communication-turn
+    action: { verifier: api.golden.planning-communication-turn }
+    expect: { status: passed }
   - id: proposal-review-source
     action: { verifier: api.golden.proposal-review-source }
     expect: { status: passed }
