@@ -138,6 +138,37 @@ describe('provider source workspace authorization', () => {
 			mode: 'work', acquisition: 'simulation-local', publication: 'simulation-branch' });
 	});
 
+	it('uses the immutable public source SHA without consuming anonymous GitHub REST quota', async () => {
+		const f = fixture({ workday_execution_mode: 'simulation', work_day_id: 'workday',
+			workday_parameters_json: '{"acceptanceCampaignId":"campaign"}', assignment_attempt_json: JSON.stringify(canonicalAttempt) });
+		const first = await f.service({ principal }, 'assignment', f.request);
+		const second = await f.service({ principal }, 'assignment', f.request);
+		expect(first.authorization).toMatchObject({ acquisition: 'upstream-public', source: { repositoryId: 'repository', commit } });
+		expect(second.authorization.source.commit).toBe(commit);
+		expect(f.store.run).toHaveBeenCalledTimes(1);
+		expect(mocks.authority).toHaveBeenCalledTimes(4);
+		expect(mocks.credential).not.toHaveBeenCalled();
+		expect(f.fetchImpl).not.toHaveBeenCalled();
+	});
+
+	it('rejects a public pin that no longer matches the immutable assignment SHA', async () => {
+		const f = fixture({ workday_execution_mode: 'simulation', work_day_id: 'workday',
+			assignment_attempt_json: JSON.stringify(canonicalAttempt) });
+		await f.service({ principal }, 'assignment', f.request);
+		const context = JSON.parse(String(f.current.workspace_context_json));
+		context.sourceWorkspace.exactCommit = 'b'.repeat(40);
+		f.current.workspace_context_json = JSON.stringify(context);
+		await expect(f.service({ principal }, 'assignment', f.request)).rejects.toMatchObject({ code: 'assignment_source_pin_changed' });
+		expect(f.fetchImpl).not.toHaveBeenCalled();
+	});
+
+	it('still resolves a public moving ref upstream when no exact assignment source exists', async () => {
+		const f = fixture({ workday_execution_mode: 'simulation' });
+		await f.service({ principal }, 'assignment', f.request);
+		expect(f.fetchImpl).toHaveBeenCalledTimes(2);
+		expect(mocks.credential).not.toHaveBeenCalled();
+	});
+
 	it('reads a reviewed simulation candidate from local custody, not GitHub', async () => {
 		const candidateCommit = '9'.repeat(40);
 		const reviewed = { ...canonicalAttempt,
