@@ -36,6 +36,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
     testName: "re-reads and merges distinct class estimates after a concurrent TreeDX branch lease"
+  api.golden.owner-estimate-graph:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: "allows an owner estimate after its own planning turn without waiting for unrelated agents"
   api.golden.estimate-lease-denial:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
