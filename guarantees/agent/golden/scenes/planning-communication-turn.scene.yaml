@@ -1,0 +1,8 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.planning-communication-turn
+title: Planning discussion turn allocation
+scope: local-component-tests
+workflow:
+  - id: planning-communication-turn
+    action: { verifier: api.golden.planning-communication-turn }
+    expect: { status: passed }

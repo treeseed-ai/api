@@ -11,6 +11,11 @@ verifiers:
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
     testName: uses the total five-slot ceiling rather than remaining headroom for atomic admission
+  api.golden.planning-communication-turn:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: gives planning discussion the policy turn ceiling without changing acting chat allocation
   api.golden.proposal-review-source:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

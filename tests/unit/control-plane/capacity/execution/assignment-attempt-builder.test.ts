@@ -47,6 +47,42 @@ const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedP
 } } } as never;
 
 describe('immutable assignment-attempt construction', () => {
+	it('gives planning discussion the policy turn ceiling without changing acting chat allocation', () => {
+		const discussion = structuredClone(candidate);
+		discussion.node.kind = 'communication';
+		discussion.node.pairRole = null as never;
+		discussion.node.estimate = { minimumSeconds: 90, expectedSeconds: 180, maximumSeconds: 180 };
+		discussion.node.requiredCapabilities = ['conversation'];
+		discussion.node.workspace = 'treedx';
+		discussion.node.sourceRef = { ...sourceRef, model: 'discussion', path: 'discussion-messages/one.mdx' } as never;
+		discussion.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] } as never;
+		discussion.effectiveProfile.permissionCeiling = discussion.node.requestedPermissions;
+		discussion.effectiveProfile.activity = 'chat';
+		const offered = { ...provider, capabilities: ['conversation'],
+			accountingLimits: { ...provider.accountingLimits, capabilityLimits: { conversation: { dailyActiveSecondsLimit: 28800 } } },
+			accountingObservation: { ...provider.accountingObservation,
+				capabilityUsage: { conversation: provider.accountingObservation.modelUsage } },
+			lanes: [{ ...provider.lanes[0]!, purpose: 'communication', capabilities: ['conversation'] }],
+			offers: [{ offerId: 'codex-conversation', capabilities: [{ id: 'conversation' }] }] };
+		const measurements = [{ id: 'successful-short-chat', completedAt: '2026-09-13T11:59:00.000Z',
+			expectedSeconds: 180, allocatedSeconds: 90, activeSeconds: 45, outcome: 'completed' }];
+		const chatRun = structuredClone(run) as { parameters: { appliedPlan: { policySnapshot: { planningTurnMaximumSeconds: number } } } };
+		chatRun.parameters.appliedPlan.policySnapshot.planningTurnMaximumSeconds = 180;
+		const build = (now: string) => buildAssignmentAttempt({ candidate: discussion as never, run: chatRun as never,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements, constraints: [] } } as never, providerSessionId: 'session',
+			providers: [{ ...offered, accountingObservation: { ...offered.accountingObservation,
+				modelUsage: { ...offered.accountingObservation.modelUsage, observedAt: now },
+				capabilityUsage: { conversation: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
+			attempt: 1, now });
+		const planning = build('2026-09-13T12:01:00.000Z');
+		expect(planning.assignment.limits.maximumSeconds).toBe(180);
+		expect(planning.allocation.calibration.measurementIds).toEqual([]);
+		expect(() => build('2026-09-13T12:11:30.000Z')).toThrow('remaining execution window cannot fit the viable task minimum');
+		const acting = build('2026-09-13T12:30:00.000Z');
+		expect(acting.allocation.calibration.measurementIds).toEqual(['successful-short-chat']);
+		expect(acting.assignment.limits.maximumSeconds).toBe(162);
+	});
 	it('uses the total five-slot ceiling rather than remaining headroom for atomic admission', () => {
 		for (const remaining of [5, 3, 1]) {
 			const offered = { ...provider, availableConcurrency: remaining, maxConcurrentRunners: 5,
