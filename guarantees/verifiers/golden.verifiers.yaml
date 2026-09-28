@@ -31,6 +31,16 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
     testName: "rejects a public pin that no longer matches the immutable assignment SHA"
+  api.golden.estimate-lease-reconciliation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "re-reads and merges distinct class estimates after a concurrent TreeDX branch lease"
+  api.golden.estimate-lease-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: "fails closed on non-lease conflicts and exhausted assignment time"
   api.golden.maintenance-failure-isolation:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

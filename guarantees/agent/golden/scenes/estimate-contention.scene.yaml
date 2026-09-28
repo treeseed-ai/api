@@ -1,0 +1,11 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.estimate-contention
+title: Concurrent estimate integration
+scope: local-component-tests
+workflow:
+  - id: reconcile-class-estimate
+    action: { verifier: api.golden.estimate-lease-reconciliation }
+    expect: { status: passed }
+  - id: reject-unsafe-retry
+    action: { verifier: api.golden.estimate-lease-denial }
+    expect: { status: passed }

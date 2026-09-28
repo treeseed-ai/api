@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { integrateAssignmentEstimate, mergeAssignmentEstimate } from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { integrateAssignmentEstimate, mergeAssignmentEstimate, retryEstimateContention } from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
 
 const estimate = { minimumSeconds: 100, expectedSeconds: 200, maximumSeconds: 300, rationale: 'Exact source inspection.' };
 const frozen = { id: 'proposal-1', projectId: 'project-1', status: 'draft', executionPlan: { workItems: [
@@ -11,6 +11,36 @@ const candidate = { ...frozen, executionPlan: { workItems: [
 ] } };
 
 describe('exact estimator result integration', () => {
+	it('re-reads and merges distinct class estimates after a concurrent TreeDX branch lease', async () => {
+		const other = { ...frozen, executionPlan: { workItems: [
+			{ ...frozen.executionPlan.workItems[0], estimate }, frozen.executionPlan.workItems[1],
+		] } };
+		let current: Record<string, unknown> = frozen, calls = 0;
+		const write = vi.fn(async () => {
+			if (++calls === 1) {
+				current = mergeAssignmentEstimate({ frozen, candidate: other, current, agentClass: 'researcher' });
+				throw Object.assign(new Error('conflict: writable lease already exists for repo branch'), { status: 409 });
+			}
+			current = mergeAssignmentEstimate({ frozen, candidate, current, agentClass: 'engineer' });
+		});
+		await retryEstimateContention(write, { deadlineMs: 1_000, now: () => 0, wait: async () => undefined });
+		expect(write).toHaveBeenCalledTimes(2);
+		const items = (current.executionPlan as { workItems: Array<Record<string, unknown>> }).workItems;
+		expect(items[0].estimate).toEqual(estimate);
+		expect(items[1].estimate).toEqual(estimate);
+	});
+	it('fails closed on non-lease conflicts and exhausted assignment time', async () => {
+		for (const error of [Object.assign(new Error('proposal source changed'), { status: 409 }),
+			Object.assign(new Error('conflict: writable lease already exists for repo branch'), { status: 503 })]) {
+			const write = vi.fn(async () => { throw error; });
+			await expect(retryEstimateContention(write, { deadlineMs: 1_000, now: () => 0, wait: async () => undefined })).rejects.toBe(error);
+			expect(write).toHaveBeenCalledOnce();
+		}
+		const conflict = Object.assign(new Error('conflict: writable lease already exists for repo branch'), { status: 409 });
+		const write = vi.fn(async () => { throw conflict; });
+		await expect(retryEstimateContention(write, { deadlineMs: 250, now: () => 0, wait: async () => undefined })).rejects.toBe(conflict);
+		expect(write).toHaveBeenCalledOnce();
+	});
 	it('preserves all six golden owner estimates and six reviews regardless of Reviewer publication order', () => {
 		const classes = ['researcher', 'architect', 'tester', 'engineer', 'technical-writer', 'releaser'];
 		const source = { id: 'golden', status: 'draft', executionPlan: { workItems: classes.map((agentClass, index) =>

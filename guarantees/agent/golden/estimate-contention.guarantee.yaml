@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.estimate-contention
+journey: Reconcile concurrent class estimates on one proposal branch
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: authority
+status: planned
+gates: [core]
+summary: A transient TreeDX branch lease re-reads and merges the immutable class estimate without another content authority.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/estimate-contention.scene.yaml
