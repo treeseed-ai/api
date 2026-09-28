@@ -1,4 +1,5 @@
 import { validatePortableContentData } from '@treeseed/sdk/content-validation';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { AssignmentResult } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
@@ -67,10 +68,35 @@ export function mergeAssignmentEstimate(input: {
 			? { ...item, [field]: candidateItems[itemIndex][field] } : item) } };
 }
 
+/** TreeDX's existing writable branch lease serializes publication. Re-read and
+ * merge after contention; never replay the stale proposal version as-is. */
+export async function retryEstimateContention(write: () => Promise<void>, input: {
+	deadlineMs: number; now?: () => number; wait?: (ms: number) => Promise<void>;
+}): Promise<void> {
+	const now = input.now ?? Date.now, wait = input.wait ?? ((ms: number) => delay(ms));
+	for (;;) {
+		try { await write(); return; }
+		catch (error) {
+			const failure = error as { status?: number; message?: string };
+			if (failure.status !== 409 || !/\bconflict: writable lease already exists for /u.test(String(failure.message ?? ''))
+				|| now() + 250 >= input.deadlineMs) throw error;
+			await wait(250);
+		}
+	}
+}
+
 export async function integrateAssignmentEstimate(
 	store: EstimateIntegrationStore, assignment: DurableProviderAssignment, result: AssignmentResult,
 ): Promise<void> {
 	if (assignment.assignmentAttempt?.effectiveProfile.activity !== 'estimating') return;
+	const leaseExpiry = Date.parse(assignment.leaseExpiresAt ?? '');
+	const deadlineMs = Math.min(Date.now() + 10_000, Number.isFinite(leaseExpiry) ? leaseExpiry - 1_000 : Infinity);
+	await retryEstimateContention(() => integrateAssignmentEstimateOnce(store, assignment, result), { deadlineMs });
+}
+
+async function integrateAssignmentEstimateOnce(
+	store: EstimateIntegrationStore, assignment: DurableProviderAssignment, result: AssignmentResult,
+): Promise<void> {
 	const attempt = assignment.assignmentAttempt;
 	if (attempt.sourceRef.model !== 'proposal' || !assignment.agentId) throw new CapacityGovernanceError(
 		'assignment_estimate_source_missing', 'Estimating assignment lacks a frozen proposal, work item, or agent.', 409);

@@ -21,6 +21,12 @@ workflow:
   - id: public-source-pin-denial
     action: { verifier: api.golden.public-source-pin-denial }
     expect: { status: passed }
+  - id: estimate-lease-reconciliation
+    action: { verifier: api.golden.estimate-lease-reconciliation }
+    expect: { status: passed }
+  - id: estimate-lease-denial
+    action: { verifier: api.golden.estimate-lease-denial }
+    expect: { status: passed }
   - id: maintenance-failure-isolation
     action: { verifier: api.golden.maintenance-failure-isolation }
     expect: { status: passed }
