@@ -35,7 +35,10 @@ interface RecoveryScope {
 
 export function recoverableLeaseSql(alias = ''): string {
 	const column = (name: string) => `${alias ? `${alias}.` : ''}${name}`;
-	return `(${column('lease_expires_at')} IS NOT NULL AND ${column('lease_expires_at')} <= ? OR (${column('provider_session_id')} IS NOT NULL AND EXISTS (SELECT 1 FROM capacity_provider_availability_sessions recovery_session WHERE recovery_session.id = ${column('provider_session_id')} AND recovery_session.status IN ('closed','expired'))))`;
+	// Productive authority ends at lease expiry. An executing provider still
+	// needs a bounded interval to destroy its sandbox and report a terminal
+	// timeout with measured usage before recovery takes ownership of the row.
+	return `((${column('lease_expires_at')} IS NOT NULL AND ${column('lease_expires_at')} <= ? AND (COALESCE(${column('metadata_json')}::jsonb ->> 'operationalState', '') <> 'executing' OR ${column('lease_expires_at')} <= ?)) OR (${column('provider_session_id')} IS NOT NULL AND EXISTS (SELECT 1 FROM capacity_provider_availability_sessions recovery_session WHERE recovery_session.id = ${column('provider_session_id')} AND recovery_session.status IN ('closed','expired'))))`;
 }
 
 export interface RecoveryEvidence {
@@ -181,9 +184,12 @@ async function recoverLocked(database: CapacityGovernanceDatabase, assignment: D
 export async function recoverExpiredProviderAssignments(database: CapacityGovernanceDatabase, scope: RecoveryScope = {}): Promise<AssignmentRecoverySummary> {
 	await database.ensureInitialized();
 	const now = scope.now ?? new Date().toISOString();
+	// AgentKernel drains a timed-out model transport for at most 30 seconds;
+	// the remaining time bounds sandbox destruction and the provider report.
+	const timeoutReportCutoff = new Date(Date.parse(now) - 90_000).toISOString();
 	const limit = Math.max(1, Math.min(Math.floor(Number(scope.limit ?? 100)), 200));
 	const clauses = [`status = 'leased'`, `lease_state = 'leased'`, recoverableLeaseSql()];
-	const params: unknown[] = [now];
+	const params: unknown[] = [now, timeoutReportCutoff];
 	if (scope.teamId) { clauses.push('team_id = ?'); params.push(scope.teamId); }
 	if (scope.providerId) { clauses.push('capacity_provider_id = ?'); params.push(scope.providerId); }
 	const rows = await database.all(`SELECT * FROM capacity_provider_assignments WHERE ${clauses.join(' AND ')} ORDER BY lease_expires_at ASC, id ASC LIMIT ?`, [...params, limit]);
