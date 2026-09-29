@@ -18,7 +18,7 @@ const candidate = {
 		workItemId: 'implementation', kind: 'acting', pairRole: 'actor', sourceRef,
 		authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'e'.repeat(64)}` }],
 		ruleRevision: 1, nodeRevision: 1, agentClass: 'engineer', status: 'ready',
-		estimate: { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 180 },
+		estimate: { expectedSeconds: 120, maximumSeconds: 180 },
 		requiredCapabilities: ['code-change'], requestedPermissions: permissions, workspace: 'git',
 		acceptanceCriteria: ['Tests pass.'], maximumReviewCycles: 2,
 		graphRevisionCreated: 1, graphRevisionUpdated: 4,
@@ -51,7 +51,7 @@ describe('immutable assignment-attempt construction', () => {
 		const discussion = structuredClone(candidate);
 		discussion.node.kind = 'communication';
 		discussion.node.pairRole = null as never;
-		discussion.node.estimate = { minimumSeconds: 90, expectedSeconds: 180, maximumSeconds: 180 };
+		discussion.node.estimate = { expectedSeconds: 180, maximumSeconds: 180 };
 		discussion.node.requiredCapabilities = ['conversation'];
 		discussion.node.workspace = 'treedx';
 		discussion.node.sourceRef = { ...sourceRef, model: 'discussion', path: 'discussion-messages/one.mdx' } as never;
@@ -78,7 +78,7 @@ describe('immutable assignment-attempt construction', () => {
 		const planning = build('2026-09-13T12:01:00.000Z');
 		expect(planning.assignment.limits.maximumSeconds).toBe(180);
 		expect(planning.allocation.calibration.measurementIds).toEqual([]);
-		expect(() => build('2026-09-13T12:11:30.000Z')).toThrow('remaining execution window cannot fit the viable task minimum');
+		expect(() => build('2026-09-13T12:11:30.000Z')).toThrow('No positive active-time allocation remains');
 		const acting = build('2026-09-13T12:30:00.000Z');
 		expect(acting.allocation.calibration.measurementIds).toEqual(['successful-short-chat']);
 		expect(acting.assignment.limits.maximumSeconds).toBe(162);
@@ -337,7 +337,7 @@ describe('immutable assignment-attempt construction', () => {
 		planning.node.kind = 'planning' as never;
 		planning.node.pairRole = null;
 		planning.node.workspace = 'read-only';
-		planning.node.estimate = { minimumSeconds: 1, expectedSeconds: 60, maximumSeconds: 60 };
+		planning.node.estimate = { expectedSeconds: 60, maximumSeconds: 60 };
 		planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 		planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
 			permissionCeiling: planning.node.requestedPermissions } as never;
@@ -356,7 +356,7 @@ describe('immutable assignment-attempt construction', () => {
 		planning.node.kind = 'planning' as never;
 		planning.node.pairRole = null;
 		planning.node.workspace = 'read-only';
-		planning.node.estimate = { minimumSeconds: 1, expectedSeconds: 60, maximumSeconds: 60 };
+		planning.node.estimate = { expectedSeconds: 60, maximumSeconds: 60 };
 		planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 		planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
 			permissionCeiling: planning.node.requestedPermissions } as never;
@@ -367,7 +367,7 @@ describe('immutable assignment-attempt construction', () => {
 			] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:00:00.000Z' });
 		expect(result.assignment.limits.maximumSeconds).toBe(30);
-		expect(result.allocation).toMatchObject({ admitted: true, minimumSeconds: 1,
+		expect(result.allocation).toMatchObject({ admitted: true,
 			limitingConstraint: 'workday-phase-share' });
 	});
 
@@ -376,7 +376,7 @@ describe('immutable assignment-attempt construction', () => {
 		planning.node.kind = 'planning' as never;
 		planning.node.pairRole = null;
 		planning.node.workspace = 'read-only';
-		planning.node.estimate = { minimumSeconds: 1, expectedSeconds: 60, maximumSeconds: 60 };
+		planning.node.estimate = { expectedSeconds: 60, maximumSeconds: 60 };
 		planning.node.requestedPermissions = { content: { read: ['proposal'], write: [] }, tools: ['source.read'] } as never;
 		planning.effectiveProfile = { ...planning.effectiveProfile, activity: 'planning', handler: 'planner',
 			permissionCeiling: planning.node.requestedPermissions } as never;
@@ -384,17 +384,17 @@ describe('immutable assignment-attempt construction', () => {
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } },
 			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
-			now: '2026-09-13T12:59:01.000Z' })).toThrow(/cannot fit the viable task minimum/u);
+			now: '2026-09-13T12:59:01.000Z' })).toThrow(/No positive active-time allocation remains/u);
 	});
 
-	it('uses the acting window for a governance review whose viable minimum outlives planning', () => {
+	it('allocates a paired work review from the acting window without a minimum floor', () => {
 		const review = structuredClone(candidate);
 		review.node.kind = 'reviewing' as never;
-		review.node.pairRole = null;
-		review.node.workItemId = 'proposal-review';
+		review.node.pairRole = 'reviewer';
+		review.node.workItemId = 'architecture';
 		review.node.sourceRef = sourceRef;
 		review.node.workspace = 'treedx';
-		review.node.estimate = { minimumSeconds: 780, expectedSeconds: 1320, maximumSeconds: 1980 };
+		review.node.estimate = { expectedSeconds: 1320, maximumSeconds: 1980 };
 		review.node.requestedPermissions = { content: { read: ['proposal'], write: ['decision'] },
 			tools: ['source.read', 'verification'] } as never;
 		review.effectiveProfile.activity = 'reviewing';
@@ -409,7 +409,7 @@ describe('immutable assignment-attempt construction', () => {
 			providerSessionId: 'session', providers: [reviewProvider] as never, attempt: 1,
 			now: '2026-09-13T12:30:00.000Z' });
 		expect(result.allocation.admitted).toBe(true);
-		expect(result.assignment.limits.maximumSeconds).toBeGreaterThanOrEqual(780);
+		expect(result.assignment.limits.maximumSeconds).toBeGreaterThan(0);
 		expect(Date.parse(result.assignment.deadline)).toBeGreaterThan(Date.parse('2026-09-13T12:20:00.000Z'));
 		expect(Date.parse(result.assignment.deadline)).toBeLessThanOrEqual(Date.parse('2026-09-13T13:00:00.000Z'));
 	});
@@ -457,7 +457,7 @@ describe('immutable assignment-attempt construction', () => {
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
 			now: '2026-09-13T12:59:30.000Z',
-		})).toThrow('The remaining execution window cannot fit the viable task minimum.');
+		})).toThrow('No positive active-time allocation remains');
 	});
 
 	it('uses the independent communication lane for chat nodes', () => {

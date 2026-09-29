@@ -1,7 +1,6 @@
 import type { CapacityGovernanceDatabase } from '../../../database.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { decodeDurableJsonArray } from '../../../durable-json.ts';
-import type { MinimumAssignmentDuration } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapabilityOffer } from '@treeseed/sdk/capacity-provider';
 import { capabilityAccountingLimitsSchema, type CapabilityAccountingLimits, type CapabilityAccountingObservation } from '@treeseed/sdk/agent-capacity';
 import { capacitySupplyCandidateStatus } from '../../../policy/supply-selection.ts';
@@ -52,7 +51,6 @@ export interface ProviderSynthesisExecutionProvider {
 	availableConcurrency?: number;
 	maxConcurrentRunners: number;
 	estimatedCost?: number | null;
-	minimumAssignmentDuration?: MinimumAssignmentDuration;
 	lanes: Array<{
 		id: string;
 		purpose: 'communication' | 'platform' | 'workday';
@@ -63,7 +61,6 @@ export interface ProviderSynthesisExecutionProvider {
 		lendWhenIdle: boolean;
 		queueLimit: number;
 		capabilities: string[];
-		minimumAssignmentDuration?: MinimumAssignmentDuration;
 	}>;
 }
 
@@ -110,15 +107,13 @@ function executionProviders(row: Row): ProviderSynthesisExecutionProvider[] {
 		availableConcurrency: Number.isInteger(Number(provider.availableConcurrency)) ? Math.max(0, Number(provider.availableConcurrency)) : 1,
 		maxConcurrentRunners: Math.max(1, Number(provider.maxConcurrentRunners ?? 1)),
 		estimatedCost: Number.isFinite(Number(provider.estimatedCost)) ? Number(provider.estimatedCost) : null,
-		...(provider.minimumAssignmentDuration ? { minimumAssignmentDuration: provider.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}),
 		lanes: Array.isArray(provider.lanes) ? provider.lanes.map((value) => value as Row).flatMap((lane) => {
 			const id = String(lane.id ?? '').trim();
 			const purpose = ['communication', 'platform', 'workday'].includes(String(lane.purpose)) ? lane.purpose as 'communication' | 'platform' | 'workday' : null;
 			return id && purpose ? [{ id, purpose, maxConcurrentRunners: Math.max(1, Number(lane.maxConcurrentRunners ?? 1)),
 				priority: Number(lane.priority ?? 0), reservedConcurrentWorkers: Math.max(0, Number(lane.reservedConcurrentWorkers ?? 0)),
 				borrowWhenIdle: Boolean(lane.borrowWhenIdle), lendWhenIdle: Boolean(lane.lendWhenIdle), queueLimit: Math.max(0, Number(lane.queueLimit ?? 0)),
-				capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String).filter(Boolean) : [],
-				...(lane.minimumAssignmentDuration ? { minimumAssignmentDuration: lane.minimumAssignmentDuration as unknown as MinimumAssignmentDuration } : {}) }] : [];
+				capabilities: Array.isArray(lane.capabilities) ? lane.capabilities.map(String).filter(Boolean) : [] }] : [];
 		}) : [],
 	})).filter((provider) => provider.id && /^sha256:[a-f0-9]{64}$/u.test(provider.runtimeBuild));
 }

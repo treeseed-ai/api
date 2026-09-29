@@ -11,14 +11,33 @@ const record = (value: unknown): Row => {
 };
 const text = (...values: unknown[]): string => String(values.find((value) => typeof value === 'string' && value.trim()) ?? '').trim();
 
+/** External approval survives estimate-only TreeDX revisions, never changes to
+ * the objective, work graph, or other authored proposal content. */
+export function proposalApprovalFingerprint(proposal: Row): string {
+	const plan = record(proposal.executionPlan);
+	const items = Array.isArray(plan.workItems) ? plan.workItems.map((value: unknown) => {
+		const { estimate: _estimate, reviewEstimate: _reviewEstimate, ...item } = record(value);
+		return item;
+	}) : [];
+	const { status: _status, executionPlan: _plan, ...content } = proposal;
+	const canonical = (value: unknown): string => Array.isArray(value) ? `[${value.map(canonical).join(',')}]`
+		: value && typeof value === 'object' ? `{${Object.entries(value as Row).sort(([a], [b]) => a.localeCompare(b))
+			.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}` : JSON.stringify(value);
+	return createHash('sha256').update(canonical({ ...content, executionPlan: { ...plan, workItems: items } })).digest('hex');
+}
+
 /** A draft may enter the graph only after its work units have genuine bounded
  * estimates. Readiness and source selection must use the same structural gate. */
 export function hasCompleteExecutablePlan(proposal: Row): boolean {
 	const plan = record(proposal.executionPlan);
+	const complete = (value: unknown) => {
+		const estimate = record(value);
+		const expected = Number(estimate.expectedSeconds), maximum = Number(estimate.maximumSeconds);
+		return Number.isFinite(expected) && expected > 0 && Number.isFinite(maximum) && maximum >= expected;
+	};
 	return Array.isArray(plan.workItems) && plan.workItems.length > 0 && plan.workItems.every((value: unknown) => {
 		const item = record(value);
-		return Number(record(item.estimate).minimumSeconds) > 0
-			&& (item.review !== 'required' || Number(record(item.reviewEstimate).minimumSeconds) > 0);
+		return complete(item.estimate) && (item.review !== 'required' || complete(item.reviewEstimate));
 	});
 }
 

@@ -75,8 +75,8 @@ export const simulationRunByDecision = (workdays: readonly { id: string; executi
 export function simulationRunForNode(node: ExecutionNode, byDecision: ReadonlyMap<string, string>, byProposal: ReadonlyMap<string, string>): string {
 	const decisionId = node.authorityRefs?.find((reference) => reference.model === 'decision')?.id;
 	const selectedDecision = decisionId ? byDecision.get(decisionId) ?? '' : '';
-	// A proposal Reviewer runs before a decision exists. Its explicit proposal
-	// selection is already authoritative for this simulation workday.
+	// Selected proposal work may be planned before an approved decision exists;
+	// the exact decision takes authority once accepted.
 	const selectedProposal = byProposal.get(node.sourceRef.id) ?? '';
 	if (selectedDecision && selectedProposal && selectedDecision !== selectedProposal) throw new CapacityOperationError(409,
 		'execution_simulation_selection_overlap', 'The proposal and decision belong to different simultaneous simulations.');
@@ -133,23 +133,26 @@ async function loadActiveWorkdays(store: any, teamId: string) {
 			executionMode: text(row.execution_mode) }] : [];
 	});
 	return Promise.all(sources.map(async (source: { id: string; teamId: string; parameters: Row }) => {
-		if (!Object.keys(record(source.parameters.planningSourceByProjectId)).length) return source;
-		const proposalsByProjectId: Record<string, Row> = {};
-		const proposalStatusesByProjectId: Record<string, string> = {};
-		for (const [projectId, value] of Object.entries(record(source.parameters.planningSourceByProjectId))) {
+		if (!Object.keys(record(source.parameters.planningSourceByProposalId)).length) return source;
+		const proposalsByProjectId: Record<string, Row[]> = {};
+		const proposalStatusesByProposalId: Record<string, string> = {};
+		for (const [proposalId, value] of Object.entries(record(source.parameters.planningSourceByProposalId))) {
 			const reference = record(value);
-			const proposal = await store.getGovernanceProposal(text(reference.id));
+			if (text(reference.id) !== proposalId) throw new CapacityOperationError(409,
+				'estimating_proposal_scope_invalid', 'Estimating proposal identity differs from its exact source.');
+			const proposal = await store.getGovernanceProposal(proposalId);
+			const projectId = text(proposal?.projectId ?? proposal?.project_id);
 			if (!proposal || text(proposal.teamId ?? proposal.team_id) !== teamId
-				|| text(proposal.projectId ?? proposal.project_id) !== projectId) throw new CapacityOperationError(
+				|| !array(source.parameters.scheduledProjectIds).includes(projectId)) throw new CapacityOperationError(
 				409, 'estimating_proposal_scope_invalid', 'Estimating requires the selected team and project proposal.');
 			const exact = await readExactProposal(store, proposal, reference as import('@treeseed/sdk/agent-capacity').ExactEntityReference);
 			if (stable(exact.ref) !== stable(reference)) throw new CapacityOperationError(
 				409, 'estimating_proposal_source_moved', 'The frozen estimating proposal revision changed.');
-			proposalsByProjectId[projectId] = exact.definition;
-			proposalStatusesByProjectId[projectId] = text(proposal.status);
+			(proposalsByProjectId[projectId] ??= []).push(exact.definition);
+			proposalStatusesByProposalId[proposalId] = text(proposal.status);
 		}
 		// Transient exact TreeDX reads, never another persisted plan authority.
-		return { ...source, proposalsByProjectId, proposalStatusesByProjectId };
+		return { ...source, proposalsByProjectId, proposalStatusesByProposalId };
 	}));
 }
 

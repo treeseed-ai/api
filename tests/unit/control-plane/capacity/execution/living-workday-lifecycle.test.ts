@@ -3,19 +3,51 @@ vi.mock('../../../../../src/api/capacity/services/capacity/assignments/lifecycle
 	reconcileAssignmentContent: vi.fn(async () => undefined),
 }));
 import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
-import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { runtimeWorkdayPhase } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+
+const fluidPlan = { ...compileWorkday({ id: 'fluid-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+	executionMode: 'simulation', policy: { durationSeconds: 3600, planningPercent: 100 / 3,
+		maximumConcurrency: 5, communicationConcurrency: 5 }, agentIds: [],
+	startsAt: '2026-09-29T12:00:00Z' }), state: 'active' as const };
+const fluidRun = { id: 'fluid-workday', teamId: 'team', executionKind: 'workday',
+	parameters: { appliedPlan: fluidPlan, scheduledProjectIds: ['sdk', 'api'] } } as never;
+
+describe('fluid workday phase from the living graph', () => {
+	it('keeps the initial planning window even if approved work is ready', async () => {
+		const first = vi.fn(async () => ({ id: 'actor' }));
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, '2026-09-29T12:19:59Z')).toBe('planning');
+		expect(first).not.toHaveBeenCalled();
+	});
+	it('continues or resumes planning when no approved acting node is ready', async () => {
+		const first = vi.fn(async () => null);
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, '2026-09-29T12:20:00Z')).toBe('planning');
+		expect(first).toHaveBeenCalledOnce();
+	});
+	it('admits acting only when a ready node exists in selected projects', async () => {
+		const first = vi.fn(async () => ({ id: 'actor' }));
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, '2026-09-29T12:20:00Z')).toBe('acting');
+		expect(first.mock.calls[0]?.[0]).toContain("node.kind IN ('acting','reviewing')");
+	});
+	it('never revives a workday after its hard end', async () => {
+		const first = vi.fn(async () => ({ id: 'actor' }));
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, fluidPlan.endsAt)).toBe('ended');
+		expect(first).not.toHaveBeenCalled();
+	});
+});
 
 vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (importOriginal) => ({
 	...await importOriginal<typeof import('../../../../../src/api/governance/executable-proposal.ts')>(),
 	readExactProposal: vi.fn(async (_store: unknown, proposal: { id?: string }) => {
 		if (proposal.id === 'incomplete') throw Object.assign(new Error('Proposal has no executable plan.'),
 			{ code: 'proposal_execution_plan_invalid' });
-		return { ref: { store: 'treedx', model: 'proposal', id: 'new-proposal', revision: 1,
+		return { ref: { store: 'treedx', model: 'proposal', id: proposal.id, revision: 1,
 		digest: `sha256:${'a'.repeat(64)}`, repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/new.mdx' },
-		definition: { status: proposal.id === 'ready' ? 'ready' : proposal.id === 'revised' ? 'discussing' : 'draft',
+		definition: { id: proposal.id, status: proposal.id === 'ready' ? 'ready' : proposal.id === 'revised' ? 'discussing' : 'draft',
 			executionPlan: { workItems: [{ id: 'research', agentClass: 'researcher', review: 'required',
 				...(proposal.id === 'ready' || proposal.id === 'revised' ? {
-					estimate: { minimumSeconds: 60 }, reviewEstimate: { minimumSeconds: 30 },
+					estimate: { expectedSeconds: 30, maximumSeconds: 60 },
+					reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 },
 				} : {}) }] } } };
 	}),
 }));
@@ -79,11 +111,11 @@ describe('living workday lifecycle', () => {
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
 		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual([
 			'planning:workday:3:project/architect',
-			'planning:workday:3:project/project/researcher:estimating',
-			'planning:workday:3:project/project/reviewer:estimating',
+			'planning:workday:3:project/project/researcher:estimating:new-proposal',
+			'planning:workday:3:project/project/reviewer:estimating:new-proposal',
 		]);
 		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
-			parameters: expect.objectContaining({ planningSourceByProjectId: { project: expect.objectContaining({ id: 'new-proposal' }) } }),
+			parameters: expect.objectContaining({ planningSourceByProposalId: { 'new-proposal': expect.objectContaining({ id: 'new-proposal' }) } }),
 		}));
 	});
 	it('continues collaborative planning without regenerating estimates after the proposal is ready', async () => {
@@ -102,20 +134,20 @@ describe('living workday lifecycle', () => {
 				estimating: { handler: 'estimate', permissions, prompt: { system: 'Estimate exact work.' } },
 			} });
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
-			planningSourceByProjectId: { project: { store: 'treedx', model: 'proposal', id: 'ready', revision: 1,
+			planningSourceByProposalId: { ready: { store: 'treedx', model: 'proposal', id: 'ready', revision: 1,
 				digest: `sha256:${'a'.repeat(64)}`, repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/ready.mdx' } },
 			agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer'].map((agentClass) =>
 				({ definition: agent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
 			? currentPlan.planningRounds.flatMap((round) => round.assignmentIds.map((id) => ({ id, kind: 'planning', status: 'completed' })))
-			: []), getGovernanceProposal: vi.fn(async () => ({ id: 'ready', team_id: 'team', project_id: 'project' })),
+			: [{ id: 'ready', team_id: 'team', project_id: 'project' }]), getGovernanceProposal: vi.fn(async () => ({ id: 'ready', team_id: 'team', project_id: 'project' })),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
 		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual([
 			'planning:workday:2:project/project/architect:planning',
 		]);
 	});
-	it.each(['ready', 'revised'])('advances a fully estimated %s proposal to governance review after two cycles', async proposalId => {
+	it.each(['ready', 'revised'])('keeps planning a fully estimated %s proposal until external approval yields acting work', async proposalId => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
 			{ round: 1, state: 'complete', assignmentIds: ['planning:workday:1:project/project/architect:planning'],
 				startedAt: '2026-09-13T15:00:00Z', completedAt: '2026-09-13T15:01:00Z' },
@@ -123,14 +155,14 @@ describe('living workday lifecycle', () => {
 				startedAt: '2026-09-13T15:01:00Z', completedAt: '2026-09-13T15:02:00Z' },
 		], policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
-			planningSourceByProjectId: { project: { store: 'treedx', model: 'proposal', id: proposalId, revision: 1,
+			planningSourceByProposalId: { [proposalId]: { store: 'treedx', model: 'proposal', id: proposalId, revision: 1,
 				digest: `sha256:${'a'.repeat(64)}`, repository: 'project-library', commit: 'b'.repeat(40), path: 'proposals/ready.mdx' } } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
 			? currentPlan.planningRounds.flatMap((round) => round.assignmentIds.map((id) => ({ id, kind: 'planning', status: 'completed' })))
 			: []), getGovernanceProposal: vi.fn(async () => ({ id: proposalId, team_id: 'team', project_id: 'project' })),
 			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
 		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:03:00Z');
-		expect(result.plan.planningRounds).toHaveLength(2);
+		expect(result.plan.planningRounds).toHaveLength(3);
 	});
 	it('completes planning rounds and enters closing without consulting demand or envelope storage', async () => {
 		const updateCapacityWorkdayRun = vi.fn(async () => run);
@@ -161,23 +193,23 @@ describe('living workday lifecycle', () => {
 		expect(await advanceLivingWorkday(store as never, closingRun, now)).toMatchObject({
 			status: 'running', plan: { state: 'closing' } });
 	});
-	it('fails closeout without running Reporter when a selected decision terminal is failed', async () => {
+	it('keeps Reporter responsible for closeout even when selected decision work failed', async () => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status')
 			? [{ id: 'report', kind: 'reporting', status: 'blocked' }]
 			: sql.includes('JOIN execution_edges') ? [{ status: 'failed' }] : [{ state: 'released' }]),
 			updateCapacityWorkdayRun: vi.fn(async () => closingRun) };
 		expect(await advanceLivingWorkday(store as never, closingRun, now)).toMatchObject({
-			status: 'failed', plan: { state: 'ended', endedAt: now } });
+			status: 'running', plan: { state: 'closing' } });
 	});
-	it.each(['ready', 'blocked', 'assigned', 'running'])('fails bounded closeout when a selected decision terminal remains %s', async status => {
+	it.each(['ready', 'blocked', 'assigned', 'running'])('does not fail closeout merely because selected decision work remains %s', async status => {
 		const closingRun = { ...run, parameters: { appliedPlan: { ...plan, state: 'closing', closingAt: now } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('SELECT id,kind,status')
 			? [{ id: 'report', kind: 'reporting', status: 'blocked' }]
 			: sql.includes('JOIN execution_edges') ? [{ status }] : [{ state: 'released' }]),
 			updateCapacityWorkdayRun: vi.fn(async () => closingRun) };
 		expect(await advanceLivingWorkday(store as never, closingRun, now)).toMatchObject({
-			status: 'failed', plan: { state: 'ended', endedAt: now } });
+			status: 'running', plan: { state: 'closing' } });
 	});
 	it('ends only after Reporter completion and reservation settlement', async () => {
 		const closing = { ...plan, state: 'closing', closingAt: now } as const;

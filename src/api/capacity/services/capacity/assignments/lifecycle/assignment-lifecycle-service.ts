@@ -11,7 +11,7 @@ import { evaluateProviderAssignmentLeaseAuthority,type ProviderLeasePrincipal } 
 import { settleCapacityReservationExactlyOnce } from '../../accounting/settlement-service.ts';
 import { validateAssignmentResultCompletion } from '../context/assignment-result-completion.ts';
 import { verifyAssignmentContent, recordAssignmentContentIntegration } from './assignment-content-readback.ts';
-import { resolveProposalReviewDisposition, resolveReviewDisposition } from '../context/review-result.ts';
+import { resolveReviewDisposition } from '../context/review-result.ts';
 import { livingExecutionLifecycleOperations } from './execution/living-execution-lifecycle.ts';
 import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
 import { integrateAssignmentEstimate } from '../planning/estimates/integration.ts';
@@ -267,9 +267,6 @@ export class ProviderAssignmentLifecycleService {
 		const reviewDisposition = assignmentResult
 			? await resolveReviewDisposition(this.store, assignment, assignmentResult)
 			: null;
-		const proposalReview = assignmentResult
-			? await resolveProposalReviewDisposition(this.store, assignment, assignmentResult)
-			: null;
 		const completed = await this.transition(principal, assignment, terminalInput, now, {
 			status: 'completed',
 			timestampColumn: 'completed_at',
@@ -278,31 +275,8 @@ export class ProviderAssignmentLifecycleService {
 			assignmentResult,
 			reviewDisposition,
 		});
-		const reviewedProposalId = assignment.proposalId ?? (assignment.assignmentAttempt?.sourceRef.model === 'proposal'
-			? assignment.assignmentAttempt.sourceRef.id : null);
 		if (completed) await recordAssignmentContentIntegration(this.store, assignment, assignmentResult, contentReferences);
-		if (completed && proposalReview && reviewedProposalId) {
-			await this.store.recordGovernanceEvent({
-				eventType: 'proposal.discussion', actorType: 'agent', actorId: assignment.agentId ?? null,
-				teamId: assignment.teamId, projectId: assignment.projectId, proposalId: reviewedProposalId,
-				proposalVersion: assignment.assignmentAttempt?.sourceRef.revision ?? null,
-				nextState: proposalReview.disposition,
-				message: assignmentResult?.summary ?? null,
-				evidence: {
-					kind: proposalReview.disposition === 'approved' ? 'support' : 'concern',
-					feedbackStatus: proposalReview.disposition === 'approved' ? 'resolved' : 'open',
-					proposalVersion: assignment.assignmentAttempt?.sourceRef.revision,
-					decisionRef: proposalReview.sourceRef,
-				},
-			});
-			if (proposalReview.disposition !== 'deferred') await this.store.evaluateGovernanceProposal(reviewedProposalId, {
-				expectedProposalVersion: assignment.assignmentAttempt?.sourceRef.revision,
-				adminDecision: proposalReview.disposition === 'approved' ? 'approved' : 'rejected',
-				actorType: 'agent', actorId: assignment.agentId ?? null,
-			});
-		}
-		if (completed && assignmentResult && (assignment.assignmentAttempt?.effectiveProfile.activity === 'estimating'
-			|| proposalReview)) await reconcileExecutionGraph(this.store, assignment.teamId, {},
+		if (completed && assignmentResult && assignment.assignmentAttempt?.effectiveProfile.activity === 'estimating') await reconcileExecutionGraph(this.store, assignment.teamId, {},
 			`assignment-result:${assignment.id}:${assignment.stateVersion}`);
 		if (completed && assignment.invocationId) {
 			await this.store.run(`UPDATE agent_invocation_requests SET assignment_id=?,blocking_state_json=?,updated_at=?

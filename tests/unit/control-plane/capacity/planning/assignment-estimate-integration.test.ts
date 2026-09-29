@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { integrateAssignmentEstimate, mergeAssignmentEstimate, retryEstimateContention } from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
+import { finalizeEstimateReadyApproval, integrateAssignmentEstimate, mergeAssignmentEstimate, retryEstimateContention } from '../../../../../src/api/capacity/services/capacity/assignments/planning/estimates/integration.ts';
+import { proposalApprovalFingerprint } from '../../../../../src/api/governance/executable-proposal.ts';
 
-const estimate = { minimumSeconds: 100, expectedSeconds: 200, maximumSeconds: 300, rationale: 'Exact source inspection.' };
+const estimate = { expectedSeconds: 200, maximumSeconds: 300, rationale: 'Exact source inspection.' };
 const frozen = { id: 'proposal-1', projectId: 'project-1', status: 'draft', executionPlan: { workItems: [
 	{ id: 'research', agentClass: 'researcher', review: 'required', objective: 'Inspect the source.' },
 	{ id: 'implementation', agentClass: 'engineer', review: 'required', objective: 'Implement the contract.' },
@@ -11,6 +12,26 @@ const candidate = { ...frozen, executionPlan: { workItems: [
 ] } };
 
 describe('exact estimator result integration', () => {
+	it('finalizes only a matching external approval after all owner and reviewer estimates arrive', async () => {
+		const complete = { ...frozen, executionPlan: { workItems: frozen.executionPlan.workItems.map(item => ({
+			...item, estimate, reviewEstimate: estimate,
+		})) } };
+		const fingerprint = proposalApprovalFingerprint(frozen);
+		const evaluateGovernanceProposal = vi.fn(async () => undefined);
+		const first = vi.fn(async () => ({ actor_id: 'human', evidence_json: JSON.stringify({
+			pendingEstimates: true, approvalFingerprint: fingerprint,
+		}) }));
+		const store = { first, evaluateGovernanceProposal };
+		expect(await finalizeEstimateReadyApproval(store as never, 'proposal-1', frozen)).toBe(false);
+		expect(evaluateGovernanceProposal).not.toHaveBeenCalled();
+		expect(await finalizeEstimateReadyApproval(store as never, 'proposal-1', complete)).toBe(true);
+		expect(evaluateGovernanceProposal).toHaveBeenCalledWith('proposal-1', {
+			adminDecision: 'approved', actorType: 'user', actorId: 'human',
+		});
+		evaluateGovernanceProposal.mockClear();
+		expect(await finalizeEstimateReadyApproval(store as never, 'proposal-1', { ...complete, request: 'Changed objective.' })).toBe(false);
+		expect(evaluateGovernanceProposal).not.toHaveBeenCalled();
+	});
 	it('re-reads and merges distinct class estimates after a concurrent TreeDX branch lease', async () => {
 		const other = { ...frozen, executionPlan: { workItems: [
 			{ ...frozen.executionPlan.workItems[0], estimate }, frozen.executionPlan.workItems[1],
@@ -68,7 +89,7 @@ describe('exact estimator result integration', () => {
 		}
 	});
 	it('merges only the assigned estimate while preserving another completed estimate', () => {
-		const prior = { minimumSeconds: 60, expectedSeconds: 120, maximumSeconds: 180, rationale: 'Research evidence.' };
+		const prior = { expectedSeconds: 120, maximumSeconds: 180, rationale: 'Research evidence.' };
 		const current = { ...frozen, executionPlan: { workItems: [
 			{ ...frozen.executionPlan.workItems[0], estimate: prior }, frozen.executionPlan.workItems[1],
 		] } };

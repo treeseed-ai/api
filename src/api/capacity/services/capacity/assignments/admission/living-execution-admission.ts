@@ -33,10 +33,9 @@ const reviewCycleAdmissionFence = `NOT EXISTS (
 )`;
 
 export function assignmentAccountingMode(assignment: Pick<AssignmentAttempt, 'effectiveProfile' | 'sourceRef' | 'workItemId'>,
-	phase: 'planning' | 'acting' | 'ended'): 'planning' | 'acting' {
+	_phase: 'planning' | 'acting' | 'ended'): 'planning' | 'acting' {
 	return assignment.effectiveProfile.activity === 'planning' || assignment.effectiveProfile.activity === 'estimating'
-		|| (assignment.effectiveProfile.activity === 'reviewing' && assignment.sourceRef.model === 'proposal'
-			&& assignment.workItemId === 'proposal-review' && phase === 'planning') ? 'planning' : 'acting';
+		? 'planning' : 'acting';
 }
 
 /** Atomically claim one normalized node and create its one reservation/attempt. */

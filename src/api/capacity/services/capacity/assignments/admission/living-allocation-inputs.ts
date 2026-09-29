@@ -1,9 +1,9 @@
-import { allocateWorkdayCapacity, appliedWorkdaySchema, remainingCapabilitySeconds, workdayPhase,
+import { allocateWorkdayCapacity, appliedWorkdaySchema, remainingCapabilitySeconds,
 	type AllocationMeasurement, type AssignmentAllocationConstraint } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../providers/provider-synthesis-context-service.ts';
-import { executionNodeRunScope } from '../../../build/ready-execution-node.ts';
+import { executionNodeRunScope, runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
 
 export type LivingAllocationInputs = Record<string, { measurements: AllocationMeasurement[]; constraints: AssignmentAllocationConstraint[];
 	opportunity: ReturnType<typeof allocateWorkdayCapacity>[string] }>;
@@ -40,7 +40,7 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 		for (const run of input.runs) {
 			const parsed = appliedWorkdaySchema.safeParse(run.parameters.appliedPlan);
 			if (!parsed.success) continue;
-			const plan = parsed.data, phase = workdayPhase(plan, input.now);
+			const plan = parsed.data, phase = await runtimeWorkdayPhase(store, run, input.now);
 			const scope = executionNodeRunScope(run);
 			const projectIds = Array.isArray(run.parameters.scheduledProjectIds)
 				? run.parameters.scheduledProjectIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [];
@@ -51,12 +51,12 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 				AND ${projectIds.length ? `node.project_id IN (${projectIds.map(() => '?').join(',')})` : 'false'}
 				AND node.required_capabilities_json::jsonb @> ?::jsonb
 				AND ${plan.state === 'closing' ? "node.kind='reporting'" : phase === 'planning'
-					? "(node.kind IN ('planning','estimating','communication') OR (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal'))"
-					: "node.kind NOT IN ('planning','estimating','reporting')"}`,
+					? "node.kind IN ('planning','estimating','communication')"
+					: "(node.kind='acting' OR (node.kind='reviewing' AND node.pair_role='reviewer') OR node.kind='communication')"}`,
 				[run.teamId, ...scope.parameters, ...projectIds, JSON.stringify([input.capabilityId])]);
 			const usage = commitments.filter(row => row.work_day_id === run.id).map(row => ({ planning: row.mode === 'planning',
 				seconds: ['reserved', 'consuming'].includes(String(row.state)) ? Math.max(Number(row.reserved_seconds), Number(row.active_seconds)) : Number(row.active_seconds) }));
-			workdays.push({ plan, committedSeconds: usage.reduce((sum, row) => sum + row.seconds, 0),
+			workdays.push({ plan, actingReady: phase === 'acting', committedSeconds: usage.reduce((sum, row) => sum + row.seconds, 0),
 				planningCommittedSeconds: usage.filter(row => row.planning).reduce((sum, row) => sum + row.seconds, 0),
 				maximumAdditionalSeconds: Number(readiness?.ready_count) > 0
 					? plan.state === 'closing' ? Number(readiness?.maximum_seconds ?? 0)

@@ -9,6 +9,7 @@ const text = (value: unknown): string => typeof value === 'string' ? value.trim(
 
 export interface WorkdayParticipant {
 	projectId: string;
+	proposalId?: string;
 	definition: AgentDefinition;
 	activity: Extract<Activity, 'planning' | 'estimating'>;
 	id: string;
@@ -33,23 +34,24 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 			const validation = validateAgentDefinitionModel(entry.definition);
 			if (!validation.ok || !validation.data) continue;
 			const frozenActivities = array(entry.activities).map(text).filter(Boolean) as Activity[];
-			const workItems = array(record(record(record(parameters.proposalsByProjectId)[projectId]).executionPlan).workItems).map(record);
-			const canEstimate = workItems.some(item => text(item.agentClass) === validation.data!.agentClass
-				&& Object.keys(record(item.estimate)).length === 0)
-				|| (validation.data.agentClass === 'reviewer' && workItems.some(item => item.review === 'required'
-					&& Object.keys(record(item.reviewEstimate)).length === 0));
 			const activities = (explicitActivitySelection ? frozenActivities : frozenActivities.filter((activity) =>
 				activity === 'planning' || activity === 'estimating'))
-				.filter((activity) => activity !== 'estimating' || canEstimate)
 				.filter((activity): activity is 'planning' | 'estimating' => activity === 'planning' || activity === 'estimating');
 			for (const activity of activities) {
 				if (!validation.data.activityProfiles[activity]) continue;
-				participants.push({
-					projectId,
-					definition: validation.data,
-					activity,
-					id: `${projectId}/${validation.data.id}:${activity}`,
-				});
+				if (activity === 'planning') participants.push({ projectId, definition: validation.data,
+					activity, id: `${projectId}/${validation.data.id}:planning` });
+				else for (const proposalValue of array(record(parameters.proposalsByProjectId)[projectId])) {
+					const proposal = record(proposalValue);
+					const proposalId = text(proposal.id);
+					const items = array(record(proposal.executionPlan).workItems).map(record);
+					const canEstimate = items.some(item => text(item.agentClass) === validation.data!.agentClass
+						&& Object.keys(record(item.estimate)).length === 0)
+						|| (validation.data.agentClass === 'reviewer' && items.some(item => item.review === 'required'
+							&& Object.keys(record(item.reviewEstimate)).length === 0));
+					if (proposalId && canEstimate) participants.push({ projectId, proposalId,
+						definition: validation.data, activity, id: `${projectId}/${validation.data.id}:estimating:${proposalId}` });
+				}
 			}
 		}
 	}

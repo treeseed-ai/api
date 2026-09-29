@@ -5,7 +5,6 @@ import {
 	calculateAssignmentAllocation,
 	remainingCapabilitySeconds,
 	workdayPlanningEndsAt,
-	workdayPhase,
 	type AssignmentAttempt,
 	type ExactEntityReference,
 	type ExactGrant,
@@ -15,7 +14,7 @@ import { assignmentSourceBranch, simulationSourceBranch } from '@treeseed/sdk/ca
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { ProviderLeasePrincipal } from '../../../../accounts/lease-authority-service.ts';
 import type { ProviderSynthesisExecutionProvider } from '../../../providers/provider-synthesis-context-service.ts';
-import { isProposalGovernanceReview, type ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
+import { type ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
 import { assignmentPreparationSeconds, compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
@@ -210,9 +209,8 @@ export function buildAssignmentAttempt(input: {
 	const planningEnd = workdayPlanningEndsAt(appliedPlan);
 	const planningTurn = ['planning', 'estimating'].includes(candidate.node.kind)
 		|| (communication && Date.parse(input.now) < Date.parse(planningEnd));
-	const planningPhase = planningTurn || (isProposalGovernanceReview(candidate.node)
-		&& workdayPhase(appliedPlan, input.now) === 'planning');
-	const windowEnd = planningPhase ? planningEnd : appliedPlan.endsAt;
+	const planningPhase = planningTurn;
+	const windowEnd = planningPhase && Date.parse(input.now) < Date.parse(planningEnd) ? planningEnd : appliedPlan.endsAt;
 	const preparationSeconds = assignmentPreparationSeconds(undefined);
 	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
@@ -228,23 +226,20 @@ export function buildAssignmentAttempt(input: {
 		const remaining = (dailyLimitSeconds: number, value: typeof observation.modelUsage | undefined) => value
 			? remainingCapabilitySeconds({ now: input.now, maximumObservationAgeSeconds: 90, dailyLimitSeconds,
 				observation: value, ledgerActiveSeconds: 0, ledgerReservedSeconds: 0 }).availableSeconds : 0;
-		// Planning and estimating turns have equal policy-owned ceilings. Historical task
-		// calibration does not shrink them, but constrained supply may shorten a turn as long
-		// as the node's actual viable minimum still fits.
+		// Estimates size a maximum attempt; positive available supply may shorten it.
 		const allocation = calculateAssignmentAllocation({ estimate: allocationEstimate,
 			measurements: planningTurn ? [] : allocationInputs.measurements,
 			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
 				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000 - preparationSeconds) },
 				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
 				{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
-			providerMinimumSeconds: capabilityLimits.minimumAssignmentSeconds,
 			providerMaximumSeconds: capabilityLimits.maximumAssignmentSeconds,
 			...(planningTurn ? { planningTurnMaximumSeconds: appliedPlan.policySnapshot.planningTurnMaximumSeconds } : {}) });
 		return [{ selected, allocation, allocationInputs }];
 	});
 	const admitted = considered.find(({ allocation }) => allocation.admitted);
 	if (!admitted) throw new CapacityGovernanceError('capacity_assignment_allocation_deferred',
-		'The remaining execution window cannot fit the viable task minimum.', 409,
+		'No positive active-time allocation remains in the execution window or provider supply.', 409,
 		{ nodeId: candidate.node.id, providers: considered.map(({ selected, allocation }) => ({ providerId: selected.provider.id, allocation })) });
 	const { selected, allocation, allocationInputs } = admitted;
 	const limits = selected.provider.accountingLimits!;

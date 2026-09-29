@@ -9,6 +9,6 @@ export const assignment = {
 	provider: { providerId: 'provider', offerId: 'offer', executionProviderId: 'codex', modelConfigurationId: 'terra-medium', executionCapabilityId: 'code-change', offerRevision: 1, runtimeBuild: `sha256:${'c'.repeat(64)}` }, contextRefs: [], predecessorResultIds: [],
 	acceptanceCriteria: ['Complete the exact work item.'],
 	workspace: { mode: 'git', repository: 'treeseed-ai/sdk', baseCommit: 'd'.repeat(40), branch: 'treeseed/assignments/assignment', writablePaths: ['src'] },
-	estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 }, limits: { maximumSeconds: 3, maximumContextBytes: 1, maximumContextTokens: 1, maximumContextItems: 1 },
+	estimate: { expectedSeconds: 2, maximumSeconds: 3 }, limits: { maximumSeconds: 3, maximumContextBytes: 1, maximumContextTokens: 1, maximumContextItems: 1 },
 	deadline: '2026-09-14T00:00:00.000Z', leaseId: 'lease', reservationId: 'reservation', attempt: 1, status: 'created', createdAt: '2026-09-13T12:00:00.000Z',
 } as const;

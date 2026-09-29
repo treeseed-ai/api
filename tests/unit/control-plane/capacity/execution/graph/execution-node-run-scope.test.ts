@@ -17,11 +17,10 @@ describe('living execution run scope', () => {
 		});
 	});
 
-	it('admits workday-owned communication without adopting unrelated conversations or proposal reviews', () => {
+	it('admits workday-owned communication without adopting unrelated conversations', () => {
 		const workday = { id: 'workday-1', executionKind: 'workday', parameters: {} } as const;
 		expect(executionNodeRunScope(workday as never)).toEqual({
-			sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'
-		AND NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal')))`,
+			sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'))`,
 			parameters: ['workday-1'],
 		});
 	});
@@ -33,13 +32,12 @@ describe('living execution run scope', () => {
 		});
 	});
 
-	it('admits only the selected proposal governance review during planning-only execution', () => {
+	it('does not admit a retired proposal governance review during planning-only execution', () => {
 		const workday = { id: 'workday-1', executionKind: 'workday', parameters: {
 			planningOnly: true, proposalIds: ['proposal-1'],
 		} } as const;
 		const scope = executionNodeRunScope(workday as never);
-		expect(scope.parameters).toEqual(['workday-1', 'proposal-1']);
-		expect(scope.sql).toContain("node.kind='reviewing'");
-		expect(scope.sql).toContain("node.source_ref_json::jsonb->>'id' IN (?)");
+		expect(scope.parameters).toEqual(['workday-1']);
+		expect(scope.sql).not.toContain("node.kind='reviewing'");
 	});
 });
