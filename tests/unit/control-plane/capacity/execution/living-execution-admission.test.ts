@@ -104,7 +104,8 @@ describe('living execution admission', () => {
 
 	it('binds a conversation invocation to the assignment in the admission transaction', async () => {
 		const committed = { id: assignment.id, executionNodeId: 'node', executionNodeRevision: 1 };
-		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed), batch: vi.fn(async () => []) };
+		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
+			batch: vi.fn(async () => []), first: vi.fn(async () => ({ status: 'running', assignment_id: assignment.id })) };
 		await admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
 			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'communication',
 			lanePurpose: 'communication', executionKind: 'conversation', workdayConcurrencyLimit: 2, invocationId: 'invocation-1', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
@@ -113,5 +114,21 @@ describe('living execution admission', () => {
 		expect(binding.params).toEqual(['assignment', assignment.createdAt, 'invocation-1', 'team', 'assignment']);
 		const reservation = store.batch.mock.calls[0]![0].find((operation: { query: string }) => operation.query.includes('INSERT INTO capacity_reservations'))!;
 		expect(reservation.params.slice(-8)).toEqual(['team', 'workday', 'conversation', 2, 'team', 'provider', 'communication', 1]);
+		expect(reservation.query).toContain("invocation.status IN ('admitted','running')");
+		expect(reservation.query).toContain("prior.status IN ('returned','failed','cancelled')");
+		const operations = store.batch.mock.calls[0]![0] as Array<{ query: string; params: unknown[] }>;
+		expect(operations.findIndex((operation) => operation.query.includes('agent_invocation_requests WHERE id=? AND team_id=? FOR UPDATE')))
+			.toBeLessThan(operations.findIndex((operation) => operation.query.includes('INSERT INTO capacity_reservations')));
+		for (const operation of operations) expect((operation.query.match(/\?/gu) ?? []).length).toBe(operation.params.length);
+	});
+	it('fails closed when a committed conversation assignment lacks the exact invocation binding', async () => {
+		const committed = { id: assignment.id, executionNodeId: 'node', executionNodeRevision: 1 };
+		const store = { getProviderAssignment: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(committed),
+			batch: vi.fn(async () => []), first: vi.fn(async () => ({ status: 'running', assignment_id: 'other-active-assignment' })) };
+		await expect(admitLivingExecutionAssignment(store as never, { principal: { teamId: 'team', capacityProviderId: 'provider', membershipId: 'membership' } as never,
+			accountingLimits, assignment: assignment as never, allocation, projectAgentClassId: 'class', providerSessionId: 'session', executionProviderId: 'runtime', laneId: 'communication',
+			lanePurpose: 'communication', executionKind: 'conversation', workdayConcurrencyLimit: 2, invocationId: 'invocation-1', predecessorResults: [], treedxProxyHandle: { id: 'tdx_assignment', status: 'issued',
+				allowedPaths: [], allowedReadPaths: [], allowedWritePaths: [], scopes: [], allowedOperations: [] }, now: assignment.createdAt }))
+			.rejects.toMatchObject({ code: 'communication_invocation_binding_failed', details: { observedAssignmentId: 'other-active-assignment' } });
 	});
 });

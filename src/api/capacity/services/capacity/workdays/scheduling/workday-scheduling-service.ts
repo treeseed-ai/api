@@ -12,7 +12,7 @@ type WorkdayProject,
 } from '../policy/workday-project-policy.ts';
 import { resolveWorkdayAgentProfileSnapshot } from '../policy/workday-agent-profile-policy.ts';
 import { reconcileTreeDxRefSignals } from '../../../treedx/repositories/treedx-ref-signal-reconciler.ts';
-import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
 import { readExactProposal } from '../../../../../governance/executable-proposal.ts';
 
@@ -253,7 +253,8 @@ export async function scheduleCapacityWorkdayRun(
 	if (!updated) {
 		throw new CapacityGovernanceError('capacity_workday_run_update_failed', 'Scheduled workday run could not be updated.', 500, { runId: run.id });
 	}
-	await reconcileExecutionGraph(store, run.teamId);
+	if (run.executionKind === 'conversation') await reconcileCommunicationExecutionGraph(store, run.teamId);
+	else await reconcileExecutionGraph(store, run.teamId);
 	await recordRequiredEvent(store, run.teamId, run.id, {
 		eventType: 'assignment.polling_ready', status: 'recorded',
 		title: 'Workday is ready for authenticated provider polling',

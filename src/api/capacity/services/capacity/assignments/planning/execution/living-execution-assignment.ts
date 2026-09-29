@@ -203,7 +203,8 @@ export async function assignNextReadyExecutionNode(
 				try {
 				const allocationInputs = await livingAllocationInputs(store, { run, runs, providers: executionProviders,
 					capacityProviderId: principal.capacityProviderId, capabilityId: candidate.node.requiredCapabilities?.[0] ?? '',
-					agentClass: candidate.node.agentClass!, activity: candidate.effectiveProfile.activity, now });
+					agentClass: candidate.node.agentClass!, activity: candidate.effectiveProfile.activity,
+					proposalGovernanceReview: isProposalGovernanceReview(candidate.node), now });
 				const selected = buildAssignmentAttempt({
 					candidate, run, principal, providerSessionId, providers: executionProviders, allocationInputs,
 					attempt: priorAttempts + 1, now,

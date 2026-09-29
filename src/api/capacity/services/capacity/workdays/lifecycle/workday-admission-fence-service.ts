@@ -3,7 +3,7 @@ import { CapacityGovernanceError } from '../../../../database.ts';
 import { assignmentContentIntegrationReadySql,CONTENT_INTEGRATED_EVENT,CONTENT_INTEGRATION_REQUIRED_EVENT } from '../../assignments/lifecycle/assignment-content-integration-requirement.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { advanceLivingWorkday } from './living-workday-lifecycle.ts';
-import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 type WorkdayAdmissionFenceStore = Parameters<typeof advanceLivingWorkday>[0];
 
@@ -26,7 +26,8 @@ export async function fenceCapacityWorkdayAdmission(
 		'capacity_workday_plan_missing', 'Running workday has no authoritative applied plan to close.', 409, { runId });
 	if (run.status === 'running' && run.parameters.appliedPlan) {
 		await advanceLivingWorkday(store, run, new Date().toISOString(), true);
-		await reconcileExecutionGraph(store, teamId);
+		if (run.executionKind === 'conversation') await reconcileCommunicationExecutionGraph(store, teamId);
+		else await reconcileExecutionGraph(store, teamId);
 	}
 	const assignment = await store.first(
 		`SELECT COUNT(*) AS total,

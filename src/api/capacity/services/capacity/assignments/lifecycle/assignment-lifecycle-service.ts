@@ -34,6 +34,25 @@ interface ProviderAssignmentLifecycleStore extends CapacityGovernanceDatabase {
 export interface ProviderAssignmentLifecycleMutationResult {
 	assignment: DurableProviderAssignment; leaseToken: string | null; leaseSeconds: number | null;
 }
+
+export async function batchAssignmentGraphTransition(input: {
+	operations: Array<{ query: string; params?: unknown[] }>;
+	graphOperationCount: number;
+	batch: (operations: Array<{ query: string; params?: unknown[] }>) => Promise<unknown>;
+	rebuildGraphOperations: () => Promise<Array<{ query: string; params?: unknown[] }>>;
+}): Promise<void> {
+	for (let attempt = 0; ; attempt += 1) {
+		try { await input.batch(input.operations); return; }
+		catch (error) {
+			const conflict = error as { code?: unknown; constraint?: unknown };
+			if (attempt >= 3 || conflict.code !== '23505'
+				|| conflict.constraint !== 'execution_graph_revisions_pkey') throw error;
+			const refreshed = await input.rebuildGraphOperations();
+			input.operations.splice(1, input.graphOperationCount, ...refreshed);
+			input.graphOperationCount = refreshed.length;
+		}
+	}
+}
 async function assertRequiredSignals(database: CapacityGovernanceDatabase, assignment: DurableProviderAssignment) {
 	const required = Array.isArray(record(assignment.allowedOutputs).publishedSignals)
 		? [...new Set((record(assignment.allowedOutputs).publishedSignals as unknown[]).map(String).map((value) => value.replace(/_/gu, '-')).filter(Boolean))] : [];
@@ -433,10 +452,11 @@ export class ProviderAssignmentLifecycleService {
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
 			   AND lease_token = ? ${options.allowExpiredLease ? '' : 'AND (lease_expires_at IS NULL OR lease_expires_at > ?)'} `, params: [options.status, ...params] }];
-		operations.push(...await livingExecutionLifecycleOperations({ store: this.store, assignment,
+		const graphOperations = await livingExecutionLifecycleOperations({ store: this.store, assignment,
 			status: options.status, now, result: options.assignmentResult,
 			returnCode: options.status === 'returned' ? input.code : undefined,
-			reviewDisposition: options.reviewDisposition ?? null }));
+			reviewDisposition: options.reviewDisposition ?? null });
+		operations.push(...graphOperations);
 		if (['completed','failed','cancelled'].includes(options.status)) {
 			const terminalWorkspace = terminalAssignmentAuthority(assignment, now);
 			operations.push({
@@ -455,7 +475,16 @@ export class ProviderAssignmentLifecycleService {
 				params: [options.status==='cancelled'?'cancelled':'failed',assignment.id, now, JSON.stringify({ code: input.code ?? options.defaultCode, reason: input.reason ?? input.message ?? options.defaultReason }), now, assignment.invocationId, assignment.teamId],
 			});
 		}
-		await this.store.batch(operations);
+		// Parallel assignment completions can observe the same graph head. The
+		// losing transaction is rolled back by PostgreSQL; recompute its graph
+		// projection against the committed head, preserving the same assignment
+		// transition and exactly-once result.
+		await batchAssignmentGraphTransition({ operations, graphOperationCount: graphOperations.length,
+			batch: (statements) => this.store.batch(statements),
+			rebuildGraphOperations: () => livingExecutionLifecycleOperations({ store: this.store, assignment,
+					status: options.status, now, result: options.assignmentResult,
+					returnCode: options.status === 'returned' ? input.code : undefined,
+					reviewDisposition: options.reviewDisposition ?? null }) });
 		const transitioned = await this.store.getProviderAssignment(principal.teamId, assignment.id);
 		if (!transitioned || transitioned.stateVersion !== assignment.stateVersion + 1 || transitioned.status !== options.status) return null;
 		if (assignment.operationHandoffId && (options.status === 'completed' || options.status === 'failed')) await terminalizeOperationHandoff(this.store, assignment.operationHandoffId, assignment.id, options.status, now);

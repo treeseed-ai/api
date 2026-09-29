@@ -129,7 +129,9 @@ async function integrateAssignmentEstimateOnce(
 		'assignment_estimate_content_missing', 'Estimator proposal result has no content.', 409);
 	const parsed = validatePortableContentData('proposal', record(file.frontmatter));
 	if (!parsed.ok || !parsed.data) throw new CapacityGovernanceError('assignment_estimate_content_invalid',
-		'Estimator proposal content is invalid.', 409, { diagnostics: parsed.diagnostics });
+		`Estimator proposal content is invalid: ${parsed.diagnostics.slice(0, 5)
+			.map((diagnostic) => `${diagnostic.field ?? 'document'}:${diagnostic.code}`).join(', ') || 'missing data'}.`,
+		409, { diagnostics: parsed.diagnostics });
 	const candidate = parsed.data as Row;
 	const merged = mergeAssignmentEstimate({ frozen: frozen.definition, candidate, current: current.definition,
 		agentClass: attempt.agentClass });
