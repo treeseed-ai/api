@@ -11,7 +11,7 @@ const executionNodeRow = (value: { id: string; kind: string; agentClass: string;
 	source_ref_json: JSON.stringify({ store: 'treedx', model: 'proposal', id: 'proposal', revision: 1, digest: exactDigest(value.digest) }),
 	authority_refs_json: JSON.stringify(value.decisionRevision ? [{ store: 'treedx', model: 'decision', id: 'decision', revision: value.decisionRevision, digest: `sha256:${'d'.repeat(64)}` }] : []),
 	rule_revision: 1, node_revision: value.nodeRevision ?? 1, agent_class: value.agentClass, status: 'ready',
-	estimate_json: JSON.stringify({ minimumSeconds: 60, expectedSeconds: value.expectedSeconds, maximumSeconds: value.expectedSeconds * 2 }),
+	estimate_json: JSON.stringify({ expectedSeconds: value.expectedSeconds, maximumSeconds: value.expectedSeconds * 2 }),
 	required_capabilities_json: '[]', requested_permissions_json: JSON.stringify({ content: { read: [], write: [] }, tools: [] }),
 	workspace: value.kind === 'acting' ? 'git' : 'treedx', graph_revision_created: 1, graph_revision_updated: 1,
 });

@@ -24,9 +24,10 @@ describe('planning phase boundary', () => {
 				allocationWeight: 1, planningTurnMaximumSeconds: 180, projectPercentages: { project: 100 }, agentClassPercentages: { project: { engineer: 100 } } },
 			planningRounds: [], admittedSecondsByProject: {}, admittedSecondsByAgentClass: {},
 		} } };
-		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ id: 'membership' }] : [{ id: 'turn' }]), run: vi.fn() };
+		const store = { all: vi.fn(async (sql: string) => sql.includes('capacity_provider_team_memberships') ? [{ id: 'membership' }] : [{ id: 'turn' }]),
+			first: vi.fn(async () => null), run: vi.fn() };
 		await tickCapacityWorkdayRun(store as never, 'team', 'workday', now);
-		if (now.includes('12:10') && state === 'active') { expect(fixture.cancel).not.toHaveBeenCalled(); expect(store.run).not.toHaveBeenCalled(); }
+		if (state === 'active') { expect(fixture.cancel).not.toHaveBeenCalled(); expect(store.run).not.toHaveBeenCalled(); }
 		else {
 			expect(fixture.cancel).toHaveBeenCalledWith('team', 'turn', expect.objectContaining({ idempotencyKey: 'planning-boundary:workday:turn' }));
 			expect(store.all.mock.calls[1]?.[0]).toContain("node.kind IN ('planning','estimating')");

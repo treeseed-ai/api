@@ -27,7 +27,7 @@ describe('live allocation ledger inputs', () => {
 			runs: [chatRun as never], providers: [chatProvider as never], capacityProviderId: 'provider',
 			capabilityId: 'implementation', agentClass: 'architect', activity: 'chat', now: at });
 		expect(result['codex-implementation']?.opportunity.availableSeconds).toBe(600);
-		expect(store.first.mock.calls[0]?.[0]).toContain("node.kind='communication'");
+		expect(store.first.mock.calls.some(([sql]) => String(sql).includes("node.kind='communication'"))).toBe(true);
 	});
 	it('counts shared proposal work through real PostgreSQL graph custody, not only workday-owned nodes', async () => {
 		const db = new PGlite();
@@ -44,6 +44,7 @@ describe('live allocation ledger inputs', () => {
 				('planning','team','project','workday','ready','planning',NULL,'{}','{}','["implementation"]');`);
 			const counts: number[] = [];
 			const store = { all: vi.fn(async () => []), first: async (sql: string, values: unknown[]) => {
+				if (sql.includes('SELECT node.id FROM execution_nodes')) return { id: 'selected-actor' };
 				let index = 0;
 				const row = (await db.query<{ ready_count: number }>(sql.replace(/\?/gu, () => `$${++index}`), values)).rows[0];
 				counts.push(Number(row?.ready_count));
@@ -56,17 +57,14 @@ describe('live allocation ledger inputs', () => {
 					capabilityUsage: { implementation: { ...observation, observedAt: at } },
 				} } as never],
 				capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'reviewer', activity: 'reviewing', now: at });
-			expect((await calculate(selectedRun, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
-			expect(counts.at(-1)).toBe(2);
-			// The same ready proposal governance node can use acting capacity after
-			// the planning window; accepted work stays decision-gated in the graph.
+			expect((await calculate(selectedRun, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(990);
+			expect(counts.at(-1)).toBe(1);
+			// Acting capacity is available to selected accepted Actor/Reviewer pairs.
 			expect((await calculate(selectedRun))['codex-implementation']?.opportunity.availableSeconds).toBe(990);
-			expect(counts.at(-1)).toBe(3);
-			const planningOnly = { ...selectedRun, parameters: { ...selectedRun.parameters, planningOnly: true } };
-			expect((await calculate(planningOnly, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(198);
-			// Governance review is planning work, not implementation. A planning-only
-			// run must retain that node as well as its ordinary planning turn.
 			expect(counts.at(-1)).toBe(2);
+			const planningOnly = { ...selectedRun, parameters: { ...selectedRun.parameters, planningOnly: true } };
+			expect((await calculate(planningOnly, '2026-09-16T12:10:00.000Z'))['codex-implementation']?.opportunity.availableSeconds).toBe(990);
+			expect(counts.at(-1)).toBe(1);
 			await db.exec(`INSERT INTO execution_nodes VALUES
 				('report','team','project','workday','ready','reporting',NULL,'{}','{"maximumSeconds":300}','["implementation"]')`);
 			const closing = { ...selectedRun, parameters: { ...selectedRun.parameters,

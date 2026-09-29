@@ -12,7 +12,7 @@ describe('project-scoped reconciliation during another project workday', () => {
 		const node: ExecutionNode = { schemaVersion: 'treeseed.execution-node/v1', id: 'planning:sdk:architect',
 			teamId: 'team', projectId: 'sdk', workdayId: 'workday', kind: 'planning', pairRole: null,
 			sourceRef, authorityRefs: [], ruleRevision: 2, nodeRevision: 1, status: 'completed', agentClass: 'architect',
-			estimate: { minimumSeconds: 1, expectedSeconds: 180, maximumSeconds: 180 }, requiredCapabilities: ['planning'],
+			estimate: { expectedSeconds: 180, maximumSeconds: 180 }, requiredCapabilities: ['planning'],
 			requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: [] }, workspace: 'read-only',
 			acceptanceCriteria: ['Publish a contribution.'], graphRevisionCreated: 1, graphRevisionUpdated: 1 };
 		projectWorkdays.mockReturnValue({ nodes: [node], edges: [], changedSourceRefs: [sourceRef] });

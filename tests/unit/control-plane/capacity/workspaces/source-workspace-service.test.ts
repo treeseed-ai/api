@@ -41,7 +41,7 @@ const canonicalAttempt = {
 	contextRefs: [{ store: 'git', model: 'repository', id: 'repository', repository: 'repository', commit }], predecessorResultIds: [],
 	acceptanceCriteria: ['Tests fail first.'], workspace: { mode: 'git', repository: 'repository', baseCommit: commit,
 		branch: 'treeseed/assignments/assignment', writablePaths: ['.'] },
-	estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 },
+	estimate: { expectedSeconds: 2, maximumSeconds: 3 },
 	limits: { maximumSeconds: 3, maximumContextBytes: 1, maximumContextTokens: 1, maximumContextItems: 1 },
 	deadline: '2026-09-11T00:00:00.000Z', leaseId: 'lease', reservationId: 'reservation', attempt: 1,
 	status: 'created', createdAt: now.toISOString(),

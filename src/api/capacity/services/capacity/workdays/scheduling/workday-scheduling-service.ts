@@ -87,12 +87,6 @@ export function acceptedLibraryRevision(library: { metadata?: unknown; contentRe
 	return immutableRef;
 }
 
-/** Estimating may attach to one exact proposal; autonomous planning starts with none. */
-export function requiresGovernedPlanningProposal(run: Pick<DurableCapacityWorkdayRun, 'executionKind' | 'parameters'>): boolean {
-	return run.executionKind === 'workday' && Array.isArray(record(run.parameters.agentSelection).activityTypes)
-		&& (record(run.parameters.agentSelection).activityTypes as unknown[]).includes('estimating');
-}
-
 async function resolveCapacityWorkdayPreflight(
 	store: WorkdayScheduleStore,
 	run: DurableCapacityWorkdayRun,
@@ -142,10 +136,7 @@ async function resolveCapacityWorkdayPreflight(
 		const profileSnapshot=await resolveWorkdayAgentProfileSnapshot(store, project.id, parameters.agentSelection);
 		agentProfiles.set(project.id,profileSnapshot);
 		const projectProposals = selectedProposals.filter((proposal) => proposal.projectId === project.id);
-		if (requiresGovernedPlanningProposal(run) && projectProposals.length > 1) throw new CapacityGovernanceError(
-			'capacity_workday_proposal_selection_invalid', 'A planning workday can bind at most one exact proposal per selected project.', 409,
-			{ projectId: project.id, proposalIds: projectProposals.map((proposal) => proposal.proposalId) });
-		if (projectProposals[0]) proposalContexts.set(project.id, projectProposals[0].ref);
+		for (const proposal of projectProposals) proposalContexts.set(proposal.proposalId, proposal.ref);
 	}
 	const selectedProjectIds = new Set(projects.map((project) => project.id));
 	const outsideSelection = selectedProposals.filter((proposal) => !selectedProjectIds.has(proposal.projectId));
@@ -157,7 +148,8 @@ async function resolveCapacityWorkdayPreflight(
 	const agentIds = workdayParticipants({
 		agentSelection: parameters.agentSelection,
 		agentProfilesByProjectId: frozenProfilesByProjectId,
-		proposalsByProjectId: Object.fromEntries(selectedProposals.map(proposal => [proposal.projectId, proposal.definition])),
+		proposalsByProjectId: Object.fromEntries(projects.map(project => [project.id,
+			selectedProposals.filter(proposal => proposal.projectId === project.id).map(proposal => proposal.definition)])),
 	}).map((participant) => participant.id);
 	const appliedPlan = compileWorkday({ id: run.id, teamId: run.teamId,
 		executionMode,
@@ -172,10 +164,6 @@ async function resolveCapacityWorkdayPreflight(
 			...canonicalWorkdayShares(parameters, projects) },
 		agentIds, startsAt: startedAt });
 	// Turn ceilings are not reservations. Admission sizes each turn against supply.
-	const planningSeconds = appliedPlan.planningRounds.length ? agentIds.length * 2 : 0;
-	if (planningSeconds > time.availableSeconds * appliedPlan.policySnapshot.planningPercent / 100) throw new CapacityGovernanceError('capacity_workday_planning_capacity_insufficient',
-		'Workday capacity cannot guarantee the compiled cooperative assignments for every selected agent.', 409,
-		{ requiredSeconds: planningSeconds, availableSeconds: time.availableSeconds, agentCount: agentIds.length });
 	return { parameters,executionMode,providerId,startedAt,environment,membership,projects,contexts,proposalContexts,agentProfiles,time,appliedPlan };
 }
 
@@ -239,7 +227,7 @@ export async function scheduleCapacityWorkdayRun(
 			repositoryIdsByProjectId: Object.fromEntries(
 				projects.map((project) => [project.id, contexts.get(project.id)!.repositoryId]),
 			),
-			planningSourceByProjectId: Object.fromEntries(proposalContexts),
+			planningSourceByProposalId: Object.fromEntries(proposalContexts),
 			workdayContextByProjectId: Object.fromEntries(projects.map((project) => {
 				const context = contexts.get(project.id)!;
 				const root = context.contentRoot === '.' ? '' : `${context.contentRoot.replace(/\/+$/u, '')}/`;

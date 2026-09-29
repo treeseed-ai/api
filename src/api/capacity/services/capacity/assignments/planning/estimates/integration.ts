@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { AssignmentResult } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError } from '../../../../../database.ts';
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
-import { readExactProposal } from '../../../../../../governance/executable-proposal.ts';
+import { hasCompleteExecutablePlan, proposalApprovalFingerprint, readExactProposal } from '../../../../../../governance/executable-proposal.ts';
 import { commitProposalVersionContent } from '../../../../../../control-plane/governance/proposal-version-content.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../../../../knowledge/gateway-treedx-connection.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../database.ts';
@@ -94,6 +94,22 @@ export async function integrateAssignmentEstimate(
 	await retryEstimateContention(() => integrateAssignmentEstimateOnce(store, assignment, result), { deadlineMs });
 }
 
+export async function finalizeEstimateReadyApproval(store: Pick<EstimateIntegrationStore, 'first'> & {
+	evaluateGovernanceProposal(proposalId: string, input: Row): Promise<unknown>;
+}, proposalId: string, definition: Row): Promise<boolean> {
+	if (definition.status === 'withdrawn' || !hasCompleteExecutablePlan(definition)) return false;
+	const approval = await store.first(`SELECT actor_id, evidence_json FROM governance_events
+		WHERE proposal_id=? AND event_type IN ('proposal.admin_decision','proposal.simulated_human_decision')
+		ORDER BY created_at DESC, id DESC LIMIT 1`, [proposalId]);
+	const evidence = typeof approval?.evidence_json === 'string'
+		? record(JSON.parse(approval.evidence_json)) : record(approval?.evidence_json);
+	if (evidence.pendingEstimates !== true || evidence.approvalFingerprint !== proposalApprovalFingerprint(definition)) return false;
+	await store.evaluateGovernanceProposal(proposalId, {
+		adminDecision: 'approved', actorType: 'user', actorId: text(approval.actor_id),
+	});
+	return true;
+}
+
 async function integrateAssignmentEstimateOnce(
 	store: EstimateIntegrationStore, assignment: DurableProviderAssignment, result: AssignmentResult,
 ): Promise<void> {
@@ -146,4 +162,5 @@ async function integrateAssignmentEstimateOnce(
 			changeReason: `Integrate ${attempt.agentClass} estimates from assignment ${assignment.id}.` } });
 	await store.updateGovernanceProposalDraft({ id: assignment.agentId, type: 'agent' }, text(proposal.id),
 		{ ...authored.update, createdByType: 'agent', createdById: assignment.agentId });
+	if (allEstimated) await finalizeEstimateReadyApproval(store, text(proposal.id), merged);
 }

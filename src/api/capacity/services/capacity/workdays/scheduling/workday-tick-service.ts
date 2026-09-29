@@ -5,7 +5,8 @@ import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/
 import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { CapacityWorkdayEventService } from '../content/workday-event-service.ts';
 import { advanceLivingWorkday } from '../lifecycle/living-workday-lifecycle.ts';
-import { appliedWorkdaySchema, workdayPhase } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema } from '@treeseed/sdk/agent-capacity';
+import { runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
 import { OperatorAssignmentService } from '../../assignments/observability/operator-assignment-service.ts';
 import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
 import type { WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
@@ -39,7 +40,7 @@ export async function tickCapacityWorkdayRun(
 		{ runId, providerId: run.capacityProviderId, matchCount: memberships.length },
 	);
 	const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
-	if (plan.state === 'closing' || workdayPhase(plan, now) !== 'planning') {
+	if (plan.state === 'closing' || await runtimeWorkdayPhase(store, run, now) !== 'planning') {
 		const turns = await store.all(`SELECT assignment.id FROM capacity_provider_assignments assignment
 			JOIN execution_nodes node ON node.team_id=assignment.team_id AND node.id=assignment.execution_node_id
 			WHERE node.team_id=? AND node.workday_id=? AND node.kind IN ('planning','estimating')

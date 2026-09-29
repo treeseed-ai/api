@@ -1,7 +1,10 @@
 import {
 	assignmentResultSchema,
 	assignmentAttemptSchema,
+	appliedWorkdaySchema,
 	effectiveActivityProfileSchema,
+	workdayPlanningEndsAt,
+	workdayPhase,
 	validateAgentDefinitionModel,
 	type AssignmentResult,
 	type EffectiveActivityProfile,
@@ -109,9 +112,23 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 		AND NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal')))`, parameters: [run.id] };
 }
 
-/** Governance review is planning work; paired work-item review is acting work. */
-export function isProposalGovernanceReview(node: Pick<ExecutionNode, 'kind' | 'pairRole' | 'sourceRef'>): boolean {
-	return node.kind === 'reviewing' && node.pairRole === null && node.sourceRef.model === 'proposal';
+/** The phase is derived from current approved graph work, never persisted as a second scheduler state. */
+export async function runtimeWorkdayPhase(store: any, run: DurableCapacityWorkdayRun, now: string) {
+	const plan = appliedWorkdaySchema.parse(run.parameters.appliedPlan);
+	if (Date.parse(now) < Date.parse(workdayPlanningEndsAt(plan)) || Date.parse(now) >= Date.parse(plan.endsAt))
+		return workdayPhase(plan, now, false);
+	const projectIds = array(run.parameters.scheduledProjectIds).map(text).filter(Boolean);
+	if (!projectIds.length || run.parameters.planningOnly === true) return workdayPhase(plan, now, false);
+	const scope = executionNodeRunScope(run);
+	const ready = await store.first(`SELECT node.id FROM execution_nodes node
+		WHERE node.team_id=? AND ${scope.sql} AND node.status IN ('ready','assigned','running')
+		AND node.kind IN ('acting','reviewing') AND node.pair_role IS NOT NULL
+		AND node.project_id IN (${projectIds.map(() => '?').join(',')})
+		AND (node.status IN ('assigned','running') OR NOT EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+			WHERE assignment.team_id=node.team_id AND assignment.execution_node_id=node.id
+			AND assignment.execution_node_revision=node.node_revision AND assignment.status<>'returned'))
+		LIMIT 1`, [run.teamId, ...scope.parameters, ...projectIds]);
+	return workdayPhase(plan, now, Boolean(ready));
 }
 
 export async function workItemContext(store: any, node: ExecutionNode): Promise<ExactEntityReference[]> {
@@ -181,7 +198,7 @@ export async function workItemContext(store: any, node: ExecutionNode): Promise<
 	const file = record(response.file ?? (Array.isArray(response.files) ? response.files[0] : null));
 	const validation = validatePortableContentData('proposal', record(file.frontmatter));
 	if (!validation.ok) throw new CapacityGovernanceError('execution_node_source_invalid', `Node ${node.id} proposal is no longer valid.`, 409);
-	if ((!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) || isProposalGovernanceReview(node)) {
+	if (!node.workItemId && (node.kind === 'planning' || node.kind === 'estimating')) {
 		const proposal = record(validation.data);
 		return [source, ...await canonicalProposalContextRefs(store, node, [
 			...array(proposal.objectiveRefs), ...array(proposal.evidenceRefs),
@@ -397,15 +414,11 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 		ORDER BY node.updated_at,node.id LIMIT 100`, [run.teamId,project.id,...runScope.parameters]);
 	const selectedDecisionIds = new Set(Array.isArray(run.parameters.decisionIds)
 		? run.parameters.decisionIds.map(text).filter(Boolean) : []);
-	const selectedProposalIds = new Set(Array.isArray(run.parameters.proposalIds)
-		? run.parameters.proposalIds.map(text).filter(Boolean) : []);
 	const teamContext = await teamCoreContext(store, run.teamId);
 	const projectContext = await projectCoreContext(store, project);
 	const ready: ReadyExecutionNode[] = [];
 	for (const row of rows) {
 		const node = decodeExecutionNode(row);
-		if (isProposalGovernanceReview(node)
-			&& (!selectedProposalIds.size || !selectedProposalIds.has(node.sourceRef.id))) continue;
 		const decisionIds = (node.authorityRefs ?? []).filter((reference) => reference.model === 'decision').map((reference) => reference.id);
 		// A workday's decision selection constrains only nodes whose authority is a
 		// decision. Cooperative planning and lifecycle reporting are authorized by

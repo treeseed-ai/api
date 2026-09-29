@@ -1,7 +1,6 @@
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { ProviderAssignmentRepository,type DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
-import { evaluateMinimumAssignmentDuration } from '../../../../policy/timing/assignment-duration.ts';
 
 type JsonRecord = Record<string,unknown>;
 interface CapacityProviderAccessPrincipal {
@@ -31,12 +30,8 @@ export function compileAssignmentExecutionWindow(assignment:Pick<DurableProvider
 	const nextTime={ ...time,executionSeconds,closeoutSeconds,executionStartedAt:now,executionDeadlineAt,
 		closeoutStartedAt:new Date(Math.max(startedMs,hardDeadlineMs-closeoutSeconds*1_000)).toISOString(),
 		closeoutDeadlineAt,hardDeadlineAt:executionDeadlineAt,remainingSeconds:Math.floor((hardDeadlineMs-startedMs)/1_000) };
-	const minimum=record(record(assignment.metadata).minimumAssignmentDuration); const requirement=record(minimum.requirement);
-	const productiveMinimum=text(requirement.unit)&&positive(requirement.amount)
-		? evaluateMinimumAssignmentDuration(requirement as never,now)
-		: minimum;
 	return { capacityEnvelope:{ ...envelope,budget:{ ...budget,time:nextTime,deadline:closeoutDeadlineAt } },
-		metadata:{ ...assignment.metadata,minimumAssignmentDuration:productiveMinimum,operationalState:'executing',executionWindow:{ startedAt:now,executionDeadlineAt,closeoutDeadlineAt,executionRef } } };
+		metadata:{ ...assignment.metadata,operationalState:'executing',executionWindow:{ startedAt:now,executionDeadlineAt,closeoutDeadlineAt,executionRef } } };
 }
 
 export async function startAssignmentExecutionWindow(database:CapacityGovernanceDatabase,principal:CapacityProviderAccessPrincipal,assignmentId:string,input:JsonRecord,now=new Date().toISOString()){

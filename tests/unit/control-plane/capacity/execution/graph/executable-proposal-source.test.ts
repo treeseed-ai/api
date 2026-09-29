@@ -47,8 +47,8 @@ describe('executable proposal source selection', () => {
 			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: null }]);
 		exactProposal.mockResolvedValueOnce({ ref: { repository: 'treeseed-ai/sdk', path: 'proposals/one.md',
 			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` }, definition: {
-			status: 'draft', executionPlan: { workItems: [{ estimate: { minimumSeconds: 10 },
-				review: 'required', reviewEstimate: { minimumSeconds: 5 } }] },
+			status: 'draft', executionPlan: { workItems: [{ estimate: { expectedSeconds: 30, maximumSeconds: 60 },
+				review: 'required', reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 } }] },
 		} });
 		const sources = await loadTeamExecutableProposalSources({ all }, 'team', 'project');
 		expect(sources).toHaveLength(1);
@@ -98,8 +98,8 @@ describe('executable proposal source selection', () => {
 			decision_record_json: { proposalRef },
 		}]);
 		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: {
-			status: 'accepted', executionPlan: { workItems: [{ estimate: { minimumSeconds: 10 },
-				review: 'required', reviewEstimate: { minimumSeconds: 5 } }] },
+			status: 'accepted', executionPlan: { workItems: [{ estimate: { expectedSeconds: 30, maximumSeconds: 60 },
+				review: 'required', reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 } }] },
 		} });
 		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toMatchObject([{
 			projectId: 'project', decision: { id: 'decision' },

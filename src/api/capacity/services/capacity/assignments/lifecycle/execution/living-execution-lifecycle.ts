@@ -75,7 +75,7 @@ export async function livingExecutionLifecycleOperations(input: {
 	const reviewExhausted = revisionRequested
 		&& Number(priorReviewRow?.count ?? 0) + 1 >= (target.maximumReviewCycles ?? 1);
 	if (revisionRequested && !actor) throw new Error('review_actor_node_missing');
-	target.status = recoverableReviewReturn && target.workItemId !== 'proposal-review' && attempt >= maxAttempts
+	target.status = recoverableReviewReturn && attempt >= maxAttempts
 		? 'failed' : nodeStatus as ExecutionNode['status'];
 	target.graphRevisionUpdated = nextRevision;
 	const changed = [target.id];

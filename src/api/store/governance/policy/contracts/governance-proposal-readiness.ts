@@ -27,7 +27,6 @@ export async function governanceProposalReadinessMethod(this: ControlPlaneStore,
 	const missingContent = exactSourceProblem ? [`exact proposal source (${exactSourceProblem})`] : [];
 	const missingVoting = [...missingContent];
 	if (!executionPlanReady) missingVoting.push('ready proposal-owned execution plan');
-	if (reviews.length < 1) missingVoting.push('independent Reviewer disposition');
 	if (blockers.length) missingVoting.push('resolved blocking questions and concerns');
 	return {
 		contentReady: missingContent.length === 0,

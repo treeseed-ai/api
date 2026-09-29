@@ -30,7 +30,7 @@ function node(status: ExecutionNode['status']): ExecutionNode {
 			store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'c'.repeat(64)}`,
 		}],
 		ruleRevision: 1, nodeRevision: 1, agentClass: 'engineer', status,
-		estimate: { minimumSeconds: 1, expectedSeconds: 2, maximumSeconds: 3 },
+		estimate: { expectedSeconds: 2, maximumSeconds: 3 },
 		requiredCapabilities: [], requestedPermissions: permissions as never, workspace: 'git',
 		acceptanceCriteria: ['Verified.'], maximumReviewCycles: 1,
 		graphRevisionCreated: 1, graphRevisionUpdated: 1,
@@ -258,7 +258,7 @@ describe('normalized living execution graph persistence', () => {
 
 	it('revises an unassigned node when projected assignment semantics change', () => {
 		const current = graph(1, [node('ready')]);
-		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
+		const projected = { ...node('blocked'), estimate: { expectedSeconds: 5, maximumSeconds: 30 } };
 		expect(applyOperationalState(current, graph(2, [projected]), 2, new Set(['node'])).nodes).toEqual([
 			expect.objectContaining({ id: 'node', status: 'ready', nodeRevision: 2, estimate: projected.estimate }),
 		]);
@@ -266,7 +266,7 @@ describe('normalized living execution graph persistence', () => {
 
 	it('preserves all immutable semantics for an in-flight node', () => {
 		const current = graph(1, [node('running')]);
-		const projected = { ...node('blocked'), estimate: { minimumSeconds: 1, expectedSeconds: 5, maximumSeconds: 30 } };
+		const projected = { ...node('blocked'), estimate: { expectedSeconds: 5, maximumSeconds: 30 } };
 		expect(applyOperationalState(current, graph(2, [projected]), 2, new Set(['node'])).nodes).toEqual([
 			expect.objectContaining({ status: 'running', nodeRevision: 1, estimate: node('running').estimate }),
 		]);

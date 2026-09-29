@@ -1,5 +1,4 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { evaluateMinimumAssignmentDuration } from '../../../policy/timing/assignment-duration.ts';
 import { CapacityGovernanceError } from '../../../database.ts';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 import { decodeWorkdayAgentProfileSnapshot } from '../workdays/policy/workday-agent-profile-policy.ts';
@@ -220,11 +219,8 @@ async function communicationSupply(store: DiscussionInvocationStore, teamId: str
 		const lanes = Array.isArray(provider.lanes) ? provider.lanes.map(record) : [];
 		const communicationLane = lanes.find((lane) => lane.purpose === 'communication');
 		if (!communicationLane) continue;
-		const durations = [provider.minimumAssignmentDuration, communicationLane.minimumAssignmentDuration]
-			.filter((value): value is Parameters<typeof evaluateMinimumAssignmentDuration>[0] => Boolean(value));
-		const minimumSeconds = Math.max(0, ...durations.map((duration) => evaluateMinimumAssignmentDuration(duration, now).minimumWindowSeconds));
 		const maxConcurrentWorkers = Math.max(1, Number(communicationLane.maxConcurrentWorkers ?? provider.maxConcurrentWorkers ?? 1) || 1);
-		return { ...candidate, minimumSeconds, maxConcurrentWorkers,
+		return { ...candidate, maxConcurrentWorkers,
 			providerRuntimeBuild: text(record(session?.metadata_json).runtimeBuild) || null };
 	}
 	return null;
@@ -361,7 +357,7 @@ export async function admitDiscussionInvocations(store: DiscussionInvocationStor
 		}
 		try {
 			const runIdentity = parent ? { id: parent.id, existing: true } : await nextConversationRunId(store, input.teamId, invocation.id);
-			const effectiveSeconds = Math.max(input.durationSeconds, invocation.productiveSeconds, Number(supply.minimumSeconds ?? 0));
+			const effectiveSeconds = Math.max(input.durationSeconds, invocation.productiveSeconds);
 			const claimToken=randomUUID();
 			await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json=?,updated_at=? WHERE id=? AND status IN ('queued','blocked') AND (execution_id IS NULL OR execution_id='')`, [runIdentity.id,JSON.stringify({code:'communication_admission_claimed',claimToken}),new Date().toISOString(), invocation.id]);
 			const claimed = await store.first(`SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests WHERE id=? LIMIT 1`, [invocation.id]);
@@ -441,7 +437,7 @@ export async function reconcileBlockedDiscussionInvocations(store:DiscussionInvo
 		const active=selectedSubjects.has(serialKey)||await store.first(`SELECT id FROM agent_invocation_requests WHERE project_id=? AND agent_id=? AND subject_digest=? AND id<>? AND status IN ('admitted','running') LIMIT 1`,[row.project_id,row.agent_id,row.subject_digest,invocationId]);
 		if(active){await store.run(`UPDATE agent_invocation_requests SET blocking_state_json=? WHERE id=?`,[JSON.stringify({code:'discussion_agent_serialized'}),invocationId]);continue;}selectedSubjects.add(serialKey);
 		try{
-			const identity=text(row.parent_workday_id)?{id:text(row.parent_workday_id),existing:true}:await nextConversationRunId(store,teamId,invocationId); const productiveSeconds=Math.max(1,Number(metadata.productiveSeconds??0),Number(supply.minimumSeconds??0));
+			const identity=text(row.parent_workday_id)?{id:text(row.parent_workday_id),existing:true}:await nextConversationRunId(store,teamId,invocationId); const productiveSeconds=Math.max(1,Number(metadata.productiveSeconds??0));
 			const claimToken=randomUUID();
 			await store.run(`UPDATE agent_invocation_requests SET status='admitted',execution_id=?,blocking_state_json=?,updated_at=? WHERE id=? AND team_id=? AND status IN ('queued','blocked') AND (execution_id IS NULL OR execution_id='')`,[identity.id,JSON.stringify({code:'communication_admission_claimed',claimToken}),new Date().toISOString(),invocationId,teamId]);
 			const claimed=await store.first(`SELECT status,execution_id,blocking_state_json FROM agent_invocation_requests WHERE id=? AND team_id=? LIMIT 1`,[invocationId,teamId]);
