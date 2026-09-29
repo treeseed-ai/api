@@ -1,0 +1,11 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.source-pin-identity
+title: Exact source pin identity
+scope: local-component-tests
+workflow:
+  - id: semantic-identity
+    action: { verifier: api.golden.source-pin-field-comparison }
+    expect: { status: passed }
+  - id: immutable-revision
+    action: { verifier: api.golden.source-pin-mutation-denied }
+    expect: { status: passed }

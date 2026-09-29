@@ -61,6 +61,15 @@ export function readAssignmentSourcePin(context: Record<string, unknown>): Assig
   return { schemaVersion: pin.schemaVersion, repository, exactCommit: pin.exactCommit!, credentialBindingId: pin.credentialBindingId };
 }
 
+/** Compare custody identity, not JSON object key order from PostgreSQL jsonb. */
+export function sameAssignmentSourcePin(left: AssignmentSourcePin | null, right: AssignmentSourcePin): boolean {
+  return left !== null && left.schemaVersion === right.schemaVersion
+    && left.exactCommit === right.exactCommit && left.credentialBindingId === right.credentialBindingId
+    && left.repository.id === right.repository.id && left.repository.provider === right.repository.provider
+    && left.repository.owner === right.repository.owner && left.repository.name === right.repository.name
+    && left.repository.ref === right.repository.ref && left.repository.cloneUrl === right.repository.cloneUrl;
+}
+
 /** CAS preserves the first exact revision across concurrent requests and moving protected refs. */
 export async function persistAssignmentSourcePin(store: PinStore, input: {
   assignmentId: string; teamId: string; providerId: string; membershipId: string; runnerId: string;

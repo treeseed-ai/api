@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.source-pin-identity
+journey: Authorize an exact assignment source pin independent of JSON representation
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: custody
+status: planned
+gates: [core]
+summary: Key reordering preserves identical authority; changed or missing pins remain denied.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/source-pin-identity.scene.yaml

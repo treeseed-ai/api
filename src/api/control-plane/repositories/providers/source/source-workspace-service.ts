@@ -7,7 +7,7 @@ import { CapacityGovernanceError, type CapacityGovernanceDatabase } from '../../
 import { evaluateProviderAssignmentLeaseAuthority } from '../../../../capacity/services/accounts/lease-authority-service.ts';
 import { selectAssignmentSourceRepository } from '../../../../capacity/services/capacity/assignments/context/source-repository.ts';
 import { providerPrincipal, type ProviderPrincipal } from '../provider-runtime-service.ts';
-import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit } from './source-pin.ts';
+import { persistAssignmentSourcePin, readAssignmentSourcePin, resolveAuthorizedSourceCommit, sameAssignmentSourcePin } from './source-pin.ts';
 
 type RecordValue = Record<string, unknown>;
 interface SourceStore {
@@ -169,7 +169,8 @@ export function createSourceWorkspaceService(database: CapacityGovernanceDatabas
     const issued = now();
     row = assertSourceAssignmentLease(await load(assignmentId, actor), actor, assignmentId, request.runnerId, request.leaseToken, issued);
 	const accepted = readAssignmentSourcePin(record(row.workspace_context_json));
-    if (JSON.stringify(accepted) !== JSON.stringify(pin)) throw new CapacityGovernanceError('assignment_source_pin_changed', 'Assignment source identity changed during authorization.', 409);
+	if (!sameAssignmentSourcePin(accepted, pin)) throw new CapacityGovernanceError('assignment_source_pin_changed',
+		accepted ? 'Assignment source identity changed during authorization.' : 'Assignment source pin disappeared during authorization.', 409);
 	const additionalCommits = assignmentPredecessorSourceCommits(row, [configured.id, configuredRepository], pin.exactCommit);
 	const credentialExpiry = credential?.expiresAt ? Date.parse(credential.expiresAt) : issued.getTime() + 300_000;
     const expiry = Math.min(Date.parse(String(row.lease_expires_at)), credentialExpiry, issued.getTime() + 300_000);
