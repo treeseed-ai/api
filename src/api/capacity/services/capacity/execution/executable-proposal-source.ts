@@ -30,7 +30,9 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		WHERE p.team_id = ? AND ((p.decision_id IS NULL AND p.status IN ('draft','submitted','open','voting')) OR d.id IS NOT NULL)
 			${projectId ? 'AND p.project_id = ?' : ''}
 		ORDER BY p.project_id,p.id`, projectId ? [teamId, projectId] : [teamId]),
-		store.all('SELECT source_ref_json,status FROM execution_nodes WHERE team_id=?', [teamId])]);
+		store.all(`SELECT node.source_ref_json,node.status,node.workday_id,run.status AS workday_status
+			FROM execution_nodes node LEFT JOIN capacity_workday_runs run
+				ON run.team_id=node.team_id AND run.id=node.workday_id WHERE node.team_id=?`, [teamId])]);
 	const graphState = new Map<string, { count: number; incomplete: number; ready: number }>();
 	for (const graphRow of graphRows) {
 		const source = record(graphRow.source_ref_json);
@@ -39,7 +41,8 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		const state = graphState.get(key) ?? { count: 0, incomplete: 0, ready: 0 };
 		state.count += 1;
 		if (text(graphRow.status) !== 'completed') state.incomplete += 1;
-		if (text(graphRow.status) === 'ready') state.ready += 1;
+		if (text(graphRow.status) === 'ready' && !(text(graphRow.workday_id)
+			&& ['cancelled', 'completed', 'failed'].includes(text(graphRow.workday_status)))) state.ready += 1;
 		graphState.set(key, state);
 	}
 	const sources: ExecutableProposalSource[] = [];
