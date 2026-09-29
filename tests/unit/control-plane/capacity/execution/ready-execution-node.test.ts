@@ -77,12 +77,11 @@ it('keeps explicit proposal workdays away from unrelated historical decisions', 
 	expect(scope.sql).toContain('node.workday_id IS NULL');
 });
 
-it('keeps decision-only workdays away from unselected proposal-governance reviews', () => {
+it('admits unbound decision work without a separate proposal Reviewer', () => {
 	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { decisionIds: ['decision'] } });
 	expect(scope.parameters).toEqual(['run']);
-	expect(scope.sql).toContain("node.kind='reviewing'");
-	expect(scope.sql).toContain("node.pair_role IS NULL");
-	expect(scope.sql).toContain("node.source_ref_json::jsonb->>'model'='proposal'");
+	expect(scope.sql).toContain("node.kind<>'communication'");
+	expect(scope.sql).not.toContain("node.pair_role IS NULL");
 });
 const project = { id: projectId, slug: 'sdk' };
 const contextRefs = [{ store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'e'.repeat(40) }];

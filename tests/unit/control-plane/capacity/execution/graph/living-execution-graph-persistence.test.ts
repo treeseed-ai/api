@@ -76,13 +76,13 @@ it('binds each accepted decision to at most one active simulation workday', () =
 	} }], 'proposalIds').get('proposal')).toBe('golden');
 });
 
-it('binds the real proposal Reviewer before a decision exists without adopting an unrelated run', () => {
-	const proposalReview = { ...node('ready'), sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal' },
-		workItemId: 'proposal-review', kind: 'reviewing', authorityRefs: [{ store: 'treedx', model: 'proposal', id: 'proposal' }] } as never;
+it('binds selected proposal work and its accepted decision to one simulation', () => {
+	const proposalWork = { ...node('ready'), sourceRef: { store: 'treedx', model: 'proposal', id: 'proposal' },
+		workItemId: 'architecture', kind: 'acting', authorityRefs: [{ store: 'treedx', model: 'proposal', id: 'proposal' }] } as never;
 	const proposalRuns = new Map([['proposal', 'simulation-a']]);
-	expect(simulationRunForNode(proposalReview, new Map(), proposalRuns)).toBe('simulation-a');
-	expect(simulationRunForNode(proposalReview, new Map(), new Map([['other', 'simulation-b']]))).toBe('');
-	const accepted = { ...proposalReview, authorityRefs: [{ store: 'treedx', model: 'decision', id: 'decision' }] } as never;
+	expect(simulationRunForNode(proposalWork, new Map(), proposalRuns)).toBe('simulation-a');
+	expect(simulationRunForNode(proposalWork, new Map(), new Map([['other', 'simulation-b']]))).toBe('');
+	const accepted = { ...proposalWork, authorityRefs: [{ store: 'treedx', model: 'decision', id: 'decision' }] } as never;
 	expect(simulationRunForNode(accepted, new Map([['decision', 'simulation-a']]), proposalRuns)).toBe('simulation-a');
 	expect(() => simulationRunForNode(accepted, new Map([['decision', 'simulation-b']]), proposalRuns))
 		.toThrow('different simultaneous simulations');

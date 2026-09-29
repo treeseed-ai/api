@@ -387,11 +387,11 @@ describe('immutable assignment-attempt construction', () => {
 			now: '2026-09-13T12:59:01.000Z' })).toThrow(/No positive active-time allocation remains/u);
 	});
 
-	it('uses the acting window for a governance review whose viable minimum outlives planning', () => {
+	it('allocates a paired work review from the acting window without a minimum floor', () => {
 		const review = structuredClone(candidate);
 		review.node.kind = 'reviewing' as never;
-		review.node.pairRole = null;
-		review.node.workItemId = 'proposal-review';
+		review.node.pairRole = 'reviewer';
+		review.node.workItemId = 'architecture';
 		review.node.sourceRef = sourceRef;
 		review.node.workspace = 'treedx';
 		review.node.estimate = { expectedSeconds: 1320, maximumSeconds: 1980 };
@@ -409,7 +409,7 @@ describe('immutable assignment-attempt construction', () => {
 			providerSessionId: 'session', providers: [reviewProvider] as never, attempt: 1,
 			now: '2026-09-13T12:30:00.000Z' });
 		expect(result.allocation.admitted).toBe(true);
-		expect(result.assignment.limits.maximumSeconds).toBeGreaterThanOrEqual(780);
+		expect(result.assignment.limits.maximumSeconds).toBeGreaterThan(0);
 		expect(Date.parse(result.assignment.deadline)).toBeGreaterThan(Date.parse('2026-09-13T12:20:00.000Z'));
 		expect(Date.parse(result.assignment.deadline)).toBeLessThanOrEqual(Date.parse('2026-09-13T13:00:00.000Z'));
 	});

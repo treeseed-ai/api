@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: fluid-phase
+    action: { verifier: api.golden.fluid-phase }
+    expect: { status: passed }
+  - id: external-approval
+    action: { verifier: api.golden.external-approval }
+    expect: { status: passed }
+  - id: parallel-proposals
+    action: { verifier: api.golden.parallel-proposals }
+    expect: { status: passed }
+  - id: reporter-carry-forward
+    action: { verifier: api.golden.reporter-carry-forward }
+    expect: { status: passed }
   - id: canonical-adapter-headroom
     action: { verifier: api.golden.canonical-adapter-headroom }
     expect: { status: passed }

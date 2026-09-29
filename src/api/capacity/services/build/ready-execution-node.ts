@@ -91,13 +91,6 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 		return { sql: `node.kind='reporting' AND node.workday_id=?`, parameters: [run.id] };
 	}
 	if (run.parameters.planningOnly === true) {
-		if (proposalIds.length) return {
-			sql: `(node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')
-				OR (node.workday_id IS NULL AND node.kind='reviewing' AND node.pair_role IS NULL
-					AND node.source_ref_json::jsonb->>'model'='proposal'
-					AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
-			parameters: [run.id, ...proposalIds],
-		};
 		return {
 			sql: `node.workday_id=? AND node.kind IN ('planning','estimating','communication','reporting')`,
 			parameters: [run.id],
@@ -108,8 +101,7 @@ export function executionNodeRunScope(run: Pick<DurableCapacityWorkdayRun, 'id' 
 			AND node.source_ref_json::jsonb->>'model'='proposal' AND node.source_ref_json::jsonb->>'id' IN (${proposalIds.map(() => '?').join(',')})))`,
 		parameters: [run.id, ...proposalIds],
 	};
-	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'
-		AND NOT (node.kind='reviewing' AND node.pair_role IS NULL AND node.source_ref_json::jsonb->>'model'='proposal')))`, parameters: [run.id] };
+	return { sql: `(node.workday_id=? OR (node.workday_id IS NULL AND node.kind<>'communication'))`, parameters: [run.id] };
 }
 
 /** The phase is derived from current approved graph work, never persisted as a second scheduler state. */

@@ -75,8 +75,8 @@ export const simulationRunByDecision = (workdays: readonly { id: string; executi
 export function simulationRunForNode(node: ExecutionNode, byDecision: ReadonlyMap<string, string>, byProposal: ReadonlyMap<string, string>): string {
 	const decisionId = node.authorityRefs?.find((reference) => reference.model === 'decision')?.id;
 	const selectedDecision = decisionId ? byDecision.get(decisionId) ?? '' : '';
-	// A proposal Reviewer runs before a decision exists. Its explicit proposal
-	// selection is already authoritative for this simulation workday.
+	// Selected proposal work may be planned before an approved decision exists;
+	// the exact decision takes authority once accepted.
 	const selectedProposal = byProposal.get(node.sourceRef.id) ?? '';
 	if (selectedDecision && selectedProposal && selectedDecision !== selectedProposal) throw new CapacityOperationError(409,
 		'execution_simulation_selection_overlap', 'The proposal and decision belong to different simultaneous simulations.');
