@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.retired-graph-estimate-migration:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/migrations/retired-graph-estimate-minimum.test.ts
+    testName: removes only the retired minimum from persisted graph estimates and replays as a noop
   api.golden.early-external-approval:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
