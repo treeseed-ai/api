@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { CapacityGovernanceError } from '../../../../database.ts';
 import { decodeDurableJsonObject } from '../../../../durable-json.ts';
 import { CapacityWorkdayRunRepository } from '../../../../repositories/capacity/workdays/workday-run.ts';
-import { reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { reconcileCommunicationExecutionGraph, reconcileExecutionGraph } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { CapacityWorkdayEventService } from '../content/workday-event-service.ts';
 import { advanceLivingWorkday } from '../lifecycle/living-workday-lifecycle.ts';
 import { appliedWorkdaySchema, workdayPhase } from '@treeseed/sdk/agent-capacity';
@@ -52,7 +52,9 @@ export async function tickCapacityWorkdayRun(
 			WHERE team_id=? AND workday_id=? AND kind IN ('planning','estimating') AND status IN ('ready','blocked')`, [now, teamId, runId]);
 	}
 	const lifecycle = await advanceLivingWorkday(store, run, now);
-	const executionGraph = await reconcileExecutionGraph(store, teamId, {}, `workday-tick:${runId}:${eventId ?? now}`);
+	const executionGraph = run.executionKind === 'conversation'
+		? await reconcileCommunicationExecutionGraph(store, teamId)
+		: await reconcileExecutionGraph(store, teamId, {}, `workday-tick:${runId}:${eventId ?? now}`);
 	const result = { runId, tickedAt: now, lifecycle, executionGraph };
 	if (eventId) await new CapacityWorkdayEventService(store).create(teamId, runId, {
 		id: eventId, eventType: 'workday.tick', status: 'recorded', title: 'Workday execution-graph tick',

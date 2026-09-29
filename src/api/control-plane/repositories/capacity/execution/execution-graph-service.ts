@@ -277,12 +277,12 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 	return revisionRecord;
 }
 
-async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}) {
+async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}, scope: 'team' | 'communication' = 'team') {
 	const current = await loadGraphSource('projection', () => readGraph(store, teamId));
 	const [sources, profiles, workdays, communications, activeAssignmentRows, terminalAssignmentRows, reviewCycleRows] = await Promise.all([
-		loadGraphSource('governance', () => loadTeamExecutableProposalSources(store, teamId)),
+		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('governance', () => loadTeamExecutableProposalSources(store, teamId)),
 		loadGraphSource('agent_profiles', () => loadProfiles(store, teamId)),
-		loadGraphSource('workdays', () => loadActiveWorkdays(store, teamId)),
+		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('workdays', () => loadActiveWorkdays(store, teamId)),
 		loadGraphSource('communications', () => loadCommunicationInvocations(store, teamId)),
 		loadGraphSource('assignments', () => store.all(`SELECT DISTINCT execution_node_id,work_day_id FROM capacity_provider_assignments
 			WHERE team_id=? AND execution_node_id IS NOT NULL AND status IN ('pending','leased','running','returned')`, [teamId])),
@@ -316,11 +316,14 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles,
 		decisionNodes: proposalProjection?.nodes ?? [] });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
-	const nodes = [...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes];
-	const edges = [...(proposalProjection?.edges ?? []), ...workdayProjection.edges];
+	const nodes = scope === 'communication'
+		? [...current.nodes.filter((node) => node.kind !== 'communication'), ...communicationProjection.nodes]
+		: [...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes];
+	const edges = scope === 'communication' ? current.edges : [...(proposalProjection?.edges ?? []), ...workdayProjection.edges];
 	const changedSourceRefs = [...new Map([...(proposalProjection?.revision.changedSourceRefs ?? []),
 		...workdayProjection.changedSourceRefs, ...communicationProjection.changedSourceRefs,
-		...(!sources.length && !workdays.length && !communications.length ? current.nodes.map((node) => node.sourceRef) : [])]
+		...(scope === 'team' && !sources.length && !workdays.length && !communications.length
+			? current.nodes.map((node) => node.sourceRef) : [])]
 		.map((reference) => [stable(reference), reference])).values()];
 	const base: TeamGraph = { teamId, revision, digest: digest({ teamId, nodes, edges }), nodes, edges };
 	const nodeById = new Map(base.nodes.map((node) => [node.id, node]));
@@ -423,15 +426,24 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 }
 
 /** Concurrent source changes converge by rereading the winning graph revision. */
-export async function reconcileExecutionGraph(store: any, teamId: string, body: Row = {}, ..._trace: unknown[]) {
+async function reconcileGraphScope(store: any, teamId: string, body: Row, scope: 'team' | 'communication') {
 	for (let attempt = 1; attempt <= 4; attempt += 1) {
 		try {
-			return await reconcileExecutionGraphOnce(store, teamId, body);
+			return await reconcileExecutionGraphOnce(store, teamId, body, scope);
 		} catch (error) {
 			if (!(error instanceof CapacityOperationError) || error.code !== 'execution_graph_revision_conflict' || attempt === 4) throw error;
 		}
 	}
 	throw new CapacityOperationError(409, 'execution_graph_revision_conflict', 'The execution graph changed concurrently; reconcile again.');
+}
+
+export async function reconcileExecutionGraph(store: any, teamId: string, body: Row = {}, ..._trace: unknown[]) {
+	return reconcileGraphScope(store, teamId, body, 'team');
+}
+
+/** Reconcile conversation demand in the same graph without reinterpreting unrelated accepted proposals. */
+export async function reconcileCommunicationExecutionGraph(store: any, teamId: string, body: Row = {}) {
+	return reconcileGraphScope(store, teamId, body, 'communication');
 }
 
 export function createExecutionGraphService(store: any) {
