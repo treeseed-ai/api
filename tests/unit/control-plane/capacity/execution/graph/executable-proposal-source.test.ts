@@ -159,9 +159,9 @@ describe('executable proposal source selection', () => {
 	});
 	it('refuses to freeze invalid accepted content with an active assignment', async () => {
 		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
-			source_ref_json: { model: 'proposal', id: 'active', digest: `sha256:${'a'.repeat(64)}` },
-			status: 'ready', active_assignment: true,
-		}] : [{ proposal_id: 'active', project_id: 'project', active_version: 1,
+			id: 'active-node', source_ref_json: { model: 'proposal', id: 'active', digest: `sha256:${'a'.repeat(64)}` },
+			status: 'ready',
+		}] : query.includes('FROM capacity_provider_assignments') ? [{ execution_node_id: 'active-node' }] : [{ proposal_id: 'active', project_id: 'project', active_version: 1,
 			active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision',
 			decision_record_json: { proposalRef: { id: 'active' } } }]);
 		exactProposal.mockRejectedValueOnce(Object.assign(new Error('Invalid active content.'), {
