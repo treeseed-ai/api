@@ -48,29 +48,12 @@ const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedP
 
 describe('immutable assignment-attempt construction', () => {
 	it('uses observed proposal-review viability without shortening an ordinary paired review', () => {
-		const review = structuredClone(candidate);
-		review.node.kind = 'reviewing';
-		review.node.pairRole = null as never;
-		review.node.agentClass = 'reviewer';
-		review.node.workspace = 'read-only';
-		review.node.estimate = { minimumSeconds: 60, expectedSeconds: 100, maximumSeconds: 165 };
-		review.node.requestedPermissions = { content: { read: ['proposal'], write: [] },
-			tools: ['source.read', 'verification'] } as never;
-		review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
-		review.effectiveProfile.activity = 'reviewing';
-		review.effectiveProfile.handler = 'reviewer';
-		const measurements = Array.from({ length: 20 }, (_, index) => ({ id: `review-${index}`,
-			completedAt: new Date(Date.parse('2026-09-13T11:30:00.000Z') + index * 1000).toISOString(),
-			expectedSeconds: 250, allocatedSeconds: 200, activeSeconds: 84, outcome: 'completed' as const }));
-		const build = (item: typeof review) => buildAssignmentAttempt({ candidate: item as never, run,
-			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
-			allocationInputs: { codex: { measurements, constraints: [] } }, providerSessionId: 'session',
-			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:01:00.000Z' });
-		expect(build(review).allocation).toMatchObject({ admitted: true, minimumSeconds: 105,
-			observedMinimumSeconds: 105, allocatedSeconds: 105 });
-		review.node.pairRole = 'reviewer' as never;
-		expect(build(review).allocation).toMatchObject({ admitted: true, minimumSeconds: 60,
-			observedMinimumSeconds: 0, allocatedSeconds: 60 });
+		const review = structuredClone(candidate); Object.assign(review.node, { kind: 'reviewing', pairRole: null, agentClass: 'reviewer', workspace: 'read-only', estimate: { minimumSeconds: 60, expectedSeconds: 100, maximumSeconds: 165 }, requestedPermissions: { content: { read: ['proposal'], write: [] }, tools: ['source.read', 'verification'] } });
+		Object.assign(review.effectiveProfile, { activity: 'reviewing', handler: 'reviewer', permissionCeiling: review.node.requestedPermissions });
+		const measurements = Array.from({ length: 20 }, (_, index) => ({ id: `review-${index}`, completedAt: new Date(Date.parse('2026-09-13T11:30:00.000Z') + index * 1000).toISOString(), expectedSeconds: 250, allocatedSeconds: 200, activeSeconds: 84, outcome: 'completed' as const }));
+		const build = (item: typeof review) => buildAssignmentAttempt({ candidate: item as never, run, principal: { teamId: 'team', capacityProviderId: 'provider' } as never, allocationInputs: { codex: { measurements, constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1, now: '2026-09-13T12:01:00.000Z' });
+		expect(build(review).allocation).toMatchObject({ admitted: true, minimumSeconds: 105, observedMinimumSeconds: 105, allocatedSeconds: 105 }); review.node.pairRole = 'reviewer' as never;
+		expect(build(review).allocation).toMatchObject({ admitted: true, minimumSeconds: 60, observedMinimumSeconds: 0, allocatedSeconds: 60 });
 	});
 	it('gives planning discussion the policy turn ceiling without changing acting chat allocation', () => {
 		const discussion = structuredClone(candidate);
