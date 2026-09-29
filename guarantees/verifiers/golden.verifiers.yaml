@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.bounded-planning-node-id:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/workday-execution-projector.test.ts
+    testName: admits a long governed proposal without exceeding the planning node ID bound
   api.golden.retired-graph-estimate-migration:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

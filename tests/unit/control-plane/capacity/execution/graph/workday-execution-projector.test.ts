@@ -18,6 +18,37 @@ const definition = (agentClass: string, dependsOn: string[] = []): AgentDefiniti
 });
 
 describe('workday living-graph projection', () => {
+	it('admits a long governed proposal without exceeding the planning node ID bound', () => {
+		const projectId = '8cbfb810-6da5-4da2-9ae9-cad53101253f';
+		const proposalId = `golden-sdk-decision-governed-workday-intent-v4-${'f'.repeat(36)}`;
+		const workdayId = `workday-${'a'.repeat(36)}`;
+		const architect = definition('architect');
+		architect.activityProfiles.estimating = { handler: 'estimate', permissions,
+			prompt: { system: 'Estimate the exact proposal work.' } };
+		const proposal = { id: proposalId, executionPlan: { workItems: [
+			{ id: 'architecture-contract', agentClass: 'architect', review: 'required' },
+		] } };
+		const snapshot = { [projectId]: { agents: [{ definition: architect, activities: ['planning', 'estimating'] }] } };
+		const participants = workdayParticipants({ agentProfilesByProjectId: snapshot,
+			proposalsByProjectId: { [projectId]: [proposal] } });
+		expect(participants).toHaveLength(2);
+		expect(participants.find(item => item.activity === 'estimating')?.proposalId).toBe(proposalId);
+		const plan = compileWorkday({ id: workdayId, teamId: 'team', policyId: 'default', policyRevision: 1,
+			executionMode: 'simulation', agentIds: participants.map(item => item.id),
+			startsAt: '2026-09-29T22:00:00Z', policy: { durationSeconds: 3600,
+				maximumConcurrency: 5, communicationConcurrency: 5 } });
+		expect(plan.planningRounds[0]?.assignmentIds.every(id => id.length <= 200)).toBe(true);
+		const graph = projectActiveWorkdays({ teamId: 'team', revision: 1,
+			profiles: { 'sdk:architect': architect }, sources: [{ id: workdayId, teamId: 'team',
+				proposalsByProjectId: { [projectId]: [proposal] }, parameters: { appliedPlan: plan,
+					scheduledProjectIds: [projectId], agentProfilesByProjectId: snapshot,
+					planningSourceByProposalId: { [proposalId]: { store: 'treedx', model: 'proposal',
+						id: proposalId, revision: 1, repository: 'treeseed-ai/sdk-library',
+						commit: 'b'.repeat(40), path: 'proposals/golden.mdx' } } } }] });
+		expect(graph.nodes).toHaveLength(2);
+		expect(graph.nodes.find(node => node.kind === 'estimating')?.sourceRef.id).toBe(proposalId);
+		expect(validateExecutionGraph(graph.nodes, graph.edges)).toMatchObject({ ok: true });
+	});
 	it('keeps policy authority stable across operational accounting and repeated rounds', () => {
 		const architect = definition('architect');
 		const plan = compileWorkday({ id: 'stable', teamId: 'team', policyId: 'default', policyRevision: 1,
