@@ -141,13 +141,13 @@ describe('executable proposal source selection', () => {
 			.resolves.toEqual([]);
 		expect(frozen).toEqual([{ id: 'historical', digest: `sha256:${'a'.repeat(64)}` }]);
 	});
-	it('treats ready nodes from a cancelled simulation as non-admissible historical state', async () => {
+	it('treats ready nodes without an active assignment as non-admissible historical state', async () => {
 		const row = { proposal_id: 'old', project_id: 'project', active_version: 1,
 			active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision',
 			decision_record_json: { proposalRef: { id: 'old' } } };
 		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
 			source_ref_json: { model: 'proposal', id: 'old', digest: `sha256:${'a'.repeat(64)}` },
-			status: 'ready', workday_id: 'stopped', workday_status: 'cancelled',
+			status: 'ready', active_assignment: false,
 		}] : [row]);
 		exactProposal.mockRejectedValueOnce(Object.assign(new Error('Invalid old content.'), {
 			status: 422, code: 'proposal_execution_plan_invalid',
@@ -157,10 +157,10 @@ describe('executable proposal source selection', () => {
 			.resolves.toEqual([]);
 		expect(frozen).toEqual(['old']);
 	});
-	it('refuses to freeze invalid accepted content with an active ready assignment', async () => {
+	it('refuses to freeze invalid accepted content with an active assignment', async () => {
 		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
 			source_ref_json: { model: 'proposal', id: 'active', digest: `sha256:${'a'.repeat(64)}` },
-			status: 'ready', workday_id: 'running', workday_status: 'running',
+			status: 'ready', active_assignment: true,
 		}] : [{ proposal_id: 'active', project_id: 'project', active_version: 1,
 			active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision',
 			decision_record_json: { proposalRef: { id: 'active' } } }]);

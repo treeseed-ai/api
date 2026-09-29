@@ -30,19 +30,20 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 		WHERE p.team_id = ? AND ((p.decision_id IS NULL AND p.status IN ('draft','submitted','open','voting')) OR d.id IS NOT NULL)
 			${projectId ? 'AND p.project_id = ?' : ''}
 		ORDER BY p.project_id,p.id`, projectId ? [teamId, projectId] : [teamId]),
-		store.all(`SELECT node.source_ref_json,node.status,node.workday_id,run.status AS workday_status
-			FROM execution_nodes node LEFT JOIN capacity_workday_runs run
-				ON run.team_id=node.team_id AND run.id=node.workday_id WHERE node.team_id=?`, [teamId])]);
-	const graphState = new Map<string, { count: number; incomplete: number; ready: number }>();
+		store.all(`SELECT node.source_ref_json,node.status,
+			EXISTS (SELECT 1 FROM capacity_provider_assignments assignment
+				WHERE assignment.team_id=node.team_id AND assignment.execution_node_id=node.id
+				AND assignment.status IN ('pending','leased','running','returned')) AS active_assignment
+			FROM execution_nodes node WHERE node.team_id=?`, [teamId])]);
+	const graphState = new Map<string, { count: number; incomplete: number; active: number }>();
 	for (const graphRow of graphRows) {
 		const source = record(graphRow.source_ref_json);
 		if (text(source.model) !== 'proposal') continue;
 		const key = `${text(source.id)}\u0000${text(source.digest)}`;
-		const state = graphState.get(key) ?? { count: 0, incomplete: 0, ready: 0 };
+		const state = graphState.get(key) ?? { count: 0, incomplete: 0, active: 0 };
 		state.count += 1;
 		if (text(graphRow.status) !== 'completed') state.incomplete += 1;
-		if (text(graphRow.status) === 'ready' && !(text(graphRow.workday_id)
-			&& ['cancelled', 'completed', 'failed'].includes(text(graphRow.workday_status)))) state.ready += 1;
+		if (graphRow.active_assignment === true) state.active += 1;
 		graphState.set(key, state);
 	}
 	const sources: ExecutableProposalSource[] = [];
@@ -69,9 +70,9 @@ export async function loadTeamExecutableProposalSources(store: any, teamId: stri
 			const value = error as { status?: number; code?: string };
 			// An already-materialized historical component whose content no longer
 			// satisfies the current schema may remain visible, but cannot admit work.
-			// Preserve its exact graph nodes; never silently drop an unmaterialized or
-			// ready accepted decision, or mask a TreeDX outage/authority mismatch.
-			if (value.code === 'proposal_execution_plan_invalid' && state?.count && state.ready === 0 && onFrozenInvalid) {
+			// Preserve its exact graph nodes; never silently drop an unmaterialized
+			// decision, interrupt an active assignment, or mask a TreeDX outage.
+			if (value.code === 'proposal_execution_plan_invalid' && state?.count && state.active === 0 && onFrozenInvalid) {
 				onFrozenInvalid({ id: text(row.proposal_id), digest: `sha256:${text(row.active_content_hash)}` });
 				continue;
 			}
