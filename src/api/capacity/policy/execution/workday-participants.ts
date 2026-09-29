@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { validateAgentDefinitionModel, type AgentDefinition } from '@treeseed/sdk/agent-capacity';
 
 type Row = Record<string, unknown>;
@@ -6,6 +7,10 @@ type Activity = keyof AgentDefinition['activityProfiles'];
 const record = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+// Planning node IDs include the workday, round, project and agent. Keep long
+// proposal names in the exact source reference, not in the bounded node ID.
+const proposalKey = (id: string): string => id.length > 50
+	? createHash('sha256').update(id).digest('hex').slice(0, 32) : id;
 
 export interface WorkdayParticipant {
 	projectId: string;
@@ -50,7 +55,7 @@ export function workdayParticipants(parameters: Row): WorkdayParticipant[] {
 						|| (validation.data.agentClass === 'reviewer' && items.some(item => item.review === 'required'
 							&& Object.keys(record(item.reviewEstimate)).length === 0));
 					if (proposalId && canEstimate) participants.push({ projectId, proposalId,
-						definition: validation.data, activity, id: `${projectId}/${validation.data.id}:estimating:${proposalId}` });
+						definition: validation.data, activity, id: `${projectId}/${validation.data.id}:estimating:${proposalKey(proposalId)}` });
 				}
 			}
 		}
