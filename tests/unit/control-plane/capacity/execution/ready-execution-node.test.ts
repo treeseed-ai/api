@@ -179,7 +179,7 @@ describe('direct ready-node admission input', () => {
 			.mockResolvedValueOnce([{ assignment_result_json: result }]) };
 		const [candidate] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
 		expect(candidate).toMatchObject({
-			graphRevision: 4, projectAgentClassId: 'class-engineer',
+			graphRevision: 4, projectAgentClassId: 'class-engineer', projectContentRepositoryId: 'team-repository',
 			node: { id: 'node', estimate: { expectedSeconds: 120, maximumSeconds: 180 } },
 			effectiveProfile: { handler: 'actor', activity: 'acting', handlerOrigin: 'agent-package', permissionCeiling: permissions },
 			predecessorResults: [result],
@@ -197,6 +197,19 @@ describe('direct ready-node admission input', () => {
 			projectId, write: false, readRefs: [agentCommit], workspacePaths: [agentPath],
 		}));
 		expect(JSON.stringify(candidate)).not.toMatch(/capacityPlan|demand|sourceCandidate|artifactManifest/u);
+	});
+	it('keeps the assignment project library binding distinct from Team Library context', async () => {
+		const store = { ...teamContextStore,
+			getProjectTreeDxLibrary: vi.fn(async (id: string) => ({ repositoryId: id === projectId ? 'sdk-library' : 'team-library',
+				contentRepositoryRef: '1'.repeat(40) })),
+			all: vi.fn().mockResolvedValueOnce([nodeRow()]).mockResolvedValueOnce([classRow(definition)])
+				.mockResolvedValueOnce([]) };
+		const [selected] = await listReadyExecutionNodes(store, run as never, project as never, async () => contextRefs);
+		expect(selected.projectContentRepositoryId).toBe('sdk-library');
+		expect(selected.contextRefs).toEqual(expect.arrayContaining([
+			expect.objectContaining({ repository: 'team-library', model: 'objective' }),
+			expect.objectContaining({ repository: 'sdk-library', model: 'objective' }),
+		]));
 	});
 	it('loads every canonical workday attempt for Reporter instead of stopping at condition nodes', async () => {
 		const reporter = { ...definition, id: 'agent:reporter', name: 'Reporter', agentClass: 'reporter',

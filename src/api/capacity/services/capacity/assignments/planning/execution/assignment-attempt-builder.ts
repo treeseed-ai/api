@@ -77,6 +77,14 @@ function communicationDiscussionReference(candidate: ReadyExecutionNode): ExactE
 	return [{ ...source, id: `${source.id}:discussion`, path: `${match[1]}discussions/${match[2]}.mdx` }];
 }
 
+function projectTreeDxWorkspaceReference(candidate: ReadyExecutionNode): ExactEntityReference | undefined {
+	const source = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : undefined;
+	if (source && source.repository !== candidate.projectContentRepositoryId) throw new CapacityGovernanceError(
+		'assignment_content_project_mismatch', 'Writable TreeDX content must belong to the assignment project library.', 409);
+	return source ?? candidate.contextRefs.find((reference) => reference.store === 'treedx'
+		&& reference.repository === candidate.projectContentRepositoryId);
+}
+
 function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant {
 	const requested = candidate.node.requestedPermissions!;
 	const ceiling = candidate.effectiveProfile.permissionCeiling;
@@ -100,7 +108,7 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 			.filter((value): value is string => Boolean(value)))]
 		: [];
 	const contentRefs = candidate.contextRefs.filter((reference) => reference.store === 'treedx');
-	const treeDxBase = candidate.node.sourceRef.store === 'treedx' ? candidate.node.sourceRef : contentRefs[0];
+	const treeDxBase = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate) : undefined;
 	const bookRef = contentRefs.find((reference) => reference.model === 'book'
 		&& reference.repository === treeDxBase?.repository && reference.commit && reference.path);
 	if (candidate.node.kind === 'acting' && candidate.node.workspace === 'treedx'
@@ -137,8 +145,9 @@ function grant(candidate: ReadyExecutionNode, assignmentId: string): ExactGrant 
 
 function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGrant: ExactGrant, run: DurableCapacityWorkdayRun) {
 	if (candidate.node.workspace === 'read-only') return { mode: 'read-only' as const };
-	const reference = candidate.node.sourceRef.store === candidate.node.workspace ? candidate.node.sourceRef
-		: candidate.contextRefs.find((item) => item.store === candidate.node.workspace);
+	const reference = candidate.node.workspace === 'treedx' ? projectTreeDxWorkspaceReference(candidate)
+		: candidate.node.sourceRef.store === candidate.node.workspace ? candidate.node.sourceRef
+			: candidate.contextRefs.find((item) => item.store === candidate.node.workspace);
 	if (!reference?.repository || !reference.commit) throw new CapacityGovernanceError(
 		'assignment_workspace_reference_missing', `Node ${candidate.node.id} lacks its exact ${candidate.node.workspace} workspace reference.`, 409);
 	const writablePaths = candidate.node.workspace === 'treedx'
