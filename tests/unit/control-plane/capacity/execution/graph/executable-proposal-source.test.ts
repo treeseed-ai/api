@@ -8,6 +8,7 @@ vi.mock('../../../../../../src/api/governance/executable-proposal.ts', async (im
 
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 import { loadProposalBlockingFeedback } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-planning-source.ts';
+import { reconcileExecutionGraph } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 
 const questionRef = { store: 'treedx', model: 'question', id: 'question', revision: 1,
 	digest: `sha256:${'c'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'questions/question.mdx' };
@@ -122,5 +123,43 @@ describe('executable proposal source selection', () => {
 		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).rejects.toMatchObject({
 			code: 'proposal_execution_plan_invalid', diagnostics: [{ path: 'executionPlan' }],
 		});
+	});
+	it('freezes an already-materialized invalid accepted component with no ready work', async () => {
+		const all = vi.fn(async (query: string) => query.includes('FROM execution_nodes') ? [{
+			source_ref_json: { model: 'proposal', id: 'historical', digest: `sha256:${'a'.repeat(64)}` },
+			status: 'blocked',
+		}] : [{
+			proposal_id: 'historical', project_id: 'project', active_version: 1,
+			active_content_hash: 'a'.repeat(64), decision_id: 'decision', accepted_decision_id: 'decision',
+			decision_record_json: { proposalRef: { id: 'historical' } },
+		}]);
+		exactProposal.mockRejectedValueOnce(Object.assign(new Error('Legacy proposal schema is invalid.'), {
+			status: 422, code: 'proposal_execution_plan_invalid',
+		}));
+		const frozen: Array<{ id: string; digest: string }> = [];
+		await expect(loadTeamExecutableProposalSources({ all }, 'team', undefined, (source) => frozen.push(source)))
+			.resolves.toEqual([]);
+		expect(frozen).toEqual([{ id: 'historical', digest: `sha256:${'a'.repeat(64)}` }]);
+	});
+	it('retains a blocked historical component during ordinary team reconciliation', async () => {
+		const source = { store: 'treedx', model: 'proposal', id: 'historical', revision: 1,
+			digest: `sha256:${'a'.repeat(64)}`, repository: 'library', commit: 'b'.repeat(40), path: 'proposals/old.mdx' };
+		const all = vi.fn(async (query: string) => {
+			if (query.includes('FROM governance_proposals')) return [{ proposal_id: 'historical', project_id: 'project',
+				active_version: 1, active_content_hash: 'a'.repeat(64), accepted_decision_id: 'decision',
+				decision_record_json: { proposalRef: { id: 'historical' } } }];
+			if (query.includes('FROM execution_nodes')) return [{ id: 'old-condition', team_id: 'team', project_id: 'project',
+				kind: 'condition', pair_role: null, source_ref_json: source, authority_refs_json: [], rule_revision: 1,
+				node_revision: 1, status: 'blocked', condition_json: { conditionType: 'authority', subjectRef: source,
+					expectedState: 'accepted' }, graph_revision_created: 1, graph_revision_updated: 1 }];
+			return [];
+		});
+		exactProposal.mockRejectedValueOnce(Object.assign(new Error('Legacy proposal schema is invalid.'), {
+			status: 422, code: 'proposal_execution_plan_invalid',
+		}));
+		const store = { all, first: vi.fn(async () => ({ revision: 1, graph_digest: `sha256:${'b'.repeat(64)}` })) };
+		const planned = await reconcileExecutionGraph(store, 'team', { plan: true });
+		expect(planned).toMatchObject({ changes: { stale: [], added: [] } });
+		expect(all).toHaveBeenCalledWith(expect.stringContaining('FROM governance_proposals'), ['team']);
 	});
 });

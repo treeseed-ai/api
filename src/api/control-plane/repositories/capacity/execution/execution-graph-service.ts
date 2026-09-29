@@ -276,11 +276,12 @@ export async function persistExecutionGraph(store: any, graph: TeamGraph, curren
 	}
 	return revisionRecord;
 }
-
 async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row = {}, scope: 'team' | 'communication' = 'team') {
 	const current = await loadGraphSource('projection', () => readGraph(store, teamId));
+	const frozenInvalid = new Set<string>();
 	const [sources, profiles, workdays, communications, activeAssignmentRows, terminalAssignmentRows, reviewCycleRows] = await Promise.all([
-		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('governance', () => loadTeamExecutableProposalSources(store, teamId)),
+		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('governance', () =>
+			loadTeamExecutableProposalSources(store, teamId, undefined, (source) => frozenInvalid.add(`${source.id}\u0000${source.digest}`))),
 		loadGraphSource('agent_profiles', () => loadProfiles(store, teamId)),
 		scope === 'communication' ? Promise.resolve([]) : loadGraphSource('workdays', () => loadActiveWorkdays(store, teamId)),
 		loadGraphSource('communications', () => loadCommunicationInvocations(store, teamId)),
@@ -316,10 +317,13 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 	const workdayProjection = projectActiveWorkdays({ teamId, revision, sources: workdays, profiles,
 		decisionNodes: proposalProjection?.nodes ?? [] });
 	const communicationProjection = projectCommunicationInvocations({ teamId, revision, sources: communications, profiles });
+	const frozenNodes = current.nodes.filter((node) => frozenInvalid.has(`${node.sourceRef.id}\u0000${node.sourceRef.digest}`));
+	const frozenNodeIds = new Set(frozenNodes.map((node) => node.id));
 	const nodes = scope === 'communication'
 		? [...current.nodes.filter((node) => node.kind !== 'communication'), ...communicationProjection.nodes]
-		: [...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes];
-	const edges = scope === 'communication' ? current.edges : [...(proposalProjection?.edges ?? []), ...workdayProjection.edges];
+		: [...(proposalProjection?.nodes ?? []), ...workdayProjection.nodes, ...communicationProjection.nodes, ...frozenNodes];
+	const edges = scope === 'communication' ? current.edges : [...(proposalProjection?.edges ?? []), ...workdayProjection.edges, ...current.edges.filter(
+		(edge) => frozenNodeIds.has(edge.fromNodeId) || frozenNodeIds.has(edge.toNodeId))];
 	const changedSourceRefs = [...new Map([...(proposalProjection?.revision.changedSourceRefs ?? []),
 		...workdayProjection.changedSourceRefs, ...communicationProjection.changedSourceRefs,
 		...(scope === 'team' && !sources.length && !workdays.length && !communications.length
@@ -347,10 +351,8 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		const disposition = text(record(record(row.lifecycle_output_json).activityCompletion).reviewDisposition);
 		const status = text(row.status);
 		const nodeId = text(row.execution_node_id);
-		// A failed Actor revision is terminal graph evidence. Dropping it here lets
-		// the projection restore the Actor to blocked/ready and can cause its paired
-		// Reviewer to re-review an older successful candidate. Preserve the exact
-		// failed/cancelled revision so the review edge remains fail-closed.
+		// Preserve failed Actor revisions or a Reviewer could re-review an old candidate.
+		// Failed/cancelled revisions remain terminal, never restored to ready.
 		if (status !== 'completed') return [[nodeId, {
 			status: status === 'cancelled' ? 'cancelled' as const : 'failed' as const,
 			nodeRevision: integer(row.execution_node_revision),
@@ -409,6 +411,8 @@ async function reconcileExecutionGraphOnce(store: any, teamId: string, body: Row
 		}).map((node) => node.id));
 		recoverInterruptedGovernanceReviews(desired, eligible, revision);
 	}
+	for (const node of desired.nodes) if (frozenNodeIds.has(node.id) && node.status === 'ready') node.status = 'blocked';
+	if (frozenNodeIds.size) desired.digest = digest({ teamId, nodes: desired.nodes, edges: desired.edges });
 	const changes = graphChanges(current, desired);
 	if (body.plan === true) return { teamId, baseRevision: current.revision, desiredRevision: desired.revision, desiredDigest: desired.digest, changes };
 	if (!hasChanges(changes)) return current.revision
@@ -437,14 +441,10 @@ async function reconcileGraphScope(store: any, teamId: string, body: Row, scope:
 	throw new CapacityOperationError(409, 'execution_graph_revision_conflict', 'The execution graph changed concurrently; reconcile again.');
 }
 
-export async function reconcileExecutionGraph(store: any, teamId: string, body: Row = {}, ..._trace: unknown[]) {
-	return reconcileGraphScope(store, teamId, body, 'team');
-}
+export async function reconcileExecutionGraph(store: any, teamId: string, body: Row = {}, ..._trace: unknown[]) { return reconcileGraphScope(store, teamId, body, 'team'); }
 
 /** Reconcile conversation demand in the same graph without reinterpreting unrelated accepted proposals. */
-export async function reconcileCommunicationExecutionGraph(store: any, teamId: string, body: Row = {}) {
-	return reconcileGraphScope(store, teamId, body, 'communication');
-}
+export async function reconcileCommunicationExecutionGraph(store: any, teamId: string, body: Row = {}) { return reconcileGraphScope(store, teamId, body, 'communication'); }
 
 export function createExecutionGraphService(store: any) {
 	return {
