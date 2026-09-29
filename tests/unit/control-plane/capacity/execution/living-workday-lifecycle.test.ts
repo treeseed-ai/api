@@ -3,7 +3,38 @@ vi.mock('../../../../../src/api/capacity/services/capacity/assignments/lifecycle
 	reconcileAssignmentContent: vi.fn(async () => undefined),
 }));
 import { advanceLivingWorkday } from '../../../../../src/api/capacity/services/capacity/workdays/lifecycle/living-workday-lifecycle.ts';
-import { validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { compileWorkday, validateAgentDefinitionModel } from '@treeseed/sdk/agent-capacity';
+import { runtimeWorkdayPhase } from '../../../../../src/api/capacity/services/build/ready-execution-node.ts';
+
+const fluidPlan = { ...compileWorkday({ id: 'fluid-workday', teamId: 'team', policyId: 'default', policyRevision: 1,
+	executionMode: 'simulation', policy: { durationSeconds: 3600, planningPercent: 100 / 3,
+		maximumConcurrency: 5, communicationConcurrency: 5 }, agentIds: [],
+	startsAt: '2026-09-29T12:00:00Z' }), state: 'active' as const };
+const fluidRun = { id: 'fluid-workday', teamId: 'team', executionKind: 'workday',
+	parameters: { appliedPlan: fluidPlan, scheduledProjectIds: ['sdk', 'api'] } } as never;
+
+describe('fluid workday phase from the living graph', () => {
+	it('keeps the initial planning window even if approved work is ready', async () => {
+		const first = vi.fn(async () => ({ id: 'actor' }));
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, '2026-09-29T12:19:59Z')).toBe('planning');
+		expect(first).not.toHaveBeenCalled();
+	});
+	it('continues or resumes planning when no approved acting node is ready', async () => {
+		const first = vi.fn(async () => null);
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, '2026-09-29T12:20:00Z')).toBe('planning');
+		expect(first).toHaveBeenCalledOnce();
+	});
+	it('admits acting only when a ready node exists in selected projects', async () => {
+		const first = vi.fn(async () => ({ id: 'actor' }));
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, '2026-09-29T12:20:00Z')).toBe('acting');
+		expect(first.mock.calls[0]?.[0]).toContain("node.kind IN ('acting','reviewing')");
+	});
+	it('never revives a workday after its hard end', async () => {
+		const first = vi.fn(async () => ({ id: 'actor' }));
+		expect(await runtimeWorkdayPhase({ first } as never, fluidRun, fluidPlan.endsAt)).toBe('ended');
+		expect(first).not.toHaveBeenCalled();
+	});
+});
 
 vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (importOriginal) => ({
 	...await importOriginal<typeof import('../../../../../src/api/governance/executable-proposal.ts')>(),
