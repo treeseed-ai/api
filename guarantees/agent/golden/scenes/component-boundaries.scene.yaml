@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: retired-graph-estimate-migration
+    action: { verifier: api.golden.retired-graph-estimate-migration }
+    expect: { status: passed }
   - id: early-external-approval
     action: { verifier: api.golden.early-external-approval }
     expect: { status: passed }
