@@ -67,6 +67,7 @@ export interface ReadyExecutionNode {
 	graphRevision: number;
 	projectAgentClassId: string;
 	effectiveProfile: EffectiveActivityProfile;
+	projectContentRepositoryId: string;
 	contextRefs: ExactEntityReference[];
 	sourceRepositories: string[];
 	predecessorResults: AssignmentResult[];
@@ -434,6 +435,7 @@ export async function listReadyExecutionNodes(store: any, run: DurableCapacityWo
 			node, graphRevision: Number(row.current_graph_revision),
 			projectAgentClassId: selected.projectAgentClassId,
 			effectiveProfile: selected.profile,
+			projectContentRepositoryId: projectContext[0]!.repository!,
 			sourceRepositories,
 			contextRefs: [...new Map([node.sourceRef, ...(node.authorityRefs ?? []), ...teamContext, ...projectContext, ...candidateRefs, ...predecessor.contentRefs, ...loadedContext]
 				.filter((reference) => reference.store === 'git'

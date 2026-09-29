@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.project-library-binding:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: keeps the assignment project library binding distinct from Team Library context
+  api.golden.project-workspace-write:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: writes planning content to its project library while retaining Team Library as read-only context
+  api.golden.cross-project-write-denied:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/assignment-attempt-builder.test.ts
+    testName: rejects a writable TreeDX source bound to another project library
   api.golden.provider-usage-deadlock-retry:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

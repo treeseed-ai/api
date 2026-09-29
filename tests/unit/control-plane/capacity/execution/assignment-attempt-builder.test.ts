@@ -6,7 +6,7 @@ const sourceRef = { store: 'treedx' as const, model: 'proposal', id: 'proposal',
 const gitRef = { store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'c'.repeat(40) };
 const permissions = { content: { read: ['proposal'] as const, write: [] }, tools: ['source.read', 'source.write', 'verification'] as const };
 const candidate = {
-	graphRevision: 4, projectAgentClassId: 'class-engineer', contextRefs: [gitRef], predecessorResults: [],
+	graphRevision: 4, projectAgentClassId: 'class-engineer', projectContentRepositoryId: 'library', contextRefs: [gitRef], predecessorResults: [],
 	sourceRepositories: [],
 	effectiveProfile: {
 		handler: 'actor', prompt: { system: 'Implement the accepted work and verify the exact result.' },
@@ -124,6 +124,43 @@ describe('immutable assignment-attempt construction', () => {
 		expect(target.id).toMatch(/^knowledge-[a-f0-9]+$/u);
 		expect(target.path).toBe(`knowledge/sdk-architecture/${target.id}.md`);
 		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', writablePaths: [target.path] });
+	});
+
+	it('writes planning content to its project library while retaining Team Library as read-only context', () => {
+		const planning = structuredClone(candidate);
+		planning.node.kind = 'planning';
+		planning.node.workspace = 'treedx';
+		planning.node.sourceRef = { store: 'postgresql', model: 'workday', id: 'workday', revision: 1,
+			digest: `sha256:${'2'.repeat(64)}` } as never;
+		planning.node.requestedPermissions = { content: { read: ['objective', 'book'], write: ['note'] }, tools: ['source.read'] } as never;
+		planning.effectiveProfile.permissionCeiling = planning.node.requestedPermissions;
+		const team = { store: 'treedx', model: 'objective', id: 'team-objective', repository: 'team-library',
+			commit: '8'.repeat(40), path: 'objectives/team.md', revision: 1, digest: `sha256:${'8'.repeat(64)}` };
+		const project = { store: 'treedx', model: 'objective', id: 'sdk-objective', repository: 'sdk-library',
+			commit: '9'.repeat(40), path: 'objectives/sdk.md', revision: 1, digest: `sha256:${'9'.repeat(64)}` };
+		planning.contextRefs = [team, project] as never;
+		planning.projectContentRepositoryId = 'sdk-library';
+		const result = buildAssignmentAttempt({ candidate: planning as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' });
+		expect(result.assignment.contextRefs).toContainEqual(team);
+		expect(result.assignment.workspace).toMatchObject({ mode: 'treedx', repository: 'sdk-library', baseCommit: '9'.repeat(40) });
+		expect(result.assignment.grant.contentWrite).toEqual([expect.objectContaining({ repository: 'sdk-library' })]);
+		expect(result.assignment.grant.contentRead).toContainEqual(team);
+	});
+
+	it('rejects a writable TreeDX source bound to another project library', () => {
+		const misplaced = structuredClone(candidate);
+		misplaced.node.workspace = 'treedx';
+		misplaced.node.sourceRef = { ...sourceRef, repository: 'team-library' };
+		misplaced.node.requestedPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['source.read'] } as never;
+		misplaced.effectiveProfile.permissionCeiling = misplaced.node.requestedPermissions;
+		expect(() => buildAssignmentAttempt({ candidate: misplaced as never, run,
+			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
+			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
+			providers: [provider] as never, attempt: 1, now: '2026-09-13T12:00:00.000Z' }))
+			.toThrow('Writable TreeDX content must belong to the assignment project library.');
 	});
 
 	it('preserves a proposal-owned exact Knowledge identity in the assignment grant', () => {
