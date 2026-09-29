@@ -4,4 +4,4 @@
 UPDATE execution_nodes
 SET estimate_json = (estimate_json::jsonb - 'minimumSeconds')::text
 WHERE estimate_json IS NOT NULL
-  AND estimate_json::jsonb ? 'minimumSeconds';
+  AND jsonb_exists(estimate_json::jsonb, 'minimumSeconds');

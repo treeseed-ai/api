@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { expect, it } from 'vitest';
+import { translateControlPlaneSqlToPostgres } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 
 const migration = readFileSync('drizzle/control-plane/0043_remove_retired_graph_estimate_minimum.sql', 'utf8');
 
@@ -12,9 +13,9 @@ it('removes only the retired minimum from persisted graph estimates and replays 
 			('legacy', '{"minimumSeconds":30,"expectedSeconds":60,"maximumSeconds":120,"rationale":"Measured work"}'),
 			('current', '{"expectedSeconds":40,"maximumSeconds":90}'),
 			('condition', NULL);`);
-		await db.exec(migration);
+		await db.exec(translateControlPlaneSqlToPostgres(migration));
 		const first = (await db.query('SELECT id,estimate_json FROM execution_nodes ORDER BY id')).rows;
-		await db.exec(migration);
+		await db.exec(translateControlPlaneSqlToPostgres(migration));
 		const second = (await db.query('SELECT id,estimate_json FROM execution_nodes ORDER BY id')).rows;
 		expect(second).toEqual(first);
 		expect(first.map((row) => ({ id: row.id, estimate: row.estimate_json ? JSON.parse(String(row.estimate_json)) : null }))).toEqual([
