@@ -104,7 +104,8 @@ describe('live allocation ledger inputs', () => {
 	it('does not learn a short success from an Actor attempt rejected by review', async () => {
 		const db = new PGlite();
 		try {
-			await db.exec(`CREATE TABLE execution_nodes (id text, team_id text, agent_class text, pair_role text, status text, node_revision integer);
+			await db.exec(`CREATE TABLE execution_nodes (id text, team_id text, agent_class text, pair_role text, status text, node_revision integer,
+				kind text DEFAULT 'acting', source_ref_json jsonb DEFAULT '{}');
 				CREATE TABLE capacity_provider_assignments (id text, team_id text, execution_node_id text, execution_node_revision integer,
 					capacity_provider_id text, execution_provider_id text, status text, lifecycle_code text, assignment_attempt_json jsonb);
 				CREATE TABLE capacity_usage_actuals (id text, assignment_id text, created_at text, active_seconds integer, accounting_mode text);
@@ -132,6 +133,39 @@ describe('live allocation ledger inputs', () => {
 				providers: [provider as never], capacityProviderId: 'provider', capabilityId: 'implementation',
 				agentClass: 'tester', activity: 'act', now });
 			expect(result['codex-implementation']?.measurements.map(({ id }) => id)).toEqual(['expired', 'accepted']);
+		} finally { await db.close(); }
+	}, 15_000);
+	it('uses only proposal-governance history for proposal reviews, never paired-review duration', async () => {
+		const db = new PGlite();
+		try {
+			await db.exec(`CREATE TABLE execution_nodes (id text, team_id text, agent_class text, pair_role text,
+				kind text, source_ref_json jsonb, status text, node_revision integer);
+				CREATE TABLE capacity_provider_assignments (id text, team_id text, execution_node_id text,
+					capacity_provider_id text, execution_provider_id text, status text, lifecycle_code text,
+					assignment_attempt_json jsonb, execution_node_revision integer);
+				CREATE TABLE capacity_usage_actuals (id text, assignment_id text, created_at text, active_seconds integer, accounting_mode text);
+				INSERT INTO execution_nodes VALUES
+				('governance','team','reviewer',NULL,'reviewing','{"model":"proposal"}','completed',1),
+				('paired','team','reviewer','reviewer','reviewing','{"model":"proposal"}','completed',1);
+				INSERT INTO capacity_provider_assignments VALUES
+				('governance','team','governance','provider','codex-implementation','completed',NULL,
+				 '{"estimate":{"expectedSeconds":250},"limits":{"maximumSeconds":165},"provider":{"modelConfigurationId":"terra-medium","executionCapabilityId":"implementation"},"effectiveProfile":{"activity":"reviewing"}}',1),
+				('paired','team','paired','provider','codex-implementation','completed',NULL,
+				 '{"estimate":{"expectedSeconds":250},"limits":{"maximumSeconds":165},"provider":{"modelConfigurationId":"terra-medium","executionCapabilityId":"implementation"},"effectiveProfile":{"activity":"reviewing"}}',1);
+				INSERT INTO capacity_usage_actuals VALUES
+				('governance','governance','2026-09-16T12:01:00Z',84,'aggregate'),
+				('paired','paired','2026-09-16T12:02:00Z',15,'aggregate');`);
+			const store = { all: async (sql: string, values: unknown[]) => {
+				if (!sql.includes('capacity_usage_actuals')) return [];
+				let index = 0;
+				return (await db.query(sql.replace(/\?/gu, () => `$${++index}`), values)).rows;
+			}, first: async () => ({ ready_count: 1 }) };
+			const base = { run: run as never, runs: [run as never], providers: [provider as never],
+				capacityProviderId: 'provider', capabilityId: 'implementation', agentClass: 'reviewer', activity: 'reviewing', now };
+			expect((await livingAllocationInputs(store as never, { ...base, proposalGovernanceReview: true }))
+				['codex-implementation']?.measurements.map(({ id }) => id)).toEqual(['governance']);
+			expect((await livingAllocationInputs(store as never, { ...base, proposalGovernanceReview: false }))
+				['codex-implementation']?.measurements.map(({ id }) => id)).toEqual(['paired']);
 		} finally { await db.close(); }
 	}, 15_000);
 	it('does not exempt closing workdays from shared supply and weighted allocation', async () => {

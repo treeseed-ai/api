@@ -233,6 +233,7 @@ export function buildAssignmentAttempt(input: {
 		// as the node's actual viable minimum still fits.
 		const allocation = calculateAssignmentAllocation({ estimate: allocationEstimate,
 			measurements: planningTurn ? [] : allocationInputs.measurements,
+			observedViabilityFloor: isProposalGovernanceReview(candidate.node),
 			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
 				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000 - preparationSeconds) },
 				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
