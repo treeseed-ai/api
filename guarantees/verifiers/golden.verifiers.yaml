@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.provider-usage-deadlock-retry:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/postgres-batch-retry.test.ts
+    testName: settles five concurrent usage-like batches despite repeated deadlocks
+  api.golden.provider-usage-deadlock-bound:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/postgres-batch-retry.test.ts
+    testName: bounds SQL batch deadlock retries without retrying unrelated failures
   api.golden.bounded-planning-node-id:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

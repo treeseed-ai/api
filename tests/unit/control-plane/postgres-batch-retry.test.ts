@@ -27,10 +27,19 @@ it('retries a rolled-back SQL batch after a PostgreSQL deadlock', async () => {
 	expect(releases()).toBe(2);
 });
 
+it('settles five concurrent usage-like batches despite repeated deadlocks', async () => {
+	const { database, queries, releases } = databaseWithDeadlocks(4);
+	const batches = Array.from({ length: 5 }, () => database.batch([{ query: 'SELECT 1' }]));
+	await expect(Promise.all(batches)).resolves.toHaveLength(5);
+	expect(queries.filter(query => query === 'ROLLBACK')).toHaveLength(4);
+	expect(queries.filter(query => query === 'COMMIT')).toHaveLength(5);
+	expect(releases()).toBe(9);
+});
+
 it('bounds SQL batch deadlock retries without retrying unrelated failures', async () => {
-	const { database, queries, releases } = databaseWithDeadlocks(3);
+	const { database, queries, releases } = databaseWithDeadlocks(7);
 	await expect(database.batch([{ query: 'SELECT 1' }])).rejects.toMatchObject({ code: '40P01' });
-	expect(queries.filter(query => query === 'SELECT 1')).toHaveLength(3);
-	expect(queries.filter(query => query === 'ROLLBACK')).toHaveLength(3);
-	expect(releases()).toBe(3);
+	expect(queries.filter(query => query === 'SELECT 1')).toHaveLength(7);
+	expect(queries.filter(query => query === 'ROLLBACK')).toHaveLength(7);
+	expect(releases()).toBe(7);
 });

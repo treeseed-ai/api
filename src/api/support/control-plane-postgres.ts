@@ -308,13 +308,16 @@ export class ControlPlanePostgresDatabase {
 
 	async batch(statements: Array<{ query: string; bindings?: unknown[]; params?: unknown[] }>): Promise<PreparedResult[]> {
 		// PostgreSQL aborts the whole transaction on 40P01. Replaying this SQL-only
-		// batch is safe; retrying arbitrary transaction callbacks is not.
+		// batch is safe; retrying arbitrary transaction callbacks is not. Full
+		// jitter keeps simultaneous provider usage reports from deadlocking again
+		// in lockstep under normal five-way workday concurrency.
 		for (let attempt = 0; ; attempt += 1) {
 			try {
 				return await this.transaction(client => executePostgresBatch(client, statements));
 			} catch (error) {
-				if ((error as { code?: unknown } | null)?.code !== '40P01' || attempt >= 2) throw error;
-				await new Promise(resolve => setTimeout(resolve, 10 * (attempt + 1)));
+				if ((error as { code?: unknown } | null)?.code !== '40P01' || attempt >= 6) throw error;
+				const ceilingMs = Math.min(800, 25 * 2 ** attempt);
+				await new Promise(resolve => setTimeout(resolve, Math.floor(Math.random() * ceilingMs) + 1));
 			}
 		}
 	}
