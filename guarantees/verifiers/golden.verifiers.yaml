@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.early-external-approval:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/governance/proposals/early-external-approval.test.ts
+    testName: records external approval without creating an unestimated decision
+  api.golden.estimate-finalizes-approval:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/planning/assignment-estimate-integration.test.ts
+    testName: finalizes only a matching external approval after all owner and reviewer estimates arrive
   api.golden.fluid-phase:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

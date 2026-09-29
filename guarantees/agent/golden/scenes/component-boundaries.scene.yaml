@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: early-external-approval
+    action: { verifier: api.golden.early-external-approval }
+    expect: { status: passed }
+  - id: estimate-finalizes-approval
+    action: { verifier: api.golden.estimate-finalizes-approval }
+    expect: { status: passed }
   - id: fluid-phase
     action: { verifier: api.golden.fluid-phase }
     expect: { status: passed }
