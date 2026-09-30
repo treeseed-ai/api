@@ -28,7 +28,11 @@ async function completedReportRefs(store: CapacityGovernanceDatabase, run: Durab
 }
 
 async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {
-	const sources = { ...record(run.parameters.planningSourceByProposalId) };
+	const selectedProposalIds = [...new Set(Array.isArray(run.parameters.proposalIds)
+		? run.parameters.proposalIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [])];
+	const selected = new Set(selectedProposalIds);
+	const sources = Object.fromEntries(Object.entries(record(run.parameters.planningSourceByProposalId))
+		.filter(([id]) => !selected.size || selected.has(id)));
 	const proposalsByProjectId: Record<string, Row[]> = {};
 	const first = plan.planningRounds[0]!;
 	const prefix = `planning:${plan.id}:${first.round}:`;
@@ -38,7 +42,9 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 	for (const projectId of projectIds) {
 		if (typeof projectId !== 'string') continue;
 		const candidates = await store.all(`SELECT * FROM governance_proposals WHERE team_id=? AND project_id=?
-			AND status IN ('draft','submitted','open','voting') ORDER BY id LIMIT 101`, [run.teamId, projectId]);
+			AND status IN ('draft','submitted','open','voting')
+			${selected.size ? `AND id IN (${selectedProposalIds.map(() => '?').join(',')})` : ''}
+			ORDER BY id LIMIT 101`, [run.teamId, projectId, ...selectedProposalIds]);
 		if (candidates.length > 100) throw new Error(`planning_proposal_inventory_too_large:${projectId}`);
 		proposalsByProjectId[projectId] = [];
 		for (const proposal of candidates) {
@@ -60,7 +66,7 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 		? workdayParticipants({ ...run.parameters, proposalsByProjectId: proposalsNeedingEstimates })
 			.filter((participant) => participant.activity === 'estimating' && projectIds.includes(participant.projectId))
 			.map((participant) => participant.id) : [];
-	return { sources, proposalIds: Object.keys(sources).sort(),
+	return { sources, proposalIds: selectedProposalIds.sort(),
 		agentIds: [...new Set([...(planningAgentIds.length ? planningAgentIds : initialAgentIds), ...estimators])].sort() };
 }
 

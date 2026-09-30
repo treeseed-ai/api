@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.workday-proposal-selection
+journey: Scope planning cycles to explicit proposal selection while preserving unscoped discovery
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: planning
+status: planned
+gates: [core]
+summary: One or several selected proposals do not admit unrelated estimates; an unscoped workday discovers new proposals.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/workday-proposal-selection.scene.yaml

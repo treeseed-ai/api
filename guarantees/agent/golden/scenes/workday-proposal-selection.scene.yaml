@@ -1,0 +1,11 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.workday-proposal-selection
+title: Exact workday proposal selection
+scope: local-component-tests
+workflow:
+  - id: explicit-selection
+    action: { verifier: api.golden.explicit-proposal-selection }
+    expect: { status: passed }
+  - id: unscoped-discovery
+    action: { verifier: api.golden.unscoped-proposal-discovery }
+    expect: { status: passed }
