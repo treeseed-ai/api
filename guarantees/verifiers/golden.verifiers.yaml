@@ -175,7 +175,22 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
-    testName: "still resolves a public moving ref upstream when no exact assignment source exists"
+    testName: "resolves public moving refs with API-only custody and reuses the immutable pin"
+  api.golden.planning-source-quota:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "does not exhaust anonymous quota across repeated planning source authorizations"
+  api.golden.public-source-custody-failure:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "supports public moving refs without a configured connection, but never retries a failed managed lookup anonymously"
+  api.golden.public-source-authority-selection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-credential-authority.test.ts
+    testName: "permits anonymous public metadata only when no unpinned managed authority exists"
   api.golden.public-source-pin-denial:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
