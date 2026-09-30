@@ -34,7 +34,7 @@ describe('immutable assignment-attempt construction', () => {
 		const planning = build('2026-09-13T12:01:00.000Z');
 		expect(planning.assignment.limits.maximumSeconds).toBe(180);
 		expect(planning.allocation.calibration.measurementIds).toEqual([]);
-		expect(() => build('2026-09-13T12:11:30.000Z')).toThrow('No positive active-time allocation remains');
+		expect(build('2026-09-13T12:11:30.000Z').assignment.limits.maximumSeconds).toBe(30);
 		const acting = build('2026-09-13T12:30:00.000Z');
 		expect(acting.allocation.calibration.measurementIds).toEqual(['successful-short-chat']);
 		expect(acting.assignment.limits.maximumSeconds).toBe(162);
@@ -364,7 +364,7 @@ describe('immutable assignment-attempt construction', () => {
 			limitingConstraint: 'workday-phase-share' });
 	});
 
-	it('defers a planning turn when the remaining phase cannot fit its full policy-owned slot', () => {
+	it('defers a planning turn when no positive authority window remains', () => {
 		const planning = structuredClone(candidate);
 		planning.node.kind = 'planning' as never;
 		planning.node.pairRole = null;
@@ -377,7 +377,7 @@ describe('immutable assignment-attempt construction', () => {
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } },
 			providerSessionId: 'session', providers: [provider] as never, attempt: 1,
-			now: '2026-09-13T12:59:01.000Z' })).toThrow(/No positive active-time allocation remains/u);
+			now: '2026-09-13T13:00:00.000Z' })).toThrow(/No positive active-time allocation remains/u);
 	});
 
 	it('allocates a paired work review from the acting window without a minimum floor', () => {
@@ -442,14 +442,14 @@ describe('immutable assignment-attempt construction', () => {
 		})).toThrow(/Content writes require a TreeDX workspace/u);
 	});
 
-	it('defers instead of extending beyond the viable remaining workday window', () => {
+	it('defers instead of extending beyond an exhausted workday window', () => {
 		const nearEnd = structuredClone(candidate);
 		nearEnd.node.estimate.maximumSeconds = 600;
 		expect(() => buildAssignmentAttempt({
 			candidate: nearEnd as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', providers: [provider] as never, attempt: 1,
-			now: '2026-09-13T12:59:30.000Z',
+			now: '2026-09-13T13:00:00.000Z',
 		})).toThrow('No positive active-time allocation remains');
 	});
 

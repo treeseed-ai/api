@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: active-window-production
+    action: { verifier: api.golden.active-window-production }
+    expect: { status: passed }
+  - id: active-window-simulation
+    action: { verifier: api.golden.active-window-simulation }
+    expect: { status: passed }
+  - id: active-window-rollover
+    action: { verifier: api.golden.active-window-rollover }
+    expect: { status: passed }
+  - id: active-window-exhaustion
+    action: { verifier: api.golden.active-window-exhaustion }
+    expect: { status: passed }
   - id: continuation-history
     action: { verifier: api.golden.continuation-history }
     expect: { status: passed }
