@@ -123,9 +123,9 @@ async function credentialForRow(row: any, input: {
 	throw new Error(`Credential authority scheme ${row.scheme} is not unattended-ready.`);
 }
 
-/** Assignment source acquisition only. No creation privilege, no fallback after a pinned binding fails. */
+/** Assignment source reads only. No creation privilege or fallback after a selected authority fails. */
 export async function resolveGitHubSourceAuthority(input: {
-	store: any; teamId: string; owner: string; repository: string; bindingId?: string; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
+	store: any; teamId: string; owner: string; repository: string; bindingId?: string; required?: boolean; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch;
 }) {
 	if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/u.test(input.owner) || !/^[A-Za-z0-9_.-]+$/u.test(input.repository)
 		|| ['.', '..'].includes(input.repository)) throw new Error('Source repository identity is invalid.');
@@ -141,6 +141,10 @@ export async function resolveGitHubSourceAuthority(input: {
 		const connector = json(json(config.githubConnectors).repository);
 		return String(connector.accountLogin ?? config.organization ?? '').trim().toLowerCase() === input.owner.toLowerCase();
 	});
+	// Public metadata can be resolved anonymously on sovereign installations
+	// without a connection. Ambiguous, pinned or failing managed custody cannot
+	// silently downgrade to anonymous access.
+	if (!matches.length && input.required === false && !input.bindingId) return null;
 	if (matches.length !== 1) throw new Error(input.bindingId ? 'The pinned source credential binding is unavailable.' : 'Source access requires one unambiguous team repository connection.');
 	const row = matches[0];
 	return { ...await credentialForRow({ ...row, name: input.repository }, { store: input.store, capability: 'repository-hosting',

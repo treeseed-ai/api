@@ -11,6 +11,15 @@ workflow:
   - id: moving-public-source
     action: { verifier: api.golden.public-moving-source }
     expect: { status: passed }
+  - id: planning-source-quota
+    action: { verifier: api.golden.planning-source-quota }
+    expect: { status: passed }
+  - id: public-source-custody-failure
+    action: { verifier: api.golden.public-source-custody-failure }
+    expect: { status: passed }
+  - id: public-source-authority-selection
+    action: { verifier: api.golden.public-source-authority-selection }
+    expect: { status: passed }
   - id: public-source-pin-denial
     action: { verifier: api.golden.public-source-pin-denial }
     expect: { status: passed }
