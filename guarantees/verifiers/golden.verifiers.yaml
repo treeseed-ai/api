@@ -26,6 +26,16 @@ verifiers:
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
     testName: adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents
+  api.golden.decision-proposal-selection:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: keeps decision-only continuation planning scoped without rediscovering unrelated proposals
+  api.golden.decision-proposal-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: fails closed on missing or foreign-team decision planning scope before proposal discovery
   api.golden.source-pin-field-comparison:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

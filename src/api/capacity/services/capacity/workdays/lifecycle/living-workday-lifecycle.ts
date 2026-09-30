@@ -5,6 +5,7 @@ import { workdayParticipants } from '../../../../policy/execution/workday-partic
 import { hasCompleteExecutablePlan, readExactProposal } from '../../../../../governance/executable-proposal.ts';
 import { reconcileAssignmentContent } from '../../assignments/lifecycle/assignment-content-readback.ts';
 import { runtimeWorkdayPhase } from '../../../build/ready-execution-node.ts';
+import { CapacityGovernanceError } from '../../../../database.ts';
 
 type Row = Record<string, unknown>;
 const terminalNodeStates = new Set(['completed', 'failed', 'cancelled', 'stale']);
@@ -30,7 +31,18 @@ async function completedReportRefs(store: CapacityGovernanceDatabase, run: Durab
 async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: DurableCapacityWorkdayRun, plan: AppliedWorkday) {
 	const selectedProposalIds = [...new Set(Array.isArray(run.parameters.proposalIds)
 		? run.parameters.proposalIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [])];
-	const selected = new Set(selectedProposalIds);
+	const decisionIds = [...new Set(Array.isArray(run.parameters.decisionIds)
+		? run.parameters.decisionIds.filter((id): id is string => typeof id === 'string' && Boolean(id)) : [])];
+	const decisions = decisionIds.length ? await store.all(`SELECT id,proposal_id FROM governance_decisions
+		WHERE team_id=? AND id IN (${decisionIds.map(() => '?').join(',')})`, [run.teamId, ...decisionIds]) : [];
+	if (decisions.length !== decisionIds.length || decisions.some(decision => !decision.proposal_id)) {
+		throw new CapacityGovernanceError('workday_planning_decision_scope_invalid',
+			'Every selected decision must resolve to a proposal in this team.', 409);
+	}
+	// Derive scope from the existing decision records, never widen an explicit
+	// decision-only workday into autonomous discovery or copy another authority.
+	const scopedProposalIds = [...new Set([...selectedProposalIds, ...decisions.map(decision => String(decision.proposal_id))])];
+	const selected = new Set(scopedProposalIds);
 	const sources = Object.fromEntries(Object.entries(record(run.parameters.planningSourceByProposalId))
 		.filter(([id]) => !selected.size || selected.has(id)));
 	const proposalsByProjectId: Record<string, Row[]> = {};
@@ -43,8 +55,8 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 		if (typeof projectId !== 'string') continue;
 		const candidates = await store.all(`SELECT * FROM governance_proposals WHERE team_id=? AND project_id=?
 			AND status IN ('draft','submitted','open','voting')
-			${selected.size ? `AND id IN (${selectedProposalIds.map(() => '?').join(',')})` : ''}
-			ORDER BY id LIMIT 101`, [run.teamId, projectId, ...selectedProposalIds]);
+			${selected.size ? `AND id IN (${scopedProposalIds.map(() => '?').join(',')})` : ''}
+			ORDER BY id LIMIT 101`, [run.teamId, projectId, ...scopedProposalIds]);
 		if (candidates.length > 100) throw new Error(`planning_proposal_inventory_too_large:${projectId}`);
 		proposalsByProjectId[projectId] = [];
 		for (const proposal of candidates) {
