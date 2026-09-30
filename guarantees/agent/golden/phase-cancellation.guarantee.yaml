@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.phase-cancellation
+journey: Cancel planning at the authoritative phase boundary without hiding task failures
+ownerPackage: '@treeseed/api'
+type: agent
+subtype: execution
+status: planned
+gates: [core]
+summary: Provider-first and tick-first phase cancellation preserve real PostgreSQL usage exactly once; earlier deadlines, acting failures, fluid planning and denied authority remain unchanged.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/phase-cancellation.scene.yaml

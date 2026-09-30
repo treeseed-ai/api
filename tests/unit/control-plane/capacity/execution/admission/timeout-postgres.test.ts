@@ -5,10 +5,18 @@ import { createControlPlanePostgresDatabase } from '../../../../../../src/api/su
 import type { CapacityGovernanceDatabase } from '../../../../../../src/api/capacity/database.ts';
 import { ProviderAssignmentLifecycleService } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { seedPlanningBoundary } from './fixtures/planning-boundary-postgres.ts';
+import { terminalPerformance } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/completion/assignment-terminal-performance.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
-	it.each([12, 25])('settles actual %s seconds once without late completion, cap expansion or approval', async activeSeconds => {
+	it.each([
+		['12 seconds', 12, false, false],
+		['25 seconds', 25, false, false],
+		['phase timeout before periodic cancellation', 12, true, false],
+		['phase stop after periodic cancellation', 12, true, true],
+	] as const)('settles actual %s once without late completion, cap expansion or approval', async (_label, activeSeconds, phase, requested) => {
+		const reservedSeconds = phase ? 31 : 20;
 		const connection = new URL(url!);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
@@ -31,16 +39,18 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 			await db.pool.query(`INSERT INTO capacity_reservations
 				(id,idempotency_key,admission_token,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,
 				assignment_id,mode,requested_seconds,reserved_seconds,created_at,updated_at)
-				VALUES ('reservation','reservation','admission','membership','team','project','provider','engineer','assignment','acting',20,20,$1,$1)`, [now]);
+				VALUES ('reservation','reservation','admission','membership','team','project','provider','engineer','assignment','acting',$2,$2,$1,$1)`, [now, reservedSeconds]);
 			await db.pool.query(`UPDATE capacity_provider_assignments SET reservation_id='reservation' WHERE id='assignment'`);
 			await db.pool.query(`INSERT INTO capacity_admission_counters
 				(id,team_id,scope,scope_id,period_key,hard_limit,committed_amount,created_at,updated_at)
-				VALUES ('counter','team','model-day','terra','2026-09-16',20,20,$1,$1)`, [now]);
+				VALUES ('counter','team','model-day','terra','2026-09-16',$2,$2,$1,$1)`, [now, reservedSeconds]);
 			await db.pool.query(`INSERT INTO capacity_reservation_counter_claims
 				(reservation_id,counter_id,admission_token,reserved_amount,release_policy,created_at,updated_at)
-				VALUES ('reservation','counter','admission',20,'usage-settlement',$1,$1)`, [now]);
+				VALUES ('reservation','counter','admission',$2,'usage-settlement',$1,$1)`, [now, reservedSeconds]);
 			await db.pool.query(`UPDATE capacity_provider_assignments SET capacity_envelope_json=$1 WHERE id='assignment'`,
 				[JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting' })]);
+			if (phase) await seedPlanningBoundary(db, now, expired);
+			if (requested) await db.pool.query(`UPDATE capacity_provider_assignments SET metadata_json='{"cancellationRequested":true}' WHERE id='assignment'`);
 			const store: CapacityGovernanceDatabase & { db: typeof db } = { db, ensureInitialized: () => db.migrate(),
 				run: async (sql, params = []) => { await db.prepare(sql).bind(...params).run(); },
 				first: (sql, params = []) => db.prepare(sql).bind(...params).first(),
@@ -51,20 +61,23 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 				getProviderAssignment: repository.get.bind(repository),
 			}) as ConstructorParameters<typeof ProviderAssignmentLifecycleService>[0]);
 			const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
-			const failure = { leaseToken: 'lease', code: 'assignment_timeout', retryable: false,
+			const failure = { leaseToken: 'lease', code: requested ? 'assignment_cancelled' : 'assignment_timeout', retryable: false,
 				activeSeconds, elapsedSeconds: activeSeconds + 3, usage: { inputTokens: 200, outputTokens: 30 },
 				output: { teardown: { verified: true, completedAt: now } } };
+			const report = phase ? { ...failure, performance: terminalPerformance((await repository.get('team', 'assignment'))!, failure, 'failed', now) } : failure;
 			expect(await service.complete(principal, 'assignment', { leaseToken: 'lease' })).toBeNull();
 			expect(await service.fail(principal, 'assignment', { ...failure, leaseToken: 'wrong' })).toBeNull();
-			const outcomes = await Promise.all([service.fail(principal, 'assignment', failure), service.fail(principal, 'assignment', failure)]);
+			const outcomes = await Promise.all([service.fail(principal, 'assignment', report), service.fail(principal, 'assignment', report)]);
 			expect(outcomes.filter(Boolean)).toHaveLength(1);
-			expect(await repository.get('team', 'assignment')).toMatchObject({ status: 'failed',
-				lifecycleOutput: { teardown: { verified: true, completedAt: now } } });
+			expect(await repository.get('team', 'assignment')).toMatchObject({ status: phase ? 'cancelled' : 'failed',
+				lifecycleOutput: { teardown: { verified: true, completedAt: now },
+					performance: { disposition: phase ? 'cancelled' : 'deadline_exhausted',
+						actual: { activeSeconds, elapsedSeconds: activeSeconds + 3, inputTokens: 200, outputTokens: 30 } } } });
 			const reservation = await store.first('SELECT state,active_seconds,released_seconds FROM capacity_reservations WHERE id=?', ['reservation']);
-			expect(reservation).toMatchObject({ state: 'consumed', active_seconds: activeSeconds, released_seconds: Math.max(0, 20 - activeSeconds) });
+			expect(reservation).toMatchObject({ state: 'consumed', active_seconds: activeSeconds, released_seconds: Math.max(0, reservedSeconds - activeSeconds) });
 			expect(await store.first('SELECT hard_limit,committed_amount FROM capacity_admission_counters WHERE id=?', ['counter']))
-				.toMatchObject({ hard_limit: 20, committed_amount: activeSeconds });
-			if (activeSeconds > 20) expect(await store.first(
+				.toMatchObject({ hard_limit: reservedSeconds, committed_amount: activeSeconds });
+			if (activeSeconds > reservedSeconds) expect(await store.first(
 				'UPDATE capacity_admission_counters SET committed_amount=committed_amount+1 WHERE id=? AND committed_amount+1<=hard_limit RETURNING id', ['counter']))
 				.toBeNull();
 			const usages = await store.all('SELECT active_seconds,input_tokens,output_tokens FROM capacity_usage_actuals WHERE assignment_id=?', ['assignment']);
