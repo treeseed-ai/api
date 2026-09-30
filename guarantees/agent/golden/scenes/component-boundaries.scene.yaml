@@ -168,6 +168,9 @@ workflow:
   - id: restart
     action: { verifier: api.golden.restart }
     expect: { status: passed }
+  - id: recovery-isolation
+    action: { verifier: api.golden.recovery-isolation }
+    expect: { status: passed }
   - id: missing-result
     action: { verifier: api.golden.missing-result }
     expect: { status: passed }

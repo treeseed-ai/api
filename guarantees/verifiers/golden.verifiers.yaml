@@ -341,6 +341,11 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-recovery-graph-custody.test.ts
     testName: "finds ready graph work and assignment evidence by the canonical workday IDs"
+  api.golden.recovery-isolation:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/workday-recovery-graph-custody.test.ts
+    testName: recovers later terminal workdays before reporting a corrupt historical assignment
   api.golden.missing-result:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
