@@ -3,6 +3,33 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: phase-before-tick
+    action: { verifier: api.golden.phase-before-tick }
+    expect: { status: passed }
+  - id: phase-after-tick
+    action: { verifier: api.golden.phase-after-tick }
+    expect: { status: passed }
+  - id: phase-task-timeout-denial
+    action: { verifier: api.golden.phase-task-timeout-denial }
+    expect: { status: passed }
+  - id: phase-fluid-planning-denial
+    action: { verifier: api.golden.phase-fluid-planning-denial }
+    expect: { status: passed }
+  - id: phase-authority-denial
+    action: { verifier: api.golden.phase-authority-denial }
+    expect: { status: passed }
+  - id: phase-before-tick-postgres
+    action: { verifier: api.golden.phase-before-tick-postgres }
+    expect: { status: passed }
+  - id: phase-after-tick-postgres
+    action: { verifier: api.golden.phase-after-tick-postgres }
+    expect: { status: passed }
+  - id: phase-real-timeout-postgres
+    action: { verifier: api.golden.phase-real-timeout-postgres }
+    expect: { status: passed }
+  - id: phase-real-overrun-postgres
+    action: { verifier: api.golden.phase-real-overrun-postgres }
+    expect: { status: passed }
   - id: active-window-production
     action: { verifier: api.golden.active-window-production }
     expect: { status: passed }

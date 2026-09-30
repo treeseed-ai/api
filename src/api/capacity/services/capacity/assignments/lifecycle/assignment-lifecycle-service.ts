@@ -19,7 +19,7 @@ import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-serv
 import { terminalAssignmentAuthority } from './assignment-terminal-authority.ts';
 import { composeAssignmentLifecycleOutput } from './assignment-lifecycle-output.ts';
 import { terminalizeOperationHandoff } from '../handoffs/operation-handoff-lifecycle-service.ts';
-import { archivedConversationCancellation } from './assignment-failure-policy.ts';
+import { archivedConversationCancellation, planningBoundaryCancellation } from './assignment-failure-policy.ts';
 import { assertAssignmentCompletionEvidence } from './completion/assignment-completion-evidence.ts';
 import { quarantineContextOverflowOffer } from './context-capacity/overflow.ts';
 import { optionalFiniteNumber,record,terminalPerformance,type ExtendedProviderAssignmentLifecycleRequest,type JsonRecord } from './completion/assignment-terminal-performance.ts';
@@ -317,7 +317,15 @@ export class ProviderAssignmentLifecycleService {
 		// Expiration ends productive authority, not the current owner's obligation
 		// to report its terminal timeout. The row lock prevents recovery taking it.
 		const timeout = input.code === 'assignment_timeout';
-		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now, timeout)) return null;
+		if (!activeLeaseOwnedBy(assignment, principal, input.leaseToken, now, true)) return null;
+		const phaseCancelled = await planningBoundaryCancellation(this.store, assignment, input, now);
+		if (!timeout && !phaseCancelled && !activeLeaseOwnedBy(assignment, principal, input.leaseToken, now)) return null;
+		if (phaseCancelled) {
+			const reason = 'Unfinished planning turn cancelled at its authoritative phase boundary.';
+			input = { ...input, code: 'planning_boundary_cancelled', reason,
+				...(input.performance ? { performance: { ...input.performance, disposition: 'cancelled', reason } } : {}) };
+			failure = classifyCapacityFailure(input);
+		}
 		if (input.fallbackOutput) await this.persistFallback(assignment, {
 			...input.fallbackOutput,
 			status: record(input.fallbackOutput).status ?? 'suppressed',
@@ -342,12 +350,12 @@ export class ProviderAssignmentLifecycleService {
 		}
 		const archived=archivedConversationCancellation(assignment,input);
 		return this.transition(principal, assignment, input, now, {
-			status: archived?'cancelled':'failed',
+			status: archived || phaseCancelled ? 'cancelled' : 'failed',
 			timestampColumn: 'failed_at',
 			defaultCode: archived?'discussion_archived':'provider_assignment_failed',
 			defaultReason: archived?'The source Discussion was archived.':'Provider assignment failed.',
 			metadata: { ...record(assignment.metadata), failureClassification: failure },
-			allowExpiredLease: timeout,
+			allowExpiredLease: timeout || phaseCancelled,
 		});
 	}
 

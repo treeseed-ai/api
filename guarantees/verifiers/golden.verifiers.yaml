@@ -1,6 +1,51 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.phase-before-tick:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: cancels the captured timeout when its phase ends before periodic cancellation
+  api.golden.phase-after-tick:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: recognizes phase cancellation after the periodic request without trusting a provider request
+  api.golden.phase-task-timeout-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: preserves earlier task expiration and acting failures
+  api.golden.phase-fluid-planning-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: keeps fluid planning and non-timeout failures unchanged
+  api.golden.phase-authority-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/assignments/planning-boundary-cancellation.test.ts
+    testName: does not infer phase cancellation from missing or malformed authority
+  api.golden.phase-before-tick-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual phase timeout before periodic cancellation once without late completion, cap expansion or approval
+  api.golden.phase-after-tick-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual phase stop after periodic cancellation once without late completion, cap expansion or approval
+  api.golden.phase-real-timeout-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual 12 seconds once without late completion, cap expansion or approval
+  api.golden.phase-real-overrun-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual 25 seconds once without late completion, cap expansion or approval
   api.golden.active-window-production:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
