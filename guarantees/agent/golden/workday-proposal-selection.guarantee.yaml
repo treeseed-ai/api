@@ -6,7 +6,7 @@ type: agent
 subtype: planning
 status: planned
 gates: [core]
-summary: One or several selected proposals do not admit unrelated estimates; an unscoped workday discovers new proposals.
+summary: Selected proposals or decisions do not admit unrelated estimates; unresolved decision scopes fail closed, and unscoped workdays discover new proposals.
 scene:
   required: true
   manifest: guarantees/agent/golden/scenes/workday-proposal-selection.scene.yaml

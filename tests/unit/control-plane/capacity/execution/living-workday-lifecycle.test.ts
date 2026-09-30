@@ -142,6 +142,48 @@ describe('living workday lifecycle', () => {
 		}));
 		}
 	});
+	it('keeps decision-only continuation planning scoped without rediscovering unrelated proposals', async () => {
+		for (const proposalIds of [[], ['explicit']]) {
+			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
+				policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+				decisionIds: ['decision', 'second'], proposalIds, continueFromWorkdayId: 'settled',
+				agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer'].map(agentClass =>
+					({ definition: planningAgent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
+			const store = { all: vi.fn(async (sql: string, args: unknown[]) => {
+				if (sql.includes('FROM governance_decisions')) return [{ id: 'decision', proposal_id: 'ready' },
+					{ id: 'second', proposal_id: 'revised' }];
+				if (sql.includes('execution_nodes')) return currentPlan.planningRounds.flatMap(round =>
+					round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' })));
+				return ['ready', 'revised', 'explicit', 'unrelated'].filter(id => args.includes(id))
+					.map(id => ({ id, team_id: 'team', project_id: 'project' }));
+			}), updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+			const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
+			expect(store.all).toHaveBeenCalledWith(expect.stringContaining('WHERE team_id=? AND id IN (?,?)'),
+				['team', 'decision', 'second']);
+			expect(store.all).toHaveBeenCalledWith(expect.stringContaining('AND id IN'),
+				['team', 'project', ...proposalIds, 'ready', 'revised']);
+			expect(result.plan.planningRounds.at(-1)?.assignmentIds.some(id => id.includes('unrelated'))).toBe(false);
+			expect(result.plan.planningRounds.at(-1)?.assignmentIds.filter(id => id.includes(':estimating:')))
+				.toHaveLength(proposalIds.length * 2);
+			expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
+				parameters: expect.objectContaining({ proposalIds, decisionIds: ['decision', 'second'] }) }));
+		}
+	});
+	it('fails closed on missing or foreign-team decision planning scope before proposal discovery', async () => {
+		for (const decisions of [[], [{ id: 'decision', proposal_id: null }]]) {
+			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
+				policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, decisionIds: ['decision'] } } as never;
+			const store = { all: vi.fn(async (sql: string) => sql.includes('FROM governance_decisions') ? decisions
+				: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' })))),
+				updateCapacityWorkdayRun: vi.fn() };
+			await expect(advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z'))
+				.rejects.toMatchObject({ code: 'workday_planning_decision_scope_invalid' });
+			expect(store.all.mock.calls.some(([sql]) => sql.includes('FROM governance_proposals'))).toBe(false);
+			expect(store.updateCapacityWorkdayRun).not.toHaveBeenCalled();
+		}
+	});
 	it('continues collaborative planning without regenerating estimates after the proposal is ready', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
 			{ round: 1, state: 'complete', assignmentIds: [
