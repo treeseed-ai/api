@@ -55,6 +55,13 @@ vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (impor
 const now = '2026-09-13T16:00:00.000Z';
 const policy = { durationSeconds: 60, maximumConcurrency: 2, planningTurnMaximumSeconds: 10,
 	communicationConcurrency: 1, projectPercentages: { project: 100 }, agentClassPercentages: { project: { architect: 100 } } };
+const planningPermissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
+const planningAgent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${agentClass}`,
+	name: agentClass, agentClass, purpose: 'Estimate governed work.', responsibilities: ['Return exact results.'],
+	capabilities: ['reasoning'], context: { include: ['project-objectives'] }, activityProfiles: {
+		planning: { handler: 'writer', permissions: planningPermissions, prompt: { system: 'Plan useful governed work for this project.' } },
+		estimating: { handler: 'estimate', permissions: planningPermissions, prompt: { system: 'Estimate exact proposal work for this project.' } },
+	} });
 const plan = { schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 	executionMode: 'simulation',
 	policySnapshot: policy, state: 'active', startsAt: '2026-09-13T15:00:00.000Z', endsAt: '2026-09-13T15:01:00.000Z',
@@ -92,17 +99,10 @@ describe('living workday lifecycle', () => {
 	it('adds a newly created proposal owner and Reviewer to the next round without replacing the frozen planning agents', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
 			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
-		const permissions = { content: { read: ['proposal'], write: ['proposal'] }, tools: ['discussion'] };
-		const agent = (agentClass: string) => ({ schemaVersion: 'treeseed.agent/v1', id: `project/${agentClass}`,
-			name: agentClass, agentClass, purpose: 'Estimate governed work.', responsibilities: ['Return exact results.'],
-			capabilities: ['reasoning'], context: { include: ['project-objectives'] }, activityProfiles: {
-				planning: { handler: 'writer', permissions, prompt: { system: 'Plan useful governed work for this project.' } },
-				estimating: { handler: 'estimate', permissions, prompt: { system: 'Estimate exact proposal work for this project.' } },
-			} });
-		expect(validateAgentDefinitionModel(agent('researcher')).ok).toBe(true);
+		expect(validateAgentDefinitionModel(planningAgent('researcher')).ok).toBe(true);
 		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
 			agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer'].map((agentClass) =>
-				({ definition: agent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
+				({ definition: planningAgent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
 		const store = { all: vi.fn(async (sql: string) => sql.includes('execution_nodes')
 			? currentPlan.planningRounds.flatMap((round) => round.assignmentIds.map((id) => ({ id, kind: 'planning', status: 'completed' })))
 			: [{ id: 'incomplete', team_id: 'team', project_id: 'project' },
@@ -115,8 +115,32 @@ describe('living workday lifecycle', () => {
 			'planning:workday:3:project/project/reviewer:estimating:new-proposal',
 		]);
 		expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
-			parameters: expect.objectContaining({ planningSourceByProposalId: { 'new-proposal': expect.objectContaining({ id: 'new-proposal' }) } }),
+			parameters: expect.objectContaining({ proposalIds: [], planningSourceByProposalId: { 'new-proposal': expect.objectContaining({ id: 'new-proposal' }) } }),
 		}));
+	});
+	it('keeps one or several explicit proposals while ignoring unrelated open proposals', async () => {
+		for (const selected of [['new-proposal'], ['new-proposal', 'other-proposal']]) {
+			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
+			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+			const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			proposalIds: selected, agentProfilesByProjectId: { project: { agents: ['architect', 'researcher', 'reviewer']
+				.map((agentClass) => ({ definition: planningAgent(agentClass), activities: ['planning', 'estimating'] })) } } } } as never;
+			const inventory = ['new-proposal', 'other-proposal', 'unrelated'].map((id) => ({ id, team_id: 'team', project_id: 'project' }));
+			const store = { all: vi.fn(async (sql: string, args: unknown[]) => sql.includes('execution_nodes')
+			? currentPlan.planningRounds.flatMap((round) => round.assignmentIds.map((id) => ({ id, kind: 'planning', status: 'completed' })))
+			: inventory.filter((proposal) => !sql.includes('AND id IN') || args.includes(proposal.id))),
+			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+			const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:02:00Z');
+			const next = result.plan.planningRounds.at(-1)!;
+			expect(next.assignmentIds).toHaveLength(1 + selected.length * 2);
+			expect(next.assignmentIds.every((id) => !id.includes('unrelated'))).toBe(true);
+			expect(store.all).toHaveBeenCalledWith(expect.stringContaining(`AND id IN (${selected.map(() => '?').join(',')})`),
+			['team', 'project', ...selected]);
+			expect(store.updateCapacityWorkdayRun).toHaveBeenCalledWith('team', 'workday', expect.objectContaining({
+			parameters: expect.objectContaining({ proposalIds: selected,
+				planningSourceByProposalId: Object.fromEntries(selected.map((id) => [id, expect.objectContaining({ id })])) }),
+		}));
+		}
 	});
 	it('continues collaborative planning without regenerating estimates after the proposal is ready', async () => {
 		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z', planningRounds: [
