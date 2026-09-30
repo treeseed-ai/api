@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.active-window-production:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: does not precharge unused infrastructure watchdog time in production
+  api.golden.active-window-simulation:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: does not precharge unused infrastructure watchdog time in simulation
+  api.golden.active-window-rollover:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: clamps after real preparation without crossing the UTC accounting day
+  api.golden.active-window-exhaustion:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/assignment-active-window.test.ts
+    testName: defers after authority is exhausted without changing provider supply
   api.golden.continuation-history:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

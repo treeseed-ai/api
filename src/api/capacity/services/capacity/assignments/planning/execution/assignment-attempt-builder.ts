@@ -17,7 +17,7 @@ import type { ProviderSynthesisExecutionProvider } from '../../../providers/prov
 import { type ReadyExecutionNode } from '../../../../build/ready-execution-node.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayTreeDxWorkspaceId } from '../../../workdays/treedx/workday-treedx-workspace-service.ts';
-import { assignmentPreparationSeconds, compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
+import { compileAssignmentTimeBudget } from '../assignment-time-budget.ts';
 import type { LivingAllocationInputs } from '../../admission/living-allocation-inputs.ts';
 
 const stable = (value: unknown): string => {
@@ -220,10 +220,12 @@ export function buildAssignmentAttempt(input: {
 		|| (communication && Date.parse(input.now) < Date.parse(planningEnd));
 	const planningPhase = planningTurn;
 	const windowEnd = planningPhase && Date.parse(input.now) < Date.parse(planningEnd) ? planningEnd : appliedPlan.endsAt;
-	const preparationSeconds = assignmentPreparationSeconds(undefined);
 	const utcDayEnd = Date.parse(`${input.now.slice(0, 10)}T00:00:00.000Z`) + 86_400_000;
+	// Infrastructure has its own watchdog. Reserve active time against authority;
+	// execution start clamps that reservation after actual setup/queueing, without
+	// precharging the entire (usually unspent) preparation ceiling.
 	const availableSeconds = candidate.node.kind === 'reporting' && appliedPlan.state === 'closing'
-		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000 - preparationSeconds);
+		? candidate.node.estimate.maximumSeconds : Math.max(0, (Date.parse(windowEnd) - Date.parse(input.now)) / 1000);
 	const capability = candidate.node.requiredCapabilities![0]!;
 	const considered = eligible.flatMap((selected) => {
 		const allocationInputs = input.allocationInputs[selected.provider.id];
@@ -239,7 +241,7 @@ export function buildAssignmentAttempt(input: {
 		const allocation = calculateAssignmentAllocation({ estimate: allocationEstimate,
 			measurements: planningTurn ? [] : allocationInputs.measurements,
 			constraints: [{ id: 'execution-window', remainingSeconds: availableSeconds },
-				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000 - preparationSeconds) },
+				{ id: 'utc-day-window', remainingSeconds: Math.max(0, (utcDayEnd - Date.parse(input.now)) / 1000) },
 				{ id: 'model-day', remainingSeconds: remaining(limits.dailyActiveSecondsLimit, observation.modelUsage) },
 				{ id: 'capability-day', remainingSeconds: remaining(capabilityLimits.dailyActiveSecondsLimit, observation.capabilityUsage[capability]) }, ...allocationInputs.constraints],
 			providerMaximumSeconds: capabilityLimits.maximumAssignmentSeconds,
