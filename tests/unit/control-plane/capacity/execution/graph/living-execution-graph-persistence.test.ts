@@ -13,6 +13,7 @@ import {
 	simulationRunForNode,
 	terminalAssignmentWasRequeued,
 } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import { assignmentBelongsToRun } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 import { applyOperationalState, recoverIncompleteReviewCycles, recoverInterruptedGovernanceReviews,
 	recoverableGovernanceReviewAttemptHistory, reviewCycleLimitReached,
 } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
@@ -62,6 +63,21 @@ it('keeps an approved review authoritative over a duplicate result until the Act
 	const revisedActor = result('actor', '2026-09-25T08:55:00.000Z');
 	expect(selectTerminalAssignmentRows([revisedActor, duplicate, approved, originalActor], [actor, reviewer], [pair])
 		.find((entry) => entry.execution_node_id === 'reviewer')).toBe(duplicate);
+});
+
+it('preserves exact completed history only for explicit continuation, never fresh simulation or changed authority', () => {
+	const current = { ...node('stale'), workdayId: 'old' };
+	const desired = { ...node('ready'), workdayId: 'next' };
+	const row = { work_day_id: 'old', assignment_attempt_json: { sourceRef: desired.sourceRef, authorityRefs: desired.authorityRefs } };
+	expect(assignmentBelongsToRun(row, desired, 'next', new Set())).toBe(false);
+	expect(assignmentBelongsToRun(row, desired, 'next', new Set(['old']))).toBe(true);
+	expect(assignmentBelongsToRun({ ...row, assignment_attempt_json: { ...row.assignment_attempt_json, sourceRef: { ...sourceRef, revision: 2 } } }, desired, 'next', new Set(['old']))).toBe(false);
+	const graph = (entry: ExecutionNode) => ({ teamId: 'team', revision: 1, digest: 'digest', nodes: [entry], edges: [] });
+	const terminal = new Map([[current.id, { status: 'completed' as const, nodeRevision: 1 }]]);
+	expect(applyOperationalState(graph(current), graph(desired), 2, new Set(), terminal).nodes[0]?.status).toBe('ready');
+	const retained = applyOperationalState(graph(current), graph(desired), 2, new Set(), terminal, new Map([['next', new Set(['old'])]]));
+	expect(retained.nodes[0]).toMatchObject({ status: 'completed', workdayId: 'next' });
+	expect(applyOperationalState(retained, graph(desired), 3, new Set(), terminal).nodes[0]?.status).toBe('completed');
 });
 
 it('binds each accepted decision to at most one active simulation workday', () => {
