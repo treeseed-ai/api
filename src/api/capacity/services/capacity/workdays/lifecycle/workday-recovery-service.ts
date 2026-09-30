@@ -72,20 +72,29 @@ export async function maintainCapacityWorkdayRuns(store: WorkdayRecoveryStore, t
 		cursor = runs.at(-1)!.id;
 	}
 	let recoveredTerminalRuns = 0; let terminalCursor = '';
+	const failures: Error[] = [];
 	while (true) {
 		const terminalRuns = await repository.listTerminal(teamId, terminalCursor); if (!terminalRuns.length) break;
 		for (const terminalRun of terminalRuns) {
-			const candidate = await repository.recoveryState(terminalRun);
-			if (!candidate.hasUnfinishedAssignments && !candidate.hasReadyNodes && !candidate.missingDeadlineEvent) continue;
-			const { run } = candidate;
-			const terminalization = await store.terminalizeCapacityWorkdayAssignments(run.teamId, run.id, { now, settlementKeyPrefix: 'workday-terminal-recovery', source: 'capacity_workday_terminal_recovery',
-				code: `workday_${run.status}_recovered`, reason: `Recovered unfinished assignment state from terminal workday ${run.id}.`,
-				preserveActiveLeasesUntil: terminalGraceUntil(run), metadata: { status: run.status, recovery: true } });
-			if (candidate.missingDeadlineEvent) await store.createCapacityWorkdayEvent(run.teamId, run.id, eventInput(run, run.actual));
-			if (candidate.hasUnfinishedAssignments || candidate.hasReadyNodes || candidate.missingDeadlineEvent || terminalization.unfinishedAssignmentCount > 0) recoveredTerminalRuns += 1;
+			try {
+				const candidate = await repository.recoveryState(terminalRun);
+				if (!candidate.hasUnfinishedAssignments && !candidate.hasReadyNodes && !candidate.missingDeadlineEvent) continue;
+				const { run } = candidate;
+				const terminalization = await store.terminalizeCapacityWorkdayAssignments(run.teamId, run.id, { now, settlementKeyPrefix: 'workday-terminal-recovery', source: 'capacity_workday_terminal_recovery',
+					code: `workday_${run.status}_recovered`, reason: `Recovered unfinished assignment state from terminal workday ${run.id}.`,
+					preserveActiveLeasesUntil: terminalGraceUntil(run), metadata: { status: run.status, recovery: true } });
+				if (candidate.missingDeadlineEvent) await store.createCapacityWorkdayEvent(run.teamId, run.id, eventInput(run, run.actual));
+				if (candidate.hasUnfinishedAssignments || candidate.hasReadyNodes || candidate.missingDeadlineEvent || terminalization.unfinishedAssignmentCount > 0) recoveredTerminalRuns += 1;
+			} catch (error) {
+				// An invalid historical assignment remains failed, but cannot prevent
+				// cleanup of other settled workdays. Report every failure after sweep.
+				failures.push(new Error(`Terminal workday ${terminalRun.id}: ${error instanceof Error ? error.message : String(error)}`,
+					{ cause: error }));
+			}
 		}
 		if (terminalRuns.length < MAX_CAPACITY_PAGE_LIMIT) break;
 		terminalCursor = terminalRuns.at(-1)!.id;
 	}
+	if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('; '));
 	return { expired, recoveredTerminalRuns };
 }
