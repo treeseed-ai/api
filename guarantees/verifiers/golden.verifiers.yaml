@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.concurrent-terminal-revisions:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/persistence/concurrent-results-postgres.test.ts
+    testName: "commits five simultaneous results against reconciliation without duplicate or lost revisions"
   api.golden.phase-before-tick:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

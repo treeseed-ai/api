@@ -399,11 +399,12 @@ describe('normalized living execution graph persistence', () => {
 		};
 		await persistExecutionGraph(store, next, graph(1), revision(2, next.digest));
 		expect(operations.some((operation) => operation.query.includes('estimate_json=excluded.estimate_json'))).toBe(true);
-		expect(operations[0]?.query).toContain('FOR UPDATE');
-		expect(operations[1]?.query).toContain('COALESCE(MAX(revision),0)');
-		expect(operations[1]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
-		expect(operations[1]?.params[8]).toBe(1);
-		expect(operations.slice(2).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
+		expect(operations[0]?.query).toBe('SELECT id FROM teams WHERE id=? FOR UPDATE');
+		expect(operations[1]?.query).toContain('FOR UPDATE');
+		expect(operations[2]?.query).toContain('COALESCE(MAX(revision),0)');
+		expect(operations[2]?.query).toContain('ON CONFLICT (team_id,revision) DO NOTHING');
+		expect(operations[2]?.params[8]).toBe(1);
+		expect(operations.slice(3).every((operation) => operation.query.includes('created_at=?'))).toBe(true);
 		expect(operations.some((operation) => /graph_events|reconciliation_receipts/u.test(operation.query))).toBe(false);
 	});
 
@@ -421,7 +422,7 @@ describe('normalized living execution graph persistence', () => {
 		const nodeWrites = operations.filter((operation) => operation.query.includes('INSERT INTO execution_nodes'));
 		expect(nodeWrites).toHaveLength(1);
 		expect(nodeWrites[0]?.params[0]).toBe('changed-node');
-		expect(operations[1]?.params[9]).toContain('other-node');
+		expect(operations[2]?.params[9]).toContain('other-node');
 	});
 
 	it('fails closed when another reconciliation wins the graph revision', async () => {

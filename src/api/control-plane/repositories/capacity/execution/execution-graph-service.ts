@@ -210,7 +210,8 @@ function visibleGraph(graph: TeamGraph, query: Row): TeamGraph {
 export async function persistExecutionGraph(store: any, graph: TeamGraph, current: TeamGraph, revisionRecord: GraphRevision) {
 	const now = revisionRecord.createdAt;
 	const operations: Array<{ query: string; params: unknown[] }> = [{
-		query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId],
+		query: 'SELECT id FROM teams WHERE id=? FOR UPDATE', params: [graph.teamId],
+	}, { query: 'SELECT id FROM execution_nodes WHERE team_id=? ORDER BY id FOR UPDATE', params: [graph.teamId],
 	}, {
 		query: `INSERT INTO execution_graph_revisions
 			(team_id,revision,rule_revision,changed_source_refs_json,graph_digest,changes_json,created_at)
