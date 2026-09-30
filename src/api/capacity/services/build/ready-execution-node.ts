@@ -19,6 +19,7 @@ import { CapacityGovernanceError } from '../../database.ts';
 import { resolveKnowledgeGatewayConnection } from '../../../knowledge/gateway-treedx-connection.ts';
 import { selectAssignmentSourceRepository } from '../capacity/assignments/context/source-repository.ts';
 import { readExactProposal } from '../../../governance/executable-proposal.ts';
+import { workdayLineageSql } from '../capacity/workdays/scheduling/workday-continuation.ts';
 
 type Row = Record<string, unknown>;
 const record = (value: unknown): Row => {
@@ -260,7 +261,7 @@ async function effectiveProfile(store: any, node: ExecutionNode): Promise<{ proj
 async function predecessorContext(store: any, node: ExecutionNode, sourceRepository?: string): Promise<{ results: AssignmentResult[]; contentRefs: ExactEntityReference[]; lineageSourceCommit?: string; directPredecessorSourceCommit?: string }> {
 	const decisionId = (node.authorityRefs ?? []).find((reference) => reference.model === 'decision')?.id;
 	const decisionFilter = (alias: string) => decisionId ? `AND ${alias}.decision_id=?` : '';
-	const runFilter = (alias: string) => node.workdayId ? `AND ${alias}.work_day_id=?` : '';
+	const runFilter = (alias: string) => node.workdayId ? `AND ${alias}.work_day_id IN ${workdayLineageSql('?', `${alias}.team_id`)}` : '';
 	const candidateParameters = () => [...(decisionId ? [decisionId] : []), ...(node.workdayId ? [node.workdayId] : [])];
 	const rows: Row[] = node.kind === 'reporting' ? await store.all(`SELECT assignment_result_json,assignment_attempt_json
 		FROM capacity_provider_assignments WHERE team_id=? AND work_day_id=?

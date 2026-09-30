@@ -20,7 +20,8 @@ export const digest = (value: unknown): string => `sha256:${createHash('sha256')
 
 export function applyOperationalState(current: TeamGraph, projected: TeamGraph, revision: number,
 	activeAssignmentNodeIds: ReadonlySet<string> = new Set(),
-	terminalAssignmentStatuses: ReadonlyMap<string, { status: ExecutionNode['status']; nodeRevision: number }> = new Map()): TeamGraph {
+	terminalAssignmentStatuses: ReadonlyMap<string, { status: ExecutionNode['status']; nodeRevision: number }> = new Map(),
+	continuationByRun: ReadonlyMap<string, ReadonlySet<string>> = new Map()): TeamGraph {
 	const priorById = new Map(current.nodes.map((node) => [node.id, node]));
 	const activeIds = new Set(projected.nodes.map((node) => node.id));
 	const terminalProjectionNodeIds = new Set<string>();
@@ -32,9 +33,11 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			return { ...prior, status: 'stale' as const,
 				nodeRevision: prior.status === 'stale' ? prior.nodeRevision : prior.nodeRevision + 1,
 				graphRevisionUpdated: revision };
-		const freshSimulationAttempt = Boolean(prior && node.workdayId && prior.workdayId !== node.workdayId
-			&& node.authorityRefs?.some((reference) => reference.model === 'decision'));
 		const terminal = prior ? terminalAssignmentStatuses.get(node.id) : undefined;
+		const continuedTerminal = Boolean(terminal && prior?.workdayId && node.workdayId
+			&& continuationByRun.get(node.workdayId)?.has(prior.workdayId));
+		const freshSimulationAttempt = Boolean(prior && node.workdayId && prior.workdayId !== node.workdayId
+			&& node.authorityRefs?.some((reference) => reference.model === 'decision') && !continuedTerminal);
 		// A completed Reviewer result governs the paired Actor candidate, not the
 		// projection revision. Projection-only bumps must not reopen an approval;
 		// the caller rejects it when a newer Actor candidate has completed.
@@ -51,7 +54,7 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 			if (prior.pairRole !== 'reviewer' || recoveredTerminalStatus !== 'blocked') {
 				terminalProjectionNodeIds.add(node.id);
 			}
-			return { ...prior, status: recoveredTerminalStatus,
+			return { ...prior, ...(continuedTerminal ? node : {}), status: recoveredTerminalStatus,
 			// A terminal assignment is evidence for an existing node revision, not a
 			// new semantic revision. Repeated reconciliation must converge instead of
 			// manufacturing fresh ready Actor revisions that can be leased again.

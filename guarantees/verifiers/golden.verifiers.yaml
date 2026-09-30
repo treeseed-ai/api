@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.continuation-history:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: derives a bounded exact lineage from existing records without another ledger
+  api.golden.continuation-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: rejects retained leases, unsettled reservations, cycles, unknown decisions and project expansion
+  api.golden.continuation-freshness:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/graph/living-execution-graph-persistence.test.ts
+    testName: preserves exact completed history only for explicit continuation, never fresh simulation or changed authority
   api.golden.explicit-proposal-selection:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

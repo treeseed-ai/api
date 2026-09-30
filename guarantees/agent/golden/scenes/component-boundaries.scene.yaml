@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: continuation-history
+    action: { verifier: api.golden.continuation-history }
+    expect: { status: passed }
+  - id: continuation-denial
+    action: { verifier: api.golden.continuation-denial }
+    expect: { status: passed }
+  - id: continuation-freshness
+    action: { verifier: api.golden.continuation-freshness }
+    expect: { status: passed }
   - id: bounded-planning-node-id
     action: { verifier: api.golden.bounded-planning-node-id }
     expect: { status: passed }

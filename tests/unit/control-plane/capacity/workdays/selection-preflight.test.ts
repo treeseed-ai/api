@@ -32,6 +32,20 @@ function fixture() {
 }
 
 describe('public workday selection custody', () => {
+	it('snapshots explicit continuation without resetting completed graph roots', async () => {
+		const f = fixture();
+		const first = f.store.first.getMockImplementation()!, all = f.store.all.getMockImplementation()!;
+		f.store.first.mockImplementation(async (sql: string) => sql.includes('SELECT * FROM capacity_workday_runs WHERE team_id')
+			? { id: 'old', team_id: 'team', status: 'completed', execution_kind: 'workday', execution_mode: 'simulation', capacity_provider_id: 'provider',
+				parameters_json: '{"scheduledProjectIds":["project-sdk"]}' } : first(sql));
+		f.store.all.mockImplementation(async (sql: string) => sql.includes('SELECT id,slug FROM projects')
+			? [{ id: 'project-sdk', slug: 'sdk' }] : sql.includes('SELECT DISTINCT decision_id')
+				? [{ decision_id: 'decision', assignment_attempt_json: '{}' }] : all(sql));
+		await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), decisionIds: ['decision'], continueFromWorkdayId: 'old' }), 'actor');
+		expect(f.stored().runInput.parameters).toMatchObject({ continueFromWorkdayId: 'old', decisionIds: ['decision'] });
+		expect(f.stored().receipt.intentDigest).toBeTruthy();
+		expect(() => parsePublicWorkdayIntent('team', { ...input(), continueFromWorkdayId: 'old' })).toThrow(/invalid/u);
+	});
 	it('preserves explicit production custody and defaults omitted mode to simulation', async () => {
 		const f = fixture();
 		await f.service.preflight('team', parsePublicWorkdayIntent('team', { ...input(), executionMode: 'production' }), 'actor');

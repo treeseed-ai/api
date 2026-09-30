@@ -7,6 +7,7 @@ import type { DurableProviderAssignment } from '../../../../repositories/capacit
 import type { ProviderLeasePrincipal } from '../../../accounts/lease-authority-service.ts';
 import { compileAssignmentTimeBudget } from '../planning/assignment-time-budget.ts';
 import { workdayReportContext } from './workday-report-context.ts';
+import { workdayLineageSql } from '../../workdays/scheduling/workday-continuation.ts';
 
 interface Store extends CapacityGovernanceDatabase {
 	getProviderAssignment(teamId: string, assignmentId: string): Promise<DurableProviderAssignment | null>;
@@ -26,7 +27,7 @@ const reviewCycleAdmissionFence = `NOT EXISTS (
 	AND reviewer.pair_role='reviewer'
 	AND (SELECT COUNT(*) FROM capacity_provider_assignments review_history
 		WHERE review_history.team_id=node.team_id AND review_history.execution_node_id=reviewer.id
-		AND (node.workday_id IS NULL OR review_history.work_day_id=node.workday_id)
+		AND (node.workday_id IS NULL OR review_history.work_day_id IN ${workdayLineageSql('node.workday_id', 'node.team_id')})
 		AND review_history.status='completed' AND review_history.assignment_result_json IS NOT NULL
 		AND review_history.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='request-changes'
 	)>=COALESCE(reviewer.maximum_review_cycles,1)
