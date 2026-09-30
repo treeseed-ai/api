@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: concurrent-terminal-revisions
+    action: { verifier: api.golden.concurrent-terminal-revisions }
+    expect: { status: passed }
   - id: phase-before-tick
     action: { verifier: api.golden.phase-before-tick }
     expect: { status: passed }

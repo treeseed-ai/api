@@ -12,7 +12,7 @@ import { settleCapacityReservationExactlyOnce } from '../../accounting/settlemen
 import { validateAssignmentResultCompletion } from '../context/assignment-result-completion.ts';
 import { verifyAssignmentContent, recordAssignmentContentIntegration } from './assignment-content-readback.ts';
 import { resolveReviewDisposition } from '../context/review-result.ts';
-import { livingExecutionLifecycleOperations } from './execution/living-execution-lifecycle.ts';
+import { commitLivingExecutionLifecycle } from './execution/living-execution-lifecycle.ts';
 import type { ProviderAssignmentExplanationWrite } from '../observability/assignment-explanation-service.ts';
 import { integrateAssignmentEstimate } from '../planning/estimates/integration.ts';
 import { normalizeProviderAssignmentLeaseSeconds } from './assignment-lease-service.ts';
@@ -298,6 +298,7 @@ export class ProviderAssignmentLifecycleService {
 		});
 		await this.store.ensureInitialized();
 		return capacityTransaction(this.store, async database => {
+			await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [principal.teamId]);
 			await database.run('SELECT id FROM capacity_provider_assignments WHERE id=? AND team_id=? FOR UPDATE', [assignmentId, principal.teamId]);
 			const repository = new ProviderAssignmentRepository(database);
 			const evidence = new CapacityRuntimeEvidenceRepository(database);
@@ -356,7 +357,7 @@ export class ProviderAssignmentLifecycleService {
 			defaultReason: archived?'The source Discussion was archived.':'Provider assignment failed.',
 			metadata: { ...record(assignment.metadata), failureClassification: failure },
 			allowExpiredLease: timeout || phaseCancelled,
-		});
+		}, this.store);
 	}
 
 	private async persistFallback(assignment: DurableProviderAssignment, fallbackOutput: JsonRecord): Promise<void> {
@@ -383,6 +384,7 @@ export class ProviderAssignmentLifecycleService {
 			assignmentResult?: AssignmentResult | null;
 			reviewDisposition?: 'approved' | 'request-changes' | null;
 		},
+		transaction?: CapacityGovernanceDatabase,
 	): Promise<ProviderAssignmentLifecycleMutationResult | null> {
 		const transitionMetadata = options.metadata ?? (['completed','failed','cancelled'].includes(options.status)
 			? { ...record(assignment.metadata), operationalState: options.status }
@@ -415,10 +417,6 @@ export class ProviderAssignmentLifecycleService {
 			 WHERE id = ? AND team_id = ? AND capacity_provider_id = ? AND membership_id = ?
 			   AND state_version = ? AND status = 'leased' AND lease_state = 'leased'
 			   AND lease_token = ? ${options.allowExpiredLease ? '' : 'AND (lease_expires_at IS NULL OR lease_expires_at > ?)'} `, params: [options.status, ...params] }];
-		operations.push(...await livingExecutionLifecycleOperations({ store: this.store, assignment,
-			status: options.status, now, result: options.assignmentResult,
-			returnCode: options.status === 'returned' ? input.code : undefined,
-			reviewDisposition: options.reviewDisposition ?? null }));
 		if (['completed','failed','cancelled'].includes(options.status)) {
 			const terminalWorkspace = terminalAssignmentAuthority(assignment, now);
 			operations.push({
@@ -437,7 +435,10 @@ export class ProviderAssignmentLifecycleService {
 				params: [options.status==='cancelled'?'cancelled':'failed',assignment.id, now, JSON.stringify({ code: input.code ?? options.defaultCode, reason: input.reason ?? input.message ?? options.defaultReason }), now, assignment.invocationId, assignment.teamId],
 			});
 		}
-		await this.store.batch(operations);
+		await commitLivingExecutionLifecycle({ store: this.store, assignment,
+			status: options.status, now, result: options.assignmentResult,
+			returnCode: options.status === 'returned' ? input.code : undefined,
+			reviewDisposition: options.reviewDisposition ?? null }, operations, transaction);
 		const transitioned = await this.store.getProviderAssignment(principal.teamId, assignment.id);
 		if (!transitioned || transitioned.stateVersion !== assignment.stateVersion + 1 || transitioned.status !== options.status) return null;
 		if (assignment.operationHandoffId && (options.status === 'completed' || options.status === 'failed')) await terminalizeOperationHandoff(this.store, assignment.operationHandoffId, assignment.id, options.status, now);

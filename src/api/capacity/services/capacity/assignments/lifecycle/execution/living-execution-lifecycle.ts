@@ -3,8 +3,25 @@ import type { AssignmentResult, ExecutionEdge, ExecutionNode } from '@treeseed/s
 import type { DurableProviderAssignment } from '../../../../../repositories/capacity/assignments/assignment.ts';
 import type { CapacityGovernanceDatabase } from '../../../../../database.ts';
 import { decodeExecutionEdge, decodeExecutionNode } from '../../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
+import { capacityTransaction } from '../../../../../transaction.ts';
 
 type Operation = { query: string; params?: unknown[] };
+
+/** The same team row fences both reconciliation and terminal result projection.
+ * Read the next revision only after taking the lock on the writing connection.
+ * Timeout closeout already owns a transaction and must keep that connection. */
+export async function commitLivingExecutionLifecycle(
+	input: Parameters<typeof livingExecutionLifecycleOperations>[0], operations: Operation[],
+	transaction?: CapacityGovernanceDatabase,
+): Promise<void> {
+	const apply = async (database: CapacityGovernanceDatabase) => {
+		await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [input.assignment.teamId]);
+		const projection = await livingExecutionLifecycleOperations({ ...input, store: database });
+		await database.batch([...operations.slice(0, 1), ...projection, ...operations.slice(1)]);
+	};
+	if (transaction) await apply(transaction);
+	else await capacityTransaction(input.store, apply);
+}
 
 const stable = (value: unknown): string => {
 	if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
