@@ -1,6 +1,56 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.progress-postgres-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress-postgres.test.ts
+    testName: "retains captured preparation evidence and ordered replay without duplicate discussion commits"
+  api.golden.preparation-progress:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "persists all captured EJ preparation stages without waiting for TreeDX projection"
+  api.golden.preparation-no-commit-wait:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "does not put a delayed discussion commit on the preparation critical path"
+  api.golden.provider-progress-authority:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "keeps routine provider progress in its one authoritative workday event stream"
+  api.golden.provider-terminal-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "preserves terminal and diagnostic warning discussion projection with exact durable content"
+  api.golden.terminal-projection-fatal:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "keeps required terminal projection failure fatal rather than returning a false receipt"
+  api.golden.terminal-projection-replay:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "replays required terminal projection after a durable event survived a failed discussion commit"
+  api.golden.progress-idempotency:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "retains durable progress idempotency and rejects changed evidence"
+  api.golden.workday-lifecycle-projection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "preserves ordinary workday lifecycle projection and activity mirror exclusion"
+  api.golden.progress-token-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/provider-progress.test.ts
+    testName: "still rejects transient token deltas before durable insertion"
   api.golden.late-planning-round:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
