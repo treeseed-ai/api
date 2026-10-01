@@ -1,6 +1,41 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.operator-phase-postgres:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/timeout-postgres.test.ts
+    testName: settles actual returned pre-model phase cancellation once without late completion, cap expansion or approval
+  api.golden.operator-phase-closeout:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: normalizes a claimed returned turn without replacing the provider closure or measured usage
+  api.golden.operator-phase-no-fabrication:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: does not invent isolation teardown when the provider supplied no receipt
+  api.golden.operator-phase-early-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for earlier despite a planning-looking reason or key
+  api.golden.operator-phase-acting-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for acting despite a planning-looking reason or key
+  api.golden.operator-phase-fluid-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for fluid despite a planning-looking reason or key
+  api.golden.operator-phase-provider-denial:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
+    testName: preserves ordinary cancellation for wrong-provider despite a planning-looking reason or key
   api.golden.admitted-discussion-binding:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

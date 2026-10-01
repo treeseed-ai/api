@@ -65,7 +65,8 @@ function typedJson<T>(value: unknown, field: string, assignmentId: string, schem
 export function serializeProviderAssignmentRow(row: Row | null, inspection = false): DurableProviderAssignment | null {
 	try { return serializeExecutableAssignmentRow(row); }
 	catch (error) {
-		if (!inspection || !row || !(error instanceof CapacityGovernanceError) || error.code !== 'provider_assignment_contract_invalid') throw error;
+		if (!inspection || !row || !(error instanceof CapacityGovernanceError)
+			|| !['provider_assignment_contract_invalid', 'provider_assignment_json_invalid'].includes(error.code)) throw error;
 		// Inspection/cancellation never makes an invalid snapshot executable.
 		return serializeExecutableAssignmentRow({ ...row, assignment_attempt_json: null, assignment_result_json: null,
 			explanation_json: { ...json(row.explanation_json, {}, 'explanation_json', text(row.id)),
@@ -169,7 +170,7 @@ export class ProviderAssignmentRepository {
 			FROM capacity_provider_assignments assignment
 			LEFT JOIN capacity_workday_runs run ON run.id=assignment.work_day_id AND run.team_id=assignment.team_id
 			WHERE assignment.id=? AND assignment.team_id=? LIMIT 1`, [assignmentId, teamId]);
-		return serializeProviderAssignmentRow(row ? { ...row, assignment_attempt_json: null, assignment_result_json: null } : null);
+		return serializeProviderAssignmentRow(row, true);
 	}
 
 	async get(teamId: string, assignmentId: string, inspection = false): Promise<DurableProviderAssignment | null> {

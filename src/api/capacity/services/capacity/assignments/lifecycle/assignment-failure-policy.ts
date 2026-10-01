@@ -27,7 +27,7 @@ export async function planningBoundaryCancellation(database: CapacityGovernanceD
 	assignment: DurableProviderAssignment, input: FailureInput, now: string): Promise<boolean> {
 	const activity = assignment.assignmentAttempt?.effectiveProfile.activity;
 	if (!assignment.workDayId || !['planning', 'estimating'].includes(activity ?? '')
-		|| !(input.code === 'assignment_timeout' || (input.code === 'assignment_cancelled'
+		|| !(input.code === 'assignment_timeout' || input.code === 'operator_cancelled' || (input.code === 'assignment_cancelled'
 			&& record(assignment.metadata).cancellationRequested === true))) return false;
 	const time = record(record(assignment.capacityEnvelope).budget).time;
 	const authority = Date.parse(String(record(time).authorityDeadlineAt ?? ''));

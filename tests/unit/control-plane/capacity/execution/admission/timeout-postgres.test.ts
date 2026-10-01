@@ -7,15 +7,18 @@ import { ProviderAssignmentLifecycleService } from '../../../../../../src/api/ca
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { seedPlanningBoundary } from './fixtures/planning-boundary-postgres.ts';
 import { terminalPerformance } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/completion/assignment-terminal-performance.ts';
+import { OperatorAssignmentService } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/operator-assignment-service.ts';
+import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
 describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 	it.each([
-		['12 seconds', 12, false, false],
-		['25 seconds', 25, false, false],
-		['phase timeout before periodic cancellation', 12, true, false],
-		['phase stop after periodic cancellation', 12, true, true],
-	] as const)('settles actual %s once without late completion, cap expansion or approval', async (_label, activeSeconds, phase, requested) => {
+		['12 seconds', 12, false, false, false],
+		['25 seconds', 25, false, false, false],
+		['phase timeout before periodic cancellation', 12, true, false, false],
+		['phase stop after periodic cancellation', 12, true, true, false],
+		['returned pre-model phase cancellation', 0, true, false, true],
+	] as const)('settles actual %s once without late completion, cap expansion or approval', async (_label, activeSeconds, phase, requested, returned) => {
 		const reservedSeconds = phase ? 31 : 20;
 		const connection = new URL(url!);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
@@ -67,8 +70,19 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 			const report = phase ? { ...failure, performance: terminalPerformance((await repository.get('team', 'assignment'))!, failure, 'failed', now) } : failure;
 			expect(await service.complete(principal, 'assignment', { leaseToken: 'lease' })).toBeNull();
 			expect(await service.fail(principal, 'assignment', { ...failure, leaseToken: 'wrong' })).toBeNull();
-			const outcomes = await Promise.all([service.fail(principal, 'assignment', report), service.fail(principal, 'assignment', report)]);
-			expect(outcomes.filter(Boolean)).toHaveLength(1);
+			if (returned) {
+				await settleCapacityReservationExactlyOnce(store, { settlementKey: 'pre-model-return', teamId: 'team',
+					membershipId: 'membership', reservationId: 'reservation', assignmentId: 'assignment', activeSeconds,
+					elapsedSeconds: activeSeconds + 3, usageActual: failure.usage, source: 'provider_assignment_return', existingSettlementPolicy: 'replay' });
+				await db.pool.query(`UPDATE capacity_provider_assignments SET status='returned',lease_state='released',lease_token=NULL,
+					lifecycle_output_json=$1 WHERE id='assignment'`, [JSON.stringify({ teardown: failure.output.teardown })]);
+				const operator = new OperatorAssignmentService(store);
+				await operator.cancel('team', 'assignment', { idempotencyKey: 'phase' });
+				await operator.cancel('team', 'assignment', { idempotencyKey: 'phase-replay' });
+			} else {
+				const outcomes = await Promise.all([service.fail(principal, 'assignment', report), service.fail(principal, 'assignment', report)]);
+				expect(outcomes.filter(Boolean)).toHaveLength(1);
+			}
 			expect(await repository.get('team', 'assignment')).toMatchObject({ status: phase ? 'cancelled' : 'failed',
 				lifecycleOutput: { teardown: { verified: true, completedAt: now },
 					performance: { disposition: phase ? 'cancelled' : 'deadline_exhausted',
