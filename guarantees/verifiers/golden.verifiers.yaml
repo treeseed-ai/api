@@ -71,6 +71,21 @@ verifiers:
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/providers/assignments/operator-planning-cancel.test.ts
     testName: preserves ordinary cancellation for wrong-provider despite a planning-looking reason or key
+  api.golden.admission-source-custody-leased:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: preserves source custody when a losing admission reaches an existing leased assignment
+  api.golden.admission-source-custody-pending:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: preserves source custody when a losing admission reaches an existing pending assignment
+  api.golden.admission-source-custody-completed:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: preserves source custody when a losing admission reaches an existing completed assignment
   api.golden.admitted-discussion-binding:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
