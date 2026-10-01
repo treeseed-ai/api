@@ -25,6 +25,7 @@ export function compileAssignmentExecutionWindow(assignment:Pick<DurableProvider
 	if(!Number.isFinite(authorityDeadline)) throw new CapacityGovernanceError('assignment_authority_deadline_required','Execution requires its original admission deadline.',500);
 	const hardDeadlineMs=Math.min(authorityDeadline,startedMs+executionSeconds*1_000);
 	if(hardDeadlineMs<=startedMs) throw new CapacityGovernanceError('assignment_execution_window_exhausted','The admission deadline is exhausted.',409);
+	if(hardDeadlineMs-startedMs<=closeoutSeconds*1_000) throw new CapacityGovernanceError('assignment_execution_window_exhausted','The remaining admission window cannot contain productive execution and its closeout reserve.',409);
 	const executionDeadlineAt=new Date(hardDeadlineMs).toISOString();
 	const closeoutDeadlineAt=executionDeadlineAt;
 	const nextTime={ ...time,executionSeconds,closeoutSeconds,executionStartedAt:now,executionDeadlineAt,

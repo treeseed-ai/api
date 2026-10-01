@@ -3,6 +3,18 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: late-planning-round
+    action: { verifier: api.golden.late-planning-round }
+    expect: { status: passed }
+  - id: fluid-planning-window
+    action: { verifier: api.golden.fluid-planning-window }
+    expect: { status: passed }
+  - id: unusable-execution-window
+    action: { verifier: api.golden.unusable-execution-window }
+    expect: { status: passed }
+  - id: short-productive-window
+    action: { verifier: api.golden.short-productive-window }
+    expect: { status: passed }
   - id: admission-source-custody-leased
     action: { verifier: api.golden.admission-source-custody-leased }
     expect: { status: passed }

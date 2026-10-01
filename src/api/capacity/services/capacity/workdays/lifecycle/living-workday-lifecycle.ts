@@ -1,4 +1,4 @@
-import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
+import { appliedWorkdaySchema, assignmentResultSchema, compilePlanningRounds, workdayPlanningEndsAt, type AppliedWorkday } from '@treeseed/sdk/agent-capacity';
 import type { CapacityGovernanceDatabase } from '../../../../database.ts';
 import type { DurableCapacityWorkdayRun } from '../../../../repositories/capacity/workdays/workday-run.ts';
 import { workdayParticipants } from '../../../../policy/execution/workday-participants.ts';
@@ -111,7 +111,12 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	const states = new Map(nodeRows.map((row) => [String(row.id), String(row.status)]));
 	let next = advanceRounds(plan, states, now);
 	if (next.state === 'planned') next = { ...next, state: 'active', activatedAt: next.activatedAt ?? now };
+	// Do not create another full planning turn in the tail of its authority.
+	// After the initial phase, fluid planning uses the unchanged workday end.
+	const planningEnd = Date.parse(workdayPlanningEndsAt(next));
+	const planningWindowEnd = Date.parse(now) < planningEnd ? planningEnd : Date.parse(next.endsAt);
 	if (!requestClose && next.state === 'active' && await runtimeWorkdayPhase(store, run, now) === 'planning'
+		&& planningWindowEnd - Date.parse(now) >= next.policySnapshot.planningTurnMaximumSeconds * 1_000
 		&& next.planningRounds.length && next.planningRounds.every((round) => round.state === 'complete')) {
 		const { sources, proposalIds, agentIds } = await nextPlanningParticipants(store, run, next);
 		if (agentIds.length) {
