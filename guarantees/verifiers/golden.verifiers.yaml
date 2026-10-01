@@ -1,6 +1,36 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.admitted-discussion-binding:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "does not let a denied admission steal the invocation before the winning assignment exists"
+  api.golden.discussion-binding-foreign-team:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: foreign-team"
+  api.golden.discussion-binding-wrong-reservation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: wrong-reservation"
+  api.golden.discussion-binding-wrong-invocation:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: wrong-invocation"
+  api.golden.discussion-binding-terminal:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: terminal"
+  api.golden.discussion-binding-bound-other:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/discussion-binding.test.ts
+    testName: "rejects mismatched conversation admission authority: bound-other"
   api.golden.concurrent-terminal-revisions:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

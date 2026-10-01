@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.discussion-binding
+journey: Preserve exact discussion assignment authority through admission
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: execution
+status: planned
+gates: [core]
+summary: "Denied admission cannot bind an invocation; only its exact pending assignment can. Component SQL proof, not a live workday pass."
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/discussion-binding.scene.yaml
