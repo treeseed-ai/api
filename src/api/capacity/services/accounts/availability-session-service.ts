@@ -87,8 +87,9 @@ export class AvailabilitySessionService {
 	private async accountingTransaction<T>(principal: ProviderAvailabilityPrincipal, write: AvailabilitySessionWrite,
 		apply: (database: CapacityGovernanceDatabase) => Promise<T>): Promise<T> {
 		return capacityTransaction(this.database, async database => {
-			// Serialize across memberships and sessions before reading the prior observations.
-			await database.run('SELECT id FROM capacity_providers WHERE id=? FOR UPDATE', [write.providerId]);
+			// Serialize accounting across memberships without blocking unchanged-key FK
+			// checks held by admission/completion while publication waits on their rows.
+			await database.run('SELECT id FROM capacity_providers WHERE id=? FOR NO KEY UPDATE', [write.providerId]);
 			await new AvailabilitySessionService(database).assertMembership(principal);
 			const previous = await database.all(`SELECT id,execution_providers_json FROM capacity_provider_availability_sessions
 				WHERE capacity_provider_id=? ORDER BY refreshed_at DESC,id DESC`, [write.providerId]);
