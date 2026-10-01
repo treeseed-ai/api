@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.late-planning-round:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning-round-window.test.ts
+    testName: "captured EI third round preserves deadlines and creates only usable new rounds"
+  api.golden.fluid-planning-window:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning-round-window.test.ts
+    testName: "fluid planning after initial phase preserves deadlines and creates only usable new rounds"
+  api.golden.unusable-execution-window:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/execution-window-replay.test.ts
+    testName: "rejects captured EI sub-second execution rather than starting a model that cannot close out"
+  api.golden.short-productive-window:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/planning/execution-window-replay.test.ts
+    testName: "preserves a short but productive window outside the existing closeout reserve"
   api.golden.reviewed-allocation-history:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

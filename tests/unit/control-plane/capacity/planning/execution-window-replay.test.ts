@@ -15,6 +15,24 @@ function assignment() { return { id: 'assignment', capacityProviderId: 'provider
 beforeEach(() => { mocks.get.mockReset(); });
 
 describe('execution transition replay authority', () => {
+  it.each([
+    ['captured EI sub-second execution', '2026-10-01T20:25:40.992Z', 11],
+    ['inside closeout reserve', '2026-10-01T20:25:36.363Z', 5],
+    ['exact closeout reserve', '2026-10-01T20:25:36.362Z', 5],
+  ] as const)('rejects %s rather than starting a model that cannot close out', (_label, startedAt, closeoutSeconds) => {
+    const timing = compileAssignmentTimeBudget({ now: '2026-10-01T20:24:42.595Z', requestedSeconds: 58,
+      configuredBudget: { deadline: '2026-10-01T20:25:41.362Z', time: { closeoutSeconds } } });
+    expect(() => compileAssignmentExecutionWindow({ capacityEnvelope: { budget: timing.capacityBudget }, metadata: {} } as never,
+      startedAt, executionRef)).toThrowError(expect.objectContaining({ code: 'assignment_execution_window_exhausted' }));
+  });
+  it('preserves a short but productive window outside the existing closeout reserve', () => {
+    const timing = compileAssignmentTimeBudget({ now: '2026-10-01T20:24:42.595Z', requestedSeconds: 58,
+      configuredBudget: { deadline: '2026-10-01T20:25:41.362Z', time: { closeoutSeconds: 5 } } });
+    const result = compileAssignmentExecutionWindow({ capacityEnvelope: { budget: timing.capacityBudget }, metadata: {} } as never,
+      '2026-10-01T20:25:35.362Z', executionRef);
+    expect(result.capacityEnvelope.budget.time).toMatchObject({ remainingSeconds: 6, closeoutSeconds: 5,
+      authorityDeadlineAt: '2026-10-01T20:25:41.362Z', executionDeadlineAt: '2026-10-01T20:25:41.362Z' });
+  });
   it('starts bounded preparation on claim after queueing without extending the outer deadline', () => {
     const timing = compileAssignmentTimeBudget({ now, requestedSeconds: 180, configuredBudget: { deadline: '2026-09-11T12:10:00Z' } });
     expect(timing.authorityExpiresAt).toBe('2026-09-11T12:10:00.000Z');
