@@ -3,11 +3,17 @@ import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import { createControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
 import { AvailabilitySessionService } from '../../../../../src/api/capacity/services/accounts/availability-session-service.ts';
-import { AvailabilitySessionRepository } from '../../../../../src/api/capacity/repositories/accounts/availability-session.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
+async function clientForeignKeys(pool: pg.Pool, table: string): Promise<string[]> {
+  const result = await pool.query<{ conname: string }>(`SELECT constraint_row.conname FROM pg_trigger trigger_row
+    JOIN pg_constraint constraint_row ON constraint_row.oid=trigger_row.tgconstraint
+    WHERE trigger_row.tgrelid=$1::regclass AND trigger_row.tgtype & 4 = 4 AND constraint_row.contype='f'
+    ORDER BY trigger_row.tgname`, [table]);
+  return result.rows.map(row => row.conname);
+}
 describe.skipIf(!url)('availability publication foreign-key lock compatibility', () => {
-  async function publishAlongside(kind: 'assignment' | 'reservation') {
+  async function publishAlongside(kind: 'assignment' | 'reservation', operation: 'open' | 'refresh' = 'refresh') {
     const connection = new URL(url!);
     if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
     const admin = new pg.Pool({ connectionString: connection.href });
@@ -47,17 +53,31 @@ describe.skipIf(!url)('availability publication foreign-key lock compatibility',
       expect(session?.sequence).toBe(1);
       consumer = await db.pool.connect();
       await consumer.query('BEGIN');
-      // Admission/completion can retain dependent row locks before their FK checks.
+      // Retain the KEY SHARE locks taken by real dependent foreign-key checks.
       // Force both live cycles: publisher waits for this row, consumer checks provider.
-      await consumer.query(kind === 'assignment'
-        ? `SELECT id FROM capacity_execution_providers WHERE capacity_provider_id='provider' AND id='codex' FOR UPDATE`
-        : `SELECT id FROM capacity_provider_lanes WHERE capacity_provider_id='provider' AND id='workday' FOR UPDATE`);
-      const original = AvailabilitySessionRepository.prototype.refresh;
-      spy = vi.spyOn(AvailabilitySessionRepository.prototype, 'refresh').mockImplementation(async function(write, sequence, operations) {
-        entered(); await released;
-        return original.call(this, write, sequence, operations);
-      });
-      const refresh = service.refresh(principal, session!.id, { ...input, expectedSequence: 1 });
+      await consumer.query(`SELECT id FROM capacity_execution_providers WHERE capacity_provider_id='provider' AND id='codex' FOR KEY SHARE`);
+      if (kind === 'reservation') {
+        // A reservation checks the execution-provider FK before the lane FK;
+        // retaining only the latter would invent a reverse lock order.
+        const order = await clientForeignKeys(db.pool, 'capacity_reservations');
+        expect(order.indexOf('fk_capacity_reservations_execution_provider')).toBeLessThan(order.indexOf('fk_capacity_reservations_lane'));
+        await consumer.query(`SELECT id FROM capacity_provider_lanes WHERE capacity_provider_id='provider' AND id='workday' FOR KEY SHARE`);
+      }
+      const original = db.transaction.bind(db);
+      spy = vi.spyOn(db, 'transaction').mockImplementation(run => original(client => run(new Proxy(client, {
+        get(target, key) {
+          if (key === 'query') return async (sql: string, params?: unknown[]) => {
+            // Pause after the production provider/membership/session row locks,
+            // not a substituted transaction or synthetic foreign-key check.
+            if (sql.startsWith('INSERT INTO capacity_execution_providers')) { entered(); await released; }
+            return target.query(sql, params);
+          };
+          const value = Reflect.get(target, key);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }))));
+      const refresh = operation === 'open' ? service.open(principal, input)
+        : service.refresh(principal, session!.id, { ...input, expectedSequence: 1 });
       const refreshOutcome = refresh.then(value => ({ value }), error => ({ error }));
       await publishing;
       const client = consumer;
@@ -65,8 +85,8 @@ describe.skipIf(!url)('availability publication foreign-key lock compatibility',
         try {
           if (kind === 'assignment') {
             await client.query(`INSERT INTO capacity_provider_assignments
-              (id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,execution_provider_id,lane_id,mode,status,created_at,updated_at)
-              VALUES ('assignment','team','project','engineer','provider','membership','codex','workday','planning','leased',$1,$1)`, [now]);
+              (id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,provider_session_id,execution_provider_id,lane_id,mode,status,created_at,updated_at)
+              VALUES ('assignment','team','project','engineer','provider','membership',$2,'codex','workday','planning','leased',$1,$1)`, [now, session!.id]);
             await client.query(`UPDATE capacity_provider_assignments SET assignment_result_json='{}',updated_at=$1 WHERE id='assignment'`, [now]);
           } else {
             await client.query(`INSERT INTO capacity_reservations
@@ -81,7 +101,8 @@ describe.skipIf(!url)('availability publication foreign-key lock compatibility',
       const [publication, mutation] = await Promise.all([refreshOutcome, write]);
       expect(publication).not.toHaveProperty('error');
       expect(mutation).toEqual({ committed: true });
-      expect((await service.get('team', session!.id))?.sequence).toBe(2);
+      expect((await service.get('team', session!.id))?.sequence).toBe(operation === 'refresh' ? 2 : 1);
+      expect((await service.get('team', session!.id))?.status).toBe(operation === 'refresh' ? 'open' : 'closed');
       const table = kind === 'assignment' ? 'capacity_provider_assignments' : 'capacity_reservations';
       expect((await db.pool.query(`SELECT count(*)::int AS count FROM ${table}`)).rows[0].count).toBe(1);
     } finally {
@@ -92,4 +113,6 @@ describe.skipIf(!url)('availability publication foreign-key lock compatibility',
   }
   it('publishes while a concurrent assignment write holds a dependent provider row', () => publishAlongside('assignment'), 30_000);
   it('publishes while a concurrent reservation write holds a dependent provider row', () => publishAlongside('reservation'), 30_000);
+  it('opens availability while an assignment FK write holds a dependent provider row', () => publishAlongside('assignment', 'open'), 30_000);
+  it('opens availability while a reservation FK write holds a dependent provider row', () => publishAlongside('reservation', 'open'), 30_000);
 });

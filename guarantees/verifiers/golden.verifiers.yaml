@@ -16,6 +16,16 @@ verifiers:
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/ontology/availability-postgres.test.ts
     testName: serializes observations across memberships before validation and publication
+  api.golden.availability-open-assignment-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: opens availability while an assignment FK write holds a dependent provider row
+  api.golden.availability-open-reservation-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: opens availability while a reservation FK write holds a dependent provider row
   api.golden.operator-phase-postgres:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

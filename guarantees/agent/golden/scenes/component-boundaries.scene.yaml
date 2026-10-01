@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: availability-open-assignment-locks
+    action: { verifier: api.golden.availability-open-assignment-locks }
+    expect: { status: passed }
+  - id: availability-open-reservation-locks
+    action: { verifier: api.golden.availability-open-reservation-locks }
+    expect: { status: passed }
   - id: availability-assignment-locks
     action: { verifier: api.golden.availability-assignment-locks }
     expect: { status: passed }

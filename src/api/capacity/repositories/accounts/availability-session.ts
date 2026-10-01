@@ -72,8 +72,10 @@ export class AvailabilitySessionRepository {
 
 	async open(input: AvailabilitySessionWrite, providerOperations: CapacityDatabaseOperation[]) {
 		await this.database.ensureInitialized();
+		// These rows serialize publication without changing their referenced keys.
+		// KEY SHARE from in-flight assignment/reservation FKs must remain compatible.
 		await this.database.batch([
-			{ query: `SELECT id FROM capacity_provider_team_memberships WHERE id = ? AND team_id = ? AND capacity_provider_id = ? FOR UPDATE`, params: [input.membershipId, input.teamId, input.providerId] },
+			{ query: `SELECT id FROM capacity_provider_team_memberships WHERE id = ? AND team_id = ? AND capacity_provider_id = ? FOR NO KEY UPDATE`, params: [input.membershipId, input.teamId, input.providerId] },
 			...providerOperations,
 			{ query: `UPDATE capacity_provider_availability_sessions SET status = 'closed', closed_at = COALESCE(closed_at, ?), updated_at = ? WHERE membership_id = ? AND status IN ('open','draining')`, params: [input.openedAt, input.openedAt, input.membershipId] },
 			{ query: `INSERT INTO capacity_provider_availability_sessions (id, membership_id, team_id, capacity_provider_id, environment, status, sequence, opened_at, refreshed_at, expires_at, available_from, available_until, execution_providers_json, capabilities_json, native_limits_json, runner_pressure_json, constraints_json, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, params: [input.id, input.membershipId, input.teamId, input.providerId, input.environment, input.sequence, input.openedAt, input.refreshedAt, input.expiresAt, input.availableFrom, input.availableUntil, JSON.stringify(input.executionProviders), JSON.stringify(input.capabilities), JSON.stringify(input.nativeLimits), JSON.stringify(input.runnerPressure), JSON.stringify(input.constraints), JSON.stringify(input.metadata), input.openedAt, input.openedAt] },
@@ -84,7 +86,7 @@ export class AvailabilitySessionRepository {
 	async refresh(input: AvailabilitySessionWrite, expectedSequence: number, providerOperations: CapacityDatabaseOperation[]) {
 		await this.database.ensureInitialized();
 		const results = await this.database.batch([
-			{ query: `SELECT id FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? FOR UPDATE`, params: [input.id, input.membershipId, input.teamId] },
+			{ query: `SELECT id FROM capacity_provider_availability_sessions WHERE id = ? AND membership_id = ? AND team_id = ? FOR NO KEY UPDATE`, params: [input.id, input.membershipId, input.teamId] },
 			...providerOperations,
 			{ query: `UPDATE capacity_provider_availability_sessions SET sequence = sequence + 1, refreshed_at = ?, expires_at = ?, available_from = ?, available_until = ?, execution_providers_json = ?, capabilities_json = ?, native_limits_json = ?, runner_pressure_json = ?, constraints_json = ?, metadata_json = ?, updated_at = ? WHERE id = ? AND membership_id = ? AND team_id = ? AND capacity_provider_id = ? AND status = 'open' AND sequence = ? RETURNING id, sequence`, params: [input.refreshedAt, input.expiresAt, input.availableFrom, input.availableUntil, JSON.stringify(input.executionProviders), JSON.stringify(input.capabilities), JSON.stringify(input.nativeLimits), JSON.stringify(input.runnerPressure), JSON.stringify(input.constraints), JSON.stringify(input.metadata), input.refreshedAt, input.id, input.membershipId, input.teamId, input.providerId, expectedSequence] },
 		]);
