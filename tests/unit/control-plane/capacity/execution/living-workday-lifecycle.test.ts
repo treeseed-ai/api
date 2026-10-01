@@ -118,6 +118,43 @@ describe('living workday lifecycle', () => {
 			parameters: expect.objectContaining({ proposalIds: [], planningSourceByProposalId: { 'new-proposal': expect.objectContaining({ id: 'new-proposal' }) } }),
 		}));
 	});
+	it('stops regenerating terminal explicit proposal and decision scope without shortening the planning phase', async () => {
+		for (const scope of ['proposal', 'decision']) {
+			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
+				policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+			const parameters = { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+				...(scope === 'proposal' ? { proposalIds: ['accepted'] } : { decisionIds: ['decision'] }) };
+			const currentRun = { ...run, parameters } as never;
+			const store = { all: vi.fn(async (sql: string) => {
+				if (sql.includes('FROM governance_decisions')) return [{ id: 'decision', proposal_id: 'accepted' }];
+				if (sql.includes('FROM governance_proposals')) return [];
+				return currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' })));
+			}), updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+			const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:03:00Z');
+			expect(result.plan.planningRounds).toHaveLength(2);
+			expect(result.plan.planningRounds.every(round => round.state === 'complete')).toBe(true);
+			expect(result.plan).toMatchObject({ state: 'active', startsAt: currentPlan.startsAt, endsAt: currentPlan.endsAt,
+				policySnapshot: currentPlan.policySnapshot });
+			expect(store.all).toHaveBeenCalledWith(expect.stringContaining("status IN ('draft','submitted','open','voting')"),
+				['team', 'project', 'accepted']);
+			const settledRun = { ...run, parameters: { ...parameters, appliedPlan: result.plan } };
+			const again = await advanceLivingWorkday(store as never, settledRun as never, '2026-09-13T15:04:00Z');
+			expect(again.changed).toBe(false);
+			expect(again.plan.planningRounds).toHaveLength(2);
+		}
+	});
+	it('keeps incomplete scoped proposals planning even when exact executable-plan parsing is not ready', async () => {
+		const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',
+			policySnapshot: { ...policy, durationSeconds: 3600, planningPercent: 20 } };
+		const currentRun = { ...run, parameters: { appliedPlan: currentPlan, scheduledProjectIds: ['project'],
+			proposalIds: ['accepted', 'incomplete'] } } as never;
+		const store = { all: vi.fn(async (sql: string) => sql.includes('FROM governance_proposals')
+			? [{ id: 'incomplete', team_id: 'team', project_id: 'project' }]
+			: currentPlan.planningRounds.flatMap(round => round.assignmentIds.map(id => ({ id, kind: 'planning', status: 'completed' })))),
+			updateCapacityWorkdayRun: vi.fn(async () => currentRun) };
+		const result = await advanceLivingWorkday(store as never, currentRun, '2026-09-13T15:03:00Z');
+		expect(result.plan.planningRounds.at(-1)?.assignmentIds).toEqual(['planning:workday:3:project/architect']);
+	});
 	it('keeps one or several explicit proposals while ignoring unrelated open proposals', async () => {
 		for (const selected of [['new-proposal'], ['new-proposal', 'other-proposal']]) {
 			const currentPlan = { ...plan, endsAt: '2026-09-13T16:00:00Z',

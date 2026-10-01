@@ -3,6 +3,12 @@ id: api.golden.workday-proposal-selection
 title: Exact workday proposal selection
 scope: local-component-tests
 workflow:
+  - id: terminal-scoped-planning
+    action: { verifier: api.golden.terminal-scoped-planning }
+    expect: { status: passed }
+  - id: incomplete-scoped-planning
+    action: { verifier: api.golden.incomplete-scoped-planning }
+    expect: { status: passed }
   - id: explicit-selection
     action: { verifier: api.golden.explicit-proposal-selection }
     expect: { status: passed }

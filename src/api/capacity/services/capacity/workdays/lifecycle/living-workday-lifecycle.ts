@@ -46,6 +46,7 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 	const sources = Object.fromEntries(Object.entries(record(run.parameters.planningSourceByProposalId))
 		.filter(([id]) => !selected.size || selected.has(id)));
 	const proposalsByProjectId: Record<string, Row[]> = {};
+	let hasPlanningProposals = false;
 	const first = plan.planningRounds[0]!;
 	const prefix = `planning:${plan.id}:${first.round}:`;
 	const initialAgentIds = first.assignmentIds.map((id) => id.slice(prefix.length));
@@ -58,6 +59,7 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 			${selected.size ? `AND id IN (${scopedProposalIds.map(() => '?').join(',')})` : ''}
 			ORDER BY id LIMIT 101`, [run.teamId, projectId, ...scopedProposalIds]);
 		if (candidates.length > 100) throw new Error(`planning_proposal_inventory_too_large:${projectId}`);
+		hasPlanningProposals ||= candidates.length > 0;
 		proposalsByProjectId[projectId] = [];
 		for (const proposal of candidates) {
 			try {
@@ -79,7 +81,10 @@ async function nextPlanningParticipants(store: CapacityGovernanceDatabase, run: 
 			.filter((participant) => participant.activity === 'estimating' && projectIds.includes(participant.projectId))
 			.map((participant) => participant.id) : [];
 	return { sources, proposalIds: selectedProposalIds.sort(),
-		agentIds: [...new Set([...(planningAgentIds.length ? planningAgentIds : initialAgentIds), ...estimators])].sort() };
+		// Terminal explicit scope is not autonomous proposal discovery. Keep the
+		// initial phase window, but do not repeat already-decided planning work.
+		agentIds: selected.size && !hasPlanningProposals ? []
+			: [...new Set([...(planningAgentIds.length ? planningAgentIds : initialAgentIds), ...estimators])].sort() };
 }
 
 function advanceRounds(plan: AppliedWorkday, states: Map<string, string>, now: string): AppliedWorkday {
@@ -109,10 +114,12 @@ export async function advanceLivingWorkday(store: CapacityGovernanceDatabase & {
 	if (!requestClose && next.state === 'active' && await runtimeWorkdayPhase(store, run, now) === 'planning'
 		&& next.planningRounds.length && next.planningRounds.every((round) => round.state === 'complete')) {
 		const { sources, proposalIds, agentIds } = await nextPlanningParticipants(store, run, next);
-		const round = next.planningRounds.at(-1)!.round + 1;
-		const turns = compilePlanningRounds(next.id, agentIds, next.policySnapshot.planningTurnMaximumSeconds, round);
-		next = { ...next, planningRounds: [...next.planningRounds, { round, state: 'active',
-			assignmentIds: turns.map((turn) => turn.id), startedAt: now }] };
+		if (agentIds.length) {
+			const round = next.planningRounds.at(-1)!.round + 1;
+			const turns = compilePlanningRounds(next.id, agentIds, next.policySnapshot.planningTurnMaximumSeconds, round);
+			next = { ...next, planningRounds: [...next.planningRounds, { round, state: 'active',
+				assignmentIds: turns.map((turn) => turn.id), startedAt: now }] };
+		}
 		run = { ...run, parameters: { ...run.parameters, planningSourceByProposalId: sources, proposalIds } };
 	}
 	if (next.state === 'active' && (requestClose || Date.parse(now) >= Date.parse(next.endsAt))) {
