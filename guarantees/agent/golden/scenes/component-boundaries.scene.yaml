@@ -3,6 +3,15 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: admission-source-custody-leased
+    action: { verifier: api.golden.admission-source-custody-leased }
+    expect: { status: passed }
+  - id: admission-source-custody-pending
+    action: { verifier: api.golden.admission-source-custody-pending }
+    expect: { status: passed }
+  - id: admission-source-custody-completed
+    action: { verifier: api.golden.admission-source-custody-completed }
+    expect: { status: passed }
   - id: terminal-scoped-planning
     action: { verifier: api.golden.terminal-scoped-planning }
     expect: { status: passed }

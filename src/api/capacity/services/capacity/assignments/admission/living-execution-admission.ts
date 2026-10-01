@@ -172,11 +172,14 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 				assignment.teamId,assignment.nodeId,assignment.nodeRevision] },
 		{ query: `UPDATE capacity_provider_assignments SET explanation_json=?::jsonb,graph_revision=?,execution_node_id=?,execution_node_revision=?,
 			assignment_attempt_json=?::jsonb,treedx_proxy_handle_json=?::jsonb,workspace_context_json=?::jsonb,updated_at=?
-			WHERE id=? AND team_id=? AND reservation_id=?`,
+			WHERE id=? AND team_id=? AND reservation_id=? AND status='pending' AND lease_state='unleased'
+			AND EXISTS (SELECT 1 FROM capacity_reservations owned WHERE owned.id=capacity_provider_assignments.reservation_id
+				AND owned.team_id=capacity_provider_assignments.team_id AND owned.assignment_id=capacity_provider_assignments.id
+				AND owned.admission_token=?)`,
 			params: [JSON.stringify({ metadata: { allocation: input.allocation } }),assignment.graphRevision,assignment.nodeId,assignment.nodeRevision,JSON.stringify(assignment),
 				JSON.stringify(input.treedxProxyHandle),JSON.stringify({ assignmentAttempt: assignment,
 					predecessorResults: input.predecessorResults, authorizedContext, treedxProxyHandle: input.treedxProxyHandle }),input.now,
-				assignment.id,assignment.teamId,assignment.reservationId] },
+				assignment.id,assignment.teamId,assignment.reservationId,admissionToken] },
 		...(input.invocationId ? [{ query: `UPDATE agent_invocation_requests SET assignment_id=?, status='running', updated_at=?
 			WHERE id=? AND team_id=? AND status IN ('admitted','running') AND (assignment_id IS NULL OR assignment_id=?)
 			AND EXISTS (SELECT 1 FROM capacity_provider_assignments admitted
