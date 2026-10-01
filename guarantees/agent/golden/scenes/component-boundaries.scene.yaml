@@ -3,6 +3,27 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: operator-phase-postgres
+    action: { verifier: api.golden.operator-phase-postgres }
+    expect: { status: passed }
+  - id: operator-phase-closeout
+    action: { verifier: api.golden.operator-phase-closeout }
+    expect: { status: passed }
+  - id: operator-phase-no-fabrication
+    action: { verifier: api.golden.operator-phase-no-fabrication }
+    expect: { status: passed }
+  - id: operator-phase-early-denial
+    action: { verifier: api.golden.operator-phase-early-denial }
+    expect: { status: passed }
+  - id: operator-phase-acting-denial
+    action: { verifier: api.golden.operator-phase-acting-denial }
+    expect: { status: passed }
+  - id: operator-phase-fluid-denial
+    action: { verifier: api.golden.operator-phase-fluid-denial }
+    expect: { status: passed }
+  - id: operator-phase-provider-denial
+    action: { verifier: api.golden.operator-phase-provider-denial }
+    expect: { status: passed }
   - id: admitted-discussion-binding
     action: { verifier: api.golden.admitted-discussion-binding }
     expect: { status: passed }

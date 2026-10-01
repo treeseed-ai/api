@@ -4,6 +4,9 @@ import { ProviderAssignmentRepository } from '../../../../repositories/capacity/
 import type { DurableProviderAssignment } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
 import { terminalAssignmentAuthority } from '../lifecycle/assignment-terminal-authority.ts';
+import { planningBoundaryCancellation } from '../lifecycle/assignment-failure-policy.ts';
+import { composeAssignmentLifecycleOutput } from '../lifecycle/assignment-lifecycle-output.ts';
+import { record, terminalPerformance } from '../lifecycle/completion/assignment-terminal-performance.ts';
 
 function idempotencyKey(value: string) {
 	if (!value.trim()) throw new CapacityGovernanceError('capacity_idempotency_key_required', 'An idempotency key is required.', 400);
@@ -44,9 +47,20 @@ export class OperatorAssignmentService {
 		if (!assignment.reservationId || !assignment.membershipId) throw new CapacityGovernanceError('capacity_assignment_admission_provenance_missing', 'Assignment lacks reservation provenance.', 500, { assignmentId });
 		const now = new Date().toISOString();
 		if (assignment.status !== 'cancelled' && !failedCleanup) {
+			const phaseCancelled = await planningBoundaryCancellation(this.database, assignment, { code: 'operator_cancelled' }, now);
+			const code = phaseCancelled ? 'planning_boundary_cancelled' : 'operator_cancelled';
+			const reason = phaseCancelled ? 'Unfinished planning turn cancelled at its authoritative phase boundary.'
+				: input.reason ?? 'Assignment cancelled by a team operator.';
+			const priorOutput = record(assignment.lifecycleOutput);
+			const usage = phaseCancelled ? await this.database.first(
+				`SELECT active_seconds, elapsed_seconds, input_tokens, cached_input_tokens, reasoning_tokens, output_tokens, actual_usd FROM capacity_usage_actuals WHERE id = ? AND assignment_id = ? AND accounting_mode = 'aggregate' LIMIT 1`,
+				[`usage:${assignment.id}:${assignment.attemptCount}:aggregate`, assignment.id]) : null;
+			const terminalInput = { code, reason, completion: { disposition: 'cancelled' as const }, output: priorOutput };
+			const output = phaseCancelled ? composeAssignmentLifecycleOutput(terminalInput,
+				terminalPerformance(assignment, terminalInput, 'failed', now, record(usage))) : priorOutput;
 			const fenced = await this.database.first(
-				`UPDATE capacity_provider_assignments SET status = 'cancelled', lease_state = 'released', lifecycle_code = 'operator_cancelled', lifecycle_reason = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status IN ('pending','returned','expired') AND lease_state IN ('unleased','released','expired') RETURNING id`,
-				[input.reason ?? 'Assignment cancelled by a team operator.', now, assignmentId, teamId, assignment.stateVersion],
+				`UPDATE capacity_provider_assignments SET status = 'cancelled', lease_state = 'released', lifecycle_code = ?, lifecycle_reason = ?, failed_at = COALESCE(failed_at, ?), lifecycle_output_json = ?, state_version = state_version + 1, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? AND status IN ('pending','returned','expired') AND lease_state IN ('unleased','released','expired') RETURNING id`,
+				[code, reason, now, JSON.stringify(output), now, assignmentId, teamId, assignment.stateVersion],
 			);
 			if (!fenced) throw new CapacityGovernanceError('capacity_assignment_cancel_conflict', 'Assignment changed during cancellation.', 409, { assignmentId });
 			assignment = await this.assignments.getForCancellation(teamId, assignmentId);

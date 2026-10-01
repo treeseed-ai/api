@@ -1,0 +1,26 @@
+schemaVersion: treeseed.scene/v1
+id: api.golden.operator-phase-closeout
+title: Authoritative operator planning cancellation
+scope: local-component-tests
+workflow:
+  - id: postgres-settlement
+    action: { verifier: api.golden.operator-phase-postgres }
+    expect: { status: passed }
+  - id: closeout
+    action: { verifier: api.golden.operator-phase-closeout }
+    expect: { status: passed }
+  - id: no-fabrication
+    action: { verifier: api.golden.operator-phase-no-fabrication }
+    expect: { status: passed }
+  - id: early-denial
+    action: { verifier: api.golden.operator-phase-early-denial }
+    expect: { status: passed }
+  - id: acting-denial
+    action: { verifier: api.golden.operator-phase-acting-denial }
+    expect: { status: passed }
+  - id: fluid-denial
+    action: { verifier: api.golden.operator-phase-fluid-denial }
+    expect: { status: passed }
+  - id: provider-denial
+    action: { verifier: api.golden.operator-phase-provider-denial }
+    expect: { status: passed }
