@@ -17,8 +17,12 @@ type JsonRecord = Record<string, unknown>;
 function object(value: unknown): JsonRecord { return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}; }
 function nullable(value: unknown): string | null { return typeof value === 'string' && value.trim() ? value.trim() : null; }
 export function isTransientCapacityEvent(eventType: string) { return /(?:^|[._-])(?:token[._-]?delta|delta[._-]?token)(?:$|[._-])/iu.test(eventType); }
-export function projectsToDiscussionLifecycle(event: Pick<CapacityWorkdayEventRecord,'id'|'eventType'>) {
-	return !event.id.startsWith('activity:') && !isTransientCapacityEvent(event.eventType);
+export function projectsToDiscussionLifecycle(event: Pick<CapacityWorkdayEventRecord,'id'|'eventType'|'status'>) {
+	// Routine provider diagnostics already have durable, indexed workday custody.
+	// Duplicating each progress trace as a TreeDX commit blocked preparation and
+	// spent productive time. Keep terminal and warning/error discussion evidence.
+	const routineProviderTrace = event.id.startsWith('provider-runtime:') && ['recorded', 'active'].includes(event.status);
+	return !routineProviderTrace && !event.id.startsWith('activity:') && !isTransientCapacityEvent(event.eventType);
 }
 
 export class CapacityWorkdayEventService {
@@ -59,6 +63,7 @@ export class CapacityWorkdayEventService {
 				'capacity_workday_event_idempotency_conflict', 'Capacity workday event id is bound to different evidence.', 409,
 				{ teamId, runId, eventId: id },
 			);
+			await this.projectDiscussion(teamId, run.parameters, existing);
 			return existing;
 		}
 		const event = await this.events.create(teamId, runId, write);
@@ -67,12 +72,16 @@ export class CapacityWorkdayEventService {
 			eventType: 'resource.invalidated', teamId, projectId: event.projectId, resourceId: runId,
 			payload: { resource: 'workday', workdayId: runId, eventId: event.id, endpoints: [`/v1/teams/${teamId}/workday-runs/${runId}`] },
 		}).catch((error: unknown) => console.warn('[api] Workday session event degraded', { error: error instanceof Error ? error.message : String(error) }));
-		const discussion = object(run.parameters.discussion);
+		await this.projectDiscussion(teamId, run.parameters, event);
+		return event;
+	}
+
+	private async projectDiscussion(teamId: string, parameters: JsonRecord, event: CapacityWorkdayEventRecord) {
+		const discussion = object(parameters.discussion);
 		const discussionId = nullable(discussion.discussionId);
 		if (discussionId && event.projectId && projectsToDiscussionLifecycle(event)) {
 			await appendDiscussionEvent({ store: this.database, projectId: event.projectId, teamId, discussionId, event: event as unknown as JsonRecord });
 		}
-		return event;
 	}
 
 	list(teamId: string, runId: string, filters: { limit?: unknown; cursor?: CapacityPageCursor | null; afterEventIndex?: number | null } = {}): Promise<CapacityPage<CapacityWorkdayEventRecord>> {

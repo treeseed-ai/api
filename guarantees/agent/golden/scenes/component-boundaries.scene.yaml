@@ -3,6 +3,36 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: progress-postgres-custody
+    action: { verifier: api.golden.progress-postgres-custody }
+    expect: { status: passed }
+  - id: preparation-progress
+    action: { verifier: api.golden.preparation-progress }
+    expect: { status: passed }
+  - id: preparation-no-commit-wait
+    action: { verifier: api.golden.preparation-no-commit-wait }
+    expect: { status: passed }
+  - id: provider-progress-authority
+    action: { verifier: api.golden.provider-progress-authority }
+    expect: { status: passed }
+  - id: provider-terminal-projection
+    action: { verifier: api.golden.provider-terminal-projection }
+    expect: { status: passed }
+  - id: terminal-projection-fatal
+    action: { verifier: api.golden.terminal-projection-fatal }
+    expect: { status: passed }
+  - id: terminal-projection-replay
+    action: { verifier: api.golden.terminal-projection-replay }
+    expect: { status: passed }
+  - id: progress-idempotency
+    action: { verifier: api.golden.progress-idempotency }
+    expect: { status: passed }
+  - id: workday-lifecycle-projection
+    action: { verifier: api.golden.workday-lifecycle-projection }
+    expect: { status: passed }
+  - id: progress-token-denial
+    action: { verifier: api.golden.progress-token-denial }
+    expect: { status: passed }
   - id: late-planning-round
     action: { verifier: api.golden.late-planning-round }
     expect: { status: passed }
