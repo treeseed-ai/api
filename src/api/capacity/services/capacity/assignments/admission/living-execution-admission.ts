@@ -178,8 +178,12 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 					predecessorResults: input.predecessorResults, authorizedContext, treedxProxyHandle: input.treedxProxyHandle }),input.now,
 				assignment.id,assignment.teamId,assignment.reservationId] },
 		...(input.invocationId ? [{ query: `UPDATE agent_invocation_requests SET assignment_id=?, status='running', updated_at=?
-			WHERE id=? AND team_id=? AND status IN ('admitted','running') AND (assignment_id IS NULL OR assignment_id=?)`,
-			params: [assignment.id,input.now,input.invocationId,assignment.teamId,assignment.id] }] : []),
+			WHERE id=? AND team_id=? AND status IN ('admitted','running') AND (assignment_id IS NULL OR assignment_id=?)
+			AND EXISTS (SELECT 1 FROM capacity_provider_assignments admitted
+				WHERE admitted.id=? AND admitted.team_id=? AND admitted.reservation_id=?
+				AND admitted.invocation_id=? AND admitted.status='pending')`,
+			params: [assignment.id,input.now,input.invocationId,assignment.teamId,assignment.id,
+				assignment.id,assignment.teamId,assignment.reservationId,input.invocationId] }] : []),
 		{ query: `INSERT INTO treedx_proxy_handles (
 			id,team_id,project_id,assignment_id,repository_id,workspace_id,status,scopes_json,
 			allowed_operations_json,allowed_paths_json,allowed_read_paths_json,allowed_write_paths_json,
