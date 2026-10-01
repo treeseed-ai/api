@@ -74,7 +74,7 @@ describe('availability initializes its ontology without a catalog read', () => {
 	it('locks provider-wide authority before reading accounting and writing the session', async () => {
 		const { store, query } = coldStore();
 		const write = vi.spyOn(AvailabilitySessionRepository.prototype, 'open').mockImplementation(async () => {
-			expect(query.mock.calls[0]?.[0]).toContain('capacity_providers WHERE id=$1 FOR UPDATE');
+			expect(query.mock.calls[0]?.[0]).toContain('capacity_providers WHERE id=$1 FOR NO KEY UPDATE');
 			expect(query.mock.calls.findIndex(([sql]) => sql.includes('FROM capacity_provider_availability_sessions'))).toBeGreaterThan(0);
 			return null;
 		});

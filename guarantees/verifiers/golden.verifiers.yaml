@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.availability-assignment-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: publishes while a concurrent assignment write holds a dependent provider row
+  api.golden.availability-reservation-locks:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-locks-postgres.test.ts
+    testName: publishes while a concurrent reservation write holds a dependent provider row
+  api.golden.availability-accounting-serialization:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/ontology/availability-postgres.test.ts
+    testName: serializes observations across memberships before validation and publication
   api.golden.operator-phase-postgres:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
