@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.reviewed-allocation-history:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "retains only exact approved Actor history after graph retirement"
+  api.golden.expired-allocation-history:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "calibrates productive deadline expiration, not uncertain lease recovery"
   api.golden.availability-assignment-locks:
     kind: vitestCase
     ownerPackage: '@treeseed/api'

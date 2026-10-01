@@ -64,6 +64,9 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 							* (input.activity === 'chat' ? plan.policySnapshot.communicationConcurrency : plan.policySnapshot.maximumConcurrency) : 0 });
 		}
 		const shares = allocateWorkdayCapacity({ remainingSeconds: supply, now: input.now, workdays });
+		// Retirement can advance a graph node and mark it stale. Learn Actor
+		// success only from a validated approval of this immutable result, never
+		// from mutable current graph state or an unreviewed/rejected completion.
 		const rows = await store.all(`SELECT usage.id,usage.created_at,usage.active_seconds,assignment.status,assignment.lifecycle_code,
 			assignment.assignment_attempt_json::jsonb->'estimate'->>'expectedSeconds' AS expected_seconds,
 			assignment.assignment_attempt_json::jsonb->'limits'->>'maximumSeconds' AS allocated_seconds
@@ -75,7 +78,15 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			AND assignment.assignment_attempt_json::jsonb->'effectiveProfile'->>'activity'=?
 			AND usage.accounting_mode='aggregate' AND ((assignment.status='completed'
 				AND (node.pair_role IS DISTINCT FROM 'actor'
-					OR (node.status='completed' AND assignment.execution_node_revision=node.node_revision)))
+					OR EXISTS (SELECT 1 FROM capacity_provider_assignments review
+						JOIN execution_edges pair ON pair.team_id=review.team_id
+							AND pair.from_node_id=assignment.execution_node_id AND pair.to_node_id=review.execution_node_id
+							AND pair.provenance='review-pair'
+						WHERE review.team_id=assignment.team_id AND review.status='completed'
+						AND review.assignment_result_json IS NOT NULL
+						AND review.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='approved'
+						AND review.assignment_attempt_json::jsonb->'predecessorResultIds'
+							@> jsonb_build_array(assignment.assignment_result_json::jsonb->>'id'))))
 				OR (assignment.status='failed' AND assignment.lifecycle_code='assignment_timeout'))
 			ORDER BY usage.created_at DESC,usage.id DESC LIMIT 20`,
 			[input.capacityProviderId, provider.id, input.agentClass, limits.modelConfigurationId, input.capabilityId, input.activity]);

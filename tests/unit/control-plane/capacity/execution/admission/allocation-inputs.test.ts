@@ -95,19 +95,26 @@ describe('live allocation ledger inputs', () => {
 		const query = store.all.mock.calls.find(([sql]) => sql.includes('capacity_usage_actuals'))![0];
 		expect(query).toContain("assignment.lifecycle_code='assignment_timeout'");
 		expect(query).toContain("node.pair_role IS DISTINCT FROM 'actor'");
-		expect(query).toContain("node.status='completed' AND assignment.execution_node_revision=node.node_revision");
+		expect(query).toContain("{activityCompletion,reviewDisposition}'='approved'");
+		expect(query).toContain("'predecessorResultIds'");
+		expect(query).not.toContain("node.status='completed' AND assignment.execution_node_revision=node.node_revision");
 		expect(query).not.toContain("assignment.status='expired'");
 		expect(query).toContain('LIMIT 20');
 	});
-	it('does not learn a short success from an Actor attempt rejected by review', async () => {
+	it('retains only exact approved Actor history after graph retirement', async () => {
 		const db = new PGlite();
 		try {
 			await db.exec(`CREATE TABLE execution_nodes (id text, team_id text, agent_class text, pair_role text, status text, node_revision integer);
+				CREATE TABLE execution_edges (team_id text,from_node_id text,to_node_id text,provenance text);
+				INSERT INTO execution_edges VALUES ('team','accepted','review-node','review-pair'),
+					('team','rejected','rejection-node','review-pair'),('team','rejected','wrong-pair-node','review-pair');
 				CREATE TABLE capacity_provider_assignments (id text, team_id text, execution_node_id text, execution_node_revision integer,
-					capacity_provider_id text, execution_provider_id text, status text, lifecycle_code text, assignment_attempt_json jsonb);
+					capacity_provider_id text, execution_provider_id text, status text, lifecycle_code text, assignment_attempt_json jsonb,
+					assignment_result_json jsonb DEFAULT NULL, lifecycle_output_json jsonb DEFAULT NULL);
 				CREATE TABLE capacity_usage_actuals (id text, assignment_id text, created_at text, active_seconds integer, accounting_mode text);
 				INSERT INTO execution_nodes VALUES ('accepted','team','tester','actor','completed',2),('rejected','team','tester','actor','failed',2);
-				INSERT INTO capacity_provider_assignments VALUES
+				INSERT INTO capacity_provider_assignments (id,team_id,execution_node_id,execution_node_revision,
+					capacity_provider_id,execution_provider_id,status,lifecycle_code,assignment_attempt_json) VALUES
 				('old','team','accepted',1,'provider','codex-implementation','completed',NULL,
 				 '{"estimate":{"expectedSeconds":360},"limits":{"maximumSeconds":360},"provider":{"modelConfigurationId":"terra-medium","executionCapabilityId":"implementation"},"effectiveProfile":{"activity":"act"}}'),
 				('accepted','team','accepted',2,'provider','codex-implementation','completed',NULL,
@@ -121,15 +128,30 @@ describe('live allocation ledger inputs', () => {
 				('accepted','accepted','2026-09-16T12:02:00Z',500,'aggregate'),
 				('rejected','rejected','2026-09-16T12:03:00Z',180,'aggregate'),
 				('expired','expired','2026-09-16T12:04:00Z',385,'aggregate');`);
+			await db.exec(`UPDATE capacity_provider_assignments SET assignment_result_json=jsonb_build_object('id','result:'||id);
+				INSERT INTO capacity_provider_assignments (id,team_id,execution_node_id,status,assignment_attempt_json,lifecycle_output_json) VALUES
+				('review','team','review-node','completed','{"predecessorResultIds":["result:accepted"]}',
+				 '{"activityCompletion":{"reviewDisposition":"approved"}}'),
+				('rejection','team','rejection-node','completed','{"predecessorResultIds":["result:rejected"]}',
+				 '{"activityCompletion":{"reviewDisposition":"request-changes"}}'),
+				('wrong-team','foreign','review-node','completed','{"predecessorResultIds":["result:old"]}',
+				 '{"activityCompletion":{"reviewDisposition":"approved"}}'),
+				('wrong-pair','team','wrong-pair-node','completed','{"predecessorResultIds":["result:old"]}',
+				 '{"activityCompletion":{"reviewDisposition":"approved"}}');
+				UPDATE capacity_provider_assignments SET assignment_result_json=jsonb_build_object('id','result:'||id)
+				WHERE assignment_result_json IS NULL;`);
 			const store = { all: async (sql: string, values: unknown[]) => {
 				if (!sql.includes('capacity_usage_actuals')) return [];
 				let index = 0;
 				return (await db.query(sql.replace(/\?/gu, () => `$${++index}`), values)).rows;
 			}, first: async () => ({ ready_count: 1 }) };
-			const result = await livingAllocationInputs(store as never, { run: run as never, runs: [run as never],
+			const calculate = () => livingAllocationInputs(store as never, { run: run as never, runs: [run as never],
 				providers: [provider as never], capacityProviderId: 'provider', capabilityId: 'implementation',
 				agentClass: 'tester', activity: 'act', now });
-			expect(result['codex-implementation']?.measurements.map(({ id }) => id)).toEqual(['expired', 'accepted']);
+			expect((await calculate())['codex-implementation']?.measurements.map(({ id }) => id)).toEqual(['expired', 'accepted']);
+			// Retirement changes graph state, never the prior exact-candidate approval.
+			await db.exec("UPDATE execution_nodes SET status='stale',node_revision=node_revision+1");
+			expect((await calculate())['codex-implementation']?.measurements.map(({ id }) => id)).toEqual(['expired', 'accepted']);
 		} finally { await db.close(); }
 	}, 15_000);
 	it('does not exempt closing workdays from shared supply and weighted allocation', async () => {
