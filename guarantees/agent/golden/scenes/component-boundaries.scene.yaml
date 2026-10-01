@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: terminal-scoped-planning
+    action: { verifier: api.golden.terminal-scoped-planning }
+    expect: { status: passed }
+  - id: incomplete-scoped-planning
+    action: { verifier: api.golden.incomplete-scoped-planning }
+    expect: { status: passed }
   - id: reviewed-allocation-history
     action: { verifier: api.golden.reviewed-allocation-history }
     expect: { status: passed }

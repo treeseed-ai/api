@@ -191,6 +191,16 @@ verifiers:
     ownerPackage: '@treeseed/api'
     testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
     testName: keeps one or several explicit proposals while ignoring unrelated open proposals
+  api.golden.terminal-scoped-planning:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: stops regenerating terminal explicit proposal and decision scope without shortening the planning phase
+  api.golden.incomplete-scoped-planning:
+    kind: vitestCase
+    ownerPackage: '@treeseed/api'
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: keeps incomplete scoped proposals planning even when exact executable-plan parsing is not ready
   api.golden.unscoped-proposal-discovery:
     kind: vitestCase
     ownerPackage: '@treeseed/api'
