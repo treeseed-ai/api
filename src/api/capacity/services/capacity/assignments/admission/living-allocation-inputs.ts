@@ -79,6 +79,9 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			AND usage.accounting_mode='aggregate' AND ((assignment.status='completed'
 				AND (node.pair_role IS DISTINCT FROM 'actor'
 					OR EXISTS (SELECT 1 FROM capacity_provider_assignments review
+						JOIN execution_edges pair ON pair.team_id=review.team_id
+							AND pair.from_node_id=assignment.execution_node_id AND pair.to_node_id=review.execution_node_id
+							AND pair.provenance='review-pair'
 						WHERE review.team_id=assignment.team_id AND review.status='completed'
 						AND review.assignment_result_json IS NOT NULL
 						AND review.lifecycle_output_json::jsonb #>> '{activityCompletion,reviewDisposition}'='approved'
