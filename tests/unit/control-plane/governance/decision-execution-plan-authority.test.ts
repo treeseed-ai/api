@@ -19,7 +19,7 @@ describe('decision proposal authority', () => {
 	});
 
 	it('denies an operational proposal snapshot without governed classed Decision authority', async () => {
-		const proposalRef = { id: 'proposal', revision: 2, digest: `sha256:${digest}`, repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
+		const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 2, digest: `sha256:${digest}`, repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
 		const database = { first: async () => ({ ...baseRow, decision_record_json: { decisionDependencies: [], proposalRef } }) };
 		await expect(validateDecisionAuthority(database, 'decision')).resolves.toMatchObject({
 			valid: false,
