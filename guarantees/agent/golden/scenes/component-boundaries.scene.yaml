@@ -3,6 +3,39 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-closeout-unit-failed
+    action: { verifier: api.golden.architecture-closeout-unit-failed }
+    expect: { status: passed }
+  - id: architecture-closeout-unit-cancelled
+    action: { verifier: api.golden.architecture-closeout-unit-cancelled }
+    expect: { status: passed }
+  - id: architecture-closeout-unit-stale
+    action: { verifier: api.golden.architecture-closeout-unit-stale }
+    expect: { status: passed }
+  - id: architecture-closeout-unit-single
+    action: { verifier: api.golden.architecture-closeout-unit-single }
+    expect: { status: passed }
+  - id: architecture-closeout-unit-time
+    action: { verifier: api.golden.architecture-closeout-unit-time }
+    expect: { status: passed }
+  - id: architecture-closeout-sql-failed
+    action: { verifier: api.golden.architecture-closeout-sql-failed }
+    expect: { status: passed }
+  - id: architecture-closeout-sql-cancelled
+    action: { verifier: api.golden.architecture-closeout-sql-cancelled }
+    expect: { status: passed }
+  - id: architecture-closeout-sql-stale
+    action: { verifier: api.golden.architecture-closeout-sql-stale }
+    expect: { status: passed }
+  - id: architecture-closeout-sql-single
+    action: { verifier: api.golden.architecture-closeout-sql-single }
+    expect: { status: passed }
+  - id: architecture-closeout-sql-settlement
+    action: { verifier: api.golden.architecture-closeout-sql-settlement }
+    expect: { status: passed }
+  - id: architecture-closeout-sql-time
+    action: { verifier: api.golden.architecture-closeout-sql-time }
+    expect: { status: passed }
   - id: architecture-reporting-rename
     action: { verifier: api.golden.architecture-reporting-rename }
     expect: { status: passed }

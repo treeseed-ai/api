@@ -1,6 +1,61 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-closeout-unit-failed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "retains failed Reporter failure evidence without ending a workday that has no closeout report"
+  api.golden.architecture-closeout-unit-cancelled:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "retains cancelled Reporter failure evidence without ending a workday that has no closeout report"
+  api.golden.architecture-closeout-unit-stale:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "retains stale Reporter failure evidence without ending a workday that has no closeout report"
+  api.golden.architecture-closeout-unit-single:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "ends only after Reporter completion and reservation settlement"
+  api.golden.architecture-closeout-unit-time:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/living-workday-lifecycle.test.ts
+    testName: "rejects future-completion Reporter evidence despite a completed graph node"
+  api.golden.architecture-closeout-sql-failed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "retains failed Reporter failure through SQL without an unreported ended workday"
+  api.golden.architecture-closeout-sql-cancelled:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "retains cancelled Reporter failure through SQL without an unreported ended workday"
+  api.golden.architecture-closeout-sql-stale:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "retains stale Reporter failure through SQL without an unreported ended workday"
+  api.golden.architecture-closeout-sql-single:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "persists exactly one canonical workday report from the completed result without a plural authority map"
+  api.golden.architecture-closeout-sql-settlement:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "does not end or publish a report while its actual reservation remains consuming"
+  api.golden.architecture-closeout-sql-time:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-closeout-persistence.test.ts
+    testName: "denies future result completion at the real SQL closeout boundary"
   api.golden.architecture-reporting-rename:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
