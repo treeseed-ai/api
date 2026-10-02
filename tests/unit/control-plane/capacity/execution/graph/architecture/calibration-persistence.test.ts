@@ -21,7 +21,8 @@ describe('architecture calibration at original SQL and public SDK boundaries', (
 			];
 			for (const [index, scope] of denied.entries()) await fixture.seed(`denied-${index}`, 100 + index, scope);
 			const beforeInput = structuredClone(fixture.input);
-			const beforeRows = await fixture.query('SELECT * FROM capacity_usage_actuals ORDER BY id');
+			const tables = ['capacity_usage_actuals', 'capacity_provider_assignments', 'capacity_workday_runs', 'capacity_reservations', 'execution_nodes'];
+			const beforeRows = await Promise.all(tables.map(async table => (await fixture.query(`SELECT * FROM ${table} ORDER BY id`)).rows));
 			const result = (await fixture.calculate())[fixture.providerId]!;
 			expect(result.measurements.map(({ id }) => id)).toEqual(Array.from({ length: 20 }, (_, index) =>
 				`eligible-${String(20 - index).padStart(2, '0')}`));
@@ -32,7 +33,7 @@ describe('architecture calibration at original SQL and public SDK boundaries', (
 				admitted: true, allocatedSeconds: 600, limitingConstraint: 'workday-phase-share' });
 			expect(await fixture.calculate()).toEqual({ [fixture.providerId]: result });
 			expect(fixture.input).toEqual(beforeInput);
-			expect((await fixture.query('SELECT * FROM capacity_usage_actuals ORDER BY id')).rows).toEqual(beforeRows.rows);
+			expect(await Promise.all(tables.map(async table => (await fixture.query(`SELECT * FROM ${table} ORDER BY id`)).rows))).toEqual(beforeRows);
 		} finally { await fixture.db.close(); }
 	});
 	it('denies malformed selected estimate bytes rather than turning stored SQL history into an admitted deadline', async () => {
