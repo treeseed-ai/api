@@ -3,10 +3,11 @@ import { validateDecisionAuthority } from '../../../../src/api/governance/decisi
 import { evaluateGovernanceProposalMethod } from '../../../../src/api/store/governance/policy/contracts/evaluate-governance-proposal.ts';
 import type { ControlPlaneStore } from '../../../../src/api/persistence/store.ts';
 
+const digest = 'b'.repeat(64);
 const baseRow = {
 	id: 'decision', team_id: 'team', project_id: 'project', proposal_id: 'proposal', proposal_version: 2,
-	proposal_content_hash: 'proposal-digest', status: 'accepted', superseded_at: null,
-	proposal_status: 'accepted', active_version: 2, active_content_hash: 'proposal-digest',
+	proposal_content_hash: digest, status: 'accepted', superseded_at: null,
+	proposal_status: 'accepted', active_version: 2, active_content_hash: digest,
 };
 
 describe('decision proposal authority', () => {
@@ -17,11 +18,11 @@ describe('decision proposal authority', () => {
 		});
 	});
 
-	it('returns the exact executable proposal snapshot as assignment authority', async () => {
-		const proposalRef = { id: 'proposal', revision: 2, digest: 'sha256:proposal-digest', repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
+	it('denies an operational proposal snapshot without governed classed Decision authority', async () => {
+		const proposalRef = { id: 'proposal', revision: 2, digest: `sha256:${digest}`, repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
 		const database = { first: async () => ({ ...baseRow, decision_record_json: { decisionDependencies: [], proposalRef } }) };
 		await expect(validateDecisionAuthority(database, 'decision')).resolves.toMatchObject({
-			valid: true, current: { proposalRef },
+			valid: false,
 		});
 	});
 });

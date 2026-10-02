@@ -23,7 +23,7 @@ export async function proposalNativeFixture() {
 			const chunks: Buffer[] = [];
 			for await (const chunk of request) chunks.push(Buffer.from(chunk));
 			const input = JSON.parse(Buffer.concat(chunks).toString()) as { ref: string; path: string };
-			if (!/^[a-f0-9]{40}$/u.test(input.ref) || input.path !== 'proposals/proposal.mdx') throw new Error('Unsafe source');
+			if (!/^[a-f0-9]{40}$/u.test(input.ref) || !/^(proposals|decisions)\/[a-z0-9-]+\.mdx$/u.test(input.path)) throw new Error('Unsafe source');
 			requests.push({ ref: input.ref, path: input.path });
 			if (fault === 'denied') { response.writeHead(403); response.end(JSON.stringify({ error: 'forbidden' })); return; }
 			const content = execFileSync('git', ['show', `${input.ref}:${input.path}`], { cwd: root, encoding: 'utf8' });
@@ -52,12 +52,18 @@ export async function proposalNativeFixture() {
 		};
 		const store = { config: { TREESEED_TREEDX_URL: `http://127.0.0.1:${address.port}` },
 			getProjectTreeDxLibrary: async () => ({ repositoryId: 'repository', contentPath: '.', contentRepositoryDefaultBranch: 'staging', topology: {} }),
+			first: async (sql: string, parameters: unknown[] = []) => (await query(sql, parameters)).rows[0] ?? null,
 			all: async (sql: string, parameters: unknown[] = []) => (await query(sql, parameters)).rows };
-		const publish = async (definition: Record<string, unknown>) => {
+		const publishContent = (path: string, definition: Record<string, unknown>) => {
+			if (!/^(proposals|decisions)\/[a-z0-9-]+\.mdx$/u.test(path)) throw new Error('Unsafe fixture path');
+			mkdirSync(join(root, path.split('/')[0]!), { recursive: true });
 			const source = `---\n${stringify(definition)}---\n`;
-			writeFileSync(join(root, 'proposals/proposal.mdx'), source);
-			git('add', 'proposals/proposal.mdx'); git('commit', '--quiet', '--allow-empty', '-m', 'Governed fixture input');
-			const commit = git('rev-parse', 'HEAD'), digest = createHash('sha256').update(source).digest('hex');
+			writeFileSync(join(root, path), source);
+			git('add', path); git('commit', '--quiet', '--allow-empty', '-m', 'Governed fixture input');
+			return { source, commit: git('rev-parse', 'HEAD'), digest: createHash('sha256').update(source).digest('hex') };
+		};
+		const publish = async (definition: Record<string, unknown>) => {
+			const { source, commit, digest } = publishContent('proposals/proposal.mdx', definition);
 			await query('DELETE FROM governance_proposals');
 			await query(`INSERT INTO governance_proposals (id,team_id,project_id,title,summary,body,active_content_hash,
 				governance_provider_id,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
@@ -68,12 +74,12 @@ export async function proposalNativeFixture() {
 		};
 		const snapshot = async () => {
 			const rows: Record<string, unknown> = {};
-			for (const table of ['governance_proposals', 'governance_decisions', 'governance_events', 'execution_nodes', 'execution_edges']) {
+			for (const table of ['governance_proposals', 'governance_decisions', 'governance_events', 'execution_nodes', 'execution_edges', 'capacity_provider_assignments']) {
 				rows[table] = (await query(`SELECT * FROM ${table} ORDER BY id`)).rows;
 			}
 			return { rows, head: git('rev-parse', 'HEAD'), status: git('status', '--porcelain') };
 		};
-		return { store, publish, snapshot, query, requests, setFault: (value: typeof fault) => { fault = value; },
+		return { store, publish, publishContent, snapshot, query, requests, setFault: (value: typeof fault) => { fault = value; },
 			close: async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
 				await db.close(); rmSync(root, { recursive: true, force: true }); } };
 	} catch (error) { server.closeAllConnections(); if (server.listening) server.close(); await db.close(); rmSync(root, { recursive: true, force: true }); throw error; }

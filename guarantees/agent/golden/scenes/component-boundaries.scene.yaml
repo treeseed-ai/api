@@ -3,6 +3,60 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-decision-proposal-unit-no-substitute
+    action: { verifier: api.golden.architecture-decision-proposal-unit-no-substitute }
+    expect: { status: passed }
+  - id: architecture-decision-review-unit-complete
+    action: { verifier: api.golden.architecture-decision-review-unit-complete }
+    expect: { status: passed }
+  - id: architecture-decision-review-unit-required
+    action: { verifier: api.golden.architecture-decision-review-unit-required }
+    expect: { status: passed }
+  - id: architecture-decision-review-unit-positions
+    action: { verifier: api.golden.architecture-decision-review-unit-positions }
+    expect: { status: passed }
+  - id: architecture-decision-review-unit-disposition
+    action: { verifier: api.golden.architecture-decision-review-unit-disposition }
+    expect: { status: passed }
+  - id: architecture-decision-review-unit-maker
+    action: { verifier: api.golden.architecture-decision-review-unit-maker }
+    expect: { status: passed }
+  - id: architecture-decision-review-unit-conflict
+    action: { verifier: api.golden.architecture-decision-review-unit-conflict }
+    expect: { status: passed }
+  - id: architecture-decision-review-unit-time
+    action: { verifier: api.golden.architecture-decision-review-unit-time }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-complete
+    action: { verifier: api.golden.architecture-decision-review-native-complete }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-positions
+    action: { verifier: api.golden.architecture-decision-review-native-positions }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-required
+    action: { verifier: api.golden.architecture-decision-review-native-required }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-conflict
+    action: { verifier: api.golden.architecture-decision-review-native-conflict }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-maker
+    action: { verifier: api.golden.architecture-decision-review-native-maker }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-time
+    action: { verifier: api.golden.architecture-decision-review-native-time }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-denial
+    action: { verifier: api.golden.architecture-decision-review-native-denial }
+    expect: { status: passed }
+  - id: architecture-decision-review-native-predecessor
+    action: { verifier: api.golden.architecture-decision-review-native-predecessor }
+    expect: { status: passed }
+  - id: architecture-decision-proposal-native-no-substitute
+    action: { verifier: api.golden.architecture-decision-proposal-native-no-substitute }
+    expect: { status: passed }
+  - id: architecture-decision-proposal-native-stale
+    action: { verifier: api.golden.architecture-decision-proposal-native-stale }
+    expect: { status: passed }
   - id: architecture-readiness-complete
     action: { verifier: api.golden.architecture-readiness-complete }
     expect: { status: passed }

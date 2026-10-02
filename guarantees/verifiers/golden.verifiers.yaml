@@ -1,6 +1,96 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-decision-proposal-unit-no-substitute:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/decision-execution-plan-authority.test.ts
+    testName: "denies an operational proposal snapshot without governed classed Decision authority"
+  api.golden.architecture-decision-review-unit-complete:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
+    testName: "accepts complete classed authority for arbitrary configured reviewing identity without input mutation"
+  api.golden.architecture-decision-review-unit-required:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
+    testName: "denies absent or malformed class, method, decision-maker and authority evidence"
+  api.golden.architecture-decision-review-unit-positions:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
+    testName: "requires signed positions for approval and vote methods, not a method label alone"
+  api.golden.architecture-decision-review-unit-disposition:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
+    testName: "does not turn a rejected work-review Decision into request-changes"
+  api.golden.architecture-decision-review-unit-maker:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
+    testName: "requires exact decision-maker evidence from the assigned governed reviewing profile"
+  api.golden.architecture-decision-review-unit-conflict:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
+    testName: "denies conflicting exact review Decisions rather than selecting the first returned disposition"
+  api.golden.architecture-decision-review-unit-time:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-authority.test.ts
+    testName: "denies review evidence produced before admission or after the returned result"
+  api.golden.architecture-decision-review-native-complete:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "reads exact committed authority, approval and vote evidence repeatedly and concurrently without mutation"
+  api.golden.architecture-decision-review-native-positions:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "rejects method labels without exact signed positions through native content readback"
+  api.golden.architecture-decision-review-native-required:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "denies missing and malformed classed authority from actual committed YAML without changing SQL"
+  api.golden.architecture-decision-review-native-conflict:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "rejects conflicting committed dispositions instead of treating reference order as authority"
+  api.golden.architecture-decision-review-native-maker:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "denies committed evidence attributed to a different reviewing identity"
+  api.golden.architecture-decision-review-native-time:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "rejects stale or future committed Decision times relative to the original review assignment and result"
+  api.golden.architecture-decision-review-native-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "denies moved and forbidden source readback without changing persisted authority"
+  api.golden.architecture-decision-review-native-predecessor:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/review-decision-native.test.ts
+    testName: "does not approve a stale candidate outside immutable predecessor result identities"
+  api.golden.architecture-decision-proposal-native-no-substitute:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts
+    testName: "does not substitute an accepted SQL row and exact proposal bytes for a governed classed Decision"
+  api.golden.architecture-decision-proposal-native-stale:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts
+    testName: "retains fail-closed moved proposal revision, digest and superseded Decision controls in owning SQL"
   api.golden.architecture-readiness-complete:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
