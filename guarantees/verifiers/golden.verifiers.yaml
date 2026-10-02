@@ -1,6 +1,56 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-readiness-complete:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/ready-proposal.test.ts
+    testName: "admits complete arbitrary-class work without changing authored scope or estimates"
+  api.golden.architecture-readiness-required:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/ready-proposal.test.ts
+    testName: "denies every missing work-item authority even when both estimates are present"
+  api.golden.architecture-readiness-malformed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/ready-proposal.test.ts
+    testName: "denies malformed scope review bounds and retired work-item fields without rewriting input"
+  api.golden.architecture-readiness-estimates:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/ready-proposal.test.ts
+    testName: "requires positive integer expected maximum and reviewer estimates with no coercion or minimum field"
+  api.golden.architecture-readiness-dependencies:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/ready-proposal.test.ts
+    testName: "requires unique local acyclic work dependencies rather than manufacturing a graph from estimates"
+  api.golden.architecture-readiness-draft:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/ready-proposal.test.ts
+    testName: "keeps structurally valid estimate-free drafts outside executable demand"
+  api.golden.architecture-readiness-native-optional:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "admits canonical optional-capability omission instead of imposing a second proposal schema"
+  api.golden.architecture-readiness-native-custody:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "replays complete native proposal source without rewriting content estimates or SQL authority"
+  api.golden.architecture-readiness-native-dependencies:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "denies duplicate dangling and cyclic governed work at the actual SQL source boundary"
+  api.golden.architecture-readiness-native-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "keeps denied moved and digest-mismatched exact HTTP reads closed without mutating persisted source"
   api.golden.architecture-calibration-sql-scope:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

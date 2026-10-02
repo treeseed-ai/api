@@ -8,6 +8,7 @@ vi.mock('../../../../../../src/api/governance/executable-proposal.ts', async (im
 
 import { loadTeamExecutableProposalSources } from '../../../../../../src/api/capacity/services/capacity/execution/executable-proposal-source.ts';
 import { loadProposalBlockingFeedback } from '../../../../../../src/api/capacity/services/capacity/execution/proposal-planning-source.ts';
+import { readyProposal } from '../../../governance/proposals/architecture/ready-proposal-fixture.ts';
 
 const questionRef = { store: 'treedx', model: 'question', id: 'question', revision: 1,
 	digest: `sha256:${'c'.repeat(64)}`, repository: 'repository', commit: 'b'.repeat(40), path: 'questions/question.mdx' };
@@ -46,10 +47,7 @@ describe('executable proposal source selection', () => {
 		}] : [{ proposal_id: 'proposal', project_id: 'project', active_version: 1,
 			active_content_hash: 'a'.repeat(64), metadata_json: {}, decision_id: null }]);
 		exactProposal.mockResolvedValueOnce({ ref: { repository: 'treeseed-ai/sdk', path: 'proposals/one.md',
-			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` }, definition: {
-			status: 'draft', executionPlan: { workItems: [{ estimate: { expectedSeconds: 30, maximumSeconds: 60 },
-				review: 'required', reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 } }] },
-		} });
+			commit: 'b'.repeat(40), digest: `sha256:${'a'.repeat(64)}` }, definition: readyProposal() });
 		const sources = await loadTeamExecutableProposalSources({ all }, 'team', 'project');
 		expect(sources).toHaveLength(1);
 		expect(sources[0]).toMatchObject({ decision: null, feedback: [{ id: 'question-1', resolved: false }] });
@@ -97,10 +95,7 @@ describe('executable proposal source selection', () => {
 			accepted_decision_id: 'decision', proposal_version: 2,
 			decision_record_json: { proposalRef },
 		}]);
-		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: {
-			status: 'accepted', executionPlan: { workItems: [{ estimate: { expectedSeconds: 30, maximumSeconds: 60 },
-				review: 'required', reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 } }] },
-		} });
+		exactProposal.mockResolvedValueOnce({ ref: proposalRef, definition: { ...readyProposal(), status: 'decided' } });
 		await expect(loadTeamExecutableProposalSources({ all }, 'team', 'project')).resolves.toMatchObject([{
 			projectId: 'project', decision: { id: 'decision' },
 		}]);

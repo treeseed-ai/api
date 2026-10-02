@@ -3,6 +3,36 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-readiness-complete
+    action: { verifier: api.golden.architecture-readiness-complete }
+    expect: { status: passed }
+  - id: architecture-readiness-required
+    action: { verifier: api.golden.architecture-readiness-required }
+    expect: { status: passed }
+  - id: architecture-readiness-malformed
+    action: { verifier: api.golden.architecture-readiness-malformed }
+    expect: { status: passed }
+  - id: architecture-readiness-estimates
+    action: { verifier: api.golden.architecture-readiness-estimates }
+    expect: { status: passed }
+  - id: architecture-readiness-dependencies
+    action: { verifier: api.golden.architecture-readiness-dependencies }
+    expect: { status: passed }
+  - id: architecture-readiness-draft
+    action: { verifier: api.golden.architecture-readiness-draft }
+    expect: { status: passed }
+  - id: architecture-readiness-native-optional
+    action: { verifier: api.golden.architecture-readiness-native-optional }
+    expect: { status: passed }
+  - id: architecture-readiness-native-custody
+    action: { verifier: api.golden.architecture-readiness-native-custody }
+    expect: { status: passed }
+  - id: architecture-readiness-native-dependencies
+    action: { verifier: api.golden.architecture-readiness-native-dependencies }
+    expect: { status: passed }
+  - id: architecture-readiness-native-denial
+    action: { verifier: api.golden.architecture-readiness-native-denial }
+    expect: { status: passed }
   - id: architecture-calibration-sql-scope
     action: { verifier: api.golden.architecture-calibration-sql-scope }
     expect: { status: passed }

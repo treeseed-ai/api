@@ -2,10 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../../src/api/governance/executable-proposal.ts', async (importOriginal) => {
 	const original = await importOriginal<typeof import('../../../../../src/api/governance/executable-proposal.ts')>();
-	return { ...original, readExactProposal: vi.fn(async () => ({ definition: {
-		status: 'draft', executionPlan: { workItems: [{ estimate: { expectedSeconds: 30, maximumSeconds: 60 },
-			review: 'required', reviewEstimate: { expectedSeconds: 10, maximumSeconds: 20 } }] },
-	} })) };
+	const { readyProposal } = await import('./architecture/ready-proposal-fixture.ts');
+	return { ...original, readExactProposal: vi.fn(async () => ({ definition: readyProposal() })) };
 });
 vi.mock('../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts',
 	() => ({ reconcileExecutionGraph: vi.fn(async () => undefined) }));
