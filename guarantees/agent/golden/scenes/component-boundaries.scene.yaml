@@ -3,6 +3,27 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-reporting-rename
+    action: { verifier: api.golden.architecture-reporting-rename }
+    expect: { status: passed }
+  - id: architecture-closeout-selection
+    action: { verifier: api.golden.architecture-closeout-selection }
+    expect: { status: passed }
+  - id: architecture-reporting-event-denial
+    action: { verifier: api.golden.architecture-reporting-event-denial }
+    expect: { status: passed }
+  - id: architecture-activity-event-scope
+    action: { verifier: api.golden.architecture-activity-event-scope }
+    expect: { status: passed }
+  - id: architecture-disabled-reporting
+    action: { verifier: api.golden.architecture-disabled-reporting }
+    expect: { status: passed }
+  - id: architecture-closeout-sql
+    action: { verifier: api.golden.architecture-closeout-sql }
+    expect: { status: passed }
+  - id: architecture-event-sql
+    action: { verifier: api.golden.architecture-event-sql }
+    expect: { status: passed }
   - id: progress-postgres-custody
     action: { verifier: api.golden.progress-postgres-custody }
     expect: { status: passed }

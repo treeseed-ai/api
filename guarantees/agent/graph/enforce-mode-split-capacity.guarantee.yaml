@@ -3,10 +3,10 @@ id: guarantee.agent.graph.enforce-mode-split-capacity.314
 journeyIndex: 314
 type: agent
 subtype: graph
-journey: Enforce Mode Split Capacity
+journey: Enforce workday planning and weighted provider capacity
 ownerPackage: "@treeseed/api"
 surface: api-control-plane
-summary: "Planning and acting reservations respect workday mode split min, max, and hard-cap policy."
+summary: "The authoritative workday policy reserves its initial planning window, allocates admissible graph-ready opportunities by workday/project/class weights, and applies shared provider/model/native limits without changing accepted estimates or graph dependencies."
 status: planned
 actors:
   allowed: [project_manager, capacity_operator, team_owner]
@@ -30,4 +30,7 @@ negativeCases:
 evidence:
   required: [guarantee_report, verifier_evidence]
 notes:
-  - "The canonical evaluator and atomic admission transaction enforce hierarchical targets, minimum protection, maximums, hard caps, reserve policy, and explicit borrowing. This guarantee remains planned until Phase 12 adds a real service-workflow verifier for the complete matrix; focused tests are not promoted into release evidence."
+  - "There are no allocation sets, minimum/target/maximum tiers, priority bands, borrowing rules, generic reserves, capacity-plan work units or demand records. Derive closeout capacity from required closeout estimates and preserve existing reservations."
+  - "Idle weighted opportunity flows only to admissible ready work. Provider arbitration compares teams globally without exposing or merging project context or grants. Simulation consumes real supply under the sole Workday.executionMode authority."
+  - "Cold-start allocations start from accepted task maximum subject to available supply; scoped terminal measurements calibrate later allocations without editing the estimate or original assignment deadline."
+  - "BLOCKED: real concurrent admission, UTC/model cap restart safety, stable fairness ties, actual usage, exactly-once settlement and one selected Reporter through closing to ended require full CLI/managed proof. Component passes are not release evidence."

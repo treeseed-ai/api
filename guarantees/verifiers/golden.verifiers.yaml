@@ -1,6 +1,41 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-reporting-rename:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
+    testName: "projects reporting from a governed profile independently of the agent class name"
+  api.golden.architecture-closeout-selection:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
+    testName: "rejects ambiguous closeout selection instead of manufacturing multiple workday reports"
+  api.golden.architecture-reporting-event-denial:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
+    testName: "never invents a reporting lifecycle dependency from an agent name or another activity"
+  api.golden.architecture-activity-event-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
+    testName: "applies a declared lifecycle dependency only to its scheduled activity"
+  api.golden.architecture-disabled-reporting:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-projection.test.ts
+    testName: "does not manufacture reporting work for disabled profiles or mutate governed profile bytes"
+  api.golden.architecture-closeout-sql:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-persistence.test.ts
+    testName: "persists and read-backs renamed reporting readiness through the original closing transition"
+  api.golden.architecture-event-sql:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-profile-persistence.test.ts
+    testName: "persists lifecycle edges only for the activity that declares them in YAML"
   api.golden.progress-postgres-custody:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
