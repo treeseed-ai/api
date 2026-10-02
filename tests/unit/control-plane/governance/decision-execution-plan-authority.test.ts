@@ -13,7 +13,7 @@ const baseRow = {
 // Single-row UNIT collaborator, not owning SQL integration. Preserve the
 // database's generic query signature; callers choose their projected row type.
 function decisionDatabase(row: Record<string, unknown>): DecisionAuthorityDatabase {
-	return { first: async <T extends Record<string, unknown> = Record<string, unknown>>() => structuredClone(row) as T };
+	return { first: async <T extends Record<string, unknown> = Record<string, unknown>>(): Promise<T | null> => structuredClone(row) as T };
 }
 
 describe('decision proposal authority', () => {
