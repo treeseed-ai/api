@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { validateDecisionAuthority } from '../../../../src/api/governance/decision-authority.ts';
+import { validateDecisionAuthority, type DecisionAuthorityDatabase } from '../../../../src/api/governance/decision-authority.ts';
 import { evaluateGovernanceProposalMethod } from '../../../../src/api/store/governance/policy/contracts/evaluate-governance-proposal.ts';
 import type { ControlPlaneStore } from '../../../../src/api/persistence/store.ts';
 
@@ -12,7 +12,8 @@ const baseRow = {
 
 describe('decision proposal authority', () => {
 	it('requires immutable proposal provenance on every accepted decision', async () => {
-		const database = { first: async () => ({ ...baseRow, decision_record_json: { decisionDependencies: [] } }) };
+		const database: DecisionAuthorityDatabase = { first: vi.fn<DecisionAuthorityDatabase['first']>()
+			.mockResolvedValue({ ...baseRow, decision_record_json: { decisionDependencies: [] } }) };
 		await expect(validateDecisionAuthority(database, 'decision')).resolves.toMatchObject({
 			valid: false, code: 'governance_decision_proposal_ref_invalid',
 		});
@@ -20,7 +21,8 @@ describe('decision proposal authority', () => {
 
 	it('denies an operational proposal snapshot without governed classed Decision authority', async () => {
 		const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 2, digest: `sha256:${digest}`, repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
-		const database = { first: async () => ({ ...baseRow, decision_record_json: { decisionDependencies: [], proposalRef } }) };
+		const database: DecisionAuthorityDatabase = { first: vi.fn<DecisionAuthorityDatabase['first']>()
+			.mockResolvedValue({ ...baseRow, decision_record_json: { decisionDependencies: [], proposalRef } }) };
 		await expect(validateDecisionAuthority(database, 'decision')).resolves.toMatchObject({
 			valid: false,
 		});
