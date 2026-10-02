@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-calibration-sql-scope:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/calibration-persistence.test.ts
+    testName: "selects exactly the latest twenty eligible same-scope measurements without changing SQL or workday authority"
+  api.golden.architecture-calibration-sql-malformed:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/calibration-persistence.test.ts
+    testName: "denies malformed selected estimate bytes rather than turning stored SQL history into an admitted deadline"
   api.golden.architecture-closeout-unit-failed:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

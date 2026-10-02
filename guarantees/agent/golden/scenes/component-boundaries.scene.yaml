@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-calibration-sql-scope
+    action: { verifier: api.golden.architecture-calibration-sql-scope }
+    expect: { status: passed }
+  - id: architecture-calibration-sql-malformed
+    action: { verifier: api.golden.architecture-calibration-sql-malformed }
+    expect: { status: passed }
   - id: architecture-closeout-unit-failed
     action: { verifier: api.golden.architecture-closeout-unit-failed }
     expect: { status: passed }
