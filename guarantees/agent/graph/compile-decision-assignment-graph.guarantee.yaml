@@ -18,8 +18,8 @@ api:
   required: true
   verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
 content:
-  required: false
-  verifierRefs: []
+  required: true
+  verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
 audit:
   required: true
   verifierRefs: [api.agent.graph.compile-decision-assignment-graph]
