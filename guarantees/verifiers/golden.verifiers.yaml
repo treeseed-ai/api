@@ -1,6 +1,91 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-admission-replay-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "returns an identical replay without rewriting the original input or stored snapshot"
+  api.golden.architecture-admission-replay-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects replay changes to grant or mutable workspace"
+  api.golden.architecture-admission-replay-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects replay changes to profile handler or parameters"
+  api.golden.architecture-admission-replay-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects replay changes to source and Decision authority"
+  api.golden.architecture-admission-replay-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects replay changes to provider build and original deadline"
+  api.golden.architecture-admission-replay-unit-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects replay changes to graph context and predecessor custody"
+  api.golden.architecture-admission-replay-unit-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects replay changes to accepted estimate or reserved limit"
+  api.golden.architecture-admission-replay-unit-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects a replay by an unrelated team or capacity provider"
+  api.golden.architecture-admission-replay-unit-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-authority.test.ts
+    testName: "rejects an identity already bound to another node revision"
+  api.golden.architecture-admission-replay-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "replays exact persisted custody repeatedly and concurrently without changing six owning SQL tables"
+  api.golden.architecture-admission-replay-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "denies changed grant or mutable workspace against actual stored custody"
+  api.golden.architecture-admission-replay-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "denies changed profile handler or parameters against actual stored custody"
+  api.golden.architecture-admission-replay-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "denies changed source and Decision authority against actual stored custody"
+  api.golden.architecture-admission-replay-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "denies changed provider build and original deadline against actual stored custody"
+  api.golden.architecture-admission-replay-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "denies changed graph context and predecessor custody against actual stored custody"
+  api.golden.architecture-admission-replay-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "denies changed accepted estimate or reserved limit against actual stored custody"
+  api.golden.architecture-admission-replay-native-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/admission-replay-native.test.ts
+    testName: "denies unrelated authenticated team and provider while preserving persisted authority"
   api.golden.architecture-decision-proposal-unit-no-substitute:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

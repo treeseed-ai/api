@@ -3,6 +3,57 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-admission-replay-unit-1
+    action: { verifier: api.golden.architecture-admission-replay-unit-1 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-2
+    action: { verifier: api.golden.architecture-admission-replay-unit-2 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-3
+    action: { verifier: api.golden.architecture-admission-replay-unit-3 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-4
+    action: { verifier: api.golden.architecture-admission-replay-unit-4 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-5
+    action: { verifier: api.golden.architecture-admission-replay-unit-5 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-6
+    action: { verifier: api.golden.architecture-admission-replay-unit-6 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-7
+    action: { verifier: api.golden.architecture-admission-replay-unit-7 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-8
+    action: { verifier: api.golden.architecture-admission-replay-unit-8 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-unit-9
+    action: { verifier: api.golden.architecture-admission-replay-unit-9 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-1
+    action: { verifier: api.golden.architecture-admission-replay-native-1 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-2
+    action: { verifier: api.golden.architecture-admission-replay-native-2 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-3
+    action: { verifier: api.golden.architecture-admission-replay-native-3 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-4
+    action: { verifier: api.golden.architecture-admission-replay-native-4 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-5
+    action: { verifier: api.golden.architecture-admission-replay-native-5 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-6
+    action: { verifier: api.golden.architecture-admission-replay-native-6 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-7
+    action: { verifier: api.golden.architecture-admission-replay-native-7 }
+    expect: { status: passed }
+  - id: architecture-admission-replay-native-8
+    action: { verifier: api.golden.architecture-admission-replay-native-8 }
+    expect: { status: passed }
   - id: architecture-decision-proposal-unit-no-substitute
     action: { verifier: api.golden.architecture-decision-proposal-unit-no-substitute }
     expect: { status: passed }
