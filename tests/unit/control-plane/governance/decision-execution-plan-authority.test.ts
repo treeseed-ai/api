@@ -10,10 +10,15 @@ const baseRow = {
 	proposal_status: 'accepted', active_version: 2, active_content_hash: digest,
 };
 
+// Single-row UNIT collaborator, not owning SQL integration. Preserve the
+// database's generic query signature; callers choose their projected row type.
+function decisionDatabase(row: Record<string, unknown>): DecisionAuthorityDatabase {
+	return { first: async <T extends Record<string, unknown> = Record<string, unknown>>() => structuredClone(row) as T };
+}
+
 describe('decision proposal authority', () => {
 	it('requires immutable proposal provenance on every accepted decision', async () => {
-		const database: DecisionAuthorityDatabase = { first: vi.fn<DecisionAuthorityDatabase['first']>()
-			.mockResolvedValue({ ...baseRow, decision_record_json: { decisionDependencies: [] } }) };
+		const database = decisionDatabase({ ...baseRow, decision_record_json: { decisionDependencies: [] } });
 		await expect(validateDecisionAuthority(database, 'decision')).resolves.toMatchObject({
 			valid: false, code: 'governance_decision_proposal_ref_invalid',
 		});
@@ -21,8 +26,7 @@ describe('decision proposal authority', () => {
 
 	it('denies an operational proposal snapshot without governed classed Decision authority', async () => {
 		const proposalRef = { store: 'treedx', model: 'proposal', id: 'proposal', revision: 2, digest: `sha256:${digest}`, repository: 'repository', commit: 'a'.repeat(40), path: 'proposals/proposal.mdx' };
-		const database: DecisionAuthorityDatabase = { first: vi.fn<DecisionAuthorityDatabase['first']>()
-			.mockResolvedValue({ ...baseRow, decision_record_json: { decisionDependencies: [], proposalRef } }) };
+		const database = decisionDatabase({ ...baseRow, decision_record_json: { decisionDependencies: [], proposalRef } });
 		await expect(validateDecisionAuthority(database, 'decision')).resolves.toMatchObject({
 			valid: false,
 		});
