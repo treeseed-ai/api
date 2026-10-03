@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CapacityWorkdayRecoveryRepository } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-recovery.ts';
 import { maintainCapacityWorkdayRuns } from '../../../../../../src/api/capacity/services/capacity/workdays/lifecycle/workday-recovery-service.ts';
+import { compileCapacityWorkdayRunRecord } from '../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('workday recovery graph custody', () => {
 	it('recovers later terminal workdays before reporting a corrupt historical assignment', async () => {
-		const runs = ['old', 'current'].map(id => ({ id, teamId: 'team', status: 'cancelled',
-			completedAt: '2026-09-30T05:00:00Z', actual: {}, parameters: { decisionIds: ['accepted'] } }));
+		const runs = ['old', 'current'].map(id => compileCapacityWorkdayRunRecord('team', { id, status: 'cancelled',
+			executionMode: 'simulation', startedAt: '2026-09-30T04:59:00Z', completedAt: '2026-09-30T05:00:00Z',
+			parameters: { durationSeconds: 60 } }, { now: '2026-09-30T04:59:00Z' }));
 		const original = structuredClone(runs);
 		vi.spyOn(CapacityWorkdayRecoveryRepository.prototype, 'listRunning').mockResolvedValue([]);
-		vi.spyOn(CapacityWorkdayRecoveryRepository.prototype, 'listTerminal').mockResolvedValue(runs as never);
+		vi.spyOn(CapacityWorkdayRecoveryRepository.prototype, 'listTerminal').mockResolvedValue(runs);
 		vi.spyOn(CapacityWorkdayRecoveryRepository.prototype, 'recoveryState').mockImplementation(async run => ({
 			run, hasUnfinishedAssignments: true, hasReadyNodes: false, missingDeadlineEvent: false }));
 		const defect = new Error('Invalid historical assignment_attempt_json at agentClass');
@@ -33,8 +35,10 @@ describe('workday recovery graph custody', () => {
 				return query.includes('FROM execution_nodes') ? { id: 'ready-node' } : null;
 			}),
 		};
-		const run = { id: 'run', teamId: 'team', actual: {} };
-		const state = await new CapacityWorkdayRecoveryRepository(database as never).recoveryState(run as never);
+		const run = compileCapacityWorkdayRunRecord('team', { id: 'run', status: 'cancelled', executionMode: 'simulation',
+			startedAt: '2026-09-30T04:59:00Z', completedAt: '2026-09-30T05:00:00Z', parameters: { durationSeconds: 60 } },
+			{ now: '2026-09-30T04:59:00Z' });
+		const state = await new CapacityWorkdayRecoveryRepository(database as never).recoveryState(run);
 		expect(state).toMatchObject({ hasReadyNodes: true, hasUnfinishedAssignments: false });
 		expect(queries.join('\n')).not.toContain('capacity_workday_demands');
 		expect(queries.join('\n')).toContain('assignment.work_day_id = ?');

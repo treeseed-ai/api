@@ -1,10 +1,25 @@
 import { readFileSync } from 'node:fs';
 import { assignmentAttemptSchema, emptyCapacityBudget } from '@treeseed/sdk/agent-capacity';
 import { splitPostgresSqlStatements } from '../../../../../../src/api/persistence/postgres-sql-statements.ts';
-import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
+import { ProviderAssignmentRepository, serializeProviderAssignmentRow } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { frozenAttempt, settlementDatabase } from '../../../capacity/accounting/architecture/settlement-fixture.ts';
 
 export const cancelNow = '2026-10-02T21:00:04.000Z';
+export function recoveryAssignment(started: boolean) {
+	const budget = emptyCapacityBudget(frozenAttempt.deadline, frozenAttempt.limits.maximumSeconds);
+	const result = serializeProviderAssignmentRow({ id: frozenAttempt.id, team_id: frozenAttempt.teamId,
+		project_id: frozenAttempt.projectId, membership_id: 'membership', capacity_provider_id: 'provider',
+		project_agent_class_id: frozenAttempt.agentClass, work_day_id: frozenAttempt.workdayId, mode: 'acting',
+		status: 'leased', lease_state: 'leased', lease_token: 'lease-token', lease_expires_at: frozenAttempt.deadline,
+		execution_kind: 'work', trigger_kind: 'graph', reservation_id: frozenAttempt.reservationId, attempt_count: 1,
+		state_version: 1, execution_node_id: frozenAttempt.nodeId, execution_node_revision: frozenAttempt.nodeRevision,
+		assignment_attempt_json: JSON.stringify({ ...frozenAttempt, status: 'created' }), created_at: frozenAttempt.createdAt,
+		updated_at: frozenAttempt.createdAt, capacity_envelope_json: JSON.stringify({ teamId: 'team', projectId: 'project',
+			mode: 'acting', budget: { ...budget, time: { ...budget.time,
+				executionStartedAt: started ? frozenAttempt.createdAt : null, executionDeadlineAt: started ? frozenAttempt.deadline : null } } }) });
+	if (!result) throw new Error('Missing isolated full assignment');
+	return result;
+}
 /** Isolated original SQL and parsed attempt. Clock and usage inputs are not
  * provider-generated evidence, actual admission or a physical teardown receipt. */
 export async function cancellationDatabase(status = 'leased', started = false) {

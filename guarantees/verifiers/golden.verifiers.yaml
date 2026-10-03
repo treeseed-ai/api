@@ -1,6 +1,41 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  agent.golden.architecture-workday-terminal-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "preserves an unexpired provider lease while cancelling only unclaimed nodes in its workday"
+  agent.golden.architecture-workday-terminal-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "refuses unknown productive usage at the workday boundary instead of writing zero and declaring closure"
+  agent.golden.architecture-workday-terminal-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "preserves measured settlement and immutable attempts through repeated terminal cleanup"
+  agent.golden.architecture-workday-terminal-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "retains already durable measurements across a real transition SQL interruption and retry"
+  agent.golden.architecture-workday-terminal-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/terminalization-persistence.test.ts
+    testName: "does not report complete cleanup while an orphan running graph node remains"
+  agent.golden.architecture-workday-recovery-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/recovery-persistence.test.ts
+    testName: "does not execute deadline recovery before the original authority deadline or mutate scoped rows"
+  agent.golden.architecture-workday-recovery-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/lifecycle/architecture/recovery-persistence.test.ts
+    testName: "reports corrupt old-run provenance while closing another settled run and preserves both outcomes on retry"
   api.golden.architecture-cancellation-sql-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
