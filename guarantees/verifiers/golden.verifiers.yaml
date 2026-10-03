@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-workday-observation-pages:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-observation-persistence.test.ts
+    testName: "retains every event beyond the first show page through actual cursor reads without database mutation"
+  api.golden.architecture-workday-observation-unavailable:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/workday-observation-persistence.test.ts
+    testName: "distinguishes observed empty scheduling from unavailable SQL and denies missing scope or malformed cursors"
   api.golden.architecture-admission-replay-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

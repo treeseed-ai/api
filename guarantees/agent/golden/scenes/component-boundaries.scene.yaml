@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-workday-observation-pages
+    action: { verifier: api.golden.architecture-workday-observation-pages }
+    expect: { status: passed }
+  - id: architecture-workday-observation-unavailable
+    action: { verifier: api.golden.architecture-workday-observation-unavailable }
+    expect: { status: passed }
   - id: architecture-admission-replay-unit-1
     action: { verifier: api.golden.architecture-admission-replay-unit-1 }
     expect: { status: passed }
