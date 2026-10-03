@@ -3,6 +3,60 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-provider-settlement-existing-1
+    action: { verifier: api.golden.architecture-provider-settlement-existing-1 }
+    expect: { status: passed }
+  - id: architecture-provider-settlement-existing-2
+    action: { verifier: api.golden.architecture-provider-settlement-existing-2 }
+    expect: { status: passed }
+  - id: architecture-provider-settlement-existing-3
+    action: { verifier: api.golden.architecture-provider-settlement-existing-3 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-unit-1
+    action: { verifier: api.golden.architecture-provider-accounting-unit-1 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-unit-2
+    action: { verifier: api.golden.architecture-provider-accounting-unit-2 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-unit-3
+    action: { verifier: api.golden.architecture-provider-accounting-unit-3 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-unit-4
+    action: { verifier: api.golden.architecture-provider-accounting-unit-4 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-unit-5
+    action: { verifier: api.golden.architecture-provider-accounting-unit-5 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-1
+    action: { verifier: api.golden.architecture-provider-accounting-sql-1 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-2
+    action: { verifier: api.golden.architecture-provider-accounting-sql-2 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-3
+    action: { verifier: api.golden.architecture-provider-accounting-sql-3 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-4
+    action: { verifier: api.golden.architecture-provider-accounting-sql-4 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-5
+    action: { verifier: api.golden.architecture-provider-accounting-sql-5 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-6
+    action: { verifier: api.golden.architecture-provider-accounting-sql-6 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-7
+    action: { verifier: api.golden.architecture-provider-accounting-sql-7 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-8
+    action: { verifier: api.golden.architecture-provider-accounting-sql-8 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-9
+    action: { verifier: api.golden.architecture-provider-accounting-sql-9 }
+    expect: { status: passed }
+  - id: architecture-provider-accounting-sql-10
+    action: { verifier: api.golden.architecture-provider-accounting-sql-10 }
+    expect: { status: passed }
   - id: architecture-settlement-unit-7
     action: { verifier: api.golden.architecture-settlement-unit-7 }
     expect: { status: passed }

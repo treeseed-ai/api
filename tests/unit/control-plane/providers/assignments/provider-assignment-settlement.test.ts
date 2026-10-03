@@ -9,9 +9,10 @@ vi.mock('../../../../../src/api/capacity/services/capacity/accounting/settlement
 }));
 
 import { createProviderAssignmentService } from '../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { frozenAttempt, terminalUsage } from '../../capacity/accounting/architecture/settlement-fixture.ts';
 
 const auth = { principal: {
-	membershipId: 'membership-1', teamId: 'team-1', capacityProviderId: 'provider-1',
+	membershipId: terminalUsage.membershipId, teamId: terminalUsage.teamId, capacityProviderId: 'provider',
 	scopes: ['provider:usage:write', 'provider:assignments:write'],
 } };
 
@@ -31,7 +32,8 @@ describe('provider assignment settlement', () => {
 	it('settles conversation usage without inventing a returned checkpoint or completing before its result', async () => {
 		const returnProviderAssignment = vi.fn().mockResolvedValue({ assignment: { id: 'assignment-1' } });
 		const store = {
-			first: vi.fn().mockResolvedValue({ id: 'assignment-1', team_id: 'team-1', membership_id: 'membership-1', reservation_id: 'reservation-1' }),
+			first: vi.fn().mockResolvedValue({ id: frozenAttempt.id, team_id: 'team', membership_id: 'membership', reservation_id: 'reservation',
+				capacity_provider_id: 'provider', assignment_attempt_json: JSON.stringify(frozenAttempt), attempt_count: 1 }),
 			getProviderAssignment: vi.fn().mockResolvedValue({
 				id: 'assignment-1', teamId: 'team-1', membershipId: 'membership-1', capacityProviderId: 'provider-1',
 				executionKind: 'conversation', status: 'leased', leaseState: 'leased', lifecycleCode: null,
@@ -40,15 +42,19 @@ describe('provider assignment settlement', () => {
 		} as never;
 		const service = createProviderAssignmentService(store);
 
-		await expect(service.settle(auth, 'assignment-1', { activeSeconds: 4, elapsedSeconds: 5, usageActual: {} }, 'settlement-1'))
+		await expect(service.settle(auth, frozenAttempt.id, { ...structuredClone(terminalUsage) }, 'settlement-1'))
 			.resolves.toEqual({ replayed: false, entry: { id: 'entry-1' } });
+		expect(settleCapacityReservationExactlyOnce).toHaveBeenCalledWith(store, expect.objectContaining({
+			assignmentId: frozenAttempt.id, assignmentAttempt: 1, activeSeconds: 2, elapsedSeconds: 3, usageActual: terminalUsage.usageActual,
+		}));
 		expect(returnProviderAssignment).not.toHaveBeenCalled();
 	});
 
 	it('does not invoke conversation closeout for ordinary workday settlement', async () => {
 		const returnProviderAssignment = vi.fn();
 		const store = {
-			first: vi.fn().mockResolvedValue({ id: 'assignment-1', team_id: 'team-1', membership_id: 'membership-1', reservation_id: 'reservation-1' }),
+			first: vi.fn().mockResolvedValue({ id: frozenAttempt.id, team_id: 'team', membership_id: 'membership', reservation_id: 'reservation',
+				capacity_provider_id: 'provider', assignment_attempt_json: JSON.stringify(frozenAttempt), attempt_count: 1 }),
 			getProviderAssignment: vi.fn().mockResolvedValue({
 				id: 'assignment-1', teamId: 'team-1', membershipId: 'membership-1', capacityProviderId: 'provider-1',
 				executionKind: 'workday', status: 'completed', leaseState: 'released', lifecycleCode: 'completed',
@@ -57,7 +63,7 @@ describe('provider assignment settlement', () => {
 		} as never;
 		const service = createProviderAssignmentService(store);
 
-		await service.settle(auth, 'assignment-1', { activeSeconds: 4, elapsedSeconds: 5, usageActual: {} }, 'settlement-1');
+		await service.settle(auth, frozenAttempt.id, { ...structuredClone(terminalUsage) }, 'settlement-1');
 		expect(returnProviderAssignment).not.toHaveBeenCalled();
 	});
 });

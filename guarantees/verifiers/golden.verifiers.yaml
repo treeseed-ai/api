@@ -1,6 +1,96 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-provider-settlement-existing-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/provider-assignment-settlement.test.ts
+    testName: "rejects retired mode-run identity before any settlement or assignment lookup"
+  api.golden.architecture-provider-settlement-existing-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/provider-assignment-settlement.test.ts
+    testName: "settles conversation usage without inventing a returned checkpoint or completing before its result"
+  api.golden.architecture-provider-settlement-existing-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/provider-assignment-settlement.test.ts
+    testName: "does not invoke conversation closeout for ordinary workday settlement"
+  api.golden.architecture-provider-accounting-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting.test.ts
+    testName: "retains exact configured attempt and measured input without mutating the caller"
+  api.golden.architecture-provider-accounting-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting.test.ts
+    testName: "denies coercible measured seconds and attempt values before calling the settlement owner"
+  api.golden.architecture-provider-accounting-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting.test.ts
+    testName: "denies a provider principal conflicting with the frozen assignment owner even within its membership"
+  api.golden.architecture-provider-accounting-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting.test.ts
+    testName: "denies unknown and terminal accounting modes on the nonterminal report boundary"
+  api.golden.architecture-provider-accounting-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting.test.ts
+    testName: "denies missing credentials scopes and unknown membership assignments without calling accounting"
+  api.golden.architecture-provider-accounting-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "preserves incremental measurements and charges one aggregate across repeated concurrent public reports"
+  api.golden.architecture-provider-accounting-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "denies coerced public measurement or attempt values before any accounting row is committed"
+  api.golden.architecture-provider-accounting-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "denies foreign provider ownership despite matching membership and preserves all accounting rows"
+  api.golden.architecture-provider-accounting-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "denies unknown or terminal nonterminal-report modes instead of silently storing informational usage"
+  api.golden.architecture-provider-accounting-sql-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "denies a terminal aggregate below measured incremental seconds while retaining those measurements"
+  api.golden.architecture-provider-accounting-sql-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "denies aggregate token underreporting rather than dropping known incremental provider counts"
+  api.golden.architecture-provider-accounting-sql-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "replays a cleanup release without replacing the prior real measured aggregate or charging again"
+  api.golden.architecture-provider-accounting-sql-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "refuses zero cleanup settlement when accepted incremental work remains unaccounted"
+  api.golden.architecture-provider-accounting-sql-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "denies unauthenticated underscoped and foreign membership reports without changing original SQL"
+  api.golden.architecture-provider-accounting-sql-10:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "retains a matching incremental replay after settlement but denies new late usage without residue"
   api.golden.architecture-settlement-unit-7:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
