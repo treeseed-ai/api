@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AssignmentCompletionEvidence } from '@treeseed/sdk/agent-capacity';
 import { ProviderAssignmentLifecycleService } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
 import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { CapacityRuntimeEvidenceRepository } from '../../../../../../../src/api/capacity/repositories/runtime/runtime-evidence.ts';
 import { executePostgresBatch } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { workspaceCleanupFixture, workspaceId } from '../../architecture/workspace-cleanup-fixture.ts';
-import { cancelNow } from '../../architecture/cancellation-fixture.ts';
+import { cancellationDatabase, cancelNow } from '../../architecture/cancellation-fixture.ts';
 
 // REAL lifecycle/transaction/row-lock/original SQL and independent official
 // TreeDX HTTP read. Upstream state, principal, time and measurements are isolated
@@ -13,9 +14,15 @@ afterEach(() => vi.useRealTimers());
 const principal = { teamId: 'team', membershipId: 'membership', capacityProviderId: 'provider' };
 const report = { leaseToken: 'lease-token', code: 'assignment_timeout', retryable: false,
 	activeSeconds: 2, elapsedSeconds: 3, usage: { inputTokens: 7, nativeUsage: { activeSeconds: 2, tokens: 7 } } };
+const returnedCompletion: AssignmentCompletionEvidence = { disposition: 'blocked',
+	acceptanceChecks: [{ id: 'isolated-work-item', passed: false }], durableArtifactRefs: [], remainingBudget: {},
+	completionReason: 'Isolated provider return input; unfinished work requires a later authorized attempt.', noUsefulScopedWorkRemaining: false };
 async function fixture() {
 	vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(cancelNow));
 	const native = await workspaceCleanupFixture();
+	return { ...native, ...await lifecycle(native) };
+}
+async function lifecycle(native: Awaited<ReturnType<typeof cancellationDatabase>>) {
 	await native.query('UPDATE execution_nodes SET source_ref_json=?,authority_refs_json=?,estimate_json=?,required_capabilities_json=?,requested_permissions_json=?,workspace=? WHERE id=?',
 		[JSON.stringify(native.attempt.sourceRef), JSON.stringify(native.attempt.authorityRefs), JSON.stringify(native.attempt.estimate),
 			JSON.stringify(native.attempt.requiredCapabilities), JSON.stringify(native.attempt.effectiveProfile.permissionCeiling),
@@ -28,9 +35,84 @@ async function fixture() {
 		getProviderAssignment: repository.get.bind(repository), recordAgentFallbackOutput: evidence.recordFallbackOutput.bind(evidence),
 		recordProviderAssignmentExplanation: async () => { throw new Error('Terminal reporting must not invoke renewal explanation'); },
 		updateCapacityWorkdayRun: async () => { throw new Error('This terminal report must not rewrite workday configuration'); } };
-	return { ...native, repository, service: new ProviderAssignmentLifecycleService(store) };
+	return { repository, service: new ProviderAssignmentLifecycleService(store) };
+}
+async function returnFixture() {
+	vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-02T21:00:02.000Z'));
+	const native = await cancellationDatabase('leased', true);
+	try {
+		// Isolated two-attempt policy INPUT. Original productive seconds/deadline
+		// and frozen attempt remain unchanged; this does not raise a live allowance.
+		const envelope = structuredClone(native.assignment.capacityEnvelope);
+		if (!envelope.budget) throw new Error('Missing original bounded assignment budget');
+		envelope.budget.maxAttempts = 2;
+		await native.query('UPDATE capacity_provider_assignments SET capacity_envelope_json=? WHERE id=?',
+			[JSON.stringify(envelope), native.assignment.id]);
+		return { ...native, ...await lifecycle(native), close: () => native.db.close() };
+	} catch (error) { await native.db.close(); throw error; }
 }
 describe('provider terminal reporting through original transaction and resource custody', () => {
+	it('advances the retryable returned node revision without rewriting its historical assignment attempt', async () => {
+		const native = await returnFixture();
+		try {
+			const before = (await native.repository.get('team', native.assignment.id))!;
+			const input = { leaseToken: 'lease-token', code: 'provider_assignment_returned',
+				activeSeconds: 1, elapsedSeconds: 2, completion: returnedCompletion }, original = structuredClone(input);
+			const result = await native.service.return(principal, before.id, input);
+			const node = (await native.query('SELECT status,node_revision FROM execution_nodes WHERE id=?', [native.attempt.nodeId])).rows[0];
+			expect(result?.assignment.status).toBe('returned'); expect(input).toEqual(original);
+			expect(result?.assignment.assignmentAttempt).toEqual(before.assignmentAttempt);
+			expect({ ordinal: result?.assignment.attemptCount, node }).toEqual({ ordinal: before.attemptCount,
+				node: { status: 'ready', node_revision: native.attempt.nodeRevision + 1 } });
+		} finally { await native.close(); }
+	});
+	it('settles measured returned work exactly once and releases its consumed reservation before another attempt', async () => {
+		const native = await returnFixture();
+		try {
+			const input = { leaseToken: 'lease-token', activeSeconds: 1, elapsedSeconds: 2,
+				usage: { inputTokens: 7, nativeUsage: { activeSeconds: 1, tokens: 7 } }, completion: returnedCompletion };
+			expect((await native.service.return(principal, native.assignment.id, input))?.assignment.status).toBe('returned');
+			const observations = {
+				usage: (await native.query('SELECT active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows,
+				ledger: (await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows,
+				reservation: (await native.query('SELECT state FROM capacity_reservations WHERE id=\'reservation\'')).rows,
+			};
+			const beforeReplay = await native.snapshot();
+			await expect(native.service.return(principal, native.assignment.id, input)).resolves.toBeNull();
+			expect(await native.snapshot()).toEqual(beforeReplay);
+			expect(observations).toEqual({ usage: [{ active_seconds: 1, elapsed_seconds: 2 }],
+				ledger: [{ total: 1 }], reservation: [{ state: 'settled' }] });
+		} finally { await native.close(); }
+	});
+	it('retains wrong-owner token and expired-return denials without changing graph or financial authority', async () => {
+		const native = await returnFixture();
+		try {
+			const before = await native.snapshot(), graph = (await native.query('SELECT * FROM execution_nodes ORDER BY id')).rows;
+			const input = { leaseToken: 'lease-token', activeSeconds: 1, elapsedSeconds: 2, completion: returnedCompletion };
+			for (const owner of [{ ...principal, membershipId: 'foreign' }, { ...principal, capacityProviderId: 'foreign' }])
+				await expect(native.service.return(owner, native.assignment.id, input)).resolves.toBeNull();
+			await expect(native.service.return(principal, native.assignment.id, { ...input, leaseToken: 'foreign' })).resolves.toBeNull();
+			vi.setSystemTime(new Date(native.attempt.deadline));
+			await expect(native.service.return(principal, native.assignment.id, input)).resolves.toBeNull();
+			expect(await native.snapshot()).toEqual(before); expect((await native.query('SELECT * FROM execution_nodes ORDER BY id')).rows).toEqual(graph);
+		} finally { await native.close(); }
+	});
+	it('commits one returned transition and graph revision for concurrent matching reports and read-only replay', async () => {
+		const native = await returnFixture();
+		try {
+			const input = { leaseToken: 'lease-token', activeSeconds: 1, elapsedSeconds: 2, completion: returnedCompletion };
+			const original = structuredClone(input), revisionCount = Number((await native.query('SELECT COUNT(*) AS total FROM execution_graph_revisions')).rows[0]!.total);
+			const results = await Promise.all([native.service.return(principal, native.assignment.id, input),
+				native.service.return(principal, native.assignment.id, input)]);
+			const observations = { transitioned: results.filter(Boolean).length,
+				revisions: Number((await native.query('SELECT COUNT(*) AS total FROM execution_graph_revisions')).rows[0]!.total) - revisionCount };
+			const terminal = await native.snapshot(), graph = (await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows;
+			await expect(native.service.return(principal, native.assignment.id, input)).resolves.toBeNull();
+			expect(input).toEqual(original); expect(await native.snapshot()).toEqual(terminal);
+			expect((await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows).toEqual(graph);
+			expect(observations).toEqual({ transitioned: 1, revisions: 1 });
+		} finally { await native.close(); }
+	});
 	it('preserves the immutable attempt ordinal when a terminal report releases its lease and retains measured settlement', async () => {
 		const native = await fixture();
 		try {

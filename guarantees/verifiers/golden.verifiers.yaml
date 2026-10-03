@@ -1,6 +1,26 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-return-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "advances the retryable returned node revision without rewriting its historical assignment attempt"
+  api.golden.architecture-return-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "settles measured returned work exactly once and releases its consumed reservation before another attempt"
+  api.golden.architecture-return-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "retains wrong-owner token and expired-return denials without changing graph or financial authority"
+  api.golden.architecture-return-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "commits one returned transition and graph revision for concurrent matching reports and read-only replay"
   api.golden.architecture-terminal-performance-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
