@@ -20,7 +20,12 @@ verifiers:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
-    testName: "retains canonical completed result and matching replay while settling supplied measured completion once"
+    testName: "retains canonical completed result after public exactly-once settlement and replays without another charge"
+  api.golden.architecture-completion-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "denies completion before public settlement without creating a result or rewriting financial authority"
   api.golden.architecture-completion-sql-3:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

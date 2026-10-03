@@ -4,6 +4,8 @@ import { ProviderAssignmentLifecycleService } from '../../../../../../../src/api
 import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { CapacityRuntimeEvidenceRepository } from '../../../../../../../src/api/capacity/repositories/runtime/runtime-evidence.ts';
 import { executePostgresBatch } from '../../../../../../../src/api/support/control-plane-postgres.ts';
+import { createProviderAssignmentService } from '../../../../../../../src/api/control-plane/repositories/providers/provider-assignment-service.ts';
+import { terminalUsage } from '../../../../capacity/accounting/architecture/settlement-fixture.ts';
 import { workspaceCleanupFixture, workspaceId } from '../../architecture/workspace-cleanup-fixture.ts';
 import { cancellationDatabase, cancelNow } from '../../architecture/cancellation-fixture.ts';
 
@@ -51,13 +53,16 @@ async function returnFixture() {
 		return { ...native, ...await lifecycle(native), close: () => native.db.close() };
 	} catch (error) { await native.db.close(); throw error; }
 }
-async function completionFixture() {
+async function completionFixture(settled = true) {
 	vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-02T21:00:02.000Z'));
 	const native = await cancellationDatabase('leased', true);
 	try {
-		// Existing completion admission requires this stored state. This isolated
-		// input is not evidence that live reservation admission produced it.
-		await native.query("UPDATE capacity_reservations SET state='consumed' WHERE id='reservation'");
+		// Actual provider caller settles before completion. Exercise that SAME
+		// public owning service rather than fabricating a consumed SQL state.
+		if (settled) await createProviderAssignmentService(native.owner as Parameters<typeof createProviderAssignmentService>[0]).settle(
+			{ principal: { ...principal, scopes: ['provider:usage:write', 'provider:assignments:write'] } }, native.assignment.id,
+			{ ...terminalUsage, activeSeconds: 1, elapsedSeconds: 2,
+				usageActual: { ...terminalUsage.usageActual, nativeUsage: { activeSeconds: 1, tokens: 7 } } }, 'completion-settlement');
 		const workspace = native.attempt.workspace;
 		if (workspace.mode !== 'git') throw new Error('Expected sole governed Git workspace input');
 		const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: 'completion-result',
@@ -88,7 +93,7 @@ describe('provider terminal reporting through original transaction and resource 
 		}
 		expect(observations).toEqual([true, true, true]);
 	});
-	it('retains canonical completed result and matching replay while settling supplied measured completion once', async () => {
+	it('retains canonical completed result after public exactly-once settlement and replays without another charge', async () => {
 		const native = await completionFixture();
 		try {
 			const input = { leaseToken: 'lease-token', activeSeconds: 1, elapsedSeconds: 2,
@@ -101,7 +106,16 @@ describe('provider terminal reporting through original transaction and resource 
 			expect({ usage: (await native.query('SELECT active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows,
 				ledger: (await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows,
 				reservation: (await native.query("SELECT state FROM capacity_reservations WHERE id='reservation'")).rows })
-				.toEqual({ usage: [{ active_seconds: 1, elapsed_seconds: 2 }], ledger: [{ total: 1 }], reservation: [{ state: 'settled' }] });
+				.toEqual({ usage: [{ active_seconds: 1, elapsed_seconds: 2 }], ledger: [{ total: 1 }], reservation: [{ state: 'consumed' }] });
+		} finally { await native.close(); }
+	});
+	it('denies completion before public settlement without creating a result or rewriting financial authority', async () => {
+		const native = await completionFixture(false);
+		try {
+			const before = await native.snapshot();
+			await expect(native.service.complete(principal, native.assignment.id, { leaseToken: 'lease-token',
+				output: { assignmentResult: native.result } })).resolves.toBeNull();
+			expect(await native.snapshot()).toEqual(before);
 		} finally { await native.close(); }
 	});
 	it('denies noncompleted result status and wrong completion owner token or deadline without changing stored authority', async () => {
