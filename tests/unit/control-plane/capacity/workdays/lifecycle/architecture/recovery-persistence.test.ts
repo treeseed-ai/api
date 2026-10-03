@@ -20,7 +20,7 @@ async function fixture() {
 			await base.db.exec(statements[0]!);
 		}
 		const events = new CapacityWorkdayEventService(base.owner);
-		return { ...base, recovery: { ...base.store,
+		return { ...base, recovery: { ...base.owner,
 			terminalizeCapacityWorkdayAssignments: (team: string, run: string, input: Record<string, unknown>) =>
 				terminalizeCapacityWorkdayAssignments(base.owner, team, run, input),
 			createCapacityWorkdayEvent: events.create.bind(events) } };
