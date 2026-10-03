@@ -1,6 +1,21 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-usage-pages-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/usage-observation-persistence.test.ts
+    testName: "reads all measured usage beyond page one with exact project workday cursor and immutable repeated reads"
+  api.golden.architecture-usage-pages-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/usage-observation-persistence.test.ts
+    testName: "denies missing authority corrupt native JSON and invalid pages while preserving explicit empty terminal evidence"
+  api.golden.architecture-usage-pages-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/usage-observation-persistence.test.ts
+    testName: "rejects corrupt stored creation clocks and zero measured productive time instead of returning valid-looking evidence"
   api.golden.architecture-assignment-pages-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
