@@ -1,6 +1,76 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-settlement-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "preserves exact arbitrary-class attempt and measured input while identifying one matching report"
+  api.golden.architecture-settlement-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "denies changed durable attempt and scalar measurement on an otherwise identical retry"
+  api.golden.architecture-settlement-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "denies coerced attempt identities rather than treating strings as the frozen attempt number"
+  api.golden.architecture-settlement-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "denies changed native measurement or provider model authority on an idempotent report"
+  api.golden.architecture-settlement-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "denies incomplete frozen attempt authority before preparing terminal measurement persistence"
+  api.golden.architecture-settlement-unit-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "denies malformed native measured units before they can become null or coerced stored values"
+  api.golden.architecture-settlement-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "settles repeated and concurrent matching terminal reports once with exact native usage and immutable authority"
+  api.golden.architecture-settlement-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "denies foreign identity changed attempt and conflicting scalar retries without altering any durable accounting row"
+  api.golden.architecture-settlement-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "rejects changed native usage and provider model replay instead of silently retaining incompatible measured authority"
+  api.golden.architecture-settlement-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "rolls back real late SQL failure including usage counters and claim then permits one clean retry"
+  api.golden.architecture-settlement-sql-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "records supplied terminal overrun truth without raising hard limits or charging a replay twice"
+  api.golden.architecture-settlement-sql-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "denies incomplete frozen attempt instead of committing unattributed terminal measurements"
+  api.golden.architecture-settlement-sql-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "denies coerced attempt identity before charging a reservation through actual SQL"
+  api.golden.architecture-settlement-sql-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-persistence.test.ts
+    testName: "denies corrupt native units rather than durably writing negative coerced or null measurements"
   api.golden.architecture-usage-pages-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

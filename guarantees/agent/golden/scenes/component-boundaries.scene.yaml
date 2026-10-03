@@ -3,6 +3,48 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-settlement-unit-1
+    action: { verifier: api.golden.architecture-settlement-unit-1 }
+    expect: { status: passed }
+  - id: architecture-settlement-unit-2
+    action: { verifier: api.golden.architecture-settlement-unit-2 }
+    expect: { status: passed }
+  - id: architecture-settlement-unit-3
+    action: { verifier: api.golden.architecture-settlement-unit-3 }
+    expect: { status: passed }
+  - id: architecture-settlement-unit-4
+    action: { verifier: api.golden.architecture-settlement-unit-4 }
+    expect: { status: passed }
+  - id: architecture-settlement-unit-5
+    action: { verifier: api.golden.architecture-settlement-unit-5 }
+    expect: { status: passed }
+  - id: architecture-settlement-unit-6
+    action: { verifier: api.golden.architecture-settlement-unit-6 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-1
+    action: { verifier: api.golden.architecture-settlement-sql-1 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-2
+    action: { verifier: api.golden.architecture-settlement-sql-2 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-3
+    action: { verifier: api.golden.architecture-settlement-sql-3 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-4
+    action: { verifier: api.golden.architecture-settlement-sql-4 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-5
+    action: { verifier: api.golden.architecture-settlement-sql-5 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-6
+    action: { verifier: api.golden.architecture-settlement-sql-6 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-7
+    action: { verifier: api.golden.architecture-settlement-sql-7 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-8
+    action: { verifier: api.golden.architecture-settlement-sql-8 }
+    expect: { status: passed }
   - id: architecture-usage-pages-1
     action: { verifier: api.golden.architecture-usage-pages-1 }
     expect: { status: passed }

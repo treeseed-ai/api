@@ -103,16 +103,18 @@ describe('terminal accounting through the owning transaction and persistence', (
 	});
 	it('denies corrupt native units rather than durably writing negative coerced or null measurements', async () => {
 		const invalid = [{ tokens: -1 }, { tokens: Infinity }, { tokens: NaN }, { tokens: '7' }, { tokens: null }];
-		const outcomes: Array<{ denied: boolean; unchanged: boolean }> = [];
+		const outcomes: Array<{ denied: boolean; unchanged: boolean; storedNative: unknown[] }> = [];
 		for (const nativeUsage of invalid) {
-			const { db, owner, snapshot } = await settlementDatabase();
+			const { db, owner, query, snapshot } = await settlementDatabase();
 			try {
 				const before = await snapshot(); let denied = false;
 				try { await settleCapacityReservationExactlyOnce(owner, { ...terminalUsage, usageActual: { ...terminalUsage.usageActual, nativeUsage } }); }
 				catch { denied = true; }
-				outcomes.push({ denied, unchanged: JSON.stringify(await snapshot()) === JSON.stringify(before) });
+				outcomes.push({ denied, unchanged: JSON.stringify(await snapshot()) === JSON.stringify(before),
+					storedNative: (await query('SELECT native_usage_json FROM capacity_usage_actuals')).rows
+						.map(row => JSON.parse(String(row.native_usage_json)) as unknown) });
 			} finally { await db.close(); }
 		}
-		expect(outcomes).toEqual(invalid.map(() => ({ denied: true, unchanged: true })));
+		expect(outcomes).toEqual(invalid.map(() => ({ denied: true, unchanged: true, storedNative: [] })));
 	});
 });
