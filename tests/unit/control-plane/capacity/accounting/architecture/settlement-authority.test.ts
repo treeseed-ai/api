@@ -57,4 +57,8 @@ describe('immutable settlement measurement authority', () => {
 		});
 		expect(outcomes).toEqual(invalid.map(() => 'DENIED'));
 	});
+	it('denies a first report substituting an execution provider outside the frozen selection', () => {
+		expect(() => capacityUsageInsertOperation({ ...input, usageActual: { ...input.usageActual, executionProviderId: 'foreign-provider' } },
+			reservation, identity, { column: 'settlement_token', token: 'isolated-token' }, frozenAttempt.createdAt)).toThrow();
+	});
 });

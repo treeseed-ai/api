@@ -117,4 +117,16 @@ describe('terminal accounting through the owning transaction and persistence', (
 		}
 		expect(outcomes).toEqual(invalid.map(() => ({ denied: true, unchanged: true, storedNative: [] })));
 	});
+	it('denies first terminal report executor substitution before durable usage or counter attribution', async () => {
+		const { db, owner, query, snapshot } = await settlementDatabase();
+		try {
+			const before = await snapshot(); let denied = false;
+			try { await settleCapacityReservationExactlyOnce(owner, { ...terminalUsage,
+				usageActual: { ...terminalUsage.usageActual, executionProviderId: 'foreign-provider' } }); }
+			catch { denied = true; }
+			const executors = (await query('SELECT execution_provider_id FROM capacity_usage_actuals')).rows.map(row => row.execution_provider_id);
+			expect({ denied, unchanged: JSON.stringify(await snapshot()) === JSON.stringify(before), executors })
+				.toEqual({ denied: true, unchanged: true, executors: [] });
+		} finally { await db.close(); }
+	});
 });

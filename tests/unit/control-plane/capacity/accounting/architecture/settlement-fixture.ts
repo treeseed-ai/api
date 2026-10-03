@@ -42,8 +42,9 @@ export async function settlementDatabase() {
 		await base.db.exec(readFileSync('drizzle/control-plane/0033_settle_actual_usage_without_approval.sql', 'utf8'));
 		await base.query(`UPDATE capacity_provider_assignments SET project_agent_class_id=?,assignment_attempt_json=?,attempt_count=1
 			WHERE id=?`, [frozenAttempt.agentClass, JSON.stringify(frozenAttempt), frozenAttempt.id]);
-		await base.query(`UPDATE capacity_reservations SET state='consuming',project_agent_class_id=?,reserved_seconds=2,
-			requested_seconds=2,active_seconds=0,elapsed_seconds=0 WHERE id='reservation'`, [frozenAttempt.agentClass]);
+		await base.query(`UPDATE capacity_reservations SET state='consuming',project_agent_class_id=?,execution_provider_id=?,reserved_seconds=2,
+			requested_seconds=2,active_seconds=0,elapsed_seconds=0 WHERE id='reservation'`,
+			[frozenAttempt.agentClass, frozenAttempt.provider.executionProviderId]);
 		const at = frozenAttempt.createdAt;
 		await base.query(`INSERT INTO capacity_admission_counters (id,team_id,scope,scope_id,period_key,hard_limit,committed_amount,created_at,updated_at)
 			VALUES ('seconds','team','model-active-seconds','provider','day',3,2,?,?),
@@ -54,7 +55,7 @@ export async function settlementDatabase() {
 			const result: Record<string, unknown> = {};
 			for (const table of ['capacity_provider_assignments', 'capacity_reservations', 'capacity_usage_actuals',
 				'capacity_ledger_entries', 'capacity_admission_counters', 'capacity_reservation_counter_claims']) {
-				result[table] = (await base.query(`SELECT * FROM ${table} ORDER BY 1`)).rows;
+				result[table] = (await base.query(`SELECT * FROM ${table} ORDER BY 1,2`)).rows;
 			}
 			return result;
 		};

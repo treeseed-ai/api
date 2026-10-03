@@ -3,6 +3,12 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-settlement-unit-7
+    action: { verifier: api.golden.architecture-settlement-unit-7 }
+    expect: { status: passed }
+  - id: architecture-settlement-sql-9
+    action: { verifier: api.golden.architecture-settlement-sql-9 }
+    expect: { status: passed }
   - id: architecture-settlement-unit-1
     action: { verifier: api.golden.architecture-settlement-unit-1 }
     expect: { status: passed }
