@@ -1,6 +1,51 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-cancellation-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "requests active lease cancellation without terminalizing releasing or rewriting its immutable attempt"
+  api.golden.architecture-cancellation-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "replays terminal cancellation without replacing measured settlement or releasing counters twice"
+  api.golden.architecture-cancellation-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "refuses unknown productive usage instead of fabricating a zero settlement during terminal cancellation"
+  api.golden.architecture-cancellation-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "retains durable measured settlement when workspace cleanup is interrupted and retried"
+  api.golden.architecture-cancellation-sql-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/cancellation-persistence.test.ts
+    testName: "denies foreign team missing idempotency and completed assignment cancellation without accounting mutation"
+  api.golden.architecture-recovery-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery-authority.test.ts
+    testName: "does not authorize a zero-cost safe retry when an execution clock started but terminal usage is unknown"
+  api.golden.architecture-recovery-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery-authority.test.ts
+    testName: "preserves no-execution retry and financial uncertainty side-effect result and bounded failover denials"
+  api.golden.architecture-recovery-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery-persistence.test.ts
+    testName: "leaves executing leases available only for bounded terminal reporting without granting productive time"
+  api.golden.architecture-recovery-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/recovery-persistence.test.ts
+    testName: "reconciles a preparation-only expired lease without rewriting its attempt and settles the released reservation once"
   api.golden.architecture-provider-settlement-existing-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
