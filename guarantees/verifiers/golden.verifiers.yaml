@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-assignment-pages-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/assignment-observation-persistence.test.ts
+    testName: "reads every creation-ordered and identity-tied page including a failed tail with exact workday and team scope"
+  api.golden.architecture-assignment-pages-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/assignment-observation-persistence.test.ts
+    testName: "returns explicit empty terminal authority and denies unauthenticated or invalid cursor and page requests"
   api.golden.architecture-workday-observation-pages:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
