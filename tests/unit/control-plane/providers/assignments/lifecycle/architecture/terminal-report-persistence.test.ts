@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AssignmentCompletionEvidence } from '@treeseed/sdk/agent-capacity';
+import { assignmentResultSchema, type AssignmentCompletionEvidence } from '@treeseed/sdk/agent-capacity';
 import { ProviderAssignmentLifecycleService } from '../../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
 import { ProviderAssignmentRepository } from '../../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { CapacityRuntimeEvidenceRepository } from '../../../../../../../src/api/capacity/repositories/runtime/runtime-evidence.ts';
@@ -51,7 +51,77 @@ async function returnFixture() {
 		return { ...native, ...await lifecycle(native), close: () => native.db.close() };
 	} catch (error) { await native.db.close(); throw error; }
 }
+async function completionFixture() {
+	vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-02T21:00:02.000Z'));
+	const native = await cancellationDatabase('leased', true);
+	try {
+		// Existing completion admission requires this stored state. This isolated
+		// input is not evidence that live reservation admission produced it.
+		await native.query("UPDATE capacity_reservations SET state='consumed' WHERE id='reservation'");
+		const workspace = native.attempt.workspace;
+		if (workspace.mode !== 'git') throw new Error('Expected sole governed Git workspace input');
+		const result = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: 'completion-result',
+			assignmentId: native.attempt.id, status: 'completed', summary: 'Isolated canonical completion input, not native Git proof.',
+			references: [{ kind: 'git', repository: workspace.repository, branch: workspace.branch, commit: 'b'.repeat(40) }],
+			verification: [], diagnostics: [], usage: { elapsedSeconds: 2, modelInputTokens: 7, native: { activeSeconds: 1, tokens: 7 } },
+			timingAwareness: { schemaVersion: 'treeseed.assignment-timing-awareness/v1', requiredChecks: 2, completedChecks: 2,
+				firstTool: 'treedx:treeseed_time_status', firstToolSucceeded: true, lastTool: 'treedx:treeseed_time_status',
+				lastToolSucceeded: true, firstToolCompliant: true, finalToolCompliant: true }, completedAt: '2026-10-02T21:00:02.000Z' });
+		return { ...native, ...await lifecycle(native), result, close: () => native.db.close() };
+	} catch (error) { await native.db.close(); throw error; }
+}
 describe('provider terminal reporting through original transaction and resource custody', () => {
+	it('denies completed result clocks outside the immutable attempt and actual reporting interval without state mutation', async () => {
+		const observations: boolean[] = [];
+		for (const clock of ['2026-10-02T20:59:59.000Z', '2026-10-02T21:00:02.001Z', '2026-10-02T21:00:04.000Z']) {
+			const native = await completionFixture();
+			try {
+				const before = await native.snapshot(), graph = (await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows;
+				const input = { leaseToken: 'lease-token', activeSeconds: 1, elapsedSeconds: 2,
+					output: { assignmentResult: { ...native.result, completedAt: clock } } }, original = structuredClone(input);
+				let denied = false;
+				try { denied = await native.service.complete(principal, native.assignment.id, input) === null; } catch { denied = true; }
+				observations.push(denied && JSON.stringify(await native.snapshot()) === JSON.stringify(before)
+					&& JSON.stringify((await native.query('SELECT * FROM execution_graph_revisions ORDER BY revision')).rows) === JSON.stringify(graph));
+				expect(input).toEqual(original);
+			} finally { await native.close(); }
+		}
+		expect(observations).toEqual([true, true, true]);
+	});
+	it('retains canonical completed result and matching replay while settling supplied measured completion once', async () => {
+		const native = await completionFixture();
+		try {
+			const input = { leaseToken: 'lease-token', activeSeconds: 1, elapsedSeconds: 2,
+				usage: { inputTokens: 7, nativeUsage: { activeSeconds: 1, tokens: 7 } }, output: { assignmentResult: native.result } }, original = structuredClone(input);
+			const result = await native.service.complete(principal, native.assignment.id, input);
+			expect(result?.assignment.status).toBe('completed'); expect(result?.assignment.assignmentResult).toEqual(native.result);
+			const terminal = await native.snapshot();
+			await expect(native.service.complete(principal, native.assignment.id, input)).resolves.toBeNull();
+			expect(await native.snapshot()).toEqual(terminal); expect(input).toEqual(original);
+			expect({ usage: (await native.query('SELECT active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows,
+				ledger: (await native.query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows,
+				reservation: (await native.query("SELECT state FROM capacity_reservations WHERE id='reservation'")).rows })
+				.toEqual({ usage: [{ active_seconds: 1, elapsed_seconds: 2 }], ledger: [{ total: 1 }], reservation: [{ state: 'settled' }] });
+		} finally { await native.close(); }
+	});
+	it('denies noncompleted result status and wrong completion owner token or deadline without changing stored authority', async () => {
+		const native = await completionFixture();
+		try {
+			const before = await native.snapshot(), input = { leaseToken: 'lease-token', output: { assignmentResult: native.result } };
+			for (const status of ['blocked', 'failed'] as const)
+				await expect(native.service.complete(principal, native.assignment.id, { ...input, output: { assignmentResult: { ...native.result, status } } }))
+					.rejects.toMatchObject({ code: 'assignment_content_result_invalid' });
+			for (const completedAt of [undefined, 'invalid'])
+				await expect(native.service.complete(principal, native.assignment.id, { ...input, output: { assignmentResult: { ...native.result, completedAt } } }))
+					.rejects.toMatchObject({ code: 'assignment_result_invalid' });
+			for (const owner of [{ ...principal, membershipId: 'foreign' }, { ...principal, capacityProviderId: 'foreign' }])
+				await expect(native.service.complete(owner, native.assignment.id, input)).resolves.toBeNull();
+			await expect(native.service.complete(principal, native.assignment.id, { ...input, leaseToken: 'foreign' })).resolves.toBeNull();
+			vi.setSystemTime(new Date(native.attempt.deadline));
+			await expect(native.service.complete(principal, native.assignment.id, input)).resolves.toBeNull();
+			expect(await native.snapshot()).toEqual(before);
+		} finally { await native.close(); }
+	});
 	it('advances the retryable returned node revision without rewriting its historical assignment attempt', async () => {
 		const native = await returnFixture();
 		try {

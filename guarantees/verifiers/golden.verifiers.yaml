@@ -1,6 +1,31 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-completion-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/completion-clock.test.ts
+    testName: "retains a complete arbitrary-class frozen attempt and valid exact result unchanged"
+  api.golden.architecture-completion-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/completion-clock.test.ts
+    testName: "denies before-start and past-original-deadline result timestamps using the same complete frozen authority"
+  api.golden.architecture-completion-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "denies completed result clocks outside the immutable attempt and actual reporting interval without state mutation"
+  api.golden.architecture-completion-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "retains canonical completed result and matching replay while settling supplied measured completion once"
+  api.golden.architecture-completion-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "denies noncompleted result status and wrong completion owner token or deadline without changing stored authority"
   api.golden.architecture-return-sql-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
