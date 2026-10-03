@@ -84,6 +84,7 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 				.toEqual(custody);
 			await database.pool.query(`UPDATE capacity_provider_assignments SET status='pending',lease_state='unleased' WHERE id=$1`, [winner.id]);
 			const admitted = await new ProviderAssignmentRepository(store as never).get('team', winner.id);
+			if (!admitted?.assignmentAttempt) throw new Error('Complete admitted assignment authority is required for the settlement fixture.');
 			expect(admitted?.explanation)
 				.toMatchObject({ metadata: { allocation: { admitted: true } } });
 			expect(buildProviderAssignmentExplanation(admitted!, 'team', { source: 'lease_next_assignment', eligible: true }, now))
@@ -114,8 +115,9 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 			await expect(repository.get('team', winner.id)).rejects.toThrow('invalid assignment_attempt_json');
 			expect(await repository.getForCancellation('team', winner.id)).toMatchObject({ id: winner.id,
 				assignmentAttempt: null, explanation: { snapshotValidation: { valid: false, field: 'assignment_attempt_json' } } });
-			// Restore the existing settlement fixture after the independent malformed-JSON read-back assertion.
-			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json='{}' WHERE id=$1`, [winner.id]);
+			// Restore the exact owning admission read-back, not an empty noncanonical attempt.
+			await database.pool.query(`UPDATE capacity_provider_assignments SET assignment_attempt_json=$1 WHERE id=$2`,
+				[JSON.stringify(admitted.assignmentAttempt), winner.id]);
 			const settlement = { settlementKey: `settle:${winner.id}`, teamId: 'team', membershipId: 'membership',
 				reservationId: winner.reservationId, assignmentId: winner.id, activeSeconds: 2, elapsedSeconds: 4,
 				source: 'postgres-admission-test' };
