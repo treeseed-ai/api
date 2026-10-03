@@ -13,11 +13,12 @@ export async function workspaceCleanupFixture(handleStatus = 'issued') {
 	const base = await cancellationDatabase('returned', true);
 	let fault: 'none' | 'denied' | 'open-success' | 'absent' | 'unidentified-404' = 'none', state = 'open', bound = true;
 	const requests: string[] = [];
+	let readResponse: Record<string, unknown> | undefined;
 	const server = createServer((request, response) => {
 		const route = `${request.method} ${request.url}`; requests.push(route);
 		response.setHeader('content-type', 'application/json');
 		if (route === `GET /api/v1/workspaces/${workspaceId}`) {
-			response.end(JSON.stringify({ workspaceId, repoId: 'repository', status: state })); return;
+			response.end(JSON.stringify(readResponse ?? { workspaceId, repoId: 'repository', status: state })); return;
 		}
 		if (route !== `POST /api/v1/workspaces/${workspaceId}/close`) {
 			response.writeHead(404); response.end(JSON.stringify({ error: { code: 'not_found', message: 'Unknown fixture route.' } })); return;
@@ -43,7 +44,8 @@ export async function workspaceCleanupFixture(handleStatus = 'issued') {
 			[base.assignment.id, workspaceId, handleStatus, cancelNow, cancelNow, cancelNow]);
 		await settleCapacityReservationExactlyOnce(owner, terminalUsage);
 		const client = new TreeDxClient({ baseUrl, transport: new FetchTransport({ baseUrl }) });
-		return { ...base, owner, client, requests, setFault: (value: typeof fault) => { fault = value; },
+		return { ...base, owner, client, baseUrl, requests, setFault: (value: typeof fault) => { fault = value; },
+			setReadResponse: (value: Record<string, unknown> | undefined) => { readResponse = value; },
 			setBound: (value: boolean) => { bound = value; }, close: async () => {
 				server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await base.db.close(); } };
 	} catch (error) { server.closeAllConnections(); if (server.listening) server.close(); await base.db.close(); throw error; }

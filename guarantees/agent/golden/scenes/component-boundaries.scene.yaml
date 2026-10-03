@@ -3,6 +3,24 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-workspace-identity-1
+    action: { verifier: api.golden.architecture-workspace-identity-1 }
+    expect: { status: passed }
+  - id: architecture-workspace-identity-2
+    action: { verifier: api.golden.architecture-workspace-identity-2 }
+    expect: { status: passed }
+  - id: architecture-workspace-identity-3
+    action: { verifier: api.golden.architecture-workspace-identity-3 }
+    expect: { status: passed }
+  - id: architecture-workspace-readback-sql-1
+    action: { verifier: api.golden.architecture-workspace-readback-sql-1 }
+    expect: { status: passed }
+  - id: architecture-workspace-readback-sql-2
+    action: { verifier: api.golden.architecture-workspace-readback-sql-2 }
+    expect: { status: passed }
+  - id: architecture-workspace-readback-sql-3
+    action: { verifier: api.golden.architecture-workspace-readback-sql-3 }
+    expect: { status: passed }
   - id: architecture-workspace-unit-1
     action: { verifier: api.golden.architecture-workspace-unit-1 }
     expect: { status: passed }

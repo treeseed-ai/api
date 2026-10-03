@@ -1,6 +1,36 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-workspace-identity-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/workspaces/architecture/workspace-identity.test.ts
+    testName: "retains exact open and closed resource reads without mutating the requested project binding"
+  api.golden.architecture-workspace-identity-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/workspaces/architecture/workspace-identity.test.ts
+    testName: "denies missing foreign or malformed workspace identity even when the repository matches"
+  api.golden.architecture-workspace-identity-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/workspaces/architecture/workspace-identity.test.ts
+    testName: "retains foreign-repository and denied-upstream controls without exposing raw upstream text"
+  api.golden.architecture-workspace-readback-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/workspaces/architecture/workspace-readback-persistence.test.ts
+    testName: "reads exact open and closed resources repeatedly and concurrently without changing assignment finance"
+  api.golden.architecture-workspace-readback-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/workspaces/architecture/workspace-readback-persistence.test.ts
+    testName: "denies foreign and missing workspace identities rather than returning foreign authority with a success receipt"
+  api.golden.architecture-workspace-readback-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/workspaces/architecture/workspace-readback-persistence.test.ts
+    testName: "denies missing principal binding and foreign repository before publishing a successful workspace receipt"
   api.golden.architecture-workspace-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
