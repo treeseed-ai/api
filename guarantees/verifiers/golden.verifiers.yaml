@@ -1,6 +1,41 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-terminal-performance-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-performance.test.ts
+    testName: "retains supplied measured terminal time and arbitrary class without rewriting the frozen assignment"
+  api.golden.architecture-terminal-performance-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-performance.test.ts
+    testName: "denies unknown terminal measurements after execution started instead of synthesizing zero usage"
+  api.golden.architecture-terminal-performance-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-performance.test.ts
+    testName: "denies coerced or negative measured seconds instead of converting them into successful performance facts"
+  api.golden.architecture-terminal-report-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "preserves the immutable attempt ordinal when a terminal report releases its lease and retains measured settlement"
+  api.golden.architecture-terminal-report-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "does not certify terminal revocation while the independently read exact workspace remains open"
+  api.golden.architecture-terminal-report-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "retains foreign-owner and wrong-token denials and matching terminal replay without another charge"
+  api.golden.architecture-terminal-report-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-report-persistence.test.ts
+    testName: "rolls back a late SQL authority-revocation failure and retries terminal reporting without another settlement charge"
   api.golden.architecture-workspace-identity-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
