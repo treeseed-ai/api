@@ -1,6 +1,56 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.architecture-workspace-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup.test.ts
+    testName: "does not treat denied or unidentified upstream 404 errors as confirmed workspace absence"
+  api.golden.architecture-workspace-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup.test.ts
+    testName: "requires no remote closure for an assignment that owns no TreeDX workspace"
+  api.golden.architecture-workspace-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup.test.ts
+    testName: "rejects missing mismatched or still-open close responses while retaining exact closed replay authority"
+  api.golden.architecture-workspace-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup-persistence.test.ts
+    testName: "does not turn an unidentified upstream 404 denial into durable workspace closure"
+  api.golden.architecture-workspace-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup-persistence.test.ts
+    testName: "closes the exact remote workspace before durable proxy revocation and retains settlement through replay"
+  api.golden.architecture-workspace-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup-persistence.test.ts
+    testName: "keeps explicit already-absent closure idempotent through the actual HTTP error contract"
+  api.golden.architecture-workspace-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup-persistence.test.ts
+    testName: "does not skip an open workspace merely because its SQL capability handle is already revoked"
+  api.golden.architecture-workspace-sql-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup-persistence.test.ts
+    testName: "retries an interrupted operator close through workday cleanup even after durable capability revocation"
+  api.golden.architecture-workspace-sql-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup-persistence.test.ts
+    testName: "rejects a still-open success response instead of certifying closure without authoritative resource agreement"
+  api.golden.architecture-workspace-sql-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/workspace-cleanup-persistence.test.ts
+    testName: "retains recoverable workspace custody when the configured library binding is unavailable"
   agent.golden.architecture-workday-terminal-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

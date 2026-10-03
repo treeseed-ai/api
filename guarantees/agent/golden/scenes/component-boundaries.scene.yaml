@@ -3,6 +3,36 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: architecture-workspace-unit-1
+    action: { verifier: api.golden.architecture-workspace-unit-1 }
+    expect: { status: passed }
+  - id: architecture-workspace-unit-2
+    action: { verifier: api.golden.architecture-workspace-unit-2 }
+    expect: { status: passed }
+  - id: architecture-workspace-unit-3
+    action: { verifier: api.golden.architecture-workspace-unit-3 }
+    expect: { status: passed }
+  - id: architecture-workspace-sql-1
+    action: { verifier: api.golden.architecture-workspace-sql-1 }
+    expect: { status: passed }
+  - id: architecture-workspace-sql-2
+    action: { verifier: api.golden.architecture-workspace-sql-2 }
+    expect: { status: passed }
+  - id: architecture-workspace-sql-3
+    action: { verifier: api.golden.architecture-workspace-sql-3 }
+    expect: { status: passed }
+  - id: architecture-workspace-sql-4
+    action: { verifier: api.golden.architecture-workspace-sql-4 }
+    expect: { status: passed }
+  - id: architecture-workspace-sql-5
+    action: { verifier: api.golden.architecture-workspace-sql-5 }
+    expect: { status: passed }
+  - id: architecture-workspace-sql-6
+    action: { verifier: api.golden.architecture-workspace-sql-6 }
+    expect: { status: passed }
+  - id: architecture-workspace-sql-7
+    action: { verifier: api.golden.architecture-workspace-sql-7 }
+    expect: { status: passed }
   - id: architecture-workday-terminal-1
     action: { verifier: agent.golden.architecture-workday-terminal-1 }
     expect: { status: passed }
