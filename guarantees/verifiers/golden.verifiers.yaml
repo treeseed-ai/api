@@ -1,6 +1,16 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-reference-inventory-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-authority.test.ts
+    testName: "rejects duplicate canonical assignment and result references through owning validators before SQL without normalizing supplied authority"
+  api.golden.execution-reference-inventory-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
+    testName: "real owning admission rejects duplicated canonical references before writes and retains invalid input across exact retries"
   api.golden.execution-agent-snapshot-diagnostics-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

@@ -6,6 +6,29 @@ import { CapacityGovernanceError } from '../../../../../../../../src/api/capacit
 import { invalidAdmissionBindings } from '../initial-admission-fixture.ts';
 
 describe('dependency custody at admission authority', () => {
+	it('rejects duplicate canonical assignment and result references through owning validators before SQL without normalizing supplied authority', async () => {
+		const outcomes = [];
+		for (const mode of ['authority', 'context', 'read-grant', 'result'] as const) {
+			const input = dependencyUnitInput();
+			if (mode === 'authority') input.assignment.authorityRefs.push(structuredClone(input.assignment.authorityRefs[0]!));
+			if (mode === 'context') input.assignment.contextRefs.push(structuredClone(input.assignment.contextRefs[0]!));
+			if (mode === 'read-grant') input.assignment.grant.contentRead.push(structuredClone(input.assignment.grant.contentRead[0]!));
+			if (mode === 'result') {
+				const result = assignmentResultSchema.parse(input.predecessorResults[0]);
+				input.predecessorResults[0] = { ...result, references: [...result.references, structuredClone(result.references[0]!)] };
+			}
+			const held = structuredClone(input), guard = admissionWriteGuard();
+			let failure: unknown; try { await admitLivingExecutionAssignment(guard.store, input); } catch (error) { failure = error; }
+			outcomes.push({ mode, owned: failure instanceof CapacityGovernanceError,
+				code: failure instanceof CapacityGovernanceError ? failure.code : undefined,
+				status: failure instanceof CapacityGovernanceError ? failure.status : undefined,
+				reads: guard.reads(), writes: guard.writes() });
+			expect(input).toEqual(held);
+		}
+		expect(outcomes).toEqual(['authority', 'context', 'read-grant', 'result'].map(mode => ({ mode, owned: true,
+			code: mode === 'result' ? 'assignment_predecessor_authority_mismatch' : 'execution_assignment_authority_mismatch',
+			status: 409, reads: 0, writes: 0 })));
+	});
 	it('denies conflicting or malformed immutable provider execution bindings before SQL without turning a collaborator error into an authority refusal', async () => {
 		const original = dependencyUnitInput(), before = structuredClone(original), outcomes = [];
 		for (const variant of invalidAdmissionBindings(original)) {

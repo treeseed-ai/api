@@ -1,5 +1,5 @@
 import type { AssignmentAttempt, CapabilityAccountingLimits, calculateAssignmentAllocation, allocateWorkdayCapacity, selectFairReadyNode } from '@treeseed/sdk/agent-capacity';
-import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { capabilityCounterClaims, initializeCapabilityCounters, commitCapabilityCounters } from './capability-counter-claims.ts';
@@ -63,6 +63,10 @@ export async function admitLivingExecutionAssignment(store: Store, input: {
 	now: string;
 }): Promise<DurableProviderAssignment> {
 	const { assignment, principal } = input;
+	if (!assignmentAttemptSchema.safeParse(assignment).success) {
+		throw new CapacityGovernanceError('execution_assignment_authority_mismatch',
+			'Assignment admission requires a canonical immutable assignment attempt.', 409);
+	}
 	const boundIds = [principal.teamId, principal.capacityProviderId, principal.membershipId,
 		input.projectAgentClassId, input.providerSessionId, input.executionProviderId, input.laneId];
 	if (boundIds.some(value => typeof value !== 'string' || !value.trim() || value !== value.trim())

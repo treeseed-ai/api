@@ -3,6 +3,39 @@ import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { dependencyAdmission } from './dependency-admission-fixture.ts';
 
 describe('original SQL dependency custody admission', () => {
+	it('real owning admission rejects duplicated canonical references before writes and retains invalid input across exact retries', async () => {
+		const observed: Array<{ mode: string; status: string; code?: string; statusCode?: number; stateUnchanged: boolean; inputUnchanged: boolean }> = [];
+		for (const mode of ['authority', 'context', 'read-grant', 'result'] as const) {
+			const f = await dependencyAdmission(); try {
+				const input = f.input();
+				if (mode === 'authority') input.assignment = { ...input.assignment, authorityRefs: [...input.assignment.authorityRefs, structuredClone(input.assignment.authorityRefs[0]!)] };
+				if (mode === 'context') input.assignment = { ...input.assignment, contextRefs: [...input.assignment.contextRefs, structuredClone(input.assignment.contextRefs[0]!)] };
+				if (mode === 'read-grant') input.assignment = { ...input.assignment, grant: { ...input.assignment.grant,
+					contentRead: [...input.assignment.grant.contentRead, structuredClone(input.assignment.grant.contentRead[0]!)] } };
+				if (mode === 'result') {
+					const invalid = { ...f.actor, references: [...f.actor.references, structuredClone(f.actor.references[0]!)] };
+					input.predecessorResults = [invalid, f.review];
+					// Deliberately invalid supplied stored/input authority matches exactly;
+					// a late byte-mismatch fence must not disguise missing validation.
+					await f.query('UPDATE capacity_provider_assignments SET assignment_result_json=? WHERE id=?', [JSON.stringify(invalid), f.actor.assignmentId]);
+				}
+				const before = await f.snapshot(), held = structuredClone(input);
+				for (let retry = 0; retry < 2; retry++) {
+					const [outcome] = await Promise.allSettled([f.admit(input)]);
+					if (!outcome) throw new Error('Native admission observation required.');
+					const error: unknown = outcome.status === 'rejected' ? outcome.reason : undefined;
+					observed.push({ mode, status: outcome.status,
+						...(error && typeof error === 'object' ? {
+							code: 'code' in error && typeof error.code === 'string' ? error.code : undefined,
+							statusCode: 'status' in error && typeof error.status === 'number' ? error.status : undefined } : {}),
+						stateUnchanged: JSON.stringify(await f.snapshot()) === JSON.stringify(before), inputUnchanged: JSON.stringify(input) === JSON.stringify(held) });
+				}
+			} finally { await f.db.close(); }
+		}
+		expect(observed).toEqual(['authority', 'context', 'read-grant', 'result'].flatMap(mode => Array.from({ length: 2 }, () => ({
+			mode, status: 'rejected', statusCode: 409, code: mode === 'result' ? 'assignment_predecessor_authority_mismatch' : 'execution_assignment_authority_mismatch',
+			stateUnchanged: true, inputUnchanged: true }))));
+	});
 	it('initial owning admission freezes both exact predecessor results with one dependent reservation and unchanged supplied review history', async () => {
 		const f = await dependencyAdmission(); try {
 			const input = f.input(), original = structuredClone(input), before = await f.snapshot(), admitted = await f.admit(input);
