@@ -10,6 +10,45 @@ function isolatedEnvironment() {
 	vi.stubEnv('TREESEED_ENVIRONMENT', 'test');
 }
 describe('architecture readiness native SQL and public HTTP-client integration', () => {
+	it('real executable proposal intake retains invalid committed work-item inventories through repeated denial before exact bounded source retry', async () => {
+		isolatedEnvironment(); const native = await proposalNativeFixture();
+		try {
+			const definition = readyProposal(), item = definition.executionPlan.workItems[0]!;
+			const ref = { store: 'git', model: 'repository', id: 'source', repository: 'treeseed-ai/source', commit: 'a'.repeat(40) };
+			const bounded = { ...item, id: 'a'.repeat(100), agentClass: 'a'.repeat(100),
+				requiredCapabilities: ['source.read', 'a'.repeat(200)], contextRefs: [ref] };
+			const variants = [{ id: 'a'.repeat(101) }, { agentClass: 'a'.repeat(101) },
+				{ requiredCapabilities: ['source.read', 'source.read'] }, { requiredCapabilities: ['source.read', 'internal space'] },
+				{ contextRefs: [ref, Object.fromEntries(Object.entries(ref).reverse())] },
+				{ requestedPermissions: { ...item.requestedPermissions, content: { read: ['proposal', 'proposal'], write: [] } } },
+				{ requestedPermissions: { ...item.requestedPermissions, content: { read: ['proposal'], write: ['note', 'note'] } } },
+				{ requestedPermissions: { ...item.requestedPermissions, tools: ['source.read', 'source.read'] } }];
+			const inputs = variants.map(patch => ({ ...definition, executionPlan: { workItems: [{ ...bounded, ...patch }] } }));
+			const held = structuredClone(inputs), denied: Array<{ row: Record<string, unknown>; source: string }> = [];
+			for (const input of inputs) {
+				const exact = await native.publish(input), row = (await native.query('SELECT * FROM governance_proposals')).rows[0]!;
+				const before = await native.snapshot();
+				for (let retry = 0; retry < 2; retry++) {
+					await expect(readExactProposal(native.store, row)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
+					expect(await loadTeamExecutableProposalSources(native.store, 'team', 'project')).toEqual([]);
+					expect(await native.snapshot()).toEqual(before);
+				}
+				denied.push({ row, source: exact.source });
+			}
+			const valid = { ...definition, executionPlan: { workItems: [bounded] } }, original = structuredClone(valid);
+			const exact = await native.publish(valid), before = await native.snapshot();
+			const row = (await native.query('SELECT * FROM governance_proposals')).rows[0]!;
+			await expect(readExactProposal(native.store, row)).resolves.toMatchObject({ source: exact.source });
+			const first = await loadTeamExecutableProposalSources(native.store, 'team', 'project');
+			expect(first).toHaveLength(1); expect(first[0]).toMatchObject({ frontmatter: valid, commit: exact.commit, digest: `sha256:${exact.digest}` });
+			expect(await Promise.all([loadTeamExecutableProposalSources(native.store, 'team', 'project'),
+				loadTeamExecutableProposalSources(native.store, 'team', 'project')])).toEqual([first, first]);
+			for (const observation of denied) {
+				await expect(readExactProposal(native.store, observation.row)).rejects.toMatchObject({ status: 422, code: 'proposal_execution_plan_invalid' });
+			}
+			expect(await native.snapshot()).toEqual(before); expect(inputs).toEqual(held); expect(valid).toEqual(original);
+		} finally { await native.close(); }
+	});
 	it('admits canonical optional-capability omission instead of imposing a second proposal schema', async () => {
 		isolatedEnvironment(); const native = await proposalNativeFixture();
 		try {

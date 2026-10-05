@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-work-item-inventory-native
+    action: { verifier: api.golden.execution-work-item-inventory-native }
+    expect: { status: passed }
   - id: execution-profile-signal-cutover-unit
     action: { verifier: api.golden.execution-profile-signal-cutover-unit }
     expect: { status: passed }

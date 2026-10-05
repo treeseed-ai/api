@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-work-item-inventory-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-native-readiness.test.ts
+    testName: "real executable proposal intake retains invalid committed work-item inventories through repeated denial before exact bounded source retry"
   api.golden.execution-profile-signal-cutover-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
