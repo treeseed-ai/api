@@ -19,5 +19,15 @@ describe('team provider registration code', () => {
 			codePrefix: 'trsd_reg', rotatedAt: metadata.createdAt });
 		expect(registrationCodeReceipt({ ...metadata, registrationKey: 'registration-code-secret' })).toEqual({ schemaVersion: 'treeseed.provider-registration-code-receipt/v1',
 			teamId: 'team-1', generation: 7, codePrefix: 'trsd_reg', registrationCode: 'registration-code-secret', rotatedAt: metadata.createdAt });
+		const { rotatedAt: _rotation, ...unrotated } = metadata;
+		for (const input of [unrotated, metadata, { ...metadata, rotatedAt: '2026-09-02T20:00:00.000Z' }]) {
+			const held = structuredClone(input), expected = 'rotatedAt' in input ? input.rotatedAt ?? metadata.createdAt : metadata.createdAt;
+			expect(registrationCodeStatus(input)).toEqual({ schemaVersion: 'treeseed.provider-registration-code-status/v1',
+				teamId: metadata.teamId, generation: metadata.generation, codePrefix: metadata.keyPrefix, rotatedAt: expected });
+			expect(registrationCodeReceipt({ ...input, registrationKey: 'registration-code-secret' })).toEqual({
+				schemaVersion: 'treeseed.provider-registration-code-receipt/v1', teamId: metadata.teamId, generation: metadata.generation,
+				codePrefix: metadata.keyPrefix, registrationCode: 'registration-code-secret', rotatedAt: expected });
+			expect(input).toEqual(held);
+		}
 	});
 });

@@ -2,6 +2,7 @@ import type {
 	CapacityProviderIdentityRotationRequest,
 	CapacityProviderSignedProof,
 	ProviderRegistrationSubmission,
+	TeamCapacityRegistrationKeyMetadata,
 } from '@treeseed/sdk/capacity-provider/contracts';
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
@@ -75,12 +76,14 @@ export function providerAccountingStatus(value: unknown): Array<{
 	});
 }
 
-export function registrationCodeStatus(metadata: { teamId: string; generation: number; keyPrefix: string; createdAt: string; rotatedAt: string | null }) {
+type RegistrationCodeMetadata = Pick<TeamCapacityRegistrationKeyMetadata, 'teamId' | 'generation' | 'keyPrefix' | 'createdAt' | 'rotatedAt'>;
+
+export function registrationCodeStatus(metadata: RegistrationCodeMetadata) {
 	return { schemaVersion: 'treeseed.provider-registration-code-status/v1' as const, teamId: metadata.teamId,
 		generation: metadata.generation, codePrefix: metadata.keyPrefix, rotatedAt: metadata.rotatedAt ?? metadata.createdAt };
 }
 
-export function registrationCodeReceipt(metadata: { teamId: string; generation: number; keyPrefix: string; registrationKey: string; createdAt: string; rotatedAt: string | null }) {
+export function registrationCodeReceipt(metadata: RegistrationCodeMetadata & { registrationKey: string }) {
 	return { schemaVersion: 'treeseed.provider-registration-code-receipt/v1' as const, teamId: metadata.teamId,
 		generation: metadata.generation, codePrefix: metadata.keyPrefix, registrationCode: metadata.registrationKey,
 		rotatedAt: metadata.rotatedAt ?? metadata.createdAt };
@@ -198,7 +201,7 @@ export function createProviderRuntimeService(store: CapacityGovernanceDatabase, 
 			const synthesisEvent = await store.first(`SELECT action, metadata_json, created_at FROM capacity_audit_events
 				WHERE team_id = ? AND capacity_provider_id = ? AND action IN ('provider-assignment.synthesis-failed', 'provider-assignment.synthesis-completed')
 				ORDER BY created_at DESC, id DESC LIMIT 1`, [teamId, providerId]);
-			const synthesisFailure = synthesisEvent?.action === 'provider-assignment.synthesis-failed' ? {
+			const synthesisFailure: Record<string, unknown> | null = synthesisEvent?.action === 'provider-assignment.synthesis-failed' ? {
 				...jsonObject(synthesisEvent.metadata_json),
 				observedAt: String(synthesisEvent.created_at ?? ''),
 			} : null;
