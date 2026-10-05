@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { beginAssignmentPreparationTimeBudget, compileAssignmentTimeBudget } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
 import { compileAssignmentExecutionWindow } from '../../../../../../src/api/capacity/services/capacity/assignments/lifecycle/assignment-execution-window-service.ts';
-import { candidate, provider, run } from '../fixtures/assignment-attempt-fixtures.ts';
+import { candidate, provider, run, executionCapability } from '../fixtures/assignment-attempt-fixtures.ts';
 
 function allocate(now: string, mode: 'production' | 'simulation', startsAt: string, endsAt: string) {
 	const planning = structuredClone(candidate);
@@ -23,7 +23,7 @@ function allocate(now: string, mode: 'production' | 'simulation', startsAt: stri
 	return buildAssignmentAttempt({ candidate: planning as never, run: applied as never,
 		principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 		allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session',
-		providers: [{ ...provider, accountingObservation: { modelUsage: observation, capabilityUsage: { 'code-change': observation } } }] as never,
+		providers: [{ ...provider, accountingObservation: { modelUsage: observation, capabilityUsage: { [executionCapability]: observation } } }] as never,
 		attempt: 1, now });
 }
 

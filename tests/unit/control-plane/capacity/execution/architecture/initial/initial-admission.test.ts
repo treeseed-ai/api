@@ -2,8 +2,37 @@ import { describe, expect, it } from 'vitest';
 import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import { initialAdmission, invalidAdmissionBindings } from './initial-admission-fixture.ts';
 import { CapacityGovernanceError } from '../../../../../../../src/api/capacity/database.ts';
+import { canonicalOfferBuildInput } from '../../fixtures/assignment-attempt-fixtures.ts';
+import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 
 describe('initial living assignment native admission', () => {
+	it('native builder and admission retain the original phase deadline separately from allocated active time through exact reservation and concurrent replay', async () => {
+		const f = await initialAdmission();
+		try {
+			const supplied = canonicalOfferBuildInput(f.attempt.createdAt);
+			Object.assign(supplied.candidate.node, { id: 'allocated-deadline-node', teamId: f.attempt.teamId,
+				projectId: f.attempt.projectId, agentClass: f.attempt.agentClass });
+			supplied.run.id = f.attempt.workdayId; supplied.run.parameters.appliedPlan = f.plan;
+			const held = structuredClone(supplied), built = buildAssignmentAttempt(supplied);
+			await f.seedNode(built.assignment);
+			const input = f.input(built.assignment), admitted = await f.admit(input);
+			const stored = await f.repository.get(built.assignment.teamId, built.assignment.id), snapshot = await f.snapshot();
+			const deadline = f.plan.endsAt;
+			expect(built.assignment.deadline).toBe(deadline);
+			expect(built.assignment.limits.maximumSeconds).toBe(3); expect(built.allocation.allocatedSeconds).toBe(3);
+			expect(admitted.assignmentAttempt).toEqual(built.assignment); expect(stored?.assignmentAttempt).toEqual(built.assignment);
+			expect(snapshot.financial.capacity_reservations).toHaveLength(1);
+			const reservations = snapshot.financial.capacity_reservations;
+			if (!Array.isArray(reservations)) throw new Error('Original native reservation inventory required');
+			expect(reservations[0]).toMatchObject({ reserved_seconds: 3, expires_at: deadline });
+			for (const replay of await Promise.all([f.admit(input), f.admit(structuredClone(input))])) expect(replay.assignmentAttempt).toEqual(built.assignment);
+			const widened = structuredClone(input);
+			widened.assignment.deadline = new Date(Date.parse(deadline) + 1).toISOString();
+			const heldWidened = structuredClone(widened);
+			await expect(f.admit(widened)).rejects.toMatchObject({ status: 409 }); expect(widened).toEqual(heldWidened);
+			expect(await f.snapshot()).toEqual(snapshot); expect(supplied).toEqual(held);
+		} finally { await f.db.close(); }
+	});
 	it('native admission retains exact original selector inputs in one allocation explanation and denies changed replay history without replacing candidate reservation or financial bytes', async () => {
 		const f = await initialAdmission();
 		try {

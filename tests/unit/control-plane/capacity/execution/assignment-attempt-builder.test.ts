@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssignmentAttempt } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
-import { candidate, permissions, provider, run, sourceRef, canonicalOfferBuildInput, invalidCanonicalOffers } from './fixtures/assignment-attempt-fixtures.ts';
+import { candidate, permissions, provider, run, sourceRef, canonicalOfferBuildInput, invalidCanonicalOffers,
+	conversationCapability, executionCapability, suppliedCapabilityOffer } from './fixtures/assignment-attempt-fixtures.ts';
+import { capabilityOfferDigest } from '@treeseed/sdk/capacity-provider';
 import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 describe('immutable assignment-attempt construction', () => {
@@ -9,18 +11,18 @@ describe('immutable assignment-attempt construction', () => {
 		discussion.node.kind = 'communication';
 		discussion.node.pairRole = null as never;
 		discussion.node.estimate = { expectedSeconds: 180, maximumSeconds: 180 };
-		discussion.node.requiredCapabilities = ['conversation'];
+		discussion.node.requiredCapabilities = [conversationCapability];
 		discussion.node.workspace = 'treedx';
 		discussion.node.sourceRef = { ...sourceRef, model: 'discussion', path: 'discussion-messages/one.mdx' } as never;
 		discussion.node.requestedPermissions = { content: { read: ['discussion'], write: ['discussion'] }, tools: ['discussion'] } as never;
 		discussion.effectiveProfile.permissionCeiling = discussion.node.requestedPermissions;
 		discussion.effectiveProfile.activity = 'chat';
-		const offered = { ...provider, capabilities: ['conversation'],
-			accountingLimits: { ...provider.accountingLimits, capabilityLimits: { conversation: { dailyActiveSecondsLimit: 28800 } } },
+		const offered = { ...provider, capabilities: [conversationCapability],
+			accountingLimits: { ...provider.accountingLimits, capabilityLimits: { [conversationCapability]: { dailyActiveSecondsLimit: 28800 } } },
 			accountingObservation: { ...provider.accountingObservation,
-				capabilityUsage: { conversation: provider.accountingObservation.modelUsage } },
-			lanes: [{ ...provider.lanes[0]!, purpose: 'communication', capabilities: ['conversation'] }],
-			offers: [{ offerId: 'codex-conversation', capabilities: [{ id: 'conversation' }] }] };
+				capabilityUsage: { [conversationCapability]: provider.accountingObservation.modelUsage } },
+			lanes: [{ ...provider.lanes[0]!, purpose: 'communication', capabilities: [conversationCapability] }],
+			offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', conversationCapability, 'codex-conversation')] };
 		const measurements = [{ id: 'successful-short-chat', completedAt: '2026-09-13T11:59:00.000Z',
 			expectedSeconds: 180, allocatedSeconds: 90, activeSeconds: 45, outcome: 'completed' }];
 		const chatRun = structuredClone(run) as { parameters: { appliedPlan: { policySnapshot: { planningTurnMaximumSeconds: number } } } };
@@ -30,7 +32,7 @@ describe('immutable assignment-attempt construction', () => {
 			allocationInputs: { codex: { measurements, constraints: [] } } as never, providerSessionId: 'session',
 			providers: [{ ...offered, accountingObservation: { ...offered.accountingObservation,
 				modelUsage: { ...offered.accountingObservation.modelUsage, observedAt: now },
-				capabilityUsage: { conversation: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
+				capabilityUsage: { [conversationCapability]: { ...offered.accountingObservation.modelUsage, observedAt: now } } } }] as never,
 			attempt: 1, now });
 		const planning = build('2026-09-13T12:01:00.000Z');
 		expect(planning.assignment.limits.maximumSeconds).toBe(180);
@@ -299,8 +301,11 @@ describe('immutable assignment-attempt construction', () => {
 	});
 
 	it('selects the least-privileged offer satisfying the compiled node demand', () => {
-		const broad = { ...provider.offers[0]!, offerId: 'broad', capabilities: [{ id: 'code-change' }, { id: 'release' }] };
-		const narrow = { ...provider.offers[0]!, offerId: 'narrow', capabilities: [{ id: 'code-change' }] };
+		const narrow = suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'narrow');
+		const release = suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', 'treeseed.engineering.release', 'release-input');
+		const broad = { ...narrow, offerId: 'broad', capabilities: [...narrow.capabilities, ...release.capabilities],
+			conformance: [...narrow.conformance, ...release.conformance] };
+		const { offerDigest: _broadDigest, ...broadMaterial } = broad; broad.offerDigest = capabilityOfferDigest(broadMaterial);
 		const result = buildAssignmentAttempt({
 			candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
@@ -311,8 +316,8 @@ describe('immutable assignment-attempt construction', () => {
 	});
 
 	it('selects another eligible provider when the first has no workday allocation left', () => {
-		const exhausted = { ...provider, id: 'a-exhausted', offers: [{ ...provider.offers[0]!, offerId: 'exhausted-offer' }] };
-		const available = { ...provider, id: 'b-available', offers: [{ ...provider.offers[0]!, offerId: 'available-offer' }] };
+		const exhausted = { ...provider, id: 'a-exhausted', offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'exhausted-offer')] };
+		const available = { ...provider, id: 'b-available', offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'available-offer')] };
 		const result = buildAssignmentAttempt({ candidate: candidate as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: {
@@ -395,7 +400,7 @@ describe('immutable assignment-attempt construction', () => {
 		review.effectiveProfile.permissionCeiling = review.node.requestedPermissions;
 		const currentObservation = { ...provider.accountingObservation.modelUsage, observedAt: '2026-09-13T12:30:00.000Z' };
 		const reviewProvider = { ...provider, accountingObservation: { modelUsage: currentObservation,
-			capabilityUsage: { 'code-change': currentObservation } } };
+			capabilityUsage: { [executionCapability]: currentObservation } } };
 		const result = buildAssignmentAttempt({ candidate: review as never, run,
 			principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 			allocationInputs: { codex: { measurements: [], constraints: [],

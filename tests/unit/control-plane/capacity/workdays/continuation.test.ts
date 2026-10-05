@@ -3,7 +3,8 @@ import pg from 'pg';
 import { validateWorkdayContinuation, workdayContinuationHistory, workdayLineageSql } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
 import { workdayStartDatabase } from './scheduling/architecture/workday-start-fixture.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
-import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
+import { assignment } from '../execution/fixtures/assignment.ts';
 
 const previous = { id: 'previous', team_id: 'team', execution_kind: 'workday', execution_mode: 'simulation',
 	capacity_provider_id: 'provider', status: 'completed', parameters_json: JSON.stringify({ scheduledProjectIds: ['sdk'] }) };
@@ -23,10 +24,13 @@ describe('settled workday continuation', () => {
 				assignmentId: 'returned-attempt', status: 'failed', summary: 'Controlled failed history, not a fabricated execution receipt.',
 				references: [], verification: [], usage: { elapsedSeconds: 1, native: { tokens: 7 } }, diagnostics: [], completedAt: at });
 			const raw = JSON.stringify(failed);
+			const frozen = assignmentAttemptSchema.parse({ ...structuredClone(assignment), id: 'returned-attempt', idempotencyKey: 'returned-attempt',
+				workdayId: 'returned-parent', reservationId: 'returned-reservation', createdAt: at,
+				deadline: new Date(Date.parse(at) + 3_000).toISOString() });
 			await f.query(`INSERT INTO capacity_provider_assignments
 				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,work_day_id,mode,status,lease_state,
-				attempt_count,decision_id,assignment_result_json,returned_at,created_at,updated_at)
-				VALUES ('returned-attempt','membership','team','project','provider','class','returned-parent','acting','returned','released',1,'decision',?,?,?,?)`, [raw, at, at, at]);
+				attempt_count,decision_id,assignment_result_json,assignment_attempt_json,returned_at,created_at,updated_at)
+				VALUES ('returned-attempt','membership','team','project','provider','class','returned-parent','acting','returned','released',1,'decision',?,?,?,?,?)`, [raw, JSON.stringify(frozen), at, at, at]);
 			await f.query(`INSERT INTO capacity_reservations
 				(id,idempotency_key,admission_token,membership_id,capacity_provider_id,project_agent_class_id,assignment_id,mode,
 				team_id,project_id,work_day_id,requested_seconds,reserved_seconds,created_at,updated_at)

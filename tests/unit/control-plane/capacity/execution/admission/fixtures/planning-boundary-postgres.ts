@@ -2,7 +2,7 @@ import { assignmentAttemptSchema } from '@treeseed/sdk/agent-capacity';
 import type { createControlPlanePostgresDatabase } from '../../../../../../../src/api/support/control-plane-postgres.ts';
 import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { compileAssignmentTimeBudget } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/assignment-time-budget.ts';
-import { candidate, provider, run } from '../../fixtures/assignment-attempt-fixtures.ts';
+import { candidate, provider, run, executionCapability } from '../../fixtures/assignment-attempt-fixtures.ts';
 
 /** Use the ordinary allocator and graph records, not a partial attempt snapshot. */
 export async function seedPlanningBoundary(db: ReturnType<typeof createControlPlanePostgresDatabase>, now: string, boundary: string) {
@@ -25,7 +25,7 @@ export async function seedPlanningBoundary(db: ReturnType<typeof createControlPl
 	const allocated = buildAssignmentAttempt({ candidate: planning as never,
 		run: { ...structuredClone(run as Record<string, unknown>), parameters } as never, principal: { teamId: 'team', capacityProviderId: 'provider' } as never,
 		allocationInputs: { codex: { measurements: [], constraints: [] } }, providerSessionId: 'session', attempt: 1, now: issuedAt,
-		providers: [{ ...provider, accountingObservation: { modelUsage: observation, capabilityUsage: { 'code-change': observation } } }] as never });
+		providers: [{ ...provider, accountingObservation: { modelUsage: observation, capabilityUsage: { [executionCapability]: observation } } }] as never });
 	const attempt = assignmentAttemptSchema.parse({ ...allocated.assignment, id: 'assignment', reservationId: 'reservation' });
 	const budget = compileAssignmentTimeBudget({ now: issuedAt, requestedSeconds: 31,
 		configuredBudget: { deadline: boundary } }).capacityBudget;

@@ -4,8 +4,31 @@ import type { CapacityDatabaseOperation, CapacityGovernanceDatabase } from '../.
 import { CapacityRegistrationSecurityRepository, type RegistrationRateBucket } from '../../../../../../../../src/api/capacity/repositories/support/registration-security.ts';
 import { verifyCapacityProviderProof } from '../../../../../../../../src/api/capacity/security.ts';
 import { registrationProofInputs } from './dependency-registration-fixture.ts';
+import type { ProviderRegistrationRequest } from '@treeseed/sdk/capacity-provider/contracts';
+import { CapacityAuditRepository } from '../../../../../../../../src/api/capacity/repositories/support/audit.ts';
+import { sha256 } from '../../../../../../../../src/api/capacity/security.ts';
 
 describe('original signed registration authority', () => {
+	it('registration audit retries retain one committed request identity original clock and exact conditional write bytes without independent reads or changing inputs and the original failure cause', async () => {
+		const supplied = registrationProofInputs(), request: ProviderRegistrationRequest = { id: 'original-request', teamId: 'team', providerId: 'provider',
+			providerFingerprint: supplied.payload.providerFingerprint, registrationKeyGeneration: 1, status: 'pending', capabilitySummary: supplied.body.capabilitySummary,
+			supplyOffer: supplied.body.supplyOffer, createdAt: supplied.payload.issuedAt, updatedAt: supplied.payload.issuedAt, expiresAt: supplied.payload.expiresAt };
+		const before = structuredClone(request), writes: Array<{ sql: string; params: unknown[] | undefined }> = [];
+		const cause = new Error('Original registration audit interruption'); let fail = true, reads = 0;
+		const database: CapacityGovernanceDatabase = { ensureInitialized: async () => undefined,
+			first: async () => { reads++; throw new Error('Unexpected independent audit read'); },
+			all: async () => { throw new Error('Unexpected history inventory'); }, batch: async () => { throw new Error('Unexpected replacement transaction'); },
+			run: async (sql, params) => { writes.push({ sql, params: structuredClone(params) }); if (fail) throw cause; } };
+		const audit = new CapacityAuditRepository(database);
+		await expect(audit.recordRegistrationRequest(request, 'original-key')).rejects.toBe(cause);
+		fail = false; await Promise.all([audit.recordRegistrationRequest(request, 'original-key'), audit.recordRegistrationRequest(request, 'original-key')]);
+		expect(writes).toHaveLength(3); expect(writes[1]).toEqual(writes[0]); expect(writes[2]).toEqual(writes[0]);
+		expect(writes[0]?.params).toEqual([sha256('provider-registration.requested:original-request'), 'team', 'provider', null,
+			'provider-identity', request.providerFingerprint, 'provider-registration.requested', 'provider-registration-request', 'original-request', 'original-request',
+			'original-key', JSON.stringify({ registrationKeyGeneration: 1 }), request.createdAt]);
+		expect(writes[0]?.sql).toContain('WHERE NOT EXISTS'); expect(writes[0]?.sql).toContain('ON CONFLICT DO NOTHING');
+		expect(reads).toBe(0); expect(request).toEqual(before);
+	});
 	it('concurrent original rate consumptions retain their own exact batch outcomes when over limit completion precedes exact limit admission', async () => {
 		const dimensions: RegistrationRateBucket['dimension'][] = ['team', 'ip', 'fingerprint', 'key-generation'];
 		const inputs = ['first', 'second'].map(identity => ({ buckets: dimensions.map(dimension => ({ dimension, key: dimension === 'fingerprint' ? identity : `shared-${dimension}` })), now: '2026-10-03T17:27:14.000Z', expiresAt: '2026-10-03T17:28:14.000Z', limit: 20 })), before = structuredClone(inputs);

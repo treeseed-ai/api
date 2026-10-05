@@ -39,9 +39,14 @@ export interface BoundOperation<TBinding extends ControlPlaneOperationBinding<an
 	}, context: OperationInvocationContext): Promise<ControlPlaneOperationOutput<TBinding>>;
 }
 
+const operationErrorStatuses = [400, 401, 403, 404, 409, 412, 413, 422, 429, 500, 503] as const;
+export function controlPlaneErrorStatus(status: unknown): typeof operationErrorStatuses[number] {
+	return operationErrorStatuses.find(candidate => candidate === status) ?? 500;
+}
+
 export class ControlPlaneOperationError extends Error {
 	constructor(
-		readonly status: 400 | 401 | 403 | 404 | 409 | 412 | 413 | 422 | 429 | 500 | 503,
+		readonly status: typeof operationErrorStatuses[number],
 		readonly code: string,
 		message: string,
 	) {

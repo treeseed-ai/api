@@ -18,10 +18,13 @@ export async function dependencyPoll() {
 		const store = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, {
 			prepare: (sql: string) => ({ bind: (...params: unknown[]) => new Statement(sql, params) }),
 			batch: (statements: unknown[]) => f.db.transaction(async transaction => {
+				const results: Array<{ results: Record<string, unknown>[]; success: boolean; meta: { changes: number } }> = [];
 				for (const statement of statements) {
 					assert.ok(statement instanceof Statement); let index = 0;
-					await transaction.query(statement.sql.replace(/\?/gu, () => `$${++index}`), statement.params);
+					const result = await transaction.query<Record<string, unknown>>(statement.sql.replace(/\?/gu, () => `$${++index}`), statement.params);
+					results.push({ results: result.rows, success: true, meta: { changes: result.affectedRows ?? result.rows.length } });
 				}
+				return results;
 			}),
 		});
 		store.initializationPromise = Promise.resolve(); // Original schema already applied; no unrelated owner seeding.

@@ -6,6 +6,8 @@ type CapacityPage,
 } from '@treeseed/sdk/capacity-pagination';
 import type { CapacityGovernanceDatabase } from '../../database.ts';
 import { CapacityGovernanceError } from '../../database.ts';
+import type { ProviderRegistrationRequest } from '@treeseed/sdk/capacity-provider/contracts';
+import { sha256 } from '../../security.ts';
 
 export interface CapacityAuditEvent {
 	id: string;
@@ -79,11 +81,36 @@ function auditEvent(row: Record<string, unknown>): CapacityAuditEvent {
 export class CapacityAuditRepository {
 	constructor(private readonly database: CapacityGovernanceDatabase) {}
 
-	async record(input: CapacityAuditWrite): Promise<void> {
+	async recordRegistrationRequest(request: ProviderRegistrationRequest, idempotencyKey: string) {
+		await this.recordOnce({ teamId: request.teamId, providerId: request.providerId,
+			actorType: 'provider-identity', actorId: request.providerFingerprint, action: 'provider-registration.requested',
+			resourceType: 'provider-registration-request', resourceId: request.id, requestId: request.id, idempotencyKey,
+			metadata: { registrationKeyGeneration: request.registrationKeyGeneration }, now: request.createdAt });
+	}
+
+	async recordRegistrationReview(request: ProviderRegistrationRequest, idempotencyKey: string) {
+		if (!['approved', 'rejected'].includes(request.status) || !request.reviewedAt || !request.reviewedById
+			|| (request.status === 'approved' ? !request.membershipId : !request.rejectionReason)) throw new CapacityGovernanceError(
+			'provider_registration_review_evidence_invalid', 'Review audit requires the original committed disposition, actor and clock.', 500);
+		await this.recordOnce({ teamId: request.teamId, providerId: request.providerId, membershipId: request.status === 'approved' ? request.membershipId : null,
+			actorType: 'team-principal', actorId: request.reviewedById, action: `provider-registration.${request.status}`, resourceType: 'provider-registration-request',
+			resourceId: request.id, requestId: request.id, idempotencyKey,
+			metadata: request.status === 'approved' ? { membershipOnly: true } : { reason: request.rejectionReason }, now: request.reviewedAt });
+	}
+
+	private async recordOnce(input: Omit<CapacityAuditWrite, 'id'>) {
+		await this.record({ ...input, id: sha256(`${input.action}:${input.resourceId}`) }, true);
+	}
+
+	async record(input: CapacityAuditWrite, onlyAbsent = false): Promise<void> {
 		await this.database.ensureInitialized();
+		const values = onlyAbsent ? `SELECT incoming.* FROM (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?))
+			AS incoming(id, team_id, capacity_provider_id, membership_id, actor_type, actor_id, action, resource_type, resource_id, request_id, idempotency_key, metadata_json, created_at)
+			WHERE NOT EXISTS (SELECT 1 FROM capacity_audit_events existing WHERE existing.team_id IS NOT DISTINCT FROM incoming.team_id
+				AND existing.action = incoming.action AND existing.resource_id IS NOT DISTINCT FROM incoming.resource_id)` : 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
 		await this.database.run(
 			`INSERT INTO capacity_audit_events (id, team_id, capacity_provider_id, membership_id, actor_type, actor_id, action, resource_type, resource_id, request_id, idempotency_key, metadata_json, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+			 ${values} ON CONFLICT DO NOTHING`,
 			[
 				input.id, input.teamId ?? null, input.providerId ?? null, input.membershipId ?? null,
 				input.actorType, input.actorId ?? null, input.action, input.resourceType,

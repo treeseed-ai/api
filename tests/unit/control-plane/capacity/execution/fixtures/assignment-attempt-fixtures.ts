@@ -1,4 +1,4 @@
-import { compileWorkday, effectiveActivityProfileSchema, exactEntityReferenceSchema, executionNodeSchema } from '@treeseed/sdk/agent-capacity';
+import { allocateWorkdayCapacity, compileWorkday, effectiveActivityProfileSchema, exactEntityReferenceSchema, executionNodeSchema } from '@treeseed/sdk/agent-capacity';
 import { capabilityOfferDigest, capabilityOfferSchema, CORE_CAPABILITY_DEFINITIONS, type CapabilityOffer } from '@treeseed/sdk/capacity-provider';
 import type { buildAssignmentAttempt } from '../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
 import { serializeCapacityWorkdayRunRow } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
@@ -9,6 +9,8 @@ export const sourceRef = { store: 'treedx' as const, model: 'proposal', id: 'pro
 	digest: `sha256:${'a'.repeat(64)}`, repository: 'library', commit: 'b'.repeat(40), path: 'proposals/one.mdx' };
 export const gitRef = { store: 'git' as const, model: 'repository', id: 'sdk', repository: 'treeseed-ai/sdk', commit: 'c'.repeat(40) };
 export const permissions = { content: { read: ['proposal'] as const, write: [] }, tools: ['source.read', 'source.write', 'verification'] as const };
+export const executionCapability = 'treeseed.engineering.code-change';
+export const conversationCapability = 'treeseed.coordination.conversation';
 export const candidate = {
 	graphRevision: 4, projectAgentClassId: 'class-engineer', projectContentRepositoryId: 'library', contextRefs: [gitRef], predecessorResults: [],
 	sourceRepositories: [],
@@ -23,21 +25,21 @@ export const candidate = {
 		authorityRefs: [{ store: 'postgresql', model: 'decision', id: 'decision', revision: 1, digest: `sha256:${'e'.repeat(64)}` }],
 		ruleRevision: 1, nodeRevision: 1, agentClass: 'engineer', status: 'ready',
 		estimate: { expectedSeconds: 120, maximumSeconds: 180 },
-		requiredCapabilities: ['code-change'], requestedPermissions: permissions, workspace: 'git',
+		requiredCapabilities: [executionCapability], requestedPermissions: permissions, workspace: 'git',
 		acceptanceCriteria: ['Tests pass.'], maximumReviewCycles: 2,
 		graphRevisionCreated: 1, graphRevisionUpdated: 4,
 	},
 };
 export const provider = {
 	id: 'codex', runtimeBuild: `sha256:${'f'.repeat(64)}`, status: 'available',
-	capabilities: ['code-change'], availableConcurrency: 1, maxConcurrentRunners: 1,
+	capabilities: [executionCapability], availableConcurrency: 1, maxConcurrentRunners: 1,
 	accountingLimits: { modelConfigurationId: 'terra-medium', dailyActiveSecondsLimit: 28800,
-		capabilityLimits: { 'code-change': { dailyActiveSecondsLimit: 28800 } } },
+		capabilityLimits: { [executionCapability]: { dailyActiveSecondsLimit: 28800 } } },
 	accountingObservation: { modelUsage: { day: '2026-09-13', observedAt: '2026-09-13T12:00:00.000Z', healthy: true, activeSeconds: 0, reservedSeconds: 0 },
-		capabilityUsage: { 'code-change': { day: '2026-09-13', observedAt: '2026-09-13T12:00:00.000Z', healthy: true, activeSeconds: 0, reservedSeconds: 0 } } },
-	lanes: [{ id: 'work', purpose: 'workday', priority: 1, capabilities: ['code-change'],
+		capabilityUsage: { [executionCapability]: { day: '2026-09-13', observedAt: '2026-09-13T12:00:00.000Z', healthy: true, activeSeconds: 0, reservedSeconds: 0 } } },
+	lanes: [{ id: 'work', purpose: 'workday', priority: 1, capabilities: [executionCapability],
 		maxConcurrentRunners: 1, reservedConcurrentWorkers: 0, borrowWhenIdle: true, lendWhenIdle: true, queueLimit: 10 }],
-	offers: [{ offerId: 'codex-offer', capabilities: [{ id: 'code-change' }] }],
+	offers: [suppliedCapabilityOffer('2026-09-13T12:00:00.000Z', executionCapability, 'codex-offer')],
 };
 export const run = { id: 'workday', executionMode: 'simulation', parameters: { appliedPlan: {
 	schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
@@ -50,25 +52,29 @@ export const run = { id: 'workday', executionMode: 'simulation', parameters: { a
 	admittedSecondsByProject: {}, admittedSecondsByAgentClass: {}, activatedAt: '2026-09-13T12:00:00.000Z',
 } } } as never;
 
-/** Complete supplied offer input, not native attestation or qualification proof.
- * Older partial fixtures remain untouched for their existing obligations. */
-export function canonicalOfferBuildInput(now = '2026-10-04T12:00:00.000Z', capabilityId = 'treeseed.engineering.code-change'): Parameters<typeof buildAssignmentAttempt>[0] {
+/** Complete supplied qualification input, not native attestation or suite proof. */
+export function suppliedCapabilityOffer(now: string, capabilityId: string, offerId: string): CapabilityOffer {
 	const definition = CORE_CAPABILITY_DEFINITIONS.find(value => value.id === capabilityId);
 	if (!definition) throw new Error('Original core capability definition required');
 	const reference = { id: definition.id, version: definition.version, digest: definition.digest };
 	const material: Omit<CapabilityOffer, 'offerDigest'> = {
-		schemaVersion: 'treeseed.capability-offer/v2', offerId: 'canonical-code-change', capabilities: [reference],
+		schemaVersion: 'treeseed.capability-offer/v2', offerId, capabilities: [reference],
 		features: [], configurationSupport: {}, permissionClasses: definition.permissionClasses, contextModes: definition.contextModes,
 		inputContracts: [], outputContracts: [], interactionModes: definition.interactionModes,
 		conformance: [{ schemaVersion: 'treeseed.capability-conformance/v1', providerId: 'provider', capability: reference,
-			tier: definition.qualificationTier, status: 'passed', evidenceDigest: definition.digest, suite: null,
+			tier: definition.qualificationTier, status: 'passed', evidenceDigest: definition.digest,
+			suite: definition.qualificationTier === 'automated-suite' ? { id: 'supplied-qualification', version: '1.0.0' } : null,
 			issuedAt: new Date(Date.parse(now) - 1_000).toISOString(), expiresAt: null,
 			signature: { keyId: 'controlled-key', algorithm: 'Ed25519', value: 'controlled-input-not-attestation-proof' } }],
 		contextCapacity: { mode: 'bounded', measurement: 'tokens', defaultInitial: 1024, maximum: 4096, reservedOutput: 256,
 			transportPayloadBytes: 1_048_576, measurementProvenance: { provider: 'controlled', implementation: 'unit-input', version: null } },
 		limits: {}, commercial: { currency: null, estimatedCost: null }, region: null, trust: [],
 	};
-	const offer = capabilityOfferSchema.parse({ ...material, offerDigest: capabilityOfferDigest(material) });
+	return capabilityOfferSchema.parse({ ...material, offerDigest: capabilityOfferDigest(material) });
+}
+
+export function canonicalOfferBuildInput(now = '2026-10-04T12:00:00.000Z', capabilityId = executionCapability): Parameters<typeof buildAssignmentAttempt>[0] {
+	const offer = suppliedCapabilityOffer(now, capabilityId, 'canonical-code-change'), reference = offer.capabilities[0]!;
 	const observation = { day: now.slice(0, 10), observedAt: now, healthy: true, activeSeconds: 0, reservedSeconds: 0 };
 	const plan = { ...compileWorkday({ id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
 		executionMode: 'simulation', startsAt: new Date(Date.parse(now) - 20_000).toISOString(), agentIds: [],
@@ -78,6 +84,9 @@ export function canonicalOfferBuildInput(now = '2026-10-04T12:00:00.000Z', capab
 		started_at: now, parameters_json: JSON.stringify({ appliedPlan: plan }), summary_json: '{}', metrics_json: '{}', expected_json: '{}',
 		actual_json: '{}', report_refs_json: '{}', error_json: '{}' });
 	if (!ownerRun) throw new Error('Original serialized Workday input required');
+	const opportunity = allocateWorkdayCapacity({ now, remainingSeconds: 10, workdays: [{ plan,
+		committedSeconds: 0, planningCommittedSeconds: 0, maximumAdditionalSeconds: 10, actingReady: true }] })[plan.id];
+	if (!opportunity) throw new Error('Original allocator opportunity required');
 	return { candidate: { ...candidate, readyAt: now,
 		node: executionNodeSchema.parse({ ...candidate.node, requiredCapabilities: [reference.id] }),
 		effectiveProfile: effectiveActivityProfileSchema.parse(candidate.effectiveProfile),
@@ -88,7 +97,7 @@ export function canonicalOfferBuildInput(now = '2026-10-04T12:00:00.000Z', capab
 				capabilityLimits: { [reference.id]: { dailyActiveSecondsLimit: 10, maximumAssignmentSeconds: 3 } } },
 			accountingObservation: { modelUsage: observation, capabilityUsage: { [reference.id]: observation } },
 			lanes: [{ ...provider.lanes[0]!, purpose: 'workday', capabilities: [reference.id] }] }],
-		allocationInputs: { [provider.id]: { measurements: [], constraints: [] } }, attempt: 1, now };
+		allocationInputs: { [provider.id]: { measurements: [], constraints: [], opportunity } }, attempt: 1, now };
 }
 
 export function invalidCanonicalOffers(original: CapabilityOffer, now: string): Array<{ name: string; offer: unknown }> {

@@ -52,7 +52,9 @@ describe('immutable assignment-attempt construction', () => {
 		expect(first.assignment.grant).toEqual({ contentRead: [supplied.candidate.node.sourceRef], contentWrite: [],
 			sourceRead: ['treeseed-ai/sdk'], sourceWrite: ['treeseed-ai/sdk'], tools: [...permissions.tools] });
 		expect(first.assignment.createdAt).toBe(supplied.now); expect(first.assignment.limits.maximumSeconds).toBe(3);
-		expect(first.assignment.deadline).toBe(new Date(Date.parse(supplied.now) + 3_000).toISOString());
+		// Active allocation does not precharge separately bounded infrastructure or
+		// queue time. The user's explicit contract retains original phase authority.
+		expect(first.assignment.deadline).toBe(supplied.run.parameters.appliedPlan!.endsAt);
 		expect(first.accountingLimits).toEqual(supplied.providers[0]!.accountingLimits);
 		expect(first.providerConcurrencyLimit).toBe(1); expect(first.laneId).toBe('work');
 		for (let retry = 0; retry < 3; retry++) expect(buildAssignmentAttempt(structuredClone(supplied))).toEqual(first);

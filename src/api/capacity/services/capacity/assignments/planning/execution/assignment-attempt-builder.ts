@@ -181,7 +181,7 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		&& exactGrant.tools.includes('release');
 	if (predecessorCommits.length > 1 && !explicitIntegration && !lineageBase && !revisionBase) throw new CapacityGovernanceError(
 		'assignment_git_integration_required',
-		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicitly release-authorized integration assignment must establish one base.`,
+		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicit integration assignment authorized for release must establish one base.`,
 		409, { nodeId: candidate.node.id, predecessorCommits,
 			predecessorResults: candidate.predecessorResults.flatMap((result) => result.references
 				.flatMap((item) => item.kind === 'git' && item.repository === reference.repository ? [{ resultId: result.id, commit: item.commit }] : [])) });

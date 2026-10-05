@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-registration-audit-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-authority.test.ts
+    testName: "registration audit retries retain one committed request identity original clock and exact conditional write bytes without independent reads or changing inputs and the original failure cause"
   api.golden.canonical-source-ordinal-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -3111,3 +3116,13 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
     testName: "denies absent malformed and moved stored canonical settlements without reconstructing or repairing retained financial history"
+  api.golden.execution-allocated-deadline-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native builder and admission retain the original phase deadline separately from allocated active time through exact reservation and concurrent replay"
+  api.golden.execution-capacity-error-status-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/capacity-query-operations.test.ts
+    testName: "retains every declared capacity error status and fails closed on malformed or undeclared statuses through the original catalog boundary"
