@@ -7,7 +7,7 @@ import { evaluateTreeDxProxyHandleAccess, treeDxProxyAuthorizedPathPatterns } fr
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { projectTreeDxProxyCommit, recordTreeDxProxySuccess, type TreeDxProxyStore } from '../../../capacity/services/treedx/repositories/treedx-proxy-effects.ts';
-import { resolveTreeDxProxyBaseUrl, resolveTreeDxProxyToken, treeDxTokenScope, verifyTreeDxWorkspace,
+import { resolveTreeDxProxyBaseUrl, resolveTreeDxProxyToken, treeDxTokenScope, verifyTreeDxWorkspace, assertTreeDxWorkspaceIdentity,
 	type TreeDxProxyRuntime, type TreeDxProxyScope } from '../../../capacity/services/treedx/repositories/treedx-proxy-token-service.ts';
 import { providerPrincipal, type ProviderPrincipal } from '../providers/provider-runtime-service.ts';
 import type { OperationInvocationContext } from '../../catalog/operation-registry.ts';
@@ -337,6 +337,8 @@ export function createTreeDxProxyOperationService(storeValue: CapacityGovernance
 						traceparent: context.traceparent, idempotencyKey: context.idempotencyKey, signal: context.signal,
 					}),
 				});
+				if (operation.operationId === 'getWorkspace') assertTreeDxWorkspaceIdentity({ projectId,
+					repositoryId: repositoryId(library)!, workspaceId: String(input.path.workspaceId) }, payload);
 				const identity = requestIdentity(context, input.query);
 				await projectTreeDxProxyCommit({ store, access: access as never, projectId, method: operation.method,
 					path: operation.path, body: input.body, payload });

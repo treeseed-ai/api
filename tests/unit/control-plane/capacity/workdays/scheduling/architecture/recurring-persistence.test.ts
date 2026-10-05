@@ -66,7 +66,12 @@ describe('real owning recurring schedule SQL and durable start receipt replay', 
 				f.service.update('team', 'schedule', { stateVersion: 1, purpose: 'second' })]);
 			expect(outcomes.filter(result => result.status === 'fulfilled')).toHaveLength(1);
 			expect(outcomes.filter(result => result.status === 'rejected')).toHaveLength(1);
+			for (const outcome of outcomes) if (outcome.status === 'rejected') expect(outcome.reason)
+				.toMatchObject({ status: 409, code: 'capacity_workday_schedule_version_stale' });
 			const current = await f.service.get('team', 'schedule'); expect(current?.stateVersion).toBe(2); expect(current?.intent).toEqual(f.intent);
+			for (const [index, outcome] of outcomes.entries()) if (outcome.status === 'fulfilled') {
+				expect(outcome.value).toEqual(current); expect(current?.purpose).toBe(index === 0 ? 'first' : 'second');
+			}
 			const after = await f.snapshot(); expect(after.workdays).toEqual(before.workdays); expect(after.assignments).toEqual(before.assignments); expect(after.reservations).toEqual(before.reservations);
 			await expect(f.service.update('team', 'schedule', { stateVersion: 1, status: 'paused' })).rejects.toMatchObject({ code: 'capacity_workday_schedule_version_stale' });
 			expect(await f.snapshot()).toEqual(after);

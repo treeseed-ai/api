@@ -11,7 +11,7 @@ import {
 	type WorkdayStartReceipt,
 	type WorkdayStartRequest,
 } from '@treeseed/sdk/operator-contracts';
-import type { ExecutionNode } from '@treeseed/sdk/agent-capacity';
+import type { ExecutionNode, CapacityWorkdayRunRecord } from '@treeseed/sdk/agent-capacity';
 import { CapacityGovernanceError,type CapacityGovernanceDatabase } from '../../../../database.ts';
 import { canonicalJson,sha256 } from '../../../../security.ts';
 import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
@@ -23,7 +23,7 @@ type JsonRecord = Record<string,unknown>;
 
 interface WorkdayIntentStore extends CapacityGovernanceDatabase {
 	preflightCapacityWorkdayRunRequest(teamId:string,input:JsonRecord): Promise<JsonRecord>;
-	createCapacityWorkdayRun(teamId:string,input:JsonRecord):Promise<JsonRecord|null>;
+	createCapacityWorkdayRun(teamId:string,input:JsonRecord):Promise<CapacityWorkdayRunRecord|null>;
 }
 
 interface StoredPreflight { receipt:WorkdayPreflightReceipt; intent:WorkdayIntent; runInput:JsonRecord }
@@ -222,7 +222,7 @@ export class WorkdayPreflightService {
 		return {receipt,intent,runInput};
 	}
 
-	async preflight(teamId:string,intent:WorkdayIntent,requestedById:string|null,id=randomUUID()):Promise<WorkdayPreflightReceipt> {
+	async preflight(teamId:string,intent:WorkdayIntent,requestedById:string|null,id:string=randomUUID()):Promise<WorkdayPreflightReceipt> {
 		const stored=await this.compile(teamId,intent,requestedById,id);
 		await this.store.run(`INSERT INTO capacity_operation_receipts (id,team_id,operation,idempotency_key,request_digest,resource_type,resource_id,response_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (team_id,operation,idempotency_key) DO UPDATE SET request_digest=EXCLUDED.request_digest,response_json=EXCLUDED.response_json,updated_at=EXCLUDED.updated_at`,[
 			randomUUID(),teamId,'workday.preflight',stored.receipt.id,stored.receipt.intentDigest,'workday_preflight',stored.receipt.id,canonicalJson(stored),new Date().toISOString(),new Date().toISOString(),
@@ -258,7 +258,7 @@ export class WorkdayPreflightService {
 		if(!run) throw new CapacityGovernanceError('workday_start_failed','The API did not create the governed workday.',500);
 		const receipt:WorkdayStartReceipt={schemaVersion:'treeseed.workday-start-receipt/v1',workdayId:String(run.id),preflightId:request.preflightId,preflightDigest:request.preflightDigest,
 			acceptedExecutionNodeIds:stored.receipt.selectedDemands.flatMap((demand)=>demand.actingAuthority?[demand.actingAuthority.executionNodeId]:[]),assignmentIds:[],reservationIds:[],
-			startedAt:String(run.startedAt??run.started_at??stored.receipt.startsAt),providerReceiptRefs:[],transactionReceiptId:`workday-start:${sha256(canonicalJson(request))}`};
+			startedAt:String(existing?.started_at??run.startedAt??stored.receipt.startsAt),providerReceiptRefs:[],transactionReceiptId:`workday-start:${sha256(canonicalJson(request))}`};
 		await this.store.run(`INSERT INTO capacity_operation_receipts (id,team_id,operation,idempotency_key,request_digest,resource_type,resource_id,response_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,[
 			randomUUID(),teamId,'workday.start',request.idempotencyKey,requestDigest,'workday_start',receipt.workdayId,canonicalJson(receipt),new Date().toISOString(),new Date().toISOString(),
 		]);

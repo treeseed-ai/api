@@ -30,6 +30,27 @@ async function readbackFixture() {
 }
 
 describe('public workspace resource readback through the owning SQL and native transport', () => {
+	it('denies a changed native workspace identity after successful verification before any success audit or receipt and admits only the unchanged exact retry', async () => {
+		const fixture = await readbackFixture();
+		try {
+			const before = await fixture.snapshot(), input = structuredClone(fixture.input);
+			const valid = { workspaceId, repoId: 'repository', status: 'open' };
+			for (const changed of [{ ...valid, workspaceId: 'ws_foreignresource' }, { repoId: 'repository', status: 'open' },
+				{ ...valid, repoId: 'foreign' }]) {
+				const sequence = [valid, changed], preserved = structuredClone(sequence);
+				fixture.setReadSequence(sequence);
+				await expect(fixture.read()).rejects.toMatchObject({ status: changed.repoId === 'foreign' ? 403 : 409,
+					code: changed.repoId === 'foreign' ? 'treedx_workspace_project_mismatch' : 'treedx_workspace_identity_mismatch' });
+				expect(await fixture.snapshot()).toEqual(before); expect(await fixture.owner.all('SELECT id FROM treedx_project_proxy_audit')).toEqual([]);
+				expect(fixture.input).toEqual(input); expect(sequence).toEqual(preserved);
+			}
+			expect(fixture.requests).toHaveLength(6);
+			fixture.setReadSequence([valid, valid]);
+			await expect(fixture.read()).resolves.toMatchObject({ result: valid, receipt: { projectId: 'project' } });
+			expect(await fixture.snapshot()).toEqual(before); expect(fixture.input).toEqual(input);
+			expect(await fixture.owner.all('SELECT result_status FROM treedx_project_proxy_audit')).toEqual([{ result_status: 'proxied' }]);
+		} finally { await fixture.close(); }
+	});
 	it('reads exact open and closed resources repeatedly and concurrently without changing assignment finance', async () => {
 		const fixture = await readbackFixture();
 		try {
@@ -51,12 +72,14 @@ describe('public workspace resource readback through the owning SQL and native t
 		const fixture = await readbackFixture();
 		try {
 			const before = await fixture.snapshot(), input = structuredClone(fixture.input), admitted: unknown[] = [];
-			for (const id of ['ws_foreignresource', undefined]) {
+			for (const id of ['ws_foreignresource', undefined, null, 1, '']) {
 				fixture.setReadResponse({ workspaceId: id, repoId: 'repository', status: 'closed' });
+				await expect(fixture.read()).rejects.toMatchObject({ status: 409, code: 'treedx_workspace_identity_mismatch' });
 				try { admitted.push(await fixture.read()); } catch { /* exact resource authority denied */ }
 			}
 			expect(await fixture.snapshot()).toEqual(before); expect(fixture.input).toEqual(input);
 			expect(admitted).toEqual([]);
+			expect(await fixture.owner.all('SELECT id FROM treedx_project_proxy_audit')).toEqual([]);
 		} finally { await fixture.close(); }
 	});
 	it('denies missing principal binding and foreign repository before publishing a successful workspace receipt', async () => {

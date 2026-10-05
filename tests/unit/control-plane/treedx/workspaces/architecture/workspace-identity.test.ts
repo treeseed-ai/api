@@ -16,11 +16,15 @@ describe('exact workspace response identity at the owning proxy verifier', () =>
 	it('denies missing foreign or malformed workspace identity even when the repository matches', async () => {
 		const values = [undefined, 'ws_foreignresource', null, 1, ''];
 		const admitted: number[] = [];
+		const before = structuredClone(library);
 		for (const [index, id] of values.entries()) {
+			await expect(verifyTreeDxWorkspace({ runtime: runtime({ workspaceId: id, repoId: library.repositoryId, status: 'closed' }),
+				projectId: 'project', library, workspaceId })).rejects.toMatchObject({ status: 409, code: 'treedx_workspace_identity_mismatch' });
 			try { await verifyTreeDxWorkspace({ runtime: runtime({ workspaceId: id, repoId: library.repositoryId, status: 'closed' }),
 				projectId: 'project', library, workspaceId }); admitted.push(index); } catch { /* exact identity denied */ }
 		}
 		expect(admitted).toEqual([]);
+		expect(library).toEqual(before);
 	});
 	it('retains foreign-repository and denied-upstream controls without exposing raw upstream text', async () => {
 		await expect(verifyTreeDxWorkspace({ runtime: runtime({ workspaceId, repoId: 'foreign', status: 'closed' }),

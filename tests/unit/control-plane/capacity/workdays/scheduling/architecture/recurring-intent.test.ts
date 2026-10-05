@@ -1,13 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { validateWorkdayIntent } from '@treeseed/sdk/operator-contracts';
 import { parsePublicWorkdayIntent } from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-preflight-service.ts';
-import { serializeWorkdaySchedule } from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-schedule-service.ts';
+import { serializeWorkdaySchedule, CapacityWorkdayScheduleService } from '../../../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-schedule-service.ts';
 
 export const intent = { schemaVersion: 'treeseed.workday-intent/v1' as const, teamId: 'team', profileId: 'default',
 	projects: ['project'], executionMode: 'simulation' as const, startsAt: '2026-10-02T21:00:00.000Z', durationSeconds: 60,
 	planningOnly: true, allocation: { allocationWeight: 1, planningPercent: 20 }, operatorConstraints: { providerIds: ['provider'], maxConcurrency: 1 } };
 
 describe('manual and recurring canonical high-level intent', () => {
+	it('rejects a lost conditional schedule update from its own SQL result without certifying another writers matching version', async () => {
+		const row = { id: 'schedule', team_id: 'team', status: 'active', purpose: 'Governed recurrence', cadence_seconds: 60,
+			intent_json: JSON.stringify(intent), last_run_id: null, next_run_at: intent.startsAt, state_version: 1,
+			created_at: intent.startsAt, updated_at: intent.startsAt };
+		const store: ConstructorParameters<typeof CapacityWorkdayScheduleService>[0] = {
+			ensureInitialized: async () => undefined,
+			first: async <T extends Record<string, unknown>>(): Promise<T | null> => null,
+			all: async <T extends Record<string, unknown>>(): Promise<T[]> => [],
+			run: async () => undefined, batch: async () => [], getCapacityWorkdayRun: async () => null,
+			createCapacityWorkdayRun: async () => { throw new Error('Unexpected run creation'); },
+			preflightCapacityWorkdayRunRequest: async () => { throw new Error('Unexpected preflight'); },
+		};
+		const read = vi.spyOn(store, 'first').mockResolvedValueOnce(row).mockResolvedValueOnce(null), writes = vi.spyOn(store, 'run');
+		const input = { stateVersion: 1, purpose: 'Requested change' }, before = structuredClone({ input, row });
+		await expect(new CapacityWorkdayScheduleService(store).update('team', 'schedule', input))
+			.rejects.toMatchObject({ status: 409, code: 'capacity_workday_schedule_version_stale' });
+		expect(read).toHaveBeenCalledTimes(2); expect(read.mock.calls[1]![0]).toMatch(/^UPDATE capacity_workday_schedules .*RETURNING \*/su);
+		expect(writes).not.toHaveBeenCalled(); expect({ input, row }).toEqual(before);
+	});
 	it('retains one execution mode and exact governed intent without derived capacity or duplicate scheduling policy', () => {
 		const before = structuredClone(intent), parsed = parsePublicWorkdayIntent('team', intent);
 		expect(validateWorkdayIntent(parsed)).toEqual([]); expect(parsed).toEqual(intent); expect(intent).toEqual(before);

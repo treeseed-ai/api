@@ -55,9 +55,10 @@ export class CapacityWorkdayScheduleService {
 			cadenceSeconds: integer(input.cadenceSeconds, current.cadenceSeconds, 60),
 			nextRunAt: text(input.nextRunAt, current.nextRunAt), stateVersion: current.stateVersion + 1, updatedAt: new Date().toISOString() };
 		if (!Number.isFinite(Date.parse(next.nextRunAt))) throw new CapacityGovernanceError('capacity_workday_schedule_time_invalid', 'nextRunAt must be a valid ISO timestamp.', 400);
-		await this.store.run(`UPDATE capacity_workday_schedules SET status = ?, purpose = ?, cadence_seconds = ?, intent_json = ?, next_run_at = ?, state_version = ?, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ?`,
+		const updated = await this.store.first(`UPDATE capacity_workday_schedules SET status = ?, purpose = ?, cadence_seconds = ?, intent_json = ?, next_run_at = ?, state_version = ?, updated_at = ? WHERE id = ? AND team_id = ? AND state_version = ? RETURNING *`,
 			[next.status, next.purpose, next.cadenceSeconds, JSON.stringify(next.intent), next.nextRunAt, next.stateVersion, next.updatedAt, id, teamId, current.stateVersion]);
-		const updated = await this.get(teamId, id); if (updated?.stateVersion !== next.stateVersion) throw new CapacityGovernanceError('capacity_workday_schedule_version_stale', 'Schedule changed concurrently.', 409); return updated;
+		if (!updated) throw new CapacityGovernanceError('capacity_workday_schedule_version_stale', 'Schedule changed concurrently.', 409);
+		return serializeWorkdaySchedule(updated);
 	}
 	async tick(teamId: string, id: string, now = new Date().toISOString()) {
 		let schedule = await this.get(teamId, id); if (!schedule) return null; if (schedule.status !== 'active') return { schedule, run: null, action: 'inactive' };

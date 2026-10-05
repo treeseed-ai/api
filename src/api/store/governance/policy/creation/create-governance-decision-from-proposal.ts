@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isoNow,ControlPlaneStore,serializeGovernanceDecision } from "../../../../persistence/store.ts";
-import { resolveDecisionDependencySnapshots } from '../../../../governance/decision-authority.ts';
+import { resolveDecisionDependencySnapshots, validateDecisionAuthority } from '../../../../governance/decision-authority.ts';
 import { reconcileExecutionGraph } from '../../../../control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { hasCompleteExecutablePlan, readExactProposal } from '../../../../governance/executable-proposal.ts';
 export async function createGovernanceDecisionFromProposalMethod(this: ControlPlaneStore, proposalId, input: any = {}) {
@@ -9,8 +9,15 @@ export async function createGovernanceDecisionFromProposalMethod(this: ControlPl
     if (!proposal)
         return null;
     const existing = await this.first(`SELECT * FROM governance_decisions WHERE proposal_id = ? LIMIT 1`, [proposalId]);
-    if (existing?.id)
+    if (existing?.id) {
+        const validation = await validateDecisionAuthority(this, String(existing.id), {
+            teamId: proposal.teamId, projectId: proposal.projectId,
+        });
+        if (!validation.valid) throw Object.assign(new Error(validation.message ?? 'The retained decision authority is not current.'), {
+            status: 409, code: validation.code,
+        });
         return serializeGovernanceDecision(existing);
+    }
     const timestamp = isoNow();
     const id = randomUUID();
     const votes = await this.effectiveGovernanceVotes(proposal) as Array<{

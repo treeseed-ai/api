@@ -106,6 +106,17 @@ export function resolveTreeDxProxyToken(runtime: TreeDxProxyRuntime, baseUrl: st
 	}).token;
 }
 
+export function assertTreeDxWorkspaceIdentity(input: { projectId: string; repositoryId: string; workspaceId: string }, payload: unknown): void {
+	const payloadRecord = record(payload); const nestedPayload = record(payloadRecord.payload);
+	const workspace = record(payloadRecord.workspace ?? nestedPayload.workspace ?? payloadRecord.payload ?? payload);
+	const actualRepositoryId = workspace.repoId ?? workspace.repositoryId ?? null;
+	if (actualRepositoryId !== input.repositoryId) throw new CapacityGovernanceError('treedx_workspace_project_mismatch', 'TreeDX workspace is not bound to this project repository.', 403, { projectId: input.projectId, workspaceId: input.workspaceId, repositoryId: actualRepositoryId, expectedRepositoryId: input.repositoryId });
+	if (workspace.workspaceId !== input.workspaceId) throw new CapacityGovernanceError(
+		'treedx_workspace_identity_mismatch', 'TreeDX returned a different or missing workspace identity.', 409,
+		{ projectId: input.projectId, workspaceId: input.workspaceId },
+	);
+}
+
 export async function verifyTreeDxWorkspace(input: {
 	runtime: TreeDxProxyRuntime;
 	projectId: string;
@@ -133,8 +144,5 @@ export async function verifyTreeDxWorkspace(input: {
 			projectId: input.projectId, workspaceId: input.workspaceId, upstream,
 		});
 	}
-	const payloadRecord = record(payload); const nestedPayload = record(payloadRecord.payload);
-	const workspace = record(payloadRecord.workspace ?? nestedPayload.workspace ?? payloadRecord.payload ?? payload);
-	const actualRepositoryId = workspace?.repoId ?? workspace?.repositoryId ?? null;
-	if (actualRepositoryId !== repositoryId) throw new CapacityGovernanceError('treedx_workspace_project_mismatch', 'TreeDX workspace is not bound to this project repository.', 403, { projectId: input.projectId, workspaceId: input.workspaceId, repositoryId: actualRepositoryId, expectedRepositoryId: repositoryId });
+	assertTreeDxWorkspaceIdentity({ projectId: input.projectId, repositoryId, workspaceId: input.workspaceId }, payload);
 }
