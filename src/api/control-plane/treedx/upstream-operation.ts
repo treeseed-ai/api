@@ -10,7 +10,7 @@ const reservedQueryKeys = new Set(['assignmentId', 'treeDxProxyHandleId', 'treeD
 const contentExtensions = ['.mdx', '.md', '.markdown', '.json', '.yaml', '.yml', '.toml'];
 
 export function treeDxBoundedScopedPaths(allowed: string[], requested: string[]) {
-	return requested.filter((path) => allowed.some((pattern) => treeDxScopedPathAllows(pattern, path)));
+	return requested.length ? requested.filter((path) => allowed.some((pattern) => treeDxScopedPathAllows(pattern, path))) : [...allowed];
 }
 
 function record(value: unknown): InputRecord {

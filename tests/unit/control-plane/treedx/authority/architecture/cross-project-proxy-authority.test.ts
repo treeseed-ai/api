@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { selectTreeDxReadRepositoryGrant } from '../../../../../../src/api/control-plane/repositories/treedx/proxy-operation-service.ts';
 import { providerRefAuthority } from '../../../../../../src/api/control-plane/repositories/treedx/provider-ref-authority.ts';
 import { evaluateTreeDxProxyHandleAccess } from '../../../../../../src/api/capacity/policy/treedx-proxy-access.ts';
+import { treeDxBoundedScopedPaths } from '../../../../../../src/api/control-plane/treedx/upstream-operation.ts';
 import { readGrants, secondaryProject, secondaryRepository, firstRef, secondRef } from './cross-project-proxy-fixture.ts';
 
 describe('secondary repository exact immutable grant authority', () => {
@@ -9,8 +10,12 @@ describe('secondary repository exact immutable grant authority', () => {
 		const grants = readGrants(), before = structuredClone(grants);
 		for (const [index, ref] of [firstRef, secondRef].entries()) {
 			expect(selectTreeDxReadRepositoryGrant(grants, secondaryProject, secondaryRepository, ref)).toEqual(grants[index]);
-			expect(providerRefAuthority({ handle: { projectId: 'project', baseRef: 'a'.repeat(40), metadata: { readRepositories: grants } },
-				projectId: secondaryProject, workspace: false, requestedRef: ref })).toEqual({ ref, refs: [ref] });
+				expect(providerRefAuthority({ handle: { projectId: 'project', baseRef: 'a'.repeat(40), metadata: { readRepositories: grants } },
+					projectId: secondaryProject, workspace: false, requestedRef: ref })).toEqual({ ref, refs: [ref] });
+			expect(treeDxBoundedScopedPaths(grants[index]!.allowedPaths, [])).toEqual(grants[index]!.allowedPaths);
+			for (const requested of [['*'], ['**'], ['private/foreign.md']]) {
+				expect(treeDxBoundedScopedPaths(grants[index]!.allowedPaths, requested)).toEqual([]);
+			}
 		}
 		expect(grants).toEqual(before);
 	});

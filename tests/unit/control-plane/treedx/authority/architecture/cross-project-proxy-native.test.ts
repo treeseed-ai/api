@@ -16,19 +16,28 @@ describe('public secondary reads through original SQL authorization delegation a
 						treeseed_connection_id: 'isolated-connection' } });
 			}
 			expect((await f.audit()).items).toHaveLength(2); expect(await f.snapshot()).toEqual(before); expect(f.input).toEqual(original);
+			f.setFault('403');
+			const unscoped = { ...f.input, body: { ...f.input.body, paths: [] } }, unchanged = structuredClone(unscoped);
+			await expect(f.invoke(unscoped)).rejects.toMatchObject({ status: 403 });
+			expect(f.calls.at(-1)).toMatchObject({ body: unscoped.body,
+				scope: { treedx_refs: [secondRef], treedx_paths: ['books/second.md'] } });
+			expect((await f.audit()).items).toHaveLength(2); expect(await f.snapshot()).toEqual(before);
+			expect(unscoped).toEqual(unchanged);
 		} finally { await f.close(); }
 	});
 	it('denies missing foreign moved and out of path secondary grants before upstream while retaining durable denial audit and frozen finance', async () => {
 		const outcomes: boolean[] = [];
-		for (const mutation of ['missing', 'foreign-project', 'foreign-repository', 'moved', 'path', 'empty-paths']) {
+		for (const mutation of ['missing', 'foreign-project', 'foreign-repository', 'moved', 'path', 'empty-paths', 'empty-paths-unscoped', 'wildcard', 'wildcard-single']) {
 			const f = await crossProjectProxy(); try {
 				const grants = readGrants();
 				if (mutation === 'foreign-project') grants[1]!.projectId = 'foreign';
 				if (mutation === 'foreign-repository') grants[1]!.repositoryId = 'foreign';
 				if (mutation === 'moved') grants[1]!.baseRef = 'd'.repeat(40);
-				if (mutation === 'empty-paths') grants[1]!.allowedPaths = [];
+				if (mutation.startsWith('empty-paths')) grants[1]!.allowedPaths = [];
 				await f.setGrants(mutation === 'missing' ? [] : grants);
-				const input = { ...f.input, body: { ...f.input.body, ...(mutation === 'path' ? { paths: ['private/foreign.md'] } : {}) } };
+				const input = { ...f.input, body: { ...f.input.body, ...(mutation === 'path' ? { paths: ['private/foreign.md'] } : {}),
+					...(mutation.startsWith('wildcard') ? { paths: [mutation === 'wildcard' ? '**' : '*'] } : {}),
+					...(mutation === 'empty-paths-unscoped' ? { paths: [] } : {}) } };
 				const before = await f.snapshot(), original = structuredClone(input);
 				try { await f.invoke(input); outcomes.push(false); } catch { outcomes.push(true); }
 				expect(f.calls).toEqual([]); expect(await f.snapshot()).toEqual(before); expect(input).toEqual(original);
@@ -36,7 +45,7 @@ describe('public secondary reads through original SQL authorization delegation a
 					assignmentId: f.attempt.id, actorId: 'provider', actorType: 'capacity_provider' })]);
 			} finally { await f.close(); }
 		}
-		expect(outcomes).toEqual(Array(6).fill(true));
+		expect(outcomes).toEqual(Array(9).fill(true));
 	});
 	it('revoked expired and malformed handle authority cannot be bypassed by a different secondary repository identity', async () => {
 		const outcomes: boolean[] = [];

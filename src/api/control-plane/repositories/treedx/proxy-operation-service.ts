@@ -25,7 +25,6 @@ interface Store extends TreeDxProxyStore {
 	getTreeDxProxyHandle(teamId: string, projectId: string, handleId: string): Promise<Record<string, unknown> | null>;
 	getTeamServiceConnection(teamId: string, connectionId: string): Promise<Record<string, unknown> | null>;
 	upsertTeamTreeDx(teamId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-	run(sql: string, parameters?: unknown[]): Promise<unknown>;
 	first(sql: string, parameters?: unknown[]): Promise<any>;
 	all(sql: string, parameters?: unknown[]): Promise<any[]>;
 }
@@ -143,6 +142,9 @@ async function authorize(store: Store, projectId: string, permission: Permission
 	if(permission==='projects:manage:team'&&(!primaryRepository||!primaryProject))return reject('treedx_proxy_cross_project_write_denied','TreeDX writes are restricted to the assignment primary workspace.');
 	if (handle.tokenHash && (!identity.token || createHash('sha256').update(identity.token).digest('hex') !== handle.tokenHash)) return reject('treedx_proxy_token_mismatch', 'TreeDX proxy handle token does not match.');
 	if (!requiredHandleScopes(scope).some((value) => (handle.scopes as unknown[] ?? []).map(String).includes(value))) return reject('treedx_proxy_scope_denied', 'TreeDX proxy handle does not allow this operation.');
+	if (readGrant && !primaryRepository && (!Array.isArray(readGrant.allowedPaths) || !readGrant.allowedPaths.length)) {
+		return reject('treedx_proxy_path_denied', 'Secondary-repository reads require nonempty bounded path authority.');
+	}
 	const requestPaths = scope.paths.filter((value) => value !== '**' && value !== '*');
 	for (const pathValue of requestPaths.length ? requestPaths : [null]) {
 		const evaluated = evaluateTreeDxProxyHandleAccess(handle, { teamId: principal.teamId, projectId:String(assignment.projectId), assignmentId: identity.assignmentId,
@@ -171,7 +173,7 @@ export function treeDxRequestedReadRef(method: string, query: Record<string, unk
 }
 
 function actorId(access: Access) {
-	return access.actorType === 'capacity_provider' ? String((access.principal as ProviderPrincipal).capacityProviderId) : String(access.principal.id);
+	return access.actorType === 'capacity_provider' ? String((access.principal as ProviderPrincipal).capacityProviderId) : String(record(access.principal).id);
 }
 
 export function bindCurrentLibraryView(operation: { method: string }, input: { path: Record<string, unknown>; query: Record<string, unknown>; body: unknown }, library: Record<string, unknown> | null) {
