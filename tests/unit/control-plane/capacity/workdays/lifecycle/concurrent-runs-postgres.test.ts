@@ -6,9 +6,11 @@ import { CapacityWorkdayRunService } from '../../../../../../src/api/capacity/se
 import { loadCommunicationInvocations } from '../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import { projectCommunicationInvocations } from '../../../../../../src/api/capacity/policy/execution/communication-execution-projector.ts';
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('concurrent local execution in PostgreSQL', () => {
+describe('concurrent local execution in PostgreSQL', () => {
 	it('preserves production and simulation workdays when another workday or conversation starts', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native concurrent workday coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_runs_test_${randomUUID().replaceAll('-', '')}`;

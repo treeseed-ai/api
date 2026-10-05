@@ -15,6 +15,34 @@ const stored = { id: identity.id, idempotency_key: identity.idempotencyKey, assi
 
 // UNIT owning accounting functions: supplied frozen attempt/report/row, not actual consumption.
 describe('immutable settlement measurement authority', () => {
+	it('denies every changed omitted or null diagnostic counter and accounting descriptor on the same usage identity', () => {
+		const fields = [
+			['inputTokens', 'input_tokens', 7], ['outputTokens', 'output_tokens', 3], ['cachedInputTokens', 'cached_input_tokens', 2],
+			['reasoningTokens', 'reasoning_tokens', 1], ['quotaMinutes', 'quota_minutes', 0.25], ['wallMinutes', 'wall_minutes', 0.5],
+			['filesOpened', 'files_opened', 4], ['filesChanged', 'files_changed', 2], ['diffLinesAdded', 'diff_lines_added', 9],
+			['diffLinesRemoved', 'diff_lines_removed', 6], ['testRuns', 'test_runs', 2], ['retryCount', 'retry_count', 1],
+			['executionProfileId', 'execution_profile_id', 'configured-profile'], ['businessModel', 'business_model', 'provider-native'],
+		] as const;
+		const usageActual = { ...input.usageActual, ...Object.fromEntries(fields.map(([field, , value]) => [field, value])) };
+		const report = { ...input, usageDimension: 'diagnostic-0', accountingMode: 'informational' as const, activeSeconds: 0, elapsedSeconds: 0, usageActual };
+		const exactIdentity = capacityUsageIdentity(report, reservation);
+		const exact = { ...stored, id: exactIdentity.id, usage_dimension: 'diagnostic-0', accounting_mode: 'informational', active_seconds: 0, elapsed_seconds: 0,
+			...Object.fromEntries(fields.map(([, column, value]) => [column, value])) };
+		const before = structuredClone({ report, exact, exactIdentity });
+		expect(() => assertCapacityUsageMatches(exact, report, exactIdentity)).not.toThrow();
+		const outcomes = [];
+		for (const [field, , value] of fields) for (const kind of ['changed', 'null', 'undefined', 'omitted']) {
+			const changed = structuredClone(report), supplied: Record<string, unknown> = { ...changed.usageActual };
+			if (kind === 'omitted') delete supplied[field];
+			else supplied[field] = kind === 'null' ? null : kind === 'undefined' ? undefined : typeof value === 'number' ? value + 1 : 'foreign-accounting-descriptor';
+			Object.assign(changed, { usageActual: supplied }); const immutable = structuredClone(changed);
+			let code: unknown; try { assertCapacityUsageMatches(exact, changed, exactIdentity); }
+			catch (error) { code = error instanceof Error && 'code' in error ? error.code : undefined; }
+			outcomes.push(code); expect(changed).toEqual(immutable);
+		}
+		expect(outcomes).toEqual(Array(fields.length * 4).fill('capacity_usage_idempotency_conflict'));
+		expect({ report, exact, exactIdentity }).toEqual(before);
+	});
 	it('preserves exact arbitrary-class attempt and measured input while identifying one matching report', () => {
 		const before = structuredClone({ input, reservation, stored });
 		expect(identity).toEqual({ id: 'usage:assignment-report:1:aggregate', idempotencyKey: 'usage-key', assignmentAttempt: 1, usageDimension: 'aggregate' });

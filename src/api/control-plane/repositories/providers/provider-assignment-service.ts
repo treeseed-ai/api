@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { CapacityWorkdayEventRepository } from '../../../capacity/repositories/capacity/workdays/workday-event.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import { reportCapacityUsage } from '../../../capacity/services/capacity/accounting/usage-report-service.ts';
 import { settleCapacityReservationExactlyOnce, type CapacitySettlementRequest } from '../../../capacity/services/capacity/accounting/settlement-service.ts';
@@ -14,7 +16,7 @@ import { commitDiscussionMessage } from '../../../discussions/content.ts';
 import { loadDiscussions } from '../../../discussions/content.ts';
 import { recordAssignmentDiscussionResponse } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-discussion-response-service.ts';
 import { resolveTeamCommunicationTargets } from '../../../capacity/services/capacity/invocations/communication-target-resolution.ts';
-import type { DiagnosticEnvelopeService } from '../../../security/diagnostic-envelope.ts';
+import type { DiagnosticEnvelopeService } from '../../../../security/diagnostic-envelope.ts';
 import { createSourceWorkspaceService } from './source/source-workspace-service.ts';
 
 type SessionEvents = { subscribe(teamId: string, listener: (event: { eventType: string; payload: Record<string, unknown> }) => void): Promise<() => void> };
@@ -74,12 +76,49 @@ function providerEventInput(assignment: Record<string, unknown>, body: Record<st
 	if (!message || message.length > 4_000) throw new CapacityGovernanceError('provider_runtime_event_message_invalid', 'Provider runtime event message must contain at most 4,000 characters.', 400);
 	const sanitized = redactTranscriptValue({ context: body.context, refs: body.refs, metrics: body.metrics }) as Record<string, unknown>;
 	if (JSON.stringify(sanitized).length > 262_144) throw new CapacityGovernanceError('provider_runtime_event_payload_too_large', 'Provider runtime event evidence exceeds 256 KiB.', 413);
+	const metadata: Record<string, unknown> = { severity: status === 'failed' || status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'info', metrics: record(sanitized.metrics), redactionStatus: 'sanitized' };
 	return { id: `provider-runtime:${String(assignment.id)}:${id}`, eventType, status, title: eventType, message,
 		assignmentId: assignment.id, projectId: assignment.projectId, workdayId: assignment.workDayId, createdAt: body.createdAt,
 		context: { ...record(sanitized.context), component, agentId: assignment.agentId, agentClassId: assignment.projectAgentClassId,
 			handlerId: assignment.handlerId, capacityProviderId: assignment.capacityProviderId, runnerId: assignment.runnerId,
 			executionProviderId: assignment.executionProviderId, activityType: assignmentActivityType(assignment) },
-		refs: record(sanitized.refs), metadata: { severity: status === 'failed' || status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'info', metrics: record(sanitized.metrics), redactionStatus: 'sanitized' } };
+		refs: record(sanitized.refs), metadata };
+}
+
+function protectedEventMatches(envelope: Record<string, unknown>, event: ReturnType<typeof providerEventInput>,
+	actor: ProviderPrincipal, body: Record<string, unknown>, envelopes: DiagnosticEnvelopeService) {
+	const aad = record(envelope.aad);
+	return Object.keys(envelope).length > 0 && aad.purpose === 'diagnostics' && aad.teamId === actor.teamId
+		&& aad.assignmentId === event.assignmentId && aad.resourceId === event.id && aad.sequence === body.sequence && aad.eventType === event.eventType
+		&& isDeepStrictEqual(envelopes.decrypt(envelope), body.protectedPayload);
+}
+
+async function protectedEventMetadata(store: ProviderAssignmentStore, assignment: Record<string, unknown>, actor: ProviderPrincipal,
+	runId: string, body: Record<string, unknown>, event: ReturnType<typeof providerEventInput>, envelopes?: DiagnosticEnvelopeService) {
+	const payload = body.protectedPayload;
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length === 0) throw new CapacityGovernanceError(
+		'provider_runtime_event_protected_payload_invalid', 'Protected evidence must be a nonempty object.', 400);
+	if (!Number.isSafeInteger(body.sequence) || Number(body.sequence) < 0) throw new CapacityGovernanceError(
+		'provider_runtime_event_sequence_invalid', 'Protected evidence requires a nonnegative integer sequence.', 400);
+	if (assignment.teamId !== actor.teamId || assignment.membershipId !== actor.membershipId) throw new CapacityGovernanceError(
+		'provider_assignment_forbidden', 'Protected evidence must belong to the exact provider membership and team.', 403);
+	const expiresAt = typeof assignment.leaseExpiresAt === 'string' ? Date.parse(assignment.leaseExpiresAt) : NaN;
+	if (assignment.status !== 'leased' || assignment.leaseState !== 'leased' || !Number.isFinite(expiresAt) || expiresAt <= Date.now()
+		|| typeof body.leaseToken !== 'string' || !body.leaseToken || body.leaseToken !== assignment.leaseToken
+		|| typeof body.runnerId !== 'string' || !body.runnerId || body.runnerId !== assignment.runnerId) throw new CapacityGovernanceError(
+		'provider_runtime_event_lease_invalid', 'Protected evidence requires the exact current lease and runner.', 409);
+	const serialized = JSON.stringify(payload);
+	if (!serialized || !isDeepStrictEqual(JSON.parse(serialized), payload)) throw new CapacityGovernanceError(
+		'provider_runtime_event_protected_payload_invalid', 'Protected evidence must retain its exact JSON value.', 400);
+	if (Buffer.byteLength(serialized) > 1_048_576) throw new CapacityGovernanceError(
+		'provider_runtime_event_payload_too_large', 'Protected evidence exceeds 1 MiB.', 413);
+	if (!envelopes) throw new CapacityGovernanceError('diagnostics_encryption_unavailable', 'Protected diagnostics require an active encryption key.', 503);
+	const existing = await new CapacityWorkdayEventRepository(store).get(actor.teamId, runId, event.id);
+	const retained = record(existing?.metadata.protectedPayloadEnvelope);
+	if (existing && !protectedEventMatches(retained, event, actor, body, envelopes)) throw new CapacityGovernanceError(
+		'capacity_workday_event_idempotency_conflict', 'Capacity workday event id is bound to different protected evidence.', 409);
+	return { ...event.metadata, protectedPayloadEnvelope: existing ? retained : envelopes.encrypt(record(payload), {
+		teamId: actor.teamId, assignmentId: String(assignment.id), resourceId: event.id, sequence: Number(body.sequence), eventType: event.eventType }) };
 }
 
 async function ownedAssignment(store: ProviderAssignmentStore, assignmentId: string, principal: ProviderPrincipal) {
@@ -306,11 +345,25 @@ export function createProviderAssignmentService(storeValue: ProviderAssignmentSt
 			return settlement;
 		},
 		async createEvent(auth: unknown, assignmentId: string, body: Record<string, unknown>) {
+			rejectRetiredModeRun(body);
 			const actor = principal(auth, ['provider:assignments:write']);
 			const assignment = assertProviderOwnsAssignment(await store.getProviderAssignment(actor.teamId, assignmentId), actor, 'report runtime events for');
 			const runId = assignmentWorkdayRunId(assignment);
 			if (!runId || !store.createCapacityWorkdayEvent) throw new CapacityGovernanceError('provider_runtime_event_workday_required', 'Provider runtime events require a durable workday assignment.', 409);
-			return store.createCapacityWorkdayEvent(actor.teamId, runId, providerEventInput(assignment, body));
+			const event = providerEventInput(assignment, body);
+			if (Object.hasOwn(body, 'protectedPayload')) event.metadata = await protectedEventMetadata(store, assignment, actor, runId, body, event, diagnosticEnvelopes);
+			const result = await store.createCapacityWorkdayEvent(actor.teamId, runId, event);
+			if (Object.hasOwn(body, 'protectedPayload')) {
+				const observed = record(result), metadata = record(observed.metadata);
+				const comparable = (value: Record<string, unknown>) => ({ id: value.id, assignmentId: value.assignmentId, eventType: value.eventType,
+					status: value.status, title: value.title, message: value.message, context: value.context, refs: value.refs,
+					metadata: { ...record(value.metadata), protectedPayloadEnvelope: undefined },
+					...(body.createdAt !== undefined ? { createdAt: value.createdAt } : {}) });
+				if (!protectedEventMatches(record(metadata.protectedPayloadEnvelope), event, actor, body, diagnosticEnvelopes!)
+					|| !isDeepStrictEqual(JSON.parse(JSON.stringify(comparable(event))), JSON.parse(JSON.stringify(comparable(observed)))))
+					throw new CapacityGovernanceError('capacity_workday_event_idempotency_conflict', 'Capacity workday event id is bound to different protected evidence.', 409);
+			}
+			return result;
 		},
 	};
 }

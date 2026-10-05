@@ -18,6 +18,30 @@ async function providerDatabase() {
 // Principal and measurements are fixture inputs, NOT authenticated HTTP/native provider generation.
 // PGlite concurrent calls are not separate PostgreSQL connection concurrency.
 describe('provider incremental terminal and release accounting through original SQL', () => {
+	it('native original accounting denies every own retired mode-run value before changing any assignment reservation measurement counter or ledger and retains an unchanged original settlement retry', async () => {
+		const { db, owner, snapshot, query } = await providerDatabase();
+		try {
+			const service = createProviderAssignmentService(owner as ProviderStore), before = await snapshot();
+			for (const modeRunId of [undefined, null, '', 'retired-run', false, 0, {}, []]) {
+				for (const kind of ['report', 'settle'] as const) {
+					const body = { ...terminalUsage, usageDimension: kind === 'report' ? 'original-diagnostic' : 'aggregate',
+						accountingMode: 'informational', modeRunId }, original = structuredClone(body);
+					await expect(kind === 'report' ? service.reportUsage(auth, frozenAttempt.id, body, 'original-key')
+						: service.settle(auth, frozenAttempt.id, body, 'original-key')).rejects.toMatchObject({ code: 'mode_run_contract_retired', status: 400 });
+					expect(await snapshot()).toEqual(before); expect(body).toEqual(original); expect(Object.hasOwn(body, 'modeRunId')).toBe(true);
+				}
+			}
+			const body = structuredClone(terminalUsage), original = structuredClone(body);
+			const first = await service.settle(auth, frozenAttempt.id, body, terminalUsage.settlementKey);
+			expect(first.replayed).toBe(false);
+			const settled = await snapshot();
+			expect((await query('SELECT accounting_mode,active_seconds,elapsed_seconds FROM capacity_usage_actuals')).rows)
+				.toEqual([{ accounting_mode: 'aggregate', active_seconds: 2, elapsed_seconds: 3 }]);
+			expect((await query('SELECT COUNT(*) AS total FROM capacity_ledger_entries')).rows).toEqual([{ total: 1 }]);
+			const retry = await service.settle(auth, frozenAttempt.id, body, terminalUsage.settlementKey);
+			expect(retry.replayed).toBe(true); expect(await snapshot()).toEqual(settled); expect(body).toEqual(original);
+		} finally { await db.close(); }
+	});
 	it('preserves incremental measurements and charges one aggregate across repeated concurrent public reports', async () => {
 		const { db, owner, query } = await providerDatabase();
 		try {

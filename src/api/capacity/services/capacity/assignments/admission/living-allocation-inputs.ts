@@ -68,8 +68,8 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 		// success only from a validated approval of this immutable result, never
 		// from mutable current graph state or an unreviewed/rejected completion.
 		const rows = await store.all(`SELECT usage.id,usage.created_at,usage.active_seconds,assignment.status,assignment.lifecycle_code,
-			assignment.assignment_attempt_json::jsonb->'estimate'->>'expectedSeconds' AS expected_seconds,
-			assignment.assignment_attempt_json::jsonb->'limits'->>'maximumSeconds' AS allocated_seconds
+			assignment.assignment_attempt_json::jsonb->'estimate'->'expectedSeconds' AS expected_seconds,
+			assignment.assignment_attempt_json::jsonb->'limits'->'maximumSeconds' AS allocated_seconds
 			FROM capacity_usage_actuals usage JOIN capacity_provider_assignments assignment ON assignment.id=usage.assignment_id
 			JOIN execution_nodes node ON node.team_id=assignment.team_id AND node.id=assignment.execution_node_id
 			WHERE assignment.capacity_provider_id=? AND assignment.execution_provider_id=? AND node.agent_class=?
@@ -91,8 +91,13 @@ export async function livingAllocationInputs(store: CapacityGovernanceDatabase, 
 			ORDER BY usage.created_at DESC,usage.id DESC LIMIT 20`,
 			[input.capacityProviderId, provider.id, input.agentClass, limits.modelConfigurationId, input.capabilityId, input.activity]);
 		result[provider.id] = { opportunity: shares[input.run.id]!, constraints: [{ id: 'workday-phase-share', remainingSeconds: shares[input.run.id]?.availableSeconds ?? 0 }],
-			measurements: rows.map(row => ({ id: String(row.id), completedAt: String(row.created_at), expectedSeconds: Number(row.expected_seconds),
-				allocatedSeconds: Number(row.allocated_seconds), activeSeconds: Number(row.active_seconds), outcome: row.lifecycle_code === 'assignment_timeout' ? 'expired' : 'completed' })) };
+			measurements: rows.map(row => {
+				if (typeof row.id !== 'string' || typeof row.created_at !== 'string' || typeof row.expected_seconds !== 'number'
+					|| typeof row.allocated_seconds !== 'number' || typeof row.active_seconds !== 'number') throw new Error('allocation_measurement_invalid');
+				return { id: row.id, completedAt: row.created_at, expectedSeconds: row.expected_seconds,
+					allocatedSeconds: row.allocated_seconds, activeSeconds: row.active_seconds,
+					outcome: row.lifecycle_code === 'assignment_timeout' ? 'expired' : 'completed' };
+			}) };
 	}
 	return result;
 }

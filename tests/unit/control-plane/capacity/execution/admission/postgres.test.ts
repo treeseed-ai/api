@@ -8,19 +8,29 @@ import { assignment } from '../fixtures/assignment.ts';
 import { ProviderAssignmentRepository } from '../../../../../../src/api/capacity/repositories/capacity/assignments/assignment.ts';
 import { buildProviderAssignmentExplanation } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/assignment-explanation-service.ts';
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { ControlPlaneStore } from '../../../../../../src/api/persistence/store.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
-describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
+describe('living admission in disposable PostgreSQL', () => {
 	it('serializes competing claims and rolls back without orphan reservations or duplicate charges', async () => {
-		const connection = new URL(url!);
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native atomic admission coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_allocation_test_${randomUUID().replaceAll('-', '')}`;
 		await admin.query(`CREATE DATABASE "${name}"`);
 		connection.pathname = `/${name}`;
 		const database = createControlPlanePostgresDatabase(connection.href, { migrationMode: 'apply' });
+		let peer: ReturnType<typeof createControlPlanePostgresDatabase> | undefined;
 		try {
 			await database.migrate();
+			peer = createControlPlanePostgresDatabase(connection.href);
+			const peerDatabase = peer;
+			const accounting = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, database);
+			const peerAccounting = new ControlPlaneStore({ TREESEED_ENVIRONMENT: 'test' }, peerDatabase);
+			// Original full migrations above own initialization; don't seed an
+			// unrelated portfolio while reading this freshly allocated database.
+			accounting.initializationPromise = peerAccounting.initializationPromise = Promise.resolve();
 			const now = assignment.createdAt;
 			await database.pool.query(`INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES ('team','team','Team',$1,$1)`, [now]);
 			await database.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,status,execution_mode,created_at,updated_at)
@@ -120,16 +130,65 @@ describe.skipIf(!url)('living admission in disposable PostgreSQL', () => {
 				[JSON.stringify(admitted.assignmentAttempt), winner.id]);
 			const settlement = { settlementKey: `settle:${winner.id}`, teamId: 'team', membershipId: 'membership',
 				reservationId: winner.reservationId, assignmentId: winner.id, activeSeconds: 2, elapsedSeconds: 4,
+				providerUnits: 0.25, usd: 0.001, usageActual: { inputTokens: 7, outputTokens: 3, nativeUsage: { tokens: 10, providerSeconds: 0.25 } },
 				source: 'postgres-admission-test' };
-			expect((await settleCapacityReservationExactlyOnce(store as never, settlement)).replayed).toBe(false);
+			const originalSettlement = structuredClone(settlement);
+			const state = async (reader = database) => ({
+				assignments: (await reader.pool.query('SELECT * FROM capacity_provider_assignments ORDER BY id')).rows,
+				reservations: (await reader.pool.query('SELECT * FROM capacity_reservations ORDER BY id')).rows,
+				proxies: (await reader.pool.query('SELECT * FROM treedx_proxy_handles ORDER BY id')).rows,
+				counters: (await reader.pool.query('SELECT * FROM capacity_admission_counters ORDER BY id')).rows,
+				claims: (await reader.pool.query('SELECT * FROM capacity_reservation_counter_claims ORDER BY reservation_id,counter_id')).rows,
+				usage: (await reader.pool.query('SELECT * FROM capacity_usage_actuals ORDER BY id')).rows,
+				ledger: (await reader.pool.query('SELECT * FROM capacity_ledger_entries ORDER BY id')).rows,
+				nodes: (await reader.pool.query('SELECT * FROM execution_nodes ORDER BY id')).rows,
+			});
+			const beforeFailure = await state(); expect(await state(peerDatabase)).toEqual(beforeFailure);
+			// Last-write failure in the SAME allocated native database: original
+			// usage/counter adjustments have been attempted, and must roll back.
+			await database.pool.query(`CREATE FUNCTION admission_settlement_failure() RETURNS trigger LANGUAGE plpgsql AS
+				$$ BEGIN RAISE EXCEPTION 'original native terminal ledger interruption'; END $$`);
+			await database.pool.query(`CREATE TRIGGER admission_settlement_failure BEFORE INSERT ON capacity_ledger_entries
+				FOR EACH ROW EXECUTE FUNCTION admission_settlement_failure()`);
+			await expect(settleCapacityReservationExactlyOnce(accounting, settlement)).rejects.toMatchObject({ code: 'P0001' });
+			expect(await state()).toEqual(beforeFailure); expect(await state(peerDatabase)).toEqual(beforeFailure);
+			expect(settlement).toEqual(originalSettlement);
+			await database.pool.query('DROP TRIGGER admission_settlement_failure ON capacity_ledger_entries');
+			await database.pool.query('DROP FUNCTION admission_settlement_failure()');
+			expect((await peerDatabase.pool.query("SELECT tgname FROM pg_trigger WHERE tgname='admission_settlement_failure' AND tgrelid='capacity_ledger_entries'::regclass")).rows).toEqual([]);
+			expect((await peerDatabase.pool.query("SELECT proname FROM pg_proc WHERE proname='admission_settlement_failure' AND pronamespace='public'::regnamespace")).rows).toEqual([]);
+			expect(await state()).toEqual(beforeFailure);
+			const settled = await Promise.all([
+				settleCapacityReservationExactlyOnce(accounting, settlement),
+				settleCapacityReservationExactlyOnce(peerAccounting, structuredClone(settlement)),
+			]);
+			expect(settled.map(value => value.replayed).sort()).toEqual([false, true]);
+			expect(settled[0]!.entry).toEqual(settled[1]!.entry);
+			expect(settled[0]!.usageActualId).toBe(settled[1]!.usageActualId);
+			const retained = await state(); expect(await state(peerDatabase)).toEqual(retained);
+			expect(retained.usage).toHaveLength(1); expect(retained.ledger).toHaveLength(1);
+			expect(retained.reservations).toHaveLength(1); expect(retained.reservations[0]).toMatchObject({ state: 'consumed', active_seconds: 2, elapsed_seconds: 4 });
+			expect(retained.counters.map(counter => counter.committed_amount)).toEqual([10, 10]);
+			expect(retained.assignments).toEqual(beforeFailure.assignments); expect(retained.nodes).toEqual(beforeFailure.nodes); expect(retained.proxies).toEqual(beforeFailure.proxies);
+			expect(JSON.parse(String(retained.usage[0]!.native_usage_json))).toEqual(settlement.usageActual.nativeUsage);
+			for (const change of [{ activeSeconds: 3 }, { elapsedSeconds: 5 }, { providerUnits: 0.5 }, { usd: 0.002 },
+				{ usageActual: { ...settlement.usageActual, nativeUsage: { tokens: 11, providerSeconds: 0.25 } } }]) {
+				const changed = { ...settlement, ...change }, unchanged = structuredClone(changed);
+				await expect(settleCapacityReservationExactlyOnce(peerAccounting, changed)).rejects.toMatchObject({ status: 409 });
+				expect(await state()).toEqual(retained); expect(await state(peerDatabase)).toEqual(retained); expect(changed).toEqual(unchanged);
+			}
+			// Preserve the original first-commit false and exact replay true
+			// assertions without prescribing which native pool wins the race.
+			expect(settled.find(value => value.replayed === false)?.replayed).toBe(false);
 			expect((await settleCapacityReservationExactlyOnce(store as never, settlement)).replayed).toBe(true);
+			expect(await state()).toEqual(retained); expect(await state(peerDatabase)).toEqual(retained); expect(settlement).toEqual(originalSettlement);
 			expect((await database.pool.query(`SELECT count(*)::int AS count FROM capacity_ledger_entries
 				WHERE reservation_id=$1 AND phase='task_completed_actual_settlement'`, [winner.reservationId])).rows[0].count).toBe(1);
 			expect((await database.pool.query(`SELECT count(*)::int AS count FROM capacity_usage_actuals
 				WHERE assignment_id=$1 AND accounting_mode='aggregate'`, [winner.id])).rows[0].count).toBe(1);
 		} finally {
-			await database.close();
-			await admin.query(`DROP DATABASE "${name}"`); await admin.end();
+			try { await Promise.all([database.close(), ...(peer ? [peer.close()] : [])]); }
+			finally { try { await admin.query(`DROP DATABASE "${name}"`); } finally { await admin.end(); } }
 		}
 	}, 30_000);
 });

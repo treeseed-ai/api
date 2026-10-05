@@ -1,19 +1,26 @@
 import type { CapacityGovernanceDatabase } from '../../../capacity/database.ts';
 import { CapacityGovernanceError } from '../../../capacity/database.ts';
 import type { ProviderPrincipal } from './provider-runtime-service.ts';
+import type { ProviderAssignmentLeaseResult } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-lease-service.ts';
+import type { ProviderAssignmentLifecycleMutationResult } from '../../../capacity/services/capacity/assignments/lifecycle/assignment-lifecycle-service.ts';
+import type { ProviderAssignment } from '@treeseed/sdk/agent-capacity';
+
+type AssignmentObservation = ProviderAssignment | Record<string, unknown>;
+type AssignmentMutation = ProviderAssignmentLifecycleMutationResult | Record<string, unknown>;
 
 export interface ProviderAssignmentStore extends CapacityGovernanceDatabase {
-	leaseNextProviderAssignment(principal: ProviderPrincipal, input: Record<string, unknown>): Promise<Record<string, unknown>>;
-	getProviderAssignment(teamId: string, assignmentId: string): Promise<Record<string, unknown> | null>;
-	renewProviderAssignmentLease(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-	returnProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-	completeProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-	failProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+	leaseNextProviderAssignment(principal: ProviderPrincipal, input: Record<string, unknown>): Promise<Partial<ProviderAssignmentLeaseResult>>;
+	getProviderAssignment(teamId: string, assignmentId: string): Promise<AssignmentObservation | null>;
+	renewProviderAssignmentLease(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<AssignmentMutation | null>;
+	returnProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<AssignmentMutation | null>;
+	completeProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<AssignmentMutation | null>;
+	failProviderAssignment(principal: ProviderPrincipal, assignmentId: string, input: Record<string, unknown>): Promise<AssignmentMutation | null>;
 	createCapacityWorkdayEvent?(teamId: string, runId: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
-export function assertProviderOwnsAssignment(assignment: Record<string, unknown> | null, principal: ProviderPrincipal, action: string) {
-	if (!assignment) throw new CapacityGovernanceError('provider_assignment_not_found', 'Unknown assignment.', 404);
+export function assertProviderOwnsAssignment(value: AssignmentObservation | null, principal: ProviderPrincipal, action: string) {
+	if (!value) throw new CapacityGovernanceError('provider_assignment_not_found', 'Unknown assignment.', 404);
+	const assignment = assignmentRecord(value);
 	if (assignment.capacityProviderId !== principal.capacityProviderId) throw new CapacityGovernanceError('provider_assignment_forbidden', `Provider cannot ${action} this assignment.`, 403);
 	return assignment;
 }

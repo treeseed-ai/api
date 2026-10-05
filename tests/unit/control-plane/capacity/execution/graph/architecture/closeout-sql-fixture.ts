@@ -75,7 +75,7 @@ export async function closeoutDatabase() {
 			active_seconds,elapsed_seconds,created_at,updated_at)
 			VALUES ('reservation','reservation','token','membership','provider','closeout-author','assignment-report',
 			'acting','team','project','workday','consumed',10,10,1,1,?,?)`, [now, now]);
-		return { db, reads, query, store: { ...database,
+		return { db, reads, query, owner, store: { ...database,
 			updateCapacityWorkdayRun: async (teamId: string, runId: string, input: Record<string, unknown>) => {
 				const current = await reads.get(teamId, runId);
 				if (!current) return null;

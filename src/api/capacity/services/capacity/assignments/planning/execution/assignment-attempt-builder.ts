@@ -173,10 +173,10 @@ function workspace(candidate: ReadyExecutionNode, assignmentId: string, exactGra
 		'assignment_source_lineage_mismatch', 'The direct predecessor commit is absent from exact predecessor results.', 409);
 	const explicitIntegration = predecessorCommits.length > 1
 		&& candidate.node.kind === 'acting' && candidate.node.pairRole === 'actor'
-		&& candidate.node.agentClass === 'releaser' && exactGrant.tools.includes('release');
+		&& exactGrant.tools.includes('release');
 	if (predecessorCommits.length > 1 && !explicitIntegration && !lineageBase && !revisionBase) throw new CapacityGovernanceError(
 		'assignment_git_integration_required',
-		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicit integration assignment by a Releaser must establish one base.`,
+		`Node ${candidate.node.id} has multiple Git predecessor commits; an explicitly release-authorized integration assignment must establish one base.`,
 		409, { nodeId: candidate.node.id, predecessorCommits,
 			predecessorResults: candidate.predecessorResults.flatMap((result) => result.references
 				.filter((item) => item.kind === 'git' && item.repository === reference.repository)

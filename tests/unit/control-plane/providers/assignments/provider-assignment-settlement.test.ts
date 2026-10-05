@@ -27,6 +27,30 @@ describe('provider assignment settlement', () => {
 		await expect(service.settle(auth, 'assignment-1', { modeRunId: 'retired-run', activeSeconds: 1, elapsedSeconds: 1 }, 'key'))
 			.rejects.toMatchObject({ code: 'mode_run_contract_retired', status: 400 });
 		expect(settleCapacityReservationExactlyOnce).not.toHaveBeenCalled();
+		const effects: string[] = [];
+		const guarded: Parameters<typeof createProviderAssignmentService>[0] = {
+			ensureInitialized: async () => { effects.push('initialize'); },
+			run: async () => { effects.push('run'); }, first: async () => { effects.push('first'); return null; },
+			all: async () => { effects.push('all'); return []; }, batch: async () => { effects.push('batch'); },
+			getProviderAssignment: async () => { effects.push('assignment'); return null; },
+			leaseNextProviderAssignment: async () => { effects.push('lease'); return {}; },
+			renewProviderAssignmentLease: async () => { effects.push('renew'); return null; },
+			returnProviderAssignment: async () => { effects.push('return'); return null; },
+			completeProviderAssignment: async () => { effects.push('complete'); return null; },
+			failProviderAssignment: async () => { effects.push('fail'); return null; },
+		};
+		const original = createProviderAssignmentService(guarded);
+		const methods: Array<(body: Record<string, unknown>) => Promise<unknown>> = [
+			body => original.renew(auth, 'assignment-1', body), body => original.returnAssignment(auth, 'assignment-1', body),
+			body => original.complete(auth, 'assignment-1', body), body => original.fail(auth, 'assignment-1', body),
+			body => original.reportUsage(auth, 'assignment-1', body, 'original-key'), body => original.settle(auth, 'assignment-1', body, 'original-key'),
+		];
+		for (const modeRunId of [undefined, null, '', 'retired-run', false, 0, {}, []]) for (const method of methods) {
+			const body = { activeSeconds: 1, elapsedSeconds: 1, modeRunId }, before = structuredClone(body);
+			await expect(method(body)).rejects.toMatchObject({ code: 'mode_run_contract_retired', status: 400 });
+			expect(effects).toEqual([]); expect(settleCapacityReservationExactlyOnce).not.toHaveBeenCalled();
+			expect(Object.hasOwn(body, 'modeRunId')).toBe(true); expect(body).toEqual(before);
+		}
 	});
 
 	it('settles conversation usage without inventing a returned checkpoint or completing before its result', async () => {

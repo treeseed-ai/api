@@ -1,0 +1,12 @@
+schemaVersion: treeseed.guarantee/v1
+id: guarantee.api.golden.execution-schema
+journey: Verify clean storage authority of actual managed provider execution
+ownerPackage: "@treeseed/api"
+type: agent
+subtype: execution
+status: planned
+gates: [core]
+summary: Requires the complete owning migration inventory, absence of named retired execution tables and columns, exact native-to-public canonical rows, and encrypted original executor-action custody with independent API-clock boundary readback across the actual model-backed activities of a completed managed workday. This boundary is not whole source-path deletion, generated-contract equivalence, semantic scope adaptation, external usage provenance or physical provider teardown proof.
+scene:
+  required: true
+  manifest: guarantees/agent/golden/scenes/execution-schema.scene.yaml

@@ -8,9 +8,11 @@ import { appendDiscussionEvent } from '../../../../../src/api/discussions/conten
 vi.mock('../../../../../src/api/discussions/content.ts', () => ({ appendDiscussionEvent: vi.fn(async () => { throw new Error('No progress TreeDX commit allowed'); }) }));
 vi.mock('../../../../../src/api/realtime/session-events.ts', () => ({ persistSessionEvent: vi.fn(async () => undefined) }));
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('provider progress durable PostgreSQL custody', () => {
+describe('provider progress durable PostgreSQL custody', () => {
 	it('retains captured preparation evidence and ordered replay without duplicate discussion commits', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native provider progress coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_progress_test_${randomUUID().replaceAll('-', '')}`;

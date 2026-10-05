@@ -11,7 +11,7 @@ import { OperatorAssignmentService } from '../../../../../../src/api/capacity/se
 import { settleCapacityReservationExactlyOnce } from '../../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
 
 const url = process.env.TREESEED_TEST_POSTGRES_URL;
-describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
+describe('terminal timeout PostgreSQL custody', () => {
 	it.each([
 		['12 seconds', 12, false, false, false],
 		['25 seconds', 25, false, false, false],
@@ -20,7 +20,8 @@ describe.skipIf(!url)('terminal timeout PostgreSQL custody', () => {
 		['returned pre-model phase cancellation', 0, true, false, true],
 	] as const)('settles actual %s once without late completion, cap expansion or approval', async (_label, activeSeconds, phase, requested, returned) => {
 		const reservedSeconds = phase ? 31 : 20;
-		const connection = new URL(url!);
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native terminal timeout coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_timeout_test_${randomUUID().replaceAll('-', '')}`;

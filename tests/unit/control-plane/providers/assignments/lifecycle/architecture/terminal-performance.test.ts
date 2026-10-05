@@ -8,7 +8,7 @@ describe('truthful terminal performance projection', () => {
 	it('retains supplied measured terminal time and arbitrary class without rewriting the frozen assignment', () => {
 		const item = recoveryAssignment(true), before = structuredClone(item);
 		const result = terminalPerformance(item, {}, 'failed', cancelNow, { active_seconds: 2, elapsed_seconds: 3, input_tokens: 7 });
-		expect(result.actual).toMatchObject({ activeSeconds: 2, elapsedSeconds: 3, inputTokens: 7 });
+		expect(result.actual).toMatchObject({ activeSeconds: 2, elapsedSeconds: 3, inputTokens: 7, attempts: item.assignmentAttempt!.attempt });
 		expect(result.agentClassId).toBe(item.projectAgentClassId); expect(item).toEqual(before);
 	});
 	it('denies unknown terminal measurements after execution started instead of synthesizing zero usage', () => {

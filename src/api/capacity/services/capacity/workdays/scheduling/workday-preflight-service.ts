@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
 	validateWorkdayIntent,
+	normalizeWorkdayIntent,
 	normalizeWorkdayAgentSelection,
 	validateWorkdayPreflight,
 	validateWorkdayPreflightFreshness,
@@ -16,6 +17,7 @@ import { canonicalJson,sha256 } from '../../../../security.ts';
 import { decodeExecutionNode } from '../../../../../control-plane/repositories/capacity/execution/execution-graph-storage.ts';
 import { readTeamWorkdayProfile } from '../../../../../control-plane/repositories/capacity/workdays/profile-service.ts';
 import { validateWorkdayContinuation } from './workday-continuation.ts';
+import { validateDecisionAuthority } from '../../../../../governance/decision-authority.ts';
 
 type JsonRecord = Record<string,unknown>;
 
@@ -39,6 +41,10 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	if(forbidden.length) diagnosticsError('workday_intent_derived_fields_forbidden','Workday preflight accepts high-level intent only.',forbidden.map((path)=>({code:'field_forbidden',path})));
 	if(input.teamId!==undefined&&text(input.teamId)!==teamId) diagnosticsError('workday_intent_team_mismatch','Workday intent team must match the route team.',[{code:'team_mismatch',path:'teamId'}]);
 	if(input.planningOnly!==undefined&&typeof input.planningOnly!=='boolean') diagnosticsError('workday_intent_invalid','Workday intent is invalid.',[{code:'planning_only_invalid',path:'planningOnly'}]);
+	if(input.decisionIds!==undefined&&(!Array.isArray(input.decisionIds)||!input.decisionIds.length
+		||input.decisionIds.some(value=>typeof value!=='string'||!value.trim()||value.length>128))) {
+		diagnosticsError('workday_intent_invalid','Workday intent is invalid.',[{code:'decision_selection_invalid',path:'decisionIds'}]);
+	}
 	const projects=input.projects==='all'?'all':Array.isArray(input.projects)?input.projects.map(text).filter(Boolean):[];
 	const constraints=record(input.operatorConstraints);
 	const forbiddenConstraints=Object.keys(constraints).filter((key)=>!['providerIds','maxConcurrency'].includes(key));
@@ -67,7 +73,7 @@ export function parsePublicWorkdayIntent(teamId:string,input:JsonRecord):Workday
 	if(diagnostics.length) diagnosticsError('workday_intent_invalid','Workday intent is invalid.',diagnostics);
 	if(intent.agentSelection!==undefined) intent.agentSelection=Object.fromEntries(Object.entries(normalizeWorkdayAgentSelection(intent.agentSelection))
 		.filter(([,value])=>!Array.isArray(value)||value.length>0)) as WorkdayIntent['agentSelection'];
-	return intent;
+	return normalizeWorkdayIntent(intent);
 }
 
 export class WorkdayPreflightService {
@@ -87,6 +93,17 @@ export class WorkdayPreflightService {
 		const profile = await readTeamWorkdayProfile(this.store, teamId);
 		if (intent.profileId !== profile.id) throw new CapacityGovernanceError('workday_profile_not_found', 'Select the team default workday policy.', 404);
 		const providerId=await this.providerId(teamId,intent);
+		if (intent.decisionIds?.length) {
+			const projects = await this.store.all('SELECT id,slug FROM projects WHERE team_id=?', [teamId]);
+			const selected = new Set(projects.filter(row => intent.projects === 'all'
+				|| intent.projects.includes(text(row.id)) || intent.projects.includes(text(row.slug))).map(row => text(row.id)));
+			for (const decisionId of intent.decisionIds) {
+				const authority = await validateDecisionAuthority(this.store, decisionId, { teamId });
+				if (!authority.valid || !authority.current) throw new CapacityGovernanceError(authority.code!, authority.message!, 409);
+				if (!selected.has(authority.current.projectId)) throw new CapacityGovernanceError('governance_decision_project_mismatch',
+					'The governance decision belongs to another project.', 409);
+			}
+		}
 		if (intent.continueFromWorkdayId) {
 			const projects = await this.store.all('SELECT id,slug FROM projects WHERE team_id=?', [teamId]);
 			const selected = intent.projects === 'all' ? projects : projects.filter(row =>
@@ -162,7 +179,7 @@ export class WorkdayPreflightService {
 			(Array.isArray(project.agents)?project.agents.map(record):[]),
 		]));
 		const planningEnabled=Number(record(runInput.parameters).planningPercent??policy.planningPercent)>0;
-		const selectedDemands=nodeRows.flatMap((entry,index)=>{
+		const selectedDemands=nodeRows.flatMap((entry)=>{
 			const node=decodeExecutionNode(entry) as ExecutionNode;
 			const decisionRef=node.authorityRefs.find((reference)=>reference.model==='decision');
 			if(selectedProposals.size&&node.sourceRef.model==='proposal'&&!selectedProposals.has(node.sourceRef.id)) return [];
@@ -178,7 +195,7 @@ export class WorkdayPreflightService {
 				[text(agent.classId),text(agent.classSlug),text(agent.agentClass)].includes(node.agentClass??node.kind)
 				&& (Array.isArray(agent.activityTypes)?agent.activityTypes.map(text):[]).includes(node.kind))) return [];
 			return [{id:`execution-node:${node.id}:revision:${node.nodeRevision}`,projectId:node.projectId,sourceType:'execution-node',sourceId:node.id,mode,
-				classSlug:node.agentClass??node.kind,requestedSeconds:integer(node.estimate?.expectedSeconds,1),priority:index,
+				classSlug:node.agentClass??node.kind,requestedSeconds:integer(node.estimate?.expectedSeconds,1),priority:node.priority??0,
 				...(decisionRef?{actingAuthority:{ decisionId:decisionRef.id,decisionRevision:decisionRef.revision,executionNodeId:node.id,
 					executionNodeRevision:node.nodeRevision,graphRevision:integer(entry.graph_revision,0),sourceDigest:node.sourceRef.digest }}:{})}];
 		});
@@ -188,7 +205,10 @@ export class WorkdayPreflightService {
 		const appliedPlan=record(projection.appliedPlan);
 		const profileGeneration=integer(appliedPlan.policyRevision,1);
 		const state:WorkdayPreflightObservation={
-			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot}), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],proposalIds:intent.proposalIds??[],decisionIds:intent.decisionIds??[]}),
+			profileGeneration, profileDigest:digest({profileId:intent.profileId,policy:appliedPlan.policySnapshot,
+				projects:(Array.isArray(projection.projects)?projection.projects.map(record):[]).map(project=>({
+					id:project.id,repositoryId:project.repositoryId,contentRevision:project.contentRevision,agentProfileRevision:project.agentProfileRevision,
+				}))}), demandSetDigest:digest({selectedDemands,objectives:intent.objectiveFilters??[],proposalIds:intent.proposalIds??[],decisionIds:intent.decisionIds??[]}),
 			providerCapacityDigest:digest({providerId,membershipTeam:teamId,availableSeconds:projection.availableSeconds??null}),
 			authorizationDigest:digest({teamId,requestedById,profileId:intent.profileId}),
 			reservationDigest:digest([]),
@@ -226,10 +246,14 @@ export class WorkdayPreflightService {
 		if(digest(preflightPayload)!==preflightDigest||digest(stored.intent)!==stored.receipt.intentDigest) throw new CapacityGovernanceError('workday_preflight_integrity_invalid','Stored workday preflight evidence does not match its digest; generate a fresh plan.',409);
 		const diagnostics=validateWorkdayPreflight(stored.receipt);
 		if(diagnostics.length) throw new CapacityGovernanceError('workday_preflight_stale','Workday preflight is expired or invalid; generate a fresh plan.',409,{diagnostics});
+		if(Date.parse(stored.receipt.endsAt)<=Date.now()) throw new CapacityGovernanceError('workday_preflight_stale',
+			'The original productive workday window has elapsed.',409);
 		const current=await this.compile(teamId,stored.intent,requestedById,stored.receipt.id);
 		const freshness=validateWorkdayPreflightFreshness(stored.receipt,current.receipt);
 		if(freshness.length) throw new CapacityGovernanceError('workday_preflight_stale','Workday authority or capacity changed after preflight; generate a fresh plan.',409,{diagnostics:freshness});
 		const existing=await this.store.first(`SELECT * FROM capacity_workday_runs WHERE team_id=? AND id=? LIMIT 1`,[teamId,String(current.runInput.id)]);
+		if(existing&&existing.status!=='running') throw new CapacityGovernanceError('workday_start_failed',
+			'The retained workday is not running; failed admission cannot become a successful replay.',409);
 		const run=existing??await this.store.createCapacityWorkdayRun(teamId,current.runInput);
 		if(!run) throw new CapacityGovernanceError('workday_start_failed','The API did not create the governed workday.',500);
 		const receipt:WorkdayStartReceipt={schemaVersion:'treeseed.workday-start-receipt/v1',workdayId:String(run.id),preflightId:request.preflightId,preflightDigest:request.preflightDigest,

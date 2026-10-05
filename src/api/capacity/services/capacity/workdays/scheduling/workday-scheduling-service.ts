@@ -187,6 +187,7 @@ export async function preflightCapacityWorkdayRun(store: WorkdayScheduleStore, r
 			id: project.id,
 			slug: project.slug ?? project.id,
 			repositoryId: resolved.contexts.get(project.id)!.repositoryId,
+			contentRevision: resolved.contexts.get(project.id)!.immutableRef,
 			agentProfileRevision: resolved.agentProfiles.get(project.id)!.revision,
 			agentProfiles: resolved.agentProfiles.get(project.id)!.agents.length,
 			agents: resolved.agentProfiles.get(project.id)!.agents.map((agent) => ({

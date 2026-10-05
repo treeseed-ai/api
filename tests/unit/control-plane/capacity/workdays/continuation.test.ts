@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import pg from 'pg';
 import { validateWorkdayContinuation, workdayContinuationHistory, workdayLineageSql } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-continuation.ts';
+import { workdayStartDatabase } from './scheduling/architecture/workday-start-fixture.ts';
+import { settleCapacityReservationExactlyOnce } from '../../../../../src/api/capacity/services/capacity/accounting/settlement-service.ts';
+import { assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 const previous = { id: 'previous', team_id: 'team', execution_kind: 'workday', execution_mode: 'simulation',
 	capacity_provider_id: 'provider', status: 'completed', parameters_json: JSON.stringify({ scheduledProjectIds: ['sdk'] }) };
@@ -10,8 +13,130 @@ const fixture = (rows = [previous]) => ({
 	all: vi.fn(async () => [{ decision_id: 'decision', assignment_attempt_json: '{}' }]),
 });
 describe('settled workday continuation', () => {
-	it.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('enforces recursive lineage and team isolation in real PostgreSQL', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+	it('native original settlement permits released returned history without rewriting its failed result and denies retained leases or unsettled reservations on the same immutable lineage', async () => {
+		const f = await workdayStartDatabase(); try {
+			const at = f.intent.startsAt, parameters = '{"scheduledProjectIds":["project"]}';
+			await f.query(`INSERT INTO capacity_workday_runs
+				(id,team_id,capacity_provider_id,status,execution_kind,execution_mode,trigger_kind,parameters_json,created_at,updated_at)
+				VALUES ('returned-parent','team','provider','failed','workday','simulation','manual',?,?,?)`, [parameters, at, at]);
+			const failed = assignmentResultSchema.parse({ schemaVersion: 'treeseed.assignment-result/v1', id: 'retained-failed-result',
+				assignmentId: 'returned-attempt', status: 'failed', summary: 'Controlled failed history, not a fabricated execution receipt.',
+				references: [], verification: [], usage: { elapsedSeconds: 1, native: { tokens: 7 } }, diagnostics: [], completedAt: at });
+			const raw = JSON.stringify(failed);
+			await f.query(`INSERT INTO capacity_provider_assignments
+				(id,membership_id,team_id,project_id,capacity_provider_id,project_agent_class_id,work_day_id,mode,status,lease_state,
+				attempt_count,decision_id,assignment_result_json,returned_at,created_at,updated_at)
+				VALUES ('returned-attempt','membership','team','project','provider','class','returned-parent','acting','returned','released',1,'decision',?,?,?,?)`, [raw, at, at, at]);
+			await f.query(`INSERT INTO capacity_reservations
+				(id,idempotency_key,admission_token,membership_id,capacity_provider_id,project_agent_class_id,assignment_id,mode,
+				team_id,project_id,work_day_id,requested_seconds,reserved_seconds,created_at,updated_at)
+				VALUES ('returned-reservation','returned-reservation','returned-admission','membership','provider','class','returned-attempt','acting',
+				'team','project','returned-parent',3,3,?,?)`, [at, at]);
+			await f.query("UPDATE capacity_provider_assignments SET reservation_id='returned-reservation' WHERE id='returned-attempt'");
+			const unsettled = await f.snapshot();
+			await expect(workdayContinuationHistory(f.store, 'team', 'returned-parent', 'simulation', 'provider'))
+				.rejects.toMatchObject({ status: 409, code: 'workday_continuation_unsettled' });
+			expect(await f.snapshot()).toEqual(unsettled);
+			const input = { settlementKey: 'returned-settlement', teamId: 'team', membershipId: 'membership', reservationId: 'returned-reservation',
+				assignmentId: 'returned-attempt', assignmentAttempt: 1, activeSeconds: 1, elapsedSeconds: 1,
+				source: 'controlled-continuation-input', usageActual: { nativeUsage: { tokens: 7 }, inputTokens: 7 } };
+			const heldInput = structuredClone(input), settled = await settleCapacityReservationExactlyOnce(f.store, input);
+			expect(settled.replayed).toBe(false);
+			const baseline = await f.snapshot();
+			expect(baseline.reservations).toHaveLength(1); expect(baseline.reservations[0]).toMatchObject({ state: 'consumed', active_seconds: 1, elapsed_seconds: 1 });
+			expect(baseline.usage).toHaveLength(1); expect(baseline.ledger).toHaveLength(1);
+			const parent = baseline.workdays.find(row => row.id === 'returned-parent'); if (!parent) throw new Error('Exact retained parent required');
+			expect(await workdayContinuationHistory(f.store, 'team', 'returned-parent', 'simulation', 'provider')).toEqual([parent]);
+			await expect(validateWorkdayContinuation(f.store, 'team', 'returned-parent', 'simulation', 'provider', ['project'], ['decision'])).resolves.toBeUndefined();
+			const overlapping = await Promise.all([workdayContinuationHistory(f.store, 'team', 'returned-parent', 'simulation', 'provider'),
+				workdayContinuationHistory(f.store, 'team', 'returned-parent', 'simulation', 'provider')]);
+			expect(overlapping).toEqual([[parent], [parent]]); expect(await f.snapshot()).toEqual(baseline);
+			const denials = [
+				["UPDATE capacity_provider_assignments SET lease_state='leased' WHERE id='returned-attempt'", "UPDATE capacity_provider_assignments SET lease_state='released' WHERE id='returned-attempt'"],
+				["UPDATE capacity_provider_assignments SET lease_token='retained-token' WHERE id='returned-attempt'", "UPDATE capacity_provider_assignments SET lease_token=NULL WHERE id='returned-attempt'"],
+				["UPDATE capacity_provider_assignments SET status='running' WHERE id='returned-attempt'", "UPDATE capacity_provider_assignments SET status='returned' WHERE id='returned-attempt'"],
+				["UPDATE capacity_reservations SET state='consuming' WHERE id='returned-reservation'", "UPDATE capacity_reservations SET state='consumed' WHERE id='returned-reservation'"],
+			];
+			for (const [change, restore] of denials) {
+				await f.query(change!); const changed = await f.snapshot();
+				await expect(workdayContinuationHistory(f.store, 'team', 'returned-parent', 'simulation', 'provider'))
+					.rejects.toMatchObject({ status: 409, code: 'workday_continuation_unsettled' });
+				expect(await f.snapshot()).toEqual(changed); await f.query(restore!); expect(await f.snapshot()).toEqual(baseline);
+			}
+			const replay = await settleCapacityReservationExactlyOnce(f.store, input);
+			expect(replay.replayed).toBe(true); expect(replay.entry).toEqual(settled.entry);
+			expect(await f.snapshot()).toEqual(baseline); expect(input).toEqual(heldInput); expect(f.calls).toEqual([]);
+			expect((await f.first("SELECT assignment_result_json FROM capacity_provider_assignments WHERE id='returned-attempt'"))?.assignment_result_json).toBe(raw);
+			// Actual owning accounting/continuation and original migrated SQL; supplied
+			// status/result/measurements are not native execution or accepted governance.
+		} finally { await f.close(); }
+	});
+	it('retains each terminal custody status and the exact original sixty-four-record lineage while denying a sixty-fifth record or cycle', async () => {
+		for (const status of ['completed', 'degraded', 'cancelled', 'failed']) {
+			const input = { ...previous, status }, before = structuredClone(input), store = fixture([input]);
+			expect(await workdayContinuationHistory(store, 'team', 'previous', 'simulation', 'provider')).toEqual([input]); expect(input).toEqual(before);
+		}
+		for (const size of [64, 65]) {
+			const records = Array.from({ length: size }, (_, index) => ({ ...previous, id: `lineage-${index}`,
+				parameters_json: JSON.stringify({ scheduledProjectIds: ['sdk'], ...(index + 1 < size ? { continueFromWorkdayId: `lineage-${index + 1}` } : {}) }) }));
+			const before = structuredClone(records), store = fixture(records);
+			if (size === 64) expect(await workdayContinuationHistory(store, 'team', 'lineage-0', 'simulation', 'provider')).toEqual(records);
+			else await expect(workdayContinuationHistory(store, 'team', 'lineage-0', 'simulation', 'provider')).rejects.toMatchObject({ status: 409, code: 'workday_continuation_cycle' });
+			expect(records).toEqual(before); expect(store.first.mock.calls.filter(([sql]) => sql.includes('FROM capacity_workday_runs'))).toHaveLength(64);
+		}
+		const cycle = ['cycle-a', 'cycle-b'].map((id, index) => ({ ...previous, id,
+			parameters_json: JSON.stringify({ scheduledProjectIds: ['sdk'], continueFromWorkdayId: index === 0 ? 'cycle-b' : 'cycle-a' }) }));
+		const before = structuredClone(cycle), store = fixture(cycle);
+		await expect(workdayContinuationHistory(store, 'team', 'cycle-a', 'simulation', 'provider')).rejects.toMatchObject({ status: 409, code: 'workday_continuation_cycle' });
+		expect(cycle).toEqual(before); expect(store.first.mock.calls.filter(([sql]) => sql.includes('FROM capacity_workday_runs'))).toHaveLength(2);
+	});
+	it('denies malformed persisted continuation parameters and parent identities instead of converting them into a settled root or another identifier', async () => {
+		const malformed: unknown[] = [undefined, null, '', '{invalid', 'null', '[]', '1', '"retired"', {}, [],
+			...['', ' ', null, false, 1, [], {}].map(continueFromWorkdayId => JSON.stringify({ scheduledProjectIds: ['sdk'], continueFromWorkdayId }))];
+		for (const parameters_json of malformed) {
+			const input = Object.assign({ ...previous }, { parameters_json }), before = structuredClone(input), store = fixture([input]);
+			await expect(workdayContinuationHistory(store, 'team', 'previous', 'simulation', 'provider')).rejects.toMatchObject({ status: 409, code: 'workday_continuation_scope_invalid' });
+			expect(input).toEqual(before);
+			expect(store.first.mock.calls.filter(([sql]) => sql.includes('FROM capacity_workday_runs'))).toEqual([
+				['SELECT * FROM capacity_workday_runs WHERE team_id=? AND id=?', ['team', 'previous']],
+			]);
+		}
+	});
+	it('native original continuation reader retains exact terminal lineage bytes and rejects corrupt ancestry without writes or manufacturing settled authority', async () => {
+		const f = await workdayStartDatabase(); try {
+			const seed = async (id: string, parameters: string, status = 'completed') => f.query(`INSERT INTO capacity_workday_runs
+				(id,team_id,capacity_provider_id,status,execution_kind,execution_mode,trigger_kind,parameters_json,created_at,updated_at)
+				VALUES (?,'team','provider',?,'workday','simulation','manual',?,?,?)`, [id, status, parameters, f.intent.startsAt, f.intent.startsAt]);
+			for (let index = 0; index < 64; index++) await seed(`native-lineage-${index}`, JSON.stringify({ scheduledProjectIds: ['project'],
+				...(index + 1 < 64 ? { continueFromWorkdayId: `native-lineage-${index + 1}` } : {}) }), ['completed', 'degraded', 'cancelled', 'failed'][index % 4]!);
+			const malformed = ['', '{invalid', 'null', '[]', '1', '"retired"',
+				...['', ' ', null, false, 1, [], {}].map(continueFromWorkdayId => JSON.stringify({ scheduledProjectIds: ['project'], continueFromWorkdayId }))];
+			for (const [index, parameters] of malformed.entries()) await seed(`native-corrupt-${index}`, parameters);
+			await seed('native-over-bound', '{"scheduledProjectIds":["project"],"continueFromWorkdayId":"native-lineage-0"}');
+			await seed('native-cycle-a', '{"scheduledProjectIds":["project"],"continueFromWorkdayId":"native-cycle-b"}');
+			await seed('native-cycle-b', '{"scheduledProjectIds":["project"],"continueFromWorkdayId":"native-cycle-a"}');
+			const before = await f.snapshot(), rows = await f.all('SELECT * FROM capacity_workday_runs ORDER BY id');
+			const lineage = await workdayContinuationHistory(f.store, 'team', 'native-lineage-0', 'simulation', 'provider');
+			expect(lineage).toEqual(Array.from({ length: 64 }, (_, index) => rows.find(row => row.id === `native-lineage-${index}`)));
+			const outcomes = [];
+			for (const [index] of malformed.entries()) {
+				let error: unknown; try { await workdayContinuationHistory(f.store, 'team', `native-corrupt-${index}`, 'simulation', 'provider'); } catch (failure) { error = failure; }
+				outcomes.push(error); expect(await f.snapshot()).toEqual(before); expect(f.calls).toEqual([]);
+			}
+			for (const outcome of outcomes) expect(outcome).toMatchObject({ status: 409, code: 'workday_continuation_scope_invalid' });
+			await expect(workdayContinuationHistory(f.store, 'team', 'native-over-bound', 'simulation', 'provider')).rejects.toMatchObject({ status: 409, code: 'workday_continuation_cycle' });
+			await expect(workdayContinuationHistory(f.store, 'team', 'native-cycle-a', 'simulation', 'provider')).rejects.toMatchObject({ status: 409, code: 'workday_continuation_cycle' });
+			const repeated = await Promise.all([workdayContinuationHistory(f.store, 'team', 'native-lineage-0', 'simulation', 'provider'),
+				workdayContinuationHistory(f.store, 'team', 'native-lineage-0', 'simulation', 'provider')]);
+			expect(repeated).toEqual([lineage, lineage]); expect(await f.snapshot()).toEqual(before); expect(f.calls).toEqual([]);
+			// Full original migrated PGlite/owning SQL reads, not independent PG
+			// connections or genuine governance/accepted continuation production.
+		} finally { await f.close(); }
+	});
+	it('enforces recursive lineage and team isolation in real PostgreSQL', async () => {
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native continuation coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
 		const client = new pg.Client({ connectionString: connection.href });
 		await client.connect();

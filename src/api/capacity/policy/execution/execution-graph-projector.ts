@@ -132,6 +132,7 @@ function workNode(input: {
 		schemaVersion: 'treeseed.execution-node/v1', id,
 		teamId: input.source.teamId, projectId: input.source.projectId,
 		workItemId: itemId, kind, pairRole: input.pairRole, sourceRef,
+		...(input.workItem.priority !== undefined ? { priority: input.workItem.priority } : {}),
 		authorityRefs: authority ? [authority] : [],
 		ruleRevision: RULE_REVISION, nodeRevision: 1, agentClass,
 		status: authority ? 'blocked' : 'proposed',

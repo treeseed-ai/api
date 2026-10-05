@@ -6,9 +6,11 @@ import { admitDiscussionInvocations, reconcileBlockedDiscussionInvocations } fro
 import { CapacityWorkdayRunService } from '../../../../../src/api/capacity/services/capacity/workdays/scheduling/workday-run-service.ts';
 import { compileWorkdayAgentProfileSnapshot } from '../../../../../src/api/capacity/services/capacity/workdays/policy/workday-agent-profile-policy.ts';
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('current communication supply in PostgreSQL', () => {
+describe('current communication supply in PostgreSQL', () => {
 	it('uses reported capability lanes rather than the retired materialized lane owner', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native communication supply coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_discussion_test_${randomUUID().replaceAll('-', '')}`;

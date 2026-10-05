@@ -13,14 +13,28 @@ type Operation = { query: string; params?: unknown[] };
 export async function commitLivingExecutionLifecycle(
 	input: Parameters<typeof livingExecutionLifecycleOperations>[0], operations: Operation[],
 	transaction?: CapacityGovernanceDatabase,
-): Promise<void> {
+): Promise<boolean> {
 	const apply = async (database: CapacityGovernanceDatabase) => {
 		await database.run('SELECT id FROM teams WHERE id=? FOR UPDATE', [input.assignment.teamId]);
+		const assignment = input.assignment;
+		if (!assignment.assignmentAttempt || assignment.graphRevision !== assignment.assignmentAttempt.graphRevision
+			|| assignment.executionNodeId !== assignment.assignmentAttempt.nodeId
+			|| assignment.executionNodeRevision !== assignment.assignmentAttempt.nodeRevision) return false;
+		const current = await database.first(`SELECT id FROM capacity_provider_assignments
+			WHERE id=? AND team_id=? AND status='leased' AND lease_state='leased' AND state_version=?
+			AND execution_node_id=? AND execution_node_revision=? AND graph_revision=?
+			AND assignment_attempt_json::jsonb=?::jsonb FOR UPDATE`,
+			[assignment.id, assignment.teamId, assignment.stateVersion, assignment.executionNodeId,
+				assignment.executionNodeRevision, assignment.graphRevision, JSON.stringify(assignment.assignmentAttempt)]);
+		if (!current) return false;
+		const node = await database.first(`SELECT id FROM execution_nodes WHERE id=? AND team_id=? AND node_revision=?
+			AND status IN ('assigned','running') FOR UPDATE`, [assignment.executionNodeId, assignment.teamId, assignment.executionNodeRevision]);
+		if (!node) return false;
 		const projection = await livingExecutionLifecycleOperations({ ...input, store: database });
 		await database.batch([...operations.slice(0, 1), ...projection, ...operations.slice(1)]);
+		return true;
 	};
-	if (transaction) await apply(transaction);
-	else await capacityTransaction(input.store, apply);
+	return transaction ? apply(transaction) : capacityTransaction(input.store, apply);
 }
 
 const stable = (value: unknown): string => {
@@ -94,6 +108,7 @@ export async function livingExecutionLifecycleOperations(input: {
 	if (revisionRequested && !actor) throw new Error('review_actor_node_missing');
 	target.status = recoverableReviewReturn && attempt >= maxAttempts
 		? 'failed' : nodeStatus as ExecutionNode['status'];
+	if (status === 'returned' && target.status === 'ready') target.nodeRevision += 1;
 	target.graphRevisionUpdated = nextRevision;
 	const changed = [target.id];
 	if (revisionRequested && actor) {
@@ -149,10 +164,10 @@ export async function livingExecutionLifecycleOperations(input: {
 			nextRevision, now, assignment.teamId, actor.id, actorRevision],
 	});
 	if (!revisionRequested) operations.push({
-		query: `UPDATE execution_nodes SET status=?,graph_revision_updated=?,updated_at=?
+		query: `UPDATE execution_nodes SET status=?,node_revision=?,graph_revision_updated=?,updated_at=?
 			WHERE team_id=? AND id=? AND node_revision=? AND status IN ('assigned','running')
 			AND EXISTS (SELECT 1 FROM capacity_provider_assignments WHERE id=? AND team_id=? AND execution_node_id=? AND execution_node_revision=?)`,
-		params: [nodeStatus, nextRevision, now, assignment.teamId, assignment.executionNodeId,
+		params: [nodeStatus, target.nodeRevision, nextRevision, now, assignment.teamId, assignment.executionNodeId,
 			assignment.executionNodeRevision, assignment.id, assignment.teamId,
 			assignment.executionNodeId, assignment.executionNodeRevision],
 	});

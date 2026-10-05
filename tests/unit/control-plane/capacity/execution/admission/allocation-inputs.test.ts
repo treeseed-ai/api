@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { livingAllocationInputs } from '../../../../../../src/api/capacity/services/capacity/assignments/admission/living-allocation-inputs.ts';
+import { postgresGraph } from '../graph/architecture/living/living-postgres-fixture.ts';
+import { serializeCapacityWorkdayRunRow } from '../../../../../../src/api/capacity/repositories/capacity/workdays/workday-run.ts';
+import { compileWorkday } from '@treeseed/sdk/agent-capacity';
 
 const now = '2026-09-16T12:30:00.000Z';
 const plan = { schemaVersion: 'treeseed.workday/v1', id: 'workday', teamId: 'team', policyId: 'default', policyRevision: 1,
@@ -16,6 +19,74 @@ const provider = { id: 'codex-implementation', accountingLimits: { modelConfigur
 	accountingObservation: { modelUsage: observation, capabilityUsage: { implementation: observation } } };
 
 describe('live allocation ledger inputs', () => {
+	it('native independent PostgreSQL readers retain committed seconds while weighted opportunity follows only exact ready graph demand across simulation and production', async () => {
+		const f = await postgresGraph();
+		try {
+			const at = new Date().toISOString(), startsAt = new Date(Date.parse(at) - 20_000).toISOString();
+			const database = (db: typeof f.left) => ({ db, ensureInitialized: () => db.migrate(),
+				run: async (sql: string, params: unknown[] = []) => { await db.prepare(sql).bind(...params).run(); },
+				first: (sql: string, params: unknown[] = []) => db.prepare(sql).bind(...params).first(),
+				all: async (sql: string, params: unknown[] = []) => (await db.prepare(sql).bind(...params).all()).results,
+				batch: (operations: Array<{ query: string; params?: unknown[] }>) => db.batch(operations) });
+			await f.left.pool.query(`INSERT INTO projects (id,team_id,slug,name,created_at,updated_at) VALUES ('project','team','allocation','Allocation',$1,$1)`, [at]);
+			await f.left.pool.query(`INSERT INTO project_agent_classes (id,team_id,project_id,slug,name,created_at,updated_at) VALUES ('class','team','project','renamed-author','Renamed author',$1,$1)`, [at]);
+			await f.left.pool.query(`INSERT INTO capacity_providers (id,fingerprint,public_jwk_json,display_name,created_at,updated_at) VALUES ('provider','controlled','{}','Controlled supply',$1,$1)`, [at]);
+			await f.left.pool.query(`INSERT INTO capacity_provider_team_memberships (id,team_id,capacity_provider_id,approved_at,approved_by_id,created_at,updated_at) VALUES ('membership','team','provider',$1,'controlled-input',$1,$1)`, [at]);
+			await f.left.pool.query(`INSERT INTO capacity_execution_providers (id,capacity_provider_id,display_name,adapter,native_unit,max_concurrent_runners,created_at,updated_at) VALUES ('configured-executor','provider','Configured executor','codex','seconds',1,$1,$1)`, [at]);
+			for (const [id, weight, ready] of [['a', 2, true], ['b', 1, true], ['idle', 10, false]] as const) {
+				const applied = { ...compileWorkday({ id, teamId: 'team', policyId: 'default', policyRevision: 1,
+					executionMode: id === 'b' ? 'production' : 'simulation', policy: { durationSeconds: 60, maximumConcurrency: 1,
+						communicationConcurrency: 1, planningPercent: 20, allocationWeight: weight }, agentIds: [], startsAt }), state: 'active' as const };
+				await f.left.pool.query(`INSERT INTO capacity_workday_runs (id,team_id,scenario_id,status,execution_mode,execution_kind,
+					parameters_json,started_at,created_at,updated_at) VALUES ($1,'team','weighted-input','running',$2,'workday',$3,$4,$4,$4)`,
+					[id, applied.executionMode, JSON.stringify({ appliedPlan: applied, scheduledProjectIds: ['project'] }), at]);
+				await f.left.pool.query(`INSERT INTO execution_nodes (id,team_id,project_id,workday_id,kind,source_ref_json,rule_revision,
+					node_revision,agent_class,status,estimate_json,required_capabilities_json,graph_revision_created,graph_revision_updated,created_at,updated_at)
+					VALUES ($1,'team','project',$2,'planning','{}',1,1,'renamed-author',$3,$4,'["implementation"]',1,1,$5,$5)`,
+					[`node-${id}`, id, ready ? 'ready' : 'blocked', JSON.stringify({ expectedSeconds: 2, maximumSeconds: 3 }), at]);
+			}
+			await f.left.pool.query(`INSERT INTO capacity_provider_assignments (id,membership_id,team_id,project_id,capacity_provider_id,
+				execution_provider_id,project_agent_class_id,work_day_id,mode,status,assignment_attempt_json,created_at,updated_at)
+				VALUES ('prior','membership','team','project','provider','configured-executor','class','a','planning','running',$1,$2,$2)`,
+				[JSON.stringify({ provider: { modelConfigurationId: 'shared-model', executionCapabilityId: 'implementation' } }), at]);
+			await f.left.pool.query(`INSERT INTO capacity_reservations (id,idempotency_key,admission_token,membership_id,capacity_provider_id,
+				project_agent_class_id,assignment_id,mode,team_id,project_id,work_day_id,state,requested_seconds,reserved_seconds,active_seconds,created_at,updated_at)
+				VALUES ('prior-reservation','prior-reservation','controlled-admission','membership','provider','class','prior','planning','team','project','a','reserved',4,4,0,$1,$1)`, [at]);
+			const observation = { day: at.slice(0, 10), observedAt: at, healthy: true, activeSeconds: 0, reservedSeconds: 0 };
+			const selected: Parameters<typeof livingAllocationInputs>[1]['providers'] = [{ id: 'configured-executor', runtimeBuild: `sha256:${'f'.repeat(64)}`,
+				status: 'available', capabilities: ['implementation'], maxConcurrentRunners: 1, lanes: [], offers: [],
+				accountingLimits: { modelConfigurationId: 'shared-model', dailyActiveSecondsLimit: 12, capabilityLimits: { implementation: { dailyActiveSecondsLimit: 12 } } },
+				accountingObservation: { modelUsage: observation, capabilityUsage: { implementation: observation } } }];
+			const tables = ['capacity_workday_runs', 'execution_nodes', 'execution_edges', 'capacity_provider_assignments', 'capacity_reservations', 'capacity_usage_actuals', 'capacity_ledger_entries'];
+			const snapshot = async (db: typeof f.left) => Promise.all(tables.map(async table =>
+				(await db.pool.query(`SELECT * FROM ${table} ORDER BY to_jsonb(${table})::text`)).rows));
+			const calculate = async (db: typeof f.left, reverse = false) => {
+				const rows = (await db.pool.query('SELECT * FROM capacity_workday_runs ORDER BY id')).rows;
+				const runs = rows.map(value => { const run = serializeCapacityWorkdayRunRow(value); if (!run) throw new Error('Original stored workday required'); return run; });
+				const output: Record<string, number> = {};
+				for (const run of runs) {
+					const input = { run, runs: reverse ? [...runs].reverse() : runs, providers: selected, capacityProviderId: 'provider',
+						capabilityId: 'implementation', agentClass: 'renamed-author', activity: 'planning', now: at }, before = structuredClone(input);
+					const result = (await livingAllocationInputs(database(db), input))['configured-executor']!;
+					expect(result.opportunity.committedSeconds).toBe(run.id === 'a' ? 4 : 0);
+					expect(result.opportunity.remainingSupplySeconds).toBe(8); expect(input).toEqual(before);
+					output[run.id] = result.opportunity.availableSeconds;
+				}
+				return output;
+			};
+			const baseline = await snapshot(f.left); expect(await snapshot(f.right)).toEqual(baseline);
+			for (const value of await Promise.all([calculate(f.left), calculate(f.right, true)])) expect(value).toEqual({ a: 4, b: 4, idle: 0 });
+			expect(await snapshot(f.left)).toEqual(baseline); expect(await snapshot(f.right)).toEqual(baseline);
+			await f.left.pool.query("UPDATE execution_nodes SET status='ready' WHERE id='node-idle'");
+			const expanded = await snapshot(f.right);
+			for (const value of await Promise.all([calculate(f.left, true), calculate(f.right)])) expect(value).toEqual({ a: 0, b: 1, idle: 7 });
+			expect(await snapshot(f.left)).toEqual(expanded); expect(await snapshot(f.right)).toEqual(expanded);
+			expect((await f.right.pool.query("SELECT reserved_seconds,active_seconds,state FROM capacity_reservations WHERE id='prior-reservation'")).rows)
+				.toEqual([{ reserved_seconds: 4, active_seconds: 0, state: 'reserved' }]);
+			// Native original SQL/allocator with supplied readiness and reservation
+			// facts, not accepted-decision production, actual models or global fairness.
+		} finally { await f.close(); }
+	}, 30_000);
 	it('sizes chat opportunities against communication concurrency and only chat-ready graph nodes', async () => {
 		const at = '2026-09-16T13:55:00.000Z';
 		const store = { all: vi.fn(async () => []), first: vi.fn(async () => ({ ready_count: 1 })) };

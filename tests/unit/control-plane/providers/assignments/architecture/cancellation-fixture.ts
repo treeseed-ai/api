@@ -37,11 +37,11 @@ export async function cancellationDatabase(status = 'leased', started = false) {
 		const time = { ...budget.time, authorityDeadlineAt: attempt.deadline,
 			executionStartedAt: started ? attempt.createdAt : null, executionDeadlineAt: started ? attempt.deadline : null };
 		await fixture.query(`UPDATE capacity_provider_assignments SET reservation_id='reservation',status=?,lease_state=?,
-			lease_token=?,lease_expires_at=?,state_version=1,execution_node_revision=1,assignment_result_json=NULL,
+			lease_token=?,lease_expires_at=?,state_version=1,execution_node_revision=1,graph_revision=?,assignment_result_json=NULL,
 			completed_at=NULL,claimed_at=?,created_at=?,assignment_attempt_json=?,capacity_envelope_json=?,metadata_json=?,
 			workspace_context_json='{}',treedx_proxy_handle_json='{}',lifecycle_output_json='{}' WHERE id=?`,
 			[status, status === 'leased' ? 'leased' : 'released', status === 'leased' ? 'lease-token' : null,
-				status === 'leased' ? attempt.deadline : null, attempt.createdAt, attempt.createdAt, JSON.stringify(attempt),
+				status === 'leased' ? attempt.deadline : null, attempt.graphRevision, attempt.createdAt, attempt.createdAt, JSON.stringify(attempt),
 				JSON.stringify({ teamId: 'team', projectId: 'project', mode: 'acting', budget: { ...budget, time } }),
 				JSON.stringify({ operationalState: started ? 'executing' : 'preparing' }), attempt.id]);
 		await fixture.query("UPDATE execution_nodes SET status='running',agent_class=?,node_revision=1 WHERE id='report-node'", [attempt.agentClass]);

@@ -14,6 +14,13 @@ describe('canonical completed result original clock authority', () => {
 		const before = structuredClone({ assignment, result });
 		expect(validateAssignmentResultCompletion(assignment, { assignmentResult: result })).toEqual(result);
 		expect({ assignment, result }).toEqual(before);
+		for (const field of ['id', 'assignmentId'] as const) for (const nested of [false, true]) {
+			const changed = { ...result, [field]: ` ${result[field]} ` }, input = nested
+				? { output: { assignmentResult: changed } } : { assignmentResult: changed };
+			const original = structuredClone({ assignment, input });
+			expect(() => validateAssignmentResultCompletion(assignment, input)).toThrowError(expect.objectContaining({ code: 'assignment_result_invalid' }));
+			expect({ assignment, input }).toEqual(original);
+		}
 	});
 	it('denies before-start and past-original-deadline result timestamps using the same complete frozen authority', () => {
 		const assignment = recoveryAssignment(true), workspace = assignment.assignmentAttempt!.workspace;

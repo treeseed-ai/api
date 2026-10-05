@@ -31,6 +31,21 @@ function fixture(proposalProjectId = 'project-1') {
 }
 
 describe('governance service mutation boundaries', () => {
+	it('denies proposal evaluation with unresolved exact blockers or an unready executable plan before the owning decision mutation without repairing supplied readiness', async () => {
+		for (const readiness of [
+			{ votingReady: false, executionPlanReady: true, unresolvedBlockerCount: 1, missingVoting: ['resolved blocking questions and concerns'] },
+			{ votingReady: false, executionPlanReady: false, unresolvedBlockerCount: 0, missingVoting: ['ready proposal-owned execution plan'] },
+		]) {
+			const f = fixture(), input = { expectedProposalVersion: 3 }, held = structuredClone({ readiness, input });
+			f.store.governanceProposalReadiness.mockResolvedValue(Object.assign({ readyForVoting: false }, readiness));
+			const mutate = vi.fn(async (): Promise<never> => { throw new Error('Owning mutation must not run with unready authority'); });
+			const store = { ...f.store, evaluateGovernanceProposal: mutate }, service = createGovernanceService(store, f.discussions);
+			await expect(service.evaluate(f.principal, 'project-1', 'proposal-1', input, '3'))
+				.rejects.toMatchObject({ status: 409, code: 'governance_proposal_not_ready' });
+			expect(mutate).not.toHaveBeenCalled(); expect(f.store.recordGovernanceEvent).not.toHaveBeenCalled();
+			expect({ readiness, input }).toEqual(held);
+		}
+	});
 	it('authors and then binds one exact proposal version', async () => {
 		const { store, service, principal } = fixture();
 		const receipt = { path: 'proposals/test.md', commitSha: 'a'.repeat(40) };

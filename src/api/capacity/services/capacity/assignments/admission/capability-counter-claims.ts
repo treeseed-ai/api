@@ -6,7 +6,9 @@ import type { CapacityDatabaseOperation } from '../../../../database.ts';
 export function capabilityCounterClaims(assignment: AssignmentAttempt, limits: CapabilityAccountingLimits, now: string) {
 	const day = now.slice(0, 10);
 	const capability = limits.capabilityLimits[assignment.provider.executionCapabilityId];
-	if (!capability || assignment.provider.modelConfigurationId !== limits.modelConfigurationId) throw new Error('assignment_accounting_scope_mismatch');
+	if (!capability || assignment.provider.modelConfigurationId !== limits.modelConfigurationId
+		|| typeof limits.dailyActiveSecondsLimit !== 'number' || !Number.isFinite(limits.dailyActiveSecondsLimit) || limits.dailyActiveSecondsLimit < 0
+		|| typeof capability.dailyActiveSecondsLimit !== 'number' || !Number.isFinite(capability.dailyActiveSecondsLimit) || capability.dailyActiveSecondsLimit < 0) throw new Error('assignment_accounting_scope_mismatch');
 	return [
 		{ scope: 'model-day', scopeId: JSON.stringify([assignment.provider.providerId, limits.modelConfigurationId]), hardLimit: limits.dailyActiveSecondsLimit },
 		{ scope: 'capability-day', scopeId: JSON.stringify([assignment.provider.providerId, limits.modelConfigurationId, assignment.provider.executionCapabilityId]), hardLimit: capability.dailyActiveSecondsLimit },

@@ -1,6 +1,1481 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.canonical-source-ordinal-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "binds canonical source authorization to the unchanged frozen ordinal rather than incrementing an operational lifecycle counter"
+  api.golden.canonical-source-ordinal-denial-unit:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workspaces/source-workspace-service.test.ts
+    testName: "denies a moved missing malformed or mismatched canonical source ordinal before credential acquisition without rewriting failed inputs"
+  api.golden.execution-unfinished-handoff-live-1:
+    kind: nodeTestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/acceptance/execution-schema.ts
+    testName: "Actual original model clocks failed verification and exact governed pending work bind an authorized unfinished draft before the unchanged deadline without a falsely passed replay"
+  api.golden.execution-work-priority-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "projects governed work-item integer priorities unchanged onto both review-pair nodes without bypassing approval dependencies or permission ceilings"
+  api.golden.execution-work-priority-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "native exact governed Proposal bytes produce the same canonical work-item priority on Actor and Reviewer nodes without making blocked work ready"
+  api.golden.execution-node-priority-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "binds changed canonical priority to the same semantic node revision while preserving running authority blocked dependencies and exact replay"
+  api.golden.execution-selection-producer-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "native original scheduler applies provider hard gates before weighted priority selection and retains the exact eligible input beside one atomic admission"
+  api.golden.execution-node-priority-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-postgres.test.ts
+    testName: "native graph publication retains canonical integer priorities through independent public reads and matching concurrent replay without changing readiness or grants"
+  api.golden.execution-selection-input-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native admission retains exact original selector inputs in one allocation explanation and denies changed replay history without replacing candidate reservation or financial bytes"
+  api.golden.execution-protected-observation-live-1:
+    kind: nodeTestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/acceptance/execution-schema.ts
+    testName: "Actual managed model execution retains encrypted original action observations for every enabled activity and independently binds first final and intervening clocks without public transcript leakage"
+  api.golden.execution-protected-observation-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/provider-assignment-timestamp.test.ts
+    testName: "native original event persistence encrypts exact ordinary executor evidence and retains replay conflict and interrupted-write custody without plaintext public events or financial writes"
+  api.golden.execution-protected-observation-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/provider-assignment-timestamp.test.ts
+    testName: "refuses protected ordinary execution evidence when encryption or exact current lease authority is unavailable without writing public events or hiding caller bytes"
+  api.golden.execution-retired-mode-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/provider-assignment-settlement.test.ts
+    testName: "rejects retired mode-run identity before any settlement or assignment lookup"
+  api.golden.execution-retired-mode-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/architecture/provider-accounting-persistence.test.ts
+    testName: "native original accounting denies every own retired mode-run value before changing any assignment reservation measurement counter or ledger and retains an unchanged original settlement retry"
+  api.golden.execution-clean-schema-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-postgres.test.ts
+    testName: "full native migration initialization removes every named retired execution authority while original graph writes and independent read-only retries retain exact custody"
+  api.golden.execution-clean-schema-live-1:
+    kind: nodeTestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/acceptance/execution-schema.ts
+    testName: "Actual managed execution uses the complete clean migration inventory and exact canonical assignment rows without retired scheduling authorities or read-time repair"
+  api.golden.execution-proposal-blockers-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/governance-service.test.ts
+    testName: "denies proposal evaluation with unresolved exact blockers or an unready executable plan before the owning decision mutation without repairing supplied readiness"
+  api.golden.execution-continuation-returned-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: "native original settlement permits released returned history without rewriting its failed result and denies retained leases or unsettled reservations on the same immutable lineage"
+  api.golden.execution-integration-identity-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/offer-freeze.test.ts
+    testName: "preserves explicit integration authority and one exact base when the governed class using the same Releaser handler is renamed"
+  api.golden.execution-predecessor-lineage-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/ready-execution-node.test.ts
+    testName: "retains only an unambiguous acyclic predecessor lineage without replacing contradictory duplicate result identities"
+  api.golden.execution-predecessor-lineage-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "native exact proposal context preserves the primary source lineage while foreign predecessor citations remain read-only evidence in either reference order"
+  api.golden.execution-weighted-opportunity-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/allocation-inputs.test.ts
+    testName: "native independent PostgreSQL readers retain committed seconds while weighted opportunity follows only exact ready graph demand across simulation and production"
+  api.golden.execution-qualification-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-initialization.test.ts
+    testName: "enforces the declared qualification tier and unique current suite receipt even when invalid qualification is genuinely signed by the registered input key"
+  api.golden.execution-repeating-planning-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/scheduling/planning-round-window.test.ts
+    testName: "repeats beyond two planning rounds without duplicating an active turn or refreshing the original policy and deadline"
+  api.golden.execution-repeating-planning-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "native original planning ticks retain an interrupted generation and repeat beyond two rounds without duplicate nodes events or financial writes"
+  api.golden.execution-settlement-postgres-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/admission/postgres.test.ts
+    testName: "serializes competing claims and rolls back without orphan reservations or duplicate charges"
+  api.golden.execution-final-admission-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-authority.test.ts
+    testName: "denies conflicting or malformed immutable provider execution bindings before SQL without turning a collaborator error into an authority refusal"
+  api.golden.execution-final-admission-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native final admission refuses changed ready-node authority and conflicting provider execution bindings without counter reservation proxy or assignment residue"
+  api.golden.execution-retained-quota-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-accounting.test.ts
+    testName: "denies malformed retained shared model and capability observations before renamed fresh or unhealthy publications can conceal prior authority"
+  api.golden.execution-pending-subscription-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-authority.test.ts
+    testName: "abort during pending subscription releases the late listener without another lease and preserves the original response and fresh retry"
+  api.golden.execution-pending-subscription-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "authenticated abort during pending original subscription retains native pending custody and admits only a fresh authorized retry after releasing the late listener"
+  api.golden.execution-continuation-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: "retains each terminal custody status and the exact original sixty-four-record lineage while denying a sixty-fifth record or cycle"
+  api.golden.execution-continuation-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: "denies malformed persisted continuation parameters and parent identities instead of converting them into a settled root or another identifier"
+  api.golden.execution-continuation-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/continuation.test.ts
+    testName: "native original continuation reader retains exact terminal lineage bytes and rejects corrupt ancestry without writes or manufacturing settled authority"
+  api.golden.execution-accounting-continuity-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-accounting.test.ts
+    testName: "rejects nonboolean accounting health at both shared model and capability scopes without rewriting prior reports"
+  api.golden.execution-accounting-continuity-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-accounting.test.ts
+    testName: "compares every retained shared model report after adapter renaming without resetting usage or suppressing unhealthy regression"
+  api.golden.execution-accounting-continuity-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-postgres.test.ts
+    testName: "native PostgreSQL retains closed shared model history across membership restart and rejects malformed or regressed reports before publication"
+  api.golden.execution-handler-inspection-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/handler-inspection.test.ts
+    testName: "inspects exact renamed YAML handler origins prompts context and permissions without deriving execution authority"
+  api.golden.execution-handler-inspection-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/handler-inspection.test.ts
+    testName: "denies missing project principal team permission and unknown handler inspection without reading or rewriting configured authority"
+  api.golden.execution-handler-inspection-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/handler-inspection.test.ts
+    testName: "includes handlers from every original class page and refuses a missing tail instead of presenting partial inspection as complete"
+  api.golden.execution-handler-inspection-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/handler-inspection.test.ts
+    testName: "native public operation inspection reads persisted renamed handlers and preserves every represented execution and profile row through denial and retry"
+  api.golden.execution-handler-inspection-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/agents/handler-inspection.test.ts
+    testName: "native original SQL pagination exposes the handler beyond two hundred classes without creating execution or replacing persisted profiles"
+  api.golden.execution-diagnostic-replay-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/settlement-authority.test.ts
+    testName: "denies every changed omitted or null diagnostic counter and accounting descriptor on the same usage identity"
+  api.golden.execution-diagnostic-replay-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
+    testName: "public diagnostic replay rejects every changed counter and descriptor while retaining original failed usage and terminal settlement"
+  api.golden.architecture-dependency-bootstrap-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-authority.test.ts
+    testName: "original committed identity rotation replay preserves the same missing audit failure and recovers the exact original actor version and clock without rotating or consuming proofs again"
+  api.golden.architecture-dependency-bootstrap-postgres-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine enrolled PostgreSQL late identity rotation audit failure retains committed keys proofs and revocation then current bearer replay recovers one original audit without rewriting failed history"
+  api.golden.architecture-dependency-bootstrap-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-authority.test.ts
+    testName: "original access token authority admits the current signed identity version but denies stale and future versions under the same current key before nonce consumption or token lookup"
+  api.golden.architecture-dependency-bootstrap-postgres-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine enrolled PostgreSQL two key identity rotation admits the current signed version and denies stale future and old key token proofs without consuming authority or rewriting independent history"
+  api.golden.architecture-dependency-approval-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original rejection validates key reason and missing foreign terminal authority before any review write and retains exact caller inputs"
+  api.golden.architecture-dependency-approval-unit-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original rejection preserves the same late audit failure and recovers one missing audit on exact terminal replay without repeating its conditional transition"
+  api.golden.architecture-dependency-operator-postgres-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated PostgreSQL rejection commits only exact terminal review audit and confirmation then refuses changed authority and approval while preserving immutable replay"
+  api.golden.architecture-dependency-operator-postgres-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated PostgreSQL late rejection audit failure retains terminal request and consumed confirmation then exact fresh confirmation recovers one missing audit with no enrollment or history rewrite"
+  api.golden.architecture-dependency-bootstrap-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-authority.test.ts
+    testName: "original first credential repository keeps conditional authorization and credential in one pending batch with exact inputs and propagates the same native boundary failure before readback"
+  api.golden.architecture-dependency-bootstrap-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-authority.test.ts
+    testName: "original committed credential replay must propagate a missing audit write failure then recover that exact audit without reissuing or rewriting the approved authority"
+  api.golden.architecture-dependency-bootstrap-postgres-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine enrolled PostgreSQL overlapping first exchanges share one credential authorization and audit with two independently blocked native transactions and exact replay history"
+  api.golden.architecture-dependency-bootstrap-postgres-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine enrolled PostgreSQL late credential audit failure retains issued authority and secret custody then fresh nonce replay recovers one missing audit without hiding the failed footprint"
+  api.golden.architecture-dependency-bootstrap-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-authority.test.ts
+    testName: "original bootstrap proof verification binds each exchange and token stage to its exact body route identity and unchanged expiry without accepting crossover"
+  api.golden.architecture-dependency-bootstrap-postgres-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine authenticated PostgreSQL enrollment exchanges its first credential issues a signed token and uses the real bearer to rotate authority with exact immutable replay and independent history"
+  api.golden.architecture-dependency-bootstrap-postgres-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine enrolled PostgreSQL credential insertion failure rolls back original authorization and credential together retains the consumed proof and admits only a fresh nonce retry within the same stage expiry"
+  api.golden.architecture-dependency-operator-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-authority.test.ts
+    testName: "original operator authentication intersects local authority with signed scopes and preserves the exact client and expiry without trusting issuer roles"
+  api.golden.architecture-dependency-operator-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-authority.test.ts
+    testName: "original operator authentication rejects wrong issuer audience signature expiry unmapped and ambiguous identities without manufacturing local authority"
+  api.golden.architecture-dependency-operator-postgres-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated operator resource approval enrolls a genuinely signed registration once with original confirmation SQL and independent PostgreSQL readback"
+  api.golden.architecture-dependency-operator-postgres-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current operator resource authentication and local scope or team revocation deny approval without enrollment and retain the exact native confirmation footprint"
+  api.golden.architecture-dependency-operator-postgres-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated approval confirmation rejects changed arguments client signature and operation before native enrollment then admits only the unchanged original request"
+  api.golden.architecture-dependency-approval-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original approval denies missing foreign terminal and elapsed request inputs before enrollment or audit without rewriting authority"
+  api.golden.architecture-dependency-approval-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original approval rejects a lost conditional transition or foreign winning key without recording a successful approval audit"
+  api.golden.architecture-dependency-approval-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-native.test.ts
+    testName: "original approval denies missing foreign rejected and cancelled genuine registration requests preserving all terminal history and enrollment authority"
+  api.golden.architecture-dependency-approval-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-native.test.ts
+    testName: "original approval expires a supplied elapsed genuine request without enrollment or audit and repeated denial retains exactly the original expiry transition"
+  api.golden.architecture-dependency-approval-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-native.test.ts
+    testName: "competing original approve reject and cancel operations have one durable winner audit and immutable enrollment across distinct and reused review keys"
+  api.golden.architecture-dependency-approval-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "empty original approval key denies with the owning governance error before any repository reads writes or authority mutation"
+  api.golden.architecture-dependency-approval-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original approval repository binds request membership and pending authorization in one batch before readback preserving inputs and the same failure cause"
+  api.golden.architecture-dependency-approval-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-native.test.ts
+    testName: "original approval of a genuinely registered identity creates exactly one membership and pending credential authorization with exact replay and changed alias conflict"
+  api.golden.architecture-dependency-approval-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-native.test.ts
+    testName: "concurrent same key original approvals return one immutable membership authorization and audit without duplicate enrollment or financial mutation"
+  api.golden.architecture-dependency-approval-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-native.test.ts
+    testName: "native membership insertion failure rolls back the original approval request membership authorization transaction before same facts retry creates one enrollment"
+  api.golden.architecture-dependency-approval-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-native.test.ts
+    testName: "native late approval audit failure retains committed membership and pending authorization before exact same key retry recovers one missing audit without rewriting failed history"
+  api.golden.architecture-dependency-registration-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-authority.test.ts
+    testName: "concurrent original rate consumptions retain their own exact batch outcomes when over limit completion precedes exact limit admission"
+  api.golden.architecture-dependency-registration-native-10:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "concurrent distinct signed public registrations share the final original rate slot admitting exactly one identity while retaining denied nonce counters and immutable replay history"
+  api.golden.architecture-dependency-registration-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-authority.test.ts
+    testName: "original rate repository rejects missing truncated malformed and coerced counter batch observations without treating them as admission or rewriting inputs"
+  api.golden.architecture-dependency-registration-native-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "native late rate update interruption rolls back every original bucket mutation but retains consumed proof before fresh proof same facts retry admits one new request"
+  api.golden.architecture-dependency-registration-native-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "native original rate repository resets before and exact expiry only retaining later buckets original windows and whole registration history across repeated consumption"
+  api.golden.architecture-dependency-registration-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-authority.test.ts
+    testName: "original rate repository admits exact limit and reports every exceeded dimension from the same batch while preserving inputs and original batch failures"
+  api.golden.architecture-dependency-registration-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "signed public registration denies each exhausted original rate dimension retaining consumed nonce exact counters and prior request while original replay cannot consume more authority"
+  api.golden.architecture-session-subscription-unit-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "concurrent first registrations remain pending through shared acquisition and LISTEN activation then route original team notifications and release only the last registration"
+  api.golden.architecture-session-subscription-postgres-10:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "native occupied listener pool queues one shared initial acquisition for concurrent team registrations and completed subscriptions own the original channel before independent delivery"
+  api.golden.architecture-session-subscription-unit-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "new same and foreign team registrations survive an in flight last unsubscribe channel cleanup and delayed old releases cannot remove current notification delivery"
+  api.golden.architecture-session-subscription-postgres-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "native queued listener SQL overlaps last unsubscribe and same plus foreign team reacquisition without stale release channel loss or callback revival"
+  api.golden.architecture-session-subscription-unit-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "listener failure automatically reacquires one original channel for existing registrations without a new subscriber and stale failed client errors cannot release the replacement"
+  api.golden.architecture-session-subscription-postgres-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "native listener disconnection automatically restores existing team registrations without a new subscriber preserves independent durable delivery and releases only the final current channel"
+  api.golden.architecture-session-subscription-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "concurrent first subscriptions share one acquisition rejection cause remove every denied callback and healthy concurrent retry retains only its new registrations"
+  api.golden.architecture-session-subscription-postgres-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "concurrent first native subscriptions share the original LISTEN rejection cause release one acquired client and concurrent retry restores only newly admitted team callbacks"
+  api.golden.architecture-session-subscription-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "stale repeated last unsubscribe cannot remove a later same team subscription or revive the released callback during original local publication"
+  api.golden.architecture-session-subscription-postgres-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "stale repeated last unsubscribe after native channel release cannot unbind later same team delivery and final current release retains durable history without callback revival"
+  api.golden.architecture-session-subscription-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "listener error releases only the failed client retains registered callbacks and stale duplicate error cannot reset the healthy replacement after original subscription retry"
+  api.golden.architecture-session-subscription-postgres-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "exact fresh native listener backend disconnection retains durable missed notification history and original subscription retry restores registered team delivery without leaked client custody"
+  api.golden.architecture-session-subscription-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "acquired client LISTEN failure retains the original error returns exactly the acquired client and removes the denied callback before later local publication"
+  api.golden.architecture-session-subscription-postgres-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "native acquired client aborted transaction rejects original LISTEN without leaked callbacks or pool custody and same service retry resumes independent durable delivery"
+  api.golden.architecture-session-subscription-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-authority.test.ts
+    testName: "declared database listener acquisition failure retains its original error removes the unacquired listener and never fabricates local subscription success"
+  api.golden.architecture-session-subscription-postgres-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "independent native notifications retain exact durable team events deduplicate repeated notices and release the original database channel only after the final subscriber"
+  api.golden.architecture-session-subscription-postgres-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "native event insert interruption retains all earlier durable history emits no false notification and original retry adds exactly one event without changing graph or finance"
+  api.golden.architecture-session-subscription-postgres-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/realtime/architecture/session-subscription-postgres.test.ts
+    testName: "actual native connection acquisition denial is not successful local fallback and retains healthy independent delivery without leaked callbacks or durable event loss"
+  api.golden.architecture-dependency-longpoll-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-authority.test.ts
+    testName: "original availability context admits one millisecond before expiry and rejects exact or later expiry without writes clock widening or input mutation"
+  api.golden.architecture-dependency-longpoll-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "public wait longer than original availability naturally expires without claim financial mutation or deadline extension and released callbacks cannot revive it"
+  api.golden.architecture-dependency-longpoll-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-authority.test.ts
+    testName: "caller mutation after subscription cannot rebind later owning polls or rewrite the caller object and released wake callbacks cannot revive the request"
+  api.golden.architecture-dependency-longpoll-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "genuinely authenticated owning longpoll freezes each original request field across caller mutation native event wake natural completion and immutable durable readback"
+  api.golden.architecture-dependency-longpoll-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "public malformed coerced negative and oversized wait inputs deny before reconciliation lease subscription and all auth neutral durable writes"
+  api.golden.architecture-dependency-longpoll-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "natural fractional public wait completion retains the original pending attempt finance and request then releases its subscription without abort or revival"
+  api.golden.architecture-dependency-longpoll-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-authority.test.ts
+    testName: "malformed coerced negative and oversized wait authority denies before reconciliation lease or subscription without rewriting inputs"
+  api.golden.architecture-dependency-longpoll-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-authority.test.ts
+    testName: "preaborted caller returns the empty original poll envelope before reconciliation lease or subscription and retains inputs"
+  api.golden.architecture-dependency-longpoll-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "durable foreign team foreign purpose and matching wake events never rebind the frozen foreign lane or revive an unsubscribed public poll"
+  api.golden.architecture-dependency-longpoll-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "token membership provider and stale foreign or malformed session changes during the actual wait fence further work and release the original subscription"
+  api.golden.architecture-dependency-longpoll-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-longpoll-native.test.ts
+    testName: "native synthesis audit interruption after public subscription retains pending custody releases exactly once and original bounded retry preserves all failed history"
+  api.golden.architecture-dependency-revocation-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-authority.test.ts
+    testName: "empty credential and membership revocation keys deny before all original repository reads and writes without input rewriting"
+  api.golden.architecture-dependency-revocation-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-authority.test.ts
+    testName: "missing empty and unknown membership identities deny credential and leave operations with original governance errors and no writes"
+  api.golden.architecture-dependency-revocation-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-native.test.ts
+    testName: "first concurrent original credential revocation commits one immutable credential token fence and audit while retaining pending assignment and finance"
+  api.golden.architecture-dependency-revocation-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-native.test.ts
+    testName: "foreign team member credential and missing authenticated leave authority deny after genuine issued token baseline with whole auth neutral state unchanged"
+  api.golden.architecture-dependency-revocation-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-native.test.ts
+    testName: "actual credential revocation racing authenticated poll cannot admit a new lease after the committed token fence and retains any original claim custody"
+  api.golden.architecture-dependency-revocation-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-native.test.ts
+    testName: "native credential token update interruption rolls back the whole revocation transaction and exact original key retry fences once without deleting history"
+  api.golden.architecture-dependency-revocation-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-native.test.ts
+    testName: "late credential revocation audit interruption retains exact revoked credential tokens and same key recovery records only the missing audit"
+  api.golden.architecture-dependency-revocation-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-native.test.ts
+    testName: "actual authenticated membership leave settles only unstarted pending authority once retains both predecessor results and denies all old bearer polling"
+  api.golden.architecture-dependency-revocation-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-revocation-native.test.ts
+    testName: "membership leave token interruption retains committed revoked membership and rolls back credential token batch before same frozen owning input recovery closes pending work once"
+  api.golden.architecture-dependency-registration-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-authority.test.ts
+    testName: "actual registration proof binds the exact public identity name capabilities supply metadata route audience and original clock without rewriting inputs"
+  api.golden.architecture-dependency-registration-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-authority.test.ts
+    testName: "changed registration name capabilities supply metadata identity route audience signature and exact expiry deny original verification without input rewriting"
+  api.golden.architecture-dependency-registration-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "actual signed public registration creates one exact pending identity request nonce rate footprint and audit without approval credential token or financial authority"
+  api.golden.architecture-dependency-registration-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "missing foreign disabled malformed and changed signed public registration authority denies after a genuine positive baseline without new admission nonce rate or finance"
+  api.golden.architecture-dependency-registration-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "first concurrent same key registrations and exact fresh proof replay preserve one immutable request audit and identity while changed body conflicts"
+  api.golden.architecture-dependency-registration-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "concurrent actual key rotation fences old generation admission or cancels its committed pending request without granting membership credentials or finance"
+  api.golden.architecture-dependency-registration-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "native registration insert interruption rolls back new identity request but retains consumed nonce and rate history before fresh proof same key retry admits once"
+  api.golden.architecture-dependency-registration-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-registration-native.test.ts
+    testName: "late registration audit interruption preserves pending request exact identity nonce and rate footprint before same key replay recovers one missing audit"
+  api.golden.architecture-dependency-credential-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-authority.test.ts
+    testName: "actual exchange proof verification preserves the exact approved request issuance key path audience and original clock claims"
+  api.golden.architecture-dependency-credential-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-authority.test.ts
+    testName: "foreign request changed issuance key route audience and expired signed exchange authority deny without input rewriting"
+  api.golden.architecture-dependency-credential-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "actual authenticated credential rotation and signed exchange issue one exact generation and its token polls the unchanged dependency attempt"
+  api.golden.architecture-dependency-credential-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "missing unapproved foreign revoked stale and malformed public exchange authority denies without credential issuance or financial changes"
+  api.golden.architecture-dependency-credential-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "concurrent same key exchanges and fresh nonce replay retain one exact credential while duplicate nonce and different issuance key cannot reveal another"
+  api.golden.architecture-dependency-credential-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "native credential insert interruption rolls back authorization consumption but retains proof nonce before same key fresh signed retry commits once"
+  api.golden.architecture-dependency-credential-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-credential-native.test.ts
+    testName: "late credential audit interruption preserves issued authorization revealed credential and nonce before exact same key fresh proof recovers one missing audit"
+  api.golden.architecture-dependency-identity-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-identity-authority.test.ts
+    testName: "original membership projection preserves exact configured identity key version team and status without rewriting source rows"
+  api.golden.architecture-dependency-identity-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-identity-authority.test.ts
+    testName: "missing malformed coerced identity version key membership and status projections deny without source mutation"
+  api.golden.architecture-dependency-identity-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-identity-native.test.ts
+    testName: "actual two proof public rotation revokes old tokens and newly signed issuance polls the unchanged original dependency attempt"
+  api.golden.architecture-dependency-identity-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-identity-native.test.ts
+    testName: "invalid missing mismatched and stale rotation proofs deny with original identity nonce token audit and assignment custody retained"
+  api.golden.architecture-dependency-identity-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-identity-native.test.ts
+    testName: "concurrent competing public rotation keys commit one version and same key authenticated replay retains exact rotation nonce and audit history"
+  api.golden.architecture-dependency-identity-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-identity-native.test.ts
+    testName: "late rotation audit failure retains committed identity revoked tokens and both nonces before authenticated same key recovery creates one missing audit"
+  api.golden.architecture-dependency-identity-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/credentials/dependency-identity-native.test.ts
+    testName: "native identity update interruption rolls back rotation nonces and token revocation before exact original signed retry commits once"
+  api.golden.architecture-dependency-token-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/tokens/dependency-token-authority.test.ts
+    testName: "original proof verification binds exact key fingerprint method path audience body and original expiry without rewriting inputs"
+  api.golden.architecture-dependency-token-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/tokens/dependency-token-authority.test.ts
+    testName: "changed signed body route audience key algorithm signature and malformed proof encoding deny before producing verified authority"
+  api.golden.architecture-dependency-token-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/tokens/dependency-token-authority.test.ts
+    testName: "original token validity accepts only exact integer bounds and rejects invalid numbers without changing the default"
+  api.golden.architecture-dependency-token-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/tokens/dependency-token-native.test.ts
+    testName: "actual signed public issuance persists one original nonce token audit and authenticates the unchanged dependency attempt through public polling"
+  api.golden.architecture-dependency-token-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/tokens/dependency-token-native.test.ts
+    testName: "invalid credentials signed request mutations moved identity and revoked membership deny issuance without nonce token audit or assignment changes"
+  api.golden.architecture-dependency-token-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/tokens/dependency-token-native.test.ts
+    testName: "original nonce replay denies while concurrent fresh signed retries of one issuance key return one immutable token and audit"
+  api.golden.architecture-dependency-token-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/tokens/dependency-token-native.test.ts
+    testName: "late issuance audit interruption retains original token nonce and pending assignment before same key fresh proof recovers exactly one missing audit"
+  api.golden.architecture-dependency-public-poll-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-authority.test.ts
+    testName: "only the original provider bearer grammar reaches authentication and never rewrites the presented secret"
+  api.golden.architecture-dependency-public-poll-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-authority.test.ts
+    testName: "authentication errors never invoke the downstream provider handler or install an admitted identity"
+  api.golden.architecture-dependency-public-poll-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-native.test.ts
+    testName: "real token authentication and public catalog return the exact leased attempt with both predecessor results and no finance rewrite"
+  api.golden.architecture-dependency-public-poll-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-native.test.ts
+    testName: "missing wrong revoked expired malformed and insufficient token authorities cannot claim or mutate assignment finance and history"
+  api.golden.architecture-dependency-public-poll-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-native.test.ts
+    testName: "concurrent authenticated public requests produce one immutable claim and retain exact dependency reservation context"
+  api.golden.architecture-dependency-public-poll-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-native.test.ts
+    testName: "preaborted public polling cannot reconcile synthesize claim or subscribe after the caller has withdrawn authority"
+  api.golden.architecture-dependency-public-poll-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-native.test.ts
+    testName: "public lease update failure retains pending custody and original failed history before identical request retry within the same deadline"
+  api.golden.architecture-dependency-public-poll-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-public-poll-native.test.ts
+    testName: "aborted empty longpoll releases its original event subscription without another synthesis lease or charge and later events cannot revive it"
+  api.golden.architecture-dependency-poll-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-authority.test.ts
+    testName: "missing and insufficient provider poll scope deny before any assignment authority is returned"
+  api.golden.architecture-dependency-poll-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-authority.test.ts
+    testName: "coerced empty fractional and nonfinite explicit lease seconds deny instead of creating authority from malformed poll input"
+  api.golden.architecture-dependency-poll-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "original synthesis recovery and lease retain the exact admitted attempt and both dependency results within the original authority deadline"
+  api.golden.architecture-dependency-poll-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "concurrent original polls grant one lease token and runner without duplicating or rewriting the admitted dependency reservation"
+  api.golden.architecture-dependency-poll-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "foreign missing closed and malformed availability authorities deny original poll before any lease or synthesis audit mutation"
+  api.golden.architecture-dependency-poll-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/polling/dependency-poll-native.test.ts
+    testName: "late native lease update interruption preserves original pending custody and synthesis history before identical-input bounded retry"
+  api.golden.architecture-dependency-lease-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-authority.test.ts
+    testName: "pending preparation retains a valid original authority window and cannot bypass its exact expired deadline"
+  api.golden.architecture-dependency-lease-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-authority.test.ts
+    testName: "missing malformed and nonfinite lease clocks deny rather than treating unknown timing as unlimited authority"
+  api.golden.architecture-dependency-lease-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-authority.test.ts
+    testName: "actual preparation retries preserve the original authority expiry and reject malformed signed preparation clocks without rewriting the envelope"
+  api.golden.architecture-dependency-lease-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-native.test.ts
+    testName: "actual account reservation workday proxy and availability reads retain the exact admitted dependency context without new financial writes"
+  api.golden.architecture-dependency-lease-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-native.test.ts
+    testName: "foreign team provider membership and unavailable identity deny through original SQL joins without changing admitted custody"
+  api.golden.architecture-dependency-lease-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-native.test.ts
+    testName: "missing inactive and expired exact reservation proxy workday and availability authority deny the owning SQL lease gate"
+  api.golden.architecture-dependency-lease-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-native.test.ts
+    testName: "malformed authoritative session reservation and proxy clocks and unknown current time deny without granting unbounded lease authority"
+  api.golden.architecture-dependency-lease-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/leasing/dependency-lease-native.test.ts
+    testName: "rotated availability retains only the same unexpired supplied lease and explicit closed-session or expired-lease requests stay denied"
+  api.golden.architecture-dependency-admission-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-authority.test.ts
+    testName: "denies missing extra duplicate and reused predecessor result identities before any admission write"
+  api.golden.architecture-dependency-admission-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-authority.test.ts
+    testName: "denies failed malformed and Actor self-review predecessor inputs before any admission write"
+  api.golden.architecture-dependency-admission-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-authority.test.ts
+    testName: "denies missing exact predecessor read authority rather than admitting a stripped dependency context"
+  api.golden.architecture-dependency-admission-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
+    testName: "initial owning admission freezes both exact predecessor results with one dependent reservation and unchanged supplied review history"
+  api.golden.architecture-dependency-admission-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
+    testName: "missing failed malformed and duplicate supplied predecessor contexts deny initial native admission without orphan financial or proxy writes"
+  api.golden.architecture-dependency-admission-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
+    testName: "changed predecessor status revision result and review disposition after readiness deny the final native admission fence"
+  api.golden.architecture-dependency-admission-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
+    testName: "concurrent exact and competing native dependent claims retain one immutable dependency snapshot and one reservation before read-only replay"
+  api.golden.architecture-dependency-admission-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/admission/dependency-admission-native.test.ts
+    testName: "late native dependent assignment insertion interruption rolls back the reservation and retries identical dependency custody without deleting predecessor history"
+  api.golden.architecture-relation-scheduling-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "retains both exact predecessor results as read context while granting writes only to the original sole primary Git workspace"
+  api.golden.architecture-relation-scheduling-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "denies secondary content writes and every permission outside the exact configured dependent profile before assignment construction"
+  api.golden.architecture-relation-scheduling-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "denies malformed failed and duplicate predecessor records rather than freezing incomplete or contradictory dependency evidence"
+  api.golden.architecture-relation-scheduling-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "denies elapsed original workday and stale provider observation without extending the dependent estimate window or changing predecessor custody"
+  api.golden.architecture-relation-scheduling-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "actual native Note publication blocks the dependent ready-node query before any successful independent predecessor input exists"
+  api.golden.architecture-relation-scheduling-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "actual original graph SQL and native exact profile proposal reads retain both cross-project Actor and Reviewer results despite distinct accepted Decision ownership"
+  api.golden.architecture-relation-scheduling-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "failed cancelled running and Actor-only supplied predecessor states cannot make the native dependent candidate eligible"
+  api.golden.architecture-relation-scheduling-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "missing disabled unpinned and moved native profile authority denies candidate retrieval without durable assignment reservation or financial mutation"
+  api.golden.architecture-relation-scheduling-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-native.test.ts
+    testName: "concurrent and repeated actual native candidate reads preserve exact dependency results original graph and financial history without creating a claim"
+  api.golden.architecture-relation-publication-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-authority.test.ts
+    testName: "denies missing unknown cancelled and failed publication custody before any native connection"
+  api.golden.architecture-relation-publication-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-authority.test.ts
+    testName: "denies absent unapproved and moved exact review commit without converting admission into an independent Actor review"
+  api.golden.architecture-relation-publication-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-authority.test.ts
+    testName: "denies both explicit production and every declared main ref before publication or indexing even with otherwise approved inputs"
+  api.golden.architecture-relation-publication-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
+    testName: "denies empty missing foreign and stale submission authority without native commit or queued publication"
+  api.golden.architecture-relation-publication-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
+    testName: "concurrent native submissions retain one original admitted change exact commit and queued publication without duplicate operation or proposal rewrite"
+  api.golden.architecture-relation-publication-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
+    testName: "ordinary submission and actual runner publish the native exact Note then owning graph persistence exposes the independent reviewer dependency gate"
+  api.golden.architecture-relation-publication-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
+    testName: "actual native staging movement after submission denies compare and swap publication without false manifest success or changed original candidate"
+  api.golden.architecture-relation-publication-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-publication-native.test.ts
+    testName: "late original publication audit interruption preserves native published commit immutable manifest and failed runner history before exact recovery replay"
+  api.golden.architecture-relation-authoring-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-authority.test.ts
+    testName: "serializes the canonical Note link through one original changeset with byte exact patch hash base ref and compare and swap authority"
+  api.golden.architecture-relation-authoring-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-authority.test.ts
+    testName: "denies malformed empty unknown relation and extra endpoint fields in the existing canonical Note schema without rewriting proposal authorities"
+  api.golden.architecture-relation-authoring-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-authority.test.ts
+    testName: "rejects duplicate changeset paths and preserves no newline deletion and exact input replay using the original patch implementation"
+  api.golden.architecture-relation-authoring-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-authority.test.ts
+    testName: "requires both graph and search exact committed source closure and preserves failed native graph job disposition instead of reporting completion"
+  api.golden.architecture-relation-authoring-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "creates and replays one governed native workspace writes canonical relation bytes and reads original exact draft without changing proposal endpoints"
+  api.golden.architecture-relation-authoring-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "denies missing malformed empty unsupported relation and unsafe path writes before native draft or original SQL custody changes"
+  api.golden.architecture-relation-authoring-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "denies missing foreign and stale author authority and rejects updates after actual native workspace closure without widening the original scope"
+  api.golden.architecture-relation-authoring-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "concurrent identical native edits retain one original version transition and exact relation bytes without duplicate successful custody or financial rows"
+  api.golden.architecture-relation-authoring-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "native exact relation commit graph and search refresh feed the owning dependency loader with raw byte provenance and unchanged proposal endpoints"
+  api.golden.architecture-relation-authoring-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-authoring-native.test.ts
+    testName: "late actual audit insertion failure retains native written bytes and recoverable original draft without false publication finance or successful replay"
+  api.golden.architecture-relation-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-authority.test.ts
+    testName: "binds the sole cross-project edge to the exact note and approved reviewer without merging project authority or limits"
+  api.golden.architecture-relation-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-authority.test.ts
+    testName: "rejects every endpoint identity revision digest commit path anchor model and store drift instead of silently dropping the dependency"
+  api.golden.architecture-relation-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-authority.test.ts
+    testName: "rejects reciprocal cross-project cycles while duplicate identical relation replay produces one stable edge"
+  api.golden.architecture-relation-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-authority.test.ts
+    testName: "keeps dependent work blocked through failed cancelled or unapproved precursor candidates and releases only the successful independent review"
+  api.golden.architecture-relation-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "loads signed exact relation authority and persists separate project nodes with the independent reviewer gate and note provenance"
+  api.golden.architecture-relation-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "retains the digest of exact untrimmed note bytes and denies mismatched returned note path rather than inventing content custody"
+  api.golden.architecture-relation-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "denies unpinned malformed truncated and missing graph authorities before any graph persistence"
+  api.golden.architecture-relation-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "denies missing foreign and path-excluded endpoint library bindings without reading a note or changing owning graph history"
+  api.golden.architecture-relation-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "denies moved missing foreign project and unlinked exact note replies and rejects stale endpoint digest at the owning projector"
+  api.golden.architecture-relation-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "native graph and note HTTP denial unavailable reset and malformed responses retain original authority and retry without phantom SQL success"
+  api.golden.architecture-relation-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/relations/relation-native.test.ts
+    testName: "concurrent exact intake replay and late SQL interruption preserve one relation edge with rollback and exact retry readback"
+  api.golden.architecture-cross-project-proxy-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-authority.test.ts
+    testName: "selects each sole exact secondary grant without rewriting its sibling commit or original primary authority"
+  api.golden.architecture-cross-project-proxy-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-authority.test.ts
+    testName: "denies duplicate exact grants and ambiguous omitted selectors rather than granting the first entry"
+  api.golden.architecture-cross-project-proxy-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-authority.test.ts
+    testName: "denies foreign missing moved and workspace secondary authority without widening to primary commits or produced history"
+  api.golden.architecture-cross-project-proxy-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-authority.test.ts
+    testName: "denies revoked expired and malformed explicit handle clocks for exact reads without accepting unknown time as active"
+  api.golden.architecture-cross-project-proxy-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "returns exact secondary bytes with independently verified narrow signed scope for each selected commit and path"
+  api.golden.architecture-cross-project-proxy-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "denies missing foreign moved and out of path secondary grants before upstream while retaining durable denial audit and frozen finance"
+  api.golden.architecture-cross-project-proxy-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "revoked expired and malformed handle authority cannot be bypassed by a different secondary repository identity"
+  api.golden.architecture-cross-project-proxy-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "denies released elapsed unknown clock foreign provider and missing scope authority before secondary HTTP without rewriting the original attempt"
+  api.golden.architecture-cross-project-proxy-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "secondary read grants never authorize workspace creation writes or a foreign repository even with a provider write token"
+  api.golden.architecture-cross-project-proxy-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "duplicate exact grants and conflicting path authority deny rather than signing the first secondary entry"
+  api.golden.architecture-cross-project-proxy-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "denied unavailable reset malformed and preaborted native reads never create successful audit finance or widened retry authority"
+  api.golden.architecture-cross-project-proxy-native-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "repeated and concurrent exact secondary reads preserve one frozen authority with distinct actual proxy audits and no assignment or financial mutation"
+  api.golden.architecture-cross-project-proxy-native-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/treedx/authority/architecture/cross-project-proxy-native.test.ts
+    testName: "native audit persistence interruption fails the public read and retry retains the same scope without false successful history or financial mutation"
+  api.golden.architecture-record-custody-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
+    testName: "exposes one exact canonical settlement for completed and failed attempts without translating legacy ledger truth"
+  api.golden.architecture-record-custody-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
+    testName: "reads supplied native measurements and distinct operational ledger authority without mutating financial or frozen assignment bytes"
+  api.golden.architecture-record-custody-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
+    testName: "denies absent operator and foreign project evidence before returning any settlement while retaining all original financial tables"
+  api.golden.architecture-record-custody-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/accounting/architecture/public-record-custody.test.ts
+    testName: "requires explicit scoped terminal pages and rejects malformed cursors rather than presenting a partial ledger as complete"
+  api.golden.architecture-start-authority-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-authority.test.ts
+    testName: "requires one exact immutable library commit and denies absent malformed or moving revision authority without changing inputs"
+  api.golden.architecture-start-authority-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-authority.test.ts
+    testName: "resolves selected project shares once and denies foreign or duplicate alias allocation without manufacturing another authority"
+  api.golden.architecture-start-authority-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-authority.test.ts
+    testName: "preserves identical public manual and nested recurring intent mode selection and original time authority"
+  api.golden.architecture-start-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "preflights exact governed intent without starting a workday or mutating graph assignment reservation or financial authority"
+  api.golden.architecture-start-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "starts one native planning graph with exact frozen YAML context mode and original clocks then replays without another event or charge"
+  api.golden.architecture-start-native-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "denies absent principal foreign team missing digest and conflicting idempotent start without new scheduling or accounting truth"
+  api.golden.architecture-start-native-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "rejects membership revocation and moved profile library or policy authority between preflight and start with immutable original receipts"
+  api.golden.architecture-start-native-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "denies missing denied unavailable malformed and moved native content resolution without a successful start receipt or widened original window"
+  api.golden.architecture-start-native-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "retains a native started run after late receipt interruption and retries the same admission without duplicate graph events or financial mutation"
+  api.golden.architecture-start-native-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "retains required event failure history and refuses to replay a failed partial admission as a successful native start"
+  api.golden.architecture-start-native-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "starts the first recurring workday through real preflight native content graph and event persistence then retains exact intent on replay"
+  api.golden.architecture-start-native-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "concurrent native recurring ticks have one first-start receipt and one graph event history without double successful admission"
+  api.golden.architecture-start-native-10:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "denies initial admission after the original productive window has elapsed without a new deadline or successful start receipt"
+  api.golden.architecture-recurring-intent-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-intent.test.ts
+    testName: "retains one execution mode and exact governed intent without derived capacity or duplicate scheduling policy"
+  api.golden.architecture-recurring-intent-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-intent.test.ts
+    testName: "denies every retired capacity publication provider and time-tier field instead of manufacturing workday authority"
+  api.golden.architecture-recurring-intent-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-intent.test.ts
+    testName: "denies foreign malformed and contradictory intent clocks constraints and modes without a usable schedule"
+  api.golden.architecture-recurring-intent-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-intent.test.ts
+    testName: "rejects corrupt stored schedule states and noncanonical intents rather than exposing a successful partial record"
+  api.golden.architecture-recurring-replay-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-persistence.test.ts
+    testName: "persists one high-level recurring intent with exact mode and no duplicate derived capacity authority"
+  api.golden.architecture-recurring-replay-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-persistence.test.ts
+    testName: "replays the existing canonical start receipt into the same workday without another preflight run reservation or assignment"
+  api.golden.architecture-recurring-replay-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-persistence.test.ts
+    testName: "concurrent conflicting schedule edits have one version winner without losing the original immutable intent or running workday"
+  api.golden.architecture-recurring-replay-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-persistence.test.ts
+    testName: "late native receipt-link interruption retains prior start truth and retries without duplicate dispatch or financial mutation"
+  api.golden.architecture-recurring-replay-sql-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/recurring-persistence.test.ts
+    testName: "foreign paused and future schedules cannot start work or rewrite existing workday custody"
+  api.golden.architecture-profile-inventory-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/profile-inventory.test.ts
+    testName: "reads arbitrary complete stored profiles and compiled-handler selections through owning SQL without runtime role configuration"
+  api.golden.architecture-profile-inventory-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/profile-inventory.test.ts
+    testName: "public profile inventory includes the last class after the original two hundred row page rather than silently hiding governed agents"
+  api.golden.architecture-profile-inventory-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/profile-inventory.test.ts
+    testName: "denies malformed duplicate and forbidden stored profile authority instead of returning a partial successful inventory"
+  api.golden.architecture-profile-inventory-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/profile-inventory.test.ts
+    testName: "public profile query denies missing principal missing project and unknown compiled handler without SQL mutation"
+  api.golden.architecture-graph-watch-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/graph-watch.test.ts
+    testName: "returns exact hundred tail and explicit terminal watch pages with foreign team isolation and unchanged SQL"
+  api.golden.architecture-graph-watch-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/graph-watch.test.ts
+    testName: "denies absent principal and malformed watch cursors rather than silently restarting from old history"
+  api.golden.architecture-terminal-race-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "concurrent matching completions publish one canonical result and one graph transition without another settlement"
+  api.golden.architecture-terminal-race-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "simultaneous completion and failure have one winner while every original native measurement and attempt remains unchanged"
+  api.golden.architecture-terminal-race-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "simultaneous completion and bounded return cannot both transition or overwrite their predecessor candidate"
+  api.golden.architecture-terminal-race-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "operator cancellation request and provider terminal return release once without erasing previously settled work"
+  api.golden.architecture-terminal-race-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "terminal reporting races with native recovery selection without returning productive authority or charging twice"
+  api.golden.architecture-terminal-race-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "rejects stale node and graph revisions before completing against rewritten operational authority"
+  api.golden.architecture-terminal-race-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "native late result-write interruption rolls back the transition while preserving prior settlement and exact retry input"
+  api.golden.architecture-terminal-race-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/providers/assignments/lifecycle/architecture/terminal-races.test.ts
+    testName: "expired productive authority never accepts a late success even with matching settled usage and a still-present candidate"
+  api.golden.architecture-initial-admission-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "claims one ready node with exact frozen authority one reservation and unchanged original caps"
+  api.golden.architecture-initial-admission-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "denies non-ready stale and foreign node claims without orphan reservation assignment or proxy"
+  api.golden.architecture-initial-admission-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "matching and competing concurrent node claims retain one durable attempt and one counter reservation"
+  api.golden.architecture-initial-admission-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "denies exhausted supply and concurrency without enlarging existing hard limits or original deadlines"
+  api.golden.architecture-initial-admission-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "rolls back late native proxy failure and retries the same immutable admission without residue"
+  api.golden.architecture-initial-admission-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "denies allocator mismatch malformed concurrency and expired productive windows before native writes"
+  api.golden.architecture-counter-scope-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/counter-scope.test.ts
+    testName: "shares exact host model capability day counters across teams without changing supplied authority"
+  api.golden.architecture-counter-scope-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/counter-scope.test.ts
+    testName: "separates provider model capability and day without creating a second accounting authority"
+  api.golden.architecture-counter-scope-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/counter-scope.test.ts
+    testName: "denies missing capabilities foreign models and malformed counter ceilings"
+  api.golden.architecture-living-graph-postgres-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-postgres.test.ts
+    testName: "serializes conflicting graph writers across independent connection pools with exact winning nodes and edges"
+  api.golden.architecture-living-graph-postgres-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-postgres.test.ts
+    testName: "matching concurrent graph writes have one durable revision and repeated independent reads remain unchanged"
+  api.golden.architecture-living-graph-postgres-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-postgres.test.ts
+    testName: "late native SQL interruption rolls back all graph records before another independent writer retries exact authority"
+  api.golden.architecture-living-graph-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "unions profile and work-item provenance without allowing actor completion to bypass independent review"
+  api.golden.architecture-living-graph-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "rejects cycles missing work items denied permissions and foreign team inputs without changing sources"
+  api.golden.architecture-living-graph-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "preserves all running node authority while changed source creates a later immutable revision"
+  api.golden.architecture-living-graph-unit-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "advances the same rejected pair once and blocks further revisions at the accepted review bound"
+  api.golden.architecture-living-graph-unit-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "keeps one team graph and exact project identities deterministic under source permutation"
+  api.golden.architecture-living-graph-unit-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-contract.test.ts
+    testName: "requires exact cross-project relation endpoints and rejects moved commit digest revision path and anchor"
+  api.golden.architecture-living-graph-sql-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "persists one team graph with independent reviewed dependencies and exact provenance readback"
+  api.golden.architecture-living-graph-sql-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "releases downstream SQL readiness only after independent reviewer completion and preserves the prior candidate"
+  api.golden.architecture-living-graph-sql-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "read-only node explanation filtered views repeated reads and watch cursors never mutate owning SQL"
+  api.golden.architecture-living-graph-sql-4:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "denies missing principal and foreign team node lookup with unchanged graph and assignments"
+  api.golden.architecture-living-graph-sql-5:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "rejects stale competing revision writers without overwriting the winning graph or appending duplicate history"
+  api.golden.architecture-living-graph-sql-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "rolls back a late SQL edge failure and retries the exact projection without orphan nodes or revision residue"
+  api.golden.architecture-living-graph-sql-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/graph/architecture/living/living-graph-integration.test.ts
+    testName: "persists a bounded request-changes revision on the same pair without unblocking downstream or modifying assignment history"
   api.golden.architecture-completion-unit-1:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -619,13 +2094,33 @@ verifiers:
   api.golden.architecture-decision-proposal-native-no-substitute:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
-    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
     testName: "does not substitute an accepted SQL row and exact proposal bytes for a governed classed Decision"
   api.golden.architecture-decision-proposal-native-stale:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
-    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-denial-native.test.ts
     testName: "retains fail-closed moved proposal revision, digest and superseded Decision controls in owning SQL"
+  api.golden.execution-decision-producer-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/decision-execution-plan-authority.test.ts
+    testName: "decision creation replay rejects retained foreign stale rejected and superseded authority before returning or rewriting an existing decision"
+  api.golden.execution-decision-producer-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/governance/proposals/architecture/proposal-decision-native.test.ts
+    testName: "original governance acceptance publishes one native classed Decision for the exact proposal and preserves that content and original history through decision creation replay"
+  api.golden.execution-provider-offer-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/knowledge/workspaces/architecture/relation-scheduling-authority.test.ts
+    testName: "denies missing malformed and legacy partial provider offers before constructing an immutable governed assignment"
+  api.golden.execution-provider-offer-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-initialization.test.ts
+    testName: "rejects missing malformed mixed and duplicate offer inventories before open or refresh can publish partial supply"
   api.golden.architecture-readiness-complete:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
@@ -1476,8 +2971,128 @@ verifiers:
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/provider-discussion-response.test.ts
     testName: "fails closed if concurrent lease loss prevents durable response attribution"
+  api.golden.architecture-dependency-approval-unit-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original rejection refuses a lost conditional transition or changed winning digest even when the winning key matches without recording a successful audit or rewriting inputs"
+  api.golden.architecture-dependency-operator-postgres-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated PostgreSQL rejection wins natively blocked competing approval and changed reason races with exact key digest custody one audit no enrollment residue and immutable confirmed replay"
+  api.golden.architecture-dependency-approval-unit-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original approval refuses changed winning alias digest under the same key before audit and retains exact conditional enrollment inputs"
+  api.golden.architecture-dependency-operator-postgres-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated PostgreSQL approval wins natively blocked rejection and changed alias races with exact enrollment digest audit and immutable confirmed replay"
+  api.golden.architecture-dependency-approval-unit-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-approval-authority.test.ts
+    testName: "original terminal rejection refuses unbound replay keys before transition or audit even when the requested reason matches the winner"
+  api.golden.architecture-dependency-operator-postgres-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated PostgreSQL identical rejection races share one terminal result only for the bound key with one audit and no enrollment or unbound replay"
+  api.golden.architecture-dependency-operator-unit-3:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-authority.test.ts
+    testName: "original team management policy waits for the current membership read and cannot reuse earlier owner authority after revocation"
+  api.golden.architecture-dependency-operator-postgres-9:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/enrollment/dependency-operator-postgres.test.ts
+    testName: "current authenticated PostgreSQL review waits for native team policy and denies approval or rejection after membership revocation without a terminal transition"
   api.golden.response-sql-authority:
     kind: vitestCase
     ownerPackage: "@treeseed/api"
     testFile: tests/unit/control-plane/providers/assignments/provider-discussion-response-postgres.test.ts
     testName: "retains the exact live lease and blocks stale or cross-team response attribution in PostgreSQL"
+  api.golden.architecture-dependency-bootstrap-unit-6:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-authority.test.ts
+    testName: "original identity rotation repository keeps both proofs evidence identity and token revocation in one exact pending batch and propagates the same interruption before unchanged retry readback"
+  api.golden.architecture-dependency-bootstrap-postgres-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine enrolled PostgreSQL final token revocation interruption rolls back the entire identity rotation batch and admits the same original bearer proofs and key on retry without losing history"
+  api.golden.architecture-dependency-bootstrap-unit-7:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-authority.test.ts
+    testName: "original committed access token replay preserves the same missing audit interruption then recovers the original token actor metadata and issuance clock without creating or rewriting authority"
+  api.golden.architecture-dependency-bootstrap-postgres-8:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/bootstrap/dependency-bootstrap-postgres.test.ts
+    testName: "genuine enrolled PostgreSQL first access token audit failure retains the exact committed token and fresh nonce recovery restores one original issuance audit without reissuing or erasing failed history"
+  api.golden.architecture-decision-intent-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-authority.test.ts
+    testName: "normalizes repeated public decision selectors in exact code point order without deriving authority or changing omitted planning controls"
+  api.golden.architecture-decision-intent-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-authority.test.ts
+    testName: "rejects every malformed mixed decision selector and named caller derived identity before normalization can discard it"
+  api.golden.architecture-decision-intent-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "real public preflight and nested schedule deny mixed malformed decision selectors and caller derived identities without native scheduling or financial writes"
+  api.golden.architecture-decision-intent-native-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "real persisted preflight binds exact intent and receipt hashes and refuses changed selection bytes before unchanged original start and replay"
+  api.golden.architecture-decision-selection-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "requires every explicit decision selector to resolve before persisting even a planning-only or partially matched preflight"
+  api.golden.architecture-start-custody-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "denies expired original admission and every nonrunning retained run without a start receipt or changed authority"
+  api.golden.architecture-start-custody-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/selection-preflight.test.ts
+    testName: "binds preflight to exact project library and agent profile revisions before any start write"
+  api.golden.architecture-decision-selection-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/workdays/scheduling/architecture/workday-start-native.test.ts
+    testName: "real public preflight refuses missing unaccepted foreign superseded and stale selected native governance rows without persisting a receipt or broadening planning authority"
+  api.golden.execution-offer-selection-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/offer-freeze.test.ts
+    testName: "freezes complete canonical supplied offer selection without changing scope quota or original assignment clocks on replay"
+  api.golden.execution-offer-selection-unit-2:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/offer-freeze.test.ts
+    testName: "denies changed malformed expired failed revoked or ambiguous supplied offer qualification before freezing an assignment without repairing any input"
+  api.golden.execution-offer-selection-native-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-postgres.test.ts
+    testName: "native canonical availability publication freezes exact executable supply and denies corrupted retained qualification before assignment with independent immutable SQL readback"
+  api.golden.execution-offer-signature-unit-1:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/ontology/availability-initialization.test.ts
+    testName: "verifies the exact advertised conformance against the registered provider key before open or refresh and denies substituted signatures without publication or input repair"

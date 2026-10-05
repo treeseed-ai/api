@@ -50,9 +50,11 @@ describe('recurring workdays use canonical admission', () => {
 	});
 });
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('native PostgreSQL recurring-intent migration', () => {
+describe('native PostgreSQL recurring-intent migration', () => {
 	it('preserves schedule identity while removing all obsolete allocation columns', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native recurring-intent coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (!['127.0.0.1', 'localhost'].includes(connection.hostname) || connection.pathname !== '/postgres') throw new Error('Use local disposable PostgreSQL.');
 		const admin = new pg.Pool({ connectionString: connection.href }), name = `treeseed_schedule_test_${randomUUID().replaceAll('-', '')}`;
 		let pool: pg.Pool | undefined;

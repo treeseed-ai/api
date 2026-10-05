@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { recoveryAssignment } from './cancellation-fixture.ts';
-const connection = vi.hoisted(() => ({ close: vi.fn() }));
+const connection = vi.hoisted(() => ({ close: vi.fn(), read: vi.fn() }));
 vi.mock('../../../../../../src/api/capacity/services/capacity/workdays/treedx/workday-treedx-connection.ts', () => ({
-	resolveWorkdayTreeDxConnection: vi.fn(async () => ({ client: { closeWorkspace: connection.close } })),
+	resolveWorkdayTreeDxConnection: vi.fn(async () => ({ repositoryId: 'repository', client: { closeWorkspace: connection.close, getWorkspace: connection.read } })),
 }));
 import { closeTerminalAssignmentWorkspace, terminalWorkspaceAlreadyAbsent } from '../../../../../../src/api/capacity/services/capacity/assignments/observability/assignment-terminal-workspace.ts';
-beforeEach(() => connection.close.mockReset());
+beforeEach(() => { connection.close.mockReset(); connection.read.mockReset(); connection.read.mockResolvedValue({ workspaceId: 'ws_terminalfixture', repoId: 'repository', status: 'closed' }); });
 const store = { config: {}, getProjectTreeDxLibrary: async () => null };
 describe('terminal workspace cleanup requires exact resource closure authority', () => {
 	it('does not treat denied or unidentified upstream 404 errors as confirmed workspace absence', () => {
@@ -27,11 +27,16 @@ describe('terminal workspace cleanup requires exact resource closure authority',
 		const responses = [undefined, {}, { workspaceId: 'ws_otherfixture', status: 'closed' },
 			{ workspaceId: 'ws_terminalfixture', status: 'open' }];
 		for (const [index, response] of responses.entries()) {
+			connection.read.mockResolvedValueOnce({ workspaceId: 'ws_terminalfixture', repoId: 'repository', status: 'open' });
 			connection.close.mockResolvedValue(response);
 			try { await closeTerminalAssignmentWorkspace(store, assignment); admitted.push(index); } catch { /* fail closed */ }
 		}
 		connection.close.mockResolvedValue({ workspaceId: 'ws_terminalfixture', status: 'closed' });
+		connection.read.mockResolvedValueOnce({ workspaceId: 'ws_terminalfixture', repoId: 'repository', status: 'open' });
 		expect(await closeTerminalAssignmentWorkspace(store, assignment)).toEqual({ required: true, closed: true, workspaceId: 'ws_terminalfixture' });
+		const closeCount = connection.close.mock.calls.length;
+		expect(await closeTerminalAssignmentWorkspace(store, assignment)).toEqual({ required: true, closed: true, workspaceId: 'ws_terminalfixture' });
+		expect(connection.close.mock.calls.length).toBe(closeCount);
 		expect(assignment).toEqual(before);
 		expect(admitted).toEqual([]);
 	});

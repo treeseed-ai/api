@@ -4,6 +4,7 @@ import { CapacityGovernanceError } from '../../../../database.ts';
 import { releaseCapacityReservationsExactlyOnce } from '../../accounting/settlement-service.ts';
 import { ProviderAssignmentRepository } from '../../../../repositories/capacity/assignments/assignment.ts';
 import { closeTerminalAssignmentWorkspace } from '../../assignments/observability/assignment-terminal-workspace.ts';
+import type { WorkdayTreeDxConnectionStore } from '../treedx/workday-treedx-connection.ts';
 import { terminalAssignmentAuthority } from '../../assignments/lifecycle/assignment-terminal-authority.ts';
 import { assignmentContentIntegrationReadySql,CONTENT_INTEGRATED_EVENT,CONTENT_INTEGRATION_REQUIRED_EVENT } from '../../assignments/lifecycle/assignment-content-integration-requirement.ts';
 
@@ -125,12 +126,13 @@ async function releaseUnsettledTerminalAssignments(
 }
 
 async function cleanupTerminalAssignmentWorkspaces(
-	database: CapacityGovernanceDatabase,
+	database: CapacityGovernanceDatabase & Partial<WorkdayTreeDxConnectionStore>,
 	teamId: string,
 	runId: string,
 	now: string,
 ) {
 	const repository = new ProviderAssignmentRepository(database);
+	let afterId = '';
 	while (true) {
 		const rows = await database.all<{ id: string }>(
 			`SELECT DISTINCT assignment.id
@@ -139,9 +141,9 @@ async function cleanupTerminalAssignmentWorkspaces(
 			 JOIN treedx_proxy_handles handle ON handle.assignment_id = assignment.id AND handle.team_id = assignment.team_id
 			 WHERE assignment.team_id = ? AND run.id = ?
 			   AND assignment.status IN ('completed', 'failed', 'expired', 'cancelled')
-			   AND handle.status != 'revoked'
+			   AND assignment.id > ?
 			 ORDER BY assignment.id ASC LIMIT ?`,
-			[teamId, runId, MAX_CAPACITY_PAGE_LIMIT],
+			[teamId, runId, afterId, MAX_CAPACITY_PAGE_LIMIT],
 		);
 		if (!rows.length) return;
 		for (const row of rows) {
@@ -151,15 +153,16 @@ async function cleanupTerminalAssignmentWorkspaces(
 			const authority = terminalAssignmentAuthority(assignment, now);
 			await database.batch([
 				{ query: `UPDATE capacity_provider_assignments SET treedx_proxy_handle_json = ?, workspace_context_json = ?, updated_at = ? WHERE id = ? AND team_id = ? AND status IN ('completed','failed','expired','cancelled')`, params: [JSON.stringify(authority.proxyHandle), JSON.stringify(authority.workspaceContext), now, row.id, teamId] },
-				{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ?`, params: [now, now, row.id, teamId] },
+				{ query: `UPDATE treedx_proxy_handles SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?), updated_at = ? WHERE assignment_id = ? AND team_id = ? AND status != 'revoked'`, params: [now, now, row.id, teamId] },
 			]);
 		}
+		afterId = rows[rows.length - 1]!.id;
 		if (rows.length < MAX_CAPACITY_PAGE_LIMIT) return;
 	}
 }
 
 export async function terminalizeCapacityWorkdayAssignments(
-	database: CapacityGovernanceDatabase,
+	database: CapacityGovernanceDatabase & Partial<WorkdayTreeDxConnectionStore>,
 	teamId: string,
 	runId: string,
 	input: WorkdayAssignmentTerminalizationInput = {},

@@ -1,0 +1,114 @@
+import { describe, expect, it } from 'vitest';
+import { recoverIncompleteReviewCycles } from '../../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
+import { emptyLivingGraph, graphNode, graphProjection, graphSource, graphState, livingGraphDatabase } from './living-graph-fixture.ts';
+
+// Authoring only until the complete architecture/assignment test contract is
+// present. Embedded SQL transactions are not separate-server concurrency proof.
+describe('living graph original SQL and public service integration', () => {
+	it('persists one team graph with independent reviewed dependencies and exact provenance readback', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const projection = graphProjection([graphSource(), graphSource('second')]), graph = graphState(projection), before = structuredClone(projection);
+			await f.persist(graph, emptyLivingGraph(), projection.revision);
+			const observed = await f.service.show(f.principal, 'team', {});
+			expect(observed).toEqual(graph); expect(projection).toEqual(before);
+			for (const projectId of ['project', 'second']) {
+				const view = await f.service.show(f.principal, 'team', { projectId });
+				expect(view.nodes).toEqual(graph.nodes.filter(node => node.projectId === projectId));
+				const next = graphNode(graph, 'next', 'actor', projectId), review = graphNode(graph, 'first', 'reviewer', projectId);
+				const explanation = await f.service.explain(f.principal, 'team', next.id);
+				expect(explanation.admission.eligible).toBe(false);
+				expect(explanation.predecessors.filter((value: { edge: { fromNodeId: string } }) => value.edge.fromNodeId === review.id)
+					.map((value: { edge: { provenance: string } }) => value.edge.provenance).sort()).toEqual(['profile-agent', 'work-item']);
+			}
+		} finally { await f.db.close(); }
+	});
+	it('releases downstream SQL readiness only after independent reviewer completion and preserves the prior candidate', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const initialProjection = graphProjection(), initial = graphState(initialProjection);
+			await f.persist(initial, emptyLivingGraph(), initialProjection.revision);
+			const actorCompleted = structuredClone(initial); graphNode(actorCompleted, 'first', 'actor').status = 'completed';
+			const waitingProjection = graphProjection(undefined, 2), waiting = graphState(waitingProjection, actorCompleted);
+			await f.persist(waiting, initial, waitingProjection.revision);
+			expect((await f.service.node(f.principal, 'team', graphNode(waiting, 'next', 'actor').id)).status).toBe('blocked');
+			expect((await f.service.node(f.principal, 'team', graphNode(waiting, 'first', 'reviewer').id)).status).toBe('ready');
+			const approved = structuredClone(waiting); graphNode(approved, 'first', 'reviewer').status = 'completed';
+			const finalProjection = graphProjection(undefined, 3), next = graphState(finalProjection, approved);
+			await f.persist(next, waiting, finalProjection.revision);
+			expect((await f.service.explain(f.principal, 'team', graphNode(next, 'next', 'actor').id)).admission.eligible).toBe(true);
+			expect(graphNode(next, 'first', 'actor')).toEqual(graphNode(waiting, 'first', 'actor'));
+		} finally { await f.db.close(); }
+	});
+	it('read-only node explanation filtered views repeated reads and watch cursors never mutate owning SQL', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const p = graphProjection(), graph = graphState(p); await f.persist(graph, emptyLivingGraph(), p.revision);
+			const before = await f.snapshot();
+			await Promise.all([f.service.show(f.principal, 'team', {}), f.service.show(f.principal, 'team', { decisionId: 'project-decision' }),
+				f.service.node(f.principal, 'team', graphNode(graph, 'first', 'actor').id), f.service.explain(f.principal, 'team', graphNode(graph, 'next', 'actor').id)]);
+			const first = await f.service.watch(f.principal, 'team', { cursor: '0', limit: 1 });
+			expect(first.items).toHaveLength(1); expect(first.nextCursor).toBe('1');
+			expect(await f.service.watch(f.principal, 'team', { cursor: first.nextCursor, limit: 1 })).toEqual({ items: [], nextCursor: '1' });
+			expect(await f.snapshot()).toEqual(before);
+		} finally { await f.db.close(); }
+	});
+	it('denies missing principal and foreign team node lookup with unchanged graph and assignments', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const p = graphProjection(), graph = graphState(p); await f.persist(graph, emptyLivingGraph(), p.revision);
+			const before = await f.snapshot(), id = graphNode(graph, 'first', 'actor').id;
+			await expect(f.service.show(undefined, 'team', {})).rejects.toMatchObject({ status: 401 });
+			await expect(f.service.node(f.principal, 'other-team', id)).rejects.toMatchObject({ status: 404 });
+			expect(await f.service.show(f.principal, 'other-team', {})).toMatchObject({ nodes: [], edges: [], revision: 0 });
+			expect(await f.snapshot()).toEqual(before);
+		} finally { await f.db.close(); }
+	});
+	it('rejects stale competing revision writers without overwriting the winning graph or appending duplicate history', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const p = graphProjection(), graph = graphState(p); await f.persist(graph, emptyLivingGraph(), p.revision);
+			const leftSource = graphSource(); leftSource.decision = null;
+			const leftProjection = graphProjection([leftSource], 2), left = graphState(leftProjection, graph);
+			const rightSource = graphSource(); rightSource.proposalRevision = 2; rightSource.digest = `sha256:${'d'.repeat(64)}`;
+			const rightProjection = graphProjection([rightSource], 2), right = graphState(rightProjection, graph);
+			const attempts = await Promise.allSettled([f.persist(left, graph, leftProjection.revision), f.persist(right, graph, rightProjection.revision)]);
+			expect(attempts.filter(value => value.status === 'fulfilled')).toHaveLength(1);
+			expect(attempts.filter(value => value.status === 'rejected')).toHaveLength(1);
+			const winner = await f.service.show(f.principal, 'team', {}), snapshot = await f.snapshot();
+			expect(winner.revision).toBe(2); expect(snapshot.revisions).toHaveLength(2);
+			const losing = winner.digest === left.digest ? right : left, losingReceipt = winner.digest === left.digest ? rightProjection.revision : leftProjection.revision;
+			await expect(f.persist(losing, graph, losingReceipt)).rejects.toMatchObject({ code: 'execution_graph_revision_conflict' });
+			expect(await f.snapshot()).toEqual(snapshot);
+		} finally { await f.db.close(); }
+	});
+	it('rolls back a late SQL edge failure and retries the exact projection without orphan nodes or revision residue', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const p = graphProjection(), graph = graphState(p), before = await f.snapshot();
+			await f.db.exec("CREATE FUNCTION reject_graph_edge() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'isolated late edge interruption'; END $$; CREATE TRIGGER reject_graph_edge BEFORE INSERT ON execution_edges FOR EACH ROW EXECUTE FUNCTION reject_graph_edge();");
+			await expect(f.persist(graph, emptyLivingGraph(), p.revision)).rejects.toThrow('isolated late edge interruption');
+			expect(await f.snapshot()).toEqual(before);
+			await f.db.exec('DROP TRIGGER reject_graph_edge ON execution_edges; DROP FUNCTION reject_graph_edge();');
+			await f.persist(graph, emptyLivingGraph(), p.revision);
+			expect(await f.service.show(f.principal, 'team', {})).toEqual(graph);
+			const duplicates = await f.query('SELECT from_node_id,to_node_id,provenance,COUNT(*) FROM execution_edges GROUP BY from_node_id,to_node_id,provenance HAVING COUNT(*)>1');
+			expect(duplicates.rows).toEqual([]);
+		} finally { await f.db.close(); }
+	});
+	it('persists a bounded request-changes revision on the same pair without unblocking downstream or modifying assignment history', async () => {
+		const f = await livingGraphDatabase();
+		try {
+			const p = graphProjection(), initial = graphState(p); await f.persist(initial, emptyLivingGraph(), p.revision);
+			const rejected = structuredClone(initial), actor = graphNode(rejected, 'first', 'actor'), review = graphNode(rejected, 'first', 'reviewer');
+			actor.status = 'completed'; review.status = 'failed'; const assignmentHistory = (await f.snapshot()).assignments;
+			const next = recoverIncompleteReviewCycles(rejected, new Map([[review.id, 1]]), new Set([review.id]), 2);
+			const nextProjection = graphProjection(undefined, 2); next.revision = 2;
+			await f.persist(next, initial, nextProjection.revision);
+			expect(await f.service.node(f.principal, 'team', actor.id)).toMatchObject({ status: 'ready', nodeRevision: 2, workItemId: 'first' });
+			expect(await f.service.node(f.principal, 'team', review.id)).toMatchObject({ status: 'blocked', nodeRevision: 2, workItemId: 'first' });
+			expect((await f.service.node(f.principal, 'team', graphNode(next, 'next', 'actor').id)).status).toBe('blocked');
+			expect((await f.snapshot()).assignments).toEqual(assignmentHistory);
+		} finally { await f.db.close(); }
+	});
+});

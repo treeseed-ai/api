@@ -193,6 +193,7 @@ export async function assignNextReadyExecutionNode(
 		while (remaining.length) {
 			const selectedNode = selectFairReadyNode(remaining.map((candidate) => ({ id: candidate.node.id,
 				projectId: candidate.node.projectId, agentClass: candidate.node.agentClass!,
+				...(candidate.node.priority !== undefined ? { priority: candidate.node.priority } : {}),
 				readyAt: candidate.readyAt || now })), usage, policy);
 			const candidate = remaining.find((item) => item.node.id === selectedNode?.id);
 			if (!candidate) break;

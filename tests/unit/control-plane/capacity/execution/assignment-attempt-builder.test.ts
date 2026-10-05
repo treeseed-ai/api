@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssignmentAttempt } from '../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
-import { candidate, permissions, provider, run, sourceRef } from './fixtures/assignment-attempt-fixtures.ts';
+import { candidate, permissions, provider, run, sourceRef, canonicalOfferBuildInput, invalidCanonicalOffers } from './fixtures/assignment-attempt-fixtures.ts';
+import { assignmentAttemptSchema, assignmentResultSchema } from '@treeseed/sdk/agent-capacity';
 
 describe('immutable assignment-attempt construction', () => {
 	it('gives planning discussion the policy turn ceiling without changing acting chat allocation', () => {

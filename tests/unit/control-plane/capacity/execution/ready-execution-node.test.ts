@@ -70,6 +70,35 @@ it('selects one verified linear predecessor and rejects divergent candidates', (
 	expect(linearPredecessorSourceCommit([tester, independent])).toBeUndefined();
 });
 
+it('retains only an unambiguous acyclic predecessor lineage without replacing contradictory duplicate result identities', () => {
+	const first = { resultId: 'first', commit: 'a'.repeat(40), predecessorResultIds: [] as string[] };
+	const second = { resultId: 'second', commit: 'b'.repeat(40), predecessorResultIds: ['first'] };
+	const third = { resultId: 'third', commit: 'c'.repeat(40), predecessorResultIds: ['second'] };
+	for (const entries of [[first, second, third], [third, first, second], [second, third, first],
+		[first, structuredClone(first), second, third]]) {
+		const before = structuredClone(entries);
+		expect(linearPredecessorSourceCommit(entries)).toBe(third.commit);
+		expect(entries).toEqual(before);
+	}
+	const invalid = [
+		[], [first, { ...first, commit: second.commit }],
+		[first, { ...first, predecessorResultIds: ['foreign'] }],
+		[{ ...first, resultId: '' }], [{ ...first, commit: '' }],
+		[{ ...first, predecessorResultIds: ['first'] }],
+		[{ ...first, predecessorResultIds: ['second'] }, second],
+		[first, { ...second, predecessorResultIds: ['first', 'first'] }],
+		[first, { ...second, predecessorResultIds: [] }],
+	];
+	for (const entries of invalid) {
+		for (const ordered of [entries, [...entries].reverse()]) {
+			const before = structuredClone(ordered);
+			expect(linearPredecessorSourceCommit(ordered)).toBeUndefined();
+			expect(ordered).toEqual(before);
+		}
+	}
+	expect(linearPredecessorSourceCommit([first, second])).toBe(second.commit);
+});
+
 it('keeps explicit proposal workdays away from unrelated historical decisions', () => {
 	const scope = executionNodeRunScope({ id: 'run', executionKind: 'workday', parameters: { proposalIds: ['golden-sdk'] } });
 	expect(scope.parameters).toEqual(['run', 'golden-sdk']);

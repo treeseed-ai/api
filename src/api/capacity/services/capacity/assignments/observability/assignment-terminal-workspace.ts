@@ -12,19 +12,21 @@ function text(...values: unknown[]) {
 }
 
 export function terminalWorkspaceAlreadyAbsent(error: unknown) {
-	return error instanceof Error && 'status' in error && error.status === 404;
+	return error instanceof Error && 'status' in error && error.status === 404 && 'code' in error && error.code === 'not_found';
 }
 
 export async function closeTerminalAssignmentWorkspace(
-	store: WorkdayTreeDxConnectionStore,
+	store: Partial<WorkdayTreeDxConnectionStore>,
 	assignment: DurableProviderAssignment,
 ) {
 	const workspace = record(assignment.workspaceContext);
 	const proxy = record(assignment.treedxProxyHandle ?? workspace.treedxProxyHandle);
 	const workspaceId = text(proxy.workspaceId, workspace.workspaceId);
 	if (!workspaceId) return { required: false, closed: true, workspaceId: null };
+	if (!store.config || !store.getProjectTreeDxLibrary) throw new CapacityGovernanceError(
+		'assignment_terminal_workspace_cleanup_unavailable', 'Owned workspace closure requires its authoritative library binding.', 503);
 	const runId = text(record(assignment.metadata).workdayRunId, assignment.workDayId, assignment.id);
-	const connection = await resolveWorkdayTreeDxConnection(store, {
+	const connection = await resolveWorkdayTreeDxConnection({ config: store.config, getProjectTreeDxLibrary: store.getProjectTreeDxLibrary.bind(store) }, {
 		projectId: assignment.projectId,
 		repositoryId: text(proxy.repositoryId, workspace.repositoryId),
 		runId,
@@ -38,7 +40,17 @@ export async function closeTerminalAssignmentWorkspace(
 	);
 	const client = connection.client;
 	try {
-		await client.closeWorkspace(workspaceId);
+		const current = record(await client.getWorkspace(workspaceId));
+		if (current.workspaceId !== workspaceId || (current.repoId !== undefined && current.repoId !== connection.repositoryId)) throw new CapacityGovernanceError(
+			'assignment_terminal_workspace_readback_invalid', 'Workspace closure requires the exact owned resource.', 502);
+		if (current.status === 'closed') return { required: true, closed: true, workspaceId };
+		const closed = record(await client.closeWorkspace(workspaceId));
+		if (closed.workspaceId !== workspaceId || closed.status !== 'closed') throw new CapacityGovernanceError(
+			'assignment_terminal_workspace_close_invalid', 'Workspace close must return this exact closed resource.', 502);
+		const readback = record(await client.getWorkspace(workspaceId));
+		if (readback.workspaceId !== workspaceId || readback.status !== 'closed'
+			|| (readback.repoId !== undefined && readback.repoId !== connection.repositoryId)) throw new CapacityGovernanceError(
+			'assignment_terminal_workspace_readback_invalid', 'Workspace closure requires exact independent resource read-back.', 502);
 	} catch (error) {
 		if (!terminalWorkspaceAlreadyAbsent(error)) throw error;
 	}

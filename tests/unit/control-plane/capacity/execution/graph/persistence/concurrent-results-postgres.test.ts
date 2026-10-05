@@ -6,9 +6,11 @@ import { commitLivingExecutionLifecycle } from '../../../../../../../src/api/cap
 import { persistExecutionGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
 import type { ExecutionNode, GraphRevision } from '@treeseed/sdk/agent-capacity';
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('concurrent terminal graph revision custody', () => {
+describe('concurrent terminal graph revision custody', () => {
 	it('commits five simultaneous results against reconciliation without duplicate or lost revisions', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native concurrent terminal revision coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_revision_test_${randomUUID().replaceAll('-', '')}`;
@@ -43,14 +45,17 @@ describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('concurrent terminal gr
 				changes: { added: nodes.map(node => node.id), changed: [], completed: [], blocked: [], stale: [], addedEdges: [], removedEdges: [] } };
 			await persistExecutionGraph(store, graph, { ...graph, revision: 0, nodes: [] }, receipt);
 			for (const node of nodes) await db.pool.query(`INSERT INTO capacity_provider_assignments
-				(id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,mode,status,execution_node_id,execution_node_revision,created_at,updated_at)
-				VALUES ($1,'team','project','engineer','provider','membership','planning','leased',$2,1,$3,$3)`, [`assignment-${node.id}`, node.id, now]);
+				(id,team_id,project_id,project_agent_class_id,capacity_provider_id,membership_id,mode,status,lease_state,state_version,graph_revision,
+				assignment_attempt_json,execution_node_id,execution_node_revision,created_at,updated_at)
+				VALUES ($1,'team','project','engineer','provider','membership','planning','leased','leased',1,1,$4,$2,1,$3,$3)`,
+				[`assignment-${node.id}`, node.id, now, JSON.stringify({ sourceRef, graphRevision: 1, nodeRevision: 1, nodeId: node.id })]);
 			// Hold the common row so all five real connections contend together.
 			const blocker = await db.pool.connect();
 			await blocker.query('BEGIN'); await blocker.query("SELECT id FROM teams WHERE id='team' FOR UPDATE");
 			const writes = nodes.map(node => commitLivingExecutionLifecycle({ store,
 				assignment: { id: `assignment-${node.id}`, teamId: 'team', executionNodeId: node.id,
-					executionNodeRevision: 1, assignmentAttempt: { sourceRef } } as never,
+					executionNodeRevision: 1, graphRevision: 1, stateVersion: 1,
+					assignmentAttempt: { sourceRef, graphRevision: 1, nodeRevision: 1, nodeId: node.id } } as never,
 				status: 'completed', now }, [{ query: 'UPDATE capacity_provider_assignments SET status=? WHERE id=?',
 					params: ['completed', `assignment-${node.id}`] }]));
 			const staleProjection = persistExecutionGraph(store, { ...graph, revision: 2 }, graph, { ...receipt, revision: 2 })

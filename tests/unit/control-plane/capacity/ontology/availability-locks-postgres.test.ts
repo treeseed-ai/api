@@ -12,9 +12,10 @@ async function clientForeignKeys(pool: pg.Pool, table: string): Promise<string[]
     ORDER BY trigger_row.tgname`, [table]);
   return result.rows.map(row => row.conname);
 }
-describe.skipIf(!url)('availability publication foreign-key lock compatibility', () => {
+describe('availability publication foreign-key lock compatibility', () => {
   async function publishAlongside(kind: 'assignment' | 'reservation', operation: 'open' | 'refresh' = 'refresh') {
-    const connection = new URL(url!);
+    if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native availability lock coverage cannot be skipped.');
+    const connection = new URL(url);
     if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Explicit disposable loopback PostgreSQL required.');
     const admin = new pg.Pool({ connectionString: connection.href });
     const name = `treeseed_availability_locks_${randomUUID().replaceAll('-', '')}`;

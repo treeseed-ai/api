@@ -5,9 +5,11 @@ import { DEFAULT_WORKDAY_POLICY } from '@treeseed/sdk/agent-capacity';
 import { createControlPlanePostgresDatabase } from '../../../../../src/api/support/control-plane-postgres.ts';
 import { createWorkdayProfileService, readTeamWorkdayProfile } from '../../../../../src/api/control-plane/repositories/capacity/workdays/profile-service.ts';
 
-describe.skipIf(!process.env.TREESEED_TEST_POSTGRES_URL)('team policy concurrency in PostgreSQL', () => {
+describe('team policy concurrency in PostgreSQL', () => {
 	it('preserves unrelated metadata and admits exactly one concurrent replacement', async () => {
-		const connection = new URL(process.env.TREESEED_TEST_POSTGRES_URL!);
+		const url = process.env.TREESEED_TEST_POSTGRES_URL;
+		if (!url) throw new Error('TREESEED_TEST_POSTGRES_URL is required; native policy concurrency coverage cannot be skipped.');
+		const connection = new URL(url);
 		if (connection.hostname !== '127.0.0.1' || connection.pathname !== '/postgres') throw new Error('Disposable loopback PostgreSQL required.');
 		const admin = new pg.Pool({ connectionString: connection.href });
 		const name = `treeseed_policy_test_${randomUUID().replaceAll('-', '')}`;
