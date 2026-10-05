@@ -63,7 +63,17 @@ describe('complete governed living graph contract authoring', () => {
 		expect(next.edges).toEqual(current.edges); expect(graphState(changed, next)).toEqual(next);
 		const running = structuredClone(current); graphNode(running, 'first', 'actor').status = 'running';
 		const frozen = structuredClone(graphNode(running, 'first', 'actor'));
-		expect(graphNode(graphState(changed, running, new Set([actor.id])), 'first', 'actor')).toEqual({ ...frozen, graphRevisionUpdated: 2 });
+		// Human resolution: mutable scheduling priority is not issued attempt authority.
+		const runningBefore = structuredClone(running), active = new Set([actor.id]);
+		const reprioritized = graphState(changed, running, active);
+		expect(graphNode(reprioritized, 'first', 'actor')).toEqual({ ...frozen, priority: 10, graphRevisionUpdated: 2 });
+		expect(graphState(changed, reprioritized, active)).toEqual(reprioritized);
+		const cleared = structuredClone(changed);
+		const projectedActor = cleared.nodes.find(node => node.id === actor.id); if (!projectedActor) throw new Error('Original projected Actor required');
+		delete projectedActor.priority; const removed = graphState(cleared, reprioritized, active);
+		const { priority: _priority, ...omitted } = frozen;
+		expect(graphNode(removed, 'first', 'actor')).toEqual({ ...omitted, graphRevisionUpdated: 2 });
+		expect(graphState(cleared, removed, active)).toEqual(removed); expect(running).toEqual(runningBefore);
 		for (const priority of [null, '', '1', false, {}, [], 0.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1]) {
 			const invalid = { ...projected, nodes: projected.nodes.map(node => Object.assign({}, node, { priority })) }, original = structuredClone(invalid);
 			expect(() => graphState(invalid, current)).toThrow(); expect(invalid).toEqual(original); expect(current).toEqual(graphState(input));

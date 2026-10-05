@@ -3,6 +3,9 @@ id: api.golden.component-boundaries
 title: api golden component boundaries
 scope: local-component-tests
 workflow:
+  - id: execution-issued-priority-native
+    action: { verifier: api.golden.execution-issued-priority-native }
+    expect: { status: passed }
   - id: execution-priority-storage-unit
     action: { verifier: api.golden.execution-priority-storage-unit }
     expect: { status: passed }

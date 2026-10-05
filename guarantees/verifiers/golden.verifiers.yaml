@@ -1,6 +1,11 @@
 schemaVersion: treeseed.guarantee-verifiers/v1
 ownerPackage: "@treeseed/api"
 verifiers:
+  api.golden.execution-issued-priority-native:
+    kind: vitestCase
+    ownerPackage: "@treeseed/api"
+    testFile: tests/unit/control-plane/capacity/execution/architecture/initial/initial-admission.test.ts
+    testName: "native graph reprioritization changes future scheduling only while issued canonical attempt reservation and exact admission replay remain frozen"
   api.golden.execution-priority-storage-unit:
     kind: vitestCase
     ownerPackage: "@treeseed/api"

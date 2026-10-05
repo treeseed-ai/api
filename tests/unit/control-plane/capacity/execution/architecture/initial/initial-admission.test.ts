@@ -4,8 +4,42 @@ import { initialAdmission, invalidAdmissionBindings } from './initial-admission-
 import { CapacityGovernanceError } from '../../../../../../../src/api/capacity/database.ts';
 import { canonicalOfferBuildInput } from '../../fixtures/assignment-attempt-fixtures.ts';
 import { buildAssignmentAttempt } from '../../../../../../../src/api/capacity/services/capacity/assignments/planning/execution/assignment-attempt-builder.ts';
+import { readFileSync } from 'node:fs';
+import { decodeExecutionNode } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-storage.ts';
+import { applyOperationalState, digest, type TeamGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-state.ts';
+import { createExecutionGraphService, persistExecutionGraph } from '../../../../../../../src/api/control-plane/repositories/capacity/execution/execution-graph-service.ts';
+import type { GraphRevision } from '@treeseed/sdk/agent-capacity';
 
 describe('initial living assignment native admission', () => {
+	it('native graph reprioritization changes future scheduling only while issued canonical attempt reservation and exact admission replay remain frozen', async () => {
+		const f = await initialAdmission(undefined, true);
+		try {
+			for (const file of ['0041_execution_content_output_authority.sql', '0044_execution_priority_dependency_provenance.sql']) await f.db.exec(readFileSync(`drizzle/control-plane/${file}`, 'utf8'));
+			await f.query('INSERT INTO teams (id,slug,name,created_at,updated_at) VALUES (?,?,?,?,?)', [f.attempt.teamId, 'priority-team', 'Priority team', f.attempt.createdAt, f.attempt.createdAt]);
+			await f.query('UPDATE execution_nodes SET estimate_json=?,required_capabilities_json=?,requested_permissions_json=?,workspace=? WHERE id=?',
+				[JSON.stringify(f.attempt.estimate), JSON.stringify(f.attempt.requiredCapabilities), JSON.stringify(f.attempt.effectiveProfile.permissionCeiling), f.attempt.workspace.mode, f.attempt.nodeId]);
+			const node = decodeExecutionNode((await f.query('SELECT * FROM execution_nodes WHERE id=?', [f.attempt.nodeId])).rows[0]!);
+			const initial: TeamGraph = { teamId: node.teamId, revision: f.attempt.graphRevision, digest: '', nodes: [node], edges: [] };
+			initial.digest = digest({ teamId: initial.teamId, nodes: initial.nodes, edges: initial.edges });
+			const receipt = (graph: TeamGraph): GraphRevision => ({ schemaVersion: 'treeseed.graph-revision/v1', teamId: graph.teamId,
+				revision: graph.revision, ruleRevision: 1, changedSourceRefs: [node.sourceRef], graphDigest: graph.digest,
+				changes: { added: [], changed: [node.id], completed: [], blocked: [], stale: [], removedEdges: [], addedEdges: [] }, createdAt: f.attempt.createdAt });
+			await persistExecutionGraph(f.store, initial, { ...initial, revision: 0, nodes: [] }, receipt(initial));
+			const input = f.input(), held = structuredClone(input); await f.admit(input);
+			const committed = await f.snapshot(), service = createExecutionGraphService(f.store), principal = { id: 'operator', roles: ['admin'] };
+			const current = await service.show(principal, f.attempt.teamId, {}), projection = structuredClone(current);
+			projection.revision++; projection.nodes[0]!.priority = 10;
+			const changed = applyOperationalState(current, projection, projection.revision, new Set([node.id]));
+			await persistExecutionGraph(f.store, changed, current, receipt(changed));
+			expect(await service.show(principal, f.attempt.teamId, {})).toEqual(changed);
+			expect(changed.nodes[0]).toEqual({ ...current.nodes[0], priority: 10, graphRevisionUpdated: changed.revision });
+			expect(applyOperationalState(changed, projection, projection.revision, new Set([node.id]))).toEqual(changed);
+			const after = await f.snapshot(); expect(after.financial).toEqual(committed.financial); expect(after.proxies).toEqual(committed.proxies);
+			for (const replay of await Promise.all([f.admit(input), f.admit(structuredClone(input))])) expect(replay.assignmentAttempt).toEqual(f.attempt);
+			expect((await f.repository.get(f.attempt.teamId, f.attempt.id))?.assignmentAttempt).toEqual(f.attempt);
+			expect(await f.snapshot()).toEqual(after); expect(input).toEqual(held);
+		} finally { await f.db.close(); }
+	});
 	it('native builder and admission retain the original phase deadline separately from allocated active time through exact reservation and concurrent replay', async () => {
 		const f = await initialAdmission();
 		try {

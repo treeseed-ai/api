@@ -63,7 +63,12 @@ export function applyOperationalState(current: TeamGraph, projected: TeamGraph, 
 		const operational = prior && !freshSimulationAttempt && node.kind !== 'condition'
 			&& ((['completed', 'failed', 'cancelled'].includes(prior.status))
 				|| (['assigned', 'running'].includes(prior.status) && activeAssignmentNodeIds.has(prior.id)));
-		if (operational) return { ...prior, graphRevisionUpdated: revision };
+		if (operational) {
+			// Priority governs future selection, not the already issued attempt's
+			// frozen revision, source, grants or limits. Omission clears it exactly.
+			const { priority: _priority, ...frozen } = prior;
+			return { ...frozen, ...(node.priority !== undefined ? { priority: node.priority } : {}), graphRevisionUpdated: revision };
+		}
 		const semantic = (value: ExecutionNode) => {
 			const { status: _status, nodeRevision: _nodeRevision, graphRevisionCreated: _created,
 				graphRevisionUpdated: _updated, ...rest } = value;
